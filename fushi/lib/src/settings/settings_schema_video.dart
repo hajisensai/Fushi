@@ -624,6 +624,34 @@ SettingsDestination buildVideoDestination() {
             },
             defaultValue: VideoAsbplayerConfig.defaults.seekSeconds.toDouble(),
           ),
+          // 第二档「长步进」：快捷键 Shift+←/→ 与控制条长步进按钮用。区间宽
+          // （5–300 秒），按 5 秒一档走，免得 stepper 点几十下。
+          SettingsStepperItem(
+            id: 'video.playback.long_seek_seconds',
+            title: t.video_setting_long_seek_seconds,
+            icon: Icons.fast_forward_outlined,
+            video: VideoPlacement(group: VideoGroup.playback, order: 81),
+            value: (SettingsContext settingsContext) => currentVideoAsbConfig(
+              settingsContext,
+            ).longSeekSeconds.toDouble(),
+            step: 5,
+            min: VideoAsbplayerConfig.longSeekSecondsMin.toDouble(),
+            max: VideoAsbplayerConfig.longSeekSecondsMax.toDouble(),
+            format: (double v) => '${v.round()}s',
+            onChanged: (SettingsContext settingsContext, double v) async {
+              await commitVideoAsbConfig(
+                settingsContext,
+                (VideoAsbplayerConfig c) => c.copyWith(
+                  longSeekSeconds: v.round().clamp(
+                    VideoAsbplayerConfig.longSeekSecondsMin,
+                    VideoAsbplayerConfig.longSeekSecondsMax,
+                  ),
+                ),
+              );
+            },
+            defaultValue: VideoAsbplayerConfig.defaults.longSeekSeconds
+                .toDouble(),
+          ),
           // BUG-1485：触屏横滑调进度的灵敏度。旧实现把「每像素跨多少时间」按视频总
           // 时长比例换算，长片一拽就起飞；换算模型改成「拖过整屏 = 固定一段时长」
           // （[VideoHorizontalSeekGesture]），这里让用户在三档之间选。仅移动端可见

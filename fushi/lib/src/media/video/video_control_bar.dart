@@ -35,7 +35,7 @@ enum VideoBarCluster {
 }
 
 /// 成对按钮：一侧收进菜单另一侧必须一起收，否则 `−10s` 在、`+10s` 没了。
-enum VideoBarHideGroup { seek, cue, frame }
+enum VideoBarHideGroup { seek, longSeek, cue, frame }
 
 /// 居中簇的起点 x：**能居中就居中，放不下就在左右两簇之间的空隙里平移**。
 ///
@@ -79,6 +79,10 @@ int? videoControlItemBarPriority(VideoControlItem item) {
     case VideoControlItem.seekBackward:
     case VideoControlItem.seekForward:
       return 80;
+    // 长步进是用户主动加上来的次要跳转，放不下时先于短步进 / 上下句收起。
+    case VideoControlItem.longSeekBackward:
+    case VideoControlItem.longSeekForward:
+      return 72;
     case VideoControlItem.previousCue:
     case VideoControlItem.replayCue:
     case VideoControlItem.nextCue:
@@ -131,6 +135,9 @@ VideoBarHideGroup? videoControlItemBarHideGroup(VideoControlItem item) {
     case VideoControlItem.seekBackward:
     case VideoControlItem.seekForward:
       return VideoBarHideGroup.seek;
+    case VideoControlItem.longSeekBackward:
+    case VideoControlItem.longSeekForward:
+      return VideoBarHideGroup.longSeek;
     case VideoControlItem.previousCue:
     case VideoControlItem.replayCue:
     case VideoControlItem.nextCue:

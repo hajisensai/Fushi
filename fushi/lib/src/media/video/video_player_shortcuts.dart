@@ -56,6 +56,8 @@ class VideoPlayerShortcutActions {
     required this.nextSubtitle,
     required this.seekBackward,
     required this.seekForward,
+    this.longSeekBackward = _noopShortcut,
+    this.longSeekForward = _noopShortcut,
     required this.toggleShaderCompare,
     required this.volumeUp,
     required this.volumeDown,
@@ -109,6 +111,11 @@ class VideoPlayerShortcutActions {
   final VoidCallback nextSubtitle;
   final VoidCallback seekBackward;
   final VoidCallback seekForward;
+
+  /// 长步进（±longSeekSeconds 秒，默认 Shift+←/→）。默认 no-op 只为测试哑实例省事；
+  /// 两个视频页都显式接线。
+  final VoidCallback longSeekBackward;
+  final VoidCallback longSeekForward;
   final VoidCallback toggleShaderCompare;
   final VoidCallback volumeUp;
   final VoidCallback volumeDown;
@@ -249,6 +256,8 @@ const List<ShortcutAction> kVideoAssignableActions = <ShortcutAction>[
   ShortcutAction.videoPause,
   ShortcutAction.videoSeekBackward,
   ShortcutAction.videoSeekForward,
+  ShortcutAction.videoLongSeekBackward,
+  ShortcutAction.videoLongSeekForward,
   ShortcutAction.videoPreviousFrame,
   ShortcutAction.videoNextFrame,
   // 倍速
@@ -321,6 +330,8 @@ Map<ShortcutAction, VoidCallback> videoActionCallbacks(
     ShortcutAction.videoNextSubtitle: actions.nextSubtitle,
     ShortcutAction.videoSeekBackward: actions.seekBackward,
     ShortcutAction.videoSeekForward: actions.seekForward,
+    ShortcutAction.videoLongSeekBackward: actions.longSeekBackward,
+    ShortcutAction.videoLongSeekForward: actions.longSeekForward,
     ShortcutAction.videoToggleShaderCompare: actions.toggleShaderCompare,
     ShortcutAction.videoVolumeUp: actions.volumeUp,
     ShortcutAction.videoVolumeDown: actions.volumeDown,

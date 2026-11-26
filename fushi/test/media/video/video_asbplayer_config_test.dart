@@ -21,6 +21,43 @@ void main() {
     expect(VideoAsbplayerConfig.defaults.volumeSwipeGesture, isTrue);
   });
 
+  test('长步进 longSeekSeconds：默认 30、旧档缺键取默认、越界夹回 5..300', () {
+    expect(VideoAsbplayerConfig.defaults.longSeekSeconds, 30);
+    expect(VideoAsbplayerConfig.longSeekSecondsMin, 5);
+    expect(VideoAsbplayerConfig.longSeekSecondsMax, 300);
+    // 升级前写下的配置没有 longSeekSeconds 键。
+    expect(
+      VideoAsbplayerConfig.decode('{"seekSeconds":5}').longSeekSeconds,
+      30,
+    );
+    expect(
+      VideoAsbplayerConfig.decode('{"longSeekSeconds":1}').longSeekSeconds,
+      5,
+    );
+    expect(
+      VideoAsbplayerConfig.decode('{"longSeekSeconds":9999}').longSeekSeconds,
+      300,
+    );
+    expect(
+      VideoAsbplayerConfig.decode('{"longSeekSeconds":"60"}').longSeekSeconds,
+      30,
+    );
+    expect(
+      VideoAsbplayerConfig.defaults
+          .copyWith(longSeekSeconds: 120)
+          .longSeekSeconds,
+      120,
+    );
+    // copyWith 不传时保留原值，改别的字段不串档。
+    expect(
+      VideoAsbplayerConfig.defaults
+          .copyWith(longSeekSeconds: 90)
+          .copyWith(seekSeconds: 7)
+          .longSeekSeconds,
+      90,
+    );
+  });
+
   test('issue #1525: 竖滑手势开关旧档/脏值回落 true，关态两侧独立往返', () {
     // 升级前写下的配置没有这两个键——不得把既有竖滑手势悄悄关掉。
     final VideoAsbplayerConfig legacy = VideoAsbplayerConfig.decode(
@@ -104,6 +141,7 @@ void main() {
   test('encode/decode round trips user playback preferences', () {
     const VideoAsbplayerConfig config = VideoAsbplayerConfig(
       seekSeconds: 5,
+      longSeekSeconds: 60,
       speedStep: 0.2,
       doubleTapSeekSeconds: 10,
       longPressSpeed: 2.5,
@@ -119,6 +157,7 @@ void main() {
     );
 
     expect(decoded.seekSeconds, 5);
+    expect(decoded.longSeekSeconds, 60);
     expect(decoded.speedStep, 0.2);
     expect(decoded.doubleTapSeekSeconds, 10);
     expect(decoded.longPressSpeed, 2.5);

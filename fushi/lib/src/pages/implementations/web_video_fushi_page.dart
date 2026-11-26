@@ -29,6 +29,7 @@ import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_current_line_copy.dart';
 import 'package:fushi/src/media/video/video_simultaneous_cues.dart';
 import 'package:fushi/src/media/video/video_player_shortcuts.dart';
+import 'package:fushi/src/media/video/video_asbplayer_config.dart';
 import 'package:fushi/src/media/video/video_subtitle_jump_panel.dart';
 import 'package:fushi/src/media/video/video_subtitle_overlay.dart';
 import 'package:fushi/src/media/video/video_study_accrual_arbiter.dart';
@@ -2393,6 +2394,12 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
 
   // ── 快捷键（与视频页同一注册表、同一动作集合）────────────────────────────
 
+  int get _longSeekMs =>
+      VideoAsbplayerConfig.decode(
+        _appModel.videoAsbplayerConfig,
+      ).longSeekSeconds *
+      1000;
+
   VideoPlayerShortcutActions _shortcutActions() {
     void noop() {}
     return VideoPlayerShortcutActions(
@@ -2403,6 +2410,10 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       nextSubtitle: () => unawaited(_seekToCueOffset(1)),
       seekBackward: () => unawaited(_seekRelative(-5000)),
       seekForward: () => unawaited(_seekRelative(5000)),
+      // 长步进（默认 Shift+←/→）：秒数与本地视频页同一份 asbplayer 配置
+      // （longSeekSeconds），按键当时读，设置页改了立即生效。
+      longSeekBackward: () => unawaited(_seekRelative(-_longSeekMs)),
+      longSeekForward: () => unawaited(_seekRelative(_longSeekMs)),
       toggleShaderCompare: noop,
       // 音量走 glue（Netflix 上是正片播放器的 setVolume / setMuted），不直写 <video>.volume。
       volumeUp: () => unawaited(_js('window.__fushiWebVideo.nudgeVolume(0.1)')),

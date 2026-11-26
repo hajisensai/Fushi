@@ -375,6 +375,7 @@ import 'package:fushi/src/media/video/video_loop_cue_badge.dart';
 import 'package:fushi/src/media/video/video_apple_chrome.dart';
 import 'package:fushi/src/media/video/video_apple_chrome_bar.dart';
 import 'package:fushi/src/media/video/video_apple_chrome_plan.dart';
+import 'package:fushi/src/media/video/video_apple_seek_glyph.dart';
 import 'package:fushi/src/media/video/video_m3e_chrome.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/media/video/video_control_item_presentation.dart';
@@ -2062,6 +2063,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   double? _enterBrightness;
 
   int get _asbSeekMs => _asbConfig.seekSeconds * 1000;
+  int get _asbLongSeekMs => _asbConfig.longSeekSeconds * 1000;
   double get _speedStep => _asbConfig.speedStep;
 
   ColorScheme _videoChromeColorScheme(BuildContext context) =>
@@ -10210,6 +10212,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         _keepControlsAliveIfVisible();
         unawaited(controller.seekRelative(_asbSeekMs));
       }),
+      // Shift+←/→ = 长步进（±longSeekSeconds 秒），其余语义同短步进。
+      longSeekBackward: () => _runWhenImmersiveAllowsShortcuts(() {
+        _keepControlsAliveIfVisible();
+        unawaited(controller.seekRelative(-_asbLongSeekMs));
+      }),
+      longSeekForward: () => _runWhenImmersiveAllowsShortcuts(() {
+        _keepControlsAliveIfVisible();
+        unawaited(controller.seekRelative(_asbLongSeekMs));
+      }),
       toggleShaderCompare: webGated(
         ShortcutAction.videoToggleShaderCompare,
         () => _runWhenImmersiveAllowsShortcuts(
@@ -11521,6 +11532,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           icon: Icons.fast_rewind_rounded,
           label: t.video_bottom_seek_back_label,
           tooltip: t.video_bottom_seek_back,
+          forward: false,
           color: _videoChromeButtonForeground(Theme.of(context).colorScheme),
           onPressed: () => _seekRelative(-10000),
         );
@@ -11531,8 +11543,34 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           icon: Icons.fast_forward_rounded,
           label: t.video_bottom_seek_forward_label,
           tooltip: t.video_bottom_seek_forward,
+          forward: true,
           color: _videoChromeButtonForeground(Theme.of(context).colorScheme),
           onPressed: () => _seekRelative(10000),
+        );
+      // 长步进：同 ±10s 的带标注按钮，秒数取 asbplayer 配置的 longSeekSeconds（动态）。
+      case VideoControlItem.longSeekBackward:
+        return _seekLabelButton(
+          icon: Icons.fast_rewind_rounded,
+          label: t.video_bottom_long_seek_back_label(
+            seconds: _asbConfig.longSeekSeconds,
+          ),
+          tooltip: _videoControlItemTooltip(item),
+          forward: false,
+          seconds: _asbConfig.longSeekSeconds,
+          color: _videoChromeButtonForeground(Theme.of(context).colorScheme),
+          onPressed: () => _seekRelative(-_asbLongSeekMs),
+        );
+      case VideoControlItem.longSeekForward:
+        return _seekLabelButton(
+          icon: Icons.fast_forward_rounded,
+          label: t.video_bottom_long_seek_forward_label(
+            seconds: _asbConfig.longSeekSeconds,
+          ),
+          tooltip: _videoControlItemTooltip(item),
+          forward: true,
+          seconds: _asbConfig.longSeekSeconds,
+          color: _videoChromeButtonForeground(Theme.of(context).colorScheme),
+          onPressed: () => _seekRelative(_asbLongSeekMs),
         );
       case VideoControlItem.frameBackward:
         return _frameStepButton(controller, forward: false);
@@ -11755,6 +11793,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       case VideoControlItem.playPause:
       case VideoControlItem.seekBackward:
       case VideoControlItem.seekForward:
+      case VideoControlItem.longSeekBackward:
+      case VideoControlItem.longSeekForward:
       case VideoControlItem.previousCue:
       case VideoControlItem.nextCue:
       case VideoControlItem.replayCue:
@@ -12020,6 +12060,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         return Icons.fast_rewind;
       case VideoControlItem.seekForward:
         return Icons.fast_forward;
+      case VideoControlItem.longSeekBackward:
+      case VideoControlItem.longSeekForward:
+        return videoControlItemIcon(item);
       case VideoControlItem.frameBackward:
         return Icons.arrow_left;
       case VideoControlItem.frameForward:
@@ -12118,6 +12161,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         return t.video_control_seek_backward;
       case VideoControlItem.seekForward:
         return t.video_control_seek_forward;
+      case VideoControlItem.longSeekBackward:
+        return t.video_control_long_seek_backward(
+          seconds: _asbConfig.longSeekSeconds,
+        );
+      case VideoControlItem.longSeekForward:
+        return t.video_control_long_seek_forward(
+          seconds: _asbConfig.longSeekSeconds,
+        );
       case VideoControlItem.frameBackward:
         return t.shortcut_action_video_previous_frame;
       case VideoControlItem.frameForward:
@@ -12248,6 +12299,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         break;
       case VideoControlItem.seekForward:
         unawaited(_seekRelative(10000));
+        break;
+      case VideoControlItem.longSeekBackward:
+        unawaited(_seekRelative(-_asbLongSeekMs));
+        break;
+      case VideoControlItem.longSeekForward:
+        unawaited(_seekRelative(_asbLongSeekMs));
         break;
       case VideoControlItem.frameBackward:
         _pokeControlsVisible();
@@ -12493,6 +12550,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             item != VideoControlItem.danmaku &&
             // 识别当前画面同理：默认不出现、不进「⋯」，用户拖上播放器才有。
             item != VideoControlItem.ocrFrame &&
+            // 长步进同理：键盘 Shift+←/→ 已覆盖，「⋯」里已有 ±10s，不再挤一对。
+            item != VideoControlItem.longSeekBackward &&
+            item != VideoControlItem.longSeekForward &&
             item.isChipRenderable &&
             _shouldRenderControlItem(item))
           VideoBarEntry(
@@ -12581,6 +12641,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     required IconData icon,
     required String label,
     required String tooltip,
+    required bool forward,
+    int seconds = 10,
     required Color color,
     required VoidCallback onPressed,
   }) {
@@ -12590,6 +12652,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         icon: icon,
         label: label,
         tooltip: tooltip,
+        forward: forward,
+        seconds: seconds,
         color: color,
         onTap: onPressed,
       ),
@@ -12602,13 +12666,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     required IconData icon,
     required String label,
     required String tooltip,
+    required bool forward,
+    required int seconds,
     required Color color,
     required VoidCallback onTap,
   }) {
-    // Apple：AVKit 的 ±10 秒键是带数字的 SF 字形（gobackward.10 / goforward.10），
-    // 不另挂文字标注；跳转秒数与 MD3 的 ±10s 同一个常量（[_seekRelative] 的 10000）。
+    // Apple：AVKit 的 ±N 秒键是带数字的 SF 字形（gobackward.10 / goforward.30 …），
+    // 不另挂文字标注；秒数 = 调用方给的 [seconds]（±10s 键恒 10，长步进键取配置值）。
+    // SF 没有对应数字字形的秒数由 [VideoAppleSeekGlyph] 在无数字圆箭头里叠数字。
     if (_appleChrome) {
-      final bool forward = tooltip == t.video_bottom_seek_forward;
       return FushiTooltip(
         message: tooltip,
         child: InkWell(
@@ -12616,10 +12682,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           customBorder: const CircleBorder(),
           child: Padding(
             padding: EdgeInsets.all(8 * _videoUiScale),
-            child: FushiIcon(
-              forward
-                  ? CupertinoIcons.goforward_10
-                  : CupertinoIcons.gobackward_10,
+            child: VideoAppleSeekGlyph(
+              forward: forward,
+              seconds: seconds,
               size: _videoControlIconSize,
               color: color,
               semanticLabel: label,

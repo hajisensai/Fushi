@@ -570,6 +570,9 @@ enum ShortcutAction {
   videoPause(ShortcutScope.video, 'video_pause'),
   videoSeekBackward(ShortcutScope.video, 'video_seek_backward'),
   videoSeekForward(ShortcutScope.video, 'video_seek_forward'),
+  // 第二档「长步进」：±longSeekSeconds 秒（VideoAsbplayerConfig，默认 30）。
+  videoLongSeekBackward(ShortcutScope.video, 'video_long_seek_backward'),
+  videoLongSeekForward(ShortcutScope.video, 'video_long_seek_forward'),
   videoPreviousFrame(ShortcutScope.video, 'video_previous_frame'),
   videoNextFrame(ShortcutScope.video, 'video_next_frame'),
   videoSpeedUp(ShortcutScope.video, 'video_speed_up'),

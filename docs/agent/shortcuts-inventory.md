@@ -221,6 +221,7 @@
 | ← / A / J | 时间后退（seekBackward） |
 | → / D / I | 时间前进（seekForward） |
 | Ctrl+← / Ctrl+→ | 上一句 / 下一句字幕 |
+| Shift+← / Shift+→ | 长步进后退 / 前进（videoLongSeekBackward/Forward，±longSeekSeconds，默认 30 秒；手柄无默认） |
 | Shift+F | seekForward（**与 F=全屏冲突，见待优化**） |
 | C | 切换着色器对比 |
 | ↑ / 0 | 音量+ |

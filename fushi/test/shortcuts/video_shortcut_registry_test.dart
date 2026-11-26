@@ -179,6 +179,149 @@ void main() {
     );
   });
 
+  group('long seek (second seek step) defaults', () {
+    const Map<ShortcutAction, LogicalKeyboardKey> expected =
+        <ShortcutAction, LogicalKeyboardKey>{
+          ShortcutAction.videoLongSeekBackward: LogicalKeyboardKey.arrowLeft,
+          ShortcutAction.videoLongSeekForward: LogicalKeyboardKey.arrowRight,
+        };
+
+    test('Shift+Left / Shift+Right on every platform, no gamepad default, '
+        'and no conflict inside the video co-active group', () {
+      for (final TargetPlatform platform in <TargetPlatform>[
+        TargetPlatform.windows,
+        TargetPlatform.linux,
+        TargetPlatform.macOS,
+        TargetPlatform.android,
+        TargetPlatform.iOS,
+      ]) {
+        final FushiShortcutRegistry registry = FushiShortcutRegistry()
+          ..loadDefaults(platform);
+        for (final MapEntry<ShortcutAction, LogicalKeyboardKey> e
+            in expected.entries) {
+          final InputBinding binding = InputBinding(
+            key: e.value,
+            modifiers: const <ModifierKey>{ModifierKey.shift},
+          );
+          final ShortcutBindingSet set = registry.bindingsFor(e.key);
+          expect(set.keyboardBindings, <InputBinding>[
+            binding,
+          ], reason: '$platform ${e.key.key}');
+          expect(
+            set.gamepadBindings,
+            isEmpty,
+            reason: '$platform ${e.key.key}: no gamepad default',
+          );
+          expect(
+            registry.hasKeyboardConflict(
+              ShortcutScope.video,
+              binding,
+              exclude: e.key,
+            ),
+            isNull,
+            reason: '$platform: Shift+arrow must be free in the video group',
+          );
+          expect(
+            registry.resolveKeyboard(
+              e.value,
+              modifiers: const <ModifierKey>{ModifierKey.shift},
+              scope: ShortcutScope.video,
+            ),
+            e.key,
+            reason: '$platform ${e.key.key}',
+          );
+        }
+        // 裸方向键仍是短步进，没被长步进吃掉。
+        expect(
+          registry.resolveKeyboard(
+            LogicalKeyboardKey.arrowLeft,
+            modifiers: const <ModifierKey>{},
+            scope: ShortcutScope.video,
+          ),
+          ShortcutAction.videoSeekBackward,
+        );
+      }
+    });
+
+    test('Shift+Left / Shift+Right dispatch to the long-seek callbacks', () {
+      final FushiShortcutRegistry registry = FushiShortcutRegistry()
+        ..loadDefaults(TargetPlatform.windows);
+      final List<String> log = <String>[];
+      final Map<ShortcutAction, VoidCallback> callbacks = videoActionCallbacks(
+        VideoPlayerShortcutActions(
+          togglePlayPause: () {},
+          play: () {},
+          pause: () {},
+          previousSubtitle: () {},
+          nextSubtitle: () {},
+          seekBackward: () => log.add('seekBackward'),
+          seekForward: () => log.add('seekForward'),
+          longSeekBackward: () => log.add('longSeekBackward'),
+          longSeekForward: () => log.add('longSeekForward'),
+          toggleShaderCompare: () {},
+          volumeUp: () {},
+          volumeDown: () {},
+          toggleMute: () {},
+          speedUp: () {},
+          speedDown: () {},
+          resetSpeed: () {},
+          toggleHoldSpeed: () {},
+          previousFrame: () {},
+          nextFrame: () {},
+          screenshot: () {},
+          screenshotSubtitled: () {},
+          ocrFrame: () {},
+          toggleFullscreen: () {},
+          toggleMiniWindow: () {},
+          toggleMiniChrome: () {},
+          toggleSubtitleList: () {},
+          searchSubtitleList: () {},
+          toggleImmersiveLock: () {},
+          toggleSubtitleBlur: () {},
+          cycleSubtitleObscure: () {},
+          toggleSubtitleHide: () {},
+          cycleSecondarySubtitleObscure: () {},
+          toggleSecondarySubtitleHide: () {},
+          toggleFavoriteSentence: () {},
+          replayCurrentSubtitle: () {},
+          replayPreviousSubtitle: () {},
+          copyCurrentSubtitle: () {},
+          copyCurrentSecondarySubtitle: () {},
+          toggleLoopCurrentSubtitle: () {},
+          previousChapter: () {},
+          nextChapter: () {},
+          openSubtitleAlign: () {},
+          subtitleDelayIncrease: () {},
+          subtitleDelayDecrease: () {},
+          alignSubtitleToPrev: () {},
+          alignSubtitleToNext: () {},
+          enterCaret: () {},
+          openStudyStatistics: () {},
+          toggleStudyClock: () {},
+          escape: () {},
+        ),
+      );
+      for (final MapEntry<ShortcutAction, LogicalKeyboardKey> e
+          in expected.entries) {
+        final ShortcutAction? action = registry.resolveKeyboard(
+          e.value,
+          modifiers: const <ModifierKey>{ModifierKey.shift},
+          scope: ShortcutScope.video,
+        );
+        callbacks[action]!();
+      }
+      expect(log, <String>['longSeekBackward', 'longSeekForward']);
+      expect(
+        kVideoAssignableActions,
+        contains(ShortcutAction.videoLongSeekBackward),
+      );
+      expect(
+        kVideoAssignableActions,
+        contains(ShortcutAction.videoLongSeekForward),
+      );
+    });
+  });
+
   group(
     'settings-page scope enumeration covers the video scope (TODO-134)',
     () {
