@@ -1,0 +1,10 @@
+## BUG-5492 · Android 外部书库被整树删掉，书与词典全没了
+- **报告**：2026-11-26（反馈 MXX0xhQDgt / yjj8-18vKt，vivo 3.4.0：「移到可访问文件夹」后书库全部消失、数据库还在；同类 cH-HbP8XkQ，报告人承认自己手动删过 `Android/data/app.fushi.reader`）
+- **真实性**：✅ 真问题，但不是 Fushi 自己删的。在真机（OPPO）实验包上反复验过：正常迁移、迁移中途杀进程、多次冷启动、3.3.0 → 3.4.0 → develop 升级、平铺与嵌套两种内部布局，书库都完好，应用内找不到删除路径。MXX0xhQDgt 日志里 11:08 书库根还在外部（那里只剩新建的空派生目录），11:50 锚点已是内部嵌套布局（多半是丢了之后用户自己迁回）。根因是位置本身：3.4.0 把书库默认放到 / 引导迁到外部 app 专属目录 `Android/data/<包名>/files/data`（`fushi/lib/src/storage/app_paths.dart` `decideAndroidDocumentsLocation`、首页 `maybeShowAndroidStorageMovePrompt`）。那里对文件管理器、电脑 USB、手机清理工具（vivo i管家之类）都可见可删，Fushi 拦不住；而数据位置取证环（BUG-5490）也写在外部 `files/logs`，跟着一起被删，事后查不到。
+- **[x] ① 已修复** — 用户 2026-11-26 拍板「暂时砍掉外部位置 + 哨兵检测」：
+  - 新装和没有锚点的老安装一律落内部（`decideAndroidDocumentsLocation` 只认已有锚点，否则内部）；不再弹「移到可访问文件夹」，设置「数据存储位置」在内部时不给按钮。
+  - 已在外部的安装沿用锚点、不在启动期自动搬（GB 级书库会卡死启动画面），首页一次性弹「建议移回内部存储」（`android_storage_move_prompt.dart`，标记 `android_documents_move_back_prompted` 弹前落），确认后走带进度遮罩的 `startAndroidDocumentsMigration(toExternal: false)`；设置里随时可「移回内部存储」。
+  - 书库消失哨兵 `fushi/lib/src/storage/library_sentinel.dart`：书库根放隐藏 token 文件，内部 support 根记 token + 上次见到时间 + 各顶层目录条目数；每次冷启动（`AppModel` 书库根判定之后，只 Android）核对，哨兵没了且条目变少就留下现场、写进数据位置环，首页弹「书库文件不见了」请用户带日志反馈（预填分类「问题」、正文带现场）。条目没少的整树重写只重新布防，不误报；全程不动书库文件。
+  - 数据位置取证环挪到内部 support 根 `files/logs`（`AppPaths.durableDiagnosticsDirectory`），旧位置的环首次启动时搬过去。
+- **[x] ② 已加自动化测试** — `fushi/test/storage/library_sentinel_test.dart`（布防 / 正常 / 应用内删书不误报 / 整树删除留现场且不动剩余文件 / foreign token / 条目没少只重新布防 / 空书库不误报 / 记录损坏 / 不可写报 error 不抛 / 反馈预填）；`fushi/test/storage/android_documents_location_test.dart`（无锚点一律内部、锚点沿用、移回提示判定）；`fushi/test/utils/misc/error_log_data_location_ring_test.dart`（旧环搬迁、不覆盖、同文件不动）。
+- **备注**：外部位置的代码路径（`planAndroidDocumentsMigration(toExternal: true)`、对账）保留，只是 UI 不再提供入口；以后若恢复「可访问文件夹」要先解决外部目录可被整树删除的问题（例如只把导出副本放外部）。真机上的哨兵弹框未复测（用户已取消真机验证项）。
