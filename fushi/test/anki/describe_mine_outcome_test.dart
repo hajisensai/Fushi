@@ -116,6 +116,22 @@ void main() {
       );
     });
 
+    test('success 认不出牌组名：用不带牌组名的文案，不出空引号（反馈 OGj5irRpo7）', () {
+      for (final String? deck in <String?>[null, '', '  ']) {
+        final r = describeMineOutcome(MineOutcome.success(deckName: deck));
+        expect(r.message, t.card_exported_no_deck);
+        expect(r.detail, isNull);
+        final o = describeMineOutcome(
+          MineOutcome.success(deckName: deck),
+          overwrite: true,
+        );
+        expect(o.message, t.card_overwritten_no_deck);
+        expect(o.message, isNot(contains('『』')));
+        expect(o.status, MineToastStatus.overwritten);
+        expect(o.record, isFalse);
+      }
+    });
+
     test('notConfigured: 未配置文案 + 不成功不记账', () {
       final r = describeMineOutcome(
         const MineOutcome(MineResult.notConfigured),

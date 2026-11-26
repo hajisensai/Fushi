@@ -975,8 +975,12 @@ describeMineOutcome(MineOutcome outcome, {bool overwrite = false}) {
       // 失败原因（含 HTTP 码/URL）追加到成功 toast，终结用户「没音频不知为何」的盲猜。
       // audioWarning 为 null（音频本就没有或下载成功）时维持原成功文案（向后兼容）。
       final String? audioWarning = outcome.audioWarning;
-      final String deckName = outcome.deckName ?? '';
-      final String baseMessage = overwrite
+      final String deckName = outcome.deckName?.trim() ?? '';
+      // 后端认不出落点牌组（覆写来源回看 / 首选牌组为空的笔记、视频待写队列）时用不带牌组名的文案，
+      // 不出「卡片已覆盖到『』」空引号（反馈 OGj5irRpo7）。
+      final String baseMessage = deckName.isEmpty
+          ? (overwrite ? t.card_overwritten_no_deck : t.card_exported_no_deck)
+          : overwrite
           ? t.card_overwritten(deck: deckName)
           : t.card_exported(deck: deckName);
       final bool hasAudioWarning =
