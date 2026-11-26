@@ -7,6 +7,8 @@
 #include <cwchar>
 #include <string>
 
+#include "code_integrity_probe.h"
+#include "code_integrity_report.h"
 #include "crash_dump.h"
 #include "native_glog.h"
 #include "startup_reveal_policy.h"
@@ -123,6 +125,8 @@ namespace fushi
       ULONGLONG started_ms = 0;
       bool main_window_shown = false;
       bool startup_reveal_forced = false;
+      // 本次启动的代码完整性拦截记录查过没有（code_integrity_probe.h，BUG-5484）。
+      bool code_integrity_probed = false;
     };
 
     // 抓一份 hang dump 并记录：dump 与 hang_watchdog.log 这两样证据只用栈缓冲和
@@ -245,6 +249,20 @@ namespace fushi
           elapsed_ms, "startup-hidden: ms=");
       }
       ShowWindowAsync(g_main_window, SW_SHOW);
+      // 智能应用控制 / WDAC 拦下的文件只记在 CodeIntegrity 事件日志里，用户不会去翻：
+      // 卡住这一刻自动读出来，和 dump 一起落盘（BUG-5484）。
+      s.code_integrity_probed = true;
+      StartCodeIntegrityProbe(true);
+    }
+
+    // 每次启动查一次（不管卡没卡）：被拦的 DLL 可能只让某个功能静默失效。
+    void CheckCodeIntegrityProbe(WatchdogState& s)
+    {
+      if (s.code_integrity_probed) return;
+      const ULONGLONG now_ms = UnbiasedNowMs();
+      if (now_ms < s.started_ms + kCodeIntegrityLaunchProbeDelayMs) return;
+      s.code_integrity_probed = true;
+      StartCodeIntegrityProbe(false);
     }
 
     DWORD WINAPI WatchdogMain(LPVOID)
@@ -259,6 +277,7 @@ namespace fushi
           return 0;
         }
         CheckStartupReveal(s);
+        CheckCodeIntegrityProbe(s);
         CheckDartSilence(s);
         SettleAckedHeartbeat(s);
         if (s.in_flight) {

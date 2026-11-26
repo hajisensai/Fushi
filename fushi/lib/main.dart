@@ -84,6 +84,7 @@ import 'package:fushi/src/utils/misc/flutter_error_log.dart';
 import 'package:fushi/src/utils/misc/present_watchdog.dart';
 import 'package:fushi/src/utils/misc/shortcut_icon_sync.dart';
 import 'package:fushi/src/utils/misc/smooth_wheel_scroll.dart';
+import 'package:fushi/src/utils/misc/code_integrity_log.dart';
 import 'package:fushi/src/utils/misc/hang_watchdog_log.dart';
 import 'package:fushi/src/utils/misc/wgc_capture_log.dart';
 import 'package:fushi/src/utils/rasterized_frame_size_reporter.dart';
@@ -780,6 +781,9 @@ void main([List<String> args = const <String>[]]) {
         // BUG-2588：把上次运行主线程停泵看门狗抓 hang dump 的记录折进错误日志（仅
         // Windows），让「卡死后强杀」在日志里与 native 崩溃分开、并指向可分享的 hang-*.dmp。
         HangWatchdogLog.foldIntoErrorLog(),
+        // BUG-5484：runner 自动读出的智能应用控制 / WDAC 拦截记录（被拦的 Fushi 文件 +
+        // SAC 状态）折进错误日志，用户不用自己翻事件查看器。
+        CodeIntegrityLog.foldIntoErrorLog(),
         // 上次进程「怎么没的」：会话标记（全平台）+ Android ApplicationExitInfo /
         // onTrimMemory、Windows 崩溃摘要、macOS .ips、iOS MetricKit 的摘要折进错误
         // 日志，随反馈日志上传（Dart 接不到的原生崩溃 / 被系统杀）。
