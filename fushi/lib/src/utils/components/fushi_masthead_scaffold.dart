@@ -39,12 +39,14 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart'
 import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
     show
         FushiMastheadActionGroup,
+        FushiMastheadLineMetrics,
         FushiMastheadPanel,
         FushiMastheadRole,
         FushiMastheadScope,
         FushiMastheadTitle,
         FushiMastheadTitleFit,
         fushiMastheadCompact,
+        fushiMastheadLineMetrics,
         fushiMastheadProgressOf,
         fushiMastheadTitleFit,
         fushiMastheadTitleStyle,
@@ -98,6 +100,55 @@ typedef FushiMastheadBackdropBuilder =
 // 页头一行
 // =============================================================================
 
+/// 页名首行字面中心离页名盒顶边的距离（满字号、未缩放）：返回键与动作图标
+/// 的中线对到这里（[FushiPageTitleMetrics.inkCenterEm]）。单条缓存——页头在
+/// 滚动收缩的每一帧都会重建，同一页名同一字样只排一次。
+double _titleInkFromTop(BuildContext context, String title, TextStyle style) {
+  final TextScaler textScaler = MediaQuery.textScalerOf(context);
+  final TextDirection direction = Directionality.of(context);
+  final ({
+    String title,
+    TextStyle style,
+    TextScaler textScaler,
+    TextDirection direction,
+  })
+  key = (
+    title: title,
+    style: style,
+    textScaler: textScaler,
+    direction: direction,
+  );
+  final _InkMemo? memo = _inkMemo;
+  if (memo != null && memo.key == key) return memo.value;
+  final FushiMastheadLineMetrics line = fushiMastheadLineMetrics(
+    context,
+    title,
+    style,
+  );
+  final double value = line.height - line.inkCenter;
+  _inkMemo = (key: key, value: value);
+  return value;
+}
+
+typedef _InkMemo = ({
+  ({
+    String title,
+    TextStyle style,
+    TextScaler textScaler,
+    TextDirection direction,
+  })
+  key,
+  double value,
+});
+_InkMemo? _inkMemo;
+
+/// 把 [child] 竖向居中在离顶边 [center] 的线上（盒高 2 × [center]，宽度跟
+/// [child]）：返回键 / 动作组与页名字面中心对齐用。
+Widget _centerOnLine(double center, Widget child) => SizedBox(
+  height: center * 2,
+  child: Align(widthFactor: 1, child: child),
+);
+
 /// 页名排法的缓存键：同一组输入只排一次（[fushiMastheadTitleFit] 要做多次
 /// 文字排版，页头在滚动收缩的每一帧都会重建）。
 typedef _TitleFitKey = ({
@@ -121,10 +172,16 @@ class _MastheadTitleBox extends StatefulWidget {
     required this.scale,
     required this.singleLine,
     required this.tier,
+    required this.anchor,
   });
 
   final String title;
   final bool compact;
+
+  /// 页名首行字面中心要落在离盒顶多远（与返回键 / 动作图标的中线同一条线）：
+  /// 盒顶按缩放后的字面中心补上内边距。调用方保证它不小于满字号下的字面
+  /// 中心（[_titleInkFromTop] × [scale]），缩小只会往下补。
+  final double anchor;
 
   /// 页名字阶档位。
   final FushiPageTitleTier tier;
@@ -193,9 +250,14 @@ class _MastheadTitleBoxState extends State<_MastheadTitleBox> {
           constraints.maxWidth,
           fit.lineWidth * fitScale,
         );
-        return SizedBox(
+        final double inkTop =
+            _titleInkFromTop(context, widget.title, style) * fitScale;
+        return Container(
           width: width,
           height: lineHeight * fit.lines * fitScale,
+          margin: EdgeInsetsDirectional.only(
+            top: math.max(0.0, widget.anchor - inkTop),
+          ),
           child: OverflowBox(
             alignment: AlignmentDirectional.bottomStart,
             minWidth: 0,
@@ -295,6 +357,25 @@ class FushiMastheadHeader extends StatelessWidget {
     final double collapsed = titleScale.collapsedFontSize / titleScale.fontSize;
     final double p = progress.clamp(0.0, 1.0);
     final double scale = titleInBody ? collapsed : lerpDouble(1, collapsed, p)!;
+    // 返回键、动作图标、页名首行字面中心同一条中线（2026-11-26 用户截图：原来
+    // 按行底边对齐，页名缩小后返回键高出一截）。图标半高不够时以图标为准、
+    // 页名往下补；裸图标行行高固定，中线就是行中线。
+    const double iconHalf = kFushiMastheadActionExtent / 2;
+    final double anchor = titleInBody
+        ? kFushiMastheadBareRowExtent / 2
+        : math.max(
+            iconHalf,
+            _titleInkFromTop(
+                  context,
+                  title,
+                  fushiMastheadTitleStyle(
+                    context,
+                    compact: compact,
+                    tier: titleTier,
+                  ),
+                ) *
+                scale,
+          );
     final Widget titleBox = _MastheadTitleBox(
       title: title,
       compact: compact,
@@ -303,6 +384,7 @@ class FushiMastheadHeader extends StatelessWidget {
       // 只是滚过正文大标题后的定位提示，按收起态字号一行、放不下省略。
       singleLine: titleInBody,
       tier: titleTier,
+      anchor: anchor,
     );
     final Widget? lead =
         leading ??
@@ -323,6 +405,12 @@ class FushiMastheadHeader extends StatelessWidget {
                 onTap: onBack,
               ));
     if (titleInBody) return _buildBare(context, tokens, titleBox, lead);
+    final Widget? centeredLead = lead == null
+        ? null
+        : _centerOnLine(
+            anchor,
+            FushiMastheadActionGroup(items: <Widget>[lead]),
+          );
     final FushiMastheadBadgeBuilder? badge = this.badge;
     final Widget? subtitle = this.subtitle;
     final Widget? bottom = this.bottom;
@@ -359,10 +447,10 @@ class FushiMastheadHeader extends StatelessWidget {
               fushiHeaderTitleFloor(context, constraints.maxWidth),
         );
         return Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            if (lead != null) ...<Widget>[
-              FushiMastheadActionGroup(items: <Widget>[lead]),
+            if (centeredLead != null) ...<Widget>[
+              centeredLead,
               const SizedBox(width: 14),
             ],
             Expanded(child: titleColumn),
@@ -370,7 +458,10 @@ class FushiMastheadHeader extends StatelessWidget {
               const SizedBox(width: 14),
               ConstrainedBox(
                 constraints: BoxConstraints(maxWidth: budget),
-                child: _MastheadActions(actions: actions),
+                child: _centerOnLine(
+                  anchor,
+                  _MastheadActions(actions: actions),
+                ),
               ),
             ],
           ],
@@ -438,7 +529,9 @@ class FushiMastheadHeader extends StatelessWidget {
                 // 拖窗区）。
                 child: IgnorePointer(
                   child: Align(
-                    alignment: AlignmentDirectional.centerStart,
+                    // 页名盒顶自带补白，首行字面中心落在行中线上（与返回键 /
+                    // 动作图标同一条线）。
+                    alignment: AlignmentDirectional.topStart,
                     child: Opacity(opacity: opacity, child: titleBox),
                   ),
                 ),

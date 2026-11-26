@@ -1898,11 +1898,12 @@ class _FushiFloatingChromeBarState extends State<FushiFloatingChromeBar> {
         ? _tabsNaturalWidth ?? 0
         : 0;
     final String probe = title ?? 'A';
-    final double titleBaseline = fushiMastheadBaselineFromBottom(
+    final FushiMastheadLineMetrics titleLine = fushiMastheadLineMetrics(
       context,
       probe,
       titleStyle,
     );
+    final double titleBaseline = titleLine.baseline;
     final double switchBaseline = soloTabs
         ? titleBaseline
         : fushiMastheadBaselineFromBottom(context, probe, switchStyle);
@@ -1973,6 +1974,8 @@ class _FushiFloatingChromeBarState extends State<FushiFloatingChromeBar> {
                           : kFushiMastheadActionExtent,
                       textDirection: Directionality.of(context),
                       titleBaseline: titleBaseline,
+                      titleInkCenter: titleLine.inkCenter,
+                      titleLineHeight: titleLine.height,
                       switchBaseline: switchBaseline,
                       headlineNatural: headlineNatural,
                       scrollOffset: host?.scrollOffset,
@@ -2229,6 +2232,8 @@ class _MastheadLayout extends MultiChildRenderObjectWidget {
     required this.minActionsExtent,
     required this.textDirection,
     required this.titleBaseline,
+    required this.titleInkCenter,
+    required this.titleLineHeight,
     required this.switchBaseline,
     required this.headlineNatural,
     required this.scrollOffset,
@@ -2247,6 +2252,11 @@ class _MastheadLayout extends MultiChildRenderObjectWidget {
   final double minActionsExtent;
   final TextDirection textDirection;
   final double titleBaseline;
+
+  /// 主标题的字面中心到行盒底边的距离与行盒高（见
+  /// [FushiMastheadGeometry.titleInkCenter]）。
+  final double titleInkCenter;
+  final double titleLineHeight;
   final double switchBaseline;
 
   /// 主标题（页名或标题形态的一级切换）的自然宽；0 = 没有主标题。
@@ -2263,6 +2273,8 @@ class _MastheadLayout extends MultiChildRenderObjectWidget {
         minActionsExtent: minActionsExtent,
         textDirection: textDirection,
         titleBaseline: titleBaseline,
+        titleInkCenter: titleInkCenter,
+        titleLineHeight: titleLineHeight,
         switchBaseline: switchBaseline,
         headlineNatural: headlineNatural,
         scrollOffset: scrollOffset,
@@ -2281,6 +2293,8 @@ class _MastheadLayout extends MultiChildRenderObjectWidget {
       ..minActionsExtent = minActionsExtent
       ..textDirection = textDirection
       ..titleBaseline = titleBaseline
+      ..titleInkCenter = titleInkCenter
+      ..titleLineHeight = titleLineHeight
       ..switchBaseline = switchBaseline
       ..headlineNatural = headlineNatural
       ..scrollOffset = scrollOffset
@@ -2316,6 +2330,8 @@ class _RenderMastheadLayout extends RenderBox
     required double minActionsExtent,
     required TextDirection textDirection,
     required double titleBaseline,
+    required double titleInkCenter,
+    required double titleLineHeight,
     required double switchBaseline,
     required double headlineNatural,
     required ValueListenable<double>? scrollOffset,
@@ -2327,6 +2343,8 @@ class _RenderMastheadLayout extends RenderBox
        _minActionsExtent = minActionsExtent,
        _textDirection = textDirection,
        _titleBaseline = titleBaseline,
+       _titleInkCenter = titleInkCenter,
+       _titleLineHeight = titleLineHeight,
        _switchBaseline = switchBaseline,
        _headlineNatural = headlineNatural,
        _scrollOffset = scrollOffset,
@@ -2382,6 +2400,22 @@ class _RenderMastheadLayout extends RenderBox
   set titleBaseline(double value) {
     if (value == _titleBaseline) return;
     _titleBaseline = value;
+    markNeedsLayout();
+  }
+
+  double get titleInkCenter => _titleInkCenter;
+  double _titleInkCenter;
+  set titleInkCenter(double value) {
+    if (value == _titleInkCenter) return;
+    _titleInkCenter = value;
+    markNeedsLayout();
+  }
+
+  double get titleLineHeight => _titleLineHeight;
+  double _titleLineHeight;
+  set titleLineHeight(double value) {
+    if (value == _titleLineHeight) return;
+    _titleLineHeight = value;
     markNeedsLayout();
   }
 
@@ -2747,6 +2781,8 @@ class _RenderMastheadLayout extends RenderBox
         leading: c[_kSlotLeading].size,
         title: c[_kSlotTitle].size,
         titleBaseline: _titleBaseline,
+        titleInkCenter: _titleInkCenter,
+        titleLineHeight: _titleLineHeight,
         badge: c[_kSlotBadge].size,
         switcher: c[_kSlotSwitch].size,
         switchBaseline: _switchBaseline,
@@ -2797,10 +2833,14 @@ class _RenderMastheadLayout extends RenderBox
       return out;
     }
     final double rowBottom = g.topPadAt(p) + g.firstRowHeightAt(p);
-    final double actionBottom = g.actionBottomAt(p);
+    // 前导 / 动作组 / 主按钮各按自己的高度以同一条中线垂直居中（有主标题时
+    // 是它的字面中心，见 [FushiMastheadGeometry.actionCenterLiftAt]）。
+    final double actionCenter = g.actionCenterAt(p);
+    double onCenter(Size s, double scale) =>
+        actionCenter + s.height * scale / 2;
     double cursor = 0;
     if (g.leading.width > 0) {
-      place(_kSlotLeading, 0, actionBottom, 1);
+      place(_kSlotLeading, 0, onCenter(g.leading, 1), 1);
       // 主标题单独一行时前导留在动作行，标题行从起始边排。
       if (!g.stacked) {
         cursor = g.leading.width + FushiMastheadGeometry.leadingGap;
@@ -2824,7 +2864,7 @@ class _RenderMastheadLayout extends RenderBox
     );
     final double sP = g.primaryScaleAt(p);
     final double primaryX = w - g.primary.width * sP;
-    place(_kSlotPrimary, primaryX, actionBottom, sP);
+    place(_kSlotPrimary, primaryX, onCenter(g.primary, sP), sP);
     place(
       _kSlotActions,
       primaryX -
@@ -2832,7 +2872,7 @@ class _RenderMastheadLayout extends RenderBox
               ? g.actionsPrimaryGap
               : 0) -
           g.actions.width,
-      actionBottom,
+      onCenter(g.actions, 1),
       1,
     );
     place(_kSlotSecondary, 0, g.secondaryTopAt(p) + g.secondary.height, 1);
