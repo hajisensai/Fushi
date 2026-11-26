@@ -23,7 +23,7 @@ class HangWatchdogLog {
   static const String _relativePath = r'Fushi\crashdumps\hang_watchdog.log';
 
   /// 解析日志文件（仅 Windows）。环境变量 `LOCALAPPDATA` 缺失或非 Windows 返回 null。
-  @visibleForTesting
+  /// 生产调用方：[foldIntoErrorLog] 与启动期限（`startup_stall_deadline.dart`）。
   static File? resolveLogFile({bool isWindows = false, String? localAppData}) {
     if (!isWindows) return null;
     final String? base = localAppData;
