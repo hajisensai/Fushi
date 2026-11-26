@@ -17568,11 +17568,20 @@ class _AppAutoBackupHost implements AutoBackupHost {
         t.sync_backend_fushi_server;
   }
 
+  /// 与 [serverTarget] 认同一台 host：互联会话已经选定 host 时按它的身份取名（[serverTarget] 的标签也这么取），
+  /// 还没选定（不为了显示名字去选路 / 联网）才退到第一条有名字的启用地址。
   @override
   Future<String?> serverLabel() async {
     final SyncRepository repo = SyncRepository(_app.database);
-    if (await _serverBackupChannel(repo) == null) return null;
-    return _serverName(repo);
+    final SyncChannel? channel = await _serverBackupChannel(repo);
+    if (channel == null) return null;
+    final SyncBackend backend = channel.backend;
+    return _serverName(
+      repo,
+      hostIdentity: backend is InterconnectSyncBackend
+          ? backend.resolvedHostIdentity
+          : null,
+    );
   }
 
   /// 没有互联通道返回 null；配对失效 / 连不上抛 [BackupMirrorException]（与云端同一套错误归类）。目标键是

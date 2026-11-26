@@ -53,7 +53,11 @@ class AutoBackupMirrorFolder {
 /// 文件夹里一份完整的定时还原点副本。
 @immutable
 class MirroredRestorePoint {
-  const MirroredRestorePoint({required this.point, required this.metaText});
+  const MirroredRestorePoint({
+    required this.point,
+    required this.metaText,
+    this.inOwnSlot = true,
+  });
 
   /// 解析出的元数据；[RestorePoint.directory] 是副本在文件夹里的位置（路径或平台句柄），只作显示 /
   /// 诊断，读写一律按 [id] 经 [BackupFolderMirror]。
@@ -61,6 +65,12 @@ class MirroredRestorePoint {
 
   /// 元数据原文（取回本机时原样写回，不丢字段）。
   final String metaText;
+
+  /// 这份副本就在本机 [BackupFolderMirror.upload] / [BackupFolderMirror.delete] 按 [id] 寻址的位置上。
+  /// 平铺的用户文件夹（`<folder>/<id>/`）只有这一个位置，恒为 true；云端 / 服务器按设备分目录
+  /// （`<命名空间>/<设备>/<id>/`），别的设备目录里的副本为 false——两台设备碰巧同一毫秒写出同一个 id 时，
+  /// 本机的清理 / 「已经传过」的判断不能把对方那份当成自己的。
+  final bool inOwnSlot;
 
   String get id => point.id;
 }
@@ -139,6 +149,12 @@ const String kBackupMirrorErrorCloudQuota = 'cloud_quota';
 /// 云端：其它失败（原文只进调试日志的类型名，不进状态：可能含服务器地址）。
 const String kBackupMirrorErrorCloudFailed = 'cloud_failed';
 
+/// 云端副本开着，却没有支持的同步后端（只配了互联：第四期起它归「复制到服务器」）。
+const String kBackupMirrorErrorCloudNoService = 'cloud_no_service';
+
+/// 服务器副本开着，却没有设置互联服务器。
+const String kBackupMirrorErrorServerNoServer = 'server_no_server';
+
 /// 一个副本目标（用户文件夹 / 云端）上的副本操作（按还原点 id 寻址，不暴露平台句柄）。
 abstract interface class BackupFolderMirror {
   /// 列出完整的定时还原点副本（新的在前）。
@@ -151,8 +167,13 @@ abstract interface class BackupFolderMirror {
   /// 把副本 [copy] 的文件复制到本机目录 [destDirectory]（不写元数据）。
   Future<void> download(MirroredRestorePoint copy, String destDirectory);
 
-  /// 删掉文件夹里的 `<id>/`（不存在不算错）。
+  /// 删掉**本机写入位置**上的 `<id>/`（不存在不算错）：自动备份的清理半截副本、修剪、上传失败后的收尾
+  /// 只走这里。按设备分目录的目标（云端 / 服务器）只在本机目录里找，别的设备的同名副本不碰。
   Future<void> delete(String id);
+
+  /// 删掉列表里的这一份 [copy]（还原点页「删除」：可能是别的设备的副本），按它被列出来的位置寻址，
+  /// 不按 id 去猜是哪台设备的（不存在不算错）。
+  Future<void> deleteCopy(MirroredRestorePoint copy);
 }
 
 /// 副本的元数据：本机元数据原文加上写入设备（[RestorePoint.deviceId] / [RestorePoint.deviceName]）。
@@ -378,4 +399,8 @@ class IoBackupFolderMirror implements BackupFolderMirror {
     final Directory dir = Directory(p.join(root, id));
     if (dir.existsSync()) await dir.delete(recursive: true);
   }
+
+  /// 平铺的文件夹：每个 id 只有一个位置。
+  @override
+  Future<void> deleteCopy(MirroredRestorePoint copy) => delete(copy.id);
 }

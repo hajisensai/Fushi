@@ -6,7 +6,9 @@ import 'dart:typed_data';
 import 'package:archive/archive_io.dart';
 import 'package:drift/drift.dart' show Variable;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/sync/auto_backup/auto_backup_controller.dart';
+import 'package:fushi/src/sync/auto_backup/auto_backup_messages.dart';
 import 'package:fushi/src/sync/auto_backup/auto_backup_settings.dart';
 import 'package:fushi/src/sync/auto_backup/auto_backup_status.dart';
 import 'package:fushi/src/sync/auto_backup/backup_folder_mirror.dart';
@@ -255,6 +257,9 @@ class _ScriptedMirror implements BackupFolderMirror {
     }
     return inner.delete(id);
   }
+
+  @override
+  Future<void> deleteCopy(MirroredRestorePoint copy) => delete(copy.id);
 }
 
 /// 在 [folder] 里造一份别人（或本机）写的副本。
@@ -1308,7 +1313,7 @@ void main() {
       expect(ids, contains(controller.status.value.lastSuccessPointId));
     });
 
-    test('云端副本取回本机、删除；没有可用后端时报 cloud_auth', () async {
+    test('云端副本取回本机、删除；没有可用后端时报 cloud_no_service', () async {
       expect(await controller.checkNow(), AutoBackupOutcome.created);
       final String id = controller.status.value.lastSuccessPointId!;
       Directory(
@@ -1331,7 +1336,7 @@ void main() {
           isA<BackupMirrorException>().having(
             (BackupMirrorException e) => e.code,
             'code',
-            kBackupMirrorErrorCloudAuth,
+            kBackupMirrorErrorCloudNoService,
           ),
         ),
       );
@@ -1539,7 +1544,7 @@ void main() {
       expect(await serverCopies(), hasLength(1));
     });
 
-    test('服务器副本取回本机、删除；没有互联服务器时报 cloud_auth', () async {
+    test('服务器副本取回本机、删除；没有互联服务器时报 server_no_server', () async {
       expect(await controller.checkNow(), AutoBackupOutcome.created);
       final String id = controller.status.value.lastSuccessPointId!;
       Directory(
@@ -1563,10 +1568,98 @@ void main() {
           isA<BackupMirrorException>().having(
             (BackupMirrorException e) => e.code,
             'code',
-            kBackupMirrorErrorCloudAuth,
+            kBackupMirrorErrorServerNoServer,
           ),
         ),
       );
+    });
+
+    test('开着却没有服务（云端只剩互联 / 没设互联服务器）：记进那个目标的状态、只提示一次，开关不替用户关', () async {
+      host
+        ..server = null
+        ..settings = host.settings.copyWith(cloudCopies: true);
+      expect(host.cloud, isNull);
+      expect(await controller.checkNow(), AutoBackupOutcome.created);
+      AutoBackupStatus status = controller.status.value;
+      expect(status.cloud.error, kBackupMirrorErrorCloudNoService);
+      expect(status.server.error, kBackupMirrorErrorServerNoServer);
+      expect(host.mirrorFailures, <String>[
+        'cloud:$kBackupMirrorErrorCloudNoService',
+        'server:$kBackupMirrorErrorServerNoServer',
+      ]);
+      expect(
+        autoBackupErrorText(status.cloud.error),
+        t.auto_backup_cloud_no_service,
+      );
+      expect(
+        autoBackupErrorText(status.server.error),
+        t.auto_backup_server_no_server,
+      );
+      // 下一个时段、立即备份：原因没变，不再提示。
+      now = now.add(const Duration(days: 1));
+      await addStat('no-service-1');
+      expect(await controller.checkNow(), AutoBackupOutcome.created);
+      expect(await controller.backUpNow(), isNot(AutoBackupOutcome.failed));
+      expect(host.mirrorFailures, hasLength(2));
+      expect(host.settings.cloudCopies, isTrue);
+      expect(host.settings.serverCopies, isTrue);
+      // 设好了服务器：补传，原因清掉。
+      host.server = targetOn(
+        serverStore,
+        AutoBackupMirrorKind.server,
+        serverBackupTargetKey('host-id'),
+        kServerBackupRetention,
+      );
+      now = now.add(const Duration(days: 1));
+      await addStat('no-service-2');
+      expect(await controller.checkNow(), AutoBackupOutcome.created);
+      status = controller.status.value;
+      expect(status.server.error, isNull);
+      expect(status.cloud.error, kBackupMirrorErrorCloudNoService);
+      expect((await serverCopies()).single.id, status.lastSuccessPointId);
+    });
+
+    test('别的设备碰巧有同 id 的副本：本机照传进自己的目录，自动删除只动本机目录', () async {
+      host.settings = host.settings.copyWith(serverCopies: false);
+      expect(await controller.checkNow(), AutoBackupOutcome.created);
+      final String id = controller.status.value.lastSuccessPointId!;
+      // 另一台设备同一毫秒写出了同一个 id（完整的副本）。
+      await seed('device-2', id, now.toUtc());
+      host.settings = host.settings.copyWith(serverCopies: true);
+      now = now.add(const Duration(hours: 1));
+      expect(await controller.checkNow(), AutoBackupOutcome.notDue);
+      List<MirroredRestorePoint> copies = await serverCopies();
+      expect(
+        copies
+            .map((MirroredRestorePoint c) => '${c.point.deviceId}/${c.id}')
+            .toSet(),
+        <String>{'device-1/$id', 'device-2/$id'},
+        reason: '对方那份不算「本机已经传过」',
+      );
+      expect(
+        copies
+            .where((MirroredRestorePoint c) => c.inOwnSlot)
+            .single
+            .point
+            .deviceId,
+        'device-1',
+      );
+
+      // 自动路径的删除（按 id）只在本机目录里找：删两次，对方那份都还在。
+      final AutoBackupMirrorTarget target = host.server!;
+      final BackupFolderSession session = await target.open();
+      await session.mirror.delete(id);
+      await session.mirror.delete(id);
+      copies = await serverCopies();
+      expect(copies.single.point.deviceId, 'device-2');
+      expect(copies.single.inOwnSlot, isFalse);
+
+      // 还原点页删对方那份：按列出来的那一份删。
+      await controller.deleteMirrorCopy(
+        copies.single,
+        kind: AutoBackupMirrorKind.server,
+      );
+      expect(await serverCopies(), isEmpty);
     });
   });
 }

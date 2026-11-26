@@ -589,7 +589,13 @@ class AutoBackupController {
     ]) {
       try {
         final AutoBackupMirrorTarget? target = await _remoteTarget(kind);
-        if (target != null) targets.add(target);
+        if (target != null) {
+          targets.add(target);
+        } else {
+          // 开关开着、目标却不可能有（没有支持的同步后端 / 没设置互联服务器；比如云端早先也认互联，第四期
+          // 起不认了）：不能静默地什么都不复制，记成这个目标的「没有服务」，设置页状态行说明原因。开关不替用户关。
+          errors[kind] = _noServiceCode(kind);
+        }
       } on BackupMirrorException catch (e) {
         errors[kind] = e.code;
       }
@@ -621,12 +627,17 @@ class AutoBackupController {
 
   /// 远端副本开着、也配置了，却解析不出目标（[error]：登录失效 / 连不上）：记进那个目标的状态；定时 / 立即
   /// 备份那一次（[notify]）提示一次。没到期的补复制不提示，同一个错误已经记着就不重写状态文件。
+  ///
+  /// 「没有服务」（[_noServiceCode]）只提示一次：那是配置问题，不是这一次的故障，已经记着同一个原因就不再提示。
   void _recordUnavailable(
     AutoBackupMirrorKind kind,
     String error, {
     required bool notify,
   }) {
     final AutoBackupMirrorStatus current = mirrorStatusOf(kind);
+    if (current.error == error && error == _noServiceCode(kind)) {
+      notify = false;
+    }
     if (!notify && current.error == error) return;
     _writeMirrorStatus(
       kind,
@@ -634,6 +645,12 @@ class AutoBackupController {
     );
     if (notify) host.notifyMirrorFailure(kind, error);
   }
+
+  /// 远端目标开着却没有可用服务时的错误码。
+  static String _noServiceCode(AutoBackupMirrorKind kind) =>
+      kind == AutoBackupMirrorKind.server
+      ? kBackupMirrorErrorServerNoServer
+      : kBackupMirrorErrorCloudNoService;
 
   AutoBackupMirrorTarget _folderTarget(AutoBackupMirrorFolder folder) =>
       AutoBackupMirrorTarget(
@@ -765,8 +782,11 @@ class AutoBackupController {
       mirror = session.mirror;
       final ({String id, String name}) device = await host.deviceIdentity();
       final MirrorFolderListing listing = await mirror.list();
+      // 只认本机写入位置上的完整副本：按设备分目录的目标里，别的设备碰巧同 id 的那份不算「本机这份已经
+      // 完整 / 已经传过」（[MirroredRestorePoint.inOwnSlot]）。
       final Set<String> complete = <String>{
-        for (final MirroredRestorePoint c in listing.points) c.id,
+        for (final MirroredRestorePoint c in listing.points)
+          if (c.inOwnSlot) c.id,
       };
       for (final String id in cleanup) {
         if (complete.contains(id)) {
@@ -816,7 +836,8 @@ class AutoBackupController {
       final List<String> pruneFailures = <String>[];
       for (final MirroredRestorePoint copy in doomed) {
         try {
-          await mirror.delete(copy.id);
+          // 按列出来的那一份删：保留规则只挑本机写的（元数据里的设备 id），删的就是那一份。
+          await mirror.deleteCopy(copy);
         } on Object catch (e) {
           debugPrint('AutoBackup: pruning the copy ${copy.id} failed: $e');
           pruneFailures.add(copy.id);
@@ -934,7 +955,7 @@ class AutoBackupController {
     AutoBackupMirrorKind kind = AutoBackupMirrorKind.folder,
   }) => _withTarget<void>(
     kind,
-    (BackupFolderMirror mirror) => mirror.delete(copy.id),
+    (BackupFolderMirror mirror) => mirror.deleteCopy(copy),
   );
 
   Future<T> _withTarget<T>(
@@ -953,9 +974,9 @@ class AutoBackupController {
         AutoBackupMirrorKind.folder => const BackupFolderUnavailableException(
           'no folder set',
         ),
-        // 云端 / 服务器：没有支持的同步后端 / 没登录、没配对。
+        // 云端 / 服务器：没有支持的同步后端 / 没设置互联服务器。
         AutoBackupMirrorKind.cloud || AutoBackupMirrorKind.server =>
-          const BackupMirrorException(kBackupMirrorErrorCloudAuth),
+          BackupMirrorException(_noServiceCode(kind)),
       };
     }
     if (_mirroring.contains(kind)) throw const AutoBackupBusyException();

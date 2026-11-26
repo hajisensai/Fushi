@@ -304,6 +304,10 @@ class SafBackupFolderMirror implements BackupFolderMirror {
     }
     return _invoke('delete', <String, Object?>{'dir': id});
   }
+
+  /// SAF 树根下平铺：每个 id 只有一个位置。
+  @override
+  Future<void> deleteCopy(MirroredRestorePoint copy) => delete(copy.id);
 }
 
 // ── 网络：云端副本只在不计流量的网络上传（D10） ──────────────────────────────

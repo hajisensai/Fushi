@@ -484,10 +484,20 @@ void main() {
         File(p.join(dest, kRestorePointArchiveFileName)).readAsStringSync(),
         'zzzz',
       );
-      // 删别的设备的副本（还原点页）：本机目录里没有就去别的设备目录找。
+      expect(
+        listing.points.map((MirroredRestorePoint c) => c.inOwnSlot),
+        <bool>[false, true],
+      );
+      // 按 id 删只在本机目录里找：别的设备的副本不碰（自动清理 / 修剪走这条）。
       await mine.delete(other.id);
       // 删不存在的不算错，也不调后端删除（FTP 删不存在的会抛）。
       await mine.delete('20200101-000000-000-fushi-scheduled');
+      expect(
+        (await mine.list()).points.map((MirroredRestorePoint c) => c.id),
+        <String>[other.id, local.id],
+      );
+      // 删别的设备的副本（还原点页）：按列出来的那一份删。
+      await mine.deleteCopy(listing.points.first);
       expect(
         (await mine.list()).points.map((MirroredRestorePoint c) => c.id),
         <String>[local.id],

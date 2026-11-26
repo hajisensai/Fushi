@@ -30,5 +30,7 @@ String _codeText(String code) => switch (code) {
   kBackupMirrorErrorCloudUnreachable => t.auto_backup_error_cloud_unreachable,
   kBackupMirrorErrorCloudQuota => t.auto_backup_error_cloud_quota,
   kBackupMirrorErrorCloudFailed => t.auto_backup_error_cloud_failed,
+  kBackupMirrorErrorCloudNoService => t.auto_backup_cloud_no_service,
+  kBackupMirrorErrorServerNoServer => t.auto_backup_server_no_server,
   final String other => other,
 };

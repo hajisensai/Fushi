@@ -195,11 +195,12 @@ class SyncAssetStoreBackupMirror implements BackupFolderMirror {
         if (_fatal(e) || device.name == deviceFolder) rethrow;
         continue;
       }
+      final bool own = device.name == deviceFolder;
       for (final AssetEntry dir in dirs) {
         if (!dir.isFolder || !isScheduledRestorePointId(dir.name)) continue;
         try {
           final ({MirroredRestorePoint? copy, bool metaPresent}) read =
-              await _readCopy(dir);
+              await _readCopy(dir, own: own);
           final MirroredRestorePoint? copy = read.copy;
           if (copy != null) {
             points.add(copy);
@@ -225,8 +226,9 @@ class SyncAssetStoreBackupMirror implements BackupFolderMirror {
   /// 读 `<id>/` 的元数据。`metaPresent` 为 false = 确定没有元数据（半截副本）；为 true 而 `copy` 为 null
   /// = 元数据在但解析不出定时还原点（坏的 / 别的东西）。
   Future<({MirroredRestorePoint? copy, bool metaPresent})> _readCopy(
-    AssetEntry dir,
-  ) async {
+    AssetEntry dir, {
+    required bool own,
+  }) async {
     final List<AssetEntry> files = await _call(
       () => store.listChildren(dir.id),
     );
@@ -249,7 +251,7 @@ class SyncAssetStoreBackupMirror implements BackupFolderMirror {
       return (copy: null, metaPresent: true);
     }
     return (
-      copy: MirroredRestorePoint(point: point, metaText: text),
+      copy: MirroredRestorePoint(point: point, metaText: text, inOwnSlot: own),
       metaPresent: true,
     );
   }
@@ -306,21 +308,16 @@ class SyncAssetStoreBackupMirror implements BackupFolderMirror {
     }
   }
 
-  /// 删掉 `<id>/`：先找本机目录，再找别的设备的目录（还原点页删别的设备的副本）。不存在不算错（FTP 删
-  /// 不存在的文件会抛，所以只删列表里确实有的）。
+  /// 删掉**本机目录**里的 `<id>/`（自动清理 / 修剪 / 上传失败收尾）。别的设备目录里碰巧同名的那份
+  /// （同一毫秒写出的 id）不碰。不存在不算错（FTP 删不存在的文件会抛，所以只删列表里确实有的）。
   @override
   Future<void> delete(String id) async {
     if (!isScheduledRestorePointId(id)) {
       throw ArgumentError.value(id, 'id', 'not a restore point id');
     }
     final String ns = await _ns();
-    final List<AssetEntry> devices = await _call(() => store.listChildren(ns));
-    devices.sort(
-      (AssetEntry a, AssetEntry b) => (b.name == deviceFolder ? 1 : 0)
-          .compareTo(a.name == deviceFolder ? 1 : 0),
-    );
-    for (final AssetEntry device in devices) {
-      if (!device.isFolder) continue;
+    for (final AssetEntry device in await _call(() => store.listChildren(ns))) {
+      if (!device.isFolder || device.name != deviceFolder) continue;
       for (final AssetEntry dir in await _call(
         () => store.listChildren(device.id),
       )) {
@@ -330,5 +327,16 @@ class SyncAssetStoreBackupMirror implements BackupFolderMirror {
         }
       }
     }
+  }
+
+  /// 删掉列表里的那一份（还原点页，可能是别的设备的）：按列表给出的目录资产 id（[RestorePoint.directory]，
+  /// 各后端都稳定）删，正好是那台设备目录下的那个 `<id>/`。
+  @override
+  Future<void> deleteCopy(MirroredRestorePoint copy) async {
+    if (!isScheduledRestorePointId(copy.id)) {
+      throw ArgumentError.value(copy.id, 'id', 'not a restore point id');
+    }
+    final String dirId = copy.point.directory;
+    await _call(() => store.deleteAsset(dirId, isFolder: true));
   }
 }
