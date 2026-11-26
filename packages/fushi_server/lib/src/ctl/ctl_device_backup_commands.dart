@@ -81,6 +81,13 @@ String _time(Object? ms) => ms is int
       ).toLocal().toIso8601String().substring(0, 19).replaceFirst('T', ' ')
     : '—';
 
+/// 设备报上来的文本（设备名、应用版本、id）进终端前去掉控制字符：一台设备不能借名字里的
+/// ESC 序列改写管理员的终端（清屏、伪造行、改标题）。换行 / 制表也换成空格，一台设备只占一行。
+String _plain(Object? v) => '${v ?? ''}'.replaceAll(
+  RegExp('[\u0000-\u001f\u007f-\u009f  ‪-‮⁦-⁩]'),
+  ' ',
+);
+
 void _renderDeviceBackups(Object? response, StringSink out) {
   final Object? devices = response is Map ? response['devices'] : null;
   if (devices is! List || devices.isEmpty) {
@@ -92,7 +99,7 @@ void _renderDeviceBackups(Object? response, StringSink out) {
     final Object? name = d['name'];
     final int incomplete = d['incomplete'] is int ? d['incomplete'] as int : 0;
     out.writeln(
-      '${name ?? d['device']}  [${d['device']}]  '
+      '${_plain(name ?? d['device'])}  [${_plain(d['device'])}]  '
       '${tr('${d['count']} 份', d['count'] == 1 ? '1 copy' : '${d['count']} copies')}  ${_bytes(d['bytes'])}'
       '${incomplete > 0 ? tr('  另有 $incomplete 份没传完或已损坏', '  $incomplete more unfinished or damaged') : ''}',
     );
@@ -102,8 +109,8 @@ void _renderDeviceBackups(Object? response, StringSink out) {
       if (c is! Map) continue;
       final Object? version = c['appVersion'];
       out.writeln(
-        '  ${c['id']}  ${_time(c['createdAtMs'])}  ${_bytes(c['bytes'])}'
-        '${version == null ? '' : '  Fushi $version'}',
+        '  ${_plain(c['id'])}  ${_time(c['createdAtMs'])}  ${_bytes(c['bytes'])}'
+        '${version == null ? '' : '  Fushi ${_plain(version)}'}',
       );
     }
   }

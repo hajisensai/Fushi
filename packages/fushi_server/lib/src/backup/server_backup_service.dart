@@ -103,8 +103,10 @@ class ServerBackupService {
     ServerBackupSrsHold? holdSrs,
     this.configFile,
     DateTime Function()? now,
+    Future<String>? Function({required bool includeDocuments})? fingerprinter,
   }) : _settings = settings,
        _write = write,
+       _fingerprinter = fingerprinter,
        _holdSrs = holdSrs ?? _noSrs,
        _now = now ?? DateTime.now;
 
@@ -147,6 +149,10 @@ class ServerBackupService {
   final ServerBackupWriter _write;
   final ServerBackupSrsHold _holdSrs;
   final DateTime Function() _now;
+
+  /// 测试缝：替换 [fingerprint]（测遍历数据目录失败）；返回 null = 照常算。
+  final Future<String>? Function({required bool includeDocuments})?
+  _fingerprinter;
 
   String? _running;
   ServerBackupKind? _runningKind;
@@ -207,7 +213,12 @@ class ServerBackupService {
     return (refusal: null, name: name, release: release);
   }
 
+  /// 跑一份作业并占着作业锁直到它结束。返回的 future **从不以错误结束**：调用方（admin API 的
+  /// 「立即备份」、计划任务）常常不 await 它，作业体里漏掉的异常要是从这里冒出去，就成了没人接的异步错误，
+  /// 会把 serve 整个带走。作业体自己记失败；漏网的在这里记日志、按失败返回。
   Future<ServerBackupResult> _track(
+    ServerBackupKind kind,
+    String name,
     Future<ServerBackupResult> Function() body,
     void Function() release,
   ) {
@@ -215,6 +226,13 @@ class ServerBackupService {
     job = () async {
       try {
         return await body();
+      } catch (e, stack) {
+        engineLog.log('ServerBackup.${kind.wire}', e, stack);
+        return ServerBackupResult(
+          outcome: ServerBackupOutcome.failed,
+          name: name,
+          error: _oneLine(e),
+        );
       } finally {
         _running = null;
         _runningKind = null;
@@ -244,23 +262,28 @@ class ServerBackupService {
     if (c.refusal != null) return _refused(c.refusal!);
     _lastManualError = null;
     final String name = c.name!;
-    final Future<ServerBackupResult> done = _track(() async {
-      try {
-        await _writeTo(name, includeDocuments: includeDocuments);
-        return ServerBackupResult(
-          outcome: ServerBackupOutcome.succeeded,
-          name: name,
-        );
-      } catch (e, stack) {
-        _lastManualError = _oneLine(e);
-        engineLog.log('ServerBackup.manual', e, stack);
-        return ServerBackupResult(
-          outcome: ServerBackupOutcome.failed,
-          name: name,
-          error: _lastManualError,
-        );
-      }
-    }, c.release!);
+    final Future<ServerBackupResult> done = _track(
+      ServerBackupKind.manual,
+      name,
+      () async {
+        try {
+          await _writeTo(name, includeDocuments: includeDocuments);
+          return ServerBackupResult(
+            outcome: ServerBackupOutcome.succeeded,
+            name: name,
+          );
+        } catch (e, stack) {
+          _lastManualError = _oneLine(e);
+          engineLog.log('ServerBackup.manual', e, stack);
+          return ServerBackupResult(
+            outcome: ServerBackupOutcome.failed,
+            name: name,
+            error: _lastManualError,
+          );
+        }
+      },
+      c.release!,
+    );
     return ServerBackupStart._(null, name, done);
   }
 
@@ -303,7 +326,12 @@ class ServerBackupService {
     return ServerBackupStart._(
       null,
       name,
-      _track(() => _runAutomatic(name, force: force), c.release!),
+      _track(
+        ServerBackupKind.auto,
+        name,
+        () => _runAutomatic(name, force: force),
+        c.release!,
+      ),
     );
   }
 
@@ -317,38 +345,39 @@ class ServerBackupService {
   }) async {
     final ServerBackupConfig s = _settings();
     final DateTime started = _now();
-    final String print = await fingerprint(
-      includeDocuments: s.includeDocuments,
-    );
-    final ServerBackupStatus before = status;
-    final String? lastName = before.lastSuccessName;
-    if (!force &&
-        before.fingerprint == print &&
-        lastName != null &&
-        File(p.join(dir.path, lastName)).existsSync()) {
+    try {
+      // 指纹也在 try 里：遍历数据目录读不了（权限）时照样记成这一轮失败，而不是没人接的异常。
+      final String print = await fingerprint(
+        includeDocuments: s.includeDocuments,
+      );
+      final ServerBackupStatus before = status;
+      final String? lastName = before.lastSuccessName;
+      if (!force &&
+          before.fingerprint == print &&
+          lastName != null &&
+          File(p.join(dir.path, lastName)).existsSync()) {
+        await _update(
+          (ServerBackupStatus st) => st.copyWith(
+            lastSkippedAtMs: started.millisecondsSinceEpoch,
+            lastSkipReason: kServerBackupSkipUnchanged,
+            lastSatisfiedAtMs: started.millisecondsSinceEpoch,
+          ),
+        );
+        engineLog.logDiagnostic(
+          'ServerBackup.auto',
+          'skipped: nothing changed since $lastName',
+        );
+        return const ServerBackupResult(
+          outcome: ServerBackupOutcome.skippedUnchanged,
+        );
+      }
       await _update(
         (ServerBackupStatus st) => st.copyWith(
-          lastSkippedAtMs: started.millisecondsSinceEpoch,
-          lastSkipReason: kServerBackupSkipUnchanged,
-          lastSatisfiedAtMs: started.millisecondsSinceEpoch,
+          runningSinceMs: () => started.millisecondsSinceEpoch,
+          runningName: () => name,
+          runningKind: () => ServerBackupKind.auto.wire,
         ),
       );
-      engineLog.logDiagnostic(
-        'ServerBackup.auto',
-        'skipped: nothing changed since $lastName',
-      );
-      return const ServerBackupResult(
-        outcome: ServerBackupOutcome.skippedUnchanged,
-      );
-    }
-    await _update(
-      (ServerBackupStatus st) => st.copyWith(
-        runningSinceMs: () => started.millisecondsSinceEpoch,
-        runningName: () => name,
-        runningKind: () => ServerBackupKind.auto.wire,
-      ),
-    );
-    try {
       final File written = await _writeTo(
         name,
         includeDocuments: s.includeDocuments,
@@ -421,7 +450,7 @@ class ServerBackupService {
       return ServerBackupResult(refusal: c.refusal, error: error);
     }
     final String name = c.name!;
-    return _track(() async {
+    return _track(ServerBackupKind.preUpdate, name, () async {
       final DateTime started = _now();
       await _update(
         (ServerBackupStatus st) => st.copyWith(
@@ -556,6 +585,7 @@ class ServerBackupService {
   /// documents/）的相对路径 + 大小 + 修改时间，加上配置文件与 documents 开关，取 sha1。只用来判断
   /// 「跟上次成功那份比有没有变」，便宜（只 stat，不读内容），在后台 isolate 里算。
   Future<String> fingerprint({required bool includeDocuments}) =>
+      _fingerprinter?.call(includeDocuments: includeDocuments) ??
       _fingerprintInIsolate(dataDir, configFile?.path, includeDocuments);
 
   // ── 内部 ────────────────────────────────────────────────────────────

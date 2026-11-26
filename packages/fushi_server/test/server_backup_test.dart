@@ -50,14 +50,15 @@ File _craftZip(String path, Map<String, String> entries) {
   return File(path)..writeAsBytesSync(ZipEncoder().encode(a)!);
 }
 
-String _manifest({int schema = 1}) => jsonEncode(<String, Object?>{
-  'format': kServerBackupFormat,
-  'formatVersion': 1,
-  'createdAt': DateTime.utc(2026).toIso8601String(),
-  'schemaVersion': schema,
-  'includesDocuments': true,
-  'hasConfig': false,
-});
+String _manifest({int schema = 1, bool documents = true}) =>
+    jsonEncode(<String, Object?>{
+      'format': kServerBackupFormat,
+      'formatVersion': 1,
+      'createdAt': DateTime.utc(2026).toIso8601String(),
+      'schemaVersion': schema,
+      'includesDocuments': documents,
+      'hasConfig': false,
+    });
 
 void main() {
   group('backup create / restore（CLI）', () {
@@ -237,6 +238,164 @@ void main() {
         contains('data/interconnect/sync-data/fushi-data/progress.json'),
       );
       expect(names.where((String n) => n.contains('/__backups__/')), isEmpty);
+    });
+
+    test('还原不含 documents/ 的备份：现有 documents/ 与设备备份收件箱都留在数据目录里', () async {
+      const String inboxCopy =
+          'interconnect/sync-data/fushi-data/__backups__/0123456789abcdef/'
+          '20261125-040000-000-fushi-scheduled/backup.zip';
+      final File out = File(p.join(h.tmp.path, 'auto.zip'));
+      // 第一次跑建好库与布局。
+      expect(
+        await h.run(module, <String>[
+          'backup',
+          'create',
+          '-o',
+          p.join(h.tmp.path, 'warm.zip'),
+        ]),
+        0,
+      );
+      _write(data('documents/fushi_books/b.txt'), 'book');
+      _write(data('interconnect/sync-data/fushi-data/progress.json'), 'v1');
+      await setPref('before');
+      expect(
+        await h.run(module, <String>[
+          'backup',
+          'create',
+          '-o',
+          out.path,
+          '--no-documents',
+        ]),
+        0,
+        reason: h.err.toString(),
+      );
+      // 备份之后：又下了一本书、设备又复制来一份备份、互联其余数据变了。
+      await setPref('after');
+      _write(data('documents/fushi_books/new.txt'), 'new book');
+      _write(data(inboxCopy), 'device copy');
+      _write(data('interconnect/sync-data/fushi-data/progress.json'), 'v2');
+
+      expect(
+        await h.run(module, <String>[
+          'backup',
+          'restore',
+          out.path,
+          '--yes',
+          '--json',
+        ]),
+        0,
+        reason: h.err.toString(),
+      );
+      final Map<String, Object?> r = h.json();
+      expect(r['includesDocuments'], isFalse);
+      expect(r['keptDocuments'], isTrue);
+      expect(r['keptDeviceBackups'], isTrue);
+      expect(await getPref(), 'before');
+      expect(
+        File(data('documents/fushi_books/b.txt')).readAsStringSync(),
+        'book',
+      );
+      expect(
+        File(data('documents/fushi_books/new.txt')).readAsStringSync(),
+        'new book',
+        reason: '包里没有 documents/：现有文档库原地不动',
+      );
+      expect(File(data(inboxCopy)).readAsStringSync(), 'device copy');
+      expect(
+        File(
+          data('interconnect/sync-data/fushi-data/progress.json'),
+        ).readAsStringSync(),
+        'v1',
+        reason: '互联其余数据照常按包还原',
+      );
+      final Directory previous = Directory(r['previousData']! as String);
+      expect(
+        Directory(p.join(previous.path, 'documents')).existsSync(),
+        isFalse,
+      );
+      expect(
+        File(
+          p.join(
+            previous.path,
+            'interconnect/sync-data/fushi-data/progress.json',
+          ),
+        ).readAsStringSync(),
+        'v2',
+      );
+      expect(
+        Directory(
+          p.join(
+            previous.path,
+            'interconnect/sync-data/fushi-data/__backups__',
+          ),
+        ).existsSync(),
+        isFalse,
+      );
+
+      // 文本输出也说清楚。
+      h.out.clear();
+      await previous.delete(recursive: true);
+      expect(
+        await h.run(module, <String>['backup', 'restore', out.path, '--yes']),
+        0,
+        reason: h.err.toString(),
+      );
+      expect(h.out.toString(), contains('stays in place'));
+      expect(h.out.toString(), contains('paired devices'));
+      for (final FileSystemEntity e in h.tmp.listSync()) {
+        if (p.basename(e.path).contains('pre-restore')) {
+          await e.delete(recursive: true);
+        }
+      }
+    });
+
+    test('还原中途失败：设备备份收件箱搬回原处，数据原样不动', () async {
+      const String inboxCopy =
+          'interconnect/sync-data/fushi-data/__backups__/0123456789abcdef/'
+          '20261125-040000-000-fushi-scheduled/backup.zip';
+      expect(
+        await h.run(module, <String>[
+          'backup',
+          'create',
+          '-o',
+          p.join(h.tmp.path, 'warm.zip'),
+        ]),
+        0,
+      );
+      _write(data(inboxCopy), 'device copy');
+      _write(data('interconnect/sync-data/fushi-data/progress.json'), 'live');
+      _write(data('backups/keep.txt'), 'keep');
+      await setPref('keep');
+      // 手造的包带着 data/backups/：换进来时撞上原地留着的 backups/，换到一半失败、回滚。
+      final File clash =
+          _craftZip(p.join(h.tmp.path, 'clash.zip'), <String, String>{
+            'manifest.json': _manifest(documents: false),
+            'data/support/fushi.db': 'SQLite format 3\u0000rest',
+            'data/interconnect/sync-data/fushi-data/progress.json': 'packed',
+            'data/backups/other.txt': 'x',
+          });
+      expect(
+        await h.run(module, <String>['backup', 'restore', clash.path, '--yes']),
+        65,
+      );
+      expect(h.err.toString(), contains('original data recovered'));
+      expect(File(data(inboxCopy)).readAsStringSync(), 'device copy');
+      expect(
+        File(
+          data('interconnect/sync-data/fushi-data/progress.json'),
+        ).readAsStringSync(),
+        'live',
+      );
+      expect(File(data('backups/keep.txt')).readAsStringSync(), 'keep');
+      expect(await getPref(), 'keep');
+      expect(
+        h.tmp.listSync().where(
+          (FileSystemEntity e) =>
+              p.basename(e.path).contains('pre-restore') ||
+              p.basename(e.path).contains('.restore-'),
+        ),
+        isEmpty,
+      );
     });
 
     test('没加 --yes 不还原；输出不能放进数据目录', () async {

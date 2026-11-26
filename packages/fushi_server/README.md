@@ -324,7 +324,10 @@ serve 在跑也安全）、复习库 `srs.db` 的一致快照（有才带）、�
 - 还原（先停服）：`fushi_server backup restore fushi.zip --yes`。当前数据目录的内容整体挪到
   `<data_dir>.pre-restore-<时间>/`、配置存成 `<配置>.pre-restore-<时间>`，都不删除；包里配置的
   `data_dir` 换成本机这份。`--no-config` 只还原数据。比本版本新的数据库 schema 拒绝还原（先升级）。
-  中途失败会把原数据挪回去。`<data>/backups/` 留在原处（不在包里），还原之后所有备份照样都在。
+  中途失败会把原数据挪回去。不在包里的几样留在现场：`<data>/backups/` 留在原处，还原之后所有备份照样都在；
+  已配对设备复制来的备份（`interconnect/sync-data/fushi-data/__backups__/`）随新数据留在原位置；包不含
+  `documents/`（自动 / 更新前备份默认如此）时，现有的 `documents/`（书 / 封面 / 有声书 / 下载）原地不动、
+  不挪进 pre-restore 目录。
 
 **自动备份**（默认开）：`serve` 在跑时按 `backup:` 段的计划（默认每天 04:00，服务端本地时间）在
 `<data>/backups/` 写 `fushi_server-auto-<时间>.zip`（设置 + 数据，默认不带 `documents/`）。停机错过了时刻，
@@ -337,8 +340,10 @@ WebUI「备份」页、`ctl backup schedule`、`fushi_server backup status` 都�
 
 **远程更新前备份**：互联远程更新把新版换进安装目录之前，先写一份 `fushi_server-pre_update-<时间>.zip`
 （设置 + 数据，不带 `documents/`，留最新 3 份）。写失败只记进状态与日志，更新照样进行。新版首次启动会把数据库
-迁移到新 schema；想回到旧版：停服 → 装回旧版发布包 → 用**旧版**程序
-`fushi_server backup restore <data>/backups/fushi_server-pre_update-<时间>.zip --yes` → 启动。
+迁移到新 schema；想回到旧版：停服 → 用**现在这版**程序
+`fushi_server backup restore <data>/backups/fushi_server-pre_update-<时间>.zip --yes`（还原完先别启动；新版能读
+旧版的包，还原时 `backups/`、设备备份、`documents/` 都留在原处）→ 装回旧版发布包 → 启动。顺序别反过来：
+第 4B 期之前的旧程序还原时会把 `backups/` 与 `documents/` 一起挪进 `<data_dir>.pre-restore-<时间>/`。
 （数据库另有更新前还原点 `support/restore_points/`，只含 `fushi.db`；整机回滚用这份 zip。）
 
 ### `ctl`：操作正在运行的 serve

@@ -33,7 +33,7 @@ const String kWebUiBackupsSection = r'''
 </div>
 <h3 class="kit-section-title">备份列表</h3>
 <div class="card"><div class="setting-list" id="bk-list"></div>
-<details class="kit-supporting" id="bk-restore"><summary>怎么还原</summary><p>还原要先停掉服务端，再在服务端这台机器上运行下面的命令；当前数据会挪到数据目录旁边保留，不删除，备份目录原样留着。远程更新之后想回到旧版：先停服、装回旧版程序，再用旧版程序还原那份「更新前」备份，然后启动。</p><pre id="bk-restore-cmd"></pre></details></div>
+<details class="kit-supporting" id="bk-restore"><summary>怎么还原</summary><p>还原要先停掉服务端，再在服务端这台机器上运行下面的命令；当前数据会挪到数据目录旁边保留，不删除。备份目录、已配对设备复制来的备份原地留着；备份不含 documents/ 时，现有的书 / 封面 / 有声书 / 下载也原地不动。远程更新之后想回到旧版：先停服，用现在这版程序还原那份「更新前」备份（还原完先不要启动），再装回旧版程序，然后启动。</p><pre id="bk-restore-cmd"></pre></details></div>
 </section>
 ''';
 
@@ -102,8 +102,8 @@ const Map<String, String> kWebUiBackupsEnglish = <String, String>{
   '立即跑一次自动备份': 'Run an automatic backup now',
   '备份列表': 'Backups',
   '怎么还原': 'How to restore',
-  '还原要先停掉服务端，再在服务端这台机器上运行下面的命令；当前数据会挪到数据目录旁边保留，不删除，备份目录原样留着。远程更新之后想回到旧版：先停服、装回旧版程序，再用旧版程序还原那份「更新前」备份，然后启动。':
-      'To restore, stop the server, then run the command below on the server machine; the current data is moved next to the data folder and kept, not deleted, and the backup folder stays where it is. To go back to the old version after a remote update: stop the server, reinstall the old program, restore the "pre-update" backup with the old program, then start it.',
+  '还原要先停掉服务端，再在服务端这台机器上运行下面的命令；当前数据会挪到数据目录旁边保留，不删除。备份目录、已配对设备复制来的备份原地留着；备份不含 documents/ 时，现有的书 / 封面 / 有声书 / 下载也原地不动。远程更新之后想回到旧版：先停服，用现在这版程序还原那份「更新前」备份（还原完先不要启动），再装回旧版程序，然后启动。':
+      'To restore, stop the server, then run the command below on the server machine; the current data is moved next to the data folder and kept, not deleted. The backup folder and the backups copied here by paired devices stay where they are; when the backup has no documents/, the existing books / covers / audiobooks / downloads stay in place too. To go back to the old version after a remote update: stop the server, restore the "pre-update" backup with the current program (do not start it afterwards), reinstall the old program, then start it.',
   '手动': 'Manual',
   '自动': 'Automatic',
   '更新前': 'Pre-update',

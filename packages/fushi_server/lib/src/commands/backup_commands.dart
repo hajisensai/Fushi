@@ -122,7 +122,8 @@ class BackupModule extends CliModule {
 backup create -o <file> [--no-documents] [--force] [--json]
     整机备份：数据库快照 + 配置 + 数据目录（serve 在跑时用 ctl backup create）
 backup restore <file> --yes [--no-config] [--json]
-    从备份还原（须先停服）；旧数据挪到 <data_dir>.pre-restore-<时间>/，不删除
+    从备份还原（须先停服）；旧数据挪到 <data_dir>.pre-restore-<时间>/，不删除；backups/、设备复制来的备份、
+    以及备份不含 documents/ 时的 documents/ 原地留着。回到旧版：先用当前程序还原「更新前」备份，再装回旧版
 backup status [--json]
     自动备份的计划、上次结果与 <data>/backups/ 里的备份（手动 / 自动 / 更新前）
 backup run [--if-due] [--json]
@@ -133,7 +134,9 @@ backup settings [--interval off|daily|every3Days|weekly] [--time HH:MM] [--[no-]
 backup create -o <file> [--no-documents] [--force] [--json]
     Full backup: database snapshot + config + data directory (use ctl backup create while serve is running)
 backup restore <file> --yes [--no-config] [--json]
-    Restore from a backup (stop the server first); old data is moved to <data_dir>.pre-restore-<time>/ and not deleted
+    Restore from a backup (stop the server first); old data is moved to <data_dir>.pre-restore-<time>/ and not deleted;
+    backups/, backups copied by devices and (when the backup has no documents/) documents/ stay in place.
+    To go back to an older version: restore the pre-update backup with the current program, then reinstall the old one
 backup status [--json]
     Automatic backup schedule, last result and the backups in <data>/backups/ (manual / automatic / pre-update)
 backup run [--if-due] [--json]
@@ -319,6 +322,8 @@ backup settings [--interval off|daily|every3Days|weekly] [--time HH:MM] [--[no-]
             'includesDocuments': r.manifest.includesDocuments,
             'previousData': r.previousData?.path,
             'previousConfig': r.previousConfig?.path,
+            'keptDocuments': r.keptDocuments,
+            'keptDeviceBackups': r.keptDeviceBackups,
           }),
         );
       } else {
@@ -344,11 +349,26 @@ backup settings [--interval off|daily|every3Days|weekly] [--time HH:MM] [--[no-]
             ),
           );
         }
-        if (!r.manifest.includesDocuments) {
+        if (r.keptDocuments) {
+          o.writeln(
+            tr(
+              '这份备份不含 documents/：现有的 documents/（书 / 封面 / 有声书 / 下载）原地留着，没有挪走。',
+              'This backup does not contain documents/: the existing documents/ (books / covers / audiobooks / downloads) stays in place and was not moved.',
+            ),
+          );
+        } else if (!r.manifest.includesDocuments) {
           o.writeln(
             tr(
               '这份备份不含 documents/：书 / 封面 / 下载需重新扫描或下载。',
               'This backup does not contain documents/: books / covers / downloads need to be rescanned or downloaded again.',
+            ),
+          );
+        }
+        if (r.keptDeviceBackups) {
+          o.writeln(
+            tr(
+              '已配对设备复制来的备份留在数据目录里，没有挪走。',
+              'Backups copied here by paired devices stay in the data folder and were not moved.',
             ),
           );
         }

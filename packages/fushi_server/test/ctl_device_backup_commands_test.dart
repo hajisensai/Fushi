@@ -108,6 +108,33 @@ void main() {
     expect(text, contains('  $id'));
     expect(text, contains('Fushi 1.2.3'));
 
+    // 设备报上来的名字 / 版本里带控制字符（ESC 序列、换行）：进终端前去掉。
+    out.clear();
+    nextBody = <String, Object?>{
+      'devices': <Object?>[
+        <String, Object?>{
+          'device': key,
+          'name': 'Evil\u001b[2J\nFAKE LINE',
+          'count': 1,
+          'bytes': 1,
+          'copies': <Object?>[
+            <String, Object?>{
+              'id': id,
+              'createdAtMs': 1000,
+              'bytes': 1,
+              'appVersion': '1.0\u001b]0;pwned\u0007',
+            },
+          ],
+        },
+      ],
+    };
+    expect(await ctl(<String>[]), 0, reason: '$err');
+    final String evil = out.toString();
+    expect(evil, isNot(contains('\u001b')));
+    expect(evil, isNot(contains('\u0007')));
+    expect(evil.trim().split('\n'), hasLength(2), reason: '一台设备一行 + 一份一行');
+    expect(evil, contains('Evil [2J FAKE LINE'));
+
     out.clear();
     nextBody = <String, Object?>{'devices': <Object?>[]};
     expect(await ctl(<String>['ls']), 0);

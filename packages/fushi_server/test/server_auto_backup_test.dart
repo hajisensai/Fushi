@@ -7,7 +7,11 @@ import 'dart:io';
 import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_server/src/admin/admin_api.dart';
+import 'package:fushi_server/src/admin/admin_backups.dart'
+    show adminBackupStartResponse;
 import 'package:fushi_server/src/admin/admin_context.dart';
+import 'package:fushi_server/src/backup/server_backup.dart'
+    show serverBackupWalkFiles;
 import 'package:fushi_server/src/backup/server_backup_scheduler.dart';
 import 'package:fushi_server/src/backup/server_backup_service.dart';
 import 'package:fushi_server/src/backup/server_backup_status.dart';
@@ -52,6 +56,9 @@ class _Rig {
   Completer<void>? gate;
   Exception? failWith;
   bool srsMigrating = false;
+
+  /// 给了就让指纹（遍历数据目录）抛它，模拟读不了的子目录。
+  FileSystemException? fingerprintFails;
   int writes = 0;
   int holdsReleased = 0;
   final List<bool> documentsFlags = <bool>[];
@@ -63,6 +70,10 @@ class _Rig {
     settings: () => _settings,
     now: () => now,
     holdSrs: () => srsMigrating ? null : () => holdsReleased++,
+    fingerprinter: ({required bool includeDocuments}) {
+      final FileSystemException? fail = fingerprintFails;
+      return fail == null ? null : Future<String>.error(fail);
+    },
     write: ({required File output, required bool includeDocuments}) async {
       writes++;
       documentsFlags.add(includeDocuments);
@@ -261,6 +272,80 @@ void main() {
       // 次日 04:00 之后再到期。
       rig.now = DateTime(2026, 11, 26, 4, 1);
       expect(rig.service.isDue(), isTrue);
+    });
+
+    test('遍历数据目录失败（权限）→ 记成这一轮失败；不走作业的 future 也不冒成没人接的异步错误', () async {
+      rig.fingerprintFails = const FileSystemException(
+        'Directory listing failed',
+        'data/locked',
+      );
+      // 计划任务路径：等结果。
+      final ServerBackupResult r = await rig.service.runAutomatic();
+      expect(r.outcome, ServerBackupOutcome.failed);
+      expect(r.error, contains('Directory listing failed'));
+      ServerBackupStatus st = rig.service.status;
+      expect(st.lastFailureAtMs, rig.now.millisecondsSinceEpoch);
+      expect(st.lastError, contains('Directory listing failed'));
+      expect(st.runningSinceMs, isNull);
+      expect(rig.service.running, isNull, reason: '作业锁放掉了');
+      expect(rig.holdsReleased, 1);
+
+      // admin API「立即跑」路径：只看 started、不接 done。测试 zone 里冒出没人接的错误会让这条用例失败。
+      rig.now = DateTime(2026, 11, 25, 5);
+      final ServerBackupStart start = rig.service.startAutomatic(force: true);
+      expect(start.started, isTrue);
+      await rig.service.idle();
+      st = rig.service.status;
+      expect(st.lastFailureAtMs, rig.now.millisecondsSinceEpoch);
+      expect(rig.writes, 0);
+      expect(rig.service.running, isNull);
+    });
+
+    test('数据目录遍历：起点（或途中的子目录）已经不在 → 跳过，不抛', () {
+      expect(
+        serverBackupWalkFiles(Directory(p.join(tmp.path, 'gone'))),
+        isEmpty,
+      );
+      expect(
+        serverBackupWalkFiles(
+          Directory(p.join(tmp.path, 'data')),
+        ).map((File f) => p.basename(f.path)).toSet(),
+        <String>{'fushi.db', 'a.zip', 'book.epub'},
+      );
+    });
+
+    test('开始回执 → HTTP：关着 / 没到期照实回，不报成「在跑」', () async {
+      Future<Map<String, Object?>> body(shelf.Response r) async =>
+          jsonDecode(await r.readAsString()) as Map<String, Object?>;
+      rig.settings = const ServerBackupConfig(
+        interval: ServerBackupInterval.off,
+      );
+      shelf.Response r = adminBackupStartResponse(
+        rig.service.startAutomatic(),
+        running: null,
+      );
+      expect(r.statusCode, 409);
+      expect((await body(r))['error'], 'automatic_backup_disabled');
+      rig.settings = const ServerBackupConfig();
+      await rig.service.runAutomatic();
+      r = adminBackupStartResponse(rig.service.startAutomatic(), running: null);
+      expect(r.statusCode, 409);
+      expect((await body(r))['error'], 'automatic_backup_not_due');
+      rig.gate = Completer<void>();
+      final ServerBackupStart first = rig.service.startManual(
+        includeDocuments: false,
+      );
+      r = adminBackupStartResponse(
+        rig.service.startManual(includeDocuments: false),
+        running: rig.service.running,
+      );
+      expect(r.statusCode, 409);
+      expect(await body(r), <String, Object?>{
+        'error': 'backup in progress',
+        'running': first.name,
+      });
+      rig.gate!.complete();
+      await first.done;
     });
 
     test('关着不跑；强制（立即跑）照跑', () async {

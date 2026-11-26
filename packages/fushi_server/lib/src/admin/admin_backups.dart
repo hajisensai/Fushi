@@ -133,29 +133,13 @@ class AdminBackups {
     final ServerBackupStart start = _service.startManual(
       includeDocuments: docs as bool? ?? true,
     );
-    return _startResponse(start);
+    return adminBackupStartResponse(start, running: _service.running);
   }
 
-  Future<shelf.Response> _runNow() async =>
-      _startResponse(_service.startAutomatic(force: true));
-
-  shelf.Response _startResponse(ServerBackupStart start) {
-    switch (start.refusal) {
-      case null:
-        return _jsonResponse(<String, Object?>{'name': start.name}, 202);
-      case ServerBackupRefusal.srsMigration:
-        return _jsonResponse(<String, Object?>{
-          'error': 'srs_migration_running',
-        }, 409);
-      case ServerBackupRefusal.busy ||
-          ServerBackupRefusal.disabled ||
-          ServerBackupRefusal.notDue:
-        return _jsonResponse(<String, Object?>{
-          'error': 'backup in progress',
-          'running': _service.running,
-        }, 409);
-    }
-  }
+  Future<shelf.Response> _runNow() async => adminBackupStartResponse(
+    _service.startAutomatic(force: true),
+    running: _service.running,
+  );
 
   Future<shelf.Response> _putSchedule(shelf.Request request) async {
     final Object? body = jsonDecode(await request.readAsString());
@@ -179,6 +163,35 @@ class AdminBackups {
       await ctx.updateConfig(ctx.config.copyWith(backup: next));
     }
     return _jsonResponse(_scheduleJson());
+  }
+}
+
+/// 「开始一份备份」的回执 → HTTP 回应（202 / 409 + 原因）。[running] = 正在写的那份（busy 时回给调用方）。
+shelf.Response adminBackupStartResponse(
+  ServerBackupStart start, {
+  required String? running,
+}) {
+  switch (start.refusal) {
+    case null:
+      return _jsonResponse(<String, Object?>{'name': start.name}, 202);
+    case ServerBackupRefusal.srsMigration:
+      return _jsonResponse(<String, Object?>{
+        'error': 'srs_migration_running',
+      }, 409);
+    case ServerBackupRefusal.busy:
+      return _jsonResponse(<String, Object?>{
+        'error': 'backup in progress',
+        'running': running,
+      }, 409);
+    // 「立即跑」是强制的，走不到这两条；照实回，免得哪天换了调用方把「关着 / 没到期」报成「在跑」。
+    case ServerBackupRefusal.disabled:
+      return _jsonResponse(<String, Object?>{
+        'error': 'automatic_backup_disabled',
+      }, 409);
+    case ServerBackupRefusal.notDue:
+      return _jsonResponse(<String, Object?>{
+        'error': 'automatic_backup_not_due',
+      }, 409);
   }
 }
 
