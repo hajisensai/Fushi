@@ -28,14 +28,21 @@ class SftpClient {
 
   SftpClient(this._channel, {this.printDebug, this.printTrace}) {
     _startHandshake();
-    _channel.stream.listen(_handleData);
+    // FUSHI PATCH (BUG-5483): the channel stream ends when the SSH transport
+    // dies (socket aborted, app backgrounded). Upstream had no onDone, so every
+    // request in flight waited forever on a reply that could never arrive.
+    _channel.stream.listen(_handleData, onError: _closeError, onDone: close);
   }
 
   final _buffer = ChunkBuffer();
 
   final _handshake = Completer<SftpHandsake>();
 
-  final _done = Completer<void>();
+  /// FUSHI PATCH (BUG-5483): plain flag instead of upstream's `_done`
+  /// completer, which nothing listened to: completing it with an error (version
+  /// mismatch) raised an uncaught async error, and completing it twice (close
+  /// after the channel ended) threw.
+  var _isClosed = false;
 
   final _requestId = SftpRequestId();
 
@@ -169,21 +176,27 @@ class SftpClient {
   }
 
   /// Close the sftp session.
+  /// Also called when the channel stream ends (FUSHI PATCH BUG-5483): fails
+  /// the pending handshake and every pending request with [SftpAbortError].
   void close() {
-    for (var waiter in _replyWaiters.values) {
-      waiter.completeError(SftpAbortError("Connection closed"));
-    }
-    _replyWaiters.clear();
-    _done.complete();
+    _closeError(SftpAbortError("Connection closed"));
   }
 
   void _closeError(Object error, [StackTrace? stackTrace]) {
+    if (_isClosed) return;
+    _isClosed = true;
     stackTrace ??= StackTrace.current;
-    for (var waiter in _replyWaiters.values) {
+    if (!_handshake.isCompleted) {
+      // Requests await the handshake and see this error; with none pending it
+      // must not surface as an uncaught async error.
+      _handshake.future.ignore();
+      _handshake.completeError(error, stackTrace);
+    }
+    final waiters = _replyWaiters.values.toList();
+    _replyWaiters.clear();
+    for (var waiter in waiters) {
       waiter.completeError(error, stackTrace);
     }
-    _replyWaiters.clear();
-    _done.completeError(error, stackTrace);
   }
 
   void _startHandshake() {
@@ -399,6 +412,11 @@ class SftpClient {
   }
 
   Future<SftpResponsePacket> _waitReply(int requestId) {
+    // FUSHI PATCH (BUG-5483): a request sent after the session closed gets no
+    // reply either; fail it instead of parking a waiter nobody completes.
+    if (_isClosed) {
+      return Future.error(SftpAbortError("Connection closed"));
+    }
     final completer = Completer<SftpResponsePacket>();
     _replyWaiters[requestId] = completer;
     return completer.future;
@@ -463,8 +481,7 @@ class SftpClient {
     }
 
     final error = SftpError('Version mismatch: ${packet.version}');
-    _handshake.completeError(error, StackTrace.current);
-    _closeError(error);
+    _closeError(error); // also fails the handshake (FUSHI PATCH BUG-5483)
   }
 
   void _handleStatusPacket(Uint8List payload) {
