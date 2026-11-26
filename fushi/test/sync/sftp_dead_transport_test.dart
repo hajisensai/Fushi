@@ -1,4 +1,4 @@
-// BUG-5483 (issue #4331): when the SSH transport dies mid-operation (Android
+// BUG-5520 (issue #4331): when the SSH transport dies mid-operation (Android
 // aborts the socket), dartssh2 2.11.0 left every in-flight SFTP request waiting
 // forever and threw `SSHStateError(Transport is closed)` as uncaught errors.
 // The SFTP sync backend's op lock stayed held by the stuck request, so sync and

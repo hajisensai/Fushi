@@ -28,7 +28,7 @@ void main() {
       );
     });
 
-    // BUG-5482：裸地址补的 `http://` 只是占位。新增时必须先探明 scheme（https 先）
+    // BUG-5519：裸地址补的 `http://` 只是占位。新增时必须先探明 scheme（https 先）
     // 再落库 + 配对，否则 TLS host 被明文 ping 挂到超时，UI 说「对端没应答」。
     test('schemeless add probes https/http before storing and pairing', () {
       final String source = interconnectSource.readAsStringSync();

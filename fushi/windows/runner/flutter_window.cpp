@@ -550,7 +550,7 @@ bool FlutterWindow::OnCreate() {
           EndStartupWindowPreparation();
           result->Success();
         } else if (call.method_name() == "showStartupWindow") {
-          // BUG-5491: Dart's startup reveal (first frame rasterized), in one
+          // BUG-5521: Dart's startup reveal (first frame rasterized), in one
           // platform round trip: lift the startup cloak, show, bring to the
           // foreground (what window_manager's show() did). Dart then only
           // asks for keyboard focus.

@@ -233,7 +233,7 @@ bool Win32Window::CreateAndShow(const std::wstring& title,
     return false;
   }
 
-  // BUG-5491: a hidden launch waits for Dart's reveal, but startup placement
+  // BUG-5521: a hidden launch waits for Dart's reveal, but startup placement
   // can show the window first — restoring a maximized session posts
   // SC_MAXIMIZE, and maximizing a hidden window shows it (no WM_SHOWWINDOW is
   // sent on that path, measured). Cloak it now, before anything can show it:
@@ -346,7 +346,7 @@ Win32Window::MessageHandler(HWND hwnd,
                             UINT const message,
                             WPARAM const wparam,
                             LPARAM const lparam) noexcept {
-  // BUG-5491: the hang watchdog's forced startup reveal (another thread).
+  // BUG-5521: the hang watchdog's forced startup reveal (another thread).
   // Registered message, so it cannot be a case label below.
   if (message == ::fushi::ForceStartupRevealMessage()) {
     RevealStartupWindow();

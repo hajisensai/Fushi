@@ -68,7 +68,7 @@ inline bool ShouldForceStartupReveal(ULONGLONG elapsed_ms, bool ever_shown,
          elapsed_ms >= kStartupRevealDeadlineMs;
 }
 
-// 3. 启动期主窗从建窗起就隐身（BUG-5491）：Dart 显窗前，启动阶段的某些窗口操作会
+// 3. 启动期主窗从建窗起就隐身（BUG-5521）：Dart 显窗前，启动阶段的某些窗口操作会
 //    顺带把隐藏的主窗显出来——上次最大化关掉时 applyInitialPlacement 的
 //    windowManager.maximize() 投的是 SC_MAXIMIZE，最大化一个隐藏窗口必然连带显示
 //    （实测这条路径不发 WM_SHOWWINDOW，没法在「显示那一刻」再拦）。那时 Flutter

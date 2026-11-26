@@ -1422,7 +1422,7 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
   /// 自动移出**所在运行的结束时刻（毫秒，墓碑 `deletedAt` 的上界；调用方按本机整理
   /// 记录认出，DAO 不解析整理记录的载荷）。AI 的移出不是用户否决，用户亲手再加入
   /// 这部作品就清掉它留下的成员墓碑、让集回到合集里。只清 `deletedAt <=` 上界的：
-  /// 用户之后（加回又）亲手移出写下的新墓碑更晚，照常拦（BUG-5016 / BUG-5466）。
+  /// 用户之后（加回又）亲手移出写下的新墓碑更晚，照常拦（BUG-5016 / BUG-5518）。
   Future<int?> adoptRemoteCollectionMember({
     required String name,
     required String collectionType,

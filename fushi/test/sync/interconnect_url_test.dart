@@ -33,7 +33,7 @@ void main() {
       );
     });
   });
-  // BUG-5482：裸地址的 `http://` 只是占位，不是对端的事实——配对前要先探 https。
+  // BUG-5519：裸地址的 `http://` 只是占位，不是对端的事实——配对前要先探 https。
   group('parseFushiInterconnectManualAddress', () {
     test('bare address is normalized to http but marked scheme-less', () {
       final FushiInterconnectManualAddress a =

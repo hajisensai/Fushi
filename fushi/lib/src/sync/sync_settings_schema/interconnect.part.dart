@@ -574,7 +574,7 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
     }
     final String normalizedResult = address.url;
 
-    // BUG-5482：新增的地址没写 scheme 时，`http://` 只是占位，不是对端的事实。
+    // BUG-5519：新增的地址没写 scheme 时，`http://` 只是占位，不是对端的事实。
     // 先探明对端讲 https 还是 http，再按探明的 scheme 落库 + 配对。
     final List<FushiPairingCandidate>? schemelessCandidates = editingUrl == null
         ? fushiInterconnectManualPairingCandidates(address)
@@ -639,7 +639,7 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
     }
   }
 
-  /// BUG-5482：不带 scheme 的手动地址——按 [candidates]（https 先、http 后）依次
+  /// BUG-5519：不带 scheme 的手动地址——按 [candidates]（https 先、http 后）依次
   /// 探测，与 LAN 发现共用 [probeFushiPairingCandidates]；探明的那个 scheme 才
   /// 落库、才拿去配对。
   ///
@@ -752,7 +752,7 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
         // 设备」，是「地址的 scheme 写错了」——两句话指向完全相反的排查方向，而旧
         // 实现把它们说成同一句。
         //
-        // BUG-5482：超时也要回头确认。明文请求打在 TLS-only 端口上，直连时是立刻
+        // BUG-5519：超时也要回头确认。明文请求打在 TLS-only 端口上，直连时是立刻
         // 断开（unreachable），隔着端口转发时转发器可能不把断开传回来，客户端只能
         // 等到超时——同一个「scheme 写错了」，不能因为中间多了一跳就说成「对端没
         // 应答」。

@@ -59,7 +59,7 @@ class Win32Window {
   bool BeginStartupWindowPreparation();
   void EndStartupWindowPreparation();
 
-  // BUG-5491: the startup reveal point. A normally launched (hidden) window is
+  // BUG-5521: the startup reveal point. A normally launched (hidden) window is
   // DWM-cloaked from creation, so an early show (a startup maximize of the
   // hidden window shows it) puts nothing on screen; see
   // startup_reveal_policy.h §3. Lifts the cloak and shows the window (keeps a
@@ -242,7 +242,7 @@ class Win32Window {
 
   bool fullscreen_ = false;
   bool startup_window_preparation_ = false;
-  // BUG-5491: true from creation of a normally launched (hidden) window until
+  // BUG-5521: true from creation of a normally launched (hidden) window until
   // RevealStartupWindow lifts its DWM cloak.
   bool startup_cloaked_ = false;
   bool frame_chrome_suppressed_ = false;

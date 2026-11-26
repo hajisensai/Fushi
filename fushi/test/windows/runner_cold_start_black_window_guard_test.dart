@@ -196,12 +196,12 @@ void main() {
     });
   });
 
-  // BUG-5491: restoring a maximized session calls windowManager.maximize()
+  // BUG-5521: restoring a maximized session calls windowManager.maximize()
   // while the window is still hidden; SC_MAXIMIZE shows a hidden window, so
   // the user stared at the teal fallback backdrop for seconds before the first
   // frame. The hidden-launch window is cloaked from creation (that show sends
   // no WM_SHOWWINDOW, so it cannot be caught later) until Dart's reveal.
-  group('BUG-5491: the startup window stays cloaked until the reveal', () {
+  group('BUG-5521: the startup window stays cloaked until the reveal', () {
     late String flutterWindowCpp;
     late String watchdogCpp;
     late String channelDart;

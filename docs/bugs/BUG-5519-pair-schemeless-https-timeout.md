@@ -1,4 +1,4 @@
-## BUG-5482 · 互联手动添加不带 scheme 的地址配对 TLS host 报「对端没在时限内应答」
+## BUG-5519 · 互联手动添加不带 scheme 的地址配对 TLS host 报「对端没在时限内应答」
 - **报告**：2026-11-25（用户：手机上「互联 → 添加设备」输入 `192.0.2.10:48765`（不写 scheme）配对一台开着 TLS（默认）的 Docker 版 fushi_server，提示「The peer did not respond in time.」（`sync_pair_timeout`）；改输 `https://192.0.2.10:48765` 立即配对成功。网络与 server 都正常，curl 明文请求该端口得到空应答（exit 52）。）
 - **真实性**：✅ 真 bug。
   - 症状：裸地址被当成 http 地址探测，TLS host 上配对失败，文案把锅甩给网络；落库的也是一条永远连不上的 `http://` 地址。

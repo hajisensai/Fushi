@@ -1,4 +1,4 @@
-## BUG-5483 · SSH 传输断开后 SFTP 请求永远挂起：同步卡死、「本地 vs 远端」对比弹窗一直转圈
+## BUG-5520 · SSH 传输断开后 SFTP 请求永远挂起：同步卡死、「本地 vs 远端」对比弹窗一直转圈
 - **报告**：2026-11-25（GitHub issue #4331，Android S25 Ultra，Debug 31327：对比弹窗只有转圈；日志成对的 `UncaughtZone SSHStateError(Transport is closed)` 与 `SyncBackendError: Connection failed: Software caused connection abort`）
 - **真实性**：✅ 真 bug。Android 掐掉 SFTP 的 socket（切后台 / 换网）时，dartssh2 2.11.0 两处缺陷：
   1. `SftpClient` 构造里 `_channel.stream.listen(_handleData)`（pub cache `dartssh2-2.11.0/lib/src/sftp/sftp_client.dart:31`）没有 `onDone` / `onError`：频道结束后 `_replyWaiters` 与未完成的握手永不完成，在途请求永远挂起。`SftpSyncBackend._guarded`（`fushi/lib/src/sync/sftp_sync_backend.dart` 的 `_opLock.withLock`）被这个请求一直占着，后面所有 SFTP 操作排在它后面；`_ensureConnected` 本来会因 `isClosed` 重连，但轮不到它。对比弹窗 `loadSyncCompareData` 在 `runExclusiveWithSync` 下跑，排在卡死的同步后面，只能转圈到重启。

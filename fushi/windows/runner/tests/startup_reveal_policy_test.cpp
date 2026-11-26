@@ -64,7 +64,7 @@ int main() {
       !ShouldForceStartupReveal(kStartupRevealDeadlineMs * 10, false, true),
       "the forced reveal (and its dump) happens once per process");
 
-  // BUG-5491: the hidden-launch main window is cloaked from creation, so an
+  // BUG-5521: the hidden-launch main window is cloaked from creation, so an
   // early show before Dart's reveal (SC_MAXIMIZE when the last session closed
   // maximized) puts nothing on screen.
   using fushi::IsWindowUserVisible;

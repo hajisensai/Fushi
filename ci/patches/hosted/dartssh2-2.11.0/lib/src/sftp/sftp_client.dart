@@ -28,7 +28,7 @@ class SftpClient {
 
   SftpClient(this._channel, {this.printDebug, this.printTrace}) {
     _startHandshake();
-    // FUSHI PATCH (BUG-5483): the channel stream ends when the SSH transport
+    // FUSHI PATCH (BUG-5520): the channel stream ends when the SSH transport
     // dies (socket aborted, app backgrounded). Upstream had no onDone, so every
     // request in flight waited forever on a reply that could never arrive.
     _channel.stream.listen(_handleData, onError: _closeError, onDone: close);
@@ -38,7 +38,7 @@ class SftpClient {
 
   final _handshake = Completer<SftpHandsake>();
 
-  /// FUSHI PATCH (BUG-5483): plain flag instead of upstream's `_done`
+  /// FUSHI PATCH (BUG-5520): plain flag instead of upstream's `_done`
   /// completer, which nothing listened to: completing it with an error (version
   /// mismatch) raised an uncaught async error, and completing it twice (close
   /// after the channel ended) threw.
@@ -176,7 +176,7 @@ class SftpClient {
   }
 
   /// Close the sftp session.
-  /// Also called when the channel stream ends (FUSHI PATCH BUG-5483): fails
+  /// Also called when the channel stream ends (FUSHI PATCH BUG-5520): fails
   /// the pending handshake and every pending request with [SftpAbortError].
   void close() {
     _closeError(SftpAbortError("Connection closed"));
@@ -412,7 +412,7 @@ class SftpClient {
   }
 
   Future<SftpResponsePacket> _waitReply(int requestId) {
-    // FUSHI PATCH (BUG-5483): a request sent after the session closed gets no
+    // FUSHI PATCH (BUG-5520): a request sent after the session closed gets no
     // reply either; fail it instead of parking a waiter nobody completes.
     if (_isClosed) {
       return Future.error(SftpAbortError("Connection closed"));
@@ -481,7 +481,7 @@ class SftpClient {
     }
 
     final error = SftpError('Version mismatch: ${packet.version}');
-    _closeError(error); // also fails the handshake (FUSHI PATCH BUG-5483)
+    _closeError(error); // also fails the handshake (FUSHI PATCH BUG-5520)
   }
 
   void _handleStatusPacket(Uint8List payload) {

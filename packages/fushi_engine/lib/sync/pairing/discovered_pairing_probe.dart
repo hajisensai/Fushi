@@ -40,7 +40,7 @@ List<String> discoveredPairingCandidateUrls({
 /// （[baseUrl] 才是 ping / 配对 / 落库用的地址）。
 typedef FushiPairingCandidate = ({String baseUrl, String host, int port});
 
-/// BUG-5482：手动输入的**不带 scheme** 的地址（`host[:port][/path]`）的候选顺序：
+/// BUG-5519：手动输入的**不带 scheme** 的地址（`host[:port][/path]`）的候选顺序：
 /// https 优先、http 兜底。
 ///
 /// 为什么不是「默认补 http://」：TLS host 只 `bindSecure` 一个 socket，明文请求
@@ -138,7 +138,7 @@ Future<DiscoveredPairingProbeOutcome> probeDiscoveredPairingEndpointDetailed({
 }
 
 /// 按 [candidates] 的顺序逐个探测，返回第一个 ping 通的端点**或失败原因**
-/// （LAN 发现与手动输入的无 scheme 地址共用，BUG-5482）。
+/// （LAN 发现与手动输入的无 scheme 地址共用，BUG-5519）。
 ///
 /// https 候选先经 TOFU 一次性握手取指纹（取不到 → 记下原因并跳过该候选，绝不
 /// 裸读 https），再用钉扎 ping 确认；明文 http 候选直接 ping。

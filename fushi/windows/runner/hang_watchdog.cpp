@@ -221,7 +221,7 @@ namespace fushi
     void CheckStartupReveal(WatchdogState& s)
     {
       if (s.main_window_shown) return;
-      // BUG-5491: a startup maximize shows the window cloaked until Dart's
+      // BUG-5521: a startup maximize shows the window cloaked until Dart's
       // reveal — Win32-visible, but nothing on screen yet.
       // Only the app's own cloak counts: DWM_CLOAKED_SHELL (another virtual
       // desktop) is not "never revealed".

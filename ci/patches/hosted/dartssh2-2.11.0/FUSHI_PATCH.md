@@ -9,7 +9,7 @@ Dart 3.13 收紧了「被闭包捕获的可空局部变量跨 await 的类型提
 **删除条件**：锁文件升到上游已修复的版本（dartssh2-2.11.0 的新版本要求的依赖本仓暂不能升：
 dartssh2 2.15+ 需 pointycastle ^4（2.15 仍有同一错误，2.22.5 已重写该段），pdfrx_engine 0.4.6+ 才修且需 archive ^4 / image ^4.8）后删除本目录。
 
-# BUG-5483：SSH 传输断开后 SFTP 请求永远挂起 + 未捕获 `SSHStateError`
+# BUG-5520：SSH 传输断开后 SFTP 请求永远挂起 + 未捕获 `SSHStateError`
 
 Android 掐掉 socket（切后台 / 换网）时 2.11.0 有两处缺陷，SFTP 同步后端的 op 锁被永远等不到回复的请求占住，同步与「本地 vs 远端」对比弹窗一直转圈（issue #4331）：
 

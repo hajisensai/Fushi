@@ -7,7 +7,7 @@ import 'package:fushi_engine/sync/pairing/fushi_ping_client.dart';
 import 'package:fushi_engine/sync/tls/fushi_tls_identity.dart';
 import 'package:test/test.dart';
 
-/// BUG-5482：手动输入不带 scheme 的地址（`host:port`）配对 TLS host 时，旧实现
+/// BUG-5519：手动输入不带 scheme 的地址（`host:port`）配对 TLS host 时，旧实现
 /// 把它补成 `http://` 再探测。TLS host 只 `bindSecure`，明文 ping 打上去：直连时
 /// 被立刻断开，隔一层不传递断开的端口转发（容器 / NAT 映射）时挂到超时，UI 说
 /// 「对端没在时限内应答」。这里全部用真 socket：真 TLS host、真明文 host、以及

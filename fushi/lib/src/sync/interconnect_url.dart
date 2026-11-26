@@ -7,7 +7,7 @@ import 'package:fushi_engine/sync/pairing/discovered_pairing_probe.dart';
 /// [url] is the normalized address (bare `host:port` input gets `http://`, the
 /// default plain LAN host). [schemeExplicit] records whether the user typed the
 /// scheme: only then is it a fact about the peer. A bare address says nothing
-/// about TLS, so the add flow must probe for it (BUG-5482) instead of trusting
+/// about TLS, so the add flow must probe for it (BUG-5519) instead of trusting
 /// the `http://` placeholder.
 typedef FushiInterconnectManualAddress = ({String url, bool schemeExplicit});
 
@@ -38,7 +38,7 @@ FushiInterconnectManualAddress parseFushiInterconnectManualAddress(
 String normalizeFushiInterconnectManualUrl(String rawUrl) =>
     parseFushiInterconnectManualAddress(rawUrl).url;
 
-/// BUG-5482: the endpoints to probe when pairing with a manually-added
+/// BUG-5519: the endpoints to probe when pairing with a manually-added
 /// address. A bare address tries https first, then http
 /// ([schemelessPairingCandidates]); an address with an explicit scheme returns
 /// null, because the user's scheme is authoritative and the caller keeps its

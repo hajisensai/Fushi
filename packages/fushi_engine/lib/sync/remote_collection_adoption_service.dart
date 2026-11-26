@@ -28,7 +28,7 @@ class RemoteCollectionAdoptionService {
   /// 没有变化（调用方不必重载合集映射）。
   ///
   /// 用户亲手加入（`userIntent: true`）：要撤销合集删除与本机 AI 整理的移出，按集
-  /// 走 [adoptMembership]，整理记录只读一次（[OrganizerRemovals.load]，BUG-5466）；
+  /// 走 [adoptMembership]，整理记录只读一次（[OrganizerRemovals.load]，BUG-5518）；
   /// 返回参与收养的集数（调用方都会重载，不据此判断有没有变化）。
   Future<int> adoptVideos(
     Iterable<RemoteVideoInfo> videos, {

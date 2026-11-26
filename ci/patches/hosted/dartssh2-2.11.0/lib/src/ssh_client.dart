@@ -454,7 +454,7 @@ class SSHClient {
 
   /// Close all channels that are currently open.
   void _closeChannels() {
-    // FUSHI PATCH (BUG-5483): once the transport is closed, channels can only
+    // FUSHI PATCH (BUG-5520): once the transport is closed, channels can only
     // be torn down locally; destroy() would try to send EOF / close and throw.
     final transportClosed = _transport.isClosed;
     for (final channel in _channels.values) {

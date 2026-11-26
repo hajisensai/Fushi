@@ -219,7 +219,7 @@ class SSHChannelController {
     _done.complete();
   }
 
-  /// FUSHI PATCH (BUG-5483): tears the channel down locally after the
+  /// FUSHI PATCH (BUG-5520): tears the channel down locally after the
   /// transport is gone. Unlike [destroy] it sends nothing: there is no peer to
   /// tell, and sending on a closed transport throws `SSHStateError`, which used
   /// to abort [destroy] before [_done] completed and leave the channel (and

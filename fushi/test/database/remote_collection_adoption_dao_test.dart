@@ -328,7 +328,7 @@ void main() {
     expect(await db.getAllMediaCollections(), isEmpty);
   });
 
-  group('BUG-5466 organizerRemovedKeys', () {
+  group('BUG-5518 organizerRemovedKeys', () {
     Future<int?> adoptSeries(
       String key, {
       bool userIntent = false,
