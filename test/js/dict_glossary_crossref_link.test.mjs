@@ -47,6 +47,9 @@ const handlerSrc = extract("handleGlossaryAnchorClick");
 // BUG-2456：查询词改经 linkVisibleBaseText 取基字（剥 rt/rp/.ruby-rt/.ruby-reserve），
 // 与 handler 一起注入——它是 handler 的真实依赖，不桩。
 const baseTextSrc = extract("linkVisibleBaseText");
+// BUG-5522：页内跳转判定（#id / entry://#id）与滚动同为 handler 的真实依赖，一起注入。
+const fragmentSrc = extract("dictFragmentOf");
+const scrollSrc = extract("scrollPopupToElementOffset");
 
 /**
  * 在 jsdom 页面里注入真实 handleGlossaryAnchorClick + 真实 dict-media.js + 桩，
@@ -78,7 +81,7 @@ function clickAnchor(anchorHtml) {
   };
   // 把真实函数装进这个 window 作用域（它引用 openExternalLink /
   // rewriteDictionaryMediaPath / playWordAudio / window.flutter_inappwebview 这些全局）。
-  win.eval(`${dictMediaSrc}\n${baseTextSrc}\n${handlerSrc}\nwindow.__handleGlossaryAnchorClick = handleGlossaryAnchorClick;`);
+  win.eval(`${dictMediaSrc}\n${baseTextSrc}\n${fragmentSrc}\n${scrollSrc}\n${handlerSrc}\nwindow.__handleGlossaryAnchorClick = handleGlossaryAnchorClick;`);
 
   const anchor = win.document.querySelector("a[href]");
   assert.ok(anchor, "测试 fixture 缺少 <a href>");

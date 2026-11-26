@@ -4484,7 +4484,7 @@ const DICT_SANDBOX_HELPER_JS = `(function () {
   }
   function anchorOf(event) {
     var target = event.target && event.target.nodeType === 3 ? event.target.parentElement : event.target;
-    return target && target.closest ? target.closest('a[href]') : null;
+    return target && target.nodeType === 1 ? rawClosest.call(target, 'a[href]') : null;
   }
   // caretRangeFromPoint 给的是离点最近的字间缝：点在字的右半边，偏移已经指向下一个字
   // （BUG-4753，点「訪」查成「問」）。与 selection.js getCharacterAtPoint 同一判据：在
@@ -4520,12 +4520,199 @@ const DICT_SANDBOX_HELPER_JS = `(function () {
     post({ type: 'link', href: anchor.getAttribute('href') || '', text: baseText(anchor),
            rect: rectOf(event.clientX, event.clientY, anchor) });
   }, true);
-  document.addEventListener('click', function (event) {
-    if (event.defaultPrevented) return;
+  // 词典脚本自己接管的点击（OALDPE 顶部的 noun / verb / All 词性切换、OALD 的 Verb Forms
+  // 折叠……）不能再被当成点词查词。这类控件多是没有 href 的 span，词典脚本用元素监听或
+  // jQuery 委托处理，通常既不 preventDefault 也不拦传播；点的若是已选中的那一项，或脚本
+  // 在定时器里才改 DOM，这次点击期间 DOM 根本不变。所以不看「点完变没变」，看「词典脚本
+  // 有没有认领被点的这个控件」（dictScriptClaims），DOM 同步变动只作补充（dictScriptReacted）。
+  // 本辅助脚本排在全部词典脚本之前执行，下面的记录在词典脚本注册任何监听之前就已就位。
+  //
+  // 「控件」= 被点元素自身或祖先里、文字不超过 CONTROL_TEXT_MAX 的元素（<html> / <body> 除外）：
+  // 词性标签、折叠标题、按钮都在此列；整条词条、整个释义容器不算——词典常在根节点上挂一个
+  // 总监听，若把它也算认领，整本词典的点词查词就废了。
+  var CLAIM_TYPES = { click: 1, mousedown: 1, mouseup: 1, pointerdown: 1, pointerup: 1, touchstart: 1, touchend: 1 };
+  var CLAIM_PROPS = ['onclick', 'onmousedown', 'onmouseup', 'onpointerdown', 'onpointerup', 'ontouchstart', 'ontouchend'];
+  var CONTROL_TEXT_MAX = 64;
+  var rawClosest = Element.prototype.closest;
+  var rawMatches = Element.prototype.matches;
+  function isContent(node) {
+    return !!node && node.nodeType === 1 && node !== document.documentElement && node !== document.body;
+  }
+  function isControl(node) {
+    return isContent(node) && (node.textContent || '').trim().length <= CONTROL_TEXT_MAX;
+  }
+  // ① 词典脚本在哪些元素上直接挂了点击类监听（jQuery 的 .on / .click 最终也落到这里）。
+  var boundListeners = new WeakMap();
+  (function () {
+    var proto = EventTarget.prototype;
+    var add = proto.addEventListener;
+    var remove = proto.removeEventListener;
+    proto.addEventListener = function (type, listener) {
+      if (listener && CLAIM_TYPES[type] && isContent(this)) {
+        boundListeners.set(this, (boundListeners.get(this) || 0) + 1);
+      }
+      return add.apply(this, arguments);
+    };
+    proto.removeEventListener = function (type, listener) {
+      if (listener && CLAIM_TYPES[type] && isContent(this)) {
+        var count = boundListeners.get(this) || 0;
+        if (count > 0) boundListeners.set(this, count - 1);
+      }
+      return remove.apply(this, arguments);
+    };
+  })();
+  // ② 委托式监听（挂在 document / 容器上，先用选择器认目标）：这次点击派发期间，词典代码
+  //    对哪些元素做过选择器判断并命中。jQuery 的委托不走原生 matches（带 seed 的选择器由它
+  //    自己的匹配器求值），另在 jQueryClaims 里按它登记的选择器比对。
+  var selectorHits = null;
+  function recordHit(element) {
+    if (selectorHits && element && selectorHits.length < 256) selectorHits.push(element);
+  }
+  Element.prototype.closest = function () {
+    var hit = rawClosest.apply(this, arguments);
+    if (hit) recordHit(hit);
+    return hit;
+  };
+  Element.prototype.matches = function () {
+    var hit = rawMatches.apply(this, arguments);
+    if (hit) recordHit(this);
+    return hit;
+  };
+  if (typeof Element.prototype.webkitMatchesSelector === 'function') {
+    var rawWebkitMatches = Element.prototype.webkitMatchesSelector;
+    Element.prototype.webkitMatchesSelector = function () {
+      var hit = rawWebkitMatches.apply(this, arguments);
+      if (hit) recordHit(this);
+      return hit;
+    };
+  }
+  // 词典自带的 jQuery 可能改过名（noConflict），按形状在全局里找。
+  function jQueries() {
+    var found = [];
+    var keys = [];
+    try { keys = Object.keys(window); } catch (e) {}
+    for (var i = 0; i < keys.length; i++) {
+      var value;
+      try { value = window[keys[i]]; } catch (e) { continue; }
+      if (typeof value === 'function' && value.fn && typeof value.fn.jquery === 'string' &&
+          typeof value._data === 'function' && found.indexOf(value) < 0) found.push(value);
+    }
+    return found;
+  }
+  function jQueryClaims(chain) {
+    var jqs = jQueries();
+    var holders = chain.concat([document]);
+    for (var j = 0; j < jqs.length; j++) {
+      for (var h = 0; h < holders.length; h++) {
+        var events = null;
+        try { events = jqs[j]._data(holders[h], 'events'); } catch (e) {}
+        if (!events) continue;
+        for (var type in events) {
+          if (!CLAIM_TYPES[type] || !events[type]) continue;
+          for (var k = 0; k < events[type].length; k++) {
+            var selector = events[type][k] && events[type][k].selector;
+            if (!selector) continue;
+            for (var c = 0; c < chain.length && chain[c] !== holders[h]; c++) {
+              if (!isControl(chain[c])) continue;
+              try { if (rawMatches.call(chain[c], selector)) return true; } catch (e) {}
+            }
+          }
+        }
+      }
+    }
+    return false;
+  }
+  function dictScriptClaims(target) {
+    var chain = [];
+    for (var node = target; node && node.nodeType === 1; node = node.parentElement) chain.push(node);
+    var i;
+    var hits = selectorHits || [];
+    for (i = 0; i < hits.length; i++) {
+      if (chain.indexOf(hits[i]) >= 0 && isControl(hits[i])) return true;
+    }
+    for (i = 0; i < chain.length; i++) {
+      if (!isControl(chain[i])) continue;
+      if (boundListeners.get(chain[i]) > 0) return true;
+      for (var p = 0; p < CLAIM_PROPS.length; p++) {
+        if (typeof chain[i][CLAIM_PROPS[p]] === 'function') return true;
+      }
+    }
+    if (jQueryClaims(chain)) return true;
+    // ③ 词典 CSS 把控件标成可点（cursor: pointer），且不是从外层大容器继承来的。
+    var outer = null;
+    for (i = 0; i < chain.length; i++) {
+      if (isContent(chain[i]) && !isControl(chain[i])) { outer = chain[i]; break; }
+    }
+    var inherited = false;
+    try { inherited = !!outer && getComputedStyle(outer).cursor === 'pointer'; } catch (e) {}
+    if (!inherited) {
+      for (i = 0; i < chain.length && chain[i] !== outer; i++) {
+        if (!isControl(chain[i])) continue;
+        try { if (getComputedStyle(chain[i]).cursor === 'pointer') return true; } catch (e) {}
+      }
+    }
+    return false;
+  }
+  // ④ 补充：这次点击派发期间，词典脚本同步改了被点元素的祖先链或后代（<html> / <body> 除外，
+  //    免得「每次点击都顺手改别处」的全局监听把整本词典的点词废掉）。
+  var clickObserver = null;
+  try { clickObserver = new MutationObserver(function () {}); } catch (e) {}
+  window.addEventListener('click', function () {
+    selectorHits = [];
+    if (!clickObserver) return;
+    clickObserver.disconnect();
+    clickObserver.observe(document.documentElement,
+      { subtree: true, childList: true, attributes: true, characterData: true });
+  }, true);
+  function dictScriptReacted(target) {
+    if (!clickObserver) return false;
+    var records = clickObserver.takeRecords();
+    clickObserver.disconnect();
+    for (var i = 0; i < records.length; i++) {
+      var node = records[i].target;
+      if (node && node.nodeType !== 1) node = node.parentElement;
+      if (!node || node === document.documentElement || node === document.body) continue;
+      if (node === target || node.contains(target) || target.contains(node)) return true;
+    }
+    return false;
+  }
+  // 页内跳转（#id、MDict 的 entry://#id）：在本词典块里滚到目标，不拿链接文字去查词。
+  // iframe 按内容撑高、自己不滚动，真正滚动的是父页面，所以只报目标在 frame 里的纵坐标。
+  // 词典脚本自己也处理跳转时照样滚（它在不滚动的 iframe 里滚不动），所以不看认领判据。
+  function fragmentOf(anchor) {
+    var match = /^(?:entry:\\/\\/)?#(.+)$/i.exec((anchor.getAttribute('href') || '').trim());
+    if (!match) return null;
+    try { return decodeURIComponent(match[1]); } catch (e) { return match[1]; }
+  }
+  function fragmentTarget(id) {
+    var byId = document.getElementById(id);
+    if (byId) return byId;
+    var named = document.getElementsByName(id);
+    return named.length ? named[0] : null;
+  }
+  window.addEventListener('click', function (event) {
+    var target = event.target && event.target.nodeType === 3 ? event.target.parentElement : event.target;
+    var reacted = target ? dictScriptReacted(target) : false;
+    // 必须在下面替链接 preventDefault 之前读：之后读到的就是我们自己设的。
+    var dictPrevented = event.defaultPrevented;
     var anchor = anchorOf(event);
-    if (anchor && isSoundLink(anchor)) return;
+    if (anchor && isSoundLink(anchor)) { selectorHits = null; return; }
     if (anchor) {
       event.preventDefault();
+      var fragment = fragmentOf(anchor);
+      if (fragment !== null) {
+        selectorHits = null;
+        var jumpTo = fragmentTarget(fragment);
+        if (jumpTo) post({ type: 'scroll', y: jumpTo.getBoundingClientRect().top });
+        return;
+      }
+    }
+    // 链接本来就是控件（UA 样式给它 cursor: pointer），认领判据只用在点词上；链接只在词典
+    // 脚本明确接管（preventDefault / 同步改了它）时不回查，交叉引用照常可用。
+    var claimed = dictPrevented || reacted || (!anchor && !!target && dictScriptClaims(target));
+    selectorHits = null;
+    if (claimed) return;
+    if (anchor) {
       post({ type: 'link', href: anchor.getAttribute('href') || '', text: baseText(anchor),
              rect: rectOf(event.clientX, event.clientY, anchor) });
       return;
@@ -4606,6 +4793,15 @@ function __dictSandboxHandleMessage(frame, data) {
     }
     if (data.type === 'error') {
         reportDictScriptError(dictName, 'sandbox', { message: `${data.message || ''}`.slice(0, 500) });
+        return;
+    }
+    if (data.type === 'scroll') {
+        // 沙箱里点了页内跳转（#id / entry://#id）：frame 按内容撑高、不自己滚动，由这里
+        // 把 frame 内纵坐标 y 处滚到弹窗可视区顶端。只动弹窗自己的滚动，不碰原生桥，
+        // 所以不占下面的动作节流；仍要求用户激活，沙箱脚本不能自顾自地把弹窗滚走。
+        if (!__dictSandboxUserActive(frame)) return;
+        const y = Number(data.y);
+        if (Number.isFinite(y)) scrollPopupToElementOffset(frame, Math.max(0, Math.min(y, 20000)));
         return;
     }
     if (data.type !== 'link' && data.type !== 'select') return;
@@ -11121,9 +11317,48 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
     });
 }
 
+// 把 element 内纵坐标 offsetY 处滚到它所在滚动容器的可视区顶端。弹窗的滚动容器因宿主而异
+// （app 内是文档本身，扩展里是 shadow root 下的内层容器），所以沿祖先找第一个真能滚的。
+function scrollPopupToElementOffset(element, offsetY) {
+    let container = element.parentElement;
+    while (container && container !== document.body && container !== document.documentElement) {
+        const overflowY = getComputedStyle(container).overflowY;
+        if ((overflowY === 'auto' || overflowY === 'scroll') &&
+            container.scrollHeight > container.clientHeight) break;
+        container = container.parentElement;
+    }
+    const scroller = container && container !== document.body && container !== document.documentElement
+        ? container : (document.scrollingElement || document.documentElement);
+    const viewportTop = scroller === (document.scrollingElement || document.documentElement)
+        ? 0 : scroller.getBoundingClientRect().top;
+    scroller.scrollTop += element.getBoundingClientRect().top + offsetY - viewportTop;
+}
+
+// MDX 的页内跳转：`#id`，以及 MDict 约定的 `entry://#id`（= 当前词条内的锚点）。返回解码后
+// 的 id；不是页内跳转返回 null。`entry://word#id` 指向另一个词条，仍按交叉引用回查。
+function dictFragmentOf(href) {
+    const match = /^(?:entry:\/\/)?#(.+)$/i.exec(href);
+    if (!match) return null;
+    try { return decodeURIComponent(match[1]); } catch (_) { return match[1]; }
+}
+
 function handleGlossaryAnchorClick(event, anchor) {
     event.preventDefault();
     const href = (anchor.getAttribute('href') || '').trim();
+    const fragment = dictFragmentOf(href);
+    if (fragment !== null) {
+        // OALD 的「Idioms」「Phrasal verbs」跳转等：在本词典块里滚到目标，不拿链接文字去查词
+        // （此前会查成「Idioms」这个词）。同一弹窗里多张词条卡可能各有一份同名 id，只在被点
+        // 的这一块里找；找不到就什么也不做。
+        const scope = anchor.closest('[data-dictionary]') || anchor.closest('.glossary-content');
+        const escaped = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(fragment)
+            : fragment.replace(/["\\]/g, '\\$&');
+        const jumpTo = scope
+            ? scope.querySelector(`[id="${escaped}"], [name="${escaped}"]`)
+            : null;
+        if (jumpTo) scrollPopupToElementOffset(jumpTo, 0);
+        return;
+    }
     if (/^https?:\/\//i.test(href)) {
         openExternalLink(href);
         return;
