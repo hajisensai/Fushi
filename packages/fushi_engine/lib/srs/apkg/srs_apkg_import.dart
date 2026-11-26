@@ -1681,7 +1681,8 @@ class _Importer {
         nearby.add(<SrsReviewLog>[
           for (final SrsReviewLog n in natives)
             if ((n.occurredAt - r.id).abs() <= srsImportEquivalenceWindowMs &&
-                min(n.durationMs, 60000) == r.time)
+                // 原生日志存真实用时，普通导出写 revlog 时封到 kSrsMaxAnswerDurationMs：按同一封顶比。
+                min(n.durationMs, kSrsMaxAnswerDurationMs) == r.time)
               n,
         ]);
       }

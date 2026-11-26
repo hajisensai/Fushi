@@ -60,7 +60,7 @@ blank, so please ignore it.
 | `ivl` | derived | The interval that Fushi's scheduler chose after this answer. A positive value is days. A negative value is seconds until the next learning or relearning step. `0` means no state (only on `type = 3` rows). |
 | `lastIvl` | derived | The `ivl` of the **previous exported row for the same card**, or 0 for the card's first row. Fushi recomputes it, so it does not come from Anki. |
 | `factor` | placeholder | Fushi does not use SM-2 ease. For native Fushi reviews this is always `2500` (or `0` if the card was still new after the answer). For logs imported from Anki it is the original Anki `factor`. Do not use it. |
-| `time` | real | The answer duration in ms. The exporter does **not** cap it, but Fushi caps the value at **60 000 ms** when it records the review (see section 6.4). |
+| `time` | real | The answer duration in ms, not capped. Only reviews that older Fushi versions recorded are capped at **60 000 ms** (see section 6.4). |
 | `type` | real | The queue the card was in **before** the answer. It uses Anki's codes: 0 = learn (also used for a new card's first answer), 1 = review, 2 = relearn, 3 = filtered (only on rows imported from Anki). Rows of types 4 and 5 (manual and rescheduled) are never written. |
 | `usn` | placeholder | `-1` |
 
@@ -201,9 +201,13 @@ review-queue answers.
 ### 6.4 Durations
 
 - The exporter writes the stored duration as-is, with no 60 s cap.
-- **However**, Fushi's reviewer currently caps the recorded value at 60 000 ms when it saves a native review, the
-  same as Anki's default `maxTaken`. So `fushi` rows are 0–60 000 ms in practice.
-- Rows imported from Anki carry whatever Anki recorded, so they were also capped by that collection's `maxTaken`.
+- `fushi` rows recorded by Fushi builds that can export donation files (this format, version 1) or later carry the
+  **real** duration, with no upper limit. Fushi applies the 60 s cap only when it adds up study time for its own
+  statistics; the stored log keeps the real value.
+- `fushi` rows recorded by older Fushi builds, before the donor upgraded, were capped at 60 000 ms when they were
+  saved, the same as Anki's default `maxTaken`. A single row does not say which build recorded it, so a `fushi` row
+  with `time = 60000` may be a capped value. A value above 60 000 is always real.
+- Rows imported from Anki carry whatever Anki recorded, so they were capped by that collection's `maxTaken`.
 - The timer starts when the card is shown and stops when it is answered.
 
 ### 6.5 Dropped data

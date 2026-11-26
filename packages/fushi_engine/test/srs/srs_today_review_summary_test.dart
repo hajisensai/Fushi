@@ -6,7 +6,7 @@ import 'dart:convert';
 
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
-import 'package:fushi_srs/fushi_srs.dart' show SrsReviewLog;
+import 'package:fushi_srs/fushi_srs.dart' show SrsLogOrigin, SrsReviewLog;
 import 'package:fushi_engine/srs/srs_remote_store.dart';
 import 'package:fushi_engine/srs/srs_stats.dart';
 import 'package:fushi_engine/srs/srs_stats_loader.dart';
@@ -64,6 +64,67 @@ void main() {
     expect(s.count, page.count);
     expect(s.durationMs, page.durationMs);
     expect(s.again, page.ratings[0]);
+  });
+
+  test('日志存真实用时；今日 / 统计页用时按单次 60 秒封顶', () async {
+    int clock = DateTime(2026, 11, 3, 12).millisecondsSinceEpoch;
+    final SrsDbStore store = await openTestStore(
+      profileUid: _uid,
+      deviceId: 'dev',
+      now: () => clock += 1000,
+    );
+    final List<String> cards = <String>[];
+    for (final String w in <String>['食べる', '飲む']) {
+      final String note = await store.createNote(
+        noteTypeId: store.lapisNoteTypeId,
+        fieldsById: <String, String>{
+          srsLapisFieldId(_uid, 'Expression'): w,
+          srsLapisFieldId(_uid, 'MainDefinition'): 'm',
+        },
+      );
+      cards.add((await store.cardsOfNote(note)).first.id);
+    }
+    // 走神 10 分钟的一次 + 正常的一次。
+    final SrsReviewLog long = await store.answer(
+      cards[0],
+      3,
+      durationMs: 600000,
+    );
+    await store.answer(cards[1], 1, durationMs: 2500);
+
+    expect(long.durationMs, 600000);
+    final SrsReviewLog stored = (await store.history(cards[0])).lastEffective!;
+    expect(stored.id, long.id);
+    expect(stored.durationMs, 600000, reason: '日志里不封顶');
+    expect(srsCountedAnswerMs(stored), kSrsMaxAnswerDurationMs);
+
+    final SrsTodayReviewSummary s = await store.todayReviewSummary();
+    expect(s.count, 2);
+    expect(s.durationMs, kSrsMaxAnswerDurationMs + 2500);
+    final SrsTodayStats page = (await (await loadSrsStats(
+      store,
+    )).report()).todayStats;
+    expect(page.durationMs, kSrsMaxAnswerDurationMs + 2500);
+  });
+
+  test('srsCountedAnswerMs：Fushi 记的封顶、Anki 导入的照原值、负数按 0', () {
+    SrsReviewLog log(int ms, String origin) =>
+        SrsReviewLog.fromJson(<String, Object?>{
+          'id': '01928c3e-0000-7000-8000-0000000000aa',
+          'p': _uid,
+          'card': '01928c3e-0000-7000-8000-0000000000bb',
+          'kind': 'review',
+          'hlc': '1:0:dev',
+          'at': 1,
+          'origin': origin,
+          'rtype': 'review',
+          'rating': 3,
+          'dur': ms,
+        });
+    expect(srsCountedAnswerMs(log(600000, SrsLogOrigin.fushi)), 60000);
+    expect(srsCountedAnswerMs(log(59000, SrsLogOrigin.fushi)), 59000);
+    expect(srsCountedAnswerMs(log(-5, SrsLogOrigin.fushi)), 0);
+    expect(srsCountedAnswerMs(log(90000, SrsLogOrigin.anki)), 90000);
   });
 
   test('远程线格式往返不丢字段', () {

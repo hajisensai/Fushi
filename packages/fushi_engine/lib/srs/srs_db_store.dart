@@ -6464,9 +6464,22 @@ class SrsStudyState {
   bool get rwkvPending => summary.rwkvPending;
 }
 
-/// 单次作答记入日志的最长用时（与 Anki「最长作答秒数」默认 60 秒同口径）：走神、切出去之类的长停顿
-/// 不该把复习用时统计撑爆。本机复习页与远程复习库主机端（srs_remote_store.dart）共用。
+/// 单次作答**计入学习用时**的上限（与 Anki「最长作答秒数」默认 60 秒同口径；Rust `history::MAX_COUNTED_ANSWER_MS`
+/// 同值）：走神、切出去之类的长停顿不该把复习用时统计撑爆。
+///
+/// 日志里存的是**真实**用时（2026-11-26 起；之前的版本在记日志时就封到这个值，所以老日志都 ≤ 它）：复习页与远程
+/// 复习库主机端只去掉负数。封顶只在读用时去聚合 / 显示的地方做——统计投影、今天的「按分钟」每日上限、RWKV 输入行在
+/// 内核里（`history::counted_answer_ms`），Dart 侧显示单条日志用 [srsCountedAnswerMs]，普通 Anki 导出写 revlog
+/// `time` 时同样封顶；只有复习历史捐赠包写原值。
 const int kSrsMaxAnswerDurationMs = 60000;
+
+/// [log] 计入学习用时的作答用时（与内核 `history::counted_answer_ms` 同一条规则）：负数按 0；Fushi 记的封到
+/// [kSrsMaxAnswerDurationMs]；Anki 导入的照 Anki 记的值（它已按那份集合的 `maxTaken` 封过）。
+int srsCountedAnswerMs(SrsReviewLog log) {
+  final int ms = log.durationMs < 0 ? 0 : log.durationMs;
+  if (log.origin == SrsLogOrigin.anki) return ms;
+  return ms > kSrsMaxAnswerDurationMs ? kSrsMaxAnswerDurationMs : ms;
+}
 
 /// [SrsDbStore.answerAndStudy] 拒绝作答：这张卡出题之后已在别处被复习过（只有远程复习库会抛——
 /// 本机库没有「出题之后」这一说）。没记日志；调用方跳过这张、重新排队。
