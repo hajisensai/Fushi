@@ -2115,8 +2115,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   Future<void> _resolveAndApplyMangaProfile() async {
     String? languageTag;
     try {
-      languageTag = (await appModel.database.getEpubBook(widget.bookKey))
-          ?.language;
+      languageTag = (await appModel.database.getEpubBook(
+        widget.bookKey,
+      ))?.language;
     } catch (e, st) {
       debugPrint('[MangaFushi] 读内容语言失败（非致命，退回媒体类型绑定）: $e\n$st');
     }
@@ -2602,8 +2603,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // 由 PDF 转来、还没提取过文字层的卷（加这一步之前导入的）：开书时补一次。
     // 判据先看内存里的版本号，只有确实要补才碰 PDFium。
     if (payload.pdfTextLayerVersion == null &&
-        File(p.join(p.dirname(mangaJsonPath), PdfImporter.kPdfFileName))
-            .existsSync()) {
+        File(
+          p.join(p.dirname(mangaJsonPath), PdfImporter.kPdfFileName),
+        ).existsSync()) {
       payload =
           await MangaPdfTextLayer.ensure(p.dirname(mangaJsonPath)) ?? payload;
     }
@@ -6198,8 +6200,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         followPlayback: followVolume,
         volume: followVolume
             ? liveVolume ??
-                  await AudiobookRepository(appModel.database)
-                      .readVolume(widget.bookKey)
+                  await AudiobookRepository(
+                    appModel.database,
+                  ).readVolume(widget.bookKey)
             : null,
         curve: audiobookPlaybackVolumeCurve,
       );
@@ -7182,9 +7185,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         onNewestFirstChanged: (bool value) =>
             unawaited(appModel.setMangaChapterListNewestFirst(value)),
         onClose: () => Navigator.of(sheetContext).pop(),
-        onChapterTap: (OnlineMangaChapter chapter) =>
-            Navigator.of(sheetContext)
-                .pop(entry.indexOfChapterKey(chapter.key)),
+        onChapterTap: (OnlineMangaChapter chapter) => Navigator.of(
+          sheetContext,
+        ).pop(entry.indexOfChapterKey(chapter.key)),
       ),
     );
     if (target != null && target >= 0) {
@@ -7288,13 +7291,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         ),
         onPageTurnChanged: _setPageTurnSettings,
         onEditToolbarLayout: () => unawaited(_showControlLayoutEditor()),
-        globalDefaults: appModel.mangaReaderPreferences.copyWithJson(
-          <String, Object?>{
-            if (desktopWindowFullscreenSupported)
-              'fullscreen': _isWindowFullscreen,
-            'keepScreenOn': ReaderFushiSource.instance.keepScreenAwake,
-          },
-        ),
+        globalDefaults: appModel.mangaReaderPreferences
+            .copyWithJson(<String, Object?>{
+              if (desktopWindowFullscreenSupported)
+                'fullscreen': _isWindowFullscreen,
+              'keepScreenOn': ReaderFushiSource.instance.keepScreenAwake,
+            }),
         overrides: override,
         onChanged: (Map<String, Object?> value) async {
           // 只有落库失败才抛给面板（面板据此回滚）。落库已成功时重应用出错
@@ -9295,8 +9297,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     final String? bookUid = _bookmarkBookUid;
     if (bookUid == null) return;
     try {
-      final List<Bookmark> items = await BookmarkRepository(appModel.database)
-          .getBookmarks(bookUid);
+      final List<Bookmark> items = await BookmarkRepository(
+        appModel.database,
+      ).getBookmarks(bookUid);
       if (!mounted) return;
       setState(() => _bookmarks = items);
     } on Object catch (error, stack) {
@@ -9875,8 +9878,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             // 松手后靠这个答复判断「Dart 换没换页」，没换才回弹（BUG-3219）。
             // 还要等进行中的那一轮 drain：连滑时本次 enqueue 会立即返回，步数要等
             // 那一轮才消费（见 [MangaTurnQueue.whenIdle]）。
-            return _onMangaTurn(args[0] as String)
-                .then((void _) => _turnQueue.whenIdle);
+            return _onMangaTurn(
+              args[0] as String,
+            ).then((void _) => _turnQueue.whenIdle);
           },
         );
         controller.addJavaScriptHandler(
@@ -10011,14 +10015,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         );
         unawaited(_loadInitialWindow());
       },
-      shouldInterceptRequest: (
-        InAppWebViewController controller,
-        WebResourceRequest request,
-      ) => _interceptRequest(request.url),
-      onLoadResourceWithCustomScheme: (
-        InAppWebViewController controller,
-        WebResourceRequest request,
-      ) => _loadMangaCustomScheme(request),
+      shouldInterceptRequest:
+          (InAppWebViewController controller, WebResourceRequest request) =>
+              _interceptRequest(request.url),
+      onLoadResourceWithCustomScheme:
+          (InAppWebViewController controller, WebResourceRequest request) =>
+              _loadMangaCustomScheme(request),
       onReceivedError:
           (
             InAppWebViewController controller,

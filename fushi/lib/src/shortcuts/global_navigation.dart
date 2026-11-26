@@ -318,8 +318,9 @@ KeyEventResult _activatePrimaryFocus() {
     intent: intent,
   );
   if (action == null) return KeyEventResult.ignored;
-  final (bool enabled, Object? _) = Actions.of(context)
-      .invokeActionIfEnabled(action, intent, context);
+  final (bool enabled, Object? _) = Actions.of(
+    context,
+  ).invokeActionIfEnabled(action, intent, context);
   return enabled ? KeyEventResult.handled : KeyEventResult.ignored;
 }
 

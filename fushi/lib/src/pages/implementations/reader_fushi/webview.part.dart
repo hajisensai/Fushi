@@ -2368,7 +2368,8 @@ updateLive: function(patch) {
             ),
       initialUserScripts: UnmodifiableListView<UserScript>(<UserScript>[
         UserScript(
-          source: 'window.onerror=function(m,s,l,c,e){console.error("__FUSHI_JS_ERROR__ "+m+" at "+s+":"+l+":"+c);return false;};',
+          source:
+              'window.onerror=function(m,s,l,c,e){console.error("__FUSHI_JS_ERROR__ "+m+" at "+s+":"+l+":"+c);return false;};',
           injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
         ),
         WebViewMenuDismissBridge.userScript,

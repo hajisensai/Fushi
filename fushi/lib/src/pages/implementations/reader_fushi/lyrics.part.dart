@@ -682,8 +682,9 @@ extension _ReaderLyrics on _ReaderFushiPageState {
     int chapter = _srtCueChapterMap?[cue.sentenceIndex] ?? -1;
     if (chapter < 0) chapter = _chapterIndexForCue(cue);
     if (chapter < 0 || chapter >= book.chapters.length) return null;
-    final ({int offset, int length})? range = _audioPositionIndexFor(chapter)
-        .studyRangeForUniqueText(cue.text);
+    final ({int offset, int length})? range = _audioPositionIndexFor(
+      chapter,
+    ).studyRangeForUniqueText(cue.text);
     if (range == null || range.length <= 0) return null;
     return (chapter: chapter, offset: range.offset, length: range.length);
   }
@@ -1703,7 +1704,8 @@ extension _ReaderLyrics on _ReaderFushiPageState {
       ),
       initialUserScripts: UnmodifiableListView<UserScript>(<UserScript>[
         UserScript(
-          source: 'window.onerror=function(m,s,l,c,e){console.error("__FUSHI_JS_ERROR__ "+m+" at "+s+":"+l+":"+c);return false;};',
+          source:
+              'window.onerror=function(m,s,l,c,e){console.error("__FUSHI_JS_ERROR__ "+m+" at "+s+":"+l+":"+c);return false;};',
           injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
         ),
         WebViewMenuDismissBridge.userScript,
@@ -1814,9 +1816,6 @@ extension _ReaderLyrics on _ReaderFushiPageState {
             _focusOwnership.reclaim(FocusReclaimCause.gesture);
           },
         );
-        // 歌词文档的非左键 `mousedown`（idx = 所在行的 data-cue-index，行外为 -1）。与正文
-        // `onPointerSeek` 同一条三级阶梯（HBK-AUDIT-221：此前只认「seek 到点击句」，非
-        // Windows 上绑到侧键的关词典 / 其余动作在歌词视图里全是死项）。
         // 歌词文档的鼠标按住连发：与正文同一个落地点，只多一道「仍在歌词模式」。
         controller.addJavaScriptHandler(
           handlerName: 'onReaderMouseHoldRepeat',
@@ -1827,6 +1826,9 @@ extension _ReaderLyrics on _ReaderFushiPageState {
             );
           },
         );
+        // 歌词文档的非左键 `mousedown`（idx = 所在行的 data-cue-index，行外为 -1）。与正文
+        // `onPointerSeek` 同一条三级阶梯（HBK-AUDIT-221：此前只认「seek 到点击句」，非
+        // Windows 上绑到侧键的关词典 / 其余动作在歌词视图里全是死项）。
         controller.addJavaScriptHandler(
           handlerName: 'onLyricsPointerSeek',
           callback: (List<dynamic> args) {
@@ -2020,14 +2022,12 @@ extension _ReaderLyrics on _ReaderFushiPageState {
         );
         unawaited(_loadLyricsPage());
       },
-      shouldInterceptRequest: (
-        InAppWebViewController controller,
-        WebResourceRequest request,
-      ) => _interceptRequest(request.url),
-      onLoadResourceWithCustomScheme: (
-        InAppWebViewController controller,
-        WebResourceRequest request,
-      ) => _loadResourceWithCustomScheme(request),
+      shouldInterceptRequest:
+          (InAppWebViewController controller, WebResourceRequest request) =>
+              _interceptRequest(request.url),
+      onLoadResourceWithCustomScheme:
+          (InAppWebViewController controller, WebResourceRequest request) =>
+              _loadResourceWithCustomScheme(request),
       shouldOverrideUrlLoading:
           (InAppWebViewController controller, NavigationAction action) async {
             final String url = action.request.url?.toString() ?? '';
@@ -2056,10 +2056,9 @@ extension _ReaderLyrics on _ReaderFushiPageState {
               _lyricsDocumentLoadGeneration = null;
             }
           },
-      onConsoleMessage: (
-        InAppWebViewController controller,
-        ConsoleMessage msg,
-      ) => debugPrint('[LyricsWebView] ${msg.message}'),
+      onConsoleMessage:
+          (InAppWebViewController controller, ConsoleMessage msg) =>
+              debugPrint('[LyricsWebView] ${msg.message}'),
       // 非 null 本身就是救命动作（Android renderer 被回收时不传 = 连坐杀 app；
       // WKWebView 内容进程被 jetsam 不接 = 永久白屏）。处置见
       // [_lyricsWebViewDeathGuard]：歌词文档无状态，换代重建后由
