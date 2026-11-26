@@ -11,6 +11,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:args/args.dart';
+import 'package:fushi_core/fushi_core.dart' show NotEnoughSpaceException;
 import 'package:fushi_server/src/backup/server_backup.dart';
 import 'package:fushi_server/src/backup/server_backup_service.dart';
 import 'package:fushi_server/src/backup/server_backup_status.dart';
@@ -208,6 +209,22 @@ backup settings [--interval off|daily|every3Days|weekly] [--time HH:MM] [--[no-]
           ),
         );
         return kExitUsage;
+      }
+      try {
+        await ensureServerBackupSpace(
+          dataDir: rt.config.dataDir,
+          outputDir: output.parent.path,
+          includeDocuments: command['documents'] as bool,
+          configPath: rt.configFile.path,
+        );
+      } on NotEnoughSpaceException catch (x) {
+        e.writeln(
+          tr(
+            '磁盘空间不够，没有开始备份（${x.detail}）',
+            'Not enough free disk space; the backup was not started (${x.detail})',
+          ),
+        );
+        return kExitFailure;
       }
       final File written = await createServerBackup(
         db: rt.db,

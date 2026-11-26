@@ -23,6 +23,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:fushi_core/fushi_core.dart' show kNotEnoughSpaceError;
 import 'package:fushi_server/src/admin/admin_context.dart';
 import 'package:fushi_server/src/backup/server_backup_service.dart';
 import 'package:fushi_server/src/backup/server_backup_store.dart';
@@ -133,6 +134,16 @@ class AdminBackups {
     final ServerBackupStart start = _service.startManual(
       includeDocuments: docs as bool? ?? true,
     );
+    // 动笔之前的空间检查不过：507（Insufficient Storage），不让调用方以为在写、过一会儿才在列表里看到失败。
+    final String? early = await start.preflight;
+    if (early == kNotEnoughSpaceError) {
+      return _jsonResponse(<String, Object?>{
+        'error': kNotEnoughSpaceError,
+        'message':
+            'Not enough free disk space for this backup; free some space '
+            '(or delete old backups) and try again',
+      }, 507);
+    }
     return adminBackupStartResponse(start, running: _service.running);
   }
 

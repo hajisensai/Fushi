@@ -271,6 +271,66 @@ List<String> serverBackupSourceFiles(
   ..._dataFiles(Directory(dataDir), includeDocuments: includeDocuments).values,
 ];
 
+/// 一份备份要写多少的上界（第五期空间检查）：[serverBackupSourceFiles] 的大小之和 + 配置文件，按不压缩算
+/// （zip 只会更小；documents/ 里的书 / 封面 / 音频本来就压不动）；`databases` 是主库与复习库（含 `-wal`）——
+/// `VACUUM INTO` 的快照先落在 `<data>/tmp/`，那个卷另要放下它们。只 stat，不读内容。
+({int databases, int total}) serverBackupSizeEstimate(
+  String dataDir, {
+  String? configPath,
+  required bool includeDocuments,
+}) {
+  int databases = 0;
+  for (final String db in <String>[
+    fushiDatabaseFileName,
+    kSrsGen4DatabaseFileName,
+  ]) {
+    for (final String suffix in <String>['', '-wal']) {
+      databases += fileBytesOrZero(p.join(dataDir, 'support', '$db$suffix'));
+    }
+  }
+  int total = configPath == null ? 0 : fileBytesOrZero(configPath);
+  for (final String f in serverBackupSourceFiles(
+    dataDir,
+    includeDocuments: includeDocuments,
+  )) {
+    total += fileBytesOrZero(f);
+  }
+  return (databases: databases, total: total);
+}
+
+/// 写备份之前查空间：备份目录（[outputDir]）所在的卷要放下整份（[serverBackupSizeEstimate] 的 `total`），
+/// `<data>/tmp/` 所在的卷另要放下两个库的快照；同一个卷时加在一起算（fushi_core [ensureFreeSpace]），外加
+/// [kBackupSpaceMarginBytes] 余量。不够抛 [NotEnoughSpaceException]（`toString` = `not_enough_space`）；不知道
+/// 可用空间（没登记探针、平台取不到）照常写。估算在后台 isolate 里数（documents/ 可能很大）。
+Future<void> ensureServerBackupSpace({
+  required String dataDir,
+  required String outputDir,
+  required bool includeDocuments,
+  String? configPath,
+  VolumeFreeBytes? probe,
+}) async {
+  final ({int databases, int total}) size = await Isolate.run(
+    () => serverBackupSizeEstimate(
+      dataDir,
+      configPath: configPath,
+      includeDocuments: includeDocuments,
+    ),
+  );
+  ensureFreeSpace(<SpaceNeed>[
+    SpaceNeed(outputDir, size.total),
+    SpaceNeed(p.join(dataDir, 'tmp'), size.databases),
+  ], probe: probe ?? _envFreeBytesOverride());
+}
+
+/// 只给手工验证用：环境变量 `FUSHI_SERVER_FREE_BYTES_OVERRIDE`（整数字节）把所有卷的可用空间报成这个数，
+/// 用来在真进程上看「空间不够」的状态与 WebUI（不用真把盘写满）。没设 / 不是整数 = 不覆盖。
+VolumeFreeBytes? _envFreeBytesOverride() {
+  final int? forced = int.tryParse(
+    Platform.environment['FUSHI_SERVER_FREE_BYTES_OVERRIDE'] ?? '',
+  );
+  return forced == null ? null : (String _) => forced;
+}
+
 /// 路径段相等：Windows / macOS 的默认文件系统不分大小写，同一个目录可能以别的大小写出现。
 bool _samePart(String a, String b) => (Platform.isWindows || Platform.isMacOS)
     ? a.toLowerCase() == b.toLowerCase()

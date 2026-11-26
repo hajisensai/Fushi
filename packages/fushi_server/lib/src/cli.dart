@@ -46,6 +46,7 @@ import 'package:fushi_server/src/library_scanner.dart';
 import 'package:fushi_server/src/server_language.dart';
 import 'package:fushi_server/src/server_runtime.dart';
 import 'package:fushi_server/src/video_scrape_host.dart';
+import 'package:fushi_srs/fushi_srs.dart' show FfiFsrsEngine;
 import 'package:path/path.dart' as p;
 
 const String kDefaultConfigFileName = 'fushi_server.yaml';
@@ -202,6 +203,8 @@ void _usage(ArgParser parser) {
 }
 
 Future<int> runFushiServerCli(List<String> args) async {
+  // 写备份 / 更新前快照之前的空间检查用 fushi_fsrs 的平台实现（与 app 同一份；第五期）。
+  registerVolumeFreeBytes(FfiFsrsEngine.volumeFreeBytes);
   // 帮助文案建 parser 时就按语言出，所以先定语言（只读配置里的 language 一行）。
   serverLanguage = resolveServerLanguage(
     args,

@@ -11,7 +11,7 @@ import 'package:fushi_server/src/admin/admin_backups.dart'
     show adminBackupStartResponse;
 import 'package:fushi_server/src/admin/admin_context.dart';
 import 'package:fushi_server/src/backup/server_backup.dart'
-    show serverBackupWalkFiles;
+    show serverBackupSizeEstimate, serverBackupWalkFiles;
 import 'package:fushi_server/src/backup/server_backup_scheduler.dart';
 import 'package:fushi_server/src/backup/server_backup_service.dart';
 import 'package:fushi_server/src/backup/server_backup_status.dart';
@@ -57,6 +57,9 @@ class _Rig {
   Exception? failWith;
   bool srsMigrating = false;
 
+  /// 卷的可用空间（第五期）；null = 不知道（照常写）。
+  int? Function(String path)? freeBytes;
+
   /// 给了就让指纹（遍历数据目录）抛它，模拟读不了的子目录。
   FileSystemException? fingerprintFails;
   int writes = 0;
@@ -70,6 +73,7 @@ class _Rig {
     settings: () => _settings,
     now: () => now,
     holdSrs: () => srsMigrating ? null : () => holdsReleased++,
+    freeBytes: (String path) => freeBytes?.call(path),
     fingerprinter: ({required bool includeDocuments}) {
       final FileSystemException? fail = fingerprintFails;
       return fail == null ? null : Future<String>.error(fail);
@@ -572,6 +576,105 @@ void main() {
     });
   });
 
+  group('写之前查空间（第五期）', () {
+    late Directory tmp;
+    late _Rig rig;
+    late String data;
+
+    setUp(() async {
+      tmp = await Directory.systemTemp.createTemp('fushi_backup_space_');
+      data = p.join(tmp.path, 'data');
+      _write(p.join(data, 'support', 'fushi.db'), 'x' * 1000);
+      _write(p.join(data, 'support', 'srs4.db'), 'y' * 500);
+      _write(p.join(data, 'dicts', 'a.zip'), 'd' * 200);
+      _write(p.join(data, 'documents', 'book.epub'), 'b' * 5000);
+      _write(p.join(data, 'tmp', 'junk.bin'), 'j' * 9000);
+      rig = _Rig(data);
+    });
+
+    tearDown(() => tmp.delete(recursive: true));
+
+    test('估算：库 + 数据目录（documents 只在带上时）+ 配置；tmp/ 不算', () {
+      final String config = p.join(tmp.path, 'fushi_server.yaml');
+      _write(config, 'c' * 30);
+      final ({int databases, int total}) noDocs = serverBackupSizeEstimate(
+        data,
+        configPath: config,
+        includeDocuments: false,
+      );
+      expect(noDocs.databases, 1500);
+      expect(noDocs.total, 1500 + 200 + 30);
+      expect(
+        serverBackupSizeEstimate(data, includeDocuments: true).total,
+        1500 + 200 + 5000,
+      );
+    });
+
+    test('自动：空间不够 → 记失败 not_enough_space，不写；腾出空间后照常', () async {
+      rig.freeBytes = (String _) => 1 << 20;
+      final ServerBackupResult r = await rig.service.runAutomatic(force: true);
+      expect(r.outcome, ServerBackupOutcome.failed);
+      expect(r.error, kNotEnoughSpaceError);
+      expect(rig.writes, 0);
+      expect(rig.names(), isEmpty);
+      final ServerBackupStatus st = rig.service.status;
+      expect(st.lastError, kNotEnoughSpaceError);
+      expect(st.runningSinceMs, isNull);
+      expect(st.lastSatisfiedAtMs, isNull, reason: '失败不算满足，下次检查重试');
+
+      rig.freeBytes = (String _) => 1 << 40;
+      final ServerBackupResult ok = await rig.service.runAutomatic(force: true);
+      expect(ok.outcome, ServerBackupOutcome.succeeded);
+      expect(rig.writes, 1);
+    });
+
+    test('不知道可用空间（探针给 null）→ 照常写', () async {
+      rig.freeBytes = (String _) => null;
+      final ServerBackupResult r = await rig.service.runAutomatic(force: true);
+      expect(r.outcome, ServerBackupOutcome.succeeded);
+    });
+
+    test('documents 只在带上时算进去：不带刚好够，带上就不够', () async {
+      // 余量 64 MiB + 估算；不带 documents 时估算 1700，带上 6700。
+      rig.freeBytes = (String _) => kBackupSpaceMarginBytes + 1700 + 1500 + 10;
+      final ServerBackupStart small = rig.service.startManual(
+        includeDocuments: false,
+      );
+      expect(await small.preflight, isNull);
+      expect((await small.done).outcome, ServerBackupOutcome.succeeded);
+      final ServerBackupStart big = rig.service.startManual(
+        includeDocuments: true,
+      );
+      expect(await big.preflight, kNotEnoughSpaceError);
+      expect((await big.done).outcome, ServerBackupOutcome.failed);
+      expect(rig.service.lastManualError, kNotEnoughSpaceError);
+      expect(rig.writes, 1);
+    });
+
+    test('备份目录与 tmp/ 在不同的卷：各自只要放下自己那份', () async {
+      final String backups = rig.dir.path;
+      // 备份卷放得下整份（1700 + 余量）但放不下「整份 + 库快照」；tmp 卷是另一个读数。
+      rig.freeBytes = (String path) =>
+          p.isWithin(backups, path) || p.equals(backups, path)
+          ? kBackupSpaceMarginBytes + 1700 + 10
+          : kBackupSpaceMarginBytes + 1500 + 20;
+      final ServerBackupResult r = await rig.service.runAutomatic(force: true);
+      expect(r.outcome, ServerBackupOutcome.succeeded, reason: '${r.error}');
+    });
+
+    test('更新前：空间不够 → 记 preUpdateError，不抛（更新照样进行）', () async {
+      rig.freeBytes = (String _) => 1;
+      final ServerBackupResult r = await rig.service.runPreUpdate();
+      expect(r.outcome, ServerBackupOutcome.failed);
+      expect(r.error, kNotEnoughSpaceError);
+      expect(rig.writes, 0);
+      final ServerBackupStatus st = rig.service.status;
+      expect(st.preUpdateError, kNotEnoughSpaceError);
+      expect(st.preUpdateName, isNull);
+      expect(rig.service.running, isNull, reason: '作业锁放掉了');
+    });
+  });
+
   group('ServerBackupScheduler', () {
     late Directory tmp;
     late _Rig rig;
@@ -755,6 +858,25 @@ void main() {
         expect((body['status'] as Map)['runningSinceMs'], isNull);
       },
     );
+
+    test('POST（手动）空间不够 → 507 not_enough_space，不写；状态里记下原因', () async {
+      registerVolumeFreeBytes((String _) => 1);
+      try {
+        var (int code, Map<String, dynamic> body) = await call(
+          'POST',
+          'backups',
+        );
+        expect(code, 507, reason: '$body');
+        expect(body['error'], kNotEnoughSpaceError);
+        await api.backups.pending;
+        (code, body) = await call('GET', 'backups');
+        expect(body['items'], isEmpty);
+        expect(body['lastError'], kNotEnoughSpaceError);
+        expect(body['running'], isNull);
+      } finally {
+        registerVolumeFreeBytes(null);
+      }
+    });
 
     test('下载 / 删除只认备份文件名：越界与状态文件一律 404', () async {
       final String dir = p.join(ctx.config.dataDir, 'backups');
