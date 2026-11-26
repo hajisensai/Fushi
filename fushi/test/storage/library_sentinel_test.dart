@@ -156,6 +156,21 @@ void main() {
     );
   });
 
+  test('记录里 token 不是字符串：重新布防，不卡在 error', () async {
+    addBooks(1);
+    File(
+      p.join(support.path, LibrarySentinel.recordFileName),
+    ).writeAsStringSync('{"token": 42}');
+    expect(
+      (await check(DateTime(2026, 11, 1))).status,
+      LibrarySentinelStatus.armed,
+    );
+    expect(
+      (await check(DateTime(2026, 11, 2))).status,
+      LibrarySentinelStatus.intact,
+    );
+  });
+
   test('书库根不可写（是个文件）：报 error，不抛', () async {
     final Directory bogus = Directory(p.join(tmp.path, 'file_not_dir'));
     File(bogus.path).writeAsStringSync('x');

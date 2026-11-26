@@ -222,7 +222,10 @@ class LibrarySentinel {
       final Map<String, Object?>? record = await _readRecord(supportRoot);
       final String? sentinel = await _readSentinel(libraryRoot);
       final Map<String, int> counts = await countEntries(libraryRoot);
-      final String? token = record?['token'] as String?;
+      // token 不是字符串（记录被手改 / 写坏）按「没有记录」重新布防；强转会抛，被外层收成
+      // error，之后每次启动都停在 error、哨兵永久失效。
+      final Object? rawToken = record?['token'];
+      final String? token = rawToken is String ? rawToken : null;
       final LibraryVanishIncident? pending = LibraryVanishIncident.fromJson(
         record?['incident'],
       );
