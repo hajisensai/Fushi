@@ -150,8 +150,18 @@ void main() {
       );
       tray.sync(items: menu(), tooltip: 'Fushi', closeToTray: true);
       await tray.showNotification(title: 't', body: 'b');
+      await tray.notifyExiting();
       await pumpEventQueue();
       expect(calls, isEmpty);
+    });
+
+    test('退出链通知原生侧摘托盘标记', () async {
+      final DesktopTray tray = DesktopTray(
+        platformSupported: true,
+        channel: channel,
+      );
+      await tray.notifyExiting();
+      expect(calls.single.method, 'exiting');
     });
 
     test('原生回调分发到对应处理器，未知 id 忽略', () async {
@@ -218,6 +228,40 @@ void main() {
       final String fw = read('windows/runner/flutter_window.cpp');
       expect(fw, contains('SetPropW(hwnd, ::fushi::kTrayHiddenWindowProp'));
       expect(fw, contains('RemovePropW(hwnd, ::fushi::kTrayHiddenWindowProp)'));
+    });
+
+    test('藏在托盘的首实例按「运行中」转交，不当退出中白等互斥量', () {
+      final String main = read('windows/runner/main.cpp');
+      final int classify = main.indexOf('ClassifyExistingInstance(');
+      expect(classify, greaterThan(0));
+      final int end = main.indexOf(');', classify);
+      expect(
+        main.substring(classify, end),
+        contains('::fushi::kTrayHiddenWindowProp'),
+        reason: '收进托盘的主窗显示过又不可见，不带托盘标记就会被判成退出中',
+      );
+      final String policy = read('windows/runner/startup_reveal_policy.h');
+      expect(
+        policy,
+        contains('if (hidden_to_tray) return ExistingInstanceState::kInTray;'),
+      );
+    });
+
+    test('退出链先摘托盘标记再隐藏主窗', () {
+      final String dartMain = read('lib/main.dart');
+      final int notify = dartMain.indexOf(
+        'DesktopTray.instance.notifyExiting()',
+      );
+      final int hide = dartMain.indexOf("_guardedExitStep('window hide'");
+      expect(notify, greaterThan(0));
+      expect(notify, lessThan(hide), reason: '隐藏后再摘，二次启动会转交给正在退出的进程');
+      final String fw = read('windows/runner/flutter_window.cpp');
+      final int exiting = fw.indexOf('call.method_name() == "exiting"');
+      expect(exiting, greaterThan(0));
+      expect(
+        fw.substring(exiting, exiting + 600),
+        contains('RemovePropW(hwnd, ::fushi::kTrayHiddenWindowProp)'),
+      );
     });
   });
 }

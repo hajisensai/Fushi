@@ -17,6 +17,7 @@
 #include "flutter_window.h"
 #include "hang_watchdog.h"
 #include "single_instance_mutex.h"
+#include "startup_reveal_policy.h"
 #include "tray_icon.h"
 #include "startup_trace.h"
 #include "utils.h"
@@ -380,17 +381,33 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // = 用户双击视频「点了没反应」（TODO-904 修过的正是这个形态）。
   //
   // 窗口已销毁或尚未创建时也必须等待所有权，不能凭窗口不存在放行。
-  // 判据用「主窗口不可见」：本 app 没有托盘，`windowManager.hide()` 全仓只有退出链
-  // 那一个调用点，所以不可见 ⇔ 正在退出。等它释放互斥量再按首实例正常启动——复用
-  // 重启标志那条路已经在用的等待机械，新实例自己就能打开那个视频。
+  // 「主窗不可见」有两种含义，必须分开（startup_reveal_policy.h）：普通启动隐藏建窗、
+  // 等 Dart 首帧才显窗，所以**启动中**的首实例同样不可见。区分靠首实例看门狗在主窗
+  // 第一次可见时挂的 kMainWindowShownProp；主窗被「关闭到托盘」藏着时另挂
+  // kTrayHiddenWindowProp（kInTray，照常转交并显窗，退出链隐藏主窗前会先摘掉它）。
+  // 除此之外显示过又不可见 ⇔ 正在退出（`windowManager.hide()` 全仓只有退出链那一个
+  // 调用点）→ 等它释放互斥量再按首实例
+  // 正常启动，新实例自己就能打开那个视频；从没显示过 ⇔ 启动中 → 直接走下面的转交
+  // （窗口过程已在收 WM_COPYDATA；卡在启动里的首实例由它自己的启动期限显窗），
+  // 不再白等 kPreviousInstanceWaitMs。
   if (another_instance && !test_runner) {
-    const HWND exiting = ::FindWindowW(nullptr, L"Fushi");
-    if (exiting != nullptr && !::IsWindowVisible(exiting)) {
-      // 窗口存在但不可见 ⇔ 正在退出：等它释放所有权即可按首实例启动。
+    const HWND existing_window = ::FindWindowW(nullptr, L"Fushi");
+    const ::fushi::ExistingInstanceState existing_state =
+        ::fushi::ClassifyExistingInstance(
+            existing_window != nullptr,
+            existing_window != nullptr && ::IsWindowVisible(existing_window),
+            existing_window != nullptr &&
+                ::GetPropW(existing_window, ::fushi::kMainWindowShownProp) !=
+                    nullptr,
+            existing_window != nullptr &&
+                ::GetPropW(existing_window, ::fushi::kTrayHiddenWindowProp) !=
+                    nullptr);
+    if (existing_state == ::fushi::ExistingInstanceState::kExiting) {
+      // 显示过、现在不可见 ⇔ 正在退出：等它释放所有权即可按首实例启动。
       if (single_instance_mutex.Wait(kPreviousInstanceWaitMs)) {
         another_instance = false;
       }
-    } else if (exiting == nullptr) {
+    } else if (existing_state == ::fushi::ExistingInstanceState::kNoWindow) {
       // 窗口还没出现，两种可能分不开：①首实例正在启动（它这辈子都不会释放互斥量，
       // 裸 Wait(kPreviousInstanceWaitMs) 必然跑满上界——资源管理器多选两个视频「用 Fushi
       // 打开」就是这个形状，第二个进程白卡满上界才转交）；②上一个进程已经走干净、只剩别人手里

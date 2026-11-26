@@ -5259,6 +5259,15 @@ void FlutterWindow::RegisterTrayChannel() {
           result->Success();
         } else if (call.method_name() == "hideToTray") {
           result->Success(flutter::EncodableValue(HideToTray()));
+        } else if (call.method_name() == "exiting") {
+          // 退出链开始（Dart 在 windowManager.hide() 之前调）：摘掉「藏在托盘」标记，
+          // 此后第二实例把这个隐藏主窗判成退出中（startup_reveal_policy.h）去等互斥量，
+          // 而不是把文件转交给马上就没的进程；也不再把关闭拦成藏到托盘。
+          close_to_tray_ = false;
+          if (HWND hwnd = GetHandle()) {
+            RemovePropW(hwnd, ::fushi::kTrayHiddenWindowProp);
+          }
+          result->Success();
         } else {
           result->NotImplemented();
         }

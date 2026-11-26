@@ -287,6 +287,20 @@ class DesktopTray {
     }
   }
 
+  /// 退出链开始、隐藏主窗之前调：原生侧摘掉「藏在托盘」标记并停止拦截关闭。
+  /// 否则从托盘菜单退出时主窗仍带着托盘标记，第二实例会把它当成「在托盘里照常
+  /// 运行」，把文件转交给一个马上就退出的进程。
+  Future<void> notifyExiting() async {
+    if (!platformSupported) return;
+    try {
+      await _channel.invokeMethod<void>('exiting');
+    } on PlatformException catch (e) {
+      debugPrint('[Fushi] tray exiting notify failed: $e');
+    } on MissingPluginException {
+      return;
+    }
+  }
+
   /// 托盘气泡（Windows 10/11 显示成系统通知）。
   Future<void> showNotification({
     required String title,

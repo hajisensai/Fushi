@@ -39,6 +39,10 @@ class StartupTimeline {
 
   static List<StartupMark> get marks => List<StartupMark>.unmodifiable(_marks);
 
+  /// 主窗是否已显示（[seal] 只在显窗后调用一次）。启动期限
+  /// （`startup_stall_deadline.dart`）据此判断启动有没有卡住。
+  static bool get isSealed => _sealed;
+
   /// `total=1234ms start=<墙钟> | phase=12 | phase=340 | …`，每段是相对上一个标记的毫秒数。
   static String describe() {
     final StringBuffer out = StringBuffer();

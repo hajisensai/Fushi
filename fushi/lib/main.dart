@@ -163,6 +163,7 @@ import 'package:fushi/src/sync/sync_settings_schema.dart'
         dataRootMigrationRestart,
         runInterconnectLinkPairingFlow;
 import 'package:fushi/src/startup/webview_prewarm.dart';
+import 'package:fushi/src/startup/startup_stall_deadline.dart';
 import 'package:fushi/src/startup/startup_timeline.dart';
 import 'package:fushi/src/startup/headless_launch_gate.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
@@ -372,6 +373,8 @@ Future<void> _restoreWindowsWindowIcon(AppIconSelection selection) async {
 /// to act on once the app has finished initialising.
 void main([List<String> args = const <String>[]]) {
   StartupTimeline.begin();
+  // 启动期限：到点主窗还没显示，把已走到的启动阶段落盘（卡在哪个 await，见该文件注释）。
+  armStartupStallDeadline();
   // 有声漫画工作台挂到环外入口（书卡菜单 / 侧栏速览经入口打开，见入口文件注释）。
   registerMangaAudioWorkbenchEntry();
   // 桌面端：从 args 里挑出外部打开的视频路径（Windows / Linux runner 传 argv）。
@@ -1762,6 +1765,13 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     if (Platform.isLinux) {
       await _guardedExitStep('linux notify exiting', () async {
         await LinuxExternalOpenChannel.notifyExiting(_externalVideoChannel);
+      });
+    }
+    // Windows 托盘：先摘「藏在托盘」标记再隐藏主窗，二次启动才会把这个进程判成
+    // 退出中（runner startup_reveal_policy.h 的 kExiting）而不是「在托盘里运行」。
+    if (Platform.isWindows) {
+      await _guardedExitStep('tray notify exiting', () async {
+        await DesktopTray.instance.notifyExiting().timeout(_exitHideTimeout);
       });
     }
     final AppModel appModel = ref.read(appProvider);
