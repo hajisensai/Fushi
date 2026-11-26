@@ -164,6 +164,66 @@ class ScreenOcrLayoutTest {
         assertEquals(1, ScreenOcrLayout.charIndexAt(l, 15, 150))
     }
 
+    // BUG-5494：本机模型 / Lens 的行带上 Dart 算好的块，查词窗才能跨 OCR 折行。
+    @Test
+    fun wireLinesKeepDartBlock() {
+        val block = "まさか見破れ\nる…！？"
+        val lines = ScreenOcrLayout.linesFromWire(
+            listOf(
+                mapOf(
+                    "text" to "まさか見破れ",
+                    "rect" to listOf(40, 300, 800, 350),
+                    "blockText" to block,
+                    "blockOffset" to 0,
+                    "blockRect" to listOf(40, 300, 1000, 410),
+                ),
+                mapOf(
+                    "text" to "る…！？",
+                    "rect" to listOf(40, 360, 1000, 410),
+                    "blockText" to block,
+                    "blockOffset" to 7,
+                    "blockRect" to listOf(40, 300, 1000, 410),
+                ),
+            ),
+        )
+        assertEquals(2, lines.size)
+        assertEquals(block, lines[0].blockText)
+        assertEquals(0, lines[0].blockOffset)
+        assertEquals(block, lines[1].blockText)
+        assertEquals(7, lines[1].blockOffset)
+        assertEquals(300, lines[1].blockTop)
+        assertEquals(410, lines[0].blockBottom)
+    }
+
+    @Test
+    fun wireLinesIgnoreInconsistentBlock() {
+        val lines = ScreenOcrLayout.linesFromWire(
+            listOf(
+                // 偏移处不是本行原文。
+                mapOf(
+                    "text" to "あいう",
+                    "rect" to listOf(0, 0, 30, 10),
+                    "blockText" to "xxあいう",
+                    "blockOffset" to 1,
+                    "blockRect" to listOf(0, 0, 30, 10),
+                ),
+                // 块框不含行框。
+                mapOf(
+                    "text" to "えお",
+                    "rect" to listOf(0, 20, 30, 30),
+                    "blockText" to "えお",
+                    "blockOffset" to 0,
+                    "blockRect" to listOf(0, 25, 30, 30),
+                ),
+            ),
+        )
+        assertEquals(2, lines.size)
+        assertEquals("あいう", lines[0].blockText)
+        assertEquals(0, lines[0].blockOffset)
+        assertEquals("えお", lines[1].blockText)
+        assertEquals(20, lines[1].blockTop)
+    }
+
     @Test
     fun wireLinesRejectNonList() {
         assertTrue(ScreenOcrLayout.linesFromWire(null).isEmpty())
