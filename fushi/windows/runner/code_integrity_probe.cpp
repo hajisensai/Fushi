@@ -136,7 +136,10 @@ namespace fushi
       if (dir.empty()) return;
       const std::wstring log_path = dir + L"\\code_integrity.log";
       const std::wstring marker_path = dir + L"\\code_integrity.last_record";
-      const unsigned long long last_reported = ReadLastReportedRecord(marker_path);
+      const unsigned long long stored_cursor = ReadLastReportedRecord(marker_path);
+      unsigned long long last_reported = stored_cursor;
+      bool cursor_reset = false;
+      bool saw_event = false;
       const std::wstring app_dir_key = PathMatchKey(ExecutableDirectory());
       const std::wstring profile_key = PathMatchKey(EnvironmentVariable(L"USERPROFILE"));
 
@@ -161,6 +164,15 @@ namespace fushi
             EvtClose(batch[i]);
             CodeIntegrityEvent event;
             if (!ParseCodeIntegrityEventXml(xml, &event)) continue;
+            // 倒序查询：第一条就是结果里最新的，据它判断通道是否被清空过。
+            if (!saw_event) {
+              saw_event = true;
+              if (IsCursorReset(event.record_id, stored_cursor)) {
+                cursor_reset = true;
+                last_reported = 0;
+                newest_seen = 0;
+              }
+            }
             if (event.record_id > newest_seen) newest_seen = event.record_id;
             if (!IsUnreportedRecord(event.record_id, last_reported) ||
                 !EventTouchesFushi(event, app_dir_key)) {
@@ -188,6 +200,9 @@ namespace fushi
         if (matched > lines.size()) {
           header += L" (newest " + std::to_wstring(lines.size()) + L" listed)";
         }
+        if (cursor_reset) {
+          header += L"; event log was cleared since the last report (cursor reset)";
+        }
         if (query_error != ERROR_SUCCESS) {
           header += L"; event log query error=" + std::to_wstring(query_error);
         }
@@ -197,7 +212,9 @@ namespace fushi
           " sac=" + std::to_string(sac_present ? static_cast<long>(sac_value) : -1L) +
           " query_error=" + std::to_string(query_error));
       }
-      if (newest_seen > last_reported) WriteLastReportedRecord(marker_path, newest_seen);
+      if (cursor_reset || newest_seen > last_reported) {
+        WriteLastReportedRecord(marker_path, newest_seen);
+      }
     }
 
     DWORD WINAPI ProbeThreadMain(LPVOID parameter)

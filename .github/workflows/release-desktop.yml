@@ -1223,12 +1223,14 @@ jobs:
           # Inno 运行时解到 %TEMP% 的 .tmp 安装程序和现生成的 unins000.exe 只有走 SignTool
           # 才会被签；外壳签了、它们没签，开着智能应用控制的 Windows 11 直接报 4551 拒绝启动。
           # ISCC 把 $f 换成带引号的待签文件路径；脚本失败非零退出，ISCC 随即报错停编。
+          # 脚本路径的引号只能写成 Inno 的 $q：pwsh 7 把传给原生 exe 的内嵌 " 转义成 \"，
+          # 而 ISCC 的命令行解析不认反斜杠转义，-File 会收到前后各多一个 \ 的坏路径。
           [string[]] $signArgs = @()
           if ('${{ steps.signcheck.outputs.have }}' -eq 'true') {
             $signScript = "$PWD\tool\sign_windows_release.ps1"
             $signArgs = @(
               '/DFushiSignTool',
-              "/Sfushisign=pwsh.exe -NoProfile -NonInteractive -File `"$signScript`" -Path `$f -Description Fushi"
+              "/Sfushisign=pwsh.exe -NoProfile -NonInteractive -File `$q$signScript`$q -Path `$f -Description Fushi"
             )
           }
           & "$iscc" "/DAppVersion=${{ steps.channel.outputs.build_version_name }}" `

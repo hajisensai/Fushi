@@ -206,6 +206,9 @@ Require-Text 'fushi/windows/installer/fushi.iss' $innoScript 'SignTool=fushisign
 Require-Text 'fushi/windows/installer/fushi.iss' $innoScript 'SignedUninstaller=yes' 'generated unins000.exe must carry our signature (BUG-5515)'
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow '/DFushiSignTool' 'ISCC must be invoked with the SignTool define when signing credentials exist (BUG-5515)'
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow '/Sfushisign=' 'ISCC must receive the fushisign sign command (BUG-5515)'
+# ISCC 的 /S 签名命令里不能写字面引号：pwsh 7 把内嵌 " 转义成 \" 传给原生 exe，ISCC 不认反斜杠转义，
+# 脚本路径会多出前后两个 \。引号一律写成 Inno 的 $q。
+Forbid-Pattern '.github/workflows/release-desktop.yml' $desktopWorkflow '/Sfushisign=[^\r\n]*`"' 'ISCC /S sign-tool commands must quote with Inno $q; pwsh 7 escapes an embedded " as \" and ISCC keeps the backslashes (BUG-5515)'
 Forbid-Pattern '.github/workflows/release-desktop.yml' $desktopWorkflow "-notlike 'unins\*\.exe'" 'installed-payload verification must not exempt the uninstaller from the signature check (BUG-5515)'
 # Apple 签名链路：细粒度不变式由 fushi/test/tools/apple_signing_workflow_guard_test.dart
 # 守（每个 PR 都跑）。这里只锁发布策略层面的一条：手动 dispatch 那条门必须显式判事件。

@@ -136,6 +136,9 @@ int main() {
 
   passed &= Expect(IsUnreportedRecord(4243, 4242) && !IsUnreportedRecord(4242, 4242),
                    "records are reported once (cursor is exclusive)");
+  passed &= Expect(IsCursorReset(3, 4242) && !IsCursorReset(4242, 4242) &&
+                       !IsCursorReset(5000, 4242),
+                   "a cleared channel (newest id below the cursor) resets the cursor");
   passed &= Expect(ShouldWriteCodeIntegrityHeader(true, 0),
                    "startup stall always records the SAC state");
   passed &= Expect(!ShouldWriteCodeIntegrityHeader(false, 0) &&

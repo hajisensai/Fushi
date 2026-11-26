@@ -226,6 +226,14 @@ inline bool IsUnreportedRecord(unsigned long long record_id,
   return record_id > last_reported_id;
 }
 
+// 通道被清空（事件查看器「清除日志」、wevtutil cl、系统重置）后 record id 从 1 重新计数。
+// 游标是上一轮查询结果里的最大 id；同一过滤条件下通道没被清空时，结果里最新的一条只会 >= 游标
+// （或结果为空）。最新一条比游标小就是通道已重置：游标归零重新报，否则之后的拦截永远报不出。
+inline bool IsCursorReset(unsigned long long newest_record_id,
+                          unsigned long long last_reported_id) {
+  return newest_record_id < last_reported_id;
+}
+
 // 有命中就写；启动卡死那一次即使零命中也写（「SAC 开着、没拦到 Fushi」本身就是排除项）。
 inline bool ShouldWriteCodeIntegrityHeader(bool startup_stall,
                                            std::size_t matched) {
