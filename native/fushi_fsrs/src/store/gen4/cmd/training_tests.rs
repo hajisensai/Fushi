@@ -597,3 +597,127 @@ fn arrival_order_counts_late_logs_of_low_devices_as_new_and_survives_rebuilds() 
         assert!(t.conn().is_autocommit());
     });
 }
+
+/// BUG-5532（反馈 gPPVTfHm1b）：按 `CACHE_RULES` 6 物化的库（`rwkv_last` 是空的）开库时不整层重建——`cache_config_set`
+/// 只记下当前修订号与回填游标，回包 `rwkvLastFill`；回填完成前末条读（`rwkv_last`）对没填到的卡逐卡重放，结果与填满后
+/// 逐卡相同；`rwkv_last_fill` 一批一笔推进，填完删游标，表与整层重建逐行相同；整份物化也删游标。
+#[test]
+fn rwkv_last_backfills_in_batches_after_an_in_place_rules_upgrade() {
+    use super::training::{rwkv_last, rwkv_last_fill};
+    use crate::store::gen4::cache::{CACHE_RULES, RULES_KEY, RWKV_FILL_FROM, RWKV_FILL_KEY};
+    use crate::store::gen4::derive::Index;
+    use crate::store::gen4::dispatch::cache_config_set;
+
+    let d = train_library();
+    let p = Pair::new(&d);
+    let t = Truth::new(&p.g4);
+    let col = p.col;
+    let caches: Value = serde_json::from_str(&p.cfg).unwrap();
+    let cards: Vec<String> = {
+        let mut stmt =
+            p.g4.prepare("SELECT id FROM cards WHERE col = ?1 ORDER BY id")
+                .unwrap();
+        stmt.query_map([col], |r| r.get::<_, Ref>(0))
+            .unwrap()
+            .map(|r| r.unwrap().text())
+            .collect()
+    };
+    assert!(cards.len() >= 3, "{cards:?}");
+    let table = |p: &Pair<'_>| -> Vec<(String, i64, i64, i64)> {
+        let mut stmt = p
+            .g4
+            .prepare("SELECT card, at, rating, rtype FROM rwkv_last WHERE col = ?1 ORDER BY card")
+            .unwrap();
+        stmt.query_map([col], |r| {
+            Ok((r.get::<_, Ref>(0)?.text(), r.get(1)?, r.get(2)?, r.get(3)?))
+        })
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect()
+    };
+    let want = rwkv_last(&t, col, &cards).unwrap();
+    let full = table(&p);
+    assert!(!full.is_empty(), "夹具里要有保留评分");
+
+    // 退回 6 的样子：表空、修订号 6、没有游标。
+    let from = RWKV_FILL_FROM.expect("当前口径能从 6 就地升级");
+    t.tx(|t| {
+        t.conn()
+            .execute("DELETE FROM rwkv_last WHERE col = ?1", [col])
+            .unwrap();
+        t.set_derive_cfg(col, RULES_KEY, Some(&from.to_string()))?;
+        Ok(())
+    })
+    .unwrap();
+
+    let v = t.tx(|t| cache_config_set(t, col, &caches)).unwrap();
+    assert_eq!(
+        v,
+        json!({"changed": false, "rwkvLastFill": true}),
+        "不整层重建"
+    );
+    assert!(table(&p).is_empty(), "开库不填表");
+    assert_eq!(
+        t.derive_cfg(col, RULES_KEY).unwrap(),
+        Some(CACHE_RULES.to_string())
+    );
+    assert_eq!(
+        t.derive_cfg(col, RWKV_FILL_KEY).unwrap(),
+        Some(String::new())
+    );
+    assert_eq!(
+        rwkv_last(&t, col, &cards).unwrap(),
+        want,
+        "没填的卡逐卡重放"
+    );
+    // 回填没做完时再开：回包照样带 rwkvLastFill，宿主接着填。
+    let v = t.tx(|t| cache_config_set(t, col, &caches)).unwrap();
+    assert_eq!(v, json!({"changed": false, "rwkvLastFill": true}));
+
+    // 一批一张：每一步之后读到的都与填满后相同；n 张卡 n + 1 步（最后一步取到空批 = 填完）。
+    let mut steps = 0;
+    loop {
+        let r = t.tx(|t| rwkv_last_fill(t, col, 1)).unwrap();
+        steps += 1;
+        assert_eq!(rwkv_last(&t, col, &cards).unwrap(), want, "第 {steps} 步");
+        if r["done"] == json!(true) {
+            break;
+        }
+        assert_eq!(r["filled"], json!(1), "{r}");
+        assert!(steps <= cards.len(), "回填不收敛");
+    }
+    assert_eq!(steps, cards.len() + 1);
+    assert_eq!(t.derive_cfg(col, RWKV_FILL_KEY).unwrap(), None);
+    assert_eq!(table(&p), full, "回填结果与整层物化逐行相同");
+    let v = t.tx(|t| cache_config_set(t, col, &caches)).unwrap();
+    assert_eq!(v, json!({"changed": false}), "填完不再要求回填");
+    assert_eq!(
+        t.tx(|t| rwkv_last_fill(t, col, 64)).unwrap(),
+        json!({"done": true, "filled": 0})
+    );
+
+    // 回填中途整层重建：表填满、游标删掉。
+    t.tx(|t| {
+        t.conn()
+            .execute("DELETE FROM rwkv_last WHERE col = ?1", [col])
+            .unwrap();
+        t.set_derive_cfg(col, RWKV_FILL_KEY, Some(""))?;
+        Ok(())
+    })
+    .unwrap();
+    t.tx(|t| Index::new(t, col).rebuild_caches().map(|_| ()))
+        .unwrap();
+    assert_eq!(t.derive_cfg(col, RWKV_FILL_KEY).unwrap(), None);
+    assert_eq!(table(&p), full);
+
+    // 比 6 更老的修订号照旧整层重建。
+    t.tx(|t| {
+        t.set_derive_cfg(col, RULES_KEY, Some(&(from - 1).to_string()))?;
+        Ok(())
+    })
+    .unwrap();
+    let v = t.tx(|t| cache_config_set(t, col, &caches)).unwrap();
+    assert_eq!(v["changed"], json!(true), "{v}");
+    assert_eq!(t.derive_cfg(col, RWKV_FILL_KEY).unwrap(), None);
+    assert_eq!(table(&p), full);
+}

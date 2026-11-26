@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4803 条。点号进各自文件。
+> 共 4804 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5532](bugs/BUG-5532-srs-rules7-full-rebuild-killed-loop.md) | ✅ | ✅ | 升级到缓存口径 7 后复习一直在加载：开库整层重建几分钟、切后台被杀就回滚重来 |
 | [BUG-5526](bugs/BUG-5526-srs-link-retired-root-writer.md) | ✅ | ✅ | 平板复习同步永远不采用电脑的集合：集合目录里退役旧根的写入者被当成成员，关联判成「已关联」 |
 | [BUG-5525](bugs/BUG-5525-rwkv-cold-start-full-replay.md) | ✅ | ✅ | RWKV 冷启动逐卡重放全部历史，复习页首开等十几二十秒 |
 | [BUG-5521](bugs/BUG-5521-windows-maximized-startup-teal-flash.md) | ✅ | ✅ | Windows：上次最大化关掉，下次启动先显示几秒青绿色空窗 |
