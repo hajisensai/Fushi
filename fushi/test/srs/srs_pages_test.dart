@@ -39,6 +39,15 @@ import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/srs/srs_card_autoplay.dart';
 import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show
+        FushiFloatingChromeController,
+        FushiFloatingChromeOverlay,
+        FushiFloatingChromeScope;
+import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart'
+    show FushiScrollAwayChrome;
+import 'package:fushi/src/utils/components/fushi_static_masthead.dart'
+    show FushiStaticMasthead;
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_poster_block.dart'
     show fushiPosterColors, fushiPosterHue;
@@ -481,6 +490,64 @@ void main() {
         await _unmount(tester);
       },
     );
+
+    testWidgets('[$ds] 首页页头大字与库页同一套：随滚动收缩、正文从页头底下穿过', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      await _addLapis(tester, store, '食べる');
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        size: const Size(420, 800),
+        page: const SrsDeckListPage(),
+      );
+      final Finder masthead = find.byType(FushiStaticMasthead);
+      expect(masthead, findsOneWidget);
+      // 与首页 / 库页同一套页头大字工具区，不再是「收起外壳 + 正文」竖排（大字
+      // 钉死不收、正文在页头下沿硬切）。
+      expect(
+        find.ancestor(
+          of: masthead,
+          matching: find.byType(FushiFloatingChromeOverlay),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.ancestor(
+          of: masthead,
+          matching: find.byType(FushiScrollAwayChrome),
+        ),
+        findsNothing,
+      );
+      // 正文铺到页头底下：主滚动区的顶边不低于页头顶边。
+      final Finder body = find
+          .descendant(
+            of: find.byType(SrsDeckListPage),
+            matching: find.byWidgetPredicate(
+              (Widget w) =>
+                  w is Scrollable &&
+                  axisDirectionToAxis(w.axisDirection) == Axis.vertical,
+            ),
+          )
+          .first;
+      expect(
+        tester.getTopLeft(body).dy,
+        lessThanOrEqualTo(tester.getTopLeft(masthead).dy),
+      );
+      final FushiFloatingChromeController chrome =
+          FushiFloatingChromeScope.maybeOf(tester.element(masthead))!;
+      expect(chrome.mastheadScrollOffset.value, 0);
+      await tester.drag(body, const Offset(0, -200));
+      await _settle(tester);
+      expect(
+        chrome.mastheadScrollOffset.value,
+        greaterThan(0),
+        reason: '滚动驱动页头大字收缩',
+      );
+      await _unmount(tester);
+    });
 
     testWidgets('[$ds] 牌组列表：空库给出「添加第一张卡」，加卡后显示新卡计数', (
       WidgetTester tester,
