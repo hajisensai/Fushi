@@ -453,8 +453,11 @@ class FushiMastheadGeometry {
       : math.max(_actionRowHeightAt(p), _titleRowHeightAt(p));
 
   /// 前导 / 动作组 / 主按钮共同的中线（相对面板顶）：各段按自己的高度以它
-  /// 垂直居中（主标题单独一行时在动作行里，否则见 [actionCenterLiftAt]）。
-  double actionCenterAt(double p) => stacked
+  /// 垂直居中。Apple 导航栏是动作行的中线（栏内居中，与主标题无关）；主标题
+  /// 单独一行时在动作行里；否则见 [actionCenterLiftAt]。
+  double actionCenterAt(double p) => apple
+      ? topPadAt(p) + _actionRowHeightAt(p) / 2
+      : stacked
       ? topPadAt(p) +
             _actionRowHeightAt(p) -
             (_actionHalfAt(p) + actionLiftAt(p))

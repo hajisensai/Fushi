@@ -181,6 +181,41 @@ void main() {
       }
     });
 
+    // Apple 导航栏的前导 / 动作 / 主按钮在栏行里垂直居中，不跟主标题的字面中心
+    // （窄窗大标题在栏下另起一行；宽窗常驻工具栏同一行居中）。
+    for (final bool compact in const <bool>[true, false]) {
+      test('Apple ${compact ? '窄窗' : '宽窗'}：动作在导航栏行内垂直居中', () {
+        final FushiMastheadGeometry g = FushiMastheadGeometry(
+          compact: compact,
+          stacked: compact,
+          apple: true,
+          width: compact ? 402 : 1400,
+          leading: const Size(44, 44),
+          title: const Size(120, 41),
+          titleBaseline: 9,
+          titleInkCenter: 21,
+          titleLineHeight: 41,
+          badge: Size.zero,
+          switcher: Size.zero,
+          switchBaseline: 0,
+          actions: const Size(96, 44),
+          primary: Size.zero,
+          secondary: Size.zero,
+        );
+        final double row = g.appleActionRowExtent;
+        for (final double p in const <double>[0, 0.5, 1]) {
+          expect(
+            g.actionCenterAt(p),
+            moreOrLessEquals(g.topPadAt(p) + row / 2, epsilon: 1e-6),
+          );
+          expect(
+            g.actionCenterAt(p) - g.actions.height / 2,
+            greaterThanOrEqualTo(g.topPadAt(p) - 1e-6),
+          );
+        }
+      });
+    }
+
     test('窄窗一级切换顶替页名：图标中线 = 切换大字的字面中心', () {
       final FushiMastheadGeometry g = geometry(compact: true, title: false);
       for (final double p in const <double>[0, 0.5, 1]) {
