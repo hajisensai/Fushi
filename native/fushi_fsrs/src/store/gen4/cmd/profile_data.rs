@@ -326,7 +326,7 @@ pub fn merge_marks(t: &Truth<'_>) -> Result<Vec<(String, Option<String>, Option<
 }
 
 /// 集合 [col] 的公钥表（全部设备，含本机身份：导入方按公钥验原生日志）。
-fn peers_of(t: &Truth<'_>, col: i64) -> Result<Vec<Peer>, String> {
+pub(super) fn peers_of(t: &Truth<'_>, col: i64) -> Result<Vec<Peer>, String> {
     let mut stmt = t
         .conn()
         .prepare_cached(super::fushisrs::PEERS_SQL)

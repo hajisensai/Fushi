@@ -139,6 +139,11 @@ pub fn wiring(op: &str) -> Option<Wiring> {
         | "profile_purge"
         | "profile_merge_commit" => Wired,
         "profile_merge_mark" => Removed(NO_P3_MERGE),
+        // 独立复习库并进共享复习库（组合阶段 5，`cmd/collection_merge.rs`；新代才有的命令）
+        "collection_merge_preview"
+        | "collection_merge"
+        | "collection_merges"
+        | "collection_merge_done" => Wired,
         // 同步一轮（G8-7，`cmd/sync.rs`）
         "location_root" | "plan" | "ingest" | "ingest_finish" | "outbox" | "outbox_ack"
         | "head" | "obsolete" | "retire" | "rotate" | "location_sealed" | "location_seal"
@@ -478,6 +483,24 @@ fn run(
             } else {
                 c.write_local(|t| cmd::profile_data::meta_set_edit(t, req))
             };
+        }
+        // 独立复习库并进共享复习库（`cmd/collection_merge.rs`）：`from` 的集合整个并进 `into`，两边按刷新键记的缓存
+        // 整份作废。预览与墓碑读是读快照；删墓碑只碰 `srs_meta`、不推进写入代数。
+        "collection_merge_preview" => {
+            return c.read(|t| cmd::collection_merge::collection_merge_preview(t, req));
+        }
+        "collection_merges" => return c.read(cmd::collection_merge::collection_merges),
+        "collection_merge_done" => {
+            return c.write_local(|t| cmd::collection_merge::collection_merge_done(t, req));
+        }
+        "collection_merge" => {
+            let v = write_binding(c, |t| cmd::collection_merge::collection_merge(t, req))?;
+            for k in ["from", "into"] {
+                if let Some(p) = req.get(k).and_then(Value::as_str) {
+                    c.refresh_invalidate(p);
+                }
+            }
+            return Ok(v);
         }
         // 半截并入的收尾：`from` 的集合并进 `to`（可能改绑 `to`），两边按刷新键记的缓存整份作废。
         "profile_merge_commit" => {

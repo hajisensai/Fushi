@@ -65,6 +65,20 @@ class ProfileDeletionSrsUnavailableException implements Exception {
   String toString() => 'ProfileDeletionSrsUnavailableException: $cause';
 }
 
+/// 要删的 Profile 承载着共享复习库（设计 §4.1：共享库的集合 uid 就是它的 `profiles.uid`，默认组合的
+/// `combo/srs_shared_uid` 指着它）：删了它，所有没拆出独立复习库的组合共用的那份复习就跟着没了——行删掉之后
+/// 备份 / 导出 / 同步按 `profiles` 找集合，也都找不到这份库。删除不做，Profile 原样保留（组合阶段 4）。
+class ProfileHostsSharedSrsLibraryException implements Exception {
+  const ProfileHostsSharedSrsLibraryException(this.profileId);
+
+  final int profileId;
+
+  @override
+  String toString() =>
+      'ProfileHostsSharedSrsLibraryException: profile $profileId hosts the '
+      'shared review library';
+}
+
 /// 删 Profile 的级联清理。
 abstract interface class ProfileDeletionCascade {
   /// [profile] 被删时会连带删掉的数据规模。复习库打不开时抛 [ProfileDeletionSrsUnavailableException]。

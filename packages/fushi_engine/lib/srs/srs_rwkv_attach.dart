@@ -37,6 +37,24 @@ Directory srsRwkvStateDir(
   }),
 );
 
+/// 删掉本机 [profileUid] 在**每一档**模型下的 RWKV 状态快照（`<档位目录>/rwkv-<uid>-*`，见 [srsRwkvStateDir]）：
+/// 那份复习库没了（删配置、并进共享库）之后调。只删当前档位会把切过档的另一档快照留成孤儿。
+Future<void> srsDeleteRwkvSnapshots(
+  Directory support,
+  String profileUid,
+) async {
+  final String prefix = 'rwkv-$profileUid-';
+  for (final SrsRwkvModelSize size in SrsRwkvModelSize.values) {
+    final Directory dir = srsRwkvStateDir(support, size);
+    if (!dir.existsSync()) continue;
+    await for (final FileSystemEntity e in dir.list(followLinks: false)) {
+      if (e is File && p.basename(e.path).startsWith(prefix)) {
+        await e.delete();
+      }
+    }
+  }
+}
+
 /// 设备的 RWKV 模型档位设置文件（`<support>/srs_rwkv/model_size`，内容是 [SrsRwkvModelSize.persistedName]）。
 /// 放在 support 目录而不是 app 偏好里：app 与无头服务端（fushi_server）读同一个位置、同一套规则。
 File srsRwkvModelSizeFile(Directory support) =>

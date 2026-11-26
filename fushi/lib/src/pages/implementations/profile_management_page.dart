@@ -23,9 +23,16 @@ import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/profile/combo/combo_migration_report_dialog.dart'
+    show showComboMigrationReportDialog;
+import 'package:fushi/src/profile/combo/combo_repository.dart'
+    show ComboMigrationReport;
 import 'package:fushi/src/profile/profile_deletion_cascade.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_library_merge_dialog.dart';
+import 'package:fushi/src/srs/srs_library.dart';
+import 'package:fushi/src/srs/srs_library_merge.dart';
 import 'package:fushi/src/settings/settings_schema_widgets.dart'
     show SettingsSectionFooter;
 import 'package:fushi/src/utils/misc/collection_exporter.dart';
@@ -80,7 +87,22 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
       ErrorLogService.instance.log('ProfileManagement.sweepOrphans', e, stack);
       return 0;
     });
+    // 「合并进共享复习库」内核已并完、组合还没恢复继承的（进程在两步之间被杀）：补做。
+    vm.finishPendingSrsLibraryMerges().catchError((Object e, StackTrace stack) {
+      ErrorLogService.instance.log(
+        'ProfileManagement.finishSrsLibraryMerges',
+        e,
+        stack,
+      );
+      return 0;
+    });
+    // 组合迁移报告（拍板台 design-combo-node-split）：迁移改写过存量配置时可在这里重看。
+    vm.comboMigrationReport().then((ComboMigrationReport? report) {
+      if (mounted && report != null) setState(() => _migrationReport = report);
+    });
   }
+
+  ComboMigrationReport? _migrationReport;
 
   @override
   Widget build(BuildContext context) {
@@ -106,6 +128,8 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
           children: [
             _buildCreateRow(vm),
             _buildImportRow(vm),
+            if (_migrationReport case final ComboMigrationReport report)
+              _buildMigrationReportRow(report),
             ..._buildProfileRows(uiState, vm),
           ],
         ),
@@ -204,12 +228,30 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
     );
   }
 
+  Widget _buildMigrationReportRow(ComboMigrationReport report) {
+    final bool cupertino = isCupertinoPlatform(context);
+    return AdaptiveSettingsRow(
+      key: const ValueKey<String>('profile_combo_migration_report_row'),
+      icon: cupertino ? CupertinoIcons.info : FushiIcons.info,
+      showIcon: true,
+      title: t.profile_combo_migration_view,
+      onTap: () => showComboMigrationReportDialog(context, report),
+    );
+  }
+
   // ---------------------------------------------------------------------------
   // Profile tiles
   // ---------------------------------------------------------------------------
 
   List<Widget> _buildProfileRows(ProfileUiState uiState, ProfileViewModel vm) {
     final isOnly = uiState.profiles.length <= 1;
+    // 拆出了独立复习库的组合（组合阶段 5）：行上多一个「合并进共享复习库」。
+    final Set<String> ownLibraries = <String>{
+      for (final SrsLibraryEntry e
+          in ref.watch(srsLibrariesProvider).valueOrNull?.entries ??
+              const <SrsLibraryEntry>[])
+        if (!e.shared) e.uid,
+    };
     final bool cupertino = isCupertinoPlatform(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return [
@@ -245,6 +287,16 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
                 tooltip: t.profile_copy,
                 onPressed: () => _showCopyDialog(vm, profile.id, profile.name),
               ),
+              if (ownLibraries.contains(profile.uid)) ...[
+                SizedBox(width: tokens.spacing.gap / 2),
+                _ProfileActionButton(
+                  key: ValueKey<String>('profile_merge_srs_${profile.id}'),
+                  materialIcon: Icons.merge_type,
+                  cupertinoIcon: CupertinoIcons.arrow_merge,
+                  tooltip: t.srs_library_merge_action,
+                  onPressed: () => _mergeSrsLibrary(vm, profile.id),
+                ),
+              ],
               SizedBox(width: tokens.spacing.gap / 2),
               _ProfileActionButton(
                 materialIcon: FushiIcons.rename,
@@ -348,6 +400,40 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
   // Dialogs
   // ---------------------------------------------------------------------------
 
+  /// 「合并进共享复习库」（组合阶段 5）：先读预览（冲突表），再弹确认框；合并在框里跑。
+  Future<void> _mergeSrsLibrary(ProfileViewModel vm, int id) async {
+    final SrsLibraryMergePlan? plan;
+    try {
+      plan = await vm.srsLibraryMergePlan(id);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ProfileManagement.mergePlan', e, stack);
+      FushiToast.show(
+        msg: _srsMergeErrorText(e),
+        toastLength: Toast.LENGTH_LONG,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    if (plan == null || !mounted) return;
+    final SrsMergeResult? result = await showSrsLibraryMergeDialog(
+      context,
+      plan: plan,
+      run: (Map<String, SrsMergeChoice> r) =>
+          vm.mergeSrsLibraryIntoShared(plan!, r),
+      errorText: (Object e) {
+        ErrorLogService.instance.log('ProfileManagement.mergeSrsLibrary', e);
+        return _srsMergeErrorText(e);
+      },
+    );
+    if (result != null) FushiToast.show(msg: t.srs_library_merge_done);
+  }
+
+  static String _srsMergeErrorText(Object e) => switch (e) {
+    SrsLibraryMergeStaleException() => t.srs_library_merge_stale,
+    SrsLibraryMergeUnavailableException() => t.srs_library_merge_unavailable,
+    _ => t.srs_library_merge_failed,
+  };
+
   Future<void> _showCreateDialog(ProfileViewModel vm) async {
     final name = await showAppDialog<String>(
       context: context,
@@ -407,12 +493,15 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
     // 不能让异常逃出按钮回调（那样确认框不弹、什么提示都没有，BUG-5275）：复习库打不开时确认框照弹、写明原因、
     // 删除按钮不可点；其余失败给提示。
     ProfileDeletionImpact impact = const ProfileDeletionImpact.none();
-    bool srsUnavailable = false;
+    String? blockedReason;
     try {
       impact = await vm.deletionImpact(id);
+    } on ProfileHostsSharedSrsLibraryException {
+      // 承载共享复习库（组合阶段 4）：不是错误，确认框写明为什么不能删。
+      blockedReason = t.profile_delete_hosts_shared_srs_library;
     } on ProfileDeletionSrsUnavailableException catch (e, stack) {
       ErrorLogService.instance.log('ProfileManagement.deleteImpact', e, stack);
-      srsUnavailable = true;
+      blockedReason = t.profile_delete_srs_unavailable;
     } catch (e, stack) {
       ErrorLogService.instance.log('ProfileManagement.deleteImpact', e, stack);
       FushiToast.show(
@@ -427,7 +516,7 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
       builder: (ctx) => ProfileDeleteDialog(
         profileName: name,
         impact: impact,
-        blockedReason: srsUnavailable ? t.profile_delete_srs_unavailable : null,
+        blockedReason: blockedReason,
         onConfirm: () => Navigator.pop(ctx, true),
       ),
     );
@@ -435,6 +524,13 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
     final ProfileDeletionOutcome? outcome;
     try {
       outcome = await vm.deleteProfile(id);
+    } on ProfileHostsSharedSrsLibraryException {
+      FushiToast.show(
+        msg: t.profile_delete_hosts_shared_srs_library,
+        toastLength: Toast.LENGTH_LONG,
+        severity: ToastSeverity.error,
+      );
+      return;
     } on ProfileDeletionSrsUnavailableException catch (e, stack) {
       // 确认之后复习库才变得打不开（例如别的窗口开始升级）：删除已中止，Profile 原样保留。
       ErrorLogService.instance.log('ProfileManagement.delete', e, stack);
@@ -544,6 +640,7 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
 
 class _ProfileActionButton extends StatelessWidget {
   const _ProfileActionButton({
+    super.key,
     required this.materialIcon,
     required this.cupertinoIcon,
     required this.tooltip,

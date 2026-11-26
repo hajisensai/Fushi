@@ -1458,6 +1458,18 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
     profileSettings,
   )..where((t) => t.profileId.equals(profileId))).get();
 
+  /// 所有 Profile 在 ([category], [key]) 这一行上的值：Profile id → value（没有这一行的
+  /// Profile 不在结果里）。组合格式检测（`combo/role`）用它一次查全库，不逐个读整份快照。
+  Future<Map<int, String>> profileSettingValuesOf(
+    String category,
+    String key,
+  ) async => <int, String>{
+    for (final ProfileSettingRow r in await (select(
+      profileSettings,
+    )..where((t) => t.category.equals(category) & t.key.equals(key))).get())
+      r.profileId: r.value,
+  };
+
   Future<void> upsertProfileSetting(ProfileSettingsCompanion s) =>
       into(profileSettings).insert(
         s,
@@ -1542,6 +1554,10 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
   )..where((t) => t.languageTag.equals(languageTag))).go();
 
   // ── book profiles ────────────────────────────────────────────────
+  /// 全部作品级配置绑定（组合迁移报告统计「某组合挂在多少部作品上」用）。
+  Future<List<BookProfileRow>> getAllBookProfiles() =>
+      select(bookProfiles).get();
+
   Future<BookProfileRow?> getBookProfile(String bookKey) => (select(
     bookProfiles,
   )..where((t) => t.bookKey.equals(bookKey))).getSingleOrNull();

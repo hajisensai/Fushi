@@ -1,12 +1,13 @@
 /// 「组合」的仓库层（拍板台 design-combo-node-split，阶段 2）：读写 `profile_settings` 里的
 /// 组合行、按绑定层组装并解析生效值。
 ///
-/// * 默认组合 = 激活配置（`active_profile_id`），它的真值是 live 表（偏好 / Anki / 词典元数据），
-///   由 [ComboRepository.new] 的 `liveSettings` 现读——与切走时 `snapshotCurrentSettings`
-///   写进快照的是同一份。
+/// * 解析的底 = 激活配置（`active_profile_id`）此刻的生效值，即 live 表（偏好 / Anki / 词典
+///   元数据），由 [ComboRepository.new] 的 `liveSettings` 现读。阶段 3 迁移后持久化的默认组合是
+///   `combo/role = default` 那一份（[ComboRepository.defaultComboId]）；激活配置是别的组合时，
+///   live = 默认组合 + 它的拆分（`ProfileRepository.applyProfile`），绑定层照样以 live 为底。
 /// * 其他 Profile 有两种行格式（[decodeComboRows]）：
 ///   - 组合格式（有 `combo/role` 行）：只存被拆叶子，按行解码；
-///   - 存量整份快照（阶段 3 迁移前的全部 Profile）：**读时**按
+///   - 存量整份快照（阶段 3 迁移前的全部 Profile；默认组合不是激活配置时同样是全量）：**读时**按
 ///     [diffAgainstDefaults] 化成相对默认组合的差异。单层时与旧版「整包取这份快照」的生效值
 ///     逐键一致（与默认相同的叶子取默认 = 同一个值；不同的叶子取快照），多层时每个叶子各自
 ///     往下找，媒体类型 / 语言层不再整包切换。阶段 3 把这份差异一次性落库后就不再走这条。
@@ -24,9 +25,11 @@ import 'package:fushi_engine/profile/combo/settings_tree.dart';
 
 import 'package:fushi/src/profile/combo/fushi_settings_tree.dart';
 
+export 'package:fushi_engine/profile/combo/combo_migration.dart';
 export 'package:fushi_engine/profile/combo/combo_resolver.dart';
 export 'package:fushi_engine/profile/combo/combo_rows.dart';
 export 'package:fushi_engine/profile/combo/settings_tree.dart';
+export 'package:fushi_engine/profile/combo/combo_srs_library.dart';
 
 /// 读激活配置（默认组合）此刻的全量设置；[categories] 非 null 时只读这些 category。
 typedef ComboLiveSettingsReader =
@@ -87,7 +90,7 @@ class ComboRepository {
   /// [profileId] 的全部 `profile_settings` 行（只按 [categories] 过滤，null = 全部）。
   /// 存量快照里的旧 category（`dictionary` / `reader`）换成今天落到的 pref 键；与新式行
   /// 撞键时新式行优先（与 `applyProfile` 的旧 category 分支同一映射）。
-  Future<Map<SettingKey, String>> _rowsOf(
+  Future<Map<SettingKey, String>> rowsOf(
     int profileId, {
     Set<String>? categories,
   }) async {
@@ -108,9 +111,23 @@ class ComboRepository {
     return <SettingKey, String>{...legacy, ...modern};
   }
 
+  /// 默认组合（有 `combo/role = default` 行的那份）的 id；还没迁移成组合格式（全是存量整份
+  /// 快照）时 null。坏状态下有多份时取 id 最小的（下一次归一会把其余降级）。
+  Future<int?> defaultComboId() async {
+    int? found;
+    for (final MapEntry<int, String> e in (await _db.profileSettingValuesOf(
+      kComboSyntheticCategory,
+      kComboRoleKey,
+    )).entries) {
+      if (e.value != ComboRole.defaults.wire) continue;
+      if (found == null || e.key < found) found = e.key;
+    }
+    return found;
+  }
+
   /// [profileId] 的行是否已是组合格式。
   Future<bool> isComboFormat(int profileId) async =>
-      decodeComboRows(tree, await _rowsOf(profileId)).isComboFormat;
+      decodeComboRows(tree, await rowsOf(profileId)).isComboFormat;
 
   /// [profileId] 相对默认组合 [defaults] 的差异文档。组合格式按行解码；存量快照读时 diff
   /// （见库文档）。
@@ -121,9 +138,9 @@ class ComboRepository {
   }) async {
     final DecodedComboRows decoded = decodeComboRows(
       tree,
-      await _rowsOf(profileId, categories: categories),
+      await rowsOf(profileId, categories: categories),
     );
-    if (_isSplitDocument(decoded)) return decoded.document;
+    if (isSplitDocument(decoded)) return decoded.document;
     // 存量快照，或已不是激活配置的默认组合（全量值）：读时 diff。
     return diffAgainstDefaults(
       tree: tree,
@@ -217,15 +234,15 @@ class ComboRepository {
     // 默认组合的当前值在事务外读：live 设置的读取方（Anki 设置存储）不一定走这个库的事务。
     // 只有组合格式的自动拆分要用它。
     final ResolvedSettings? effective =
-        _isSplitDocument(decodeComboRows(tree, await _rowsOf(profileId)))
+        isSplitDocument(decodeComboRows(tree, await rowsOf(profileId)))
         ? resolveCombos(tree: tree, defaults: await _liveSettings())
         : null;
     await _db.transaction(() async {
       final DecodedComboRows decoded = decodeComboRows(
         tree,
-        await _rowsOf(profileId),
+        await rowsOf(profileId),
       );
-      if (!_isSplitDocument(decoded)) {
+      if (!isSplitDocument(decoded)) {
         for (final MapEntry<SettingKey, String?> e in changes.entries) {
           final String? value = e.value;
           if (value == null) {
@@ -265,8 +282,28 @@ class ComboRepository {
     });
   }
 
+  /// 撤掉非默认组合 [profileId] 在节点 [nodeId]（叶子或子组）上的拆分（「恢复继承」），事务内整份落库。
+  /// 返回真的撤掉了拆分；不是组合格式的差异文档（默认组合 / 存量快照）或那里本来就在继承时什么都不改、返回 false。
+  /// 组合阶段 5 「合并进共享库」之后撤 `srs.library` 走这里；阶段 6 编辑页的「恢复继承」同一个口。
+  Future<bool> restoreInheritanceOf(int profileId, String nodeId) =>
+      _db.transaction(() async {
+        final DecodedComboRows decoded = decodeComboRows(
+          tree,
+          await rowsOf(profileId),
+        );
+        if (!isSplitDocument(decoded)) return false;
+        final ComboDocument next = restoreInheritance(
+          tree: tree,
+          document: decoded.document,
+          nodeId: nodeId,
+        );
+        if (next.splits.length == decoded.document.splits.length) return false;
+        await saveDocument(profileId, next, role: decoded.role!);
+        return true;
+      });
+
   /// 行是「只存被拆叶子」的差异文档（非默认角色的组合格式）。存量快照与默认组合存全量值，
   /// 改行即可。
-  static bool _isSplitDocument(DecodedComboRows decoded) =>
+  static bool isSplitDocument(DecodedComboRows decoded) =>
       decoded.isComboFormat && decoded.role != ComboRole.defaults;
 }

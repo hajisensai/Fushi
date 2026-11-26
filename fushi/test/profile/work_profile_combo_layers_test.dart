@@ -4,6 +4,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/profile/combo/combo_repository.dart';
 import 'package:fushi/src/profile/combo/fushi_settings_tree.dart';
+import 'package:fushi/src/profile/combo/srs_library_resolver.dart';
 import 'package:fushi/src/profile/profile_keys.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
@@ -69,10 +70,25 @@ void main() {
         ),
       );
 
-  /// 存量 Profile：整份快照此刻的 live 设置（新建配置的同一条路）。
+  /// 存量 Profile：整份快照此刻的 live 设置，没有 `combo/role` 行（组合迁移前的格式）。迁移
+  /// （视图模型首次装载时的 `ensureDefaultProfile`）之后库里不再产生这种行，只会由旧备份恢复 /
+  /// 合并导入带进来、到下一次归一前存在；读写路径对它们照旧逐叶子解析（读时 diff）。组合格式
+  /// 的同类场景见 `combo_migration_test.dart` / `combo_repository_test.dart`。
   Future<int> legacyProfile(String name) async {
-    final int id = await repo.createProfile(name);
-    await repo.snapshotCurrentSettings(id);
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    final int id = await db.insertProfile(
+      ProfilesCompanion.insert(name: name, createdAt: now, updatedAt: now),
+    );
+    await db.replaceProfileSettings(id, <ProfileSettingsCompanion>[
+      for (final MapEntry<SettingKey, String> e
+          in (await repo.currentSettings()).entries)
+        ProfileSettingsCompanion.insert(
+          profileId: id,
+          category: e.key.category,
+          key: e.key.key,
+          value: e.value,
+        ),
+    ]);
     return id;
   }
 
@@ -142,7 +158,6 @@ void main() {
     expect(session.sourceProfileIdOf(FushiComboNode.appearanceTheme), mediaId);
     expect(session.sourceProfileIdOf(FushiComboNode.appearanceFonts), langId);
     expect(session.sourceProfileIdOf(FushiComboNode.appearanceSubtitles), null);
-    expect(session.miningProfileId, langId, reason: '牌组来自语言层');
     expect(scope.ankiOverrides?['selectedDeckName'], 'JP');
   });
 
@@ -254,35 +269,41 @@ void main() {
     );
   });
 
-  test('复习落点：笔记类型是绑定配置自建的、牌组用默认时落那份配置的副本', () async {
+  test('复习库（组合阶段 4）：绑定层没拆 srs.library 时制卡落共享库，拆成独立库时落那份', () async {
+    // 绑定的配置自建了笔记类型：共享库里同样认得它，不再为它换一份副本（阶段 2 的过渡规则已删）。
     await put(
       mediaId,
       ProfileKeys.categoryPref,
       'srs_mining_note_type_id',
       PrefCodec.encode('nt-manga'),
     );
+    final String shared = await db.profileUidOf(defaultId);
     await openManga();
     expect(
-      scope.active!.sourceProfileIdOf(FushiComboNode.miningDeck),
-      langId,
-      reason: 'Anki 牌组名来自语言层，复习牌组 id 仍是默认（空）',
+      await resolveSrsLibraryUid(db, layers: scope.active!.layers),
+      shared,
     );
-    expect(scope.active!.miningProfileId, mediaId, reason: '自建笔记类型只在媒体类型那份副本里');
     vm.leaveWorkSession(reader);
 
-    // 都没选过具体 id：取两个落点叶子来源里优先级最高的层。
-    await db.deleteProfileSetting(
+    // 媒体类型层的组合拆出独立复习库：漫画里制卡落它自己那份。
+    await repo.combos.saveDocument(
       mediaId,
-      ProfileKeys.categoryPref,
-      'srs_mining_note_type_id',
+      ComboDocument(<String, Map<SettingKey, String>>{
+        FushiComboNode.srsLibrary: <SettingKey, String>{
+          const SettingKey(kComboSyntheticCategory, kComboSrsLibraryKey):
+              kComboSrsLibraryOwn,
+        },
+      }),
     );
     await openManga();
-    expect(scope.active!.miningProfileId, langId);
+    expect(
+      await resolveSrsLibraryUid(db, layers: scope.active!.layers),
+      await db.profileUidOf(mediaId),
+    );
     vm.leaveWorkSession(reader);
 
-    // 没有任何落点叶子来自绑定层：落激活副本。
-    await openManga(language: null);
-    expect(scope.active!.miningProfileId, isNull);
+    // 没有绑定层：落激活配置解析出的库（默认组合 = 共享库）。
+    expect(await resolveSrsLibraryUid(db), shared);
   });
 
   test('弹窗进程按发布的多层值镜像出同一份生效值', () async {
