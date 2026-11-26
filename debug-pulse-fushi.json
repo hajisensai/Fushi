@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-26T12:25:07Z",
+ "generatedAt": "2026-11-26T12:35:13Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "4703f7a06bb5b923d8b06f794ec4efd50dbb64b9",
-  "seq": 32770
+  "sha": "cdeb48c0e8e20d091e34ce0b16c3573ac7d29841",
+  "seq": 32772
  },
  "builds": [
   {
@@ -12,8 +12,8 @@
    "version": "3.4.0",
    "sha": "2704c408960f91bd1baf43eb986d24b1566b0064",
    "unknown": false,
-   "publishedAt": "2026-11-26T12:24:46Z",
-   "testflight": false,
+   "publishedAt": "2026-11-26T12:34:54Z",
+   "testflight": true,
    "baseSeq": 32753,
    "prs": [],
    "direct": [
@@ -60,16 +60,13 @@
      "state": "ok"
     },
     "windows": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45810084399"
+     "state": "ok"
     },
     "macos": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45810084399"
+     "state": "ok"
     },
     "ios": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45810084399"
+     "state": "ok"
     }
    }
   },
@@ -191,7 +188,7 @@
    "unknown": false,
    "publishedAt": "2026-11-26T06:36:59Z",
    "testflight": true,
-   "baseSeq": 32678,
+   "baseSeq": 32559,
    "prs": [],
    "direct": [
     {
@@ -237,35 +234,7 @@
     {
      "sha": "b876b0196f238627203c3da06d4a59ef3a74ee6e",
      "subject": "chore(bugs): settle BUG number collisions on 34ae43883"
-    }
-   ],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
     },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "failed",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45753369622"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
-  },
-  {
-   "seq": 32678,
-   "version": "3.4.0",
-   "sha": "34ae43883e0a27f2676b7a49555df6a6f6500279",
-   "unknown": false,
-   "publishedAt": "2026-11-25T22:03:31Z",
-   "testflight": true,
-   "baseSeq": 32559,
-   "prs": [],
-   "direct": [
     {
      "sha": "34ae43883e0a27f2676b7a49555df6a6f6500279",
      "subject": "style: dart format 两份 gal 守卫测试"
@@ -446,14 +415,14 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45700789912"
+     "state": "ok"
     },
     "windows": {
      "state": "ok"
     },
     "macos": {
-     "state": "ok"
+     "state": "failed",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45753369622"
     },
     "ios": {
      "state": "ok"
@@ -462,10 +431,14 @@
   }
  ],
  "pending": {
-  "headSha": "4703f7a06bb5b923d8b06f794ec4efd50dbb64b9",
-  "headSeq": 32770,
+  "headSha": "cdeb48c0e8e20d091e34ce0b16c3573ac7d29841",
+  "headSeq": 32772,
   "prs": [],
   "direct": [
+   {
+    "sha": "cdeb48c0e8e20d091e34ce0b16c3573ac7d29841",
+    "subject": "Merge PR #4505"
+   },
    {
     "sha": "4703f7a06bb5b923d8b06f794ec4efd50dbb64b9",
     "subject": "chore(bugs): settle BUG number collisions on 2704c4089"
