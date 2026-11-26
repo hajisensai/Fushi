@@ -747,4 +747,17 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '系统': 'System',
   '收起侧边栏': 'Collapse sidebar',
   '展开侧边栏': 'Expand sidebar',
+  // 路径框「浏览…」目录选择器
+  '浏览…': 'Browse…',
+  '选择文件夹': 'Choose a folder',
+  '选择文件': 'Choose a file',
+  '上一级': 'Up one level',
+  '输入路径后按回车': 'Type a path and press Enter',
+  '选择': 'Select',
+  '打不开：{0}': 'Cannot open: {0}',
+  '路径不存在，已打开最近的上级目录':
+      'That path does not exist; opened the nearest existing parent folder',
+  '只显示前 {0} 项': 'Showing the first {0} entries',
+  '这里是空的': 'This folder is empty',
+  '这里没有子文件夹': 'No subfolders here',
 };

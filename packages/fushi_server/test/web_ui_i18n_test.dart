@@ -34,7 +34,7 @@ List<String> _pageKeys() {
     if (_cjk.hasMatch(t)) keys.add(t);
   }
   for (final Match m in RegExp(
-    r'(?:placeholder|title)="([^"]*)"',
+    r'(?:placeholder|title|aria-label)="([^"]*)"',
   ).allMatches(markup)) {
     if (_cjk.hasMatch(m.group(1)!)) keys.add(m.group(1)!);
   }

@@ -119,6 +119,15 @@ main .card .empty-state{background:none;padding:16px 8px}
 .bytes-ctl{display:flex;gap:8px;min-width:0}
 .bytes-ctl > input{flex:1 1 auto;min-width:0}
 .bytes-ctl > .fgs,.bytes-ctl > select{flex:0 0 104px}
+/* 路径框 +「浏览…」按钮；目录选择对话框 */
+.path-ctl{display:flex;gap:8px;align-items:center;min-width:0}
+.path-ctl > input{flex:1 1 auto;min-width:0}
+.path-ctl > .icon-button{flex:none}
+.fs-dialog{width:min(600px,calc(100vw - 32px));max-width:none}
+.fs-dialog > h2{margin:0 0 12px}
+.fs-list{max-height:min(52vh,440px);overflow-y:auto;margin-top:12px}
+.fs-list .setting-copy strong{overflow-wrap:anywhere}
+.fs-dialog .note{margin:8px 4px 0}
 .kind-hint{color:var(--md-sys-color-on-surface-variant);font-weight:400}
 /* 「需要处理」 */
 .attn .setting-row{cursor:pointer}
@@ -219,7 +228,7 @@ main{grid-column:1;padding:4px 16px 48px}
 <div class="setting-list is-surface" id="libs"><div class="skeleton"></div><div class="skeleton"></div></div>
 <div class="card"><h2 class="kit-title-medium">添加</h2>
 <div class="form-grid">
-<label class="field is-wide">路径<input type="text" id="lib-path" placeholder="/srv/media/anime"></label>
+<label class="field is-wide">路径<div class="path-ctl"><input type="text" id="lib-path" placeholder="/srv/media/anime" spellcheck="false"><button class="icon-button" type="button" data-browse="lib-path" title="浏览…" aria-label="浏览…"><span class="msr-slot" data-fushi-icon="folder_open"></span></button></div></label>
 <div class="field is-wide">类型<div class="segmented" id="lib-kind" role="radiogroup">
 <label><input type="radio" name="lib-kind" value="video" checked><span><span class="msr-slot" data-fushi-icon="movie"></span>视频</span></label>
 <label><input type="radio" name="lib-kind" value="book"><span><span class="msr-slot" data-fushi-icon="book"></span>书</span></label>
@@ -401,6 +410,11 @@ main{grid-column:1;padding:4px 16px 48px}
 </div>
 <dialog class="kit-dialog" id="dlg"><div class="kit-dialog-icon"><span class="msr-slot" data-fushi-icon="help" data-fushi-icon-size="24"></span></div><p class="kit-dialog-body" id="dlg-msg"></p>
 <div class="kit-dialog-actions"><button class="plain-button" id="dlg-no" type="button">取消</button><button class="primary-button" id="dlg-ok" type="button">确定</button></div></dialog>
+<dialog class="kit-dialog fs-dialog" id="fs-dlg" aria-labelledby="fs-title"><h2 class="kit-title-medium" id="fs-title">选择文件夹</h2>
+<div class="path-ctl"><button class="icon-button" type="button" id="fs-up" title="上一级" aria-label="上一级"><span class="msr-slot" data-fushi-icon="arrow_upward"></span></button><input type="text" id="fs-path" aria-label="路径" placeholder="输入路径后按回车" spellcheck="false"></div>
+<p class="note" id="fs-note" hidden></p>
+<div class="setting-list fs-list" id="fs-list" role="listbox" aria-labelledby="fs-title"></div>
+<div class="kit-dialog-actions"><button class="plain-button" id="fs-no" type="button">取消</button><button class="primary-button" id="fs-ok" type="button">选择</button></div></dialog>
 <div class="toast is-floating" id="toast" role="status" aria-live="polite"></div>
 __FUSHI_KIT_BODY__
 <script>
@@ -414,7 +428,7 @@ function translateStatic(root){
   if (LANG !== 'en') return;
   const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   for (let n = w.nextNode(); n; n = w.nextNode()){ const k = n.data.trim(); if (k && EN[k]) n.data = n.data.replace(k, EN[k]); }
-  root.querySelectorAll('[placeholder],[title]').forEach(el=>{ for (const a of ['placeholder','title']){ const v = el.getAttribute(a); if (v && EN[v]) el.setAttribute(a, EN[v]); } });
+  root.querySelectorAll('[placeholder],[title],[aria-label]').forEach(el=>{ for (const a of ['placeholder','title','aria-label']){ const v = el.getAttribute(a); if (v && EN[v]) el.setAttribute(a, EN[v]); } });
 }
 translateStatic(document.body);
 const $ = (s) => document.querySelector(s);
@@ -441,6 +455,62 @@ function ask(msg, danger){
     d.showModal(); $('#dlg-no').focus();
   });
 }
+// 路径框「浏览…」：服务端目录选择器（GET fs/browse，只列名字）。目录点进去；文件模式下单击选中、
+// 双击 / Enter 确认。路径框照样能手打 / 粘贴；对话框顶上的路径框回车直接跳转。
+const browseBtn = (target, files) => `<button class="icon-button" type="button" data-browse="${esc(target)}"${files?' data-browse-files="1"':''} title="${esc(T('浏览…'))}" aria-label="${esc(T('浏览…'))}">${icon('folder_open')}</button>`;
+const pathCtl = (id, v, files) => `<div class="path-ctl"><input type="text" id="${id}" value="${esc(v??'')}" spellcheck="false">${browseBtn(id, files)}</div>`;
+function pickPath(initial, files){
+  const d=$('#fs-dlg'), list=$('#fs-list'), note=$('#fs-note'), inp=$('#fs-path'), ok=$('#fs-ok'), up=$('#fs-up');
+  $('#fs-title').textContent = files ? T('选择文件') : T('选择文件夹');
+  let cur=null, chosen=null, seq=0;
+  const sync = () => { ok.disabled = files ? !chosen : !(cur && cur.path); };
+  const mark = () => list.querySelectorAll('[data-fs]').forEach(el=>{ const on = !!chosen && cur.entries[+el.dataset.fs]===chosen; el.classList.toggle('is-selected', on); el.setAttribute('aria-selected', on?'true':'false'); });
+  const showNote = (text, err) => { note.textContent=text; note.hidden=!text; note.classList.toggle('err-text', !!err); };
+  // seq：连点目录时只认最后一次请求的回包。
+  const open = async (path) => {
+    const my = ++seq;
+    let r;
+    try { r = await api('fs/browse?path='+encodeURIComponent(path||'')+(files?'&files=1':'')); }
+    catch(e){ if(my===seq) showNote(T('打不开：{0}', e.message), true); return; }
+    if (my!==seq) return;
+    const hadFocus = list.contains(document.activeElement);
+    cur = r; chosen = r.selected ? (r.entries.find(x=>!x.dir && x.name===r.selected) || null) : null;
+    inp.value = r.path; up.disabled = r.parent==null;
+    const msgs = [];
+    if (r.fellBack) msgs.push(T('路径不存在，已打开最近的上级目录'));
+    if (r.truncated) msgs.push(T('只显示前 {0} 项', r.entries.length));
+    showNote(msgs.join(' · '), false);
+    list.innerHTML = r.entries.map((x,i)=>`<div class="setting-row is-clickable" data-fs="${i}" tabindex="0" role="option" aria-selected="false"><div class="list-lead">${icon(r.path===''?'dns':(x.dir?'folder':'receipt_long'))}</div><div class="setting-copy"><strong>${esc(x.name)}</strong></div>${x.dir?icon('chevron','chev'):''}</div>`).join('') || empty(files?T('这里是空的'):T('这里没有子文件夹'), 'folder');
+    mark(); list.scrollTop = 0;
+    const sel = list.querySelector('.is-selected'); if (sel) sel.scrollIntoView({block:'nearest'});
+    if (hadFocus){ const first = sel || list.querySelector('[data-fs]'); (first || inp).focus(); }
+    sync();
+  };
+  const entryOf = (e) => { const el = e.target.closest('[data-fs]'); return el && cur ? cur.entries[+el.dataset.fs] : null; };
+  const activate = (x, confirm) => { if (x.dir){ open(x.path); return; } chosen = x; mark(); sync(); if (confirm) ok.click(); };
+  list.onclick = (e) => { const x = entryOf(e); if (x) activate(x, false); };
+  list.ondblclick = (e) => { const x = entryOf(e); if (x && !x.dir) activate(x, true); };
+  list.onkeydown = (e) => { const x = entryOf(e); if (x && (e.key==='Enter' || e.key===' ')){ e.preventDefault(); activate(x, e.key==='Enter'); } else if (e.key==='Backspace' && cur && cur.parent!=null){ e.preventDefault(); open(cur.parent); } };
+  inp.onkeydown = (e) => { if (e.key==='Enter'){ e.preventDefault(); open(inp.value.trim()); } };
+  up.onclick = () => { if (cur && cur.parent!=null) open(cur.parent); };
+  list.innerHTML = '<div class="skeleton"></div>'; showNote('', false); ok.disabled = true; up.disabled = true; inp.value = initial || '';
+  return new Promise((resolve)=>{
+    const done = (v) => { seq++; d.onclose=null; ok.onclick=null; $('#fs-no').onclick=null; if (d.open) d.close(); resolve(v); };
+    ok.onclick = () => { if (!ok.disabled) done(files ? chosen.path : cur.path); };
+    $('#fs-no').onclick = () => done(null); d.onclose = () => done(null);
+    d.showModal(); inp.focus(); open(initial);
+  });
+}
+// 所有带 data-browse 的按钮（静态的库路径框、设置页动态渲染的文件框）共用一个委托：选完写回目标框并
+// 发 input / change，设置页的「未保存」计数照常更新。
+document.addEventListener('click', guard(async (e)=>{
+  const b = e.target.closest('[data-browse]'); if (!b) return;
+  e.preventDefault();
+  const el = $('#'+b.dataset.browse); if (!el) return;
+  const v = await pickPath(el.value.trim(), b.dataset.browseFiles==='1');
+  if (v==null) return;
+  el.value = v; el.dispatchEvent(new Event('input', {bubbles:true})); el.dispatchEvent(new Event('change', {bubbles:true})); el.focus();
+}));
 const REASON_TEXT = {not_running:T('互联服务没在运行'), no_reachable_address:T('没有能放进链接的地址：配对链接只收 HTTPS 地址或 P2P 隧道。请开启 TLS、在「设置 › 远程访问」填写 HTTPS 公网地址，或开启 P2P 隧道'), disabled:T('订阅已停用，请先启用'), unrecognized:T('无法识别这个站点：可以粘贴它的解析规则后再添加'), timedOut:T('站点响应超时'), ruleRequestFailed:T('按解析规则打不开站点的搜索页：请检查地址，或登录 Cookie 是否已过期'), ruleMatchedNothing:T('按解析规则在搜索页上没解析出任何结果：请检查规则里的选择器，或站点是否需要登录 Cookie'), invalidUrl:T('地址无效'), insecureHttp:T('这是明文 HTTP 地址：请改用 HTTPS，或勾选「允许明文 HTTP」')};
 async function api(path, opts){
   const r = await fetch('/api/admin/'+path, Object.assign({headers:{'Content-Type':'application/json'}}, opts||{}));
@@ -1115,8 +1185,8 @@ const FIELDS = [
   ['subtitleLanguage',T('字幕语言'),'choice:subtitleLanguage','media'],['metadataLocale',T('刮削资料语言（BCP-47，如 ja / zh-CN）'),'choice:metadataLocale','media'],
   ['scanScrape',T('扫描后自动补刮视频资料'),'bool','media'],['tmdbApiKey',T('TMDB API key（服务端没有内置 key，不填则 TMDB 不可用）'),'secret:tmdbApiKeySet','media'],['scanPrune',T('扫描后清理文件已消失的视频条目'),'bool','media'],['uploadQuotaBytes',T('上传配额'),'bytes','media'],
   ['profileTransfer',T('允许已配对设备推送 / 拉取配置文件（Profile）'),'bool','access'],['remoteUpdate',T('允许已配对设备远程更新本服务端（仅发布包；装完退出码 10，由服务管理器重启）'),'bool','access'],['leaderboardLink',T('允许「我的设备」跟随本机 Fushi 排行榜账户自动登录'),'bool','access'],['lookupChineseScriptVariants',T('中文查词简繁互查（只管不自带开关的浏览器扩展 / 旧客户端；新版 app 用自己的开关）'),'bool','access'],
-  ['ffmpeg',T('ffmpeg 路径（空=PATH）'),'text','tools'],['ffprobe',T('ffprobe 路径（空=PATH）'),'text','tools'],['onnxruntimeLibrary',T('onnxruntime 动态库'),'text','tools'],
-  ['torrent.engine',T('torrent 引擎'),'select:auto,embedded,qbittorrent','downloads'],['torrent.library',T('内置引擎库路径（空=随包/系统）'),'text','downloads'],['torrent.listen',T('libtorrent 监听接口'),'text','downloads'],
+  ['ffmpeg',T('ffmpeg 路径（空=PATH）'),'file','tools'],['ffprobe',T('ffprobe 路径（空=PATH）'),'file','tools'],['onnxruntimeLibrary',T('onnxruntime 动态库'),'file','tools'],
+  ['torrent.engine',T('torrent 引擎'),'select:auto,embedded,qbittorrent','downloads'],['torrent.library',T('内置引擎库路径（空=随包/系统）'),'file','downloads'],['torrent.listen',T('libtorrent 监听接口'),'text','downloads'],
   ['torrent.uploadEnabled',T('允许上传 / 做种（关 = 不给任何 peer 上传，已完成的种子暂停做种）'),'bool','downloads'],['torrent.uploadLimitKbps',T('上传限速 KB/s（0 = 不限）'),'number','downloads'],['torrent.downloadLimitKbps',T('下载限速 KB/s（0 = 不限）'),'number','downloads'],['torrent.limitLocalPeers',T('限速也作用于局域网 peer'),'bool','downloads'],['torrent.maxActiveDownloads',T('同时下载的种子数（-1 = 不限，0 = libtorrent 默认 3）'),'number','downloads'],['torrent.maxActiveSeeds',T('同时做种的种子数（-1 = 不限，0 = libtorrent 默认 5）'),'number','downloads'],['torrent.maxConnections',T('最大连接数（0 = 按内存自动推导）'),'number','downloads'],['torrent.seedRatioLimit',T('分享率上限（0 = 不限；开上传时生效）'),'number','downloads'],['torrent.seedTimeLimitMinutes',T('做种时长上限 分钟（0 = 不限；开上传时生效）'),'number','downloads'],
   ['qbittorrent.url',T('qBittorrent WebUI 地址'),'text','downloads'],['qbittorrent.username',T('qBittorrent 用户名'),'text','downloads'],['qbittorrent.password',T('qBittorrent 密码'),'password','downloads'],
   ['ai.preset',T('AI 提供商（手机「AI 下视频」选本机执行时用；空 = 不用 AI、不发任何 AI 请求）'),'dyn:aiPresets','ai'],['ai.apiKey','AI API key','secret:ai.apiKeySet','ai'],
@@ -1192,6 +1262,7 @@ async function loadSettings(){
     if(type.startsWith('dyn:')) ctl = `<select id="${id}">${['',...(s[type.slice(4)]||[])].map(o=>`<option value="${esc(o)}" ${o===(v??'')?'selected':''}>${esc(k==='ai.preset'?aiPresetLabel(s,o):o)}</option>`).join('')}</select>`;
     else if(type.startsWith('choice:')){ ctl = choiceCtl(id, CHOICES[type.slice(7)](s), v); wrapped = true; }
     else if(type==='bytes'){ ctl = bytesCtl(id, v); wrapped = true; }
+    else if(type==='file'){ ctl = pathCtl(id, v, true); wrapped = true; }
     else if(type==='aimodel') ctl = `<input type="text" id="${id}" list="ai-model-list" value="${esc(v??'')}" autocomplete="off"><datalist id="ai-model-list"></datalist>`;
     else if(type==='bool') ctl = `<span class="switch"><input type="checkbox" id="${id}" ${v?'checked':''}><span></span></span>`;
     else if(type.startsWith('seg:')) ctl = `<div class="segmented" id="${id}" role="radiogroup">${type.slice(4).split(',').map(o=>`<label><input type="radio" name="${id}" value="${esc(o)}" ${o===v?'checked':''}><span>${esc(LANGUAGE_NAMES[o]||o)}</span></label>`).join('')}</div>`;
