@@ -236,6 +236,7 @@ class VideoRemoteControlCard extends StatelessWidget {
     final String label = videoRemoteControlLabel(
       item,
       active: videoRemoteControlActive(item, nowPlaying),
+      nowPlaying: nowPlaying,
     );
     if (item == VideoRemoteControlItem.speed) {
       return '$label ${formatVideoRemoteSpeed(nowPlaying.speed)}';
@@ -467,6 +468,7 @@ class _SecondaryIconRow extends StatelessWidget {
                     label: videoRemoteControlLabel(
                       item,
                       active: videoRemoteControlActive(item, nowPlaying),
+                      nowPlaying: nowPlaying,
                     ),
                     selected: videoRemoteControlActive(item, nowPlaying),
                     onPressed: enabled(item) ? () => onControl(item) : null,
@@ -495,7 +497,11 @@ class _IconControl extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool active = videoRemoteControlActive(item, nowPlaying);
-    String label = videoRemoteControlLabel(item, active: active);
+    String label = videoRemoteControlLabel(
+      item,
+      active: active,
+      nowPlaying: nowPlaying,
+    );
     if (item == VideoRemoteControlItem.speed) {
       label = '$label ${formatVideoRemoteSpeed(nowPlaying.speed)}';
     }
@@ -584,7 +590,7 @@ class _GridTile extends StatelessWidget {
     final bool active = videoRemoteControlActive(item, nowPlaying);
     final String label = item == VideoRemoteControlItem.speed
         ? formatVideoRemoteSpeed(nowPlaying.speed)
-        : videoRemoteControlLabel(item, active: active);
+        : videoRemoteControlLabel(item, active: active, nowPlaying: nowPlaying);
     final String tooltip = item == VideoRemoteControlItem.speed
         ? '${t.playback_speed} $label'
         : label;

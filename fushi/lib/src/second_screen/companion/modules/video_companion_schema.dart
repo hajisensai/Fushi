@@ -33,6 +33,11 @@
 ///   [remaining] int? (rewinds still to come, absent = forever)}, the loop
 ///   being the player's "loop current line" mode; [abA] / [abB] int (A-B loop
 ///   points, player position ms; absent = not set, both set = looping).
+/// - Seek steps: [seekSeconds] / [longSeekSeconds] int (the page's own short
+///   / long seek step, what [VideoCompanionActions.seekStep] jumps by).
+///   Absent (an older page): the panel falls back to [VideoCompanionActions.
+///   seekBy] with [kVideoCompanionLegacySeekSeconds] /
+///   [kVideoCompanionLegacyLongSeekSeconds].
 ///
 /// Commands (`session.command(action, args)`): see [VideoCompanionActions].
 abstract final class VideoCompanionKeys {
@@ -57,6 +62,8 @@ abstract final class VideoCompanionKeys {
   static const String loop = 'loop';
   static const String abA = 'abA';
   static const String abB = 'abB';
+  static const String seekSeconds = 'seekSeconds';
+  static const String longSeekSeconds = 'longSeekSeconds';
 
   // Loop entries.
   static const String on = 'on';
@@ -97,6 +104,8 @@ abstract final class VideoCompanionKeys {
   // Command args.
   static const String ms = 'ms';
   static const String step = 'step';
+  static const String forward = 'forward';
+  static const String long = 'long';
 
   /// Most cues sent in one snapshot (the window around the current cue).
   static const int maxCues = 80;
@@ -111,6 +120,9 @@ abstract final class VideoCompanionKeys {
 /// - [playPause], [previousCue], [nextCue]
 /// - [seekTo] [`ms` int, player position], [seekBy] [`ms` int, may be
 ///   negative]
+/// - [seekStep] [`forward` bool, `long` bool]: seek by the page's own short /
+///   long step (the page is the single source of the step length; the
+///   snapshot reports it as `seekSeconds` / `longSeekSeconds`).
 /// - [jumpToCue] [`start` int, `text` String]: the cue with that start (the
 ///   same jump as tapping a line in the page's subtitle list)
 /// - [selectAudio] [`id`], [selectSubtitle] [`source`], [subtitleOff]
@@ -126,6 +138,7 @@ abstract final class VideoCompanionActions {
   static const String nextCue = 'nextCue';
   static const String seekTo = 'seekTo';
   static const String seekBy = 'seekBy';
+  static const String seekStep = 'seekStep';
   static const String jumpToCue = 'jumpToCue';
   static const String selectAudio = 'selectAudio';
   static const String selectSubtitle = 'selectSubtitle';
@@ -150,3 +163,60 @@ abstract final class VideoCompanionAbSteps {
 /// Loop counts the panel offers (0 = forever); `times` of
 /// [VideoCompanionActions.loopLine].
 const List<int> kVideoCompanionLoopTimes = <int>[1, 2, 3, 5, 0];
+
+/// Steps a panel uses when the page's snapshot carries no
+/// [VideoCompanionKeys.seekSeconds] / [VideoCompanionKeys.longSeekSeconds]
+/// (a page older than [VideoCompanionActions.seekStep]): the old fixed 10 s
+/// and the long step's factory default, 30 s.
+const int kVideoCompanionLegacySeekSeconds = 10;
+const int kVideoCompanionLegacyLongSeekSeconds = 30;
+
+/// One short / long seek-step button press as the panel sends it.
+class VideoCompanionSeekStepCommand {
+  const VideoCompanionSeekStepCommand({
+    required this.action,
+    required this.args,
+    required this.seconds,
+  });
+
+  final String action;
+  final Map<String, Object?> args;
+
+  /// The step length the button shows.
+  final int seconds;
+}
+
+/// The command for a short / long seek-step press: [VideoCompanionActions.
+/// seekStep] when [snapshot] reports the page's step lengths (the page then
+/// seeks by its own configuration), otherwise [VideoCompanionActions.seekBy]
+/// by the legacy fixed step (an older page that does not know `seekStep`).
+VideoCompanionSeekStepCommand videoCompanionSeekStepCommand(
+  Map<String, Object?> snapshot, {
+  required bool forward,
+  required bool long,
+}) {
+  final Object? reported =
+      snapshot[long
+          ? VideoCompanionKeys.longSeekSeconds
+          : VideoCompanionKeys.seekSeconds];
+  if (reported is int && reported > 0) {
+    return VideoCompanionSeekStepCommand(
+      action: VideoCompanionActions.seekStep,
+      args: <String, Object?>{
+        VideoCompanionKeys.forward: forward,
+        VideoCompanionKeys.long: long,
+      },
+      seconds: reported,
+    );
+  }
+  final int seconds = long
+      ? kVideoCompanionLegacyLongSeekSeconds
+      : kVideoCompanionLegacySeekSeconds;
+  return VideoCompanionSeekStepCommand(
+    action: VideoCompanionActions.seekBy,
+    args: <String, Object?>{
+      VideoCompanionKeys.ms: forward ? seconds * 1000 : -seconds * 1000,
+    },
+    seconds: seconds,
+  );
+}

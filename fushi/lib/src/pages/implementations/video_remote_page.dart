@@ -755,6 +755,25 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
   Future<void> seekTo(Duration position) =>
       _command('seek', positionMs: position.inMilliseconds.clamp(0, 1 << 30));
 
+  /// 短 / 长步进：电脑支持 `seekStep` 时让电脑按它自己的步长跳（电脑是步长的唯一
+  /// 真相源，手机标签显示电脑上报的秒数）；旧版电脑不认这条命令，回退成以当前位置
+  /// 为基准的绝对 `seek`（短 10 秒 / 长 30 秒，见 [videoRemoteSeekStepSeconds]）。
+  Future<void> seekStep({required bool forward, required bool long}) {
+    final Map<String, dynamic>? command = videoRemoteSeekStepCommand(
+      capabilities,
+      forward: forward,
+      long: long,
+    );
+    if (command != null) return _command('seekStep', extra: command);
+    final int deltaMs =
+        videoRemoteSeekStepSeconds(_state, capabilities, long: long) * 1000;
+    return seekTo(
+      Duration(
+        milliseconds: positionMs.round() + (forward ? deltaMs : -deltaMs),
+      ),
+    );
+  }
+
   /// 电脑支持的可选遥控能力（快照 `capabilities`）；旧版电脑不上报 = 全都不支持，
   /// 对应按钮置灰，不会发出它听不懂的命令。
   Set<String> get capabilities => <String>{
@@ -2188,6 +2207,16 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
       currentFavorited:
           current != null && _starred.contains(current['id'].toString()),
       volume: volume,
+      seekSeconds: videoRemoteSeekStepSeconds(
+        _state,
+        capabilities,
+        long: false,
+      ),
+      longSeekSeconds: videoRemoteSeekStepSeconds(
+        _state,
+        capabilities,
+        long: true,
+      ),
     );
   }
 
@@ -2285,9 +2314,13 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
         // 制卡要先选词：打开当前句的查词弹框。
         if (current != null) await openLookup(current, 0);
       case VideoRemoteControlItem.seekBack:
-        await seekTo(Duration(milliseconds: positionMs.round() - 10000));
+        await seekStep(forward: false, long: false);
       case VideoRemoteControlItem.seekForward:
-        await seekTo(Duration(milliseconds: positionMs.round() + 10000));
+        await seekStep(forward: true, long: false);
+      case VideoRemoteControlItem.longSeekBack:
+        await seekStep(forward: false, long: true);
+      case VideoRemoteControlItem.longSeekForward:
+        await seekStep(forward: true, long: true);
       case VideoRemoteControlItem.episodes:
         await pickEpisode();
       case VideoRemoteControlItem.subtitleTrack:

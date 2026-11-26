@@ -304,6 +304,8 @@ class VideoCompanionFrame {
     this.loopRemaining,
     this.abAMs,
     this.abBMs,
+    this.seekSeconds,
+    this.longSeekSeconds,
   });
 
   /// Identity of what plays (metadata / subtitle track lists reload when it
@@ -345,6 +347,11 @@ class VideoCompanionFrame {
   /// Line study: A-B loop points (player position ms; null = not set).
   final int? abAMs;
   final int? abBMs;
+
+  /// The page's short / long seek step in seconds (what `seekStep` jumps by);
+  /// null = not reported.
+  final int? seekSeconds;
+  final int? longSeekSeconds;
 }
 
 /// What one A-B loop command does ([VideoCompanionAbSteps] on the wire).
@@ -479,6 +486,8 @@ Map<String, Object?> buildVideoCompanionSnapshot(
     },
     VideoCompanionKeys.abA: ?abA,
     VideoCompanionKeys.abB: ?abB,
+    VideoCompanionKeys.seekSeconds: ?frame.seekSeconds,
+    VideoCompanionKeys.longSeekSeconds: ?frame.longSeekSeconds,
   };
 }
 
@@ -507,6 +516,10 @@ abstract interface class VideoCompanionPage {
   Future<void> nextCue();
   Future<void> seekToMs(int positionMs);
   Future<void> seekByMs(int deltaMs);
+
+  /// Seeks by the page's own short / long step ([VideoCompanionFrame.
+  /// seekSeconds] / [VideoCompanionFrame.longSeekSeconds]).
+  Future<void> seekStep({required bool forward, required bool long});
 
   /// Jumps to the cue starting at [startMs] (text to tell equal starts
   /// apart), as tapping it in the page's subtitle list does.
@@ -711,6 +724,12 @@ class VideoCompanionHook {
       case VideoCompanionActions.seekBy:
         final int? ms = args.intOrNull(VideoCompanionKeys.ms);
         if (ms != null && ms != 0) await _run(() => _page.seekByMs(ms));
+      case VideoCompanionActions.seekStep:
+        final Object? forward = args[VideoCompanionKeys.forward];
+        final Object? long = args[VideoCompanionKeys.long];
+        if (forward is bool && long is bool) {
+          await _run(() => _page.seekStep(forward: forward, long: long));
+        }
       case VideoCompanionActions.jumpToCue:
         final int? start = args.intOrNull(VideoCompanionKeys.start);
         if (start != null) {

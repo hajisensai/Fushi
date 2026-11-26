@@ -180,11 +180,12 @@ String videoControlItemLabel(
       return MaterialLocalizations.of(context).backButtonTooltip;
     case VideoControlItem.immersiveLock:
       return t.video_menu_lock;
+    // 编辑器里不读播放配置，短 / 长步进都用动作名；播放器上的 tooltip 带当前秒数
+    // （页面侧 `_videoControlItemTooltip` 覆盖）。
     case VideoControlItem.seekBackward:
-      return t.video_control_seek_backward;
+      return t.shortcut_action_video_seek_backward;
     case VideoControlItem.seekForward:
-      return t.video_control_seek_forward;
-    // 编辑器里不读播放配置，用动作名；播放器上的 tooltip 带当前秒数（页面侧覆盖）。
+      return t.shortcut_action_video_seek_forward;
     case VideoControlItem.longSeekBackward:
       return t.shortcut_action_video_long_seek_backward;
     case VideoControlItem.longSeekForward:

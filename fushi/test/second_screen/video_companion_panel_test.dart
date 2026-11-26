@@ -228,11 +228,15 @@ void main() {
     WidgetTester tester,
   ) async {
     final RecordingCompanionSession rec = await _pump(tester, _sample());
-    await _tapButton(tester, t.second_screen_video_back_10);
+    // 快照里没有 seekSeconds（旧版视频页）：短步进回退成固定 ±10 秒的 seekBy。
+    await _tapButton(
+      tester,
+      t.video_control_seek_backward_seconds(seconds: 10),
+    );
     await _tapButton(tester, t.second_screen_video_previous_line);
     await _tapButton(tester, t.pause);
     await _tapButton(tester, t.second_screen_video_next_line);
-    await _tapButton(tester, t.second_screen_video_forward_10);
+    await _tapButton(tester, t.video_control_seek_forward_seconds(seconds: 10));
     expect(
       rec.commands.map((CompanionCommandMessage c) => c.action).toList(),
       <String>[
@@ -251,6 +255,51 @@ void main() {
       ),
       isTrue,
     );
+  });
+
+  testWidgets('seek steps follow the page: seekStep with the reported '
+      'seconds, legacy seekBy ±10 / ±30 s when the page reports none', (
+    WidgetTester tester,
+  ) async {
+    final RecordingCompanionSession rec = await _pump(tester, <String, Object?>{
+      ..._sample(),
+      VideoCompanionKeys.seekSeconds: 3,
+      VideoCompanionKeys.longSeekSeconds: 45,
+    });
+    await _tapButton(
+      tester,
+      t.video_control_seek_backward_seconds(seconds: 45),
+    );
+    await _tapButton(tester, t.video_control_seek_backward_seconds(seconds: 3));
+    await _tapButton(tester, t.video_control_seek_forward_seconds(seconds: 3));
+    await _tapButton(tester, t.video_control_seek_forward_seconds(seconds: 45));
+    expect(
+      rec.commands.map((CompanionCommandMessage c) => c.action).toSet(),
+      <String>{VideoCompanionActions.seekStep},
+    );
+    expect(
+      rec.commands
+          .map(
+            (CompanionCommandMessage c) => (
+              c.args[VideoCompanionKeys.forward],
+              c.args[VideoCompanionKeys.long],
+            ),
+          )
+          .toList(),
+      <(Object?, Object?)>[
+        (false, true),
+        (false, false),
+        (true, false),
+        (true, true),
+      ],
+    );
+
+    // 旧版视频页（快照没有步长）：长步进退回 seekBy ±30 秒。
+    final VideoCompanionSeekStepCommand legacyLong =
+        videoCompanionSeekStepCommand(_sample(), forward: false, long: true);
+    expect(legacyLong.action, VideoCompanionActions.seekBy);
+    expect(legacyLong.args[VideoCompanionKeys.ms], -30000);
+    expect(legacyLong.seconds, 30);
   });
 
   testWidgets('the slider seeks on release', (WidgetTester tester) async {
@@ -593,11 +642,13 @@ void main() {
   ) async {
     await _pump(tester, _sample());
     for (final String tooltip in <String>[
-      t.second_screen_video_back_10,
+      t.video_control_seek_backward_seconds(seconds: 30),
+      t.video_control_seek_backward_seconds(seconds: 10),
       t.second_screen_video_previous_line,
       t.pause,
       t.second_screen_video_next_line,
-      t.second_screen_video_forward_10,
+      t.video_control_seek_forward_seconds(seconds: 10),
+      t.video_control_seek_forward_seconds(seconds: 30),
       t.second_screen_video_info,
       t.second_screen_video_replay_line_pause,
       t.second_screen_video_ab_set_a,

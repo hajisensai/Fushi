@@ -19,7 +19,7 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 /// - 顶栏按钮组给横向 `ListView`：右组从左边被裁，「剧集列表」只露半个图标。
 ///
 /// 这里的顺序是：① 全部原样放得下就原样；② 放不下先把带文字的按钮换成纯图标
-/// （±10s，`compactChild`）；③ 还放不下就从优先级最低的开始收（成对的按钮一起收），
+/// （±Ns，`compactChild`）；③ 还放不下就从优先级最低的开始收（成对的按钮一起收），
 /// 直到「剩下的 + ⋯」放得下为止。返回 / 播放暂停 / 时间这类钉死项永不收。
 
 /// 条目落在控制条的哪一簇。
@@ -34,7 +34,7 @@ enum VideoBarCluster {
   end,
 }
 
-/// 成对按钮：一侧收进菜单另一侧必须一起收，否则 `−10s` 在、`+10s` 没了。
+/// 成对按钮：一侧收进菜单另一侧必须一起收，否则 `−Ns` 在、`+Ns` 没了。
 enum VideoBarHideGroup { seek, longSeek, cue, frame }
 
 /// 居中簇的起点 x：**能居中就居中，放不下就在左右两簇之间的空隙里平移**。
@@ -318,7 +318,7 @@ class VideoBarEntry {
   /// 原样形态。
   final Widget child;
 
-  /// 紧凑形态（如 ±10s 去掉文字）；null = 没有，紧凑时仍画 [child]。
+  /// 紧凑形态（如 ±Ns 去掉文字）；null = 没有，紧凑时仍画 [child]。
   final Widget? compactChild;
 
   final VideoBarCluster cluster;

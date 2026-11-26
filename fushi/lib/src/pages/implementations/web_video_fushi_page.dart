@@ -2394,6 +2394,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
 
   // ── 快捷键（与视频页同一注册表、同一动作集合）────────────────────────────
 
+  /// 网页档的短步进（键盘 ←/→、手机遥控短步进）：固定 5 秒，站点播放器的通行步长。
+  static const int _kShortSeekMs = 5000;
+
   int get _longSeekMs =>
       VideoAsbplayerConfig.decode(
         _appModel.videoAsbplayerConfig,
@@ -2408,8 +2411,8 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       pause: () => unawaited(_pause()),
       previousSubtitle: () => unawaited(_seekToCueOffset(-1)),
       nextSubtitle: () => unawaited(_seekToCueOffset(1)),
-      seekBackward: () => unawaited(_seekRelative(-5000)),
-      seekForward: () => unawaited(_seekRelative(5000)),
+      seekBackward: () => unawaited(_seekRelative(-_kShortSeekMs)),
+      seekForward: () => unawaited(_seekRelative(_kShortSeekMs)),
       // 长步进（默认 Shift+←/→）：秒数与本地视频页同一份 asbplayer 配置
       // （longSeekSeconds），按键当时读，设置页改了立即生效。
       longSeekBackward: () => unawaited(_seekRelative(-_longSeekMs)),
@@ -2663,6 +2666,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         'playing': _state?.isPlaying ?? false,
         'speed': _state?.rate ?? 1.0,
         'controlRevision': _remoteControlRevision,
+        // 手机短 / 长步进键的秒数（`seekStep` 由本页按同一组值执行）。
+        'seekSeconds': _kShortSeekMs ~/ 1000,
+        'longSeekSeconds': _longSeekMs ~/ 1000,
         'primaryTrack': _trackSel.activeKey,
         'secondaryTrack': null,
         'primaryDelayMs': _controller.delayMs,
@@ -2715,6 +2721,12 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
             episode: episode,
           ),
       downloadSubtitle: _downloadRemoteSubtitle,
+      // 手机短 / 长步进：与本页键盘 ←/→、Shift+←/→ 同一组步长。
+      seekStep: ({required bool forward, required bool long}) {
+        _requireRemoteControllable();
+        final int ms = long ? _longSeekMs : _kShortSeekMs;
+        return _seekRelative(forward ? ms : -ms);
+      },
       close: () async {
         if (!mounted) throw const VideoRemoteException(409, 'no_video');
         if (!await Navigator.of(context).maybePop()) {
