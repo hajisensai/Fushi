@@ -1,3 +1,7 @@
+import 'package:fushi/src/media/video/video_episode_start_policy.dart'
+    show EpisodeStartIntent;
+import 'package:fushi/src/media/video/video_resume.dart'
+    show VideoResumeMode, resolveVideoStart;
 import 'package:fushi/src/media/video/web_video_bridge.dart';
 import 'package:fushi/src/media/video/web_video_session.dart'
     show kWebVideoMinPersistPositionMs;
@@ -10,22 +14,38 @@ import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
 ///
 /// 网页档每秒把播放头写进这一集书的 `lastPositionMs`（`_persistWebPosition`），但从前
 /// 打开时没有任何一处读它：续播只能靠站点账号自己的书签，不登录 YouTube 就每次从头。
-/// 本地 / mpv 流那条路径打开时按 `lastPositionMs` 起播，网页档在这里补上同一口径。
+/// 本地 / mpv 流那条路径打开时按 `lastPositionMs` 起播，网页档在这里补上同一口径：
+/// 起点一律由 [resolveVideoStart] 定（用户的「断点续播」开关 [VideoResumeMode]、拍板台
+/// IVRHvZ3pmd；片尾区从头走全仓统一的 `isEpisodePositionNearEnd`，BUG-3491），返回 0
+/// 就不 seek。
 ///
 /// 一次性：首个「是这一集、不是广告、有视频、位置已知」的站点快照到来时做一次决定——
 /// 站点已经自己续播（URL 带 `t=`、登录账号的书签）或用户已经看过片头就不动；站点从片头
 /// 起播才 seek 到记下的位置。之后不再干预（用户随后拖回片头不会被拉回去）。
 class WebVideoResumeSeek {
-  WebVideoResumeSeek({required this.episodeUrl, required this.targetMs});
+  WebVideoResumeSeek({
+    required this.episodeUrl,
+    required this.targetMs,
+    required this.intent,
+    required this.mode,
+  });
 
   /// 按书的 [lastPositionMs] 建；进度不足 [kWebVideoMinPersistPositionMs]（等于没看过）时
-  /// 返回 null。
+  /// 返回 null。[intent] 是打开意图（开页 [EpisodeStartIntent.initialOpen]、站内换集
+  /// [EpisodeStartIntent.listSelect]），[mode] 取建对象这一刻的用户续播开关。
   static WebVideoResumeSeek? forBook({
     required String episodeUrl,
     required int lastPositionMs,
+    required EpisodeStartIntent intent,
+    required VideoResumeMode mode,
   }) {
     if (lastPositionMs < kWebVideoMinPersistPositionMs) return null;
-    return WebVideoResumeSeek(episodeUrl: episodeUrl, targetMs: lastPositionMs);
+    return WebVideoResumeSeek(
+      episodeUrl: episodeUrl,
+      targetMs: lastPositionMs,
+      intent: intent,
+      mode: mode,
+    );
   }
 
   /// 要续播的那一集（[webVideoEpisodeUrl] 规范化后的地址）。
@@ -33,6 +53,12 @@ class WebVideoResumeSeek {
 
   /// 记下的进度（毫秒）。
   final int targetMs;
+
+  /// 打开意图，交给 [resolveVideoStart]。
+  final EpisodeStartIntent intent;
+
+  /// 用户的断点续播开关（偏好 `video_resume_mode`）。
+  final VideoResumeMode mode;
 
   bool _done = false;
 
@@ -46,31 +72,26 @@ class WebVideoResumeSeek {
     if (state.ad || !state.hasVideo) return null;
     final int? pos = state.positionMs;
     if (pos == null) return null;
-    // 站内已经点去了别的视频：这份进度不属于它。
-    if (webVideoEpisodeUrl(state.href) != episodeUrl) {
-      _done = true;
-      return null;
-    }
     _done = true;
+    // 站内已经点去了别的视频：这份进度不属于它。
+    if (webVideoEpisodeUrl(state.href) != episodeUrl) return null;
     // 站点自己续播了 / 已经看了一会儿：不覆盖。
     if (pos >= kWebVideoMinPersistPositionMs) return null;
-    if ((targetMs - pos).abs() <= kWebVideoResumeToleranceMs) return null;
-    // 上次已经看到片尾：从头再看，不跳到结尾立刻播完。
-    final int? duration = state.durationMs;
-    if (duration != null &&
-        duration > 0 &&
-        targetMs >= duration - kWebVideoResumeTailMs) {
-      return null;
-    }
-    return targetMs;
+    // 续播开关、短视频门、片尾区从头：与 mpv 路径同一个判定。
+    final int start = resolveVideoStart(
+      intent: intent,
+      savedPositionMs: targetMs,
+      durationMs: state.durationMs,
+      mode: mode,
+    );
+    if (start <= 0) return null;
+    if ((start - pos).abs() <= kWebVideoResumeToleranceMs) return null;
+    return start;
   }
 }
 
 /// [WebVideoResumeSeek] 的位置容差：站点状态 250 ms 一拍，再加 seek 落点误差。
 const int kWebVideoResumeToleranceMs = 1500;
-
-/// 进度离片尾不足这么多就算看完了，不续播。
-const int kWebVideoResumeTailMs = 10000;
 
 /// 网页档这一集若是 YouTube 视频，返回聊天回放探测用的观看地址；否则 null（反馈
 /// C7c1ck6RMU：聊天回放只认 mpv 流的 YouTube 地址，网页档永远探测不到）。
@@ -78,4 +99,20 @@ String? webVideoYoutubeWatchUrl(String? boundEpisodeUrl) {
   if (boundEpisodeUrl == null || !isYoutubeUrl(boundEpisodeUrl)) return null;
   final String? id = youtubeVideoIdOrNull(boundEpisodeUrl);
   return id == null || id.isEmpty ? null : boundEpisodeUrl;
+}
+
+/// 聊天回放探测用的 YouTube 观看地址：mpv 流的地址 [streamUrl] 优先；否则取网页档已落书的
+/// 这一集 [boundEpisodeUrl]，但站点此刻（[lastHref]，最近一拍状态的地址）已经站内点去了
+/// 别的、还没落书的视频时为 null（反馈 C7c1ck6RMU）。
+String? liveChatWatchUrl({
+  required String? streamUrl,
+  required String? boundEpisodeUrl,
+  required String? lastHref,
+}) {
+  if (streamUrl != null) return streamUrl;
+  if (boundEpisodeUrl == null) return null;
+  if (lastHref != null && webVideoEpisodeUrl(lastHref) != boundEpisodeUrl) {
+    return null;
+  }
+  return webVideoYoutubeWatchUrl(boundEpisodeUrl);
 }

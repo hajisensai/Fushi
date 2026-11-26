@@ -23,14 +23,12 @@ extension _VideoLiveChat on _VideoFushiPageState {
   /// 已落书、站点此刻仍在播的那一集（反馈 C7c1ck6RMU：Windows 上 YouTube 默认走网页档，
   /// 从前只认 mpv 流，PC 上按钮永远不出）。站内点去了还没落书的视频时为 null。
   String? get _liveChatYoutubeWatchUrl {
-    final String? stream = _currentYoutubeWatchUrl;
-    if (stream != null) return stream;
     final WebVideoSession? session = _webSession;
-    final String? bound = _webBoundEpisodeUrl;
-    if (session == null || bound == null) return null;
-    final WebVideoPlaybackState? state = session.lastState;
-    if (state != null && webVideoEpisodeUrl(state.href) != bound) return null;
-    return webVideoYoutubeWatchUrl(bound);
+    return liveChatWatchUrl(
+      streamUrl: _currentYoutubeWatchUrl,
+      boundEpisodeUrl: session == null ? null : _webBoundEpisodeUrl,
+      lastHref: session?.lastState?.href,
+    );
   }
 
   /// 视频就绪（首开 / 换集 / 换源；网页档是开页、站内换视频、新一集落书）后调：当前是 YouTube 流就探测聊天回放。同一个视频、

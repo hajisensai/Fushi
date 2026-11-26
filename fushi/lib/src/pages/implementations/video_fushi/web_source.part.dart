@@ -351,6 +351,8 @@ extension _VideoWebSource on _VideoFushiPageState {
         _webResumeSeek = WebVideoResumeSeek.forBook(
           episodeUrl: bound,
           lastPositionMs: row.lastPositionMs,
+          intent: EpisodeStartIntent.initialOpen,
+          mode: appModel.videoResumeMode,
         );
       }
     }
@@ -557,6 +559,8 @@ extension _VideoWebSource on _VideoFushiPageState {
         ? WebVideoResumeSeek.forBook(
             episodeUrl: url,
             lastPositionMs: bound.lastPositionMs,
+            intent: EpisodeStartIntent.listSelect,
+            mode: appModel.videoResumeMode,
           )
         : null;
     unawaited(_loadLiveChatForCurrentVideo());
