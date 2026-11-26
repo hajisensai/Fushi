@@ -1680,7 +1680,7 @@ pub(crate) mod tests {
     }
 
     /// 缓存层物化的 `rwkv_last`（`cmd/training.rs` `rwkv_last`）与逐卡重放（`rwkv_cards` 摘要里的 last）逐卡相同：
-    /// 每个调 [assert_rebuild_is_identity] 的场景（血统、重置、撤销、别名、Anki 副本……）都顺带核一遍（BUG-5491）。
+    /// 每个调 [assert_rebuild_is_identity] 的场景（血统、重置、撤销、别名、Anki 副本……）都顺带核一遍（BUG-5525）。
     pub(crate) fn assert_rwkv_last_matches_replay(t: &Truth<'_>, col: i64) {
         let cards: Vec<String> = {
             let mut stmt = t

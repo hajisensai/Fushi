@@ -818,7 +818,7 @@ void main() {
       expect(undone.keptIds, hasLength(2));
       expect(undone.appendRows(<String>[last]), isNull);
 
-      // 末条（缓存层物化的 rwkv_last，BUG-5491）与逐卡重放的 last 是同一条：撤销前后、没有评分的卡都一致。
+      // 末条（缓存层物化的 rwkv_last，BUG-5525）与逐卡重放的 last 是同一条：撤销前后、没有评分的卡都一致。
       final List<SrsRwkvLastRating?> lasts = await f.store.rwkvLastRatings(
         cards,
       );

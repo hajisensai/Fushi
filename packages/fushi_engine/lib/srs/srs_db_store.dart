@@ -3437,7 +3437,7 @@ class SrsDbStore implements SrsSync2Host {
   }
 
   /// RWKV 末条：[cardIds] 每张卡最后一条保留评分（没有 = null），读缓存层物化好的表，不重放历史
-  /// （冷启动打分 / 统计整表查询行用它，BUG-5491）。
+  /// （冷启动打分 / 统计整表查询行用它，BUG-5525）。
   Future<List<SrsRwkvLastRating?>> rwkvLastRatings(List<String> cardIds) async {
     if (cardIds.isEmpty) return const <SrsRwkvLastRating?>[];
     return srsDecodeRwkvLastRatings(

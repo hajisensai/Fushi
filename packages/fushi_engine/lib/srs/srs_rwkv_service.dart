@@ -819,7 +819,7 @@ class SrsRwkvService implements SrsRwkvScheduling, SrsRwkvStatusSource {
   /// [cards] 在时刻 [atMs] 的查询行（每张卡最后一条保留评分）与锚点（那条评分的时刻；没有 = -1）。
   ///
   /// 最后一条保留评分读缓存层物化好的表（[SrsDbStore.rwkvLastRatings]，一次表读）：冷启动分数表是空的、统计又
-  /// 整表重查，原先逐卡重放全部历史，1.5 万张卡要 26～36 秒（BUG-5491）。
+  /// 整表重查，原先逐卡重放全部历史，1.5 万张卡要 26～36 秒（BUG-5525）。
   Future<({RwkvRows rows, Int64List anchors})> _queryRows(
     List<SrsRwkvCandidate> cards,
     SrsDeckTree tree,

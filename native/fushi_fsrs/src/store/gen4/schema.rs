@@ -73,7 +73,7 @@ use rusqlite::Connection;
 /// 40025 分给同批别的 PR、最后没用）；第六波合流起 `40027`（`40026` 的形状再加 develop 上 G8-3 修复的 `media_seen`
 /// 按代号一行的集合、主键多一列 `gen`——那次修复在 develop 上单独用了 `40020`，与本线 40020 的预分配撞号，合流后
 /// 两边的表合起来才是终态，另起新号，不复用任何一边进过构建的号）。
-/// BUG-5491 起 `40028`（缓存层派生表 `rwkv_last` 与卡行删除时连带删它的触发器 `cards_gone_rwkv_last`，`cache.rs`
+/// BUG-5525 起 `40028`（缓存层派生表 `rwkv_last` 与卡行删除时连带删它的触发器 `cards_gone_rwkv_last`，`cache.rs`
 /// `DDL`）：第一次给已有用户的新代库升号，只加对象，走 [ADDITIVE_FROM] 的就地升级。
 /// 整批推送前每个改表的 PR 各自用分到的号。
 pub const SCHEMA: i64 = 40_028;
@@ -84,7 +84,7 @@ pub const SCHEMA: i64 = 40_028;
 /// 要写真正的迁移。测试 `guards_tests.rs` `every_additive_schema_upgrades_in_place_to_the_frozen_shape` 钉住
 /// 「旧号形状的库开一次 = 新建库的形状」。升级后的库旧版本打不开（[check_kind] 的「比本版本新」）。
 ///
-/// - 40027 → 40028：`rwkv_last` + `cards_gone_rwkv_last`（BUG-5491）。
+/// - 40027 → 40028：`rwkv_last` + `cards_gone_rwkv_last`（BUG-5525）。
 pub(crate) const ADDITIVE_FROM: &[i64] = &[40_027];
 
 /// 新代的号段从这里起：`schema` 小于它的都不是新代库（协议 3 的 1～29 与封存值 39999）。

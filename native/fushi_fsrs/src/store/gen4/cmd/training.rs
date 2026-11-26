@@ -148,7 +148,7 @@ pub fn rwkv_cards(
 /// 输出 `[n, (时刻|NONE, 评分, 复习类型代码) × n]`，没有保留评分（或没有卡行）的卡是 `NONE, 0, 0`。
 ///
 /// RWKV 打分的查询行只要这一条（`srs_rwkv_service.dart` `_queryRows`）：冷启动分数表是空的、统计又整表重查，
-/// 逐卡模式要重放每张卡的全部历史（实测 1.5 万张卡 26～36 秒，BUG-5491），这里是一次按主键的表读。
+/// 逐卡模式要重放每张卡的全部历史（实测 1.5 万张卡 26～36 秒，BUG-5525），这里是一次按主键的表读。
 pub fn rwkv_last(t: &Truth<'_>, col: i64, cards: &[String]) -> Result<Vec<u8>, String> {
     snapshot(t, |t| {
         let ix = Index::new(t, col);

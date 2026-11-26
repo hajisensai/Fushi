@@ -227,7 +227,7 @@ CREATE INDEX IF NOT EXISTS cards_review_due ON cards
   WHERE queue = 'review' AND hidden = 0 AND suspended = 0 AND scheduler = 'fushi';
 -- RWKV 查询行要的「最后一条保留评分」（`projection::rwkv_kept` 的最后一条，按卡行的血统算），与卡行同一次物化；
 -- 没有保留评分的卡没有行。卡行删掉时由触发器一起删（`INSERT OR REPLACE` 换卡行不触发，物化随即重写这一行）。
--- 冷启动 RWKV 打分只读这张表（`cmd/training.rs` `rwkv_last`），不再逐卡重放全部历史（BUG-5491）。
+-- 冷启动 RWKV 打分只读这张表（`cmd/training.rs` `rwkv_last`），不再逐卡重放全部历史（BUG-5525）。
 CREATE TABLE IF NOT EXISTS rwkv_last (
   col INTEGER NOT NULL,
   card NOT NULL,
@@ -386,7 +386,7 @@ pub const RULES_KEY: &str = "cacheRules";
 ///   （`registers::cards_group` 的 `registers::later`）。之前取卡 ID 序在前的：按 4 物化过的库里这类后继卡的
 ///   `flag` / `new_position` / 牌组……是按 ID 序继承的，原地重开与重建不同，要重建一次才换成新口径。
 /// - 6（BUG-5476）：日志重放、卡片状态和统计以原始日志 ID 排序和选副本。规范 ID 只用于身份和引用。
-/// - 7（BUG-5491）：新增 `rwkv_last`（每张卡最后一条 RWKV 保留评分，与卡行一起物化）。按 6 物化的库这张表是空的，
+/// - 7（BUG-5525）：新增 `rwkv_last`（每张卡最后一条 RWKV 保留评分，与卡行一起物化）。按 6 物化的库这张表是空的，
 ///   要重建一次才填上。
 pub const CACHE_RULES: i64 = 7;
 
