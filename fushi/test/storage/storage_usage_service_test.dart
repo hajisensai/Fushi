@@ -3,7 +3,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_audio/fushi_audio.dart' show AudiobookStorage;
-import 'package:fushi_core/fushi_core.dart' show fnv1a32Hex;
+import 'package:fushi_core/fushi_core.dart'
+    show fnv1a32Hex, kRestorePointsDirName;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/storage/app_paths.dart';
@@ -665,6 +666,53 @@ void main() {
       );
       expect(ocr.entries.single.label, 'ocr_models/manga');
       expect(ocr.bytes, 300);
+    });
+
+    test('更新前还原点目录单列一条带名字的只读条目，计入总量、不混进别的条目', () async {
+      writeFile(p.join(support.path, 'fushi.db'), 1000);
+      writeFile(
+        p.join(
+          support.path,
+          kRestorePointsDirName,
+          '20261125-142530-123-fushi-pre_update',
+          'fushi.db',
+        ),
+        400,
+      );
+      writeFile(
+        p.join(
+          support.path,
+          kRestorePointsDirName,
+          'last_snapshot_status.fushi.json',
+        ),
+        2,
+      );
+
+      final List<StorageCategoryUsage> all = await service()
+          .scanCategories(
+            books: const <StorageBookRef>[],
+            dictionaryNames: const <String>[],
+          )
+          .toList();
+      final StorageCategoryUsage db = all.singleWhere(
+        (StorageCategoryUsage u) => u.id == StorageCategoryId.database,
+      );
+      final StorageEntryUsage points = db.entries.singleWhere(
+        (StorageEntryUsage e) =>
+            e.id == StorageUsageService.kRestorePointsEntryId,
+      );
+      expect(points.kind, StorageEntryKind.readOnly);
+      expect(points.bytes, 402);
+      expect(points.paths, <String>[
+        p.join(support.path, kRestorePointsDirName),
+      ]);
+      expect(
+        db.entries.where(
+          (StorageEntryUsage e) => e.paths.contains(points.paths.single),
+        ),
+        hasLength(1),
+      );
+      expect(db.bytes, 1402);
     });
 
     test('BUG-1870：database 明细把主库快照残留聚成一条可删条目，活库/侧车仍只读单列', () async {

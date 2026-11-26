@@ -34,6 +34,9 @@ import 'package:fushi_server/src/config/server_ai_config.dart';
 import 'package:fushi_server/src/admin/admin_api.dart';
 import 'package:fushi_server/src/admin/admin_context.dart';
 import 'package:fushi_server/src/admin/admin_server.dart';
+import 'package:fushi_server/src/backup/server_backup.dart'
+    show kServerFreeBytesOverrideEnv, serverFreeBytesOverride;
+import 'package:fushi_server/src/backup/server_backup_scheduler.dart';
 import 'package:fushi_server/src/commands/cli_module.dart';
 import 'package:fushi_server/src/commands/cli_modules.dart';
 import 'package:fushi_server/src/config/server_config.dart';
@@ -45,6 +48,7 @@ import 'package:fushi_server/src/library_scanner.dart';
 import 'package:fushi_server/src/server_language.dart';
 import 'package:fushi_server/src/server_runtime.dart';
 import 'package:fushi_server/src/video_scrape_host.dart';
+import 'package:fushi_srs/fushi_srs.dart' show FfiFsrsEngine;
 import 'package:path/path.dart' as p;
 
 const String kDefaultConfigFileName = 'fushi_server.yaml';
@@ -201,6 +205,18 @@ void _usage(ArgParser parser) {
 }
 
 Future<int> runFushiServerCli(List<String> args) async {
+  // 写备份 / 更新前快照之前的空间检查用 fushi_fsrs 的平台实现（与 app 同一份；第五期）。
+  registerVolumeFreeBytes(
+    FfiFsrsEngine.volumeFreeBytes,
+    volumeId: FfiFsrsEngine.volumeId,
+  );
+  final int? forcedFree = serverFreeBytesOverride();
+  if (forcedFree != null) {
+    stderr.writeln(
+      'warning: $kServerFreeBytesOverrideEnv=$forcedFree is set (test only): '
+      'backups see $forcedFree bytes free on every volume',
+    );
+  }
   // 帮助文案建 parser 时就按语言出，所以先定语言（只读配置里的 language 一行）。
   serverLanguage = resolveServerLanguage(
     args,
@@ -427,6 +443,14 @@ Future<int> _serve(ServerRuntime rt, {required bool scan, bool? prune}) async {
   // admin API（与 WebUI 同一份，不依赖 admin 端口开没开）。
   final AdminApi adminApi = AdminApi(adminCtx);
   host.adminDispatch = adminApi.handle;
+  // 自动整机备份（D14）与远程更新前备份（D16）：与 WebUI 的手动备份共用 adminCtx.backups 这一把作业锁。
+  final ServerBackupScheduler backupScheduler = ServerBackupScheduler(
+    adminCtx.backups,
+  );
+  await backupScheduler.start();
+  host.beforeSelfUpdateInstall = () async {
+    await adminCtx.backups.runPreUpdate();
+  };
   AdminServer? admin;
   if (rt.config.adminPort > 0) {
     admin = AdminServer(
@@ -489,6 +513,16 @@ Future<int> _serve(ServerRuntime rt, {required bool scan, bool? prune}) async {
   await sigint.cancel();
   await sigterm?.cancel();
   await admin?.stop();
+  // 备份写到一半不关库：等它写完（再按一次 Ctrl+C 可强停，下次启动按中断清理）。
+  if (adminCtx.backups.running != null) {
+    stdout.writeln(
+      tr(
+        '等正在写的备份 ${adminCtx.backups.running} 写完…',
+        'Waiting for the backup in progress (${adminCtx.backups.running}) to finish…',
+      ),
+    );
+  }
+  await backupScheduler.stop();
   await host.stop();
   // 远程更新装完：专用的非零退出码（不是冲突的 75）让 systemd（Restart=on-failure）/
   // 服务管理器拉起新版。

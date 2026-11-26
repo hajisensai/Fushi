@@ -1289,6 +1289,24 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'system/Use GitHub download mirrors':
       'test/utils/net/github_mirrors_test.dart: 用户关掉 GitHub 加速镜像（拍板台 0E-r9q489Y）',
   'syncBackup/Auto sync': 'test/sync/sync_gating_test.dart',
+  // 自动备份（docs/specs/2026-11-25-auto-backup-restore-points.md）：写 auto_backup_* 设备本地偏好，
+  // 生效点是 AutoBackupController 的到期判定 / 建点内容 / 副本目标；harness 里没有定时备份在跑，专项
+  // 测试咬住「间隔、带哪些文件、复习媒体、复制到云端 / 服务器」的偏好往返与控制器行为。
+  'syncBackup/Frequency': 'test/sync/auto_backup_controller_test.dart',
+  'syncBackup/Dictionaries': 'test/sync/auto_backup_controller_test.dart',
+  'syncBackup/Books': 'test/sync/auto_backup_controller_test.dart',
+  'syncBackup/Audiobook audio': 'test/sync/auto_backup_controller_test.dart',
+  'syncBackup/Custom fonts': 'test/sync/auto_backup_controller_test.dart',
+  'syncBackup/Videos': 'test/sync/auto_backup_controller_test.dart',
+  'syncBackup/Local audio databases':
+      'test/sync/auto_backup_controller_test.dart',
+  'syncBackup/Games': 'test/sync/auto_backup_controller_test.dart',
+  'syncBackup/Include review media':
+      'test/sync/auto_backup_controller_test.dart',
+  'syncBackup/Copy to cloud':
+      'test/sync/auto_backup_controller_test.dart: 云端副本（D8–D11）',
+  'syncBackup/Copy to server':
+      'test/sync/auto_backup_controller_test.dart: 服务器副本（第四期 D12–D13）',
   // 云备份通道总开关：写 sync_cloud_enabled，生效点是 enabledSyncChannelBackends 不再列出
   // 云通道（常规 / 复习同步与资产传输都从这份枚举取通道）；harness 里没有同步在跑，
   // 专项测试咬住「关掉后通道枚举里没有云通道、凭据保留、复习同步入口不调 body」。

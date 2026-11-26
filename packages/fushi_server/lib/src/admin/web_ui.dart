@@ -20,6 +20,8 @@ import 'package:fushi_engine/media/torrent/bt_site_parser_rule.dart'
     show kBtSiteParserRuleTemplate;
 import 'package:fushi_server/src/admin/web_kit.dart';
 import 'package:fushi_server/src/admin/web_ui_assets.dart';
+import 'package:fushi_server/src/admin/web_ui_backups.dart';
+import 'package:fushi_server/src/admin/web_ui_device_backups.dart';
 import 'package:fushi_server/src/admin/web_ui_en.dart';
 import 'package:fushi_server/src/config/server_config.dart';
 
@@ -182,6 +184,10 @@ main{grid-column:1;padding:4px 16px 48px}
 <div class="nav-group-label">系统</div>
 <button class="nav-item" data-s="settings"><span class="nav-indicator"><span class="msr-slot" data-fushi-icon="settings"></span></span><span class="nav-label">设置</span></button>
 <button class="nav-item" data-s="logs"><span class="nav-indicator"><span class="msr-slot" data-fushi-icon="receipt_long"></span></span><span class="nav-label">日志</span></button>
+''' +
+    kWebUiBackupsNav +
+    kDeviceBackupsNavHtml +
+    r'''
 </nav>
 <div class="nav-scrim" id="scrim-nav"></div>
 <header class="topbar">
@@ -352,7 +358,9 @@ main{grid-column:1;padding:4px 16px 48px}
 <div id="srs-ankiconnect"></div></div>
 </section>
 
-<section id="s-settings">
+''' +
+    kDeviceBackupsSectionHtml +
+    r'''<section id="s-settings">
 <h3 class="kit-section-title">外观</h3>
 <div class="card appearance">
 <p class="kit-supporting">只存在这台电脑的浏览器里，不影响服务端与其他设备。</p>
@@ -397,6 +405,9 @@ main{grid-column:1;padding:4px 16px 48px}
 <pre id="logs"></pre></div>
 </section>
 
+''' +
+    kWebUiBackupsSection +
+    r'''
 </main>
 </div>
 <dialog class="kit-dialog" id="dlg"><div class="kit-dialog-icon"><span class="msr-slot" data-fushi-icon="help" data-fushi-icon-size="24"></span></div><p class="kit-dialog-body" id="dlg-msg"></p>
@@ -1484,7 +1495,10 @@ $('#btn-log-refresh').onclick = guard(loadLogs);
 
 // ── 轮询 ──
 const loaders = {status:loadStatus, pairing:loadPairing, libraries:loadLibraries, dictionaries:async()=>{ if(!dictsLoaded) await loadDictionaries(); }, upload:async()=>{ await loadLibraries(); const s=await api('status'); $('#up-quota').textContent=T('配额已用 {0} / {1}', fmtBytes(s.uploadUsedBytes), fmtBytes(s.uploadQuotaBytes)); }, jobs:loadJobs, downloads:loadDownloads, subscriptions:async()=>{ await loadSubscriptions(); await loadIndexers(false); }, ai:loadAi, anki:loadAnki, srs:loadSrs, models:loadModels, settings:async()=>{ if(!settingsCache) await loadSettings(); else renderP2pState(await api('p2p')); }, logs:async()=>{ if($('#log-auto').checked) await loadLogs(); }};
-let busy=false;
+''' +
+    kWebUiBackupsScript +
+    kDeviceBackupsScript +
+    r'''let busy=false;
 async function refresh(){ if(busy) return; busy=true; try{ await loaders[current](); }catch(e){ console.warn(e); } finally{ busy=false; } }
 const startPage = location.hash.slice(1);
 if (startPage && startPage!=='status' && navButtons.some(b=>b.dataset.s===startPage)) go(startPage, false); else refresh();

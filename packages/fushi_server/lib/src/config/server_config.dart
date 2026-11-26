@@ -11,6 +11,7 @@ import 'package:fushi_engine/sync/fushi_sync_server.dart' show FushiListenScope;
 import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart'
     show FushiAddressRangeSet;
 import 'package:fushi_server/src/config/server_ai_config.dart';
+import 'package:fushi_server/src/config/server_backup_config.dart';
 import 'package:fushi_server/src/config/server_srs_config.dart';
 import 'package:fushi_server/src/config/server_torrent_session_config.dart';
 import 'package:path/path.dart' as p;
@@ -167,6 +168,7 @@ class ServerConfig {
     this.ai,
     this.srs = const ServerSrsConfig(),
     this.ankiConnect = const ServerAnkiConnectConfig(),
+    this.backup = const ServerBackupConfig(),
   });
 
   static const int defaultPort = 38765;
@@ -359,6 +361,9 @@ class ServerConfig {
   /// AnkiConnect 兼容监听（`ankiconnect:` 段）；默认关。
   final ServerAnkiConnectConfig ankiConnect;
 
+  /// 自动整机备份的计划（`backup:` 段，见 server_backup_config.dart）；默认每日 04:00。
+  final ServerBackupConfig backup;
+
   ServerConfig copyWith({
     String? dataDir,
     int? port,
@@ -400,6 +405,7 @@ class ServerConfig {
     bool clearAi = false,
     ServerSrsConfig? srs,
     ServerAnkiConnectConfig? ankiConnect,
+    ServerBackupConfig? backup,
   }) => ServerConfig(
     dataDir: dataDir ?? this.dataDir,
     port: port ?? this.port,
@@ -441,6 +447,7 @@ class ServerConfig {
     ai: clearAi ? null : ai ?? this.ai,
     srs: srs ?? this.srs,
     ankiConnect: ankiConnect ?? this.ankiConnect,
+    backup: backup ?? this.backup,
   );
 
   /// 从 YAML 文本解析；缺项取默认。[dataDir] 相对路径按配置文件所在目录解析。
@@ -526,6 +533,7 @@ class ServerConfig {
       ai: ServerAiConfig.fromYaml(map['ai']),
       srs: ServerSrsConfig.fromYaml(map['srs']),
       ankiConnect: ServerAnkiConnectConfig.fromYaml(map['ankiconnect']),
+      backup: ServerBackupConfig.fromYaml(map['backup']),
     );
   }
 
@@ -641,6 +649,7 @@ class ServerConfig {
     ai?.writeYaml(b, _q);
     srs.writeYaml(b, _q);
     ankiConnect.writeYaml(b, _q);
+    backup.writeYaml(b, _q);
     b.writeln('torrent:');
     b.writeln('  engine: ${_q(torrentEngine)}');
     if (torrentLibraryPath != null) {

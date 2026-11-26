@@ -182,6 +182,8 @@ final class SrsAnkiMigrationFromPackage extends SrsAnkiMigrationSource {
 ///
 /// [SrsAnkiMigrationSettings.switchCardTarget] 开着且给了 [cardTargetSwitch] 时，导入成功后在同一个
 /// 任务里切卡片去向（[SrsCardTargetSwitch.apply]）；导入失败 / 被叫停（抛异常）时不切。
+///
+/// [beforeImport] 在动复习库之前调用一次：页面传「拍操作前还原点」（迁移可从还原点页撤回，D6）。
 Future<SrsImportReport> runSrsAnkiMigration({
   required SrsDbStore store,
   required SrsMediaStore media,
@@ -190,7 +192,9 @@ Future<SrsImportReport> runSrsAnkiMigration({
   SrsCardTargetSwitch? cardTargetSwitch,
   void Function(double progress)? onProgress,
   bool Function()? shouldStop,
+  Future<void> Function()? beforeImport,
 }) async {
+  await beforeImport?.call();
   final SrsImportReport report = await _importMigrationSource(
     store: store,
     media: media,

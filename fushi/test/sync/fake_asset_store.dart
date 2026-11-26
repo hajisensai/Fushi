@@ -17,6 +17,9 @@ class FakeAssetStore implements SyncAssetStore {
   /// （[AssetEntry.revision]）的后端：内容一变指纹就变。默认关（FTP / SFTP 口径）。
   final bool reportRevisions;
 
+  /// 为 true 时 [putAsset] 抛错（模拟上传到一半失败：自动备份云端副本的清理测试用）。
+  bool failPutAsset = false;
+
   String? _revisionOf(List<int> bytes) => reportRevisions
       ? '${bytes.length}-${Object.hashAll(bytes).toRadixString(16)}'
       : null;
@@ -86,6 +89,7 @@ class FakeAssetStore implements SyncAssetStore {
     File file, {
     void Function(double progress)? onProgress,
   }) async {
+    if (failPutAsset) throw const SocketException('upload interrupted');
     _files[_join(namespaceId, name)] = await file.readAsBytes();
     onProgress?.call(1.0);
   }

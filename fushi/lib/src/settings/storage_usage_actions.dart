@@ -498,6 +498,8 @@ String storageEntryTitle(StorageEntryUsage entry) => switch (entry.kind) {
       t.storage_entry_interconnect_srs_label,
     StorageUsageService.kInterconnectOtherEntryId =>
       t.storage_entry_interconnect_other_label,
+    StorageUsageService.kRestorePointsEntryId =>
+      t.storage_entry_restore_points_label,
     _ => entry.label,
   },
 };

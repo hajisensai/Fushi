@@ -156,6 +156,8 @@ import 'package:fushi/src/media/listening_reminder_app.dart'
 import 'package:fushi/src/storage/data_root_migration_view.dart';
 import 'package:fushi/src/startup/loading_watchdog_view.dart';
 import 'package:fushi/src/sync/backup_import_overlay_view.dart';
+import 'package:fushi/src/pages/implementations/restore_point_rollback_panel.dart'
+    show RestorePointRollbackPanel;
 import 'package:fushi/src/sync/sync_settings_schema.dart'
     show
         backupImportRestart,
@@ -249,7 +251,9 @@ import 'package:fushi_core/fushi_core.dart'
         FushiDatabaseFailureKind,
         kLegacySchemaBridgeAppVersion,
         kLegacySchemaBridgeReleaseUrl,
-        VideoBookRow;
+        VideoBookRow,
+        registerVolumeFreeBytes;
+import 'package:fushi_srs/fushi_srs.dart' show FfiFsrsEngine;
 import 'package:fushi/src/media/media_item.dart';
 import 'package:path/path.dart' as p;
 import 'package:url_launcher/url_launcher.dart' show LaunchMode, launchUrl;
@@ -368,6 +372,11 @@ Future<void> _restoreWindowsWindowIcon(AppIconSelection selection) async {
 /// to act on once the app has finished initialising.
 void main([List<String> args = const <String>[]]) {
   StartupTimeline.begin();
+  // 写备份 / 还原点前的空间检查用 fushi_fsrs 的平台实现（fushi_core 不依赖 fushi_srs，由入口登记；第五期）。
+  registerVolumeFreeBytes(
+    FfiFsrsEngine.volumeFreeBytes,
+    volumeId: FfiFsrsEngine.volumeId,
+  );
   // 有声漫画工作台挂到环外入口（书卡菜单 / 侧栏速览经入口打开，见入口文件注释）。
   registerMangaAudioWorkbenchEntry();
   // 桌面端：从 args 里挑出外部打开的视频路径（Windows / Linux runner 传 argv）。
@@ -1641,6 +1650,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       _flushPendingMines();
       if (ref.read(appProvider).isInitialised) {
         unawaited(_checkFeedbackReplies());
+        // 自动备份：回前台查一次到期（移动端 app 不在后台跑，错过的这里补）。
+        ref.read(appProvider).autoBackup.onResumed();
       }
       if (Platform.isIOS) {
         unawaited(
@@ -2855,7 +2866,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
           home: Scaffold(
             backgroundColor: _savedSplashColor ?? cs.surface,
             body: Center(
-              child: Padding(
+              child: SingleChildScrollView(
                 padding: const EdgeInsets.all(24),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -2887,6 +2898,14 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                       ),
                       textAlign: TextAlign.center,
                     ),
+                    // 降级：库比本版本新。有更新前还原点时给出「恢复更新前的数据」出口（D5）。
+                    if (downgrade != null)
+                      RestorePointRollbackPanel(
+                        loadPoints: appModel.restorePointsForRollback,
+                        companionOf: appModel.companionSrsRestorePoint,
+                        onRollback: appModel.rollbackToRestorePoint,
+                        onRestart: () => backupImportRestart(appModel),
+                      ),
                     // 门槛提示给出可执行出口：直接打开桥接版本的 Release 页。
                     if (downgrade == null) ...[
                       const SizedBox(height: 20),
@@ -2956,7 +2975,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
           home: Scaffold(
             backgroundColor: _savedSplashColor ?? cs.surface,
             body: Center(
-              child: Padding(
+              child: SingleChildScrollView(
                 padding: const EdgeInsets.all(24),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -2996,6 +3015,15 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                         onPressed: () => appModel.retryInitialise(),
                       ),
                     ],
+                    // 库坏了 / 打不开：有更新前还原点时同样可以换回去（空间不足时不给——
+                    // 换库要先写一份副本，腾出空间重试才是对的出口）。
+                    if (kind != FushiDatabaseFailureKind.insufficientSpace)
+                      RestorePointRollbackPanel(
+                        loadPoints: appModel.restorePointsForRollback,
+                        companionOf: appModel.companionSrsRestorePoint,
+                        onRollback: appModel.rollbackToRestorePoint,
+                        onRestart: () => backupImportRestart(appModel),
+                      ),
                   ],
                 ),
               ),

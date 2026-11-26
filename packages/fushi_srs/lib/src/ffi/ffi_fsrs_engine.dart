@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:ffi';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
@@ -389,6 +390,52 @@ class FfiFsrsEngine implements FsrsBatchEngine {
       calloc.free(input);
       calloc.free(outLen);
     }
+  }
+
+  /// [path] 所在卷对本进程可用的字节数（自动备份第五期：app 与无头服务端写备份 / 还原点前查空间）。
+  /// 路径还不存在时往上找到第一个存在的上级目录再问（备份目录可能还没建）。原生库不可用、平台取不到时
+  /// 返回 null（调用方当「不知道」，照常写）。只 stat 一次，可以在主 isolate 调。
+  static int? volumeFreeBytes(String path, {FushiFsrs? library}) {
+    final FushiFsrs? lib = library ?? FushiFsrs.instance;
+    final String? probe = _existingAncestor(path);
+    if (lib == null || probe == null) return null;
+    final Pointer<Utf8> c = probe.toNativeUtf8();
+    try {
+      final int free = lib.bindings.ffsrs_volume_free_bytes(c.cast<Char>());
+      return free < 0 ? null : free;
+    } finally {
+      calloc.free(c);
+    }
+  }
+
+  /// [path] 所在卷的身份（同一个卷恒等、不同的卷不等；只在本次开机内比较）：写备份前查空间时把同一个卷上的
+  /// 几个目标加在一起算。路径还不存在时同 [volumeFreeBytes] 往上找；取不到返回 null。
+  static int? volumeId(String path, {FushiFsrs? library}) {
+    final FushiFsrs? lib = library ?? FushiFsrs.instance;
+    final String? probe = _existingAncestor(path);
+    if (lib == null || probe == null) return null;
+    final Pointer<Utf8> c = probe.toNativeUtf8();
+    final Pointer<Uint64> out = calloc<Uint64>();
+    try {
+      return lib.bindings.ffsrs_volume_id(c.cast<Char>(), out) == 1
+          ? out.value
+          : null;
+    } finally {
+      calloc.free(c);
+      calloc.free(out);
+    }
+  }
+
+  /// [path] 本身或往上第一个存在的目录 / 文件；空串或一直到根都不存在为 null。
+  static String? _existingAncestor(String path) {
+    if (path.isEmpty) return null;
+    String probe = path;
+    while (FileSystemEntity.typeSync(probe) == FileSystemEntityType.notFound) {
+      final String parent = File(probe).parent.path;
+      if (parent == probe) return null;
+      probe = parent;
+    }
+    return probe;
   }
 
   /// zstd 文件到文件流式解码（.apkg 新格式的 collection.anki21b）：一次 FFI 调用解完整个

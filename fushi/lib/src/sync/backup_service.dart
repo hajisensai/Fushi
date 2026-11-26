@@ -146,6 +146,19 @@ enum BackupCategory {
   srs,
 }
 
+/// 带**文件树**的类别（书 / 有声书 / 视频 / 词典 / 字体 / 本地音频 / 游戏封面）。整库备份
+/// （[BackupService.createBackup] 的 `fullDatabase`）里只有它们可挑：库里的数据（书库行、进度、
+/// 统计、设置、配置档案、音乐、复习笔记与记录）一律都在，挑的只是这些文件带不带。
+const Set<BackupCategory> kBackupFileCategories = <BackupCategory>{
+  BackupCategory.dictionary,
+  BackupCategory.books,
+  BackupCategory.audiobooks,
+  BackupCategory.fonts,
+  BackupCategory.videos,
+  BackupCategory.localAudio,
+  BackupCategory.games,
+};
+
 /// 覆盖前快照（`BackupRestoreService.overwriteSnapshotPath`）的预览：快照文件本身
 /// 与其中「当前库没有」的书（BUG-4701）。
 class OverwriteSnapshotPreview {
@@ -227,6 +240,7 @@ class BackupMeta {
     this.progressCount,
     this.srsNoteCount,
     this.musicCount,
+    this.fullDatabase = false,
   });
 
   final String appVersion;
@@ -311,6 +325,12 @@ class BackupMeta {
   /// chosen local video restore root.
   final Map<String, String> videoFiles;
 
+  /// 整库备份（定时还原点，用户 2026-11-25 拍板）：主库是整库、没按类别剥过行（只剥了凭据与
+  /// 设备本地表，覆盖恢复照常从本机回灌）。[excludedCategories] 这时只列**没带文件**的文件类别
+  /// （[kBackupFileCategories]）。覆盖恢复据此：整库换入、不跑任何按类别的剥行；只换包里带着的
+  /// 文件树，没带的文件树与本机文件原样不动。老备份 / 手动导出为 false。
+  final bool fullDatabase;
+
   /// Enum names ([BackupCategory.name]) of the categories the user UNTICKED for
   /// this export (TODO-1193). Import reads `settings` / `profiles` from here to
   /// know a layer is empty BY CHOICE and must be preserved from the local
@@ -337,6 +357,7 @@ class BackupMeta {
     if (progressCount != null) 'progressCount': progressCount,
     if (srsNoteCount != null) 'srsNoteCount': srsNoteCount,
     if (musicCount != null) 'musicCount': musicCount,
+    if (fullDatabase) 'fullDatabase': true,
   };
 
   factory BackupMeta.fromJson(Map<String, dynamic> json) => BackupMeta(
@@ -367,6 +388,7 @@ class BackupMeta {
     progressCount: json['progressCount'] as int?,
     srsNoteCount: json['srsNoteCount'] as int?,
     musicCount: json['musicCount'] as int?,
+    fullDatabase: json['fullDatabase'] == true,
   );
 
   static BackupMeta? tryParse(String source) {
@@ -413,6 +435,11 @@ class BackupContentSummary {
 /// bak/临时提取路径）一律用它；读老归档（Hibiki 时代备份 / 迁移压缩包，条目名
 /// `hibiki.db`）经 [_findDbEntry] 做 legacy 回退（Never break userspace）。
 const String _dbName = fushiDatabaseFileName;
+
+/// [BackupService.createBackup] 开压缩时单个条目 deflate 的上限：超过这个大小的条目（大库 /
+/// 大文件）照旧 STORE。内存早已有界（`addFileNativeDeflate` 把大条目的压缩结果流式写进临时
+/// 文件），这条上限只限住空闲时段一次备份的 CPU 时间与临时空间。
+const int kBackupDeflateMaxEntryBytes = 512 * 1024 * 1024;
 const String _metaName = 'backup_meta.json';
 const String _dictionaryResourcesPrefix = 'dictionaryResources';
 
@@ -1350,6 +1377,23 @@ class BackupService {
   /// [onProgress] 报打包阶段的确定进度（0..1，已写入字节 / 待打包总字节）。它只在
   /// 真正写 zip 时才开始走 —— 之前的 VACUUM INTO、按分类裁剪行、枚举待打包文件
   /// 都没有可分的量，调用方在收到第一次回调前应显示不确定动画。
+  ///
+  /// [compress]：条目用原生 zlib deflate（已是压缩格式的扩展名、压不小的、以及超过
+  /// [kBackupDeflateMaxEntryBytes] 的条目仍 STORE）。定时还原点开它（库文件压缩比高）；手动导出
+  /// 保持 STORE（导出后通常立刻被分享 / 另存，打包快比体积小更要紧）。
+  ///
+  /// [fullDatabase]：整库备份（定时还原点）。主库副本不按类别剥任何行（书 / 视频 / 有声书 /
+  /// 游戏库行、进度、统计、设置、配置档案、音乐、复习都在；凭据与设备本地表照剥，覆盖恢复从
+  /// 本机回灌），[categories] 只决定哪些**文件树**（[kBackupFileCategories]）随包。meta 记
+  /// [BackupMeta.fullDatabase]，恢复侧据此不剥行。不能与 [bookKeys] / [videoKeys] 同用。缺省
+  /// false = 手动导出的原有行为，一字不改。
+  ///
+  /// [includeSrsMedia]：复习类别勾着时要不要带 `srs_media/` 文件树（D2：定时备份默认不带，
+  /// 笔记与复习记录照带）。不带媒体的包覆盖恢复时本机媒体目录原样保留（恢复侧只在包里有
+  /// `srs_media/` 条目时才换那棵树）。
+  ///
+  /// [unavailableData]：整库备份里这会儿读不了的数据类别（复习库还在等升级时的 [BackupCategory.srs]）。
+  /// 它们不进包、记进 meta 的 `excludedCategories`，覆盖恢复据此保留本机那一份，不当成「备份里是空的」。
   Future<BackupMeta> createBackup(
     String outputPath, {
     Set<BackupCategory>? categories,
@@ -1357,9 +1401,20 @@ class BackupService {
     Set<String>? videoKeys,
     void Function(double progress)? onProgress,
     void Function(List<String> names)? onDictionariesSkipped,
+    bool compress = false,
+    bool includeSrsMedia = true,
+    bool fullDatabase = false,
+    Set<BackupCategory> unavailableData = const <BackupCategory>{},
   }) async {
+    if (fullDatabase && (bookKeys != null || videoKeys != null)) {
+      throw ArgumentError('fullDatabase backups cannot select single items');
+    }
     bool wants(BackupCategory c) =>
-        categories == null || categories.contains(c);
+        !unavailableData.contains(c) &&
+        (categories == null || categories.contains(c));
+    // 整库备份：数据类别一律在（读不了的除外），[categories] 只挑文件树。
+    bool keepsData(BackupCategory c) =>
+        !unavailableData.contains(c) && (fullDatabase || wants(c));
     final tmpDir = await Directory.systemTemp.createTemp('fushi_backup_');
     try {
       final cleanDbPath = p.join(tmpDir.path, _dbName);
@@ -1390,7 +1445,7 @@ class BackupService {
       // 复习（G11-4，新代）：内核按集合导出操作流（`srs/<n>.bin`，FSRS4EXP）+ 清单
       // `srs/manifest.json`（srs_backup_bundle.dart）；不再写 `srs.db` 快照条目，也不带签名私钥。主库副本里不带
       // SRS（老形态的残表在下面剥掉）。本机复习库没开（SRS 仍在主库老表里）时没有流，老表照旧随主库副本走。
-      final bool includeSrs = wants(BackupCategory.srs);
+      final bool includeSrs = keepsData(BackupCategory.srs);
       final SrsStorage? srs = includeSrs ? await _srsStorage?.call() : null;
       final Map<String, String> srsEntries = <String, String>{};
       Set<String>? srsProfileUidSet;
@@ -1456,7 +1511,10 @@ class BackupService {
       // packed never appears after import.
       final bool includeBooks = wants(BackupCategory.books);
       await _stripCredentials(tmpDir.path);
-      if (!wantsDictionary) {
+      if (fullDatabase) {
+        // 整库：词典行原样留着。没带词典文件时覆盖恢复从本机回灌词典行（BUG-454 路径），
+        // 与原样不动的本机词典文件一致。
+      } else if (!wantsDictionary) {
         // 用户没勾词典 → 整表清空（行为不变）。
         await _stripDictionaryState(tmpDir.path);
       } else if (dictionaryPlan.packable.isEmpty) {
@@ -1477,7 +1535,9 @@ class BackupService {
       //  - book content unticked      → keep NONE (strip every epub_books row).
       //  - a per-book selection given  → keep ONLY the selected book_keys.
       //  - otherwise                   → keep all (null = legacy full export).
-      final Set<String>? retainBookKeys = !includeBooks
+      final Set<String>? retainBookKeys = fullDatabase
+          ? null // 整库：每本书的行都留着，文件带不带另说
+          : !includeBooks
           ? const <String>{}
           : bookKeys; // null = every book
       if (retainBookKeys != null) {
@@ -1490,7 +1550,9 @@ class BackupService {
       // Stripping the row (not just skipping the file) is what stops a restore
       // from resurrecting a "ghost video" whose file never travelled.
       final bool includeVideos = wants(BackupCategory.videos);
-      final Set<String>? retainVideoKeys = !includeVideos
+      final Set<String>? retainVideoKeys = fullDatabase
+          ? null
+          : !includeVideos
           ? const <String>{}
           : videoKeys; // null = every video
       if (retainVideoKeys != null) {
@@ -1501,7 +1563,7 @@ class BackupService {
       // ghost audiobook whose audio never travelled. (No per-audiobook selection
       // yet, so it is all-or-nothing.)
       final bool includeAudiobooks = wants(BackupCategory.audiobooks);
-      if (!includeAudiobooks) {
+      if (!includeAudiobooks && !fullDatabase) {
         await _retainAudiobooks(tmpDir.path, const <String>{});
       }
       // Games mirror videos/audiobooks: unticking strips every `galgames` row
@@ -1509,7 +1571,7 @@ class BackupService {
       // game library never travels uninvited (before this category existed it
       // ALWAYS rode the whole-DB blob).
       final bool includeGames = wants(BackupCategory.games);
-      if (!includeGames) {
+      if (!includeGames && !fullDatabase) {
         await _retainGames(tmpDir.path, const <String>{});
       }
 
@@ -1518,10 +1580,10 @@ class BackupService {
       // them the matching rows are DELETEd from the standalone DB COPY (never
       // the live user DB). Excluding settings/profiles is made safe on import
       // by _reapplyExcludedSettingsLayers preserving the LOCAL layer from bak.
-      final bool includeProgress = wants(BackupCategory.progress);
-      final bool includeStatistics = wants(BackupCategory.statistics);
-      final bool includeSettings = wants(BackupCategory.settings);
-      final bool includeProfiles = wants(BackupCategory.profiles);
+      final bool includeProgress = keepsData(BackupCategory.progress);
+      final bool includeStatistics = keepsData(BackupCategory.statistics);
+      final bool includeSettings = keepsData(BackupCategory.settings);
+      final bool includeProfiles = keepsData(BackupCategory.profiles);
       // 复习：操作流 + srs_media/ 文件树，一起随勾选走。主库副本里老形态的 SRS 表只在
       // 「勾了复习、本机复习库没开」时保留（那时它们就是 SRS 数据本身）。
       final bool stripLegacySrs = !includeSrs || srs != null;
@@ -1553,31 +1615,36 @@ class BackupService {
       // [BackupMergeEngine] still propagates memberships whose book lives on
       // another device), while a content-excluding export drops the rows that
       // belong to the unticked content.
-      await _stripOrphanUserDataTables(
-        tmpDir.path,
-        includeBooks: includeBooks,
-        includeVideos: includeVideos,
-        includeStatistics: includeStatistics,
-      );
+      // 整库备份到此为止：下面三段都是「离开本机的包」才要的按类别 / 隐私裁剪（搜索与查词
+      // 历史、没勾类别的表、内容登记偏好）。整库点是本机还原点，库原样留着；没带文件的
+      // 类别，其内容登记偏好由覆盖恢复从本机回灌，与原样不动的本机文件一致。
+      if (!fullDatabase) {
+        await _stripOrphanUserDataTables(
+          tmpDir.path,
+          includeBooks: includeBooks,
+          includeVideos: includeVideos,
+          includeStatistics: includeStatistics,
+        );
 
-      // 统一兜底：schema 里每张表都在 [backupTableRules] 登记了归属，归属类别全没
-      // 勾的表整表清空。以前没被任何剥离逻辑点名的表（剪贴板历史、最近打开流、
-      // 视频刮削缓存与本地路径……）无论勾什么都随包出境。
-      await _stripTablesOfExcludedCategories(tmpDir.path, <BackupCategory>{
-        for (final BackupCategory c in BackupCategory.values)
-          if (wants(c)) c,
-      });
+        // 统一兜底：schema 里每张表都在 [backupTableRules] 登记了归属，归属类别全没
+        // 勾的表整表清空。以前没被任何剥离逻辑点名的表（剪贴板历史、最近打开流、
+        // 视频刮削缓存与本地路径……）无论勾什么都随包出境。
+        await _stripTablesOfExcludedCategories(tmpDir.path, <BackupCategory>{
+          for (final BackupCategory c in BackupCategory.values)
+            if (wants(c)) c,
+        });
 
-      // BUG-816: content-registry preference rows follow their OWNING content
-      // category, not `settings` — the font registry when `fonts` is unticked,
-      // and the local-audio registry (incl. the localAudio entries of
-      // `audio_source_configs`) when `localAudio` is. Favorites (v166 a table
-      // following `books`) went with the table-rule strip above.
-      await _stripExcludedContentRegistry(
-        tmpDir.path,
-        stripFonts: !wants(BackupCategory.fonts),
-        stripLocalAudio: !wants(BackupCategory.localAudio),
-      );
+        // BUG-816: content-registry preference rows follow their OWNING content
+        // category, not `settings` — the font registry when `fonts` is unticked,
+        // and the local-audio registry (incl. the localAudio entries of
+        // `audio_source_configs`) when `localAudio` is. Favorites (v166 a table
+        // following `books`) went with the table-rule strip above.
+        await _stripExcludedContentRegistry(
+          tmpDir.path,
+          stripFonts: !wants(BackupCategory.fonts),
+          stripLocalAudio: !wants(BackupCategory.localAudio),
+        );
+      }
 
       final books = await _db.getAllEpubBooks();
       // The count reported to the import confirm dialog must reflect what is
@@ -1597,13 +1664,18 @@ class BackupService {
         _dbName: cleanDbPath,
         ...srsEntries,
       };
-      Map<String, String> videoFiles = const <String, String>{};
-      if (includeVideos) {
-        videoFiles = await _collectVideoFiles(files, videoKeys: videoKeys);
-      }
-      if (wants(BackupCategory.localAudio)) {
-        await _collectLocalAudioFiles(files);
-      }
+      // 文件类别与复习媒体：与 [estimateFileCategoryBytes] 同一个收集器，估算不会与真打包走岔。
+      final Map<String, String> videoFiles = await _collectFileCategories(
+        files,
+        wants: wants,
+        srsMedia: includeSrs && includeSrsMedia,
+        dictionaryPlan: includeDictionary
+            ? dictionaryPlan
+            : const _DictionaryPackPlan.empty(),
+        books: books,
+        bookKeys: bookKeys,
+        videoKeys: videoKeys,
+      );
 
       // TODO-1261: the confirm dialog's "N books" must count EVERY shelf item
       // that will travel usably, not just EPUBs. A video book travels usably iff
@@ -1636,7 +1708,7 @@ class BackupService {
       // Audiobook rows remaining in the exported DB blob after [_retainAudiobooks]
       // (0 when unticked → all stripped). Recorded so import can offer the
       // audiobooks toggle even with no packed audiobook files (BUG-781).
-      final int blobAudiobookCount = includeAudiobooks
+      final int blobAudiobookCount = includeAudiobooks || fullDatabase
           ? (await _db.getAllAudiobooks()).length
           : 0;
 
@@ -1648,13 +1720,15 @@ class BackupService {
           : 0;
       // Rows remaining in the exported DB blob for the DB-only categories, so
       // the import dialog can offer their toggles without peeking the blob.
-      final int blobGameCount = includeGames ? await _countRows('galgames') : 0;
+      final int blobGameCount = keepsData(BackupCategory.games)
+          ? await _countRows('galgames')
+          : 0;
       final int blobProgressCount = includeProgress
           ? await _countProgressRows()
           : 0;
       final int blobSrsNoteCount = includeSrs ? await _countSrsNotes() : 0;
       // 音乐用户表的导出裁剪走 backupTableRules 的统一兜底（follows music）。
-      final int blobMusicCount = wants(BackupCategory.music)
+      final int blobMusicCount = keepsData(BackupCategory.music)
           ? await _countMusicRows()
           : 0;
 
@@ -1690,69 +1764,17 @@ class BackupService {
         // Record every unticked category by enum name so import knows a layer is
         // empty BY CHOICE (vs a genuinely empty DB). Only settings/profiles are
         // acted on at import; the rest is diagnostic / future-proofing.
+        // 整库备份只列没带文件的文件类别（数据类别都在）。
         excludedCategories: <String>{
           for (final BackupCategory c in BackupCategory.values)
-            if (!wants(c)) c.name,
+            if (!wants(c) &&
+                (!fullDatabase ||
+                    kBackupFileCategories.contains(c) ||
+                    unavailableData.contains(c)))
+              c.name,
         },
+        fullDatabase: fullDatabase,
       );
-
-      if (includeDictionary) {
-        await _collectDictionaryTrees(
-          dictionaryResourceRoot!,
-          dictionaryPlan.packable,
-          files,
-        );
-      }
-      if (_booksRootDirectory != null && includeBooks) {
-        if (bookKeys == null) {
-          // Legacy full export: pack the whole books tree.
-          await _collectTreeFiles(
-            Directory(_booksRootDirectory),
-            _booksPrefix,
-            files,
-          );
-        } else {
-          // Per-book export (TODO-1195 part A): pack ONLY the selected books'
-          // content, keyed by each file's path relative to the books root so
-          // the archive layout matches the full-tree export (import restores
-          // the whole hoshi_books/ prefix onto this device's root either way).
-          await _collectSelectedBookFiles(
-            bookKeys,
-            books,
-            _booksRootDirectory,
-            files,
-          );
-        }
-      }
-      if (includeBooks) {
-        await _collectDownloadMangaFiles(
-          bookKeys,
-          books,
-          _booksRootDirectory,
-          files,
-        );
-      }
-      if (_audiobooksRootDirectory != null &&
-          wants(BackupCategory.audiobooks)) {
-        await _collectTreeFiles(
-          Directory(_audiobooksRootDirectory),
-          _audiobooksPrefix,
-          files,
-        );
-      }
-      if (_fontsRootDirectory != null && wants(BackupCategory.fonts)) {
-        await _collectReferencedFontFiles(files);
-      }
-      if (_gameCoversRootDirectory != null && includeGames) {
-        await _collectTreeFiles(
-          Directory(_gameCoversRootDirectory),
-          _gameCoversPrefix,
-          files,
-        );
-      }
-      if (includeSrs) {
-        await _collectSrsMediaFiles(files);
-      }
 
       final String metaJson = const JsonEncoder.withIndent(
         '  ',
@@ -1765,6 +1787,7 @@ class BackupService {
         metaName: _metaName,
         metaJson: metaJson,
         archivePathToSource: files,
+        deflate: compress,
         onBytes: onProgress == null
             ? null
             : (int deltaBytes) {
@@ -2531,6 +2554,136 @@ class BackupService {
   /// failure deletes the half-written archive so it is never mistaken for valid.
   /// 待打包总字节。缺失 / 无权限的源按 0 计，与 worker 里 `existsSync` 跳过同口径；
   /// 恒 ≥1 以免空备份除零（与导入侧 [_totalContentBytes] 同款）。
+  /// 文件类别（词典 / 书 / 下载的漫画 / 有声书 / 字体 / 视频 / 本地音频 / 游戏封面）与复习媒体要进包的文件：
+  /// zip 内路径 → 磁盘路径收进 [into]，返回打包了的视频文件表（写进 meta）。[createBackup] 与
+  /// [estimateFileCategoryBytes] 共用这一处：估算与真打包是同一张表，不会各算各的。
+  Future<Map<String, String>> _collectFileCategories(
+    Map<String, String> into, {
+    required bool Function(BackupCategory) wants,
+    required bool srsMedia,
+    required _DictionaryPackPlan dictionaryPlan,
+    required List<EpubBookRow> books,
+    Set<String>? bookKeys,
+    Set<String>? videoKeys,
+  }) async {
+    Map<String, String> videoFiles = const <String, String>{};
+    if (wants(BackupCategory.videos)) {
+      videoFiles = await _collectVideoFiles(into, videoKeys: videoKeys);
+    }
+    if (wants(BackupCategory.localAudio)) {
+      await _collectLocalAudioFiles(into);
+    }
+    final String? dictionaryRoot = _dictionaryResourceDirectory;
+    if (dictionaryRoot != null &&
+        wants(BackupCategory.dictionary) &&
+        dictionaryPlan.packable.isNotEmpty) {
+      await _collectDictionaryTrees(
+        Directory(dictionaryRoot),
+        dictionaryPlan.packable,
+        into,
+      );
+    }
+    final bool includeBooks = wants(BackupCategory.books);
+    if (_booksRootDirectory != null && includeBooks) {
+      if (bookKeys == null) {
+        // Legacy full export: pack the whole books tree.
+        await _collectTreeFiles(
+          Directory(_booksRootDirectory),
+          _booksPrefix,
+          into,
+        );
+      } else {
+        // Per-book export (TODO-1195 part A): pack ONLY the selected books'
+        // content, keyed by each file's path relative to the books root so
+        // the archive layout matches the full-tree export (import restores
+        // the whole hoshi_books/ prefix onto this device's root either way).
+        await _collectSelectedBookFiles(
+          bookKeys,
+          books,
+          _booksRootDirectory,
+          into,
+        );
+      }
+    }
+    if (includeBooks) {
+      await _collectDownloadMangaFiles(
+        bookKeys,
+        books,
+        _booksRootDirectory,
+        into,
+      );
+    }
+    if (_audiobooksRootDirectory != null && wants(BackupCategory.audiobooks)) {
+      await _collectTreeFiles(
+        Directory(_audiobooksRootDirectory),
+        _audiobooksPrefix,
+        into,
+      );
+    }
+    if (_fontsRootDirectory != null && wants(BackupCategory.fonts)) {
+      await _collectReferencedFontFiles(into);
+    }
+    if (_gameCoversRootDirectory != null && wants(BackupCategory.games)) {
+      await _collectTreeFiles(
+        Directory(_gameCoversRootDirectory),
+        _gameCoversPrefix,
+        into,
+      );
+    }
+    if (srsMedia) {
+      await _collectSrsMediaFiles(into);
+    }
+    return videoFiles;
+  }
+
+  /// 一份整库备份里文件类别与复习媒体要打包的文件（zip 内路径 → 磁盘路径）：与 [createBackup] 走同一个收集器
+  /// （[_collectFileCategories]），所以视频（库里引用的每个文件）、本地音频（库目录下的 `local_audio_*.db`）这些
+  /// 散在各处的大文件一样在里面。自动备份拿它同时算「有没有变化」的指纹与写之前的空间估算（第五期），两边都
+  /// 不会与真打包走岔。[categories] 只看文件类别；库本身不在里面。
+  Future<Map<String, String>> collectFileCategorySources({
+    required Set<BackupCategory> categories,
+    required bool includeSrsMedia,
+  }) async {
+    bool wants(BackupCategory c) => categories.contains(c);
+    final _DictionaryPackPlan plan = wants(BackupCategory.dictionary)
+        ? await _planDictionaryPack(
+            _dictionaryResourceDirectory == null
+                ? null
+                : Directory(_dictionaryResourceDirectory),
+          )
+        : const _DictionaryPackPlan.empty();
+    final Map<String, String> files = <String, String>{};
+    await _collectFileCategories(
+      files,
+      wants: wants,
+      srsMedia: includeSrsMedia,
+      dictionaryPlan: plan,
+      books: wants(BackupCategory.books)
+          ? await _db.getAllEpubBooks()
+          : const <EpubBookRow>[],
+    );
+    return files;
+  }
+
+  /// [collectFileCategorySources] 收出来的文件不压缩共多少字节（缺失 / 无权限的按 0 计，与打包时跳过同口径）；
+  /// 空表为 0。在后台 isolate 里 stat。
+  static Future<int> sourceBytesOf(Map<String, String> sources) async {
+    if (sources.isEmpty) return 0;
+    return Isolate.run(() => _totalSourceBytes(sources));
+  }
+
+  /// 一份整库备份里文件类别与复习媒体会打包多少字节（不压缩，第五期）：[collectFileCategorySources] +
+  /// [sourceBytesOf]。库本身不算（调用方按库文件大小另算）。
+  Future<int> estimateFileCategoryBytes({
+    required Set<BackupCategory> categories,
+    required bool includeSrsMedia,
+  }) async => sourceBytesOf(
+    await collectFileCategorySources(
+      categories: categories,
+      includeSrsMedia: includeSrsMedia,
+    ),
+  );
+
   static int _totalSourceBytes(Map<String, String> archivePathToSource) {
     int total = 0;
     for (final String source in archivePathToSource.values) {
@@ -2549,6 +2702,7 @@ class BackupService {
     required String metaName,
     required String metaJson,
     required Map<String, String> archivePathToSource,
+    bool deflate = false,
     void Function(int deltaBytes)? onBytes,
   }) async {
     // 进度回传口：闭包捕获 SendPort（SendPort 可跨 isolate 传递），Isolate.run 的
@@ -2569,6 +2723,7 @@ class BackupService {
         metaName: metaName,
         metaJson: metaJson,
         archivePathToSource: archivePathToSource,
+        deflate: deflate,
         sendPort: sendPort,
       );
     } finally {
@@ -2584,13 +2739,14 @@ class BackupService {
   /// `FushiDatabase` → `DynamicLibrary`）—— 两者都不可发送，spawn 当场抛
   /// `Illegal argument in isolate message`，导出备份 100% 失效（BUG-1929）。
   ///
-  /// 本函数的 Context 只有下面五个形参，全部可跨 isolate 传递（String / Map /
+  /// 本函数的 Context 只有下面六个形参，全部可跨 isolate 传递（String / Map / bool /
   /// SendPort）。**别把它内联回去**，也别在这里引用任何外层变量。
   static Future<void> _runBackupZipWorker({
     required String outputPath,
     required String metaName,
     required String metaJson,
     required Map<String, String> archivePathToSource,
+    required bool deflate,
     required SendPort? sendPort,
   }) {
     return Isolate.run(() async {
@@ -2604,7 +2760,11 @@ class BackupService {
           final File file = File(entry.value);
           if (!file.existsSync()) continue;
           final int size = file.lengthSync();
-          addFileStored(encoder, file, entry.key);
+          if (deflate && size <= kBackupDeflateMaxEntryBytes) {
+            addFileNativeDeflate(encoder, file, entry.key);
+          } else {
+            addFileStored(encoder, file, entry.key);
+          }
           sendPort?.send(size);
         }
         encoder.closeSync();

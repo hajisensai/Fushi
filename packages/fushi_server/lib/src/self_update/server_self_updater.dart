@@ -55,6 +55,7 @@ class ServerSelfUpdater implements HostSelfUpdater {
     required this.assetSuffix,
     required Future<bool> Function() isAllowed,
     required this.onInstalled,
+    this.beforeInstall,
     ServerReleaseFetcher? fetchReleases,
     ServerPackageDownloader? download,
     ServerArchiveExtractor? extract,
@@ -75,6 +76,7 @@ class ServerSelfUpdater implements HostSelfUpdater {
   factory ServerSelfUpdater.forRunningBundle({
     required Future<bool> Function() isAllowed,
     required void Function() onInstalled,
+    Future<void> Function()? beforeInstall,
   }) {
     final Directory? root = currentReleaseBundleRoot();
     return ServerSelfUpdater(
@@ -83,6 +85,7 @@ class ServerSelfUpdater implements HostSelfUpdater {
       assetSuffix: serverReleaseAssetSuffix(),
       isAllowed: isAllowed,
       onInstalled: onInstalled,
+      beforeInstall: beforeInstall,
       containerImage: serverRunsInContainerImage(),
     );
   }
@@ -98,6 +101,11 @@ class ServerSelfUpdater implements HostSelfUpdater {
 
   /// 新版已换进安装目录：`serve` 据此停服退出。
   final void Function() onInstalled;
+
+  /// 新包已下载、校验、解开，换包之前调（`serve` 接的是更新前整机备份，D16）：新版首次启动会把库迁移到
+  /// 新 schema，这份备份是回滚到旧版的依据。抛错 / 失败只记日志，**照样换包**——备份失败不挡更新，
+  /// 结果记在备份状态里给管理员看（同 app 第 1 期的更新前快照）。
+  final Future<void> Function()? beforeInstall;
 
   final Duration refreshThrottle;
 
@@ -200,6 +208,14 @@ class ServerSelfUpdater implements HostSelfUpdater {
         p.join(extracted.path, kServerBundleDirName),
       );
       _checkExtractedBundle(bundle, latest);
+      final Future<void> Function()? before = beforeInstall;
+      if (before != null) {
+        try {
+          await before();
+        } on Object catch (e, stack) {
+          engineLog.log('ServerSelfUpdate.beforeInstall', e, stack);
+        }
+      }
       await swapServerBundle(newBundle: bundle, installRoot: installRoot!);
       engineLog.logDiagnostic(
         'ServerSelfUpdate',

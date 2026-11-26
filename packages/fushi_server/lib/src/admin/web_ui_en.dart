@@ -5,7 +5,12 @@
 /// 同步改这里的键；`test/web_ui_i18n_test.dart` 会列出缺的与多余的键。
 library;
 
+import 'package:fushi_server/src/admin/web_ui_backups.dart';
+import 'package:fushi_server/src/admin/web_ui_device_backups.dart';
+
 const Map<String, String> kWebUiEnglish = <String, String>{
+  // 「设备备份」页（web_ui_device_backups.dart）。
+  ...kDeviceBackupsWebUiEnglish,
   // ── 导航与通用 ──
   '状态': 'Status',
   '配对': 'Pairing',
@@ -747,4 +752,6 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '系统': 'System',
   '收起侧边栏': 'Collapse sidebar',
   '展开侧边栏': 'Expand sidebar',
+  // ── 备份页（web_ui_backups.dart）──
+  ...kWebUiBackupsEnglish,
 };

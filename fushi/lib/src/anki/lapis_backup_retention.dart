@@ -10,6 +10,9 @@
 /// - 文件名解析不出时刻的一律保留（宁可留着，也不在年龄未知时删）。
 library;
 
+import 'package:fushi_core/fushi_core.dart'
+    show BackupRetentionPolicy, planBackupRetention;
+
 /// 备份最长保留时长。超过这个年龄**且**排在最近 [kLapisBackupKeepMinimum]
 /// 份之外才会被删。
 const Duration kLapisBackupMaxAge = Duration(days: 90);
@@ -38,7 +41,7 @@ DateTime? parseLapisBackupTimestamp(String filename) {
   return DateTime.tryParse(iso);
 }
 
-/// 规划要删除的备份条目。
+/// 规划要删除的备份条目（通用实现 [planBackupRetention] 的 Lapis 参数）。
 ///
 /// [newestFirst] 必须按**新 → 旧**排序（`LapisTemplateService.listBackups`
 /// 的契约）。返回的就是可以删的那些，顺序与输入一致。
@@ -54,14 +57,12 @@ List<T> planLapisBackupPrune<T>(
   required DateTime now,
   int keepMinimum = kLapisBackupKeepMinimum,
   Duration maxAge = kLapisBackupMaxAge,
-}) {
-  if (newestFirst.length <= keepMinimum) return <T>[];
-  final List<T> doomed = <T>[];
-  for (int i = keepMinimum; i < newestFirst.length; i++) {
-    final T item = newestFirst[i];
-    final DateTime? at = timestampOf(item);
-    if (at == null) continue;
-    if (now.difference(at) > maxAge) doomed.add(item);
-  }
-  return doomed;
-}
+}) => planBackupRetention<T>(
+  newestFirst,
+  timestampOf: timestampOf,
+  now: now,
+  policy: BackupRetentionPolicy(
+    keepMinimum: keepMinimum,
+    keepAllWithin: maxAge,
+  ),
+);

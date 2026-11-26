@@ -44,6 +44,7 @@ import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_routes.dart'
     show HostSubscriptionRejected;
 import 'package:fushi_server/src/admin/admin_backups.dart';
+import 'package:fushi_server/src/admin/admin_device_backups.dart';
 import 'package:fushi_server/src/admin/admin_srs.dart';
 import 'package:fushi_server/src/admin/admin_srs_ctl.dart';
 import 'package:fushi_server/src/admin/admin_context.dart';
@@ -137,6 +138,9 @@ class AdminApi {
   /// 整机备份端点（`/api/admin/backups*`，见 admin_backups.dart）。
   late final AdminBackups backups = AdminBackups(ctx);
 
+  /// 设备备份端点（`/api/admin/device-backups*`，见 admin_device_backups.dart）。
+  late final AdminDeviceBackups deviceBackups = AdminDeviceBackups(ctx);
+
   /// 复习（SRS）端点（`/api/admin/srs*`，见 admin_srs.dart）。
   late final AdminSrs srs = AdminSrs(ctx);
 
@@ -158,6 +162,10 @@ class AdminApi {
   ) async {
     if (path.startsWith(kAdminBackupsPath)) {
       final shelf.Response? r = await backups.route(method, path, request);
+      if (r != null) return r;
+    }
+    if (path.startsWith(kAdminDeviceBackupsPath)) {
+      final shelf.Response? r = await deviceBackups.route(method, path);
       if (r != null) return r;
     }
     if (path == kAdminSrsPath || path.startsWith('$kAdminSrsPath/')) {

@@ -562,8 +562,10 @@ void main() {
       ServerReleaseInfo? current = _beta,
       ServerReleaseFetcher? fetch,
       ServerPackageDownloader? download,
+      Future<void> Function()? beforeInstall,
     }) => ServerSelfUpdater(
       installRoot: root,
+      beforeInstall: beforeInstall,
       current: current,
       assetSuffix: _suffix,
       platform: 'linux',
@@ -622,6 +624,32 @@ void main() {
       await installed.future.timeout(const Duration(seconds: 10));
       expect(_read(p.join(root.path, 'bin', 'fushi_server')), 'new exe');
       expect((await u.status()).phase, HostUpdatePhase.installing);
+    });
+
+    test('换包之前先调 beforeInstall（更新前整机备份，D16）：那时程序文件还是旧的', () async {
+      final Completer<void> installed = Completer<void>();
+      String? exeWhenHookRan;
+      final ServerSelfUpdater u = build(
+        onInstalled: installed.complete,
+        beforeInstall: () async {
+          exeWhenHookRan = _read(p.join(root.path, 'bin', 'fushi_server'));
+        },
+      );
+      await u.startUpdate();
+      await installed.future.timeout(const Duration(seconds: 10));
+      expect(exeWhenHookRan, 'old exe');
+      expect(_read(p.join(root.path, 'bin', 'fushi_server')), 'new exe');
+    });
+
+    test('beforeInstall 抛错 → 只记日志，照样换包（备份失败不挡更新）', () async {
+      final Completer<void> installed = Completer<void>();
+      final ServerSelfUpdater u = build(
+        onInstalled: installed.complete,
+        beforeInstall: () async => throw StateError('disk full'),
+      );
+      await u.startUpdate();
+      await installed.future.timeout(const Duration(seconds: 10));
+      expect(_read(p.join(root.path, 'bin', 'fushi_server')), 'new exe');
     });
 
     test('debug 装机另按 tag 取滚动包；滚动包还不存在时仍看列表', () async {

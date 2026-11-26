@@ -139,6 +139,89 @@ void main() {
     return ZipDecoder().decodeBytes(await File(zipPath).readAsBytes());
   }
 
+  // 自动备份写之前的空间估算（第五期）与真打包是同一张文件表：每个文件类别、复习媒体都要算进去。以前估算
+  // 按一张另列的「类别 → 目录」表算，视频（库里引用的散文件）与本地音频（库目录下的 local_audio_*.db）
+  // 两类恰好漏掉。新增文件类别时这里会因为「估出 0」而红。
+  test(
+    'estimateFileCategoryBytes：每个文件类别与复习媒体都与 createBackup 打包的文件一致',
+    () async {
+      final built = await buildFullSource();
+      final String dbDir = p.join(src.path, 'db');
+      final String covers = p.join(src.path, 'game_covers');
+      await writeFile(p.join(covers, 'g1.png'), 'COVER');
+      await writeFile(p.join(dbDir, 'local_audio_1.db'), 'LOCALAUDIO');
+      await writeFile(p.join(dbDir, 'srs_media', 'p1', 'a.mp3'), 'SRSMEDIA');
+      final BackupService service = BackupService(
+        db: built.db,
+        dbDirectory: dbDir,
+        appVersion: '1.0.0',
+        dictionaryResourceDirectory: built.dictRoot,
+        booksRootDirectory: p.join(src.path, 'fushi_books'),
+        audiobooksRootDirectory: p.join(src.path, 'audiobooks'),
+        fontsRootDirectory: p.join(src.path, 'custom_fonts'),
+        gameCoversRootDirectory: covers,
+      );
+
+      // 只有库的那份整库备份里就有的条目（库 / meta / 复习库），之后从各份里扣掉。
+      Future<Set<String>> entryNames(String zip) async => <String>{
+        for (final ArchiveFile e in (await readZip(zip)).files)
+          if (e.isFile) e.name,
+      };
+      final String baseZip = p.join(src.path, 'base.zip');
+      await service.createBackup(
+        baseZip,
+        categories: const <BackupCategory>{},
+        fullDatabase: true,
+        includeSrsMedia: false,
+      );
+      final Set<String> base = await entryNames(baseZip);
+
+      Future<int> packedFileBytes(
+        Set<BackupCategory> categories, {
+        required bool srsMedia,
+      }) async {
+        final String zip = p.join(src.path, 'c${categories.length}.zip');
+        await service.createBackup(
+          zip,
+          categories: categories,
+          fullDatabase: true,
+          includeSrsMedia: srsMedia,
+        );
+        int total = 0;
+        for (final ArchiveFile e in (await readZip(zip)).files) {
+          if (e.isFile && !base.contains(e.name)) total += e.size;
+        }
+        File(zip).deleteSync();
+        return total;
+      }
+
+      for (final BackupCategory c in kBackupFileCategories) {
+        final int estimate = await service.estimateFileCategoryBytes(
+          categories: <BackupCategory>{c},
+          includeSrsMedia: false,
+        );
+        expect(estimate, greaterThan(0), reason: '$c 没算进估算');
+        expect(
+          estimate,
+          await packedFileBytes(<BackupCategory>{c}, srsMedia: false),
+          reason: '$c 的估算与打包不一致',
+        );
+      }
+      final int media = await service.estimateFileCategoryBytes(
+        categories: const <BackupCategory>{},
+        includeSrsMedia: true,
+      );
+      expect(media, 'SRSMEDIA'.length);
+      expect(
+        await service.estimateFileCategoryBytes(
+          categories: kBackupFileCategories,
+          includeSrsMedia: true,
+        ),
+        await packedFileBytes(kBackupFileCategories, srsMedia: true),
+      );
+    },
+  );
+
   /// Extracts the packed `fushi.db` from [zipPath] into a fresh dir under [into]
   /// and opens it, so a test can assert on the exported DB blob's rows directly.
   Future<FushiDatabase> openBackupDb(String zipPath, Directory into) async {

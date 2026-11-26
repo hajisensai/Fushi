@@ -1,6 +1,15 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_cli/fushi_cli.dart';
+import 'package:fushi_core/fushi_core.dart'
+    show
+        kRestorePointArchiveFileName,
+        ReceivedDeviceBackup,
+        ReceivedDeviceBackupGroup,
+        RestorePoint,
+        RestorePointDatabase,
+        RestorePointFile,
+        RestorePointKind;
 import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart'
@@ -113,6 +122,9 @@ void main() {
         ('POST', '/api/admin/subscriptions/s1/enable'),
         ('PUT', '/api/admin/subscriptions/s1'),
         ('DELETE', '/api/admin/subscriptions/s1'),
+        // 还原点：本机当互联 host 时收到的别的设备的备份。
+        ('GET', '/api/admin/restore-points/received'),
+        ('POST', '/api/admin/restore-points/received/delete'),
       ];
       for (final (String method, String path) in calls) {
         final List<CtlRoute> hits = <CtlRoute>[
@@ -185,6 +197,94 @@ void main() {
           isA<CtlFailure>().having((CtlFailure f) => f.status, 'status', 400),
         ),
       );
+    });
+  });
+
+  group('收到的设备备份（本机当互联 host）', () {
+    final CtlRoute delete = routes.firstWhere(
+      (CtlRoute r) =>
+          r.method == 'POST' &&
+          r.pattern == '/api/admin/restore-points/received/delete',
+    );
+
+    Future<void> expect400(Map<String, Object?> body) => expectLater(
+      delete.handler(
+        CtlCall(
+          method: 'POST',
+          path: '/api/admin/restore-points/received/delete',
+          body: body,
+        ),
+      ),
+      throwsA(
+        isA<CtlFailure>().having((CtlFailure f) => f.status, 'status', 400),
+      ),
+    );
+
+    test('删除缺 confirm、设备键 / id 不合格都 400，不碰 app', () async {
+      await expect400(<String, Object?>{'device': '0123456789abcdef'});
+      await expect400(<String, Object?>{
+        'device': '0123456789abcdef',
+        'id': '20261120-030000-000-fushi-scheduled',
+        'confirm': false,
+      });
+      await expect400(<String, Object?>{'device': '../etc', 'confirm': true});
+      await expect400(<String, Object?>{
+        'device': '0123456789abcdef',
+        'id': '../../x',
+        'confirm': true,
+      });
+      await expect400(<String, Object?>{'confirm': true});
+    });
+
+    test('列表出参：分组 + 设备目录与每份的目录、zip', () {
+      final String root = p.join('inbox', '__backups__');
+      final String dir = p.join(
+        root,
+        '0123456789abcdef',
+        '20261120-030000-000-fushi-scheduled',
+      );
+      final ReceivedDeviceBackupGroup group = ReceivedDeviceBackupGroup(
+        deviceKey: '0123456789abcdef',
+        deviceName: 'Pixel',
+        copies: <ReceivedDeviceBackup>[
+          ReceivedDeviceBackup(
+            deviceKey: '0123456789abcdef',
+            point: RestorePoint(
+              id: '20261120-030000-000-fushi-scheduled',
+              directory: dir,
+              kind: RestorePointKind.scheduled,
+              database: RestorePointDatabase.fushi,
+              createdAtMs: 1000,
+              fromSchema: 180,
+              toSchema: 180,
+              files: const <RestorePointFile>[
+                RestorePointFile(name: kRestorePointArchiveFileName, size: 3),
+              ],
+              appVersion: '1.2.3',
+            ),
+            bytes: 3,
+          ),
+        ],
+        totalBytes: 5,
+        incomplete: 1,
+      );
+      final Map<String, Object?> wire = receivedDeviceBackupGroupToWire(
+        group,
+        root,
+      );
+      expect(wire['device'], '0123456789abcdef');
+      expect(wire['name'], 'Pixel');
+      expect(wire['count'], 1);
+      expect(wire['bytes'], 5);
+      expect(wire['incomplete'], 1);
+      expect(wire['newestAtMs'], 1000);
+      expect(wire['path'], p.join(root, '0123456789abcdef'));
+      final Map<String, Object?> copy =
+          (wire['copies']! as List<Object?>).single! as Map<String, Object?>;
+      expect(copy['id'], '20261120-030000-000-fushi-scheduled');
+      expect(copy['appVersion'], '1.2.3');
+      expect(copy['path'], dir);
+      expect(copy['archive'], p.join(dir, kRestorePointArchiveFileName));
     });
   });
 
