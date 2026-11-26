@@ -36,6 +36,7 @@ import 'package:fushi/src/utils/components/fushi_expressive_progress.dart'
     show FushiWavyLinearProgress;
 import 'package:fushi/src/utils/components/fushi_haptics.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
+import 'package:fushi/src/utils/components/fushi_compact_landscape.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/fushi_cover_block.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
@@ -339,16 +340,31 @@ double adaptiveNavRailWidthFor(BuildContext context, {required bool extended}) {
       kMaterialNavRailFloatingInset;
 }
 
-/// 宽屏主导航此刻是否展开。默认按窗口尺寸档：expanded（≥840）展开、medium
-/// 收起。MD3 下用户可以用 rail 顶部的菜单钮手动切换并记忆（[userExpanded]，
-/// null = 没切过）；Apple 设计系统的侧栏没有这颗钮，恒按尺寸档。首页 rail 与
-/// 桌面标题栏的缩进都经这里，两边不会各算一套。
+/// 窗口本身该不该给展开的侧栏（不看用户手动收展）：expanded 档且不是横屏矮
+/// 窗口。Apple 设计系统据此决定画贴边侧栏还是窄条（`home_page.dart`）。
+bool adaptiveNavSidebarByWindow(
+  BuildContext context, {
+  required WindowSizeClass sizeClass,
+}) =>
+    sizeClass == WindowSizeClass.expanded &&
+    !isFushiCompactLandscapeWindow(context);
+
+/// 宽屏主导航此刻是否展开。默认按 [adaptiveNavSidebarByWindow]：expanded
+/// （≥840）展开、medium 收起；横屏矮窗口（横屏手机，见
+/// [isFushiCompactLandscapeWindow]）虽宽到 expanded 档也默认收起——展开侧栏占掉
+/// 四分之一宽，竖向只摆得下四个目的地，顶部菜单钮 + 品牌位又吃掉三分之一高。
+/// MD3 下用户可以用 rail 顶部的菜单钮手动切换并记忆（[userExpanded]，null = 没
+/// 切过）；Apple 设计系统的侧栏没有这颗钮，恒按窗口。首页 rail 与桌面标题栏的
+/// 缩进都经这里，两边不会各算一套。
 bool adaptiveNavRailExtended(
   BuildContext context, {
   required WindowSizeClass sizeClass,
   bool? userExpanded,
 }) {
-  final bool byWindow = sizeClass == WindowSizeClass.expanded;
+  final bool byWindow = adaptiveNavSidebarByWindow(
+    context,
+    sizeClass: sizeClass,
+  );
   if (isGlassDesign(context)) return byWindow;
   return userExpanded ?? byWindow;
 }

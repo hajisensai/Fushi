@@ -12,7 +12,10 @@ library;
 
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
+    show isGlassDesign;
 import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/fushi_compact_landscape.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart'
     show WindowSizeClass, windowSizeClassReal;
 
@@ -115,17 +118,24 @@ class FushiPageTitleMetrics {
   static FushiPageTitleMetrics forCompact(bool compact) =>
       compact ? phone : wide;
 
-  /// 此处生效的一档（与外壳底栏同一判据：真实窗口宽落在 compact 档即手机）。
+  /// 此处生效的一档（见 [isCompact]）。
   static FushiPageTitleMetrics of(BuildContext context) =>
       forCompact(isCompact(context));
 
-  /// 手机 / 窄窗判据。
+  /// 手机 / 窄窗判据：真实窗口宽落在 compact 档；MD3 下横屏矮窗口也算。
+  ///
+  /// 横屏手机宽 ~900dp 会落进 expanded 档，只按宽取档 MD3 就拿到桌面的 84 号
+  /// 页名，在只有 ~400dp 高的屏上页头吃掉三分之一高度、正文只剩一半（横屏巡检
+  /// 2026-11-26），所以取手机档。Apple 设计系统反过来：它的手机档是「导航行 +
+  /// 大标题行」两行，宽档是单行内联标题——iPhone 横屏本来就收成内联标题，宽档
+  /// 正是横屏手机该有的样子，保持按宽取档。
   static bool isCompact(BuildContext context) =>
       windowSizeClassReal(
-        MediaQuery.sizeOf(context).width,
-        FushiAppUiScale.of(context),
-      ) ==
-      WindowSizeClass.compact;
+            MediaQuery.sizeOf(context).width,
+            FushiAppUiScale.of(context),
+          ) ==
+          WindowSizeClass.compact ||
+      (!isGlassDesign(context) && isFushiCompactLandscapeWindow(context));
 
   final bool compact;
 
