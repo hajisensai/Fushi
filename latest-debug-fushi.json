@@ -28,6 +28,16 @@
       "dbSchemaVersion": 181
     },
     {
+      "name": "fushi-3.4.0-debug.32769-linux-x86_64.flatpak",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.4.0-debug.32769-linux-x86_64.flatpak",
+      "releaseSequence": 32769,
+      "tag": "v3.4.0-debug.32769+2704c40",
+      "version": "3.4.0-debug.32769",
+      "size": 260860384,
+      "sha256": "1a01f324ebe1eab7ab4dbc20178c60ede2819622ce7f7348d073a6e6a227225d",
+      "dbSchemaVersion": 181
+    },
+    {
       "name": "fushi-3.4.0-debug.32769-macos-arm64.dmg",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.4.0-debug.32769-macos-arm64.dmg",
       "releaseSequence": 32769,
