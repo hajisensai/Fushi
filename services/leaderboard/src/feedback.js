@@ -1287,8 +1287,33 @@ export async function reporterAttachmentResponse(env, row, slot, now) {
   return res;
 }
 
+/**
+ * 账户角色（accounts.role）：
+ *   dev    开发者：处理台全部能力（回复反馈人、改状态、标记修复、拍板台、统计等）。
+ *   triage 反馈协查：只能看反馈（列表 / 详情 / 附件）并写内部批注（开发者批改 / AI 总结）；
+ *          反馈人看得到或会推送给对方的动作（回复、改状态）一律没有，处理台其他页面也进不去。
+ *   user   普通用户。
+ */
+export const ACCOUNT_ROLES = Object.freeze(['dev', 'triage', 'user']);
+
+/**
+ * 能看反馈、写内部批注的角色（dev 与 triage）。
+ * @param {string | null | undefined} role
+ * @returns {boolean}
+ */
+export function canViewFeedback(role) {
+  return role === 'dev' || role === 'triage';
+}
+
+/** 回复 / 改状态等对外动作与处理台其余功能：只认 dev。 */
 export function requireDev(account) {
   if (!account || account.role !== 'dev') throw new HttpError(403, 'not_developer');
+  return account;
+}
+
+/** 只读反馈与写内部批注：dev 或 triage。 */
+export function requireFeedbackViewer(account) {
+  if (!account || !canViewFeedback(account.role)) throw new HttpError(403, 'not_developer');
   return account;
 }
 
@@ -1608,19 +1633,20 @@ export async function routeFeedback(request, env, url, now, io) {
     return json(out, 200, noStore);
   }
 
+  // GET 三个与 POST …/notes 只读 / 内部批注：dev 与 triage 都可；POST …/:id（回复、改状态，反馈人可见）只认 dev。
   if (method === 'GET' && RE.devList.test(path)) {
-    requireDev(await io.auth(new Uint8Array(), {}));
+    requireFeedbackViewer(await io.auth(new Uint8Array(), {}));
     const q = url.searchParams;
     return json(await devList(env, {
       status: q.get('status'), cursor: q.get('cursor'), limit: q.get('limit'), q: q.get('q'),
     }), 200, noStore);
   }
   if (method === 'GET' && (m = RE.devOne.exec(path))) {
-    requireDev(await io.auth(new Uint8Array(), {}));
+    requireFeedbackViewer(await io.auth(new Uint8Array(), {}));
     return json(await devView(env, await feedbackById(env, m[1])), 200, noStore);
   }
   if (method === 'GET' && (m = RE.devAttach.exec(path))) {
-    requireDev(await io.auth(new Uint8Array(), {}));
+    requireFeedbackViewer(await io.auth(new Uint8Array(), {}));
     return attachmentResponse(env, await feedbackById(env, m[1]), m[2], url.searchParams.get('view') === 'text', {
       range: request.headers.get('Range'),
       download: url.searchParams.get('download') === '1',
@@ -1635,7 +1661,7 @@ export async function routeFeedback(request, env, url, now, io) {
   }
   if (method === 'POST' && (m = RE.devNotes.exec(path))) {
     const bytes = await io.readBody(64 * 1024);
-    requireDev(await io.auth(bytes, { mutating: true }));
+    requireFeedbackViewer(await io.auth(bytes, { mutating: true }));
     const row = await feedbackById(env, m[1]);
     await devSaveNotes(env, row, io.parse(bytes), now);
     return json(await devView(env, await feedbackById(env, row.id)), 200, noStore);
