@@ -315,7 +315,7 @@ Future<Map<String, Object?>> _deviceModel() async {
 String collectFeedbackLogText({required bool includeDebugLog}) {
   final StringBuffer buf = StringBuffer()
     ..writeln('==== error log ====')
-    ..writeln(ErrorLogService.instance.getFullLog());
+    ..writeln(ErrorLogService.instance.getFullLog(includeDataLocation: false));
   if (includeDebugLog && DebugLogService.instance.enabled) {
     buf
       ..writeln()
@@ -333,6 +333,16 @@ String collectFeedbackLogText({required bool includeDebugLog}) {
       ..writeln('==== game lookup diagnostics ====')
       ..writeAll(galLines, '\n')
       ..writeln();
+  }
+  // BUG-5463：数据位置取证环（书库根判定 / 重定位 / 迁移 / 词典文件缺失，跨运行保留）
+  // 放在最末尾：超出上传上限时 [buildFeedbackLogGzip] 只留尾部，它最后才被丢。闪退报告
+  // 同样带上——它就是错误日志的一部分，不受调试日志开关管。
+  final String dataLocation = ErrorLogService.instance.dataLocationLogText();
+  if (dataLocation.isNotEmpty) {
+    buf
+      ..writeln()
+      ..writeln('==== data location diagnostics ====')
+      ..write(dataLocation);
   }
   return redactFeedbackLog(buf.toString());
 }

@@ -7,6 +7,7 @@ import 'package:fushi_anki/fushi_anki.dart' show AnkiOpenWordOutcome;
 import 'package:flutter/scheduler.dart' show SchedulerBinding;
 import 'package:flutter/services.dart' show KeyDownEvent, KeyEvent;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi/src/dictionary/dictionary_file_health.dart';
 import 'package:fushi/src/media/video/underlay_composition.dart'
     show UnderlayInputRegion;
 import 'package:fushi/src/lookup/effective_lookup_size.dart'
@@ -2357,15 +2358,22 @@ class DictionaryPopupLayer extends StatelessWidget {
         onRefineQuery;
     final String source = _refineSourceFor(result?.searchTerm);
     final bool showRefine = refine != null && source.isNotEmpty;
+    // BUG-5462：查不到是因为词典文件不在 / 读不到时如实说，不只是「未找到」。
+    final String? fileNotice = dictionaryLookupFileNotice(
+      DictionaryFileHealthMonitor.instance.value,
+    );
     return Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         child: FushiPlaceholderMessage(
           icon: FushiIcons.searchOff,
           message: dictionaryPopupNoResultsMessage(result?.searchTerm),
-          detail: showRefine
-              ? t.dictionary_popup_refine_hint
-              : t.settings_search_empty_hint,
+          detailMaxLines: fileNotice == null ? 3 : 5,
+          detail:
+              fileNotice ??
+              (showRefine
+                  ? t.dictionary_popup_refine_hint
+                  : t.settings_search_empty_hint),
           action: showRefine
               ? LookupRefinePanel(
                   key: const ValueKey<String>('lookup-refine-empty'),

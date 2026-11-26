@@ -238,6 +238,7 @@ import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi/src/pdf/pdf_importer.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/dictionary/dict_resource_materializer.dart';
+import 'package:fushi/src/dictionary/dictionary_file_health.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/dictionary/transform_description_locale.dart';
 import 'package:fushi/src/reader/dictionary_style_css.dart';
@@ -4243,6 +4244,7 @@ class AppModel
         ),
       );
     }
+    _recheckDictionaryFileHealthSync(dictList, states);
     // 排期而不是就地重建：这个回调挂在**每一次**词典元数据写入上（导入每本、
     // 类型自愈每本、隐藏/折叠/语言开关），就地重建会把总代价推成 O(N²)。真正的
     // 装载推迟到下次要用引擎时，批量写入期间的 N 次排期塌成 1 次装载。
@@ -4686,6 +4688,13 @@ class AppModel
       );
     }
     final states = _engineLoadStates(dictList);
+    await _assessDictionaryFileHealth(
+      dictList: dictList,
+      states: states,
+      paths: paths,
+      exists: existsResults,
+      probeFailed: materialized.failed,
+    );
     final List<DictPathEntry> entries = <DictPathEntry>[
       for (var i = 0; i < dictList.length; i++)
         dictPathEntryOf(
@@ -4717,6 +4726,112 @@ class AppModel
     _lastScheduledDictBuckets = b;
     _lastScheduledTermLanguages = termLanguages;
     return true;
+  }
+
+  /// BUG-5462：已登记词典的文件状态判定（异步装载路径，每次排期都重判一遍）。
+  ///
+  /// 装载链路对「目录不在 / 读不到」的词典只是不进引擎，界面上什么都看不出来——这里把
+  /// 同一份 exists 结果与物化探测的失败，加上资源根可读性与必需文件齐全性，判成
+  /// [DictionaryFileIssue]，发布到 [DictionaryFileHealthMonitor]。**只判定、不删除**：
+  /// 资源根列不出来（外部存储未挂载 / 没权限）时一律判「暂时读不到」，不当成删除。
+  Future<void> _assessDictionaryFileHealth({
+    required List<Dictionary> dictList,
+    required List<({bool hidden, Map<String, String> metadata})> states,
+    required List<String> paths,
+    required List<bool> exists,
+    required Map<String, String> probeFailed,
+  }) async {
+    final bool rootReadable = await dictionaryResourceRootReadable(
+      dictionaryResourceDirectory,
+    );
+    final List<bool> complete = await Future.wait(<Future<bool>>[
+      for (var i = 0; i < paths.length; i++)
+        exists[i] && !probeFailed.containsKey(paths[i])
+            ? dictionaryFilesComplete(paths[i])
+            : Future<bool>.value(false),
+    ]);
+    final Map<String, DictionaryFileIssue> issues =
+        <String, DictionaryFileIssue>{};
+    for (var i = 0; i < dictList.length; i++) {
+      final DictionaryFileIssue? issue = classifyDictionaryFiles(
+        rootReadable: rootReadable,
+        dirExists: exists[i],
+        filesComplete: complete[i],
+        probeError: probeFailed[paths[i]],
+      );
+      if (issue != null) issues[dictList[i].name] = issue;
+    }
+    _publishDictionaryFileHealth(dictList, states, issues);
+  }
+
+  /// 同步重建路径（每次词典元数据写入都会走）上的复查：**只撤销、不新增**——重新导入 /
+  /// 删除之后，已标出问题的那几本若文件回来了（或词典已不在列表里）就撤掉标记；新问题
+  /// 只由异步路径判（它有资源根可读性与物化探测的结论）。没有问题时零 IO。
+  void _recheckDictionaryFileHealthSync(
+    List<Dictionary> dictList,
+    List<({bool hidden, Map<String, String> metadata})> states,
+  ) {
+    final DictionaryFileHealth current =
+        DictionaryFileHealthMonitor.instance.value;
+    if (current.isHealthy) return;
+    final Map<String, DictionaryFileIssue> issues =
+        <String, DictionaryFileIssue>{};
+    for (final Dictionary d in dictList) {
+      final DictionaryFileIssue? issue = current.issueOf(d.name);
+      if (issue == null) continue;
+      final String p = path.join(dictionaryResourceDirectory.path, d.name);
+      final bool recovered =
+          Directory(p).existsSync() &&
+          _dictResources.isLoadable(p) &&
+          dictionaryFilesCompleteSync(p);
+      if (!recovered) issues[d.name] = issue;
+    }
+    _publishDictionaryFileHealth(dictList, states, issues);
+  }
+
+  void _publishDictionaryFileHealth(
+    List<Dictionary> dictList,
+    List<({bool hidden, Map<String, String> metadata})> states,
+    Map<String, DictionaryFileIssue> issues,
+  ) {
+    int total = 0;
+    int missing = 0;
+    int unreadable = 0;
+    for (var i = 0; i < dictList.length; i++) {
+      final Dictionary d = dictList[i];
+      if (states[i].hidden || d.type != DictionaryType.term) continue;
+      total++;
+      switch (issues[d.name]) {
+        case DictionaryFileIssue.missing:
+          missing++;
+        case DictionaryFileIssue.unreadable:
+          unreadable++;
+        case null:
+          break;
+      }
+    }
+    final DictionaryFileHealth health = DictionaryFileHealth(
+      issues: Map<String, DictionaryFileIssue>.unmodifiable(issues),
+      lookupTermTotal: total,
+      lookupTermMissing: missing,
+      lookupTermUnreadable: unreadable,
+    );
+    final DictionaryFileHealthMonitor monitor =
+        DictionaryFileHealthMonitor.instance;
+    if (monitor.value == health) return;
+    monitor.value = health;
+    // 进数据位置取证环（BUG-5463）：有问题、或环里记过问题而现在恢复了才记（文本没变
+    // 不占条目）；一直正常的设备一条都不写。`:popup` 进程不记：同一份环文件只由主进程
+    // 写，免得两个进程整份重写互相覆盖。
+    const String source = 'AppModel.dictionaryFiles';
+    if (!_isDictionaryPopupProcess &&
+        (!health.isHealthy ||
+            ErrorLogService.instance.lastDataLocation(source) != null)) {
+      ErrorLogService.instance.logDataLocationIfChanged(
+        source,
+        health.describe(resourceRoot: dictionaryResourceDirectory.path),
+      );
+    }
   }
 
   List<DictionarySearchResult> get dictionaryHistory =>
@@ -5691,7 +5806,7 @@ class AppModel
       // 改写了全库路径、或被磁盘反证拒绝的，都要能从反馈日志里看见（反馈
       // RCv76PPoiJ 时这一步做了什么完全无迹可查）。
       for (final String note in AppPaths.androidLocationCorrections) {
-        ErrorLogService.instance.logDiagnostic(
+        ErrorLogService.instance.logDataLocation(
           'AppPaths.androidLocation',
           note,
         );
@@ -5709,7 +5824,7 @@ class AppModel
               strayRoot: strayLibraryRoot,
               supportRoot: _databaseDirectory.path,
             );
-        ErrorLogService.instance.logDiagnostic(
+        ErrorLogService.instance.logDataLocation(
           'AppPaths.androidStrayLibrary',
           '${strayLibraryRoot.path} → ${_appDirectory.path}：${merge.describe()}',
         );
@@ -5723,11 +5838,22 @@ class AppModel
                 .log('AppModel.sandboxRelocation', e, stack),
           );
       if (relocation.isNoteworthy) {
-        ErrorLogService.instance.logDiagnostic(
+        ErrorLogService.instance.logDataLocation(
           'AppModel.sandboxRelocation',
           relocation.toString(),
         );
       }
+      // BUG-5463：本次启动用的数据根。只在和环里上一次记的不一样时占一条——平静的启动
+      // 不写盘；书库根换了位置（迁移、Android 内外部判定翻转、iOS 容器换代）的那次启动
+      // 则留下「从哪次起变了」的证据，丢数据后重开再提反馈也还在。
+      ErrorLogService.instance.logDataLocationIfChanged(
+        'AppModel.dataRoots',
+        dataRootsDiagnostic(
+          libraryRoot: _appDirectory.path,
+          supportRoot: _databaseDirectory.path,
+          androidLocation: AppPaths.decidedAndroidDocumentsLocation,
+        ),
+      );
       //    cloud backup backend can now coexist);
       // 4) BUG-1576: drop the pre-decoupling GLOBAL folder cache. Two channels
       //    took turns writing that single pair of keys, so its value can no
@@ -6423,6 +6549,9 @@ class AppModel
       await refreshForWarmDictionaryPopup();
       return;
     }
+    // 一进来就标记：下面的词典装载（BUG-5462 文件状态判定）要知道自己在 `:popup` 进程里，
+    // 不去写主进程那份数据位置取证环。
+    _isDictionaryPopupProcess = true;
     try {
       debugPrint('[Fushi-popup] init: PackageInfo + DeviceInfo');
       _packageInfo = await PackageInfo.fromPlatform();
@@ -6567,7 +6696,6 @@ class AppModel
 
       // 反馈 kEFPY4cuKZ：主进程正打开一部带作品级配置的作品时，本进程的查词 / 制卡 / 主题
       // 按同一份作品配置生效（镜像进本 isolate 的 [WorkProfileScope]）。
-      _isDictionaryPopupProcess = true;
       WorkProfileScope.instance.addListener(_onWorkProfileScopeChanged);
       await mirrorMainProcessWorkSession();
 
