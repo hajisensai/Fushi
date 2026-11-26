@@ -4701,12 +4701,21 @@ class GalHookSessionController extends ChangeNotifier {
     if (best == null) return;
     _textThreadMemoryApplied = true;
     _textThreadAutoSelectInFlight = true;
+    final EngineHookGalAudioSource? engine = _engineSource;
     unawaited(
       selectTextThread(best.nativeThreadId, threadKey: best.key).then((
         bool selected,
       ) {
         _textThreadAutoSelectInFlight = false;
-        if (!selected) return;
+        if (!selected) {
+          // 引擎已换（停止 / 降级 / 重新附着）：这次失败属于旧引擎，不动恢复状态。
+          if (!identical(engine, _engineSource)) return;
+          // native 没接受这次选择（冷启动时 JIT hook 线程刚登记、helper 侧还没就绪
+          // 等）：恢复并没有发生，必须让下一次目录 / 行数变动重试，否则本会话再也
+          // 不恢复记忆（7vGmtj4A1t）。用户在飞期间亲选过就尊重用户。
+          if (!_textThreadUserSelected) _textThreadMemoryApplied = false;
+          return;
+        }
         _record(
           GalHookEventSeverity.info,
           'text',
@@ -4756,14 +4765,25 @@ class GalHookSessionController extends ChangeNotifier {
     if (best == null) return false;
     final TexthookerTextThread chosen = best;
     final String? replaced = current?.key ?? _selectedTextThreadKey;
+    // 接管前是否已有选择：接管失败时据此判断记忆恢复是否还没发生过。
+    final bool hadSelection = _selectedTextThreadKey != null;
+    final bool memoryAppliedBefore = _textThreadMemoryApplied;
     _textThreadMemoryApplied = true;
     _textThreadAutoSelectInFlight = true;
+    final EngineHookGalAudioSource? engine = _engineSource;
     unawaited(
       selectTextThread(chosen.nativeThreadId, threadKey: chosen.key).then((
         bool selected,
       ) {
         _textThreadAutoSelectInFlight = false;
-        if (!selected) return;
+        if (!selected) {
+          if (!identical(engine, _engineSource)) return;
+          // 接管没成：恢复到发起前的状态，别让一次失败的自动选择堵死记忆恢复。
+          if (!_textThreadUserSelected && !hadSelection) {
+            _textThreadMemoryApplied = memoryAppliedBefore;
+          }
+          return;
+        }
         _record(
           GalHookEventSeverity.info,
           'text',

@@ -5037,6 +5037,94 @@ void _bug950Guard() {
     }
 
     test(
+      'a remembered thread is restored again after native rejects the first select',
+      () async {
+        // 7vGmtj4A1t：冷启动时记忆线程第一次被选中，native 还没接受（返回 false）。
+        // 旧实现在发起前就把「已恢复」钉死，失败后本会话再也不重试。
+        final Map<String, GalCaptureMemory> store = <String, GalCaptureMemory>{
+          r'd:\gal\rp\rpsisters2.exe': const GalCaptureMemory(
+            textThreadFingerprint: 'code:HQX8@1FEB30',
+          ),
+        };
+        int lunaSeq = 100;
+        bool rejectFirst = true;
+        final TexthookerService service = TexthookerService.test();
+        final ChangeNotifier endpoints = ChangeNotifier();
+        final _FakeEngineSource engine = _FakeEngineSource(
+          pairedBytes: Uint8List(0),
+          audioFormat: null,
+          textReady: true,
+          pollLinesForInvocation: (int invocation) {
+            if (invocation == 1) return staged(1);
+            // 之后每轮再出一行，给恢复留下重试的时机（与真机台词持续推进一致）。
+            if (invocation < 40) {
+              return <GalHookedLine>[luna(++lunaSeq, '台詞$lunaSeq')];
+            }
+            return const <GalHookedLine>[];
+          },
+        );
+        engine.onSelectTextThread = (int? threadId) async {
+          if (rejectFirst) {
+            rejectFirst = false;
+            return false;
+          }
+          return true;
+        };
+        final GalHookSessionController controller = GalHookSessionController(
+          textService: service,
+          isWindows: true,
+          targetWow64Probe: (_) async => false,
+          targetImagePathProbe: (int pid) => r'D:\gal\rp\rpsisters2.exe',
+          injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+          engineSourceFactory:
+              ({
+                required int targetPid,
+                required String? launchExe,
+                required String injectorPath,
+                required bool lunaPcHooks,
+                int? lunaCodepage,
+                List<String> launchArguments = const <String>[],
+                String launchWorkdir = '',
+                GalJapaneseLocaleMode japaneseLocaleMode =
+                    kGalDefaultJapaneseLocaleMode,
+                String? contentLanguage,
+              }) => engine,
+          loopbackSourceFactory: _FakeLoopbackSource.new,
+          textPollInterval: const Duration(milliseconds: 5),
+          endpointListenable: endpoints,
+          endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+        );
+        controller.attachCaptureMemory(
+          load: (String gameKey) => store[gameKey] ?? const GalCaptureMemory(),
+          save: (String gameKey, GalCaptureMemory memory) =>
+              store[gameKey] = memory,
+        );
+        await controller.startAttachedCapture(
+          const ExternalWindowInfo(hwnd: 8, pid: 29856, title: 'rpsisters2'),
+        );
+
+        await waitForSelected(controller, 5);
+        expect(controller.selectedNativeTextThreadId, 5);
+        expect(
+          engine.selectTextThreadCalls.where((int? id) => id == 5).length,
+          greaterThanOrEqualTo(2),
+        );
+        expect(
+          controller.events.map((GalHookEvent e) => e.code),
+          contains('text.thread_memory_restored'),
+        );
+        // 自动恢复不是用户表态：记忆保持原值。
+        expect(
+          store[r'd:\gal\rp\rpsisters2.exe']?.textThreadFingerprint,
+          'code:HQX8@1FEB30',
+        );
+
+        await controller.close();
+        endpoints.dispose();
+      },
+    );
+
+    test(
       'a later engine exact thread takes over a selection restored from memory',
       () async {
         final Map<String, GalCaptureMemory> store = <String, GalCaptureMemory>{
@@ -5414,8 +5502,15 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
     return GalTextPoll(count: lines.length, lines: lines);
   }
 
+  /// 非空时由它决定 native 是否接受这次线程选择（默认一律接受）。
+  Future<bool> Function(int? threadId)? onSelectTextThread;
+  final List<int?> selectTextThreadCalls = <int?>[];
+
   @override
-  Future<bool> selectTextThread(int? threadId) async => true;
+  Future<bool> selectTextThread(int? threadId) async {
+    selectTextThreadCalls.add(threadId);
+    return await onSelectTextThread?.call(threadId) ?? true;
+  }
 
   @override
   Future<void> stop() async {
