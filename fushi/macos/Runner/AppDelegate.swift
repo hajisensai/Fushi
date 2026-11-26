@@ -455,9 +455,12 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
   }
 
   /// 交给 Dart（`source_urls` 事件流 → `handleIncomingUrl`）的 `fushi://` host：卡片出处
-  /// 回跳 + 主屏小组件 / 菜单栏播放条的链接。与 Dart `SourceUrlChannel.routedHosts` 同步。
+  /// 回跳 + 主屏小组件 / 菜单栏播放条的链接 + 排行榜分享页的「在 Fushi 中打开」。
+  /// 与 Dart `SourceUrlChannel.routedHosts` 同步。
   /// OAuth / AnkiMobile 回调不在此列，照旧交给各自的插件（super）。
-  static let fushiRoutedUrlHosts: Set<String> = ["source", "widget", "shortcut", "lookup"]
+  static let fushiRoutedUrlHosts: Set<String> = [
+    "source", "widget", "shortcut", "lookup", "leaderboard",
+  ]
 
   override func application(_ application: NSApplication, open urls: [URL]) {
     // Launch Services may deliver before the engine/channel exists. Keep routed

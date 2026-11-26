@@ -3,7 +3,8 @@ import 'package:flutter/services.dart';
 /// macOS source links from Launch Services, including links queued during launch.
 ///
 /// Besides card-source links it carries the home-widget / menu-bar links
-/// ([routedHosts]: `fushi://widget/...` widget links, shortcut, lookup);
+/// ([routedHosts]: `fushi://widget/...` widget links, shortcut, lookup,
+/// leaderboard share-page links);
 /// main.dart routes every event through `handleIncomingUrl`.
 ///
 /// Android uses ReceiveIntent, iOS uses IosUrlEventChannel and Windows uses the
@@ -33,6 +34,7 @@ class SourceUrlChannel {
     'widget',
     'shortcut',
     'lookup',
+    'leaderboard',
   };
 
   static bool isRoutedUrl(String value) {
