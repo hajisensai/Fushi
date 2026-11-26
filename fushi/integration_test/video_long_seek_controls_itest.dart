@@ -24,6 +24,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/video/video_apple_chrome.dart';
 import 'package:fushi/src/media/video/video_control_bar.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -46,6 +47,10 @@ const String _kVideoFixture = _kVideoFixtureOverride == ''
     ? r'D:\hibiki_video_test\sample.mp4'
     : _kVideoFixtureOverride;
 const bool _kKeepLayout = bool.fromEnvironment('FUSHI_ITEST_KEEP_LAYOUT');
+
+/// 非空时先把设计系统切到这一套（`glass` = Apple 外壳、`material` = M3E），
+/// 新库在 macOS 上默认 `auto`，不一定落到 Apple 外壳。
+const String _kDesign = String.fromEnvironment('FUSHI_ITEST_DESIGN');
 const String _kVideoBookUid = 'video/long-seek-itest-sample';
 
 void main() {
@@ -62,6 +67,11 @@ void main() {
     );
     final AppModel appModel = container.read(appProvider);
     final VideoControlLayout originalLayout = appModel.videoControlLayout;
+    final String originalDesign = appModel.themeNotifier.designSystem;
+    if (_kDesign.isNotEmpty) {
+      await appModel.themeNotifier.setDesignSystem(_kDesign);
+      await tester.pump(const Duration(seconds: 1));
+    }
     final VideoBookRepository repo = VideoBookRepository(appModel.database);
     expect(File(_kVideoFixture).existsSync(), isTrue);
     await repo.saveVideoBook(
@@ -177,7 +187,19 @@ void main() {
         for (final Element bar in bars()) ...folded(bar),
       ];
       debugPrint('[long-seek] ⋯ labels=$foldedLabels');
-      expect(foldedLabels, containsAll(<String>[back3, fwd3, back30, fwd30]));
+      // 长步进出厂一律收在「⋯」；短步进 M3E 出厂也在「⋯」，Apple 外壳的出厂布局
+      // 把它摆在栏上（那就该是一颗带秒数 tooltip 的按钮）。
+      expect(foldedLabels, containsAll(<String>[back30, fwd30]));
+      final List<String> shortVisible = <String>[
+        for (final Element bar in bars()) ...barTooltips(bar),
+      ];
+      for (final String short in <String>[back3, fwd3]) {
+        expect(
+          foldedLabels.contains(short) || shortVisible.contains(short),
+          isTrue,
+          reason: '$short 应在「⋯」或栏上',
+        );
+      }
       final Element menuBar = bars().firstWhere(
         (Element bar) => folded(bar).contains(back30),
       );
@@ -201,18 +223,21 @@ void main() {
       await tester.pump(const Duration(milliseconds: 50));
       await mouse.up();
       await pumpFor(const Duration(milliseconds: 700));
+      // M3E 的菜单是 PopupMenuItem，Apple 外壳是玻璃菜单：按可见文字认菜单项
+      // （菜单开着时这些文案只会出现在菜单里，tooltip 不是常驻 Text）。
       final List<String> menuTexts = <String>[
-        for (final Element e
-            in find
-                .descendant(
-                  of: find.byType(PopupMenuItem<VideoBarMenuAction>),
-                  matching: find.byType(Text),
-                )
-                .evaluate())
-          (e.widget as Text).data ?? '',
+        for (final String label in folded(menuBar))
+          if (find.text(label).hitTestable().evaluate().isNotEmpty) label,
       ];
       debugPrint('[long-seek] menu texts=$menuTexts');
-      expect(menuTexts, containsAll(<String>[back3, fwd3, back30, fwd30]));
+      expect(menuTexts, containsAll(<String>[back30, fwd30]));
+      expect(
+        menuTexts,
+        containsAll(<String>[
+          for (final String short in <String>[back3, fwd3])
+            if (folded(menuBar).contains(short)) short,
+        ]),
+      );
       final ObserveShot menuShot = await captureFlutterFrame(
         tester,
         '01-default-overflow-menu',
@@ -247,7 +272,11 @@ void main() {
       expect(tips, containsAll(<String>[back3, fwd3, back30, fwd30]));
       // M3E 按钮下有「−3s」这类可见文字；Apple 外壳把秒数画进图标
       // （VideoAppleSeekGlyph），没有 Text，只认 tooltip。
-      if (!Platform.isMacOS) {
+      final bool apple = videoAppleChrome(
+        tester.element(find.byType(VideoFushiPage)),
+      );
+      debugPrint('[long-seek] apple chrome=$apple');
+      if (!apple) {
         expect(
           labels,
           containsAll(<String>[
@@ -286,6 +315,7 @@ void main() {
     } finally {
       if (!_kKeepLayout) {
         await appModel.setVideoControlLayout(originalLayout);
+        await appModel.themeNotifier.setDesignSystem(originalDesign);
       }
     }
   });
