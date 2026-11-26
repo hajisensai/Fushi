@@ -436,8 +436,11 @@ try {
   // 12. 词典脚本接管的点击不再被当成点词查词（OALDPE 的 noun / verb / All 词性切换、OALD 的
   //     折叠块），页内跳转只滚动不查词。形状取自真实 OALDPE 词条：切换控件是无 href 的
   //     span，词典脚本在 document 上委托处理，注册在辅助脚本之后（旧实现辅助脚本的
-  //     document 监听先跑，直接把「verb」报成查词）；折叠是元素上的监听改父节点 class。
-  //     另挂一个「每次点击都顺手改别处」的全局监听：它不能把正文的点词查词一起废掉。
+  //     document 监听先跑，直接把「verb」报成查词）。判据是「词典认领了这个控件」而不是
+  //     「点完 DOM 变没变」，所以下面专门覆盖 DOM 不变的两种：点已选中的 noun（切换是
+  //     no-op）、折叠标题的监听在定时器里才改 class；以及只靠词典 CSS（cursor: pointer）
+  //     标出来的发音控件。反例：每次点击都 closest 一个大容器 / 改别处的全局监听、根节点
+  //     上的总监听、从大容器继承来的 pointer，都不能把正文的点词查词废掉。
   {
     const helperLiteral = /const DICT_SANDBOX_HELPER_JS = (`[\s\S]*?`);/.exec(scripts.popup);
     const helperJs = vm.runInNewContext(helperLiteral[1]);
@@ -447,16 +450,17 @@ try {
         if (!tab) return;
         var tabs = document.querySelectorAll('.oaldpe-nav span');
         for (var i = 0; i < tabs.length; i++) tabs[i].classList.toggle('active', tabs[i] === tab);
-        var roots = document.querySelectorAll('.oald-entry-root');
-        for (var j = 0; j < roots.length; j++) roots[j].classList.toggle('visible', j === [].indexOf.call(tabs, tab));
       });
       document.querySelector('.box_title').addEventListener('click', function () {
-        this.parentNode.classList.toggle('is-active');
+        var title = this;
+        setTimeout(function () { title.parentNode.classList.toggle('is-active'); }, 0);
       });
-      document.addEventListener('click', function () {
+      document.addEventListener('click', function (event) {
+        event.target.closest('.oald-entry-root');
         var c = document.getElementById('counter');
         c.textContent = String(Number(c.textContent) + 1);
       });
+      document.querySelector('.oald-entry-root').addEventListener('click', function () {});
     })();`;
     const probeJs = `(function () {
       function click(el) {
@@ -465,20 +469,25 @@ try {
         document.elementFromPoint(x, y).dispatchEvent(new MouseEvent('click',
           { bubbles: true, cancelable: true, clientX: x, clientY: y }));
       }
-      click(document.getElementById('verb'));
-      click(document.querySelector('.box_title'));
-      click(document.getElementById('jump'));
-      click(document.getElementById('xref'));
-      click(document.getElementById('word'));
-      parent.postMessage({ __fushiDictSandbox: 1, type: 'error', message: 'done:' +
-        document.getElementById('verb').className + ':' + document.querySelector('.unbox').className }, '*');
+      ['noun', 'verb', 'fold', 'speak', 'jump', 'xref', 'word', 'inherit'].forEach(function (id) {
+        click(document.getElementById(id));
+      });
+      setTimeout(function () {
+        parent.postMessage({ __fushiDictSandbox: 1, type: 'error', message: 'done:' +
+          document.getElementById('verb').className + ':' + document.querySelector('.unbox').className }, '*');
+      }, 30);
     })();`;
-    const body = '<div class="oaldpe-nav"><span class="active" id="noun">noun</span><span id="verb">verb</span><span>All</span></div>' +
-      '<div class="oald-entry-root visible"><span class="unbox"><span class="box_title">Verb Forms</span><span class="body">x</span></span>' +
+    const long = 'to keep a permanent account of facts or events by writing them down, filming them or storing them';
+    const body = '<div class="oald-entry-root"><div class="oaldpe-nav"><span class="active" id="noun">noun</span>' +
+      '<span id="verb">verb</span><span>All</span></div>' +
+      '<span class="unbox"><span class="box_title" id="fold">Verb Forms</span><span class="body">x</span></span>' +
+      '<span id="speak" style="cursor:pointer">BrE</span>' +
       '<a href="#record_idmgs_1" id="jump"><span>Idioms</span></a>' +
       '<a href="entry://champion_1#champion_sng_1" id="xref">champion</a>' +
-      '<p id="word">keep a record</p><div style="height:400px"></div><span id="record_idmgs_1">idioms here</span></div>' +
-      '<div class="oald-entry-root"></div><span id="counter">0</span>';
+      `<p id="word">keep ${long}</p>` +
+      `<div style="cursor:pointer"><span id="inherit">inherit</span> ${long}</div>` +
+      '<div style="height:400px"></div><span id="record_idmgs_1">idioms here</span></div>' +
+      '<span id="counter">0</span>';
     const r = await driver.evalOnPage('<!doctype html><html><body></body></html>', `(async () => {
       const messages = [];
       window.addEventListener('message', (e) => {
@@ -486,7 +495,7 @@ try {
         messages.push(e.data);
       });
       const frame = document.createElement('iframe');
-      frame.style.cssText = 'width:600px;height:800px;border:0';
+      frame.style.cssText = 'width:600px;height:1200px;border:0';
       frame.srcdoc = '<!doctype html><meta charset="utf-8"><body style="margin:0;font:20px/30px sans-serif">' +
         ${JSON.stringify(body)} +
         '<script>' + ${JSON.stringify(helperJs)} + '<' + '/script>' +
@@ -505,8 +514,9 @@ try {
       'scroll:below',
       'link:champion',
       'select:keep',
+      'select:inherit',
       'error:done:active:unbox is-active',
-    ], `dictionary-handled clicks must not look up; in-page jumps scroll; plain text still looks up (${r})`);
+    ], `dictionary-claimed clicks must not look up; in-page jumps scroll; plain text still looks up (${r})`);
     passed++;
   }
 
