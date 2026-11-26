@@ -4,7 +4,7 @@
 // `fixtures/srs_rwkv_orchestration.json` 逐值比较：
 //   - backends：每个替身后端收到的调用序列（操作、行、标签、时刻、参数、返回值）；
 //   - store：编排向复习库发的三条取数命令（rwkvLogTail / rwkvReplay（现在取未解码的
-//     rwkvReplayBytes，记法不变）/ rwkvCardRows）的参数与结果摘要；
+//     rwkvReplayBytes，记法不变）/ rwkvCardRows / rwkvLastRatings）的参数与结果摘要；
 //   - status：每个服务的状态事件序列；
 //   - scores：排队 / 统计两个打分入口的参数与返回值；
 //   - files：用例结束时快照目录里的文件与元数据。
@@ -388,6 +388,21 @@ class SrsRwkvRecordingStore implements SrsDbStore {
       },
     ]);
     return bytes;
+  }
+
+  @override
+  Future<List<SrsRwkvLastRating?>> rwkvLastRatings(List<String> cardIds) async {
+    await _delay();
+    final List<SrsRwkvLastRating?> out = await _inner.rwkvLastRatings(cardIds);
+    _t.events++;
+    _log.add(<Object?>[
+      'last',
+      _t.sortedByCard(<List<Object?>>[
+        for (int i = 0; i < cardIds.length; i++)
+          <Object?>[_t.cardOfId(cardIds[i]), _t.time(out[i]?.at)],
+      ]),
+    ]);
+    return out;
   }
 
   @override

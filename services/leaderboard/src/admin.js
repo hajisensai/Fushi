@@ -7,7 +7,7 @@
 //   POST /admin/api/works/:id     {title?, author?, nsfw?, clearCover?}  改标题/作者即锁定
 //   GET  /admin/api/works/:id/covers            封面候选与状态（票数 / 确认票 / 不符 / 待生效）
 //   POST /admin/api/works/merge   {from, into}  把 from 并入 into
-//   POST /admin/api/accounts/:id/role {role: 'dev'|'user'}  设 / 撤开发者（反馈处理台）
+//   POST /admin/api/accounts/:id/role {role: 'dev'|'triage'|'user'}  设 / 撤开发者或反馈协查（triage：只看反馈 + 内部批注）
 //   POST /admin/api/works/split   {ref}         把一个误挂的别名拆成新作品，上报过它的书架随之迁走
 //   /admin/api/notices/**                       服务端公告的规则 / 已登记摘要 / 计数（notices.js 文件头）
 
@@ -25,6 +25,7 @@ import { deleteMedia } from './budget.js';
 import { recountStatement, settleStatements, workCoverCandidates } from './cover_votes.js';
 import { refreshSnapshots } from './snapshots.js';
 import { handleNoticesAdmin } from './notices.js';
+import { ACCOUNT_ROLES } from './feedback.js';
 
 /**
  * 管理操作改了作品归属后的精确重算语句（放进同一个事务）：作品读者数与周期读者数现场 COUNT，
@@ -276,10 +277,11 @@ export async function handleAdmin(env, request, path, body, now) {
     return json({ ok: true, removed: res[0].meta.changes });
   }
   if ((r = m(/^\/admin\/api\/accounts\/([A-Za-z0-9_-]+)\/role$/))) {
-    if (body.role !== 'dev' && body.role !== 'user') throw new HttpError(400, 'bad_role');
+    if (!ACCOUNT_ROLES.includes(body.role)) throw new HttpError(400, 'bad_role');
     const res = await env.DB.batch([
       env.DB.prepare('UPDATE accounts SET role = ?2 WHERE id = ?1').bind(r[1], body.role),
-      // 撤销开发者时顺带作废其网页会话（会话查询本身也会核对 role，这里只是不留垃圾）。
+      // 撤成普通用户时顺带作废其网页会话（会话查询本身也会核对 role，这里只是不留垃圾）；
+      // dev ↔ triage 互换保留会话，能做什么按每次请求时的 role 判。
       env.DB.prepare('DELETE FROM dev_sessions WHERE account_id = ?1 AND ?2 = \'user\'').bind(r[1], body.role),
     ]);
     if (res[0].meta.changes !== 1) throw new HttpError(404, 'not_found');
