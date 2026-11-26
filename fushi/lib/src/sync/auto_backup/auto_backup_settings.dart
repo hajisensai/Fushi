@@ -56,6 +56,7 @@ class AutoBackupSettings {
     this.mirrorFolder,
     this.cloudCopies = false,
     this.cloudAllowMetered = false,
+    this.serverCopies = false,
   });
 
   final AutoBackupInterval interval;
@@ -79,8 +80,12 @@ class AutoBackupSettings {
   /// 每份定时还原点再复制一份到已配置的同步后端（云端副本，D8–D11）。
   final bool cloudCopies;
 
-  /// 云端副本也用移动数据 / 计流量的网络上传（缺省只在 Wi-Fi，D10）。
+  /// 云端副本与服务器副本也用移动数据 / 计流量的网络上传（缺省只在 Wi-Fi，D10）。一个设置管两个目标
+  /// （D12）：字段与偏好键沿用第三期的名字。
   final bool cloudAllowMetered;
+
+  /// 每份定时还原点再复制一份到同步用的互联服务器（服务器副本，第四期 D12），与 [cloudCopies] 互不相干。
+  final bool serverCopies;
 
   bool get enabled => interval != AutoBackupInterval.off;
 
@@ -111,6 +116,7 @@ class AutoBackupSettings {
     AutoBackupMirrorFolder? Function()? mirrorFolder,
     bool? cloudCopies,
     bool? cloudAllowMetered,
+    bool? serverCopies,
   }) => AutoBackupSettings(
     interval: interval ?? this.interval,
     preferredMinuteOfDay: preferredMinuteOfDay != null
@@ -122,6 +128,7 @@ class AutoBackupSettings {
     mirrorFolder: mirrorFolder != null ? mirrorFolder() : this.mirrorFolder,
     cloudCopies: cloudCopies ?? this.cloudCopies,
     cloudAllowMetered: cloudAllowMetered ?? this.cloudAllowMetered,
+    serverCopies: serverCopies ?? this.serverCopies,
   );
 
   @override
@@ -133,7 +140,8 @@ class AutoBackupSettings {
       other.customFolder == customFolder &&
       other.mirrorFolder == mirrorFolder &&
       other.cloudCopies == cloudCopies &&
-      other.cloudAllowMetered == cloudAllowMetered;
+      other.cloudAllowMetered == cloudAllowMetered &&
+      other.serverCopies == serverCopies;
 
   @override
   int get hashCode => Object.hash(
@@ -144,6 +152,7 @@ class AutoBackupSettings {
     mirrorFolder,
     cloudCopies,
     cloudAllowMetered,
+    serverCopies,
   );
 }
 
@@ -175,6 +184,7 @@ AutoBackupSettings readAutoBackupSettings(
         : null,
     cloudCopies: readPref(kAutoBackupCloudPrefKey) == true,
     cloudAllowMetered: readPref(kAutoBackupCloudMeteredPrefKey) == true,
+    serverCopies: readPref(kAutoBackupServerPrefKey) == true,
   );
 }
 
@@ -196,6 +206,7 @@ Future<void> writeAutoBackupSettings(
   kAutoBackupMirrorLabelPrefKey: settings.mirrorFolder?.label ?? '',
   kAutoBackupCloudPrefKey: settings.cloudCopies,
   kAutoBackupCloudMeteredPrefKey: settings.cloudAllowMetered,
+  kAutoBackupServerPrefKey: settings.serverCopies,
 });
 
 /// 偏好里存的类别清单 → 文件树集合。只认 [kBackupFileCategories]：老版本存下的数据类别

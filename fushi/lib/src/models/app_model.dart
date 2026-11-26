@@ -468,6 +468,8 @@ import 'package:fushi/src/sync/auto_backup/backup_folder_mirror.dart'
         kBackupMirrorErrorCloudUnreachable;
 import 'package:fushi/src/sync/auto_backup/backup_folder_platform.dart';
 import 'package:fushi/src/sync/auto_backup/cloud_backup_mirror.dart';
+import 'package:fushi/src/sync/interconnect_sync_backend.dart'
+    show InterconnectSyncBackend;
 import 'package:fushi/src/sync/sync_resource_locks.dart'
     show syncChannelResource, syncResourceLocks;
 import 'package:fushi/src/sync/sync_transient_error.dart'
@@ -17364,14 +17366,16 @@ class _AppAutoBackupHost implements AutoBackupHost {
           AutoBackupMirrorKind.cloud => t.auto_backup_cloud_failed(
             reason: autoBackupErrorText(reason),
           ),
+          AutoBackupMirrorKind.server => t.auto_backup_server_failed(
+            reason: autoBackupErrorText(reason),
+          ),
         },
         severity: ToastSeverity.warning,
       );
 
-  /// 云端副本支持的后端（D9）：OneDrive 不在内。
+  /// 云端副本支持的后端（D9）：OneDrive 不在内；互联自第四期起是单独的服务器副本（D12），不再当云端。
   static const Set<SyncBackendType> _cloudBackupBackends = <SyncBackendType>{
     SyncBackendType.googleDrive,
-    SyncBackendType.fushiServer,
     SyncBackendType.dropbox,
     SyncBackendType.webDav,
     SyncBackendType.ftp,
@@ -17451,7 +17455,7 @@ class _AppAutoBackupHost implements AutoBackupHost {
     }
   }
 
-  /// 云端副本用的通道：已开的同步通道里（云在前、互联在后）第一条支持的。
+  /// 云端副本用的通道：已开的同步通道里第一条支持的云后端（互联不算，见 [_serverBackupChannel]）。
   Future<SyncChannel?> _cloudBackupChannel(SyncRepository repo) async {
     for (final SyncChannel c in await enabledSyncChannelBackends(repo)) {
       if (_cloudBackupBackends.contains(c.type)) return c;
@@ -17526,4 +17530,107 @@ class _AppAutoBackupHost implements AutoBackupHost {
 
   @override
   Future<bool> networkUnmetered() => currentNetworkUnmetered();
+
+  /// 服务器副本用的通道（D12）：同步真正用的那条互联通道（[enabledSyncChannelBackends] 里的互联通道：
+  /// 互联总开关开着，或备份后端选的就是互联）。互联后端是进程级单例，候选地址里能连上的那台 host 就是同步
+  /// 在用的那台。
+  Future<SyncChannel?> _serverBackupChannel(SyncRepository repo) async {
+    for (final SyncChannel c in await enabledSyncChannelBackends(repo)) {
+      if (c.isInterconnect) return c;
+    }
+    return null;
+  }
+
+  /// 配对记下的服务器名：[hostIdentity] 那台 host（hostId / 地址对得上）的设备名，否则第一条启用的、有设备名的
+  /// 地址；都没有用通用名。
+  static Future<String> _serverName(
+    SyncRepository repo, {
+    String? hostIdentity,
+  }) async {
+    final List<FushiClientUrl> urls = await repo.getFushiClientUrls();
+    String? named(Iterable<FushiClientUrl> candidates) {
+      for (final FushiClientUrl u in candidates) {
+        final String? name = u.deviceName?.trim();
+        if (name != null && name.isNotEmpty) return name;
+      }
+      return null;
+    }
+
+    return (hostIdentity == null
+            ? null
+            : named(
+                urls.where(
+                  (FushiClientUrl u) =>
+                      u.hostId == hostIdentity || u.url == hostIdentity,
+                ),
+              )) ??
+        named(urls.where((FushiClientUrl u) => u.enabled)) ??
+        t.sync_backend_fushi_server;
+  }
+
+  @override
+  Future<String?> serverLabel() async {
+    final SyncRepository repo = SyncRepository(_app.database);
+    if (await _serverBackupChannel(repo) == null) return null;
+    return _serverName(repo);
+  }
+
+  /// 没有互联通道返回 null；配对失效 / 连不上抛 [BackupMirrorException]（与云端同一套错误归类）。目标键是
+  /// 所连 host 的身份（[InterconnectSyncBackend.connectedHostIdentity]：配对的 hostId，老条目退到地址）的哈希。
+  @override
+  Future<AutoBackupMirrorTarget?> serverTarget() async {
+    final SyncRepository repo = SyncRepository(_app.database);
+    final SyncChannel? channel = await _serverBackupChannel(repo);
+    if (channel == null) return null;
+    final SyncBackend backend = channel.backend;
+    final Set<String> resources = <String>{
+      syncChannelResource(syncChannelScopeOf(backend)),
+    };
+    final String? identity;
+    try {
+      identity = await syncResourceLocks.withResources<String?>(
+        resources,
+        () async {
+          if (!await backend.restoreAuth(repo)) {
+            throw const BackupMirrorException(kBackupMirrorErrorCloudAuth);
+          }
+          return backend is InterconnectSyncBackend
+              ? await backend.connectedHostIdentity()
+              : null;
+        },
+      );
+    } on BackupMirrorException {
+      rethrow;
+    } on Object catch (e) {
+      final String code = _classifyCloudError(e);
+      debugPrint(
+        'AutoBackup: server sign-in failed: ${e.runtimeType} -> $code',
+      );
+      throw BackupMirrorException(code);
+    }
+    final ({String id, String name}) device = await deviceIdentity();
+    Future<T> guard<T>(Future<T> Function() body, {required bool idempotent}) =>
+        syncResourceLocks.withResources<T>(
+          resources,
+          () => idempotent ? retryTransientSync<T>(body) : body(),
+        );
+    return AutoBackupMirrorTarget(
+      kind: AutoBackupMirrorKind.server,
+      key: serverBackupTargetKey(identity),
+      label: await _serverName(repo, hostIdentity: identity),
+      policy: kServerBackupRetention,
+      open: () async => BackupFolderSession(
+        mirror: SyncAssetStoreBackupMirror(
+          store: backend,
+          namespace: () async {
+            await backend.findOrCreateRootFolder();
+            return backend.ensureNamespace(kCloudBackupNamespace);
+          },
+          deviceFolder: device.id,
+          guard: guard,
+          classify: _classifyCloudError,
+        ),
+      ),
+    );
+  }
 }

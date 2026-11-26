@@ -125,6 +125,38 @@ SettingsSection _autoBackupSection() => SettingsSection(
       ),
     ),
     SettingsCustomItem(
+      id: 'sync.auto_backup.server',
+      searchTitle: t.auto_backup_server,
+      icon: FushiIcons.devices,
+      visible: _autoBackupOn,
+      builder: (SettingsContext ctx) => AutoBackupServerRow(
+        settings: ctx.appModel.autoBackupSettings,
+        statusChanges: ctx.appModel.autoBackup.status,
+        readStatus: () => ctx.appModel.autoBackup.status.value,
+        meteredNetworks: _autoBackupMayBeMetered,
+        backendLabel: ctx.appModel.autoBackup.host.serverLabel,
+        onUpdate: (AutoBackupSettings Function(AutoBackupSettings) update) =>
+            _updateAutoBackupSettings(ctx, update),
+      ),
+    ),
+    // 云端与服务器副本共用一个「也用移动数据上传」（D10 / D12）：只在移动端、至少开了一个时出现。
+    SettingsSwitchItem(
+      id: 'sync.auto_backup.metered',
+      title: t.auto_backup_cloud_metered,
+      subtitle: t.auto_backup_copies_metered_hint,
+      icon: FushiIcons.dataUsage,
+      defaultValue: false,
+      visible: (SettingsContext ctx) =>
+          _autoBackupMayBeMetered &&
+          autoBackupMeteredRowVisible(ctx.appModel.autoBackupSettings),
+      value: (SettingsContext ctx) =>
+          ctx.appModel.autoBackupSettings.cloudAllowMetered,
+      onChanged: (SettingsContext ctx, bool value) => _updateAutoBackupSettings(
+        ctx,
+        (AutoBackupSettings s) => s.copyWith(cloudAllowMetered: value),
+      ),
+    ),
+    SettingsCustomItem(
       id: 'sync.auto_backup.status',
       searchTitle: t.auto_backup_now,
       icon: FushiIcons.backup,
@@ -494,48 +526,86 @@ class _AutoBackupMirrorRow extends StatelessWidget {
   }
 }
 
-/// 云端副本可能走计费网络的平台（移动端）：只有这里才给「使用移动数据时也上传」；桌面端一律当不计流量
+/// 云端 / 服务器副本可能走计费网络的平台（移动端）：只有这里才给「使用移动数据时也上传」；桌面端一律当不计流量
 /// （与宿主 `networkUnmetered` 的判据一致）。
 bool get _autoBackupMayBeMetered =>
     !kIsWeb && (Platform.isAndroid || Platform.isIOS);
 
-/// 云端副本的状态行（纯函数，测试用）：失败 → 告警原因；最新那份已上传 → 「最新备份已上传（3 小时前）」；
-/// 还没上传 → 「下次检查时补上」（[wifiOnly] 时说明要等 Wi-Fi）；还没有任何备份 → null（不显示）。
+/// 「也用移动数据上传」那一行该不该出现（移动端之外的判据）：自动备份开着、云端或服务器副本至少开了一个。
 @visibleForTesting
-({String text, bool failed})? autoBackupCloudStatusLine({
+bool autoBackupMeteredRowVisible(AutoBackupSettings settings) =>
+    settings.enabled && (settings.cloudCopies || settings.serverCopies);
+
+/// 远端副本（云端 / 服务器）的状态行：失败 → 告警原因；最新那份已上传 → 「最新备份已上传（3 小时前）」；
+/// 还没上传 → 「下次检查时补上」（[wifiOnly] 时说明要等 Wi-Fi）；还没有任何备份 → null（不显示）。
+({String text, bool failed})? _remoteCopyStatusLine({
+  required AutoBackupMirrorKind kind,
   required AutoBackupStatus status,
   required DateTime now,
   required bool wifiOnly,
 }) {
-  final AutoBackupMirrorStatus cloud = status.cloud;
-  if (cloud.error != null) {
+  final bool server = kind == AutoBackupMirrorKind.server;
+  final AutoBackupMirrorStatus copy = server ? status.server : status.cloud;
+  final String? error = copy.error;
+  if (error != null) {
+    final String reason = autoBackupErrorText(error);
     return (
-      text: t.auto_backup_cloud_failed(
-        reason: autoBackupErrorText(cloud.error),
-      ),
+      text: server
+          ? t.auto_backup_server_failed(reason: reason)
+          : t.auto_backup_cloud_failed(reason: reason),
       failed: true,
     );
   }
   final String? latest = status.lastSuccessPointId;
   if (latest == null) return null;
-  final int? atMs = cloud.atMs;
-  if (cloud.target != null && cloud.pointId == latest && atMs != null) {
+  final int? atMs = copy.atMs;
+  if (copy.target != null && copy.pointId == latest && atMs != null) {
+    final String time = formatActivityRelativeTime(atMs, now);
     return (
-      text: t.auto_backup_cloud_status_done(
-        time: formatActivityRelativeTime(atMs, now),
-      ),
+      text: server
+          ? t.auto_backup_server_status_done(time: time)
+          : t.auto_backup_cloud_status_done(time: time),
       failed: false,
     );
   }
   return (
-    text: wifiOnly
-        ? t.auto_backup_cloud_status_pending_wifi
-        : t.auto_backup_cloud_status_pending,
+    text: switch ((server, wifiOnly)) {
+      (false, true) => t.auto_backup_cloud_status_pending_wifi,
+      (false, false) => t.auto_backup_cloud_status_pending,
+      (true, true) => t.auto_backup_server_status_pending_wifi,
+      (true, false) => t.auto_backup_server_status_pending,
+    },
     failed: false,
   );
 }
 
-/// 副本目标（文件夹 / 云端）下方的状态行 + 「旧副本没删掉」提示行。
+/// 云端副本的状态行（纯函数，测试用；规则见 [_remoteCopyStatusLine]）。
+@visibleForTesting
+({String text, bool failed})? autoBackupCloudStatusLine({
+  required AutoBackupStatus status,
+  required DateTime now,
+  required bool wifiOnly,
+}) => _remoteCopyStatusLine(
+  kind: AutoBackupMirrorKind.cloud,
+  status: status,
+  now: now,
+  wifiOnly: wifiOnly,
+);
+
+/// 服务器副本的状态行（纯函数，测试用；规则见 [_remoteCopyStatusLine]）。
+@visibleForTesting
+({String text, bool failed})? autoBackupServerStatusLine({
+  required AutoBackupStatus status,
+  required DateTime now,
+  required bool wifiOnly,
+}) => _remoteCopyStatusLine(
+  kind: AutoBackupMirrorKind.server,
+  status: status,
+  now: now,
+  wifiOnly: wifiOnly,
+);
+
+/// 副本目标（文件夹 / 云端 / 服务器）下方的状态行 + 「旧副本没删掉」提示行。
 class _AutoBackupCopyStatusLines extends StatelessWidget {
   const _AutoBackupCopyStatusLines({
     required this.keyPrefix,
@@ -579,9 +649,10 @@ class _AutoBackupCopyStatusLines extends StatelessWidget {
   }
 }
 
-/// 「复制到云端」（D8–D11）：开关 + 用哪个同步服务、没有支持的后端时的说明；开着时另有保留规则说明、
-/// 移动端的「使用移动数据时也上传」与上传状态行。依赖全部经构造参数注入（设置页从 AppModel 接，测试注入假的）。
-class AutoBackupCloudRow extends StatefulWidget {
+/// 「复制到云端」（D8–D11）：开关 + 用哪个同步服务、没有支持的后端时的说明；开着时另有保留规则说明与上传
+/// 状态行。依赖全部经构造参数注入（设置页从 AppModel 接，测试注入假的）。「也用移动数据上传」与服务器副本共用，
+/// 是单独一行（`sync.auto_backup.metered`）。
+class AutoBackupCloudRow extends StatelessWidget {
   const AutoBackupCloudRow({
     required this.settings,
     required this.statusChanges,
@@ -600,7 +671,7 @@ class AutoBackupCloudRow extends StatefulWidget {
   /// 状态文件的最新内容。
   final AutoBackupStatus Function() readStatus;
 
-  /// 这台设备可能走计费网络（移动端）：给「使用移动数据时也上传」，不开时状态行说明要等 Wi-Fi。
+  /// 这台设备可能走计费网络（移动端）：「也用移动数据上传」没开时状态行说明要等 Wi-Fi。
   final bool meteredNetworks;
 
   /// 云端副本会用的同步服务名（`AutoBackupHost.cloudBackendLabel`，不联网）；null = 没有支持的后端。
@@ -613,18 +684,92 @@ class AutoBackupCloudRow extends StatefulWidget {
   onUpdate;
 
   @override
-  State<AutoBackupCloudRow> createState() => _AutoBackupCloudRowState();
+  Widget build(BuildContext context) => _AutoBackupRemoteCopyRow(
+    kind: AutoBackupMirrorKind.cloud,
+    settings: settings,
+    statusChanges: statusChanges,
+    readStatus: readStatus,
+    meteredNetworks: meteredNetworks,
+    label: backendLabel,
+    onUpdate: onUpdate,
+  );
 }
 
-class _AutoBackupCloudRowState extends State<AutoBackupCloudRow> {
-  late Future<String?> _label = widget.backendLabel();
+/// 「复制到服务器」（第四期 D12–D13）：开关 + 同步用的互联服务器名、没有设置互联服务器时的说明；开着时另有
+/// 保留规则说明与上传状态行。与云端副本互不相干（两个都开就各传一份）。
+class AutoBackupServerRow extends StatelessWidget {
+  const AutoBackupServerRow({
+    required this.settings,
+    required this.statusChanges,
+    required this.readStatus,
+    required this.backendLabel,
+    required this.onUpdate,
+    required this.meteredNetworks,
+    super.key,
+  });
+
+  final AutoBackupSettings settings;
+  final Listenable statusChanges;
+  final AutoBackupStatus Function() readStatus;
+  final bool meteredNetworks;
+
+  /// 服务器名（`AutoBackupHost.serverLabel`，不联网）；null = 没有设置互联服务器。
+  final Future<String?> Function() backendLabel;
+
+  final Future<void> Function(
+    AutoBackupSettings Function(AutoBackupSettings current) update,
+  )
+  onUpdate;
 
   @override
-  void didUpdateWidget(AutoBackupCloudRow oldWidget) {
+  Widget build(BuildContext context) => _AutoBackupRemoteCopyRow(
+    kind: AutoBackupMirrorKind.server,
+    settings: settings,
+    statusChanges: statusChanges,
+    readStatus: readStatus,
+    meteredNetworks: meteredNetworks,
+    label: backendLabel,
+    onUpdate: onUpdate,
+  );
+}
+
+/// 云端 / 服务器副本那一行的共同实现（文案按 [kind] 分）。
+class _AutoBackupRemoteCopyRow extends StatefulWidget {
+  const _AutoBackupRemoteCopyRow({
+    required this.kind,
+    required this.settings,
+    required this.statusChanges,
+    required this.readStatus,
+    required this.meteredNetworks,
+    required this.label,
+    required this.onUpdate,
+  });
+
+  final AutoBackupMirrorKind kind;
+  final AutoBackupSettings settings;
+  final Listenable statusChanges;
+  final AutoBackupStatus Function() readStatus;
+  final bool meteredNetworks;
+  final Future<String?> Function() label;
+  final Future<void> Function(
+    AutoBackupSettings Function(AutoBackupSettings current) update,
+  )
+  onUpdate;
+
+  @override
+  State<_AutoBackupRemoteCopyRow> createState() =>
+      _AutoBackupRemoteCopyRowState();
+}
+
+class _AutoBackupRemoteCopyRowState extends State<_AutoBackupRemoteCopyRow> {
+  late Future<String?> _label = widget.label();
+
+  @override
+  void didUpdateWidget(_AutoBackupRemoteCopyRow oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // 设置页刷新（同一页上刚配好 / 关掉同步后端之后也会刷新）：重查一次服务名。只读本机配置，不联网；
+    // 设置页刷新（同一页上刚配好 / 关掉同步后端之后也会刷新）：重查一次名字。只读本机配置，不联网；
     // FutureBuilder 换 future 时保留上一次的结果，不会闪。
-    _label = widget.backendLabel();
+    _label = widget.label();
   }
 
   void _update(AutoBackupSettings Function(AutoBackupSettings s) update) =>
@@ -633,6 +778,8 @@ class _AutoBackupCloudRowState extends State<AutoBackupCloudRow> {
   @override
   Widget build(BuildContext context) {
     final AutoBackupSettings settings = widget.settings;
+    final bool server = widget.kind == AutoBackupMirrorKind.server;
+    final String k = server ? 'auto-backup-server' : 'auto-backup-cloud';
     return FutureBuilder<String?>(
       future: _label,
       builder: (BuildContext context, AsyncSnapshot<String?> snapshot) {
@@ -640,28 +787,37 @@ class _AutoBackupCloudRowState extends State<AutoBackupCloudRow> {
             snapshot.connectionState == ConnectionState.done ||
             snapshot.hasData;
         final String? label = snapshot.data;
-        final bool on = settings.cloudCopies;
-        // 没有支持的后端时开关不可用；已经开着的仍可关掉（后端后来被移除了）。
+        final bool on = server ? settings.serverCopies : settings.cloudCopies;
+        // 没有可用的目标时开关不可用；已经开着的仍可关掉（后端 / 服务器后来被移除了）。
         final bool canToggle = label != null || on;
-        final bool metered = widget.meteredNetworks;
-        final bool wifiOnly = metered && !settings.cloudAllowMetered;
+        final bool wifiOnly =
+            widget.meteredNetworks && !settings.cloudAllowMetered;
         return Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
             AdaptiveSettingsSwitchRow(
-              key: const ValueKey<String>('auto-backup-cloud'),
-              title: t.auto_backup_cloud,
-              subtitle: label == null
-                  ? t.auto_backup_cloud_subtitle
-                  : t.auto_backup_cloud_service(service: label),
+              key: ValueKey<String>(k),
+              title: server ? t.auto_backup_server : t.auto_backup_cloud,
+              subtitle: switch ((server, label)) {
+                (false, null) => t.auto_backup_cloud_subtitle,
+                (false, final String service) => t.auto_backup_cloud_service(
+                  service: service,
+                ),
+                (true, null) => t.auto_backup_server_subtitle,
+                (true, final String name) => t.auto_backup_server_service(
+                  server: name,
+                ),
+              },
               subtitleMaxLines: 3,
-              icon: FushiIcons.cloudUpload,
+              icon: server ? FushiIcons.devices : FushiIcons.cloudUpload,
               showIcon: true,
               value: on,
               onChanged: canToggle
                   ? (bool value) => _update(
-                      (AutoBackupSettings s) => s.copyWith(cloudCopies: value),
+                      (AutoBackupSettings s) => server
+                          ? s.copyWith(serverCopies: value)
+                          : s.copyWith(cloudCopies: value),
                     )
                   : null,
             ),
@@ -669,44 +825,37 @@ class _AutoBackupCloudRowState extends State<AutoBackupCloudRow> {
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                 child: FushiInlineNotice(
-                  key: const ValueKey<String>('auto-backup-cloud-no-backend'),
-                  message: t.auto_backup_cloud_no_backend,
+                  key: ValueKey<String>('$k-no-backend'),
+                  message: server
+                      ? t.auto_backup_server_no_server
+                      : t.auto_backup_cloud_no_service,
                 ),
               ),
             if (on) ...<Widget>[
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                 child: FushiInlineNotice(
-                  key: const ValueKey<String>('auto-backup-cloud-retention'),
-                  message: t.auto_backup_cloud_retention_hint,
+                  key: ValueKey<String>('$k-retention'),
+                  message: server
+                      ? t.auto_backup_server_retention_hint
+                      : t.auto_backup_cloud_retention_hint,
                 ),
               ),
-              if (metered)
-                AdaptiveSettingsSwitchRow(
-                  key: const ValueKey<String>('auto-backup-cloud-metered'),
-                  title: t.auto_backup_cloud_metered,
-                  subtitle: t.auto_backup_cloud_metered_hint,
-                  subtitleMaxLines: 2,
-                  icon: FushiIcons.dataUsage,
-                  showIcon: true,
-                  value: settings.cloudAllowMetered,
-                  onChanged: (bool value) => _update(
-                    (AutoBackupSettings s) =>
-                        s.copyWith(cloudAllowMetered: value),
-                  ),
-                ),
               ListenableBuilder(
                 listenable: widget.statusChanges,
                 builder: (BuildContext context, Widget? _) {
                   final AutoBackupStatus status = widget.readStatus();
                   return _AutoBackupCopyStatusLines(
-                    keyPrefix: 'auto-backup-cloud',
-                    line: autoBackupCloudStatusLine(
+                    keyPrefix: k,
+                    line: _remoteCopyStatusLine(
+                      kind: widget.kind,
                       status: status,
                       now: DateTime.now(),
                       wifiOnly: wifiOnly,
                     ),
-                    pruneFailed: status.cloud.pruneError != null,
+                    pruneFailed:
+                        (server ? status.server : status.cloud).pruneError !=
+                        null,
                   );
                 },
               ),

@@ -204,6 +204,7 @@ class AutoBackupStatus {
     this.missingData = const <String>[],
     this.mirror = const AutoBackupMirrorStatus(),
     this.cloud = const AutoBackupMirrorStatus(),
+    this.server = const AutoBackupMirrorStatus(),
   });
 
   final int? lastAttemptMs;
@@ -237,6 +238,9 @@ class AutoBackupStatus {
   /// 云端副本（同步后端）的复制状态，与 [mirror] 同一套规则。
   final AutoBackupMirrorStatus cloud;
 
+  /// 服务器副本（同步用的互联 host，第四期 D12）的复制状态，与 [mirror] 同一套规则。
+  final AutoBackupMirrorStatus server;
+
   DateTime? get lastSatisfied => lastSatisfiedMs == null
       ? null
       : DateTime.fromMillisecondsSinceEpoch(lastSatisfiedMs!);
@@ -266,6 +270,7 @@ class AutoBackupStatus {
     if (missingData.isNotEmpty) 'missingData': missingData,
     if (mirror.toJson().isNotEmpty) 'mirror': mirror.toJson(),
     if (cloud.toJson().isNotEmpty) 'cloud': cloud.toJson(),
+    if (server.toJson().isNotEmpty) 'server': server.toJson(),
   };
 
   static AutoBackupStatus fromJson(Object? raw) {
@@ -294,6 +299,7 @@ class AutoBackupStatus {
       ],
       mirror: AutoBackupMirrorStatus.fromJson(raw['mirror']),
       cloud: AutoBackupMirrorStatus.fromJson(raw['cloud']),
+      server: AutoBackupMirrorStatus.fromJson(raw['server']),
     );
   }
 
@@ -312,6 +318,7 @@ class AutoBackupStatus {
     missingData: missingData,
     mirror: next,
     cloud: cloud,
+    server: server,
   );
 
   /// 换掉云端副本状态，其余不动。
@@ -329,6 +336,25 @@ class AutoBackupStatus {
     missingData: missingData,
     mirror: mirror,
     cloud: next,
+    server: server,
+  );
+
+  /// 换掉服务器副本状态，其余不动。
+  AutoBackupStatus withServer(AutoBackupMirrorStatus next) => AutoBackupStatus(
+    lastAttemptMs: lastAttemptMs,
+    lastResult: lastResult,
+    lastSuccessMs: lastSuccessMs,
+    lastSuccessPointId: lastSuccessPointId,
+    lastSuccessBytes: lastSuccessBytes,
+    lastSatisfiedMs: lastSatisfiedMs,
+    lastError: lastError,
+    fingerprint: fingerprint,
+    runningSinceMs: runningSinceMs,
+    lastInterruptedMs: lastInterruptedMs,
+    missingData: missingData,
+    mirror: mirror,
+    cloud: cloud,
+    server: next,
   );
 
   /// 开始写定时还原点：落「开始」标记，其余不动。
@@ -346,6 +372,7 @@ class AutoBackupStatus {
     missingData: missingData,
     mirror: mirror,
     cloud: cloud,
+    server: server,
   );
 
   /// 成功：记下指纹、点 id、大小，这一期满足。
@@ -366,6 +393,7 @@ class AutoBackupStatus {
     missingData: missingData,
     mirror: mirror,
     cloud: cloud,
+    server: server,
   );
 
   /// 没变化跳过：成功记录不动，这一期满足。
@@ -380,6 +408,7 @@ class AutoBackupStatus {
     missingData: missingData,
     mirror: mirror,
     cloud: cloud,
+    server: server,
   );
 
   /// 失败：这一期不算满足，下次到期检查再试。
@@ -397,6 +426,7 @@ class AutoBackupStatus {
         missingData: missingData,
         mirror: mirror,
         cloud: cloud,
+        server: server,
       );
 
   /// 启动时发现「开始」标记还在：记成失败（[kAutoBackupErrorInterrupted]），清标记，记下被
@@ -414,6 +444,7 @@ class AutoBackupStatus {
     missingData: missingData,
     mirror: mirror,
     cloud: cloud,
+    server: server,
   );
 }
 

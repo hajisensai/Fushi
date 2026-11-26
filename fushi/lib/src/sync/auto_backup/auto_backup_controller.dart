@@ -74,6 +74,15 @@ abstract interface class AutoBackupHost {
   /// 云端副本会用的同步服务名（设置页显示），不登录、不联网；没有支持的后端返回 null。
   Future<String?> cloudBackendLabel();
 
+  /// 服务器副本的目标（第四期 D12）：同步用的互联服务器（已开的互联同步通道），连上之后返回。**没有设置
+  /// 互联服务器**返回 null（设置页另有提示）；设置了但配对失效 / 连不上时抛 [BackupMirrorException]（错误码，
+  /// 原文不往外传）。不看 [AutoBackupSettings.serverCopies]。
+  Future<AutoBackupMirrorTarget?> serverTarget();
+
+  /// 服务器副本会用的互联服务器名（设置页显示：配对记下的设备名，没有就是通用名），不联网；没有设置互联
+  /// 服务器返回 null。
+  Future<String?> serverLabel();
+
   /// 当前网络是不是不计流量（Wi-Fi / 以太网 / 桌面）；云端副本缺省只在这时上传（D10）。
   Future<bool> networkUnmetered();
 
@@ -182,9 +191,17 @@ class AutoBackupFolderUnavailableException implements Exception {
   String toString() => 'backup folder unavailable: $folder';
 }
 
-/// 副本目标的种类：用户文件夹（移动端）/ 云端（已配置的同步后端）。各有一份复制状态
-/// （[AutoBackupStatus.mirror] / [AutoBackupStatus.cloud]），互不阻塞。
-enum AutoBackupMirrorKind { folder, cloud }
+/// 副本目标的种类：用户文件夹（移动端）/ 云端（已配置的云同步后端）/ 服务器（同步用的互联服务器，第四期
+/// D12）。各有一份复制状态（[AutoBackupStatus.mirror] / [AutoBackupStatus.cloud] /
+/// [AutoBackupStatus.server]），互不阻塞。
+enum AutoBackupMirrorKind {
+  folder,
+  cloud,
+  server;
+
+  /// 经网络上传的目标：缺省只在不计流量的网络上传（D10），宿主解析目标时可能登录不上 / 连不上。
+  bool get remote => this != AutoBackupMirrorKind.folder;
+}
 
 /// 一个副本目标：怎么打开、状态里用哪个键、按什么规则修剪。
 class AutoBackupMirrorTarget {
@@ -377,7 +394,7 @@ class AutoBackupController {
     final Object? lock = host.beginBackupExport();
     if (lock == null) return AutoBackupOutcome.busy;
     _running = true;
-    // 写好的（或没变化时最新的）那份：放锁之后再复制到用户文件夹 / 云端（复制不拿导出锁）。
+    // 写好的（或没变化时最新的）那份：放锁之后再复制到用户文件夹 / 云端 / 服务器（复制不拿导出锁）。
     RestorePoint? toMirror;
     final AutoBackupOutcome outcome;
     try {
@@ -551,54 +568,71 @@ class AutoBackupController {
 
   // ── 副本：用户文件夹 / 云端（第三期） ──────────────────────────────────────────
 
-  /// 这次要复制到的目标：用户文件夹（设了的话）+ 云端（开着且有可用的同步后端）。云端开着、后端也配置了，
-  /// 却登录不上 / 连不上时 `cloudError` 是错误码（不是静默地不复制：调用方记进 [AutoBackupStatus.cloud]）。
-  Future<({List<AutoBackupMirrorTarget> targets, String? cloudError})>
+  /// 这次要复制到的目标：用户文件夹（设了的话）+ 云端 / 服务器（各自开着且宿主给得出目标）。开着、也配置了，
+  /// 却登录不上 / 连不上的远端目标记在 `errors` 里（错误码；不是静默地不复制：调用方记进那个目标的状态）。
+  Future<
+    ({
+      List<AutoBackupMirrorTarget> targets,
+      Map<AutoBackupMirrorKind, String> errors,
+    })
+  >
   _resolveTargets(AutoBackupSettings settings) async {
     final AutoBackupMirrorFolder? folder = mirrorFolder(settings);
-    AutoBackupMirrorTarget? cloud;
-    String? cloudError;
-    if (settings.cloudCopies) {
+    final List<AutoBackupMirrorTarget> targets = <AutoBackupMirrorTarget>[
+      if (folder != null) _folderTarget(folder),
+    ];
+    final Map<AutoBackupMirrorKind, String> errors =
+        <AutoBackupMirrorKind, String>{};
+    for (final AutoBackupMirrorKind kind in <AutoBackupMirrorKind>[
+      if (settings.cloudCopies) AutoBackupMirrorKind.cloud,
+      if (settings.serverCopies) AutoBackupMirrorKind.server,
+    ]) {
       try {
-        cloud = await _cloudTarget();
+        final AutoBackupMirrorTarget? target = await _remoteTarget(kind);
+        if (target != null) targets.add(target);
       } on BackupMirrorException catch (e) {
-        cloudError = e.code;
+        errors[kind] = e.code;
       }
     }
-    return (
-      targets: <AutoBackupMirrorTarget>[
-        if (folder != null) _folderTarget(folder),
-        ?cloud,
-      ],
-      cloudError: cloudError,
-    );
+    return (targets: targets, errors: errors);
   }
 
-  /// [AutoBackupHost.cloudTarget]，宿主漏掉没归类的错误也归成错误码：原文可能带服务器地址 / 响应正文，
-  /// 只把类型名写进调试日志（不进状态、不进错误日志）。
-  Future<AutoBackupMirrorTarget?> _cloudTarget() async {
+  /// [AutoBackupHost.cloudTarget] / [AutoBackupHost.serverTarget]，宿主漏掉没归类的错误也归成错误码：原文
+  /// 可能带服务器地址 / 响应正文，只把类型名写进调试日志（不进状态、不进错误日志）。
+  Future<AutoBackupMirrorTarget?> _remoteTarget(
+    AutoBackupMirrorKind kind,
+  ) async {
     try {
-      return await host.cloudTarget();
+      return await switch (kind) {
+        AutoBackupMirrorKind.folder => Future<AutoBackupMirrorTarget?>.value(),
+        AutoBackupMirrorKind.cloud => host.cloudTarget(),
+        AutoBackupMirrorKind.server => host.serverTarget(),
+      };
     } on BackupMirrorException {
       rethrow;
     } on Object catch (e) {
       debugPrint(
-        'AutoBackup: resolving the cloud target failed: ${e.runtimeType}',
+        'AutoBackup: resolving the ${kind.name} target failed: '
+        '${e.runtimeType}',
       );
       throw const BackupMirrorException(kBackupMirrorErrorCloudFailed);
     }
   }
 
-  /// 云端副本开着、后端配置了，却解析不出目标（[error]：登录失效 / 连不上）：记进云端状态；定时 / 立即
+  /// 远端副本开着、也配置了，却解析不出目标（[error]：登录失效 / 连不上）：记进那个目标的状态；定时 / 立即
   /// 备份那一次（[notify]）提示一次。没到期的补复制不提示，同一个错误已经记着就不重写状态文件。
-  void _recordCloudUnavailable(String error, {required bool notify}) {
-    final AutoBackupMirrorStatus current = _status.value.cloud;
+  void _recordUnavailable(
+    AutoBackupMirrorKind kind,
+    String error, {
+    required bool notify,
+  }) {
+    final AutoBackupMirrorStatus current = mirrorStatusOf(kind);
     if (!notify && current.error == error) return;
     _writeMirrorStatus(
-      AutoBackupMirrorKind.cloud,
+      kind,
       current.unavailable(error: error, atMs: _clock().millisecondsSinceEpoch),
     );
-    if (notify) host.notifyMirrorFailure(AutoBackupMirrorKind.cloud, error);
+    if (notify) host.notifyMirrorFailure(kind, error);
   }
 
   AutoBackupMirrorTarget _folderTarget(AutoBackupMirrorFolder folder) =>
@@ -630,6 +664,7 @@ class AutoBackupController {
       switch (kind) {
         AutoBackupMirrorKind.folder => _status.value.mirror,
         AutoBackupMirrorKind.cloud => _status.value.cloud,
+        AutoBackupMirrorKind.server => _status.value.server,
       };
 
   void _writeMirrorStatus(
@@ -638,6 +673,7 @@ class AutoBackupController {
   ) => _writeStatus(switch (kind) {
     AutoBackupMirrorKind.folder => _status.value.withMirror(next),
     AutoBackupMirrorKind.cloud => _status.value.withCloud(next),
+    AutoBackupMirrorKind.server => _status.value.withServer(next),
   });
 
   /// 正在复制 / 取回 / 删除副本的目标（每个目标同时只有一个操作；与导出锁无关：复制读的是已经写好、
@@ -661,12 +697,15 @@ class AutoBackupController {
   }) async {
     final void Function() release = RestorePointStore.hold(point.directory);
     try {
-      final ({List<AutoBackupMirrorTarget> targets, String? cloudError})
+      final ({
+        List<AutoBackupMirrorTarget> targets,
+        Map<AutoBackupMirrorKind, String> errors,
+      })
       resolved = await _resolveTargets(settings);
-      final String? cloudError = resolved.cloudError;
-      if (cloudError != null) {
-        _recordCloudUnavailable(cloudError, notify: notify);
-      }
+      resolved.errors.forEach(
+        (AutoBackupMirrorKind kind, String error) =>
+            _recordUnavailable(kind, error, notify: notify),
+      );
       for (final AutoBackupMirrorTarget target in resolved.targets) {
         final AutoBackupMirrorKind kind = target.kind;
         if (_mirroring.contains(kind)) continue;
@@ -679,7 +718,7 @@ class AutoBackupController {
         }
         _mirroring.add(kind);
         try {
-          if (kind == AutoBackupMirrorKind.cloud &&
+          if (kind.remote &&
               !settings.cloudAllowMetered &&
               !await host.networkUnmetered()) {
             continue;
@@ -846,7 +885,20 @@ class AutoBackupController {
   /// [BackupMirrorException]（错误码，不带后端原文）。
   Future<MirrorFolderListing?> listCloudCopies() async {
     if (!host.readSettings().cloudCopies) return null;
-    final AutoBackupMirrorTarget? target = await _cloudTarget();
+    final AutoBackupMirrorTarget? target = await _remoteTarget(
+      AutoBackupMirrorKind.cloud,
+    );
+    if (target == null) return null;
+    return _listTarget(target);
+  }
+
+  /// 服务器上的副本（还原点页，第四期）；服务器副本没开 / 没有设置互联服务器返回 null。配对失效 / 连不上时抛
+  /// [BackupMirrorException]。
+  Future<MirrorFolderListing?> listServerCopies() async {
+    if (!host.readSettings().serverCopies) return null;
+    final AutoBackupMirrorTarget? target = await _remoteTarget(
+      AutoBackupMirrorKind.server,
+    );
     if (target == null) return null;
     return _listTarget(target);
   }
@@ -893,17 +945,17 @@ class AutoBackupController {
     final AutoBackupMirrorTarget? target = switch (kind) {
       AutoBackupMirrorKind.folder =>
         folder == null ? null : _folderTarget(folder),
-      AutoBackupMirrorKind.cloud => await _cloudTarget(),
+      AutoBackupMirrorKind.cloud ||
+      AutoBackupMirrorKind.server => await _remoteTarget(kind),
     };
     if (target == null) {
       throw switch (kind) {
         AutoBackupMirrorKind.folder => const BackupFolderUnavailableException(
           'no folder set',
         ),
-        // 云端：没有支持的同步后端 / 没登录。
-        AutoBackupMirrorKind.cloud => const BackupMirrorException(
-          kBackupMirrorErrorCloudAuth,
-        ),
+        // 云端 / 服务器：没有支持的同步后端 / 没登录、没配对。
+        AutoBackupMirrorKind.cloud || AutoBackupMirrorKind.server =>
+          const BackupMirrorException(kBackupMirrorErrorCloudAuth),
       };
     }
     if (_mirroring.contains(kind)) throw const AutoBackupBusyException();

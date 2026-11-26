@@ -459,11 +459,14 @@ List<CtlRoute> _backupRoutes(
         0,
         (int sum, RestorePoint point) => sum + point.totalBytes,
       ),
-      // 副本（用户文件夹 / 云端）的复制状态：目标只是短键（不含句柄 / 凭据）。
+      // 副本（用户文件夹 / 云端 / 服务器）的复制状态：目标只是短键（不含句柄 / 凭据）。
       'cloudCopies': settings.cloudCopies,
+      'serverCopies': settings.serverCopies,
       if (status.mirror.toJson().isNotEmpty)
         'folderCopy': status.mirror.toJson(),
       if (status.cloud.toJson().isNotEmpty) 'cloudCopy': status.cloud.toJson(),
+      if (status.server.toJson().isNotEmpty)
+        'serverCopy': status.server.toJson(),
     };
   }),
   // 立即自动备份：与设置页「立即备份」同一个 [AutoBackupController.backUpNow]（不看到期、不因

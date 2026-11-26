@@ -214,6 +214,10 @@ class AppRestorePointsHost implements RestorePointsHost {
           app.autoBackupSettings.cloudCopies
               ? await app.autoBackup.host.cloudBackendLabel()
               : null,
+        AutoBackupMirrorKind.server =>
+          app.autoBackupSettings.serverCopies
+              ? await app.autoBackup.host.serverLabel()
+              : null,
       };
 
   @override
@@ -221,6 +225,7 @@ class AppRestorePointsHost implements RestorePointsHost {
       switch (kind) {
         AutoBackupMirrorKind.folder => app.autoBackup.listMirrorCopies(),
         AutoBackupMirrorKind.cloud => app.autoBackup.listCloudCopies(),
+        AutoBackupMirrorKind.server => app.autoBackup.listServerCopies(),
       };
 
   @override
@@ -580,6 +585,9 @@ class _RestorePointsPageState extends State<RestorePointsPage> {
           AutoBackupMirrorKind.cloud => t.restore_points_cloud_copy_failed(
             reason: reason,
           ),
+          AutoBackupMirrorKind.server => t.restore_points_server_copy_failed(
+            reason: reason,
+          ),
         },
         severity: ToastSeverity.error,
       );
@@ -843,6 +851,7 @@ class _RestorePointsPageState extends State<RestorePointsPage> {
     RestorePointEntry entry, {
     bool alsoInFolder = false,
     bool alsoInCloud = false,
+    bool alsoOnServer = false,
   }) {
     final String? version = entry.point?.appVersion;
     final int? schema = entry.schema;
@@ -860,6 +869,7 @@ class _RestorePointsPageState extends State<RestorePointsPage> {
       if (device != null) t.restore_points_folder_from_device(device: device),
       if (alsoInFolder) t.restore_points_folder_also,
       if (alsoInCloud) t.restore_points_cloud_also,
+      if (alsoOnServer) t.restore_points_server_also,
       if (!entry.schemaSupported) t.restore_points_too_new,
     ].where((String line) => line.isNotEmpty).join('\n');
   }
@@ -1082,6 +1092,7 @@ class _RestorePointsPageState extends State<RestorePointsPage> {
               entry,
               alsoInFolder: _alsoIn(AutoBackupMirrorKind.folder, entry.id),
               alsoInCloud: _alsoIn(AutoBackupMirrorKind.cloud, entry.id),
+              alsoOnServer: _alsoIn(AutoBackupMirrorKind.server, entry.id),
             ),
           ),
           subtitleMaxLines: 7,
@@ -1115,10 +1126,11 @@ class _RestorePointsPageState extends State<RestorePointsPage> {
     ];
   }
 
-  /// 副本行与按钮的键名段：文件夹 `folder`、云端 `cloud`（`restore-point-<段>-<id>` 等）。
+  /// 副本行与按钮的键名段：文件夹 `folder`、云端 `cloud`、服务器 `server`（`restore-point-<段>-<id>` 等）。
   static String _copiesKey(AutoBackupMirrorKind kind) => switch (kind) {
     AutoBackupMirrorKind.folder => 'folder',
     AutoBackupMirrorKind.cloud => 'cloud',
+    AutoBackupMirrorKind.server => 'server',
   };
 
   /// 本机这一行在副本目标 [kind] 里也有一份。
@@ -1142,6 +1154,7 @@ class _RestorePointsPageState extends State<RestorePointsPage> {
           leading: FushiIcon(switch (kind) {
             AutoBackupMirrorKind.folder => FushiIcons.folder,
             AutoBackupMirrorKind.cloud => FushiIcons.cloud,
+            AutoBackupMirrorKind.server => FushiIcons.devices,
           }),
           title: Text(restorePointKindLabel(entry)),
           subtitle: Text(_entryDetails(entry)),
@@ -1196,6 +1209,8 @@ class _RestorePointsPageState extends State<RestorePointsPage> {
                         t.restore_points_folder_delete_body,
                       AutoBackupMirrorKind.cloud =>
                         t.restore_points_cloud_delete_body,
+                      AutoBackupMirrorKind.server =>
+                        t.restore_points_server_delete_body,
                     },
                     actionsInline: false,
                     actions: <Widget>[
@@ -1248,7 +1263,7 @@ class _RestorePointsPageState extends State<RestorePointsPage> {
     final MirrorFolderListing? listing = state.listing;
     final Object? error = state.error;
     final String k = _copiesKey(kind);
-    final bool cloud = kind == AutoBackupMirrorKind.cloud;
+    final bool remote = kind.remote;
     final List<MirroredRestorePoint> copies = listing == null
         ? const <MirroredRestorePoint>[]
         : restorePointFolderOnlyCopies(
@@ -1256,31 +1271,36 @@ class _RestorePointsPageState extends State<RestorePointsPage> {
             _entries.map((RestorePointEntry e) => e.id),
           );
     return <Widget>[
-      _sectionTitle(
-        context,
-        cloud
-            ? t.restore_points_cloud_section
-            : t.restore_points_folder_section,
-      ),
+      _sectionTitle(context, switch (kind) {
+        AutoBackupMirrorKind.folder => t.restore_points_folder_section,
+        AutoBackupMirrorKind.cloud => t.restore_points_cloud_section,
+        AutoBackupMirrorKind.server => t.restore_points_server_section,
+      }),
       if (error != null)
         FushiInlineNotice(
           key: ValueKey<String>('restore-point-$k-error'),
           severity: FushiNoticeSeverity.error,
-          message: cloud
-              ? t.restore_points_cloud_failed(
-                  reason: autoBackupErrorText(error),
-                )
-              : t.restore_points_folder_failed(
-                  reason: autoBackupErrorText(error),
-                ),
+          message: switch (kind) {
+            AutoBackupMirrorKind.folder => t.restore_points_folder_failed(
+              reason: autoBackupErrorText(error),
+            ),
+            AutoBackupMirrorKind.cloud => t.restore_points_cloud_failed(
+              reason: autoBackupErrorText(error),
+            ),
+            AutoBackupMirrorKind.server => t.restore_points_server_failed(
+              reason: autoBackupErrorText(error),
+            ),
+          },
         )
       else if (listing == null && state.loading)
         const Center(child: FushiCircularProgressIndicator())
-      else if (listing == null && cloud)
-        // 云端副本开着、但同步服务没登录（宿主给不出目标）。
+      else if (listing == null && remote)
+        // 云端 / 服务器副本开着、但同步服务没登录 / 没有互联服务器（宿主给不出目标）。
         FushiInlineNotice(
-          key: const ValueKey<String>('restore-point-cloud-unavailable'),
-          message: t.restore_points_cloud_unavailable,
+          key: ValueKey<String>('restore-point-$k-unavailable'),
+          message: kind == AutoBackupMirrorKind.server
+              ? t.restore_points_server_unavailable
+              : t.restore_points_cloud_unavailable,
         )
       else if (listing != null) ...<Widget>[
         _hint(switch ((kind, copies.isEmpty)) {
@@ -1292,8 +1312,12 @@ class _RestorePointsPageState extends State<RestorePointsPage> {
           (AutoBackupMirrorKind.cloud, false) => t.restore_points_cloud_hint(
             service: label,
           ),
+          (AutoBackupMirrorKind.server, true) => t.restore_points_server_empty,
+          (AutoBackupMirrorKind.server, false) => t.restore_points_server_hint(
+            server: label,
+          ),
         }),
-        if (!cloud && listing.notDownloaded > 0)
+        if (!remote && listing.notDownloaded > 0)
           FushiInlineNotice(
             key: const ValueKey<String>('restore-point-folder-not-downloaded'),
             message: t.restore_points_folder_not_downloaded(

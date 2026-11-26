@@ -71,12 +71,16 @@ class _DirHost implements RestorePointsHost {
   /// 云端列表失败时抛的异常（假扮登录失效等）。
   Exception? cloudListError;
 
+  /// 服务器（拿一个目录假扮互联服务器）；null = 服务器副本没开 / 没有互联服务器。
+  String? serverDir;
+
   /// 宿主收到的副本操作（`<copy|delete>:<kind>:<id>`）。
   final List<String> copyCalls = <String>[];
 
   String _dirOf(AutoBackupMirrorKind kind) => switch (kind) {
     AutoBackupMirrorKind.folder => folderDir!,
     AutoBackupMirrorKind.cloud => cloudDir!,
+    AutoBackupMirrorKind.server => serverDir!,
   };
 
   @override
@@ -84,6 +88,7 @@ class _DirHost implements RestorePointsHost {
       switch (kind) {
         AutoBackupMirrorKind.folder => folderDir == null ? null : 'Backups',
         AutoBackupMirrorKind.cloud => cloudDir == null ? null : 'Google Drive',
+        AutoBackupMirrorKind.server => serverDir == null ? null : 'Desk PC',
       };
 
   @override
@@ -96,6 +101,7 @@ class _DirHost implements RestorePointsHost {
       if (cloudDir == null) return null;
     }
     if (kind == AutoBackupMirrorKind.folder && folderDir == null) return null;
+    if (kind == AutoBackupMirrorKind.server && serverDir == null) return null;
     return IoBackupFolderMirror(_dirOf(kind)).list();
   }
 
@@ -224,8 +230,9 @@ void main() {
     String? folderDir,
     String? cloudDir,
     Exception? cloudListError,
+    String? serverDir,
   }) async {
-    if (folderDir != null || cloudDir != null) {
+    if (folderDir != null || cloudDir != null || serverDir != null) {
       // 文件夹那一节在两张还原点卡片下面：给足高度，懒构建的列表才会把它建出来。
       tester.view.physicalSize = const Size(1000, 3000);
       tester.view.devicePixelRatio = 1.0;
@@ -234,7 +241,8 @@ void main() {
     final _DirHost host = _DirHost(tmp.path)
       ..folderDir = folderDir
       ..cloudDir = cloudDir
-      ..cloudListError = cloudListError;
+      ..cloudListError = cloudListError
+      ..serverDir = serverDir;
     await tester.pumpWidget(
       TranslationProvider(
         child: MaterialApp(
@@ -632,6 +640,92 @@ void main() {
       );
       expect(find.textContaining(t.restore_points_folder_also), findsOneWidget);
       expect(find.textContaining(t.restore_points_cloud_also), findsOneWidget);
+    });
+  });
+
+  group('服务器（第四期）', () {
+    late String server;
+    late String foreignId;
+
+    setUp(() {
+      server = p.join(tmp.path, 'server');
+      Directory(server).createSync();
+      _mirrorInto(server, scheduled, device: 'a');
+      final RestorePoint foreign = _foreignPoint(
+        p.join(tmp.path, 'other_device'),
+      );
+      foreignId = foreign.id;
+      _mirrorInto(server, foreign, device: 'b');
+    });
+
+    testWidgets('「服务器」一节只列本机没有的副本，本机那份标「服务器上也有」；删除用服务器文案', (
+      WidgetTester tester,
+    ) async {
+      final _DirHost host = await pumpPage(tester, serverDir: server);
+      expect(find.text(t.restore_points_server_section), findsOneWidget);
+      expect(find.text(t.restore_points_cloud_section), findsNothing);
+      expect(
+        find.text(t.restore_points_server_hint(server: 'Desk PC')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(ValueKey<String>('restore-point-server-$foreignId')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(ValueKey<String>('restore-point-server-${scheduled.id}')),
+        findsNothing,
+      );
+      expect(find.textContaining(t.restore_points_server_also), findsOneWidget);
+      expect(find.textContaining(t.restore_points_cloud_also), findsNothing);
+      expect(
+        find.textContaining(
+          t.restore_points_folder_from_device(device: 'Phone b'),
+        ),
+        findsOneWidget,
+      );
+
+      final FocusDriver driver = FocusDriver(tester);
+      expect(
+        await driver.focusWidget(
+          find.byKey(
+            ValueKey<String>('restore-point-server-delete-$foreignId'),
+          ),
+        ),
+        isTrue,
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(find.text(t.restore_points_server_delete_body), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 300)),
+      );
+      await tester.pumpAndSettle();
+      expect(host.copyCalls, <String>['delete:server:$foreignId']);
+      expect(Directory(p.join(server, foreignId)).existsSync(), isFalse);
+      expect(find.text(t.restore_points_server_empty), findsOneWidget);
+    });
+
+    testWidgets('「复制到本机」按服务器取回', (WidgetTester tester) async {
+      final _DirHost host = await pumpPage(tester, serverDir: server);
+      final FocusDriver driver = FocusDriver(tester);
+      expect(
+        await driver.focusWidget(
+          find.byKey(ValueKey<String>('restore-point-server-copy-$foreignId')),
+        ),
+        isTrue,
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 300)),
+      );
+      await tester.pumpAndSettle();
+      expect(host.copyCalls, <String>['copy:server:$foreignId']);
+      expect(
+        find.byKey(ValueKey<String>('restore-point-fill-$foreignId')),
+        findsOneWidget,
+      );
     });
   });
 }

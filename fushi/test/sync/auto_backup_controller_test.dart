@@ -115,7 +115,7 @@ class _FakeHost implements AutoBackupHost {
   @override
   void notifyMirrorFailure(AutoBackupMirrorKind kind, String reason) =>
       mirrorFailures.add(
-        kind == AutoBackupMirrorKind.cloud ? 'cloud:$reason' : reason,
+        kind == AutoBackupMirrorKind.folder ? reason : '${kind.name}:$reason',
       );
 
   /// 云端副本目标（null = 没有可用的同步后端）。
@@ -137,6 +137,22 @@ class _FakeHost implements AutoBackupHost {
 
   @override
   Future<String?> cloudBackendLabel() async => cloud?.label;
+
+  /// 服务器副本目标（null = 没有设置互联服务器）。
+  AutoBackupMirrorTarget? server;
+
+  /// 非空时 [serverTarget] 抛它（配对失效 / 连不上）。
+  Object? serverError;
+
+  @override
+  Future<AutoBackupMirrorTarget?> serverTarget() async {
+    final Object? error = serverError;
+    if (error != null) Error.throwWithStackTrace(error, StackTrace.current);
+    return server;
+  }
+
+  @override
+  Future<String?> serverLabel() async => server?.label;
 
   @override
   Future<bool> networkUnmetered() async {
@@ -1334,6 +1350,223 @@ void main() {
       final String ns = await store.ensureNamespace(kCloudBackupNamespace);
       final String dev = await store.ensureFolder(ns, 'device-1');
       expect(await store.listChildren(dev), isEmpty);
+    });
+  });
+
+  group('服务器副本（第四期 D12–D13）', () {
+    late FakeAssetStore serverStore;
+    late FakeAssetStore cloudStore;
+
+    AutoBackupMirrorTarget targetOn(
+      FakeAssetStore store,
+      AutoBackupMirrorKind kind,
+      String key,
+      BackupRetentionPolicy policy,
+    ) => AutoBackupMirrorTarget(
+      kind: kind,
+      key: key,
+      label: kind == AutoBackupMirrorKind.server ? 'Desk PC' : 'Test cloud',
+      policy: policy,
+      open: () async => BackupFolderSession(
+        mirror: SyncAssetStoreBackupMirror(
+          store: store,
+          namespace: () => store.ensureNamespace(kCloudBackupNamespace),
+          deviceFolder: 'device-1',
+        ),
+      ),
+    );
+
+    setUp(() {
+      serverStore = FakeAssetStore(reportNullSizes: true);
+      cloudStore = FakeAssetStore(reportNullSizes: true);
+      host.server = targetOn(
+        serverStore,
+        AutoBackupMirrorKind.server,
+        serverBackupTargetKey('host-id'),
+        kServerBackupRetention,
+      );
+      host.settings = host.settings.copyWith(serverCopies: true);
+    });
+
+    Future<List<MirroredRestorePoint>> serverCopies() async =>
+        (await controller.listServerCopies())!.points;
+
+    Future<void> seed(String device, String id, DateTime at) async {
+      final String ns = await serverStore.ensureNamespace(
+        kCloudBackupNamespace,
+      );
+      final String dev = await serverStore.ensureFolder(ns, device);
+      final String dir = await serverStore.ensureFolder(dev, id);
+      final File zip = File(p.join(root.path, 'seed.zip'))
+        ..writeAsStringSync('zip');
+      await serverStore.putAsset(dir, kRestorePointArchiveFileName, zip);
+      final RestorePoint point = RestorePoint(
+        id: id,
+        directory: dir,
+        kind: RestorePointKind.scheduled,
+        database: RestorePointDatabase.fushi,
+        createdAtMs: at.millisecondsSinceEpoch,
+        fromSchema: kFushiDbSchemaVersion,
+        toSchema: kFushiDbSchemaVersion,
+        files: const <RestorePointFile>[
+          RestorePointFile(name: kRestorePointArchiveFileName, size: 3),
+        ],
+        deviceId: device,
+      );
+      await serverStore.putBytesAsset(
+        dir,
+        kRestorePointMetaFileName,
+        Uint8List.fromList(utf8.encode(jsonEncode(point.toJson()))),
+      );
+    }
+
+    test('服务器键带主机身份的哈希，原文不进键；保留规则就是本机那套', () {
+      final String key = serverBackupTargetKey('host-id');
+      expect(key, startsWith('server-'));
+      expect(key, hasLength('server-'.length + 12));
+      expect(key, isNot(contains('host-id')));
+      expect(serverBackupTargetKey('other-host'), isNot(key));
+      expect(serverBackupTargetKey(null), 'server');
+      expect(kServerBackupRetention, same(kRestorePointScheduledRetention));
+    });
+
+    test('与云端互不相干：两个都开就各传一份，状态各记各的', () async {
+      host
+        ..cloud = targetOn(
+          cloudStore,
+          AutoBackupMirrorKind.cloud,
+          'cloud-test',
+          kCloudBackupRetention,
+        )
+        ..settings = host.settings.copyWith(cloudCopies: true);
+      expect(await controller.checkNow(), AutoBackupOutcome.created);
+      final String id = controller.status.value.lastSuccessPointId!;
+      expect((await serverCopies()).single.id, id);
+      expect((await controller.listCloudCopies())!.points.single.id, id);
+      final AutoBackupStatus status = controller.status.value;
+      expect(status.server.holds(serverBackupTargetKey('host-id'), id), isTrue);
+      expect(status.cloud.holds('cloud-test', id), isTrue);
+      // 状态文件往返：服务器那份单独记在 `server` 下。
+      final AutoBackupStatus reread = readAutoBackupStatus(dbDir);
+      expect(reread.server.pointId, id);
+      expect(reread.cloud.pointId, id);
+    });
+
+    test('服务器关着：不传，列表返回 null', () async {
+      host.settings = host.settings.copyWith(serverCopies: false);
+      expect(await controller.checkNow(), AutoBackupOutcome.created);
+      expect(await controller.listServerCopies(), isNull);
+      expect(controller.status.value.server.target, isNull);
+    });
+
+    test('保留按本机规则（D13）：本机 60 天前那份在月度桶里留着，200 天前的删；别的设备的不动', () async {
+      final DateTime utc = now.toUtc();
+      await seed(
+        'device-1',
+        '20260926-000000-000-fushi-scheduled',
+        utc.subtract(const Duration(days: 60)),
+      );
+      await seed(
+        'device-1',
+        '20260509-000000-000-fushi-scheduled',
+        utc.subtract(const Duration(days: 200)),
+      );
+      await seed(
+        'device-2',
+        '20260509-000000-001-fushi-scheduled',
+        utc.subtract(const Duration(days: 200)),
+      );
+      expect(await controller.checkNow(), AutoBackupOutcome.created);
+      final Set<String> ids = <String>{
+        for (final MirroredRestorePoint c in await serverCopies()) c.id,
+      };
+      expect(ids, contains('20260926-000000-000-fushi-scheduled'));
+      expect(ids, isNot(contains('20260509-000000-000-fushi-scheduled')));
+      expect(ids, contains('20260509-000000-001-fushi-scheduled'));
+      expect(ids, contains(controller.status.value.lastSuccessPointId));
+    });
+
+    test('连不上服务器：记进服务器状态、定时那次提示一次（服务器文案），云端不受影响；连上后补传', () async {
+      host.serverError = const BackupMirrorException(
+        kBackupMirrorErrorCloudUnreachable,
+      );
+      expect(await controller.checkNow(), AutoBackupOutcome.created);
+      expect(
+        controller.status.value.server.error,
+        kBackupMirrorErrorCloudUnreachable,
+      );
+      expect(controller.status.value.cloud.error, isNull);
+      expect(host.mirrorFailures, <String>[
+        'server:$kBackupMirrorErrorCloudUnreachable',
+      ]);
+      // 补复制不再提示。
+      now = now.add(const Duration(hours: 1));
+      expect(await controller.checkNow(), AutoBackupOutcome.notDue);
+      expect(host.mirrorFailures, hasLength(1));
+      // 连上了：下个时段补传，错误清掉。
+      host.serverError = null;
+      now = now.add(const Duration(days: 1));
+      expect(await controller.backUpNow(), AutoBackupOutcome.created);
+      expect(controller.status.value.server.error, isNull);
+      // 失败那一期的点不补传（等下个时段 / 立即备份），新点照传。
+      expect(
+        (await serverCopies()).single.id,
+        controller.status.value.lastSuccessPointId,
+      );
+    });
+
+    test('宿主漏掉没归类的错误：归成 cloud_failed，原文不外传', () async {
+      host.serverError = StateError('https://192.168.1.5:8443/?token=secret');
+      expect(await controller.checkNow(), AutoBackupOutcome.created);
+      expect(
+        controller.status.value.server.error,
+        kBackupMirrorErrorCloudFailed,
+      );
+      expect(
+        jsonEncode(controller.status.value.toJson()),
+        isNot(contains('secret')),
+      );
+    });
+
+    test('计流量的网络上与云端同一个设置：缺省等 Wi-Fi，允许移动数据就照传', () async {
+      host.unmetered = false;
+      expect(await controller.checkNow(), AutoBackupOutcome.created);
+      expect(await serverCopies(), isEmpty);
+      expect(controller.status.value.server.error, isNull);
+      host.settings = host.settings.copyWith(cloudAllowMetered: true);
+      now = now.add(const Duration(hours: 1));
+      expect(await controller.checkNow(), AutoBackupOutcome.notDue);
+      expect(await serverCopies(), hasLength(1));
+    });
+
+    test('服务器副本取回本机、删除；没有互联服务器时报 cloud_auth', () async {
+      expect(await controller.checkNow(), AutoBackupOutcome.created);
+      final String id = controller.status.value.lastSuccessPointId!;
+      Directory(
+        p.join(dbDir, kRestorePointsDirName, id),
+      ).deleteSync(recursive: true);
+      final MirroredRestorePoint copy = (await serverCopies()).single;
+      final RestorePoint back = await controller.copyMirrorCopyToDevice(
+        copy,
+        kind: AutoBackupMirrorKind.server,
+      );
+      expect(back.copiedBackAtMs, isNotNull);
+      await controller.deleteMirrorCopy(
+        copy,
+        kind: AutoBackupMirrorKind.server,
+      );
+      expect(await serverCopies(), isEmpty);
+      host.server = null;
+      await expectLater(
+        controller.deleteMirrorCopy(copy, kind: AutoBackupMirrorKind.server),
+        throwsA(
+          isA<BackupMirrorException>().having(
+            (BackupMirrorException e) => e.code,
+            'code',
+            kBackupMirrorErrorCloudAuth,
+          ),
+        ),
+      );
     });
   });
 }

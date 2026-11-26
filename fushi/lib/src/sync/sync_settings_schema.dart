@@ -64,7 +64,7 @@ import 'package:fushi/src/pages/implementations/library_recovery_page.dart'
 import 'package:fushi/src/storage/storage_usage_service.dart'
     show formatStorageBytes;
 import 'package:fushi/src/sync/auto_backup/auto_backup_controller.dart'
-    show AutoBackupOutcome;
+    show AutoBackupMirrorKind, AutoBackupOutcome;
 import 'package:fushi/src/sync/auto_backup/auto_backup_messages.dart'
     show autoBackupErrorText;
 import 'package:fushi/src/sync/auto_backup/auto_backup_schedule.dart'

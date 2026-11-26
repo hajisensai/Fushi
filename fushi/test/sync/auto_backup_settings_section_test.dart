@@ -5,6 +5,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
     show buildFushiFallbackTheme;
+import 'package:fushi/src/models/preference_keys.dart'
+    show kAutoBackupServerPrefKey, kKnownPreferenceKeys;
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/storage/storage_usage_service.dart'
     show formatStorageBytes;
@@ -15,10 +17,14 @@ import 'package:fushi/src/sync/auto_backup/auto_backup_settings.dart';
 import 'package:fushi/src/sync/auto_backup/auto_backup_status.dart';
 import 'package:fushi/src/sync/auto_backup/backup_folder_mirror.dart';
 import 'package:fushi/src/sync/backup_service.dart' show BackupCategory;
+import 'package:fushi/src/sync/sync_repository.dart' show SyncRepository;
 import 'package:fushi/src/sync/sync_settings_schema.dart'
     show
         AutoBackupCloudRow,
+        AutoBackupServerRow,
         autoBackupCloudStatusLine,
+        autoBackupMeteredRowVisible,
+        autoBackupServerStatusLine,
         autoBackupIntervalLabel,
         autoBackupMirrorStatusLine,
         autoBackupStatusLine,
@@ -31,6 +37,7 @@ class _CloudRowHarness {
   _CloudRowHarness({
     required this.label,
     this.mobile = false,
+    this.server = false,
     AutoBackupSettings settings = const AutoBackupSettings(),
     AutoBackupStatus status = const AutoBackupStatus(),
   }) : settings = ValueNotifier<AutoBackupSettings>(settings),
@@ -40,6 +47,9 @@ class _CloudRowHarness {
 
   /// 假扮移动端（可能走计费网络）。
   final bool mobile;
+
+  /// 测「复制到服务器」那一行（[AutoBackupServerRow]）而不是云端。
+  final bool server;
   final ValueNotifier<AutoBackupSettings> settings;
   final ValueNotifier<AutoBackupStatus> status;
 
@@ -57,18 +67,31 @@ class _CloudRowHarness {
                       BuildContext context,
                       AutoBackupSettings value,
                       Widget? _,
-                    ) => AutoBackupCloudRow(
-                      settings: value,
-                      statusChanges: status,
-                      readStatus: () => status.value,
-                      meteredNetworks: mobile,
-                      backendLabel: () async => label,
-                      onUpdate:
-                          (
-                            AutoBackupSettings Function(AutoBackupSettings)
-                            update,
-                          ) async => settings.value = update(settings.value),
-                    ),
+                    ) => server
+                    ? AutoBackupServerRow(
+                        settings: value,
+                        statusChanges: status,
+                        readStatus: () => status.value,
+                        meteredNetworks: mobile,
+                        backendLabel: () async => label,
+                        onUpdate:
+                            (
+                              AutoBackupSettings Function(AutoBackupSettings)
+                              update,
+                            ) async => settings.value = update(settings.value),
+                      )
+                    : AutoBackupCloudRow(
+                        settings: value,
+                        statusChanges: status,
+                        readStatus: () => status.value,
+                        meteredNetworks: mobile,
+                        backendLabel: () async => label,
+                        onUpdate:
+                            (
+                              AutoBackupSettings Function(AutoBackupSettings)
+                              update,
+                            ) async => settings.value = update(settings.value),
+                      ),
               ),
             ),
           ),
@@ -442,7 +465,7 @@ void main() {
         find.byKey(const ValueKey<String>('auto-backup-cloud-no-backend')),
         findsOneWidget,
       );
-      expect(find.text(t.auto_backup_cloud_no_backend), findsOneWidget);
+      expect(find.text(t.auto_backup_cloud_no_service), findsOneWidget);
       expect(
         find.byKey(const ValueKey<String>('auto-backup-cloud-retention')),
         findsNothing,
@@ -483,7 +506,7 @@ void main() {
       );
     });
 
-    testWidgets('移动端：开着时有「使用移动数据时也上传」，状态行随之说明要不要等 Wi-Fi', (
+    testWidgets('移动端：状态行按共用的「也用移动数据上传」说明要不要等 Wi-Fi（开关本身是单独一行）', (
       WidgetTester tester,
     ) async {
       final _CloudRowHarness h = _CloudRowHarness(
@@ -496,14 +519,17 @@ void main() {
         ),
       );
       await h.pump(tester);
-      expect(_switchRow(tester, 'auto-backup-cloud-metered').value, isFalse);
+      // 「也用移动数据上传」与服务器副本共用，是单独一行（sync.auto_backup.metered），不在这一行里。
+      expect(
+        find.byKey(const ValueKey<String>('auto-backup-cloud-metered')),
+        findsNothing,
+      );
       expect(
         find.text(t.auto_backup_cloud_status_pending_wifi),
         findsOneWidget,
       );
-      _switchRow(tester, 'auto-backup-cloud-metered').onChanged!(true);
+      h.settings.value = h.settings.value.copyWith(cloudAllowMetered: true);
       await tester.pumpAndSettle();
-      expect(h.settings.value.cloudAllowMetered, isTrue);
       expect(find.text(t.auto_backup_cloud_status_pending), findsOneWidget);
     });
 
@@ -546,6 +572,154 @@ void main() {
       expect(
         find.byKey(const ValueKey<String>('auto-backup-cloud-prune')),
         findsNothing,
+      );
+    });
+  });
+
+  group('「复制到服务器」（第四期 D12）', () {
+    test('排在云端之后，可见性同一判据；共用的移动数据开关紧随其后', () {
+      final List<SettingsItem> items = buildSyncBackupDestination().sections
+          .expand((SettingsSection section) => section.items)
+          .toList();
+      int indexOf(String id) =>
+          items.indexWhere((SettingsItem i) => i.id == id);
+      final int cloud = indexOf('sync.auto_backup.cloud');
+      final int server = indexOf('sync.auto_backup.server');
+      final int metered = indexOf('sync.auto_backup.metered');
+      expect(server, cloud + 1);
+      expect(metered, server + 1);
+      expect(items[server].visible == items[cloud].visible, isTrue);
+      expect(items[metered].visible, isNotNull);
+    });
+
+    test('移动数据开关：自动备份开着、云端或服务器至少开了一个才出现', () {
+      const AutoBackupSettings base = AutoBackupSettings();
+      expect(autoBackupMeteredRowVisible(base), isFalse);
+      expect(
+        autoBackupMeteredRowVisible(base.copyWith(cloudCopies: true)),
+        isTrue,
+      );
+      expect(
+        autoBackupMeteredRowVisible(base.copyWith(serverCopies: true)),
+        isTrue,
+      );
+      expect(
+        autoBackupMeteredRowVisible(
+          base.copyWith(serverCopies: true, interval: AutoBackupInterval.off),
+        ),
+        isFalse,
+      );
+    });
+
+    test('偏好往返：auto_backup_server 设备本地，默认关', () async {
+      expect(const AutoBackupSettings().serverCopies, isFalse);
+      final Map<String, dynamic> prefs = <String, dynamic>{};
+      await writeAutoBackupSettings(
+        (Map<String, dynamic> values) async => prefs.addAll(values),
+        const AutoBackupSettings(serverCopies: true),
+      );
+      expect(prefs[kAutoBackupServerPrefKey], isTrue);
+      expect(
+        readAutoBackupSettings((String k) => prefs[k]).serverCopies,
+        isTrue,
+      );
+      expect(
+        SyncRepository.deviceLocalPrefKeys,
+        contains('auto_backup_server'),
+      );
+      expect(kKnownPreferenceKeys, contains('auto_backup_server'));
+    });
+
+    testWidgets('没有互联服务器：开关不可用，提示先去同步设置', (WidgetTester tester) async {
+      final _CloudRowHarness h = _CloudRowHarness(label: null, server: true);
+      await h.pump(tester);
+      expect(_switchRow(tester, 'auto-backup-server').onChanged, isNull);
+      expect(find.text(t.auto_backup_server_no_server), findsOneWidget);
+      expect(find.text(t.auto_backup_server_subtitle), findsOneWidget);
+    });
+
+    testWidgets('有服务器：副标题写服务器名，打开后出保留规则说明与状态行', (WidgetTester tester) async {
+      final _CloudRowHarness h = _CloudRowHarness(
+        label: 'Desk PC',
+        server: true,
+        mobile: true,
+        status: const AutoBackupStatus(
+          lastSuccessPointId: 'p1',
+          lastSuccessMs: 1,
+        ),
+      );
+      await h.pump(tester);
+      expect(
+        find.text(t.auto_backup_server_service(server: 'Desk PC')),
+        findsOneWidget,
+      );
+      _switchRow(tester, 'auto-backup-server').onChanged!(true);
+      await tester.pumpAndSettle();
+      expect(h.settings.value.serverCopies, isTrue);
+      expect(h.settings.value.cloudCopies, isFalse);
+      expect(find.text(t.auto_backup_server_retention_hint), findsOneWidget);
+      expect(
+        find.text(t.auto_backup_server_status_pending_wifi),
+        findsOneWidget,
+      );
+    });
+
+    test('状态行：失败 / 已复制 / 待复制，只看服务器那份状态', () {
+      final DateTime now = DateTime(2026, 11, 25, 12);
+      const AutoBackupStatus base = AutoBackupStatus(
+        lastSuccessPointId: 'p1',
+        lastSuccessMs: 1,
+      );
+      expect(
+        autoBackupServerStatusLine(
+          status: base,
+          now: now,
+          wifiOnly: false,
+        )!.text,
+        t.auto_backup_server_status_pending,
+      );
+      final AutoBackupStatus copied = base.withServer(
+        const AutoBackupMirrorStatus().succeeded(
+          folderKey: 'server-abc',
+          id: 'p1',
+          atMs: 1,
+          leftovers: const <String>[],
+        ),
+      );
+      final ({String text, bool failed}) done = autoBackupServerStatusLine(
+        status: copied,
+        now: now,
+        wifiOnly: false,
+      )!;
+      expect(done.failed, isFalse);
+      expect(done.text, startsWith(t.auto_backup_server_status_done(time: '')));
+      // 云端那份成功不算服务器的。
+      expect(
+        autoBackupCloudStatusLine(
+          status: copied,
+          now: now,
+          wifiOnly: false,
+        )!.text,
+        t.auto_backup_cloud_status_pending,
+      );
+      final ({String text, bool failed}) failed = autoBackupServerStatusLine(
+        status: copied.withServer(
+          copied.server.failed(
+            folderKey: 'server-abc',
+            error: kBackupMirrorErrorCloudUnreachable,
+            atMs: 2,
+            leftovers: const <String>[],
+          ),
+        ),
+        now: now,
+        wifiOnly: false,
+      )!;
+      expect(failed.failed, isTrue);
+      expect(
+        failed.text,
+        t.auto_backup_server_failed(
+          reason: t.auto_backup_error_cloud_unreachable,
+        ),
       );
     });
   });

@@ -24,8 +24,9 @@ import 'package:path/path.dart' as p;
 
 /// 同步根下放云端副本的命名空间（一级文件夹）。`__x__` 形状 = 保留命名空间
 /// （引擎 `isReservedSyncNamespaceName`）：对比弹窗、云端书架不会把它当成远端书列出来，「删远端」删不到它，
-/// 互联 host 的文件箱清理也不碰。
-const String kCloudBackupNamespace = '__backups__';
+/// 互联 host 的文件箱清理也不碰。名字只在 fushi_core 写一次（[kDeviceBackupsNamespace]：互联 host 按它列出
+/// 收到的设备备份），云端副本与服务器副本共用。
+const String kCloudBackupNamespace = kDeviceBackupsNamespace;
 
 /// 云端副本的保留（D11）：比本机少，7 天每天 + 4 周每周各留最新一份，另有 5 GB 上限防配额被占满；最新
 /// 一份永远留。只算本机写的副本。
@@ -51,6 +52,23 @@ String cloudBackupTargetKey(String backendType, String? accountIdentity) {
       .substring(0, 12);
   return 'cloud-$backendType-$digest';
 }
+
+/// 服务器副本（第四期 D12）目标在状态文件里的键：`server-` + 互联 host 身份（配对记下的 hostId，老条目退到
+/// 所连地址）的 sha1 前 12 位。换了服务器就是另一个目标；原文不落盘、不进日志。身份为空时只用 `server`。
+String serverBackupTargetKey(String? hostIdentity) {
+  final String identity = hostIdentity?.trim() ?? '';
+  if (identity.isEmpty) return 'server';
+  final String digest = sha1
+      .convert(utf8.encode('fushiServer|$identity'))
+      .toString()
+      .substring(0, 12);
+  return 'server-$digest';
+}
+
+/// 服务器副本的保留（D13）：服务器是用户自己的机器，本机写的副本按本机 / 用户文件夹同一套规则修剪（48 小时
+/// 全留、7 日 4 周 3 月、5 GB）；别的设备写的、取回的从不自动删，服务器自己也从不自动删。
+const BackupRetentionPolicy kServerBackupRetention =
+    kRestorePointScheduledRetention;
 
 /// 后端错误的文字（鉴权 / 连不上这类按类型认的错误已经先排除）→ 云端副本错误码。限流（Google Drive 的
 /// `rateLimitExceeded` / 「Quota exceeded for quota metric」、HTTP 429、Dropbox `too_many_*`）是瞬时的，

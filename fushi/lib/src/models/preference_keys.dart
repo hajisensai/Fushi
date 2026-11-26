@@ -145,6 +145,10 @@ const String kAutoBackupCloudPrefKey = 'auto_backup_cloud';
 /// bool（缺省 false = 只在 Wi-Fi / 不计流量的网络上传，D10）：云端副本也用移动数据上传。
 const String kAutoBackupCloudMeteredPrefKey = 'auto_backup_cloud_metered';
 
+/// bool（缺省 false）：每份定时还原点再复制一份到同步用的互联服务器（服务器副本，第四期 D12）。与云端
+/// 副本互不相干；是否也用移动数据上传与云端共用 [kAutoBackupCloudMeteredPrefKey]（冻结键名，现在管两者）。
+const String kAutoBackupServerPrefKey = 'auto_backup_server';
+
 /// 已知的静态偏好键全集（守卫强制）。按字母序。
 const Set<String> kKnownPreferenceKeys = <String>{
   'active_profile_id',
@@ -279,6 +283,7 @@ const Set<String> kKnownPreferenceKeys = <String>{
   kAutoBackupIntervalPrefKey,
   kAutoBackupMirrorFolderPrefKey,
   kAutoBackupMirrorLabelPrefKey,
+  kAutoBackupServerPrefKey,
   kAutoBackupSrsMediaPrefKey,
   kAutoBackupTimePrefKey,
   'auto_search',

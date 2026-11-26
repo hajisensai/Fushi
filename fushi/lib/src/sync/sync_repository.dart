@@ -13,6 +13,7 @@ import 'package:fushi/src/models/preference_keys.dart'
         kAutoBackupIntervalPrefKey,
         kAutoBackupMirrorFolderPrefKey,
         kAutoBackupMirrorLabelPrefKey,
+        kAutoBackupServerPrefKey,
         kAutoBackupSrsMediaPrefKey,
         kAutoBackupTimePrefKey,
         kOnlineLibraryLedgerPrefKey,
@@ -2072,6 +2073,7 @@ class SyncRepository {
     // 移动端用户文件夹的授权句柄（SAF 树 URI / 安全作用域书签）只在这台设备有效。
     kAutoBackupMirrorFolderPrefKey,
     kAutoBackupMirrorLabelPrefKey,
+    kAutoBackupServerPrefKey,
     kAutoBackupSrsMediaPrefKey,
     kAutoBackupTimePrefKey,
     // 楽天ブックス书籍检索凭据：用户自己注册的应用凭据，只留在这台设备。
