@@ -1,6 +1,6 @@
 # Fushi settings reference
 
-> Every setting of the Fushi app (version 3.4.0), generated from the app's own settings schema on each change. 929 entries. Machine-readable copy: <https://fushi.moe/settings.json>.
+> Every setting of the Fushi app (version 3.4.0), generated from the app's own settings schema on each change. 930 entries. Machine-readable copy: <https://fushi.moe/settings.json>.
 
 How to read this:
 
@@ -350,7 +350,7 @@ How to read this:
 | `video.quality.loop` | Loop file | 单文件循环 | Playback | bool |  | `false` |  |
 | `video.playback.immersive_mode` | Immersive mode | 沉浸模式 | Immersive mode | choice | `full`, `shortcutAndLookup`, `lookupOnly`, `unlockOnly` | `shortcutAndLookup` | Controls what remains available after pressing the side lock button |
 | `video.playback.immersive_tap_reveal` | Tap picture to show subtitles | 沉浸时点画面显示字幕 | Immersive mode | bool |  | `true` | When subtitles are blurred or hidden, tap the picture to show the current line; it hides again when the line changes |
-| `video.player.immersive_controls_editor` | video.player.immersive_controls_editor | video.player.immersive_controls_editor | Immersive mode | text |  | `{"version":1,"slots":{"screenLeft":["immersiveLock"],"screenRight":[]},"removed":["previousCue","replayCue","nextCue","favoriteSentence","playPause","seekBackward","seekForward"]}` | <沉浸布局 JSON，含 version 与 slots>；空串 = 恢复默认 |
+| `video.player.immersive_controls_editor` | video.player.immersive_controls_editor | video.player.immersive_controls_editor | Immersive mode | text |  | `{"version":1,"slots":{"screenLeft":["immersiveLock"],"screenRight":[]},"removed":["previousCue","replayCue","nextCue","favoriteSentence","playPause","seekBackward","seekForward","longSeekBackward","longSeekForward"]}` | <沉浸布局 JSON，含 version 与 slots>；空串 = 恢复默认 |
 | `video.controls.reset_immersive_layout` | Reset immersive mode buttons | 恢复默认沉浸模式按钮 | Immersive mode | action |  |  |  |
 | `video.playback.disc_auto_fullscreen` | Full screen for disc playback | 播放原盘时自动全屏 | Disc (Blu-ray / DVD) | bool |  | `true` | Desktop only. Leaving the disc restores the previous window size, position and maximized state. · *only on windows, macos* |
 | `video.playback.disc_launch_animation` | Disc launch animation | 原盘启动动画 | Disc (Blu-ray / DVD) | bool |  | `true` | Play a disc loading animation when entering a disc |
@@ -423,6 +423,7 @@ How to read this:
 | `video.playback.double_tap_toggles_playback` | Double-tap video to play/pause | 双击画面播放/暂停 | Controls and gestures | bool |  | `true` | On touch screens, double-tapping the middle of the video (or anywhere when double-tap seek is off) toggles playback |
 | `video.playback.long_press_speed` | Long-press speed | 长按倍速 | Controls and gestures | number | 1.0 – 4.0 | `2.0` | Temporarily use this speed while holding the video. |
 | `video.playback.seek_seconds` | Seek seconds | 快进/快退步长（秒） | Controls and gestures | number | 1.0 – 30.0 | `3.0` |  |
+| `video.playback.long_seek_seconds` | Long seek step | 长步进秒数 | Controls and gestures | number | 5.0 – 300.0 | `30.0` |  |
 | `video.playback.drag_seek_sensitivity` | Drag-to-seek sensitivity | 拖动调进度灵敏度 | Controls and gestures | choice | `low`, `medium`, `high` | `medium` | How much time a full-width swipe covers: Low about 45s, Medium about 90s, High about 180s. · *only on android, ios* |
 | `video.playback.brightness_swipe_gesture` | Swipe to adjust brightness | 竖滑调节亮度 | Controls and gestures | bool |  | `true` | Swipe up/down on the left half of the video to change screen brightness. Turn off to use the system brightness slider instead · *only on android, ios* |
 | `video.playback.volume_swipe_gesture` | Swipe to adjust volume | 竖滑调节音量 | Controls and gestures | bool |  | `true` | Swipe up/down on the right half of the video to change volume. Turn off to use the physical volume buttons instead · *only on android, ios* |
@@ -463,7 +464,7 @@ How to read this:
 | `video.danmaku.speed` | Speed | 速度 |  | number | 0.5 – 2.0 | `1.0` | Higher is faster; scrolling danmaku cross the screen sooner. |
 | `video.danmaku.area` | Display area | 显示区域 |  | number | 0.25 – 1.0 | `1.0` | Fraction of the screen height danmaku may occupy, from the top. |
 | `video.player.danmaku_block_rules` | video.player.danmaku_block_rules | video.player.danmaku_block_rules |  | text |  |  | 多行文本，每行一条；/pattern/ 为正则，其余为子串 |
-| `video.player.controls_editor` | video.player.controls_editor | video.player.controls_editor |  | text |  | `{"layout":{"version":3,"slots":{"bottomLeft":["playPause","positionIndicator"],"bottomCenter":[],"bottomRight":["volume","subtitleTrack","liveChat","speed","fullscreen"],"screenLeft":["immersiveLock"],"screenRight":["subtitleList"],"topLeft":["back"],"topCenter":["title"],"topRight":["episodeList","chapterList","screenshot","settings"]},"removed":["favoriteSentence","seekBackward","seekForward","frameBackward","frameForward","previousCue","nextCue","replayCue","clipExport","audioTrack","previousEpisode","nextEpisode","previousChapter","nextChapter","danmaku","ocrFrame","statistics","studyTimer","customAction1","customAction2","customAction3","customAction4"]},"customActions":""}` | {"layout": <布局 JSON，含 version 与 slots>, "customActions": "动作key,动作key,,"}（config get 的输出可改后原样写回） |
+| `video.player.controls_editor` | video.player.controls_editor | video.player.controls_editor |  | text |  | `{"layout":{"version":3,"slots":{"bottomLeft":["playPause","positionIndicator"],"bottomCenter":[],"bottomRight":["volume","subtitleTrack","liveChat","speed","fullscreen"],"screenLeft":["immersiveLock"],"screenRight":["subtitleList"],"topLeft":["back"],"topCenter":["title"],"topRight":["episodeList","chapterList","screenshot","settings"]},"removed":["favoriteSentence","seekBackward","seekForward","longSeekBackward","longSeekForward","frameBackward","frameForward","previousCue","nextCue","replayCue","clipExport","audioTrack","previousEpisode","nextEpisode","previousChapter","nextChapter","danmaku","ocrFrame","statistics","studyTimer","customAction1","customAction2","customAction3","customAction4"]},"customActions":""}` | {"layout": <布局 JSON，含 version 与 slots>, "customActions": "动作key,动作key,,"}（config get 的输出可改后原样写回） |
 
 ## Music (音乐)
 

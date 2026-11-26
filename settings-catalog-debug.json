@@ -13,7 +13,7 @@
   "windows",
   "macos"
  ],
- "count": 929,
+ "count": 930,
  "settings": [
   {
    "key": "appearance.language",
@@ -6274,7 +6274,7 @@
     "en": "Video › Immersive mode",
     "zh-CN": "视频 › 沉浸模式"
    },
-   "default": "{\"version\":1,\"slots\":{\"screenLeft\":[\"immersiveLock\"],\"screenRight\":[]},\"removed\":[\"previousCue\",\"replayCue\",\"nextCue\",\"favoriteSentence\",\"playPause\",\"seekBackward\",\"seekForward\"]}",
+   "default": "{\"version\":1,\"slots\":{\"screenLeft\":[\"immersiveLock\"],\"screenRight\":[]},\"removed\":[\"previousCue\",\"replayCue\",\"nextCue\",\"favoriteSentence\",\"playPause\",\"seekBackward\",\"seekForward\",\"longSeekBackward\",\"longSeekForward\"]}",
    "help": "<沉浸布局 JSON，含 version 与 slots>；空串 = 恢复默认"
   },
   {
@@ -8029,6 +8029,22 @@
    "default": 3.0
   },
   {
+   "key": "video.playback.long_seek_seconds",
+   "kind": "value",
+   "type": "number",
+   "title": {
+    "en": "Long seek step",
+    "zh-CN": "长步进秒数"
+   },
+   "path": {
+    "en": "Video › Controls and gestures",
+    "zh-CN": "视频 › 操控与手势"
+   },
+   "min": 5.0,
+   "max": 300.0,
+   "default": 30.0
+  },
+  {
    "key": "video.playback.drag_seek_sensitivity",
    "kind": "value",
    "type": "choice",
@@ -8858,7 +8874,7 @@
     "en": "Video",
     "zh-CN": "视频"
    },
-   "default": "{\"layout\":{\"version\":3,\"slots\":{\"bottomLeft\":[\"playPause\",\"positionIndicator\"],\"bottomCenter\":[],\"bottomRight\":[\"volume\",\"subtitleTrack\",\"liveChat\",\"speed\",\"fullscreen\"],\"screenLeft\":[\"immersiveLock\"],\"screenRight\":[\"subtitleList\"],\"topLeft\":[\"back\"],\"topCenter\":[\"title\"],\"topRight\":[\"episodeList\",\"chapterList\",\"screenshot\",\"settings\"]},\"removed\":[\"favoriteSentence\",\"seekBackward\",\"seekForward\",\"frameBackward\",\"frameForward\",\"previousCue\",\"nextCue\",\"replayCue\",\"clipExport\",\"audioTrack\",\"previousEpisode\",\"nextEpisode\",\"previousChapter\",\"nextChapter\",\"danmaku\",\"ocrFrame\",\"statistics\",\"studyTimer\",\"customAction1\",\"customAction2\",\"customAction3\",\"customAction4\"]},\"customActions\":\"\"}",
+   "default": "{\"layout\":{\"version\":3,\"slots\":{\"bottomLeft\":[\"playPause\",\"positionIndicator\"],\"bottomCenter\":[],\"bottomRight\":[\"volume\",\"subtitleTrack\",\"liveChat\",\"speed\",\"fullscreen\"],\"screenLeft\":[\"immersiveLock\"],\"screenRight\":[\"subtitleList\"],\"topLeft\":[\"back\"],\"topCenter\":[\"title\"],\"topRight\":[\"episodeList\",\"chapterList\",\"screenshot\",\"settings\"]},\"removed\":[\"favoriteSentence\",\"seekBackward\",\"seekForward\",\"longSeekBackward\",\"longSeekForward\",\"frameBackward\",\"frameForward\",\"previousCue\",\"nextCue\",\"replayCue\",\"clipExport\",\"audioTrack\",\"previousEpisode\",\"nextEpisode\",\"previousChapter\",\"nextChapter\",\"danmaku\",\"ocrFrame\",\"statistics\",\"studyTimer\",\"customAction1\",\"customAction2\",\"customAction3\",\"customAction4\"]},\"customActions\":\"\"}",
    "help": "{\"layout\": <布局 JSON，含 version 与 slots>, \"customActions\": \"动作key,动作key,,\"}（config get 的输出可改后原样写回）"
   },
   {
