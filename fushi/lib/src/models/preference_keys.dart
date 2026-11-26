@@ -1015,6 +1015,16 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 字体 / 字号 / 行距 / 配色 / 区块显隐 / 统一词典样式 / 密度。缺省 = 模板默认外观。
   // 非凭据、跨设备（随 Profile / 备份；字体文件路径在别的设备上不存在时回落默认字体）。
   'srs_card_appearance',
+  // 复习历史捐赠（srs/donation/srs_donation_eligibility.dart），跟随 Profile（捐赠身份按 profile 算）：
+  // String（JSON 字符串数组，笔记 id）：预览里排除的单词；bool（默认 true）：包含词头 + 读音；
+  // int（毫秒，0 = 没有）：上次成功上传时刻；int：上次上传的复习条数；bool：「不再提示」；
+  // int（毫秒，0 = 没有）：「以后再说」到期时刻。非凭据（donorKey 每次由 profileUid 现算，不落盘）。
+  'srs_donation_excluded',
+  'srs_donation_include_words',
+  'srs_donation_last_at',
+  'srs_donation_last_reviews',
+  'srs_donation_never',
+  'srs_donation_snooze_until',
   // int（0 = 关）：每日复习张数目标（小组件「目标」卡；只对内置 SRS 有意义）。
   'srs_goal_daily_reviews',
   // String（JSON）：复习首页「已配对设备」的落盘缓存——每台主机上次读到的牌组摘要（远程复习线格式）、
