@@ -101,9 +101,16 @@ Widget _musicBar(
     title: item.title,
     subtitle: byline.isEmpty ? t.music_now_playing : byline,
     titleTrailing: MusicPreviewBadgeSwitcher(visible: item.isPreview),
-    coverBuilder: (BuildContext context, double size) =>
-        MusicCover(coverPath: item.coverPath, size: size),
-    tintImage: musicCoverImageProvider(item.coverPath, size: 128),
+    coverBuilder: (BuildContext context, double size) => MusicCover(
+      coverPath: item.coverPath,
+      embeddedFromPath: item.embeddedCoverPath,
+      size: size,
+    ),
+    tintImage: musicCoverImageProvider(
+      item.coverPath,
+      size: 128,
+      embeddedFromPath: item.embeddedCoverPath,
+    ),
     clock: MusicEngineClock(engine),
     isPlaying: engine.isPlaying,
     onPlayPause: () => unawaited(engine.togglePlayPause()),

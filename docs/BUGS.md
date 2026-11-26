@@ -33,10 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4769 条。点号进各自文件。
+> 共 4771 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5505](bugs/BUG-5505-android-preview-audio-steals-focus.md) | ✅ | ✅ | android-preview-audio-steals-focus |
+| [BUG-5504](bugs/BUG-5504-music-player-embedded-cover.md) | ✅ | ✅ | music-player-embedded-cover |
 | [BUG-5490](bugs/BUG-5490-data-location-diag-not-retained.md) | ✅ | ✅ | 数据位置诊断只在内存且被普通诊断挤掉 |
 | [BUG-5489](bugs/BUG-5489-dict-files-missing-silent.md) | ✅ | ✅ | 词典文件缺失时界面静默只显示无释义 |
 | [BUG-5487](bugs/BUG-5487-music-plugin-switch-cover-pixi-slow.md) | ✅ | ✅ | music-plugin-switch-cover-pixi-slow |

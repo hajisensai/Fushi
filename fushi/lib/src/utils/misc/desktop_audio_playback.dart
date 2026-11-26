@@ -74,10 +74,27 @@ class AudioActivationQueue {
 ///   = 播放并等它结束）。
 bool get justAudioUsesMediaKitBackend => Platform.isWindows || Platform.isLinux;
 
+/// 共用预览播放器是否让 just_audio 在每次 `play()` 时激活 `audio_session`。
+///
+/// just_audio 缺省 `handleAudioSessionActivation: true`：每次 `play()` 先
+/// `AudioSession.setActive(true)`，在 Android 上就是按会话配置（缺省 / 音乐会话都是
+/// `AUDIOFOCUS_GAIN`）向系统申请音频焦点——后台别家 app 的音乐每读一个词就被暂停再恢复
+/// （反馈 E--G5mP95S：复习卡发音 / 自动播放）。这与 BUG-3311 定下的意图矛盾：读一个
+/// 一两秒的词 / 卡面音频不申请任何焦点，与用户正在听的东西叠播（查词发音已改走不申请焦点的
+/// 原生 MediaPlayer）。所以 Android 上关掉；iOS / macOS 保留——AVPlayer 不经激活时落在缺省
+/// 的 soloAmbient 类别，照样打断别家音频且受静音键影响，关掉只会更糟；Windows / Linux 上
+/// audio_session 是空实现，开关无影响。
+@visibleForTesting
+bool previewPlayerHandlesAudioSession({required bool isAndroid}) => !isAndroid;
+
 class DesktopAudioPlayback {
   const DesktopAudioPlayback._();
 
-  static AudioPlayer _player = AudioPlayer();
+  static AudioPlayer _player = AudioPlayer(
+    handleAudioSessionActivation: previewPlayerHandlesAudioSession(
+      isAndroid: Platform.isAndroid,
+    ),
+  );
 
   /// `_player.play()` 的 Future 是否覆盖整段播放（见 [justAudioUsesMediaKitBackend]）。
   static bool _playFutureSpansPlayback = !justAudioUsesMediaKitBackend;

@@ -1,0 +1,6 @@
+## BUG-5505 · android-preview-audio-steals-focus
+- **报告**：2026-11-25（反馈 E--G5mP95S，Android 15 / 小米 2311DRK48C）：别家 app 放后台音乐时，在 Fushi 里播放单词 / 卡面发音，后台音乐每次瞬间中断再继续。日志在复习页（`SrsReviewPage`）且有 `DesktopAudioPlayback.playFile` 记录。
+- **真实性**：✅ 真 bug（代码路径确认，未上真机 `dumpsys audio`）。复习卡发音 / 自动播放走共用 just_audio 播放器 `DesktopAudioPlayback`（`fushi/lib/src/utils/misc/desktop_audio_playback.dart` 的 `_player = AudioPlayer()`；调用点 `srs_card_face.dart` `srsSoundPlayerProvider`、`srs_card_autoplay.dart`），缺省 `handleAudioSessionActivation: true`：just_audio 0.9.42 `play()`（`just_audio.dart:948`）先 `audioSession.setActive(true)`，audio_session 0.1.25 `setActive`（`core.dart:232-253`）按会话配置（缺省 / 音乐会话都是 `AUDIOFOCUS_GAIN`）`requestAudioFocus`，后台音乐 app 因此暂停。与 BUG-3311 定下的意图（读一个一两秒的词不申请焦点）矛盾。
+- **[x] ① 已修复** — 共用预览播放器按 `previewPlayerHandlesAudioSession(isAndroid:)` 构造：Android 上 `handleAudioSessionActivation: false`，不再申请焦点（与 BUG-3311 查词发音走原生 MediaPlayer 同一取舍：叠播、不暂停 / 不压低别家）。iOS / macOS 保留激活（不激活时 AVPlayer 落在 soloAmbient，照样打断且受静音键影响）；Windows / Linux 上 audio_session 是空实现。
+- **[x] ② 已加自动化测试** — `fushi/test/utils/misc/desktop_audio_playback_focus_bug5505_test.dart`（判据 + 构造处接线守卫）。
+- **备注**：反馈人期望「duck」；这里按 BUG-3311 的既有拍板不申请任何焦点（后台音乐全音量叠播）。未在真机上用 `dumpsys audio` 复测。弹窗 / 悬浮词典副引擎的 WebView `<audio>`（MAY_DUCK）不在本条范围。

@@ -3,6 +3,7 @@ library;
 
 import 'package:drift/drift.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/music/music_cover_source.dart';
 
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_remote_tracks.dart';
@@ -367,31 +368,47 @@ Map<int?, List<MusicTrackRow>> groupTracksByDisc(List<MusicTrackRow> sorted) {
   return out;
 }
 
-/// 曲目行 → 播放项。
+/// 曲目行 → 播放项。封面与曲目行同一条规则（`musicCoverSourceOf`）：目录封面
+/// （[coverPath] 覆盖 / [MusicAlbumRow.coverPath]）优先，没有时带上内嵌封面来源——
+/// 专辑选定的封面曲目的路径（[albumEmbeddedPath]，调用方查好才传）或这首自己的内嵌封面。
 MusicPlayItem musicPlayItemOf(
   MusicTrackRow track, {
   MusicAlbumRow? album,
   String? coverPath,
-}) => MusicPlayItem(
-  trackUid: track.trackUid,
-  path: track.path,
-  title: track.title,
-  startMs: track.cueStartMs,
-  endMs: track.cueEndMs,
-  artist: track.artistCredit ?? album?.albumArtistCredit,
-  album: album?.title,
-  albumUid: track.albumUid,
-  discNo: track.discNo,
-  trackNo: track.trackNo,
-  durationMs: track.durationMs,
-  coverPath: coverPath ?? album?.coverPath,
-  codec: track.codec,
-  sampleRate: track.sampleRate,
-  bitDepth: track.bitDepth,
-  channels: track.channels,
-  rgTrackGain: track.rgTrackGain,
-  rgTrackPeak: track.rgTrackPeak,
-  rgAlbumGain: track.rgAlbumGain,
-  rgAlbumPeak: track.rgAlbumPeak,
-  sourceId: track.sourceId,
-);
+  String? albumEmbeddedPath,
+}) {
+  final MusicCoverSource cover = musicCoverSourceOf(
+    track: track,
+    album: album,
+    albumEmbeddedPath:
+        albumEmbeddedPath ??
+        (album?.coverTrackUid == track.trackUid ? track.path : null),
+  );
+  final String? dirCover = coverPath == null || coverPath.isEmpty
+      ? cover.coverPath
+      : coverPath;
+  return MusicPlayItem(
+    trackUid: track.trackUid,
+    path: track.path,
+    title: track.title,
+    startMs: track.cueStartMs,
+    endMs: track.cueEndMs,
+    artist: track.artistCredit ?? album?.albumArtistCredit,
+    album: album?.title,
+    albumUid: track.albumUid,
+    discNo: track.discNo,
+    trackNo: track.trackNo,
+    durationMs: track.durationMs,
+    coverPath: dirCover,
+    embeddedCoverPath: dirCover == null ? cover.embeddedFromPath : null,
+    codec: track.codec,
+    sampleRate: track.sampleRate,
+    bitDepth: track.bitDepth,
+    channels: track.channels,
+    rgTrackGain: track.rgTrackGain,
+    rgTrackPeak: track.rgTrackPeak,
+    rgAlbumGain: track.rgAlbumGain,
+    rgAlbumPeak: track.rgAlbumPeak,
+    sourceId: track.sourceId,
+  );
+}

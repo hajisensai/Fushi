@@ -11,6 +11,8 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_cover.dart'
     show lyricVisualizerCoverProvider;
+import 'package:fushi/src/pages/implementations/music/music_cover.dart'
+    show MusicEmbeddedCoverImage;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 
@@ -650,9 +652,19 @@ Size musicBackdropRenderSize(Size logical) {
 }
 
 /// 封面地址 → ImageProvider（委托歌词动画框架的共享封面工具 [lyricVisualizerCoverProvider]）：
-/// `http(s)://` 走全应用代理，本地文件存在才用 [FileImage]，其余 null（背景改用主题色 mesh）。
-ImageProvider? musicLyricsBackdropCoverProvider(String? coverPath) =>
-    lyricVisualizerCoverProvider(coverPath);
+/// `http(s)://` 走全应用代理，本地文件存在才用 [FileImage]；没有封面文件时用
+/// [embeddedFromPath] 的内嵌封面（[MusicEmbeddedCoverImage]），都没有为 null（背景改用主题色 mesh）。
+ImageProvider? musicLyricsBackdropCoverProvider(
+  String? coverPath, {
+  String? embeddedFromPath,
+}) {
+  final ImageProvider? file = lyricVisualizerCoverProvider(coverPath);
+  if (file != null) return file;
+  final String? embedded = embeddedFromPath;
+  return embedded == null || embedded.isEmpty
+      ? null
+      : MusicEmbeddedCoverImage(embedded);
+}
 
 // ---------------------------------------------------------------------------
 // 组件
@@ -664,6 +676,7 @@ class MusicLyricsBackdrop extends StatefulWidget {
   const MusicLyricsBackdrop({
     super.key,
     required this.coverPath,
+    this.embeddedFromPath,
     this.style = MusicLyricsBackdropStyle.defaultStyle,
     this.animate = true,
     this.saturation = kMusicLyricsBackdropSaturationDefault,
@@ -671,6 +684,9 @@ class MusicLyricsBackdrop extends StatefulWidget {
 
   /// 封面：本地文件路径或 `http(s)://` 地址；null = 用主题色。
   final String? coverPath;
+
+  /// 没有 [coverPath] 时从这个音频文件读内嵌封面；null = 没有。
+  final String? embeddedFromPath;
   final MusicLyricsBackdropStyle style;
 
   /// false = 静态（只渲染一次）。
@@ -790,15 +806,16 @@ class _MusicLyricsBackdropState extends State<MusicLyricsBackdrop> {
     super.didChangeDependencies();
     if (!_loadedOnce) {
       _loadedOnce = true;
-      _load(widget.coverPath, rebuild: false);
+      _load(widget.coverPath, widget.embeddedFromPath, rebuild: false);
     }
   }
 
   @override
   void didUpdateWidget(covariant MusicLyricsBackdrop oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.coverPath != widget.coverPath) {
-      _load(widget.coverPath, rebuild: true);
+    if (oldWidget.coverPath != widget.coverPath ||
+        oldWidget.embeddedFromPath != widget.embeddedFromPath) {
+      _load(widget.coverPath, widget.embeddedFromPath, rebuild: true);
     }
   }
 
@@ -826,10 +843,17 @@ class _MusicLyricsBackdropState extends State<MusicLyricsBackdrop> {
     rebuild ? setState(swap) : swap();
   }
 
-  void _load(String? coverPath, {required bool rebuild}) {
+  void _load(
+    String? coverPath,
+    String? embeddedFromPath, {
+    required bool rebuild,
+  }) {
     _cancelPending();
     final int token = ++_loadToken;
-    final ImageProvider? provider = musicLyricsBackdropCoverProvider(coverPath);
+    final ImageProvider? provider = musicLyricsBackdropCoverProvider(
+      coverPath,
+      embeddedFromPath: embeddedFromPath,
+    );
     if (provider == null) {
       _replaceSource(
         _BackdropSource(id: token, palette: MusicBackdropPalette.empty),
