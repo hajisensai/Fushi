@@ -1203,9 +1203,9 @@ List<OpDescription> _describeSubtitleOps(
         required: true,
       ),
       _collectionIdParam,
-      OpParam.string(
+      OpParam.stringList(
         'bookUids',
-        description: 'Comma-separated video bookUids (default: whole library).',
+        description: 'Video bookUids to fill (default: whole library).',
       ),
       OpParam.boolean(
         'dryRun',

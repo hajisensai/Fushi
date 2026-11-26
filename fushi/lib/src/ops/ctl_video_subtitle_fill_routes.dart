@@ -35,6 +35,22 @@ const String kCtlVideoSubtitleFillPath = '/api/admin/video/subtitle-fill';
 const String kCtlVideoSubtitleFillUndoPath =
     '/api/admin/video/subtitle-fill-undo';
 
+/// `bookUids` 参数：字符串数组原样认（bookUid 取自文件名，本身可以带逗号），
+/// 字符串按逗号切（CLI 手输的简写）；空 = 没给。
+List<String>? subtitleFillBookUidsParam(Object? raw) {
+  if (raw == null) return null;
+  final Iterable<Object?> parts = switch (raw) {
+    final List<Object?> list => list,
+    final String text => text.split(','),
+    _ => throw const CtlFailure.badRequest('bookUids 要么是字符串数组，要么是逗号分隔串'),
+  };
+  final List<String> out = <String>[
+    for (final Object? part in parts)
+      if (part is String && part.trim().isNotEmpty) part.trim(),
+  ];
+  return out.isEmpty ? null : out;
+}
+
 /// 路由处理器（依赖全部注入）。
 class CtlVideoSubtitleFillHandlers {
   CtlVideoSubtitleFillHandlers({
@@ -87,19 +103,19 @@ class CtlVideoSubtitleFillHandlers {
     return <String, Object?>{...job.summaryJson(), 'videoJob': job.mirror.id};
   }
 
-  /// 范围：`collectionId`（合集成员）或 `bookUids`（逗号分隔），都不给 = 全库。
+  /// 范围：`collectionId`（合集成员）或 `bookUids`，都不给 = 全库。
+  ///
+  /// `bookUids` 收 JSON 字符串数组（原样认，bookUid 取自文件名、本身可以带逗号，
+  /// 如 `video/Kamiina Botan, Yoeru Sugata wa …`）或逗号分隔串（CLI 手输的简写）。
   Future<List<String>?> _scope(CtlCall call) async {
     final int? collectionId = call.optInt('collectionId');
-    final String? uids = call.optString('bookUids');
+    final List<String>? uids = subtitleFillBookUidsParam(
+      call.body['bookUids'] ?? call.query['bookUids'],
+    );
     if (collectionId != null && uids != null) {
       throw const CtlFailure.badRequest('collectionId 与 bookUids 只能给一个');
     }
-    if (uids != null) {
-      return <String>[
-        for (final String u in uids.split(','))
-          if (u.trim().isNotEmpty) u.trim(),
-      ];
-    }
+    if (uids != null) return uids;
     if (collectionId == null) return null;
     final List<MediaCollectionItemRow> items = await database()
         .getCollectionItems(collectionId);

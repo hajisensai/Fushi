@@ -71,6 +71,24 @@ void main() {
     });
   });
 
+  test('bookUids：数组原样认（uid 可带逗号），字符串按逗号切', () {
+    expect(
+      subtitleFillBookUidsParam(<Object?>[
+        'video/Kamiina Botan, Yoeru Sugata wa Yuri no Hana - S01E01',
+        ' video/b ',
+        '',
+      ]),
+      <String>[
+        'video/Kamiina Botan, Yoeru Sugata wa Yuri no Hana - S01E01',
+        'video/b',
+      ],
+    );
+    expect(subtitleFillBookUidsParam('a, b,,c'), <String>['a', 'b', 'c']);
+    expect(subtitleFillBookUidsParam(null), isNull);
+    expect(subtitleFillBookUidsParam(const <Object?>[]), isNull);
+    expect(() => subtitleFillBookUidsParam(3), _status(400));
+  });
+
   test('报告 JSON 往返保留撤销需要的字段', () {
     const SubtitleFillOutcome original = SubtitleFillOutcome(
       bookUid: 'disc-a.p01.mpls',
