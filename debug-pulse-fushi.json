@@ -1,12 +1,78 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-26T11:44:14Z",
+ "generatedAt": "2026-11-26T12:25:07Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "4703f7a06bb5b923d8b06f794ec4efd50dbb64b9",
   "seq": 32770
  },
  "builds": [
+  {
+   "seq": 32769,
+   "version": "3.4.0",
+   "sha": "2704c408960f91bd1baf43eb986d24b1566b0064",
+   "unknown": false,
+   "publishedAt": "2026-11-26T12:24:46Z",
+   "testflight": false,
+   "baseSeq": 32753,
+   "prs": [],
+   "direct": [
+    {
+     "sha": "2704c408960f91bd1baf43eb986d24b1566b0064",
+     "subject": "docs(srs): rwkv_last 文档注释归位、守卫测试名改成实际的 assert_rwkv_last_matches_replay；登记首次升级整层重建耗时待办 (BUG-5491)"
+    },
+    {
+     "sha": "ce2f4f57e721c3abb14dfc8486708a66042b78ab",
+     "subject": "fix(onnx): 张量走地址的判据改认真实宿主 OS；OrtValue.dispose 等在途读取拷完再释放、之后读取报错 (BUG-5508)"
+    },
+    {
+     "sha": "76f965db967bad6d50072bd8db6c5aead04896a4",
+     "subject": "fix(windows): ISCC 签名命令用 $q 引号（pwsh 7 转义内嵌引号致坏路径）+ 守卫；完整性日志被清空后游标归零 (BUG-5515/BUG-5484)"
+    },
+    {
+     "sha": "93412062436106b00a1709a0c8b100f05fac3298",
+     "subject": "Merge PR #4496"
+    },
+    {
+     "sha": "69e8bcb8f0d9488c6fbe8e67e6adab6ce8cb187b",
+     "subject": "Merge PR #4494"
+    },
+    {
+     "sha": "2f6170568475c903cc951d0bc880dc24c5863d1c",
+     "subject": "Merge PR #4482"
+    },
+    {
+     "sha": "d2e41cfcb1f6589be60c97225e0272451ecd82e0",
+     "subject": "Merge PR #4495"
+    },
+    {
+     "sha": "831c01f1c1309440ad883d13a0ac99188cc94ef2",
+     "subject": "Merge PR #4497"
+    },
+    {
+     "sha": "a85baae75d8e7c6a08b3557f9f52e54ca20cef6a",
+     "subject": "chore(bugs): settle BUG number collisions on cb5365ea4"
+    }
+   ],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45810084399"
+    },
+    "macos": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45810084399"
+    },
+    "ios": {
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45810084399"
+    }
+   }
+  },
   {
    "seq": 32753,
    "version": "3.4.0",
@@ -380,7 +446,8 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45700789912"
     },
     "windows": {
      "state": "ok"
@@ -402,61 +469,21 @@
    {
     "sha": "4703f7a06bb5b923d8b06f794ec4efd50dbb64b9",
     "subject": "chore(bugs): settle BUG number collisions on 2704c4089"
-   },
-   {
-    "sha": "2704c408960f91bd1baf43eb986d24b1566b0064",
-    "subject": "docs(srs): rwkv_last 文档注释归位、守卫测试名改成实际的 assert_rwkv_last_matches_replay；登记首次升级整层重建耗时待办 (BUG-5491)"
-   },
-   {
-    "sha": "ce2f4f57e721c3abb14dfc8486708a66042b78ab",
-    "subject": "fix(onnx): 张量走地址的判据改认真实宿主 OS；OrtValue.dispose 等在途读取拷完再释放、之后读取报错 (BUG-5508)"
-   },
-   {
-    "sha": "76f965db967bad6d50072bd8db6c5aead04896a4",
-    "subject": "fix(windows): ISCC 签名命令用 $q 引号（pwsh 7 转义内嵌引号致坏路径）+ 守卫；完整性日志被清空后游标归零 (BUG-5515/BUG-5484)"
-   },
-   {
-    "sha": "93412062436106b00a1709a0c8b100f05fac3298",
-    "subject": "Merge PR #4496"
-   },
-   {
-    "sha": "69e8bcb8f0d9488c6fbe8e67e6adab6ce8cb187b",
-    "subject": "Merge PR #4494"
-   },
-   {
-    "sha": "2f6170568475c903cc951d0bc880dc24c5863d1c",
-    "subject": "Merge PR #4482"
-   },
-   {
-    "sha": "d2e41cfcb1f6589be60c97225e0272451ecd82e0",
-    "subject": "Merge PR #4495"
-   },
-   {
-    "sha": "831c01f1c1309440ad883d13a0ac99188cc94ef2",
-    "subject": "Merge PR #4497"
-   },
-   {
-    "sha": "a85baae75d8e7c6a08b3557f9f52e54ca20cef6a",
-    "subject": "chore(bugs): settle BUG number collisions on cb5365ea4"
    }
   ],
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45810084405"
+    "state": "none"
    },
    "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45810084399"
+    "state": "none"
    },
    "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45810084399"
+    "state": "none"
    },
    "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45810084399"
+    "state": "none"
    }
   }
  },
