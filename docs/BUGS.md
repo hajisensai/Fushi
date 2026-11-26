@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4761 条。点号进各自文件。
+> 共 4762 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5482](bugs/BUG-5482-pair-schemeless-https-timeout.md) | ✅ | ✅ | 互联手动添加不带 scheme 的地址配对 TLS host 报「对端没在时限内应答」 |
 | [BUG-5481](bugs/BUG-5481-subdeck-steps-not-inherited.md) | ✅ | ✅ | Anki 导入的子牌组带着旧步长，父牌组改 RWKV 后按 Again 仍进重学 |
 | [BUG-5480](bugs/BUG-5480-organizer-contradicts-server-series.md) | ✅ | ✅ | AI 整理把媒体服务器同一部剧的集从自己的合集移空、又塞进另一部剧的合集 |
 | [BUG-5479](bugs/BUG-5479-video-header-double-refresh.md) | ✅ | ✅ | 视频库页头点「刷新」后并排出现两颗刷新钮 |
