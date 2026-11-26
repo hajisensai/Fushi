@@ -169,11 +169,6 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  /// 继续卡按封面取色（`CoverColorSchemeCache` 带 10 s 超时计时器）：推过超时再
-  /// 收尾，免得计时器挂到 widget 树卸载之后。
-  Future<void> drainCoverTint(WidgetTester tester) =>
-      tester.pump(const Duration(seconds: 11));
-
   /// 右键 [card]，断言弹出的是书条目菜单（菜单里的「详情」），点卡本身不开书。
   Future<void> expectBookMenuOnRightClick(
     WidgetTester tester,
@@ -196,7 +191,6 @@ void main() {
       reason: '右键继续卡要弹出与书架书卡同一个书条目菜单',
     );
     expect(appModel.opened, isEmpty);
-    await drainCoverTint(tester);
   }
 
   testWidgets('继续阅读主卡：右键弹出书条目菜单', (WidgetTester tester) async {
@@ -234,6 +228,5 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text(t.book_detail_open_action), findsOneWidget);
     expect(appModel.opened, isEmpty);
-    await drainCoverTint(tester);
   });
 }

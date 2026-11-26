@@ -219,8 +219,6 @@ void main() {
     expect(block.chip, contains(t.shelf_collection_volume_count(n: 2)));
     // 成员封面照常进 covers（首个 = 最前那本，余下是叠层）。
     expect(block.covers, hasLength(2));
-    // 色块按封面取色（图片加载挂 10 秒超时），fakeAsync 里走完超时再结束。
-    await tester.pump(const Duration(seconds: 11));
   });
 
   testWidgets('没有刮削资料也没有背景图的合集：保持书封摆法', (WidgetTester tester) async {
@@ -238,6 +236,5 @@ void main() {
     expect(block.backdrop, isNull);
     expect(block.overview, isNull);
     expect(block.chip, isNull);
-    await tester.pump(const Duration(seconds: 11));
   });
 }

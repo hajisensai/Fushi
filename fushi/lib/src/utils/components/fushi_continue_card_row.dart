@@ -777,6 +777,16 @@ class CoverColorSchemeCache {
   /// 取种子色的实现（测试注入）；null = [extractImageProviderSeedArgb]。
   final Future<int?> Function(ImageProvider image)? extractSeed;
 
+  /// 默认实现（[extractImageProviderSeedArgb]）等图片加载的超时；null = 不设超时。
+  ///
+  /// 取色请求属于进程级缓存，按设计不随页面销毁。组件测试跑在 FakeAsync 里，真实
+  /// 封面永远加载不完，10 秒超时定时器会挂到 widget 树销毁之后（`A Timer is still
+  /// pending`），以前每条挂封面的测试都得在末尾补 `pump(11 秒)`。测试套件统一置
+  /// null（`test/flutter_test_config.dart` 的 `installNoCoverSeedLoadTimeout`）：
+  /// 加载不完的请求只是一直挂着，卡面保持中性色，与超时落 null 观感一致。
+  @visibleForTesting
+  Duration? loadTimeout = const Duration(seconds: 10);
+
   // Dart 默认 Map 是 LinkedHashMap：按插入顺序迭代，命中时删了重插即「最近使用」。
   final Map<ImageProvider, int?> _done = <ImageProvider, int?>{};
   final Map<ImageProvider, Future<int?>> _pending =
@@ -809,7 +819,10 @@ class CoverColorSchemeCache {
   Future<int?> _compute(ImageProvider image) async {
     int? seed;
     try {
-      seed = await (extractSeed ?? extractImageProviderSeedArgb)(image);
+      final Future<int?> Function(ImageProvider image)? inject = extractSeed;
+      seed = inject != null
+          ? await inject(image)
+          : await extractImageProviderSeedArgb(image, loadTimeout: loadTimeout);
     } on Object {
       seed = null;
     }

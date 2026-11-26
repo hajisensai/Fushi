@@ -12,6 +12,8 @@ import 'package:fushi/src/engine_bindings.dart';
 import 'package:fushi/src/media/video/cover_backfill_ledger.dart'
     show debugVideoCoverBackfillEnabled;
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/utils/components/fushi_continue_card_row.dart'
+    show coverColorSchemeCache;
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:fushi_core/fushi_core.dart' show DatabaseBackgroundWork;
 import 'package:fushi_engine/stats/stat_facts.dart' show debugStatFactsInline;
@@ -62,6 +64,7 @@ Future<void> testExecutable(FutureOr<void> Function() testMain) async {
   installNoGalgameProcessProbe();
   installInlineStatFacts();
   installNoVideoCoverBackfill();
+  installNoCoverSeedLoadTimeout();
   installReleaseOfParkedDatabaseWork();
   // 网页内容核心（fushi_web_core）是硬依赖：指向本仓刚编好的原生库（或 FUSHI_WEB_CORE_LIB）。
   // 找不到不在这里报错——用到它的测试第一次加载时抛 FushiWebCoreLibraryMissing，照常失败。
@@ -78,6 +81,17 @@ Future<void> testExecutable(FutureOr<void> Function() testMain) async {
 /// `packages/fushi_engine/test/stats/stat_facts_parity_test.dart` 钉住。
 void installInlineStatFacts() {
   debugStatFactsInline = true;
+}
+
+/// 封面取色（进程级 [coverColorSchemeCache]）在整个 `test/` 套件里**不设加载超时**。
+///
+/// 组件测试跑在 FakeAsync 里，真实封面 / 远端封面加载不完；默认 10 秒超时的定时器
+/// 属于进程级缓存、不随页面销毁，会挂到 widget 树销毁之后报 `A Timer is still
+/// pending`。以前每条挂封面的测试都得在末尾补 `pump(11 秒)`，新挂封面的测试一漏
+/// 就红（reader_remote_interconnect_test 两条）。不设超时后，加载不完的请求只是
+/// 一直挂着，卡面保持中性色；测取色本身的用例注入自己的 `CoverColorSchemeCache`。
+void installNoCoverSeedLoadTimeout() {
+  coverColorSchemeCache.loadTimeout = null;
 }
 
 /// 视频库页的缺封面后台抽帧回填（[debugVideoCoverBackfillEnabled]）在整个
