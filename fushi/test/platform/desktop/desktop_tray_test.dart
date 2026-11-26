@@ -270,5 +270,31 @@ void main() {
         contains('RemovePropW(hwnd, ::fushi::kTrayHiddenWindowProp)'),
       );
     });
+
+    test('主窗属性在 WM_DESTROY 时用消息参数 hwnd 摘除', () {
+      // Win32Window 处理 WM_DESTROY 时先清 window_handle_ 再调 OnDestroy，
+      // OnDestroy 里 GetHandle() 已是 nullptr，在那里摘属性永远走不到。
+      final String fw = read('windows/runner/flutter_window.cpp');
+      final int handler = fw.indexOf('FlutterWindow::MessageHandler(');
+      expect(handler, greaterThan(0));
+      final int destroy = fw.indexOf('if (message == WM_DESTROY) {', handler);
+      expect(destroy, greaterThan(handler));
+      final String block = fw.substring(destroy, fw.indexOf('}', destroy));
+      expect(
+        block,
+        contains('RemovePropW(hwnd, ::fushi::kMainWindowShownProp);'),
+      );
+      expect(
+        block,
+        contains('RemovePropW(hwnd, ::fushi::kTrayHiddenWindowProp);'),
+      );
+      final int onDestroy = fw.indexOf('void FlutterWindow::OnDestroy()');
+      expect(onDestroy, greaterThan(0));
+      final String onDestroyBody = fw.substring(
+        onDestroy,
+        fw.indexOf('Win32Window::OnDestroy();', onDestroy),
+      );
+      expect(onDestroyBody, isNot(contains('RemovePropW')));
+    });
   });
 }

@@ -221,8 +221,6 @@ class DesktopLookupService extends ChangeNotifier {
     return _isWindowFocused();
   }
 
-  /// 主窗是否可见（没被收进托盘）。查不到时按「可见」答，保持
-  /// [bringMainWindowToFront] 原有的「已前台就不动」行为，不因瞬态失败引出任务栏闪烁。
   /// 主窗确实摆在屏幕上（可见且未最小化）。查不到时按「在屏上」处理，保持
   /// 防任务栏闪烁的旧行为。
   Future<bool> _isMainWindowOnScreen() async {
