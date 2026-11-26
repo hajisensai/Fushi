@@ -1,12 +1,85 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-26T05:23:50Z",
+ "generatedAt": "2026-11-26T05:42:57Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "bbf3048ffa788689b67b74ba9e82183176640690",
   "seq": 32705
  },
  "builds": [
+  {
+   "seq": 32705,
+   "version": "3.4.0",
+   "sha": "bbf3048ffa788689b67b74ba9e82183176640690",
+   "unknown": false,
+   "publishedAt": "2026-11-26T05:42:38Z",
+   "testflight": false,
+   "baseSeq": 32678,
+   "prs": [],
+   "direct": [
+    {
+     "sha": "bbf3048ffa788689b67b74ba9e82183176640690",
+     "subject": "Merge remote-tracking branch 'origin/develop' into claude/review-merge-93d9b1"
+    },
+    {
+     "sha": "b580825235207a32ea34b078c8cacb0acbce216e",
+     "subject": "chore(bugs): settle BUG number collisions on review-merge batch (#4452 的 5462/5463 → 5489/5490)"
+    },
+    {
+     "sha": "8ae37501b0e66478fc0453a821d4264262e14a5e",
+     "subject": "Merge remote-tracking branch 'origin/merge-fix/4452' into claude/review-merge-93d9b1"
+    },
+    {
+     "sha": "2ee6f4b5bcf0ad44431bf4abae9bf58ac9a4ffc5",
+     "subject": "Merge remote-tracking branch 'origin/merge-fix/4453' into claude/review-merge-93d9b1"
+    },
+    {
+     "sha": "13aba8dbcab8e19c81d94ab3cdba16b51b289de3",
+     "subject": "Merge remote-tracking branch 'origin/merge-fix/4457' into claude/review-merge-93d9b1"
+    },
+    {
+     "sha": "f7f639c558c4ea129a6388fe52d6148103a95b85",
+     "subject": "Merge remote-tracking branch 'origin/pr/srs-deck-list-collapsing-title' into claude/review-merge-93d9b1"
+    },
+    {
+     "sha": "bdf68120ae5366b37ed489fb327539949fb6671f",
+     "subject": "Merge origin/merge-fix/4472 (#4472) + 修与 #4473 托盘的语义冲突"
+    },
+    {
+     "sha": "529eea1089eaa0febd013e55fffdb6677a2d188f",
+     "subject": "Merge remote-tracking branch 'origin/merge-fix/4473' into claude/review-merge-93d9b1"
+    },
+    {
+     "sha": "41373a572de7523ac0c2c22235b901e45214656c",
+     "subject": "Merge remote-tracking branch 'origin/claude/fushi-sync-data-inconsistency-29c34c' into claude/review-merge-93d9b1"
+    },
+    {
+     "sha": "1709ff1f14e223fd068fee9b281a11300bba9349",
+     "subject": "chore(readme): refresh star history chart (TODO-1294) [skip ci]"
+    },
+    {
+     "sha": "b876b0196f238627203c3da06d4a59ef3a74ee6e",
+     "subject": "chore(bugs): settle BUG number collisions on 34ae43883"
+    }
+   ],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45753369634"
+    },
+    "windows": {
+     "state": "ok"
+    },
+    "macos": {
+     "state": "failed",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45753369622"
+    },
+    "ios": {
+     "state": "ok"
+    }
+   }
+  },
   {
    "seq": 32678,
    "version": "3.4.0",
@@ -247,7 +320,7 @@
    "unknown": false,
    "publishedAt": "2026-11-25T04:22:08Z",
    "testflight": true,
-   "baseSeq": 32552,
+   "baseSeq": 32530,
    "prs": [],
    "direct": [
     {
@@ -265,34 +338,7 @@
     {
      "sha": "4f21942be4a461312fbcf5d6654facdca2b2a943",
      "subject": "docs(release): 3.4.0 公告：生成字幕措辞跟上 #4400，修复条目放在「另有 600 多项」之前"
-    }
-   ],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
     },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "ok"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
-  },
-  {
-   "seq": 32552,
-   "version": "3.4.0",
-   "sha": "6f57bfa86540868669490405e4ebb1b7fc1231f1",
-   "unknown": false,
-   "publishedAt": "2026-11-24T23:33:25Z",
-   "testflight": true,
-   "baseSeq": 32530,
-   "prs": [],
-   "direct": [
     {
      "sha": "6f57bfa86540868669490405e4ebb1b7fc1231f1",
      "subject": "docs(release): 3.4.0 公告补 #4382 #4405 #4400；test(video): 扫描回调守卫跟上 8d125e4ecd 的变量名 scanned"
@@ -309,8 +355,7 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45492837874"
+     "state": "ok"
     },
     "windows": {
      "state": "ok"
@@ -324,75 +369,6 @@
    }
   }
  ],
- "pending": {
-  "headSha": "bbf3048ffa788689b67b74ba9e82183176640690",
-  "headSeq": 32705,
-  "prs": [],
-  "direct": [
-   {
-    "sha": "bbf3048ffa788689b67b74ba9e82183176640690",
-    "subject": "Merge remote-tracking branch 'origin/develop' into claude/review-merge-93d9b1"
-   },
-   {
-    "sha": "b580825235207a32ea34b078c8cacb0acbce216e",
-    "subject": "chore(bugs): settle BUG number collisions on review-merge batch (#4452 的 5462/5463 → 5489/5490)"
-   },
-   {
-    "sha": "8ae37501b0e66478fc0453a821d4264262e14a5e",
-    "subject": "Merge remote-tracking branch 'origin/merge-fix/4452' into claude/review-merge-93d9b1"
-   },
-   {
-    "sha": "2ee6f4b5bcf0ad44431bf4abae9bf58ac9a4ffc5",
-    "subject": "Merge remote-tracking branch 'origin/merge-fix/4453' into claude/review-merge-93d9b1"
-   },
-   {
-    "sha": "13aba8dbcab8e19c81d94ab3cdba16b51b289de3",
-    "subject": "Merge remote-tracking branch 'origin/merge-fix/4457' into claude/review-merge-93d9b1"
-   },
-   {
-    "sha": "f7f639c558c4ea129a6388fe52d6148103a95b85",
-    "subject": "Merge remote-tracking branch 'origin/pr/srs-deck-list-collapsing-title' into claude/review-merge-93d9b1"
-   },
-   {
-    "sha": "bdf68120ae5366b37ed489fb327539949fb6671f",
-    "subject": "Merge origin/merge-fix/4472 (#4472) + 修与 #4473 托盘的语义冲突"
-   },
-   {
-    "sha": "529eea1089eaa0febd013e55fffdb6677a2d188f",
-    "subject": "Merge remote-tracking branch 'origin/merge-fix/4473' into claude/review-merge-93d9b1"
-   },
-   {
-    "sha": "41373a572de7523ac0c2c22235b901e45214656c",
-    "subject": "Merge remote-tracking branch 'origin/claude/fushi-sync-data-inconsistency-29c34c' into claude/review-merge-93d9b1"
-   },
-   {
-    "sha": "1709ff1f14e223fd068fee9b281a11300bba9349",
-    "subject": "chore(readme): refresh star history chart (TODO-1294) [skip ci]"
-   },
-   {
-    "sha": "b876b0196f238627203c3da06d4a59ef3a74ee6e",
-    "subject": "chore(bugs): settle BUG number collisions on 34ae43883"
-   }
-  ],
-  "truncated": false,
-  "platforms": {
-   "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45753369634"
-   },
-   "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45753369622"
-   },
-   "macos": {
-    "state": "failed",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45753369622"
-   },
-   "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45753369622"
-   }
-  }
- },
+ "pending": null,
  "prs": {}
 }
