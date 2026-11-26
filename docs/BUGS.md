@@ -39,6 +39,12 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-5522](bugs/BUG-5522-mdx-dict-script-click-looks-up.md) | ✅ | ✅ | MDX 词典自带的词性切换 / 页内跳转点了只会查词 |
+> 共 4800 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5524](bugs/BUG-5524-home-apple-collapsed-title-covered.md) | ✅ | ✅ | home-apple-collapsed-title-covered |
+| [BUG-5523](bugs/BUG-5523-srs-apple-status-bar-seam.md) | ✅ | ✅ | srs-apple-status-bar-seam |
 > 共 4803 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |

@@ -4993,11 +4993,28 @@ String? homeShellBarTitleFor(
 ///   （Apple：[FushiAppleScrollEdgeBackdrop]）。外壳的带再从状态栏下沿起叠一条
 ///   不透明页面底色，正好横在状态栏与顶栏行之间，成了一条分割线（2026-11-25
 ///   用户 iPhone 截图，音乐页）。
+/// - 重设计外壳下的复习页：页头是 [FushiStaticMasthead]，`FushiPageScaffold`
+///   把它挂进同一套 `FushiFloatingChromeOverlay(masthead: true)`，与库页同理
+///   自带整块 scroll edge（2026-11-26 用户 iPhone 截图，复习页状态栏下沿白条）。
+///
+/// 穷举每个 tab：新增模块必须在这里表态它的顶部归谁画，不再靠白名单漏项。
 @visibleForTesting
 bool homeTabOwnsTopScrollEdge(HomeTab tab, {required bool redesign}) =>
-    tab == HomeTab.settings ||
-    _HomePageState._tabHasFloatingChrome(tab) ||
-    (redesign && tab == HomeTab.home);
+    switch (tab) {
+      HomeTab.settings => true,
+      HomeTab.books ||
+      HomeTab.manga ||
+      HomeTab.video ||
+      HomeTab.music ||
+      HomeTab.browse ||
+      HomeTab.games ||
+      HomeTab.web => _HomePageState._tabHasFloatingChrome(tab),
+      // 页头大字 overlay 只在重设计外壳下挂（墨水屏走旧页头，排在正文上面）。
+      HomeTab.home || HomeTab.srs => redesign,
+      // 查词页的页头排在 Column 里（iOS 不画页头），正文从内容区顶部起、
+      // 不铺进状态栏，内容区顶部那条渐隐仍由外壳画。
+      HomeTab.dictionaries => false,
+    };
 
 /// 「后台任务」入口（同步 / 复习同步 / 补刮）是否由外壳的栏承载（承载时首页
 /// body 不再画右下 FAB）。
