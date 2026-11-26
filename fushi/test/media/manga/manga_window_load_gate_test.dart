@@ -66,5 +66,47 @@ void main() {
       gate.finish(second);
       expect(gate.hasPendingLoad, isFalse);
     });
+
+    // BUG-5495：同一代文档有两路就绪信号（文档脚本的 onMangaDocumentReady、load
+    // 事件之后的 onLoadStop），只能有一路做收尾。
+    test('同一代文档只能被一路就绪信号认领', () {
+      final MangaWindowLoadGate gate = MangaWindowLoadGate();
+      final MangaWindowLoadTicket ticket = gate.begin();
+      expect(gate.claimReady(ticket.generation), same(ticket));
+      expect(gate.claimReady(ticket.generation), isNull, reason: '后到的那路信号必须停手');
+      expect(gate.ticketFor(ticket.generation), same(ticket));
+    });
+
+    test('认领不匹配 generation 或没有在飞加载时一律拿 null', () {
+      final MangaWindowLoadGate gate = MangaWindowLoadGate();
+      expect(gate.claimReady(1), isNull);
+      final MangaWindowLoadTicket ticket = gate.begin();
+      expect(gate.claimReady(ticket.generation - 1), isNull);
+      expect(gate.claimReady(null), isNull);
+      // 旧代的认领失败不占掉当前代。
+      expect(gate.claimReady(ticket.generation), same(ticket));
+    });
+
+    test('认领者中途失败交还认领后，另一路信号还能接手', () async {
+      final MangaWindowLoadGate gate = MangaWindowLoadGate();
+      final MangaWindowLoadTicket ticket = gate.begin();
+      expect(gate.claimReady(ticket.generation), same(ticket));
+      gate.releaseReadyClaim(ticket);
+      expect(gate.claimReady(ticket.generation), same(ticket));
+      expect(gate.complete(ticket, MangaWindowLoadOutcome.ready), isTrue);
+      // 已收尾的加载交还认领无效：迟到的另一路信号不得再跑一遍收尾。
+      gate.releaseReadyClaim(ticket);
+      expect(gate.claimReady(ticket.generation), isNull);
+      expect(await ticket.outcome, MangaWindowLoadOutcome.ready);
+    });
+
+    test('新一代加载的认领与上一代互不影响', () {
+      final MangaWindowLoadGate gate = MangaWindowLoadGate();
+      final MangaWindowLoadTicket first = gate.begin();
+      expect(gate.claimReady(first.generation), same(first));
+      final MangaWindowLoadTicket second = gate.begin();
+      expect(gate.claimReady(first.generation), isNull);
+      expect(gate.claimReady(second.generation), same(second));
+    });
   });
 }

@@ -39,6 +39,7 @@
 |---|:--:|:--:|---|
 | [BUG-5492](bugs/BUG-5492-android-external-library-wiped.md) | ✅ | ✅ | Android 外部书库被整树删掉，书与词典全没了 |
 | [BUG-5491](bugs/BUG-5491-windows-maximized-startup-teal-flash.md) | ✅ | ✅ | Windows：上次最大化关掉，下次启动先显示几秒青绿色空窗 |
+| [BUG-5495](bugs/BUG-5495-manga-window-ready-waits-page-images.md) | ✅ | ✅ | 漫画窗口文档就绪要等首屏页图取完，Android 上翻页被导航锁挡住 |
 | [BUG-5490](bugs/BUG-5490-data-location-diag-not-retained.md) | ✅ | ✅ | 数据位置诊断只在内存且被普通诊断挤掉 |
 | [BUG-5489](bugs/BUG-5489-dict-files-missing-silent.md) | ✅ | ✅ | 词典文件缺失时界面静默只显示无释义 |
 | [BUG-5487](bugs/BUG-5487-music-plugin-switch-cover-pixi-slow.md) | ✅ | ✅ | music-plugin-switch-cover-pixi-slow |
