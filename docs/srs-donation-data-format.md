@@ -56,7 +56,7 @@ blank, so please ignore it.
 |---|---|---|
 | `id` | real | The answer time in epoch ms. For logs that were imported from Anki, this is the **original Anki revlog id**. If two exported rows would get the same ms value, the later one is shifted by +1 ms (ordered by time, then by Fushi log id). |
 | `cid` | real | The card id (see the id note below). |
-| `ease` | real | The rating, 1–4 (Again / Hard / Good / Easy). The exporter writes `0` for any row whose `type` is not 0–2. In practice this only happens for `type = 3` rows that were imported from Anki (see the `type` row). |
+| `ease` | real | The rating, 1–4 (Again / Hard / Good / Easy). `type = 3` rows imported from Anki keep their original Anki rating as well, so a donation package has no `ease = 0` rows. |
 | `ivl` | derived | The interval that Fushi's scheduler chose after this answer. A positive value is days. A negative value is seconds until the next learning or relearning step. `0` means no state (only on `type = 3` rows). |
 | `lastIvl` | derived | The `ivl` of the **previous exported row for the same card**, or 0 for the card's first row. Fushi recomputes it, so it does not come from Anki. |
 | `factor` | placeholder | Fushi does not use SM-2 ease. For native Fushi reviews this is always `2500` (or `0` if the card was still new after the answer). For logs imported from Anki it is the original Anki `factor`. Do not use it. |

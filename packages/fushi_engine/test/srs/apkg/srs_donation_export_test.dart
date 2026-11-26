@@ -32,6 +32,9 @@ final int ankiCatRev2 = ms(2026, 9, 3, 10);
 final int ankiSentenceRev = ms(2026, 9, 2, 10);
 final int ankiDogRev = ms(2026, 9, 2, 11);
 
+/// Anki 筛选牌组里的复习（revlog.type 3，评分 2）。
+final int ankiDogFilteredRev = ms(2026, 9, 4, 11);
+
 Map<String, Object?> _models() => <String, Object?>{
   '$kVocabNt': <String, Object?>{
     'id': kVocabNt,
@@ -140,6 +143,7 @@ Uint8List _ankiApkg() => zipOf(<String, List<int>>{
         cards: <FxCard>[
           _reviewedCard(903, <FxRevlog>[
             FxRevlog(ankiDogRev, type: 0, ease: 3, ivl: 1),
+            FxRevlog(ankiDogFilteredRev, type: 3, ease: 2, ivl: 4),
           ]),
         ],
       ),
@@ -433,11 +437,11 @@ void main() {
         });
         expect(utf8.decode(zip.findFile('media')!.content as List<int>), '{}');
 
-        // revlog：4 条 Fushi 复习 + 4 条 Anki 导入的复习；手动改期丢弃。
+        // revlog：4 条 Fushi 复习 + 5 条 Anki 导入的复习（含 1 条筛选牌组复习）；手动改期丢弃。
         final List<Row> rev = db
             .select('SELECT id, time, type, ease FROM revlog ORDER BY id')
             .toList();
-        expect(rev, hasLength(8));
+        expect(rev, hasLength(9));
         expect(p.reviewCount, rev.length);
         expect(rev.every((Row r) => (r['ease'] as int) >= 1), isTrue);
         final Map<int, int> timeOf = <int, int>{
@@ -455,6 +459,12 @@ void main() {
           ]),
         );
         expect(timeOf[ankiCatRev1], 120000);
+        // 筛选牌组复习（type 3）保留原评分，不写成手动改期的 ease 0。
+        final Row filtered = rev.singleWhere(
+          (Row r) => r['id'] == ankiDogFilteredRev,
+        );
+        expect(filtered['type'], 3);
+        expect(filtered['ease'], 2);
 
         // 来源表：每条 revlog 一行。
         final Map<int, String> origin = <int, String>{
@@ -469,6 +479,7 @@ void main() {
           ankiCatRev2,
           ankiSentenceRev,
           ankiDogRev,
+          ankiDogFilteredRev,
         ]) {
           expect(origin[id], SrsLogOrigin.anki);
         }
@@ -636,7 +647,7 @@ void main() {
         ]);
         expect(
           db.select('SELECT id FROM revlog'),
-          hasLength(8),
+          hasLength(9),
           reason: '复习照常进包',
         );
       });
@@ -656,7 +667,7 @@ void main() {
           db.select('SELECT sfld FROM notes').every((Row r) => r['sfld'] == ''),
           isTrue,
         );
-        expect(db.select('SELECT id FROM revlog'), hasLength(8));
+        expect(db.select('SELECT id FROM revlog'), hasLength(9));
       });
     });
   });
