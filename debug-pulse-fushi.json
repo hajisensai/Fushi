@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-26T19:44:01Z",
+ "generatedAt": "2026-11-26T20:08:31Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "6d1e2464929f9aceefca6fdf6387ef232f769a78",
@@ -12,8 +12,8 @@
    "version": "3.4.0",
    "sha": "06de0be3bc520671196aa8e12b13876e12977f27",
    "unknown": false,
-   "publishedAt": "2026-11-26T19:43:41Z",
-   "testflight": false,
+   "publishedAt": "2026-11-26T20:08:14Z",
+   "testflight": true,
    "baseSeq": 32846,
    "prs": [],
    "direct": [
@@ -60,16 +60,13 @@
      "state": "ok"
     },
     "windows": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45878377194"
+     "state": "ok"
     },
     "macos": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45878377194"
+     "state": "ok"
     },
     "ios": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45878377194"
+     "state": "ok"
     }
    }
   },
@@ -192,7 +189,7 @@
    "unknown": false,
    "publishedAt": "2026-11-26T12:34:54Z",
    "testflight": true,
-   "baseSeq": 32753,
+   "baseSeq": 32705,
    "prs": [],
    "direct": [
     {
@@ -230,34 +227,7 @@
     {
      "sha": "a85baae75d8e7c6a08b3557f9f52e54ca20cef6a",
      "subject": "chore(bugs): settle BUG number collisions on cb5365ea4"
-    }
-   ],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
     },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "ok"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
-  },
-  {
-   "seq": 32753,
-   "version": "3.4.0",
-   "sha": "cb5365ea4a8a1db4ffbc65191a798ce835a06cac",
-   "unknown": false,
-   "publishedAt": "2026-11-26T11:25:36Z",
-   "testflight": true,
-   "baseSeq": 32705,
-   "prs": [],
-   "direct": [
     {
      "sha": "cb5365ea4a8a1db4ffbc65191a798ce835a06cac",
      "subject": "Merge PR #4492"
@@ -346,8 +316,7 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45798362682"
+     "state": "ok"
     },
     "windows": {
      "state": "ok"
