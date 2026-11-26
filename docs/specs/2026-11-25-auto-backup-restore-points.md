@@ -512,12 +512,45 @@ space; a smaller cloud retention (e.g. 7 daily) to save quota.
   Real check: `fushi_server` from source with a temp config / data dir, fake copies on disk, admin API list /
   download (bytes identical) / bad names / delete, ctl list.
 
+### Phase 4 review fixes (2026-11-25, third review)
+
+- **Remote copy on, but no service** (4A). Interconnect stopped being a cloud backend, so "Copy to cloud" on
+  with only Interconnect configured used to copy nothing and say nothing (`cloudTarget()` → null, nothing
+  recorded). `_resolveTargets` now records `cloud_no_service` / `server_no_server` in that target's status when
+  the switch is on and the host returns no target; the settings status line shows "failed: Set up … first"
+  (the existing no-backend hint texts `auto_backup_cloud_no_service` / `auto_backup_server_no_server`, no new
+  keys). Notified once: the same no-service reason already recorded is not notified again on later slots or
+  "Back up now". User switches are never flipped. Page actions with no target throw the same codes (was
+  `cloud_auth`).
+- **Per-device scope on cloud / server** (4A). `BackupFolderMirror.delete(id)` is now "this device's `<id>/`":
+  `SyncAssetStoreBackupMirror` only looks in its own device folder (it used to delete the first match across
+  all device folders, so two devices that wrote the same millisecond id could delete each other's copy). New
+  `deleteCopy(copy)` deletes exactly the listed copy (its directory asset id); the Restore points page and
+  retention pruning use it. `MirroredRestorePoint.inOwnSlot` (false for copies in other device folders; always
+  true in flat user folders, where an id has one location) keeps another device's same-id copy out of the
+  controller's "complete / already uploaded" set used for half-written cleanup and the upload skip.
+- **Server label** uses the host identity of the resolved Interconnect session
+  (`InterconnectSyncBackend.resolvedHostIdentity`, no probing), the same identity the target key and label use;
+  unresolved sessions still fall back to the first named enabled address.
+- **ctl `device-backups`** strips control / bidi characters from device-controlled text (name, id, version)
+  before printing.
+- **Restore keeps documents and the device inbox** (4B): see "Restore keeps what is not old data" below.
+- **Automatic run never escapes as an unhandled error** (4B): the fingerprint is computed inside the try that
+  records `lastFailure`; `_track` catches anything a job body lets through and completes with a failed result
+  (the admin API's "Run now" never listens to `done`, and fushi_server has no guarded zone, so an escaped error
+  could take the process down). The data-dir walk (`serverBackupWalkFiles`) skips directories that vanish
+  mid-walk and still fails, with a recorded failure, on real permission errors.
+- **Nits.** Admin API maps `disabled` / `notDue` refusals to `automatic_backup_disabled` /
+  `automatic_backup_not_due` (were reported as "backup in progress"); top-level / inbox path parts are compared
+  case-insensitively on Windows and macOS.
+
 ### Phase 4A open questions
 
-1. **App as Interconnect host.** A desktop app acting as host stores received copies under its own
-   `sync-data/fushi-data/__backups__/` but does not show them anywhere yet. `DeviceBackupInbox` is ready for a
-   "Received from other devices" section on the Restore points page (list + delete; the app host's sync data
-   dir comes from `FushiServerController`'s `syncDataDir`); not built in this batch.
+1. **App as Interconnect host has no inbox UI.** Phones paired to a desktop app host copy their backups into
+   its `sync-data/fushi-data/__backups__/`, so the desktop's inbox fills up, but the desktop has no list or
+   delete for it (only the devices trim their own copies; nothing caps the total). `DeviceBackupInbox` is ready
+   for a "Received from other devices" section on the Restore points page (list + delete; the app host's sync
+   data dir comes from `FushiServerController`'s `syncDataDir`); not built in this batch.
 2. **Per-device write scope on the host.** Interconnect auth scopes requests to paired devices, but any paired
    device can write or delete under any `__backups__/<device key>/` over WebDAV (the device-side page may
    delete another device's copy by design, as in the cloud). A host-side rule "a device may only write its own
@@ -588,11 +621,25 @@ defaults, maintainer may change. Everything lives in `packages/fushi_server/lib/
   review-library migration) is logged and stored as `preUpdateError`, and the update proceeds. Why it matters: the
   swapped bundle exits with `kExitSelfUpdated`, and the new version migrates `fushi.db` on its first start (layer
   1 also leaves a `fushi.db`-only pre-update restore point in `support/restore_points/`, but the server has no
-  downgrade screen). **Rollback:** stop the service, reinstall the older release bundle, run the **older** binary
-  `fushi_server backup restore <data>/backups/fushi_server-pre_update-<time>.zip --yes`, start the service.
-- **Restore keeps `backups/` in place.** `restoreServerBackup` used to move every top-level entry of the data
-  dir aside, including `backups/` (which is never in a zip), so after a restore all backups were hidden in
-  `<data_dir>.pre-restore-*`. It now leaves `backups/` and the lock file where they are.
+  downgrade screen). **Rollback:** stop the service, restore with the **current** binary
+  `fushi_server backup restore <data>/backups/fushi_server-pre_update-<time>.zip --yes` (do not start it
+  afterwards), then reinstall the older release bundle and start the service. This order is the safe one: the
+  current binary reads older packages (schema / format only refuse newer) and keeps `backups/`, `documents/` and
+  the device inbox in place, while a pre-4B binary's restore moves `backups/` and `documents/` into
+  `<data_dir>.pre-restore-*` (nothing is lost, but the backups and library look gone). The config written back
+  by the newer binary is read by older ones (unknown keys are ignored). CLI usage, WebUI "How to restore" and
+  the server README say the same.
+- **Restore keeps what is not old data.** `restoreServerBackup` used to move every top-level entry of the data
+  dir aside, so after a restore all backups were hidden in `<data_dir>.pre-restore-*`, restoring an automatic
+  or pre-update backup (no `documents/`) emptied the live library (books / covers / audiobooks / downloads), and
+  received device backups vanished with `interconnect/`. Now: `backups/` and the lock file stay where they are;
+  when the package has no `documents/` (manifest `includesDocuments: false` and nothing staged under it) the
+  live `documents/` stays in place; the device inbox (`interconnect/sync-data/fushi-data/__backups__`) is moved
+  into the same relative path under the staged data before the swap (parents created; a stale inbox inside a
+  package from before 1a168494eb is dropped in favour of the live one), and moved back on rollback (taken out of
+  the placed tree before that tree is deleted). If rollback itself fails while the inbox sits in staging, the
+  staging dir is kept instead of deleted. `backup restore` reports `keptDocuments` / `keptDeviceBackups`
+  (`--json`) and says both in text.
 - **Surfaces.** Admin API (`admin_backups.dart`): `GET /api/admin/backups` adds `kind` / `createdAt` per item,
   `schedule`, `status`, `runningKind`, `backupsDir`, `configFile`; `GET|PUT /api/admin/backups/schedule`
   (partial update, invalid values 400, saved through `AdminContext.updateConfig`); `POST /api/admin/backups/run`
@@ -643,7 +690,7 @@ defaults, maintainer may change. Everything lives in `packages/fushi_server/lib/
 | D13 | Retention of copies on the server | like the cloud / like local / server decides | **Like local** (48 h all, 7 daily, 4 weekly, 3 monthly, 5 GB), the device prunes only its own copies; other devices' and copied-back copies are never auto-deleted; the server never auto-deletes device copies, its admin can (WebUI / admin API / ctl). |
 | D14 | Server self-backup: when / what | off / scheduled | **On by default: daily at 04:00 server local time** (interval off / daily / every 3 days / weekly, time configurable), catch-up after downtime, skipped when nothing changed, `documents/` excluded by default (setting to include). One job at a time with manual backups; skipped (not failed) while the review library migrates; interrupted runs detected and cleaned. *Recommended default, maintainer may change.* |
 | D15 | Server automatic-backup retention | flat keep-N / tiered | **Same tiers as D3 (48 h all, 7 daily, 4 weekly, 3 monthly), newest always kept, 5 GB cap (configurable, 0 = none).** Manual and pre-update backups are never pruned by it. *Recommended default, maintainer may change.* |
-| D16 | Backup before a server self-update | none / block on failure / proceed on failure | **Settings + data (no documents) before the bundle swap, newest 3 kept; a failure is logged and shown, the update still proceeds** (same as phase 1). Rollback = reinstall the older bundle and restore that zip with it. *Recommended default, maintainer may change.* |
+| D16 | Backup before a server self-update | none / block on failure / proceed on failure | **Settings + data (no documents) before the bundle swap, newest 3 kept; a failure is logged and shown, the update still proceeds** (same as phase 1). Rollback = restore that zip with the current binary (do not start it), then reinstall the older bundle. *Recommended default, maintainer may change.* |
 
 ## 决策摘要（中文）
 
@@ -661,13 +708,16 @@ D8–D11（用户 2026-11-25 拍板）：云端副本这一批就做（同分支
 D14–D16（用户 2026-11-25 定第 4 期两块都做，这三条按建议默认实现，维护者可改）：服务端自动整机备份默认开，每天服务端本地 04:00
 （可关 / 每天 / 每 3 天 / 每周，时刻可改），停机错过了下次启动补跑，没变化就跳过，默认不带 documents/（可开）；与手动备份共用一把作业锁，
 复习库换代迁移中记「跳过」不算失败，写到一半被杀下次启动记「中断」并清掉半截。自动备份按 D3 同一套分层保留、5 GB 上限（可改，0 = 不限），
-手动备份与更新前备份从不被它删。远程更新换包之前先备份设置与数据（不带 documents/，留最新 3 份），失败只记录、更新照样进行；回滚 = 装回旧版
-程序再用旧版程序还原那份更新前备份。还原时 `backups/` 留在原处。
+手动备份与更新前备份从不被它删。远程更新换包之前先备份设置与数据（不带 documents/，留最新 3 份），失败只记录、更新照样进行；回滚 = 先停服，用
+现在这版程序还原那份更新前备份（还原完先不启动），再装回旧版程序启动（第 4B 期之前的旧程序还原时会把 `backups/` 与 `documents/` 挪进
+pre-restore 目录）。还原时 `backups/`、设备复制来的备份原地留着；备份不含 `documents/` 时现有的 `documents/` 也原地不动。
 
 D12–D13（用户 2026-11-25 定第四期 = 设备备份到服务器 + 服务器自己定时备份；以下为推荐默认，维护者可改）：「复制到服务器」是单独的副本目标，
 与云端互不相干（两个都开就各传一份），用同步在用的那条互联通道，默认关，状态 / 键 / 失败提示各自一份；云端副本不再选互联；「也用移动数据
 上传」云端与服务器共用一个开关。服务器上的副本由设备按本机规则修剪自己写的（48 小时全留、7 日 4 周 3 月、5 GB），别的设备的、取回的从不
 自动删，服务器自己也从不自动删，管理员可在 WebUI「设备备份」页 / admin API / ctl 里删。app 当互联 host 时收到的副本暂不在还原点页列出（待定）。
+复制开关开着却没有可用服务（比如云端只配了互联）时，那个目标的状态记「没有服务」并只提示一次，开关不替用户关；云端 / 服务器上自动删除只动
+本机目录里的副本，还原点页删别的设备的副本按列出来的那一份删。
 
 ## Naming
 
