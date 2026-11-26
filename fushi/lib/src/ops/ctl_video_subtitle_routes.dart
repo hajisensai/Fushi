@@ -5,6 +5,8 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_r
 
 import 'package:fushi/src/asr_host/asr_host.dart' show isAsrSupported;
 import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart';
+import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service_entry.dart'
+    show appVideoSubtitleService;
 import 'package:fushi/src/media/video/video_playback_remote.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';

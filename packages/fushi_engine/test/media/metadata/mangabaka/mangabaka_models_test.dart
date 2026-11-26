@@ -29,6 +29,32 @@ void main() {
       expect(page.items.map((MangaBakaSeries s) => s.type), contains('novel'));
     });
 
+    test('ホリミヤ: 简介（去 Markdown）/ 年份 / 开始日期 / 评分归一 / 类型', () {
+      final MangaBakaSeries s = parseMangaBakaSearch(
+        _fixture('mb_search_horimiya.json'),
+      ).items.single;
+      expect(s.id, 6029);
+      expect(s.description, startsWith('A sweet “aww”-inspiring tale'));
+      // 结尾的 `*Source: Yen Press, Vol. 1*` 去掉强调星号、保留段落。
+      expect(s.description, endsWith('person!\n\nSource: Yen Press, Vol. 1'));
+      expect(s.description, isNot(contains('*')));
+      expect(s.year, 2011);
+      expect(s.startDate, '2011-10-18');
+      expect(s.rating, closeTo(8.35, 0.01));
+      expect(s.genres, contains('slice_of_life'));
+    });
+
+    test('没有简介 / 评分 / 类型的旧响应字段为空', () {
+      final MangaBakaSeries main = parseMangaBakaSearch(
+        _fixture('mb_search_jujutsu.json'),
+      ).items[1];
+      expect(main.description, isNull);
+      expect(main.rating, isNull);
+      expect(main.startDate, isNull);
+      expect(main.genres, isEmpty);
+      expect(main.year, 2018);
+    });
+
     test('citrus: erotica 分级记为成人向', () {
       final List<MangaBakaSeries> items = parseMangaBakaSearch(
         _fixture('mb_search_citrus.json'),
@@ -121,5 +147,27 @@ void main() {
       expect(image!.index, '28.5');
       expect(image.indexNumeric, 28.5);
     });
+  });
+
+  group('mangaBakaPlainText', () {
+    test('去链接 / 图片 / 粗体 / 斜体 / 标题 / 代码，保留段落', () {
+      expect(
+        mangaBakaPlainText(
+          '## Story\n\n**Hori** meets [Miyamura](https://x.y/z) ![c](https://i)'
+          '\n\n\n\n_Source: `Yen Press`_',
+        ),
+        'Story\n\nHori meets Miyamura\n\nSource: Yen Press',
+      );
+    });
+
+    test('词内下划线与单个星号不动；全是标记时为 null', () {
+      expect(mangaBakaPlainText('slice_of_life 5 * 3'), 'slice_of_life 5 * 3');
+      expect(mangaBakaPlainText('![](https://i)'), isNull);
+    });
+  });
+
+  test('mangaBakaGenreLabel: 蛇形键转展示名', () {
+    expect(mangaBakaGenreLabel('slice_of_life'), 'Slice of life');
+    expect(mangaBakaGenreLabel('romance'), 'Romance');
   });
 }

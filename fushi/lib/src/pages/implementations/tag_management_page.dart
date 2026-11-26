@@ -27,6 +27,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// MD3 底部让给悬浮新建按钮的高度：常规 FAB 56dp + Scaffold 的 FAB 外边距
@@ -534,11 +535,11 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
         // 新建入口按设计系统各取原生位置：Apple = 页头右上角「+」玻璃圆钮
         // （iOS / macOS 列表页的添加动作在导航栏），MD3 = 右下 FAB。
         if (apple)
-          FushiIconButtonControl(
+          FushiIconButton(
             key: const ValueKey<String>('tag-management-create'),
-            icon: const FushiIcon(FushiIcons.add),
+            icon: FushiIcons.add,
             tooltip: t.tag_new,
-            onPressed: _createTag,
+            onTap: _createTag,
           ),
       ],
       floatingActionButton: apple

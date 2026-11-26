@@ -526,9 +526,10 @@ class SrsDeckView {
   final bool learnStepsSet;
   final bool relearnStepsSet;
 
-  /// 按 [algorithm]（参数归属的 own 祖先的算法）实际用的学习步长：没写过步长的 RWKV 牌组
+  /// 按 [algorithm]（本牌组的算法）在本牌组上写的学习步长：没写过步长的 RWKV 牌组
   /// 不用步长（上游 RWKV 推荐设置：答错 / 新卡直接进复习队列，由 RWKV 按 R 决定何时再出）。
-  /// Rust 侧同一条规则在 `sync2/config.rs` `DeckTree::config`。
+  /// 步长随参数继承：只对 own 牌组（参数归属牌组）有意义，「继承上级」的牌组实际用的是 own 祖先的
+  /// （[SrsDeckTree.schedulingConfig]）。Rust 侧同一条规则在 `sync2/config.rs` `DeckTree::config`。
   List<double> learnStepsFor(SrsAlgorithm algorithm) =>
       !learnStepsSet && algorithm.usesRwkv ? const <double>[] : learnSteps;
 
@@ -709,7 +710,8 @@ class SrsDeckTree {
     return out;
   }
 
-  /// 某牌组复习时实际用的排程配置：步长 / 上限是自己的，算法 / 参数 / 记忆率来自 own 祖先。
+  /// 某牌组复习时实际用的排程配置：上限 / 最大间隔是自己的，算法 / 参数 / 记忆率 / 学习与重学步长来自 own 祖先
+  /// （步长随参数继承，拍板 design-subdeck-steps-inherit；Rust 侧同一条规则在 `sync2/config.rs` `DeckTree::config`）。
   SrsSchedulingConfig schedulingConfig(
     String id, {
     List<double> Function(SrsAlgorithm algorithm)? defaultsOf,
@@ -723,8 +725,8 @@ class SrsDeckTree {
         ? set.params
         : (defaultsOf?.call(alg.memoryAlgorithm) ?? const <double>[]);
     return SrsSchedulingConfig(
-      learnStepsMinutes: self.learnStepsFor(alg),
-      relearnStepsMinutes: self.relearnStepsFor(alg),
+      learnStepsMinutes: owner.learnStepsFor(alg),
+      relearnStepsMinutes: owner.relearnStepsFor(alg),
       desiredRetention: owner.desiredRetention,
       maxIntervalDays: self.maxIntervalDays,
       algorithm: alg,

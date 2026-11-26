@@ -236,7 +236,7 @@ void main() {
       expect(SrsCardHistory(logs.reversed).lastEffective!.id, first);
     });
 
-    test('同一事件的副本按别名归一前的原值日志 ID 选代表，与内核排程同一份（BUG-5455）', () {
+    test('同一事件的副本按别名归一前的原值日志 ID 选代表，与内核排程同一份（BUG-5476）', () {
       // 新代 `read logs` 交回规范 ID；两份同次 Anki 复习的副本带不同排程结果，规范 ID 与原值的先后相反。
       SrsReviewLog copy(String id, int dueDay) =>
           SrsReviewLog.fromJson(<String, Object?>{

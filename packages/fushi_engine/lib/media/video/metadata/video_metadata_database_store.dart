@@ -137,6 +137,7 @@ class VideoMetadataDatabaseStore {
           .asNameMap()[identity.provider];
       if (provider == null ||
           provider == VideoMetadataProviderKind.local ||
+          provider == VideoMetadataProviderKind.mediaserver ||
           provider == VideoMetadataProviderKind.fanart) {
         continue;
       }
@@ -176,8 +177,10 @@ class VideoMetadataDatabaseStore {
         .asNameMap()[identity.provider];
     final VideoMetadataMediaKind? kind = VideoMetadataMediaKind.values
         .asNameMap()[row.mediaType];
+    // 媒体服务器资料不是刮削身份：没有能「按已确认身份续刮」的 provider。
     if (provider == null ||
         provider == VideoMetadataProviderKind.fanart ||
+        provider == VideoMetadataProviderKind.mediaserver ||
         kind == null) {
       return null;
     }
@@ -1614,6 +1617,8 @@ class VideoMetadataDatabaseStore {
       VideoMetadataProviderKind.douban =>
         'https://movie.douban.com/subject/${id.value}/',
       VideoMetadataProviderKind.fanart => null,
+      // 服务器网页地址带登录态、换线路就变，不落库。
+      VideoMetadataProviderKind.mediaserver => null,
     };
   }
 

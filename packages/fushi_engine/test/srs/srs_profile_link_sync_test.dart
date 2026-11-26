@@ -13,6 +13,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_backup_merge.dart'
     show srsCanAdoptProfileUid;
 import 'package:fushi_engine/srs/srs_builtin.dart';
+import 'package:fushi_engine/srs/srs_collection_binding.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_profile_link.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
@@ -243,6 +244,65 @@ void main() {
     expect(a.store.sync2Dir, aUid);
     expect(b.store.sync2Dir, bUid);
     expect(b.unlinked, contains('Default'));
+  });
+
+  test('远端集合已经绑定本机另一个资料库时，不进入候选，原资料库仍能收卡', () async {
+    final _Device remote = await _Device.open('remote');
+    await remote.addNote('雪');
+    expect((await remote.sync(dir)).error, isNull);
+
+    final _Device local = await _Device.open('local');
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    final int ownerId = await local.db.insertProfile(
+      ProfilesCompanion.insert(name: '已绑定', createdAt: now, updatedAt: now),
+    );
+    final SrsDbStore owner = await SrsDbStore.open(
+      core: local.srs.core,
+      profileUid: await local.db.profileUidOf(ownerId),
+      deviceId: local.deviceId,
+    );
+    final String remoteDir = remote.store.sync2Dir!;
+    await local.linker.adopt(owner, remoteDir, within: dir);
+    expect(owner.sync2Collection, remote.store.sync2Collection);
+
+    await local.store.setCollectionBinding(
+      SrsCollectionBindingState.settled,
+      via: 'other-location',
+    );
+    final String? original = local.store.sync2Collection;
+    final SrsProfileLinkOutcome blocked = await local.linker.link(
+      dir,
+      local.store,
+      directoryKey: 'interconnect:host',
+    );
+    expect(blocked.choose, isNull);
+    expect(blocked.linked, isFalse);
+    expect(local.store.sync2Collection, original);
+    expect(await local.store.userNoteCount(), 0);
+
+    final String later = await remote.addNote('霜');
+    expect((await remote.sync(dir)).error, isNull);
+    expect((await _round(dir, owner)).error, isNull);
+    expect(await owner.note(later), isNotNull);
+    expect(await local.store.note(later), isNull);
+
+    final _Device other = await _Device.open('other');
+    await other.addNote('雨');
+    expect((await _round(dir, other.store)).error, isNull);
+    await other.linker.publish(dir, other.store, 'interconnect:host');
+    final SrsProfileLinkOutcome choose = await local.linker.link(
+      dir,
+      local.store,
+      directoryKey: 'interconnect:host',
+    );
+    expect(choose.choose!.map((SrsRemoteProfile p) => p.uid), <String>[
+      other.store.sync2Dir!,
+    ]);
+    await expectLater(
+      local.linker.adopt(local.store, remoteDir, within: dir),
+      throwsStateError,
+    );
+    expect(local.store.sync2Collection, original);
   });
 
   // 反馈 dOv8AdJ6yV：冲突弹窗只有「Default · 01a13df1」，看不出是哪台设备的、有多少数据，没法选。

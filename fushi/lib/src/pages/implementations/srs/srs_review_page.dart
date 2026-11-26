@@ -40,8 +40,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow;
 import 'package:fushi_anki/fushi_anki_core.dart'
     show CardSourceLink, FushiCardBlock;
-import 'package:fushi_engine/ai/ai_chat_client.dart';
-import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -57,7 +55,6 @@ import 'package:fushi/src/anki/card_source_router.dart'
 import 'package:fushi/src/focus/page_focus_ownership.dart';
 import 'package:fushi/src/second_screen/companion/companion_page_link.dart';
 import 'package:fushi/src/second_screen/companion/companion_protocol.dart';
-import 'package:fushi/src/ai/ai_srs_field_assistant.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_browse_page.dart';
@@ -66,7 +63,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_companion.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_deck_settings_page.dart';
-import 'package:fushi/src/pages/implementations/srs/srs_field_ai_sheet.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_field_ai_action.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_html_card_view.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
@@ -1456,10 +1453,9 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     if (!isAiModuleEnabled(ref.read(appProvider).moduleVisibility)) {
       return const <SrsFieldDef>[];
     }
-    final Map<String, String> text = _textFieldsOf(detail);
     return <SrsFieldDef>[
       for (final SrsFieldDef f in detail.noteType.fields)
-        if (text.containsKey(f.id)) f,
+        if (srsFieldAiEligible(f)) f,
     ];
   }
 
@@ -1557,14 +1553,9 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   Future<void> _reviewFieldAi() async {
     final SrsCardDetail? detail = _detail;
     if (detail == null) return;
-    final AiProviderConfig? provider = ref
-        .read(appProvider)
-        .prefsRepo
-        .resolveAiFeatureProvider(AiFeature.srsNoteField);
-    if (provider == null) {
-      FushiToast.show(msg: t.ai_assist_no_provider);
-      return;
-    }
+    final AppModel appModel = ref.read(appProvider);
+    final AiProviderConfig? provider = srsFieldAiProvider(appModel);
+    if (provider == null) return;
     final List<SrsFieldDef> candidates = _aiFieldsOf(detail);
     final SrsCardSelection? sel = _editSelection;
     List<String> ids = <String>[for (final SrsFieldDef f in candidates) f.id];
@@ -1583,31 +1574,16 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     if (field == null || !mounted) return;
     final String before = detail.note.field(field.id);
     final String? value = await _focusOwnership.guardOverlay(
-      () => showSrsFieldAiSheet(
+      () => showSrsFieldAiFor(
         context,
-        fieldLabel: catalog.srsFieldDisplayName(field),
-        fieldName: field.name,
+        appModel: appModel,
+        provider: provider,
+        noteType: detail.noteType,
+        field: field,
         current: before,
-        promptStore: ref.read(appProvider).prefsRepo,
-        run: (AiSrsFieldTask task, String instruction) async {
-          final AiChatClient client = AiChatClient();
-          try {
-            return await requestAiSrsField(
-              client: client,
-              provider: provider,
-              noteType: detail.noteType,
-              valuesById: <String, String>{
-                for (final SrsFieldDef f in detail.noteType.fields)
-                  f.id: detail.note.field(f.id),
-              },
-              targetFieldId: field.id,
-              task: task,
-              instruction: instruction,
-              outputLanguage: LocaleSettings.currentLocale.languageTag,
-            );
-          } finally {
-            client.close();
-          }
+        valuesById: () => <String, String>{
+          for (final SrsFieldDef f in detail.noteType.fields)
+            f.id: detail.note.field(f.id),
         },
       ),
     );

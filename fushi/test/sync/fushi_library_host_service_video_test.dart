@@ -33,7 +33,7 @@ LocalLibraryHostService _makeService({
     packages: SyncAssetPackageService(db: db),
     refreshDictionaryCache: () async {},
     runExclusive: (Future<void> Function() body) => body(),
-    videoSubtitleLangCode: langCode,
+    videoSubtitleExplicitLanguage: () => langCode,
     uploadedVideoRoot: uploadedVideoRoot,
     videoCoversDirectory: coversRoot,
     extractVideoCover: extractVideoCover,

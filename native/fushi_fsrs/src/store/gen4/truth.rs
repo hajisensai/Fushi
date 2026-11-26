@@ -853,6 +853,20 @@ impl<'c> Truth<'c> {
         self.binding_where("collection", &collection.0.as_slice())
     }
 
+    /// 本机其他 profile 当前绑定的集合，与 `collection_adopt` 用同一张表判断归属。
+    pub(crate) fn other_collections(&self, col: i64) -> Result<Vec<Id>, String> {
+        let mut stmt = self
+            .conn
+            .prepare_cached(
+                "SELECT collection FROM collections WHERE col != ?1 ORDER BY collection",
+            )
+            .map_err(sql)?;
+        let rows = stmt
+            .query_map([col], |r| r.get::<_, Vec<u8>>(0))
+            .map_err(sql)?;
+        rows.map(|r| id_of(&r.map_err(sql)?)).collect()
+    }
+
     /// 位置目录名是 [dir] 的本机 profile（按 uid 排）。一个集合只绑一个 profile，但目录名不唯一（并入后两个本机
     /// 集合可能指向同一个目录），所以回列表。`collections` 一台设备只有几行，全表扫（不加索引、不升 SCHEMA）。
     pub fn profiles_of_dir(&self, dir: &str) -> Result<Vec<String>, String> {

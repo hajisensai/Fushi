@@ -15,7 +15,32 @@ enum CollectionAutoRemoveResult {
   notMember,
 }
 
-mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
+/// 一条「收养远端主合集成员」请求（[FushiDatabase.adoptRemoteCollectionMember] /
+/// [FushiDatabase.adoptRemoteCollectionMembers] 的参数，字段语义见前者）。
+final class RemoteCollectionMemberAdoption {
+  const RemoteCollectionMemberAdoption({
+    required this.name,
+    required this.collectionType,
+    required this.mediaType,
+    required this.remoteEntryKey,
+    required this.sortIndex,
+    this.localEntryKey,
+    this.userIntent = false,
+  });
+
+  final String name;
+  final String collectionType;
+  final MediaKind mediaType;
+  final String remoteEntryKey;
+  final int sortIndex;
+  final String? localEntryKey;
+  final bool userIntent;
+
+  /// 落成成员行的键：本机有入库行时是本机键，否则是远端占位键。
+  String get targetEntryKey => localEntryKey ?? remoteEntryKey;
+}
+
+mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
   // ── media_sources ───────────────────────────────────────────────
   // TODO-817：网络/本地来源库 CRUD。configJson 绝不裸存明文密码（本地恒 NULL，
   // 网络只存凭据引用键，密码本体 M3 才落）。
@@ -1125,6 +1150,9 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
   /// [deletedAt]（缺省 now）：合集级墓碑时刻。整理收敛在同步基线推进后删败方时传
   /// 「严格晚于基线」的值——同毫秒的墓碑会被下一轮判成旧闻（v124）。
   ///
+  /// [linksMovedTo]：本合集被并进 / 整体搬进的另一个合集 id，作品图谱连接改挂到
+  /// 那里；缺省（或目标不存在）= 连接随合集一起删。
+  ///
   /// [organizeMerged]：整理器把它并进别的合集时传 true（删除哨兵记下「并掉」，不算
   /// 用户拒绝这个分组）。
   ///
@@ -1136,8 +1164,26 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
     int? deletedAt,
     bool organizeMerged = false,
     bool userIntent = true,
+    int? linksMovedTo,
   }) => transaction(() async {
     final MediaCollectionRow? col = await getMediaCollectionById(id);
+    // 作品图谱：给了 [linksMovedTo]（本合集被并进 / 整体搬进的合集）就先把连着本合集
+    // 的连接改挂过去；必须在 [_dropMediaCollectionRow] 之前——它会物理删掉以本合集
+    // 为端点的全部连接（没改挂的那些随合集删，BUG-5457 / BUG-5462）。
+    if (linksMovedTo != null &&
+        linksMovedTo != id &&
+        await getMediaCollectionById(linksMovedTo) != null) {
+      await retargetMediaLinks(
+        from: (
+          kind: MediaLinkKind.videoCollection,
+          key: collectionTagEntryKey(id),
+        ),
+        to: (
+          kind: MediaLinkKind.videoCollection,
+          key: collectionTagEntryKey(linksMovedTo),
+        ),
+      );
+    }
     await _carryCollectionPrivacyToMembers(
       id,
       <({String mediaType, String entryKey})>[
@@ -1148,13 +1194,7 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
     await (delete(
       mediaCollectionItems,
     )..where((t) => t.collectionId.equals(id))).go();
-    await deleteTagAssignmentsForHost(
-      TagHostKind.collection,
-      collectionTagEntryKey(id),
-    );
-    final int deleted = await (delete(
-      mediaCollections,
-    )..where((t) => t.id.equals(id))).go();
+    final int deleted = await _dropMediaCollectionRow(id);
     if (col != null && deleted > 0) {
       await (delete(collectionMemberTombstones)..where(
             (t) =>
@@ -1381,10 +1421,124 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
     String? localEntryKey,
     bool userIntent = false,
   }) => transaction(() async {
-    if (userIntent) {
-      await _clearCollectionDeletionTombstone(name, collectionType);
+    final ({int? collectionId, bool wrote}) result =
+        await _adoptRemoteCollectionMemberInTransaction(
+          RemoteCollectionMemberAdoption(
+            name: name,
+            collectionType: collectionType,
+            mediaType: mediaType,
+            remoteEntryKey: remoteEntryKey,
+            sortIndex: sortIndex,
+            localEntryKey: localEntryKey,
+            userIntent: userIntent,
+          ),
+        );
+    return result.collectionId;
+  });
+
+  /// 整份远端清单的主合集收养：只写**真的变了**的那几条，且全部在一个事务里。
+  ///
+  /// 库页每拿到一份新清单都要收养一遍。此前逐条调 [adoptRemoteCollectionMember]
+  /// ——每条一个事务、四五条语句，清单没变时也照跑一整轮（几千集的媒体服务器库
+  /// 就是几千个事务压在打开视频页的路上）。现在先用**一次只读查询**筛掉「收养了
+  /// 也不会写任何东西」的条目（见 [_pendingRemoteCollectionAdoptions]），剩下的才进
+  /// 同一个事务、逐条走与单条入口**同一份**规则（[_adoptRemoteCollectionMemberInTransaction]），
+  /// 墓碑 / 自然键 / 排序 / 占位提升的裁决只有一份实现。
+  ///
+  /// 返回真的改了库的条数（0 = 本轮无任何写入，调用方不必重载合集映射）。被墓碑
+  /// 挡下的条目会进事务重新裁决（规则只有一份，差分不复刻墓碑判据），但不计数。
+  Future<int> adoptRemoteCollectionMembers(
+    Iterable<RemoteCollectionMemberAdoption> requests,
+  ) async {
+    final List<RemoteCollectionMemberAdoption> pending =
+        await _pendingRemoteCollectionAdoptions(requests.toList());
+    if (pending.isEmpty) return 0;
+    return transaction(() async {
+      int written = 0;
+      for (final RemoteCollectionMemberAdoption request in pending) {
+        final ({int? collectionId, bool wrote}) result =
+            await _adoptRemoteCollectionMemberInTransaction(request);
+        if (result.wrote) written++;
+      }
+      return written;
+    });
+  }
+
+  /// [adoptRemoteCollectionMembers] 的差分：返回跑一遍规则**可能写库**的请求。
+  ///
+  /// 一条非用户意图的请求在规则里不写任何东西，当且仅当：自然键对应的合集（重名取
+  /// id 最小行，与 [getMediaCollectionByNaturalKey] 同口径）里已有 `targetEntryKey`
+  /// 这一成员行，且没有待提升的远端占位行（目标键就是远端键，或远端键那行不在）。
+  /// 此时规则要么被墓碑挡下返回 null、要么命中「已在」返回合集 id，两条路都不写。
+  /// 用户意图（`userIntent`）的请求总要清合集删除墓碑，一律进写路径。
+  ///
+  /// 只发**一条**查询：所有相关键经 `json_each` 一次带进去（不受绑定参数个数上限
+  /// 约束，也不按块拆成多次查询）。
+  Future<List<RemoteCollectionMemberAdoption>>
+  _pendingRemoteCollectionAdoptions(
+    List<RemoteCollectionMemberAdoption> requests,
+  ) async {
+    final Set<String> keys = <String>{
+      for (final RemoteCollectionMemberAdoption r in requests)
+        if (!r.userIntent) ...<String>[r.remoteEntryKey, r.targetEntryKey],
+    };
+    final Set<(String, String, String, String)> present =
+        <(String, String, String, String)>{};
+    if (keys.isNotEmpty) {
+      final List<QueryRow> rows = await customSelect(
+        'WITH primary_collections AS ('
+        ' SELECT MIN(id) AS id, name, collection_type FROM media_collections'
+        ' GROUP BY name, collection_type) '
+        'SELECT p.name AS name, p.collection_type AS collection_type,'
+        ' i.media_type AS media_type, i.entry_key AS entry_key '
+        'FROM media_collection_items i '
+        'INNER JOIN primary_collections p ON p.id = i.collection_id '
+        'WHERE i.entry_key IN (SELECT value FROM json_each(?))',
+        variables: <Variable<Object>>[
+          Variable<String>(jsonEncode(keys.toList())),
+        ],
+        readsFrom: {mediaCollections, mediaCollectionItems},
+      ).get();
+      for (final QueryRow row in rows) {
+        present.add((
+          row.read<String>('name'),
+          row.read<String>('collection_type'),
+          row.read<String>('media_type'),
+          row.read<String>('entry_key'),
+        ));
+      }
+    }
+    bool has(RemoteCollectionMemberAdoption r, String entryKey) => present
+        .contains((r.name, r.collectionType, r.mediaType.dbValue, entryKey));
+    return <RemoteCollectionMemberAdoption>[
+      for (final RemoteCollectionMemberAdoption r in requests)
+        if (r.userIntent ||
+            !has(r, r.targetEntryKey) ||
+            (r.targetEntryKey != r.remoteEntryKey && has(r, r.remoteEntryKey)))
+          r,
+    ];
+  }
+
+  /// [adoptRemoteCollectionMember] 的规则本体（调用方负责外层事务）。单条入口与
+  /// 批量入口共用这一份，墓碑 / 自然键 / 排序 / 占位提升只在这里裁决。
+  ///
+  /// `collectionId` 是单条入口的返回值；`wrote` = 本条真的改了库（清了合集删除
+  /// 墓碑、建了合集、插了成员行或删了占位行），批量入口据此告诉调用方要不要重载。
+  Future<({int? collectionId, bool wrote})>
+  _adoptRemoteCollectionMemberInTransaction(
+    RemoteCollectionMemberAdoption request,
+  ) async {
+    final String name = request.name;
+    final String collectionType = request.collectionType;
+    final MediaKind mediaType = request.mediaType;
+    final String remoteEntryKey = request.remoteEntryKey;
+    final int sortIndex = request.sortIndex;
+    final String? localEntryKey = request.localEntryKey;
+    bool wrote = false;
+    if (request.userIntent) {
+      wrote = await _clearCollectionDeletionTombstone(name, collectionType) > 0;
     } else if (await hasCollectionDeletionTombstone(name, collectionType)) {
-      return null;
+      return (collectionId: null, wrote: false);
     }
     final Set<String> keys = <String>{remoteEntryKey};
     if (localEntryKey != null) {
@@ -1410,22 +1564,26 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
               )
               ..limit(1))
             .getSingleOrNull();
-    if (removed != null) return null;
+    if (removed != null) return (collectionId: null, wrote: wrote);
 
     final MediaCollectionRow? existing = await getMediaCollectionByNaturalKey(
       name,
       collectionType,
     );
-    final int collectionId =
-        existing?.id ??
-        await into(mediaCollections).insert(
-          MediaCollectionsCompanion.insert(
-            name: name,
-            collectionType: Value(collectionType),
-            sortOrder: Value(await _nextMediaCollectionSortOrder()),
-            createdAt: DateTime.now().millisecondsSinceEpoch,
-          ),
-        );
+    final int collectionId;
+    if (existing != null) {
+      collectionId = existing.id;
+    } else {
+      collectionId = await into(mediaCollections).insert(
+        MediaCollectionsCompanion.insert(
+          name: name,
+          collectionType: Value(collectionType),
+          sortOrder: Value(await _nextMediaCollectionSortOrder()),
+          createdAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+      wrote = true;
+    }
     final String targetKey = localEntryKey ?? remoteEntryKey;
     final List<MediaCollectionItemRow> members =
         await (select(mediaCollectionItems)..where(
@@ -1458,6 +1616,7 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
         ),
         mode: InsertMode.insertOrIgnore,
       );
+      wrote = true;
     }
     if (targetKey != remoteEntryKey && placeholder != null) {
       await deleteCollectionItemRaw(
@@ -1465,9 +1624,10 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
         mediaType.dbValue,
         remoteEntryKey,
       );
+      wrote = true;
     }
-    return collectionId;
-  });
+    return (collectionId: collectionId, wrote: wrote);
+  }
 
   /// 加条目进合集（尾插；重复成员 INSERT OR IGNORE 幂等）。同事务清同键成员墓碑
   /// （schema v40：重新加入 = 撤销移出——否则跨端同步的成员墓碑会把刚加回的成员
@@ -1896,15 +2056,7 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
     final List<MediaCollectionItemRow> remaining = await (select(
       mediaCollectionItems,
     )..where((t) => t.collectionId.equals(collectionId))).get();
-    if (remaining.isEmpty) {
-      await deleteTagAssignmentsForHost(
-        TagHostKind.collection,
-        collectionTagEntryKey(collectionId),
-      );
-      await (delete(
-        mediaCollections,
-      )..where((t) => t.id.equals(collectionId))).go();
-    }
+    if (remaining.isEmpty) await _dropMediaCollectionRow(collectionId);
   });
 
   /// 合集内重排：[ordered] 表达**它点名的那批成员之间的新相对顺序**，本方法负责把它
@@ -2043,11 +2195,7 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
       );
     }
     for (final int cid in ids.difference(stillPopulated)) {
-      await deleteTagAssignmentsForHost(
-        TagHostKind.collection,
-        collectionTagEntryKey(cid),
-      );
-      await (delete(mediaCollections)..where((t) => t.id.equals(cid))).go();
+      await _dropMediaCollectionRow(cid);
     }
   });
 
@@ -2103,7 +2251,7 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
   /// 删掉该自然键的**合集级**删除墓碑（空哨兵行）＝撤销「用户删了这个合集」。
   /// 只供用户显式重建 / 显式加入的入口用（[createMediaCollection]、
   /// [adoptRemoteCollectionMember] 的 `userIntent`）；成员墓碑不动。
-  Future<void> _clearCollectionDeletionTombstone(
+  Future<int> _clearCollectionDeletionTombstone(
     String name,
     String collectionType,
   ) =>
@@ -2237,12 +2385,31 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
     await (delete(
       mediaCollectionItems,
     )..where((t) => t.collectionId.equals(id))).go();
-    await deleteTagAssignmentsForHost(
-      TagHostKind.collection,
-      collectionTagEntryKey(id),
-    );
-    await (delete(mediaCollections)..where((t) => t.id.equals(id))).go();
+    await _dropMediaCollectionRow(id);
   });
+
+  /// 删一行合集，连同按合集 id 挂着、没有外键 cascade 的引用：合集标签映射与作品
+  /// 图谱里以它为端点（`video_collection:<id>`）的连接（BUG-5462）。全部删合集路径
+  /// （用户删除、移空自删、删条目连带清空、同步解散）都经这里，调用方负责事务与成员行。
+  ///
+  /// 连接**物理删除**而不是写墓碑：本机合集 id 自增不复用，端点一旦删掉就再也解析
+  /// 不回来，留着只是「不在库中」的死卡；墓碑在这里也不对——它的语义是「用户否决了
+  /// 这一对」。跨端不受影响：作品图谱同步按合集自然键 `<type>:<name>` 对齐，本机没有
+  /// 该合集的连接本来就不发出、对端发来也跳过（`media_link_sync.dart`）；同名合集
+  /// 以后再出现，对端的连接会照常同步回来。整理器撤销要还原的连接由
+  /// [FushiDatabase.captureMediaCollectionSnapshot] 在删之前记下。返回删掉的合集行数。
+  Future<int> _dropMediaCollectionRow(int id) async {
+    final String key = collectionTagEntryKey(id);
+    await deleteTagAssignmentsForHost(TagHostKind.collection, key);
+    final String kind = MediaLinkKind.videoCollection.dbValue;
+    await (delete(mediaLinks)..where(
+          (t) =>
+              (t.fromKind.equals(kind) & t.fromKey.equals(key)) |
+              (t.toKind.equals(kind) & t.toKey.equals(key)),
+        ))
+        .go();
+    return (delete(mediaCollections)..where((t) => t.id.equals(id))).go();
+  }
 
   // ── audio cues ──────────────────────────────────────────────────
   // [bookKey] is the owner key: either an audiobook bookKey OR an srt_books.uid

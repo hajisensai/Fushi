@@ -668,8 +668,19 @@ void main() {
       isTrue,
       reason: '云视频目录/下载必须经 CloudRemoteVideoClient',
     );
+    // 来源链（互联 → Jellyfin → 云盘）收在共享解析器里，视频库页与「同一作品」
+    // 卡片的远端海报共用；页面只经 resolveRemoteVideoSource 取来源。
     expect(
-      homeSrc.contains('_resolveCloudRemoteVideoClient'),
+      homeSrc.contains('resolveRemoteVideoSource('),
+      isTrue,
+      reason: '页面经共享解析器取远端视频来源（链顺序只写一处）',
+    );
+    final String resolverSrc = File(
+      'lib/src/media/video/remote_video_source_resolver.dart',
+    ).readAsStringSync();
+    expect(
+      resolverSrc.contains('resolveSyncBackend(') &&
+          resolverSrc.contains('CloudRemoteVideoClient(backend:'),
       isTrue,
       reason: '云后端分支：resolveSyncBackend 产物包进 CloudRemoteVideoClient',
     );

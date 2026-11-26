@@ -549,10 +549,10 @@ class _AppleSubscriptionRow extends StatelessWidget {
       separatorIndent:
           metrics.rowHorizontal + (metrics.desktop ? 24 : 32) * k + 12 * k,
       child: Builder(
-        builder: (BuildContext rowContext) => GestureDetector(
-          behavior: HitTestBehavior.translucent,
-          onSecondaryTapUp: (TapUpDetails details) =>
-              unawaited(_openMenu(rowContext, at: details.globalPosition)),
+        // 右键走绑定表（ContextMenuTrigger），不硬绑次按钮：右键被改绑给别的动作时不双触发。
+        builder: (BuildContext rowContext) => ContextMenuTrigger(
+          onInvoke: (Offset position) =>
+              unawaited(_openMenu(rowContext, at: position)),
           child: FushiPressScale(
             enabled: tap != null,
             child: FushiAppleRow(

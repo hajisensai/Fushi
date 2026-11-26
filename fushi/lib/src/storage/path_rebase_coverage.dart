@@ -140,12 +140,14 @@ class PathRebasePref {
 const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
   // ── media_open_history（v80 最近打开流，取代 media_items）──────────
   // v124 AI 整理记录：改动细节 JSON（合集名 / 成员键 / 分组键）与「规则 / AI」来源
-  // 标记，都不含路径。
+  // 标记。BUG-5461 起被删合集的身份快照（撤销按原 id 还原用）带合集行原值，其中
+  // 有自有封面 / 附加图的绝对路径：那是撤销用的历史快照，不是供重开的路径引用，
+  // 迁移不改写；还原时文件不在了的路径直接清掉（dropMissingCollectionAssetRefs）。
   PathRebaseColumn(
     'LibraryOrganizeChanges',
     'payloadJson',
     PathRebaseKind.notAPath,
-    '成员键与合集快照 JSON，无路径。',
+    '成员键与合集快照 JSON；身份快照里的封面路径是撤销用历史值，还原时文件不在即清掉。',
   ),
   PathRebaseColumn(
     'LibraryOrganizeChanges',

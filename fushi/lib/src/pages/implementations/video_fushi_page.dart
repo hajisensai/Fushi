@@ -169,8 +169,9 @@ import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart'
         AppVideoSubtitleJobStatus,
         AppVideoSubtitleService,
         AppVideoSubtitleTarget,
-        AppVideoSubtitleTargetNotFound,
-        appVideoSubtitleService;
+        AppVideoSubtitleTargetNotFound;
+import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service_entry.dart'
+    show appVideoSubtitleService;
 import 'package:fushi/src/media/video/subtitle/video_subtitle_pipeline_gate.dart'
     show canRunLocalVideoSubtitlePipeline, localVideoSubtitlePipelineMediaPath;
 import 'package:fushi/src/media/video/subtitle/video_stream_subtitle_audio.dart'
@@ -516,6 +517,7 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi/src/media/video/video_subtitle_overlay.dart';
 import 'package:fushi_engine/media/video/video_subtitle_source.dart';
+import 'package:fushi_engine/media/video/video_subtitle_inherit.dart';
 import 'package:crypto/crypto.dart' show sha256;
 import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_alignment_backup.dart';
@@ -616,6 +618,8 @@ import 'package:fushi/src/utils/net/app_native_proxy.dart'
     show nativeOpenFailureDiagnosis;
 import 'package:fushi/src/utils/net/ffmpeg_relay_route.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_language_target.dart';
+import 'package:fushi_engine/media/video/subtitle/video_subtitle_language_resolver.dart';
 import 'package:fushi_engine/media/video/anime_source_video_path.dart';
 import 'package:fushi/src/media/video/online/anime_source_video_client.dart';
 import 'package:fushi/src/media/video/remote_subtitle_catalog.dart';
@@ -1521,6 +1525,11 @@ abstract class VideoFushiTestHooks {
   String? get debugActiveAudioTrackId;
   String? get debugResolvedDiscSubtitleTrackId;
   String? get debugResolvedDiscAudioTrackId;
+
+  /// 最近一次 [_applyLoad] 收到的字幕判定：外挂路径 / `embedded:<n>` / `off:` / null，
+  /// 与随之交出的 cue 条数。载入链（[_loadSingle] 的恢复 / 沿用 / 兜底）的结果，测试
+  /// 环境里控制器建不起来也读得到。
+  ({String? source, int cueCount})? get debugLastLoadSubtitle;
   void debugOpenSubtitleSettings();
 
   /// 播放页交给设置面板的能力槽（与面板拿到的是同一份构造），测试经它走真实回调。
@@ -2237,6 +2246,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   @override
   String? get debugActiveAudioTrackId =>
       (_controller ?? _pendingController)?.activeAudioTrackId;
+  @override
+  ({String? source, int cueCount})? get debugLastLoadSubtitle =>
+      _debugLastLoadSubtitle;
   @override
   VideoQuickSettingsHost debugQuickSettingsHost() =>
       _buildVideoQuickSettingsHost();
@@ -3849,6 +3861,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// titleCard → backdrop）。仅本地合集连播路径填充；单视频/远端恒空。
   List<MediaImageRow> _playlistCollectionImages = const <MediaImageRow>[];
 
+  /// 本集作为本地合集的一集打开时，同合集兄弟集里最近一次的字幕选择（BUG-5464，
+  /// [pickLatestSiblingSubtitleChoice]）。本集行自己没有字幕选择时 [_loadSingle] 按描述
+  /// 沿用它；单视频 / 远端恒 null。
+  SiblingSubtitleChoice? _siblingSubtitleChoice;
+
+  /// [debugLastLoadSubtitle] 的存储：[_applyLoad] 入口记下本次交给播放器的字幕判定。
+  ({String? source, int cueCount})? _debugLastLoadSubtitle;
+
   /// 播放中合集各本地集 → 绑到它的分集与各集刮削剧照（[videoFileEpisodeStillsByBook]，
   /// 与合集选集页同一份聚合）。选集面板取图链「手动封面 > 分集剧照 > 自动截图」的
   /// 剧照一环（拍板 design-player-episode-rail-stills）。成员列表建好后后台读
@@ -4415,8 +4435,25 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     return (_activeBookUid, index);
   }
 
-  /// app 当前目标学习语言代码（如 `'ja'`/`'ko'`），用于 sidecar 字幕语言优先检测。
-  String get _targetLangCode => JapaneseLanguage.instance.locale.languageCode;
+  /// [_loadSingle] 读库解析出的本视频字幕目标语言标签（见 [_subtitleLanguageTag]）；
+  /// null = 这次打开不经 [_loadSingle]（远端 / 串流）。
+  String? _resolvedSubtitleLanguageTag;
+
+  /// 本视频打开时自动挑字幕的目标语言标签（`ja` / `zh-Hant` …；空串 = 未知，不猜）。
+  ///
+  /// 本机单视频 / 合集里的一集由 [_loadSingle] 读库解析（合集系列字幕语言 > 字幕
+  /// 工作台默认语言 > 本视频语言 > 刮削原语言 > 默认内容语言，
+  /// [resolveVideoSubtitleLanguageTarget]）；其余入口只有偏好与本视频语言，按同一条
+  /// 链现算。此前这里恒为日语（`JapaneseLanguage` 硬编码），韩剧旁的 `.ko.srt` 永远
+  /// 不会自动加载。
+  String get _subtitleLanguageTag =>
+      _resolvedSubtitleLanguageTag ??
+      resolveSubtitleLanguageTarget(
+        explicitSubtitlePreference: appModel.jimakuDefaultLanguage,
+        videoContentLanguage: _bookRow?.language,
+        globalDefaultContentLanguage: appModel.defaultContentLanguage,
+      )?.tag ??
+      '';
 
   void _onSensorHousingEdgeChanged() {
     if (mounted) setState(() {});
@@ -5349,6 +5386,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // 角标。作品名作集名判据（集名缺失时集级刮削会把作品名回填进 title，那不是
       // 集名——与合集详情页 `_scrapedEpisodeTitle` 同判据）。
       _playlistCollectionImages = snapshot.images;
+      _siblingSubtitleChoice = pickLatestSiblingSubtitleChoice(
+        snapshot.episodes,
+        currentBookUid: _activeBookUid,
+      );
       final List<_PlaylistEpisodeRef> refs = _collectionEpisodeRefs(snapshot);
       _episodes = refs;
       // 选集面板的剧照与封面来源后台读，不挡首帧（拍板
@@ -5727,6 +5768,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
               preferences: parseSubtitleLanguagePreferences(
                 appModel.videoSubtitlePreferredLanguages,
               ),
+              languageTag: _subtitleLanguageTag,
             )
           : null;
       final String? startupSub =
@@ -6109,7 +6151,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final String nativeLang = LocaleSettings.currentLocale.languageCode;
     final List<YoutubeCaptionTrack> tracks = await resolveYoutubeCaptionTracks(
       captionsUrl,
-      preferLang: _targetLangCode,
+      preferLang: _subtitleLanguageTag,
       autoTranslateTo: nativeLang,
     );
     if (!mounted || seq != _episodeLoadSeq) return;
@@ -6126,7 +6168,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 默认自动应用最佳轨（等价「字幕默认可见」）：懒下载其 cue → overlay。
     final YoutubeCaptionTrack? best = pickBestYoutubeCaptionTrack(
       tracks,
-      preferLang: _targetLangCode,
+      preferLang: _subtitleLanguageTag,
     );
     if (best == null) return;
     await _applyYoutubeCaptionTrack(controller, best, loadSeq: seq);
@@ -6616,14 +6658,39 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     }
   }
 
-  /// 载入单视频（无播放列表）：优先用 DB 已存 cue；否则先尝试恢复用户上次选的
-  /// 字幕源（[row.subtitleSource] 跨重启保留），无匹配再退默认 sidecar 探测。
+  /// 载入一个本地视频行：单视频，或本地合集里的一集（统一合集 Phase 3 起每集是独立
+  /// VideoBooks 行，换集 `pushReplacement` 到新页、从库里开某一集，都走这里）。
+  ///
+  /// 字幕优先级：本行自己的选择（[row.subtitleSource] 跨重启保留，含 `off:` 显式关闭；
+  /// DB 有 cue 缓存时直接用 / 重解析）> 本行没有选择时沿用同合集兄弟集最近一次的选择
+  /// （[_siblingSubtitleChoice]，按描述匹配到本集，BUG-5464）> sidecar 探测 > 字幕文件夹
+  /// > 内封轨自动加载。
   Future<void> _loadSingle(VideoBookRow row) async {
     // iOS：下面先要读同目录字幕 / 封面等原文件，访问窗口得在第一次读盘前就位
     // （BUG-3697；控制器 load 里还有一道，覆盖不经这里的打开路径）。
     await SourceFolderAccess.instance.ensureForPath(row.videoPath);
     _loadAlignmentHint = null;
+    // 这一集自动挑字幕（同目录外挂 / 字幕文件夹 / 内封轨）的目标语言：读库解析一次，
+    // 下面三条兜底与字幕菜单排序共用。
+    _resolvedSubtitleLanguageTag =
+        (await resolveVideoSubtitleLanguageTarget(
+          appModel.database,
+          row,
+          explicitSubtitlePreference: appModel.jimakuDefaultLanguage,
+          globalDefaultContentLanguage: appModel.defaultContentLanguage,
+          preferredCollectionId: widget.playlistCollectionId,
+        ))?.tag ??
+        '';
     final bool subtitleExplicitlyOff = SubtitleSource.isOff(row.subtitleSource);
+    // BUG-5464：本行自己没有选择（null / 空；`off:` 是自己的选择）时，兄弟集最近一次的
+    // 选择翻译成在本集上的意图。只用于本次加载、不写回本行——用户在本集真正选了才写。
+    final String? ownSubtitleChoice = row.subtitleSource;
+    final SiblingSubtitleChoice? siblingChoice = _siblingSubtitleChoice;
+    final InheritedSubtitleIntent? inheritedSubtitle =
+        (ownSubtitleChoice == null || ownSubtitleChoice.isEmpty) &&
+            siblingChoice != null
+        ? inheritedSubtitleIntent(siblingChoice)
+        : null;
     final ({String videoPath, String? subtitleSource}) paths =
         await _relocateSingleMediaPaths(row);
     // video-20：DB 缓存 cue（整表读）改惰性——字幕显式关闭时读了就丢、外挂档重解析
@@ -6640,8 +6707,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 生效）。当持久化字幕源是仍在磁盘上的外挂文本档案时，直接重解析档案拿回带 markup 的
     // cue（重解析文本档案廉价，不触发 BUG-081 关注的内嵌轨 ffmpeg 重抽取）；重解析空
     // （档案被删/损坏）时保留 DB 缓存 cue（内容仍在、仅缺样式），不倒退功能。
-    // 播放列表换集走 _restorePersistedSubtitle→loadCuesForSource 已是重解析、天然带 markup，
-    // 故只需修单视频路径。
+    // 合集里的一集不落 cue（只落源指针），DB 缓存恒空，走下面兜底链 ① 的
+    // _restorePersistedSubtitle 重解析磁盘档案，天然带 markup；这里只管有 cue 缓存的单视频。
     final String? rehydratePath = subtitleExplicitlyOff
         ? null
         : await _rehydratableExternalSubtitlePath(externalSub);
@@ -6652,7 +6719,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 单视频重开内嵌轨仍拿 DB 缓存的无 markup cue（[loadCues] 命中且非空）→ cueStyle==null
     // → 「尊重字幕自带样式」(respectAssStyle) 对内嵌轨完全不生效（用户报「现在完全没用」）。
     // 修复：DB 命中的**文本** cue（cues 非空）且持久化源是内嵌轨时，经
-    // [_restorePersistedSubtitle]（与播放列表换集同一重解析路径）重解析已抽取的缓存档案，
+    // [_restorePersistedSubtitle]（与兜底链 ① 同一重解析路径）重解析已抽取的缓存档案，
     // 恢复 cueStyle。缓存命中不触发 ffmpeg 重抽取；图形轨（无文本 cue → cues 为空）不进本
     // 分支，仍由下方 `cues.isEmpty` 分支经 libmpv 画面渲染恢复（不倒退 BUG-122）。
     if (!subtitleExplicitlyOff && rehydratePath == null) {
@@ -6689,7 +6756,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       restored = await _restorePersistedSubtitle(
         videoPath: paths.videoPath,
         persisted: externalSub,
-        crossEpisode: false,
       );
       // BUG-3103：重解析出的是**图形轨**时，库里的 cue 是别的源留下的旧数据——清掉并
       // 把图形轨序号交给播放器渲染；restored 为空（缓存被清 / 容器不可读）时保留 DB
@@ -6719,7 +6785,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         restored = await _restorePersistedSubtitle(
           videoPath: paths.videoPath,
           persisted: paths.subtitleSource,
-          crossEpisode: false,
         );
         if (restored != null) {
           cues = restored.cues;
@@ -6727,6 +6792,39 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           graphicStreamIndex = restored.graphicStreamIndex;
         }
       }
+      // ①b 本行自己没有选择：沿用同合集兄弟集最近一次的选择（BUG-5464）。内封轨按语言 +
+      // 轨标题、sidecar 按语言 / 格式后缀匹配到本集；兄弟集关了字幕，本集同样关着起播
+      // （externalSub 置关闭哨兵，下面的 sidecar / 文件夹 / 内封轨自动加载一并短路）。
+      // 没有对应的源就什么都不动，照常往下兜底。本行有自己的 cue 缓存时轮不到这里。
+      if (inheritedSubtitle != null &&
+          cues.isEmpty &&
+          graphicStreamIndex == null) {
+        if (inheritedSubtitle is InheritSubtitleOff) {
+          externalSub = SubtitleSource.offSentinel;
+        } else {
+          final ({
+            String persisted,
+            List<AudioCue> cues,
+            int? graphicStreamIndex,
+          })?
+          inherited = await _restoreInheritedSubtitle(
+            videoPath: paths.videoPath,
+            intent: inheritedSubtitle,
+          );
+          if (inherited != null) {
+            cues = inherited.cues;
+            externalSub = inherited.persisted;
+            graphicStreamIndex = inherited.graphicStreamIndex;
+          }
+        }
+      }
+    }
+    // 自动探测这几层只在「上面都没拿到字幕、也没被关掉」时试：已确定渲染图形轨不再试
+    // （BUG-3103），兄弟集关了字幕（①b）也不再试。
+    if (!subtitleExplicitlyOff &&
+        !SubtitleSource.isOff(externalSub) &&
+        cues.isEmpty &&
+        graphicStreamIndex == null) {
       // ② 仍为空：退默认 sidecar 探测。判据只看「还没有 cue」——旧判据额外要求
       // `externalSub == null`，于是「有持久化源、但它恢复不出内容」时连 sidecar 都不试。
       if (cues.isEmpty) {
@@ -6798,12 +6896,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     return (videoPath: videoPath, subtitleSource: effectiveSubtitle);
   }
 
-  /// 尝试用持久化偏好 [persisted] 在 [videoPath] 的可用字幕源里选一个并加载 cue。
+  /// 恢复本视频行自己持久化的字幕源 [persisted]：在 [videoPath] 的可用字幕源里用
+  /// [SubtitleSource.matchesPersisted] 精确匹配同一源并加载 cue。
   ///
-  /// [crossEpisode]=false（单视频重启恢复）：用 [SubtitleSource.matchesPersisted]
-  /// 精确匹配同一源。[crossEpisode]=true（播放列表换集）：用
-  /// [pickEpisodeSubtitleSource] 按「同类偏好」（内嵌同 streamIndex / 外挂同语言
-  /// 后缀）从新集源里选。
+  /// 只服务「同一视频恢复同一选择」；本行没有选择时沿用兄弟集的选择走
+  /// [_restoreInheritedSubtitle]（按描述匹配，BUG-5464），两者不混用。
   ///
   /// 返回所选源的「实际持久化值 + 解析出的 cue」；无匹配 / 解析空 cue 返回 null
   /// （调用方退默认 sidecar）。返回的 persisted 用作 [_applyLoad] 的
@@ -6812,27 +6909,19 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   _restorePersistedSubtitle({
     required String videoPath,
     required String? persisted,
-    required bool crossEpisode,
   }) async {
     if (persisted == null || persisted.isEmpty) return null;
 
     // BUG-132: 用户手动导入 / Jimaku 下载的外挂字幕被拷到 `<appDocs>/video_subtitles/`，
-    // **不在剧集目录里**，而 [listAllSubtitleSources] 只扫视频同目录 + 内封轨 → 播放
-    // 列表换集/重进时匹配不到，导致「退出后字幕又要重新导入」。这类源的持久化值就是
-    // 它自己的绝对路径，且与剧集无关——只要文件还在磁盘上就按路径直接加载，无需经
-    // listAllSubtitleSources 的同目录枚举。单视频路径已由 `_loadSingle` 的 loadCues
-    // 命中、走不到这里；本捷径主要救播放列表（只存源指针不存 cue）。
-    //
-    // BUG-165: 换集（[crossEpisode]）时该捷径必须只接管**真正住在别处的导入字幕**
-    // ——若持久化路径与新集视频**同目录**，那是上一集自带的同目录 sidecar
-    // （如 `EP01.ja.srt`），不能原样沿用到 `EP02`，否则字幕卡在上一集。故换集时改用
-    // [shouldReusePersistedSubtitleAcrossEpisode]（按目录归属区分），同目录 sidecar 落
-    // 回下面的同目录枚举 + [pickEpisodeSubtitleSource] 按新集名重新匹配。单视频恢复
-    // （非换集）同一视频本就该恢复同一字幕，保持原 [isImportedExternalSubtitlePath] 判定。
-    final bool takeImportedShortcut = crossEpisode
-        ? shouldReusePersistedSubtitleAcrossEpisode(persisted, videoPath)
-        : isImportedExternalSubtitlePath(persisted);
-    if (takeImportedShortcut && await File(persisted).exists()) {
+    // **不在剧集目录里**，而 [listAllSubtitleSources] 只扫视频同目录 + 内封轨 → 重进时
+    // 匹配不到，导致「退出后字幕又要重新导入」。这类源的持久化值就是它自己的绝对路径
+    // ——只要文件还在磁盘上就按路径直接加载，无需经 listAllSubtitleSources 的同目录
+    // 枚举。有 cue 缓存的单视频已由 `_loadSingle` 的 loadCues 命中、走不到这里；本捷径
+    // 主要救合集里的一集（只存源指针不存 cue）。这里恢复的是**本行自己**的选择，同一
+    // 视频本就该恢复同一档；别的集的导入档不会经这里搬过来（BUG-165，见
+    // [inheritedSubtitleIntent]）。
+    if (isImportedExternalSubtitlePath(persisted) &&
+        await File(persisted).exists()) {
       final SubtitleSource external = SubtitleSource.external(
         externalPath: persisted,
         label: p.basename(persisted),
@@ -6853,38 +6942,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
     final List<SubtitleSource> sources = await listAllSubtitleSources(
       videoPath,
-      langCode: _targetLangCode,
+      langCode: _subtitleLanguageTag,
     );
     if (sources.isEmpty) return null;
 
-    final SubtitleSource? chosen = crossEpisode
-        ? pickEpisodeSubtitleSource(persisted, sources)
-        : _firstMatching(sources, persisted);
+    final SubtitleSource? chosen = _firstMatching(sources, persisted);
     if (chosen == null) return null;
-
-    // 图形内封轨（PGS 等位图）无文本 cue：返回 graphicStreamIndex，让 [_applyLoad]
-    // 经 libmpv 画面渲染恢复（不走 loadCues→空→误退 sidecar）（BUG-122）。
-    if (chosen.isGraphicEmbedded) {
-      return (
-        persisted: chosen.toPersistedValue(),
-        cues: const <AudioCue>[],
-        graphicStreamIndex: chosen.streamIndex,
-      );
-    }
-
-    final List<AudioCue> cues = await _loadCuesForSourceInLoad(
-      chosen,
-      videoPath,
-    );
-    if (cues.isEmpty) return null;
-    return (
-      persisted: chosen.toPersistedValue(),
-      cues: cues,
-      graphicStreamIndex: null,
-    );
+    return _loadChosenSubtitleForLoad(chosen, videoPath);
   }
 
-  /// 载入链上（[_restorePersistedSubtitle]）解析一个字幕源。外挂档经
+  /// 载入链上（[_restorePersistedSubtitle] / [_restoreInheritedSubtitle]）解析一个字幕源。外挂档经
   /// [_readSubtitleTextForLoad] 只读一次盘，同一份字节顺手判「是不是对齐产物」留给
   /// 本次载入的对齐检查（[_loadAlignmentHint]），[_applyLoad] 不再把刚解析过的字幕
   /// 整份重读一遍；内嵌轨照旧走缓存 / 抽取。
@@ -6929,8 +6996,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         : null;
     final List<SubtitleSource> sources =
         controller?.isBlurayNavigationSession == true
-        ? await controller!.discSubtitleSources(langCode: _targetLangCode)
-        : await listAllSubtitleSources(videoPath, langCode: _targetLangCode);
+        ? await controller!.discSubtitleSources(langCode: _subtitleLanguageTag)
+        : await listAllSubtitleSources(
+            videoPath,
+            langCode: _subtitleLanguageTag,
+          );
     final List<SubtitleSource> activeSources =
         await includeCurrentPersistedSubtitleForMenu(
           sources,
@@ -6966,6 +7036,70 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     return null;
   }
 
+  /// BUG-5464：本行没有字幕选择时，把同合集兄弟集最近一次的选择 [intent]（已排除
+  /// [InheritSubtitleOff]，关闭由 [_loadSingle] 直接处理）翻译到本集 [videoPath] 上并加载。
+  ///
+  /// 内封轨要先知道它在兄弟集里是什么（语言 + 轨标题），故与本集枚举并发读一次兄弟集
+  /// 视频的轨表，再由 [resolveInheritedSubtitleSource] 按描述挑本集的轨；sidecar 按去掉
+  /// 视频主名后的后缀挑本集的同名字幕。没有对应的源返回 null，调用方照常往下兜底。
+  Future<({String persisted, List<AudioCue> cues, int? graphicStreamIndex})?>
+  _restoreInheritedSubtitle({
+    required String videoPath,
+    required InheritedSubtitleIntent intent,
+  }) async {
+    final (
+      SubtitleSourceListing listing,
+      List<EmbeddedSubtitleTrack> previousEmbeddedTracks,
+    ) = await (
+      listAllSubtitleSourcesWithDiagnostics(
+        videoPath,
+        langCode: _subtitleLanguageTag,
+      ),
+      switch (intent) {
+        InheritEmbeddedSubtitle(:final String previousVideoPath) =>
+          listEmbeddedSubtitleTracks(previousVideoPath),
+        _ => Future<List<EmbeddedSubtitleTrack>>.value(
+          const <EmbeddedSubtitleTrack>[],
+        ),
+      },
+    ).wait;
+    final SubtitleSource? chosen = resolveInheritedSubtitleSource(
+      intent: intent,
+      previousEmbeddedTracks: previousEmbeddedTracks,
+      videoPath: videoPath,
+      listing: listing,
+    );
+    if (chosen == null) return null;
+    return _loadChosenSubtitleForLoad(chosen, videoPath);
+  }
+
+  /// 载入链上加载已选定的字幕源 [chosen]（[_restorePersistedSubtitle] /
+  /// [_restoreInheritedSubtitle] 共用）。
+  ///
+  /// 图形内封轨（PGS 等位图）无文本 cue：返回 graphicStreamIndex，让 [_applyLoad]
+  /// 经 libmpv 画面渲染恢复（不走 loadCues→空→误退 sidecar）（BUG-122）。文本源解析
+  /// 出空 cue 返回 null。
+  Future<({String persisted, List<AudioCue> cues, int? graphicStreamIndex})?>
+  _loadChosenSubtitleForLoad(SubtitleSource chosen, String videoPath) async {
+    if (chosen.isGraphicEmbedded) {
+      return (
+        persisted: chosen.toPersistedValue(),
+        cues: const <AudioCue>[],
+        graphicStreamIndex: chosen.streamIndex,
+      );
+    }
+    final List<AudioCue> cues = await _loadCuesForSourceInLoad(
+      chosen,
+      videoPath,
+    );
+    if (cues.isEmpty) return null;
+    return (
+      persisted: chosen.toPersistedValue(),
+      cues: cues,
+      graphicStreamIndex: null,
+    );
+  }
+
   /// 若 [source] 是仍在磁盘上的**外挂文本字幕档案**（.srt/.ass/.ssa/.vtt），返回其路径供
   /// 重解析拿回样式 markup（TODO-1246）；否则返回 null：内嵌轨（`embedded:<n>` 无扩展名，
   /// [subtitleFormatForPath] 判 null）、关闭哨兵、`null`/空、或档案已不在磁盘上（重解析无源）。
@@ -6983,15 +7117,22 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// 探测视频同目录 sidecar 字幕并解析为 cue（无则 null）。
   ///
-  /// 按 app 学习语言优先（学日语 → `.ja.srt > .ja.ass > … > .srt > .ass …`，
-  /// 见 [findSidecarSubtitle]）；按扩展名路由统一字幕 parser。IO + 解析失败静默返回 null。
+  /// 按本视频的目标语言 [_subtitleLanguageTag] 挑（规则见 `rankSidecarSubtitles`：
+  /// 语言对上的标记版 > 无标记；中文按繁 / 简）；语言链全空、而带标记的字幕混着几种
+  /// 语言时，退用音轨语言再挑一次。按扩展名路由统一字幕 parser。IO + 解析失败静默返回
+  /// null。
   Future<({String path, List<AudioCue> cues})?> _detectSidecar(
     String videoPath,
     String bookUid,
   ) async {
     final String? sidecarPath = await findSidecarSubtitle(
       videoPath,
-      langCode: _targetLangCode,
+      langCode: _subtitleLanguageTag,
+      fallbackLanguage: () async =>
+          audioSubtitleLanguageTarget(
+            (await probeEmbeddedSubtitleTracks(videoPath)).audioLanguages,
+          )?.tag ??
+          '',
     );
     if (sidecarPath == null) return null;
     try {
@@ -7106,6 +7247,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 开盘前检查刚验证过的 BD-J Java 目录（见 [VideoPlayerController.load] 的同名参数）。
     String? verifiedBlurayJavaHome,
   }) async {
+    _debugLastLoadSubtitle = (
+      source: externalSubtitlePath,
+      cueCount: cues.length,
+    );
     // 常规载入换了一条流：记下它的外挂音轨，供同一条流的切档重载沿用（见
     // [_streamExternalAudioTracks]）。切档重载（detectHls=false）自己就是从这里取的。
     if (detectHls) _streamExternalAudioTracks = externalAudioTracks;
@@ -7268,6 +7413,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         preferredSubtitleLanguages: parseSubtitleLanguagePreferences(
           appModel.videoSubtitlePreferredLanguages,
         ),
+        subtitleLanguageTag: _subtitleLanguageTag,
       );
     } catch (e, stack) {
       debugPrint('[VideoFushiPage] video load failed: $e\n$stack');
@@ -7546,7 +7692,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         _currentSecondarySubtitleSource == null;
     final List<SubtitleSource> all =
         sources ??
-        await listAllSubtitleSources(videoPath, langCode: _targetLangCode);
+        await listAllSubtitleSources(videoPath, langCode: _subtitleLanguageTag);
     if (!current()) return;
     final SubtitleSource? pick = pickSubtitleSourceByPreference(
       all,

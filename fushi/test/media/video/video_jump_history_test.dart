@@ -145,16 +145,28 @@ void main() {
     // 方圆角色块）就在圆胶囊里叠出第二颗按钮。按钮必须是中性档。
     test('返回 / 前进按钮是中性档，不在胶囊里再叠 tonal 色块', () {
       final String part = read('$dir/video_fushi/jump_history.part.dart');
-      final int start = part.indexOf('Widget _videoJumpHistoryTopBarGroup(');
-      expect(start, greaterThanOrEqualTo(0));
-      final int end = part.indexOf('\n  }\n', start);
-      final String group = part.substring(start, end);
-      expect(group, contains('_chromeIconButton('));
+      String body(String signature) {
+        final int start = part.indexOf(signature);
+        expect(start, greaterThanOrEqualTo(0), reason: signature);
+        final int end = part.indexOf('\n  }\n', start);
+        return part.substring(start, end);
+      }
+
+      // 8440ef2be5 起按钮本身由 _videoJumpHistoryButtons 建（M3E 胶囊与 Apple
+      // 右上玻璃胶囊共用），M3E 胶囊只负责外框：两段都要守。
+      final String buttons = body(
+        'List<({Key key, Widget button})> _videoJumpHistoryButtons(',
+      );
+      final String group = body('Widget _videoJumpHistoryTopBarGroup(');
+      expect(buttons, contains('_chromeIconButton('));
+      expect(group, contains('_videoJumpHistoryButtons('));
       expect(group, contains('clusterStyle: _m3eFloatingBarStyle('));
-      expect(group, isNot(contains('VideoM3eButtonTone.secondary')));
-      expect(group, isNot(contains('VideoM3eButtonTone.tertiary')));
-      expect(group, isNot(contains('tonal: true')));
-      expect(group, isNot(contains('selected: true')));
+      for (final String code in <String>[buttons, group]) {
+        expect(code, isNot(contains('VideoM3eButtonTone.secondary')));
+        expect(code, isNot(contains('VideoM3eButtonTone.tertiary')));
+        expect(code, isNot(contains('tonal: true')));
+        expect(code, isNot(contains('selected: true')));
+      }
     });
   });
 }
