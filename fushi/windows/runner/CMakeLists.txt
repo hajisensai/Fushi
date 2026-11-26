@@ -191,6 +191,22 @@ add_custom_target(fushi_windows_activation_policy_gate
 )
 add_dependencies(${BINARY_NAME} fushi_windows_activation_policy_gate)
 
+# Startup reveal deadline + second-launch classification (startup_reveal_policy.h):
+# a hidden-but-never-shown main window is a starting instance, not an exiting
+# one, and a window Dart never reveals is force-shown once after the deadline.
+add_executable(fushi_windows_startup_reveal_policy_test
+  "tests/startup_reveal_policy_test.cpp"
+)
+apply_standard_settings(fushi_windows_startup_reveal_policy_test)
+target_compile_definitions(fushi_windows_startup_reveal_policy_test PRIVATE
+  "NOMINMAX")
+add_custom_target(fushi_windows_startup_reveal_policy_gate
+  COMMAND "$<TARGET_FILE:fushi_windows_startup_reveal_policy_test>"
+  DEPENDS fushi_windows_startup_reveal_policy_test
+  VERBATIM
+)
+add_dependencies(${BINARY_NAME} fushi_windows_startup_reveal_policy_gate)
+
 # BUG-3768: the FUSHI_TEST_HIDDEN window must stay where the runner parked it;
 # Dart startup placement (setBounds / maximize) otherwise pulls it onto the
 # user's desktop. Keep the pin policy executable on every Windows runner build.

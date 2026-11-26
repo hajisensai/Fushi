@@ -31,6 +31,25 @@ class HangWatchdogLog {
     return File('$base\\$_relativePath');
   }
 
+  /// Dart 侧往同一个日志追加一行（启动期限，`startup_stall_deadline.dart`）。格式与
+  /// native `AppendHangLogLine` 一致：`[YYYY-MM-DD HH:MM:SS] pid=<pid> <text>`（本地时间）。
+  /// 写不进静默放弃：取证不能挡启动。
+  static void appendLine(File file, String text, {required DateTime now}) {
+    String two(int v) => v.toString().padLeft(2, '0');
+    final DateTime t = now.toLocal();
+    final String stamp =
+        '${t.year.toString().padLeft(4, '0')}-${two(t.month)}-${two(t.day)} '
+        '${two(t.hour)}:${two(t.minute)}:${two(t.second)}';
+    try {
+      file.parent.createSync(recursive: true);
+      file.writeAsStringSync(
+        '[$stamp] pid=$pid $text\r\n',
+        mode: FileMode.append,
+        flush: true,
+      );
+    } catch (_) {}
+  }
+
   /// 纯逻辑：读 [file] 内容，非空则返回内容并清空文件；不存在 / 空 / 读失败返回 null。
   @visibleForTesting
   static String? readAndClear(File file) {
@@ -65,7 +84,8 @@ class HangWatchdogLog {
       // 开发者的一行——它指向诊断区里那份可分享的 hang dump。
       ErrorLogService.instance.log(
         'MainThread.hangRecovered',
-        '上次运行看门狗抓过全线程栈 dump（主线程停泵 ≥3 秒，或主线程在泵消息但 Dart 心跳静默 ≥10 秒，界面卡住 / 黑屏）——'
+        '上次运行看门狗抓过全线程栈 dump（主线程停泵 ≥3 秒，或主线程在泵消息但 Dart 心跳静默 ≥10 秒，'
+            '界面卡住 / 黑屏；或启动后主窗一直没显示，`startup:` 行写着卡在哪个启动阶段）——'
             '请在「诊断 → 崩溃转储」分享 hang-*.dmp：\n$content',
       );
     } catch (e) {

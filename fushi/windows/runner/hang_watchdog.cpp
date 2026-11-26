@@ -9,6 +9,7 @@
 
 #include "crash_dump.h"
 #include "native_glog.h"
+#include "startup_reveal_policy.h"
 
 namespace fushi
 {
@@ -118,6 +119,10 @@ namespace fushi
       // Dart 失联量测。
       bool dart_dumped_this_silence = false;
       int dart_dumps_taken = 0;
+      // 启动期限（startup_reveal_policy.h）：看门狗起跑 = 主窗刚建好（隐藏）。
+      ULONGLONG started_ms = 0;
+      bool main_window_shown = false;
+      bool startup_reveal_forced = false;
     };
 
     // 抓一份 hang dump 并记录：dump 与 hang_watchdog.log 这两样证据只用栈缓冲和
@@ -209,16 +214,51 @@ namespace fushi
         pending_ms, "main-thread stall: ongoing ms=");
     }
 
+    // 主窗第一次可见：挂上「显示过」属性（第二个进程据此区分启动中 / 退出中）。
+    // 一直没显示：过了启动期限就抓 dump、记日志、ShowWindowAsync 显窗——Async 只是
+    // 往主线程投递，主线程若真卡住看门狗线程也不会跟着阻塞。
+    void CheckStartupReveal(WatchdogState& s)
+    {
+      if (s.main_window_shown) return;
+      if (IsWindowVisible(g_main_window)) {
+        s.main_window_shown = true;
+        SetPropW(g_main_window, kMainWindowShownProp,
+          reinterpret_cast<HANDLE>(static_cast<INT_PTR>(1)));
+        return;
+      }
+      const ULONGLONG now_ms = UnbiasedNowMs();
+      const ULONGLONG elapsed_ms =
+        now_ms > s.started_ms ? now_ms - s.started_ms : 0;
+      if (!ShouldForceStartupReveal(elapsed_ms, false,
+            s.startup_reveal_forced)) {
+        return;
+      }
+      s.startup_reveal_forced = true;
+      // 调试器断在 Dart 里当然出不了首帧：照常显窗，但不抓 dump。
+      if (IsDebuggerPresent()) {
+        AppendHangLogLine(L"startup: main window still hidden at the deadline "
+                          L"(debugger attached, no dump); force-showing it");
+      } else {
+        CaptureHangDump(
+          L"startup: main window still hidden %llu ms after creation (Dart "
+          L"never revealed it); force-showing it; hang dump=%s",
+          elapsed_ms, "startup-hidden: ms=");
+      }
+      ShowWindowAsync(g_main_window, SW_SHOW);
+    }
+
     DWORD WINAPI WatchdogMain(LPVOID)
     {
       const UINT heartbeat = g_heartbeat_message.load();
       WatchdogState s;
+      s.started_ms = UnbiasedNowMs();
 
       for (;;) {
         if (WaitForSingleObject(g_stop_event, kPollIntervalMs) == WAIT_OBJECT_0 ||
             !IsWindow(g_main_window)) {
           return 0;
         }
+        CheckStartupReveal(s);
         CheckDartSilence(s);
         SettleAckedHeartbeat(s);
         if (s.in_flight) {

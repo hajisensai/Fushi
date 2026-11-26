@@ -1,0 +1,10 @@
+## BUG-5484 · Surface Pro 7+（Intel Iris Xe）上 3.4 启动卡在首帧之前：Dart 等一个永不完成的 Future（根因待新取证）
+- **报告**：2026-11-26（Discord 用户 GrimsChild；3.3 正常，升级 3.4.0 后每次启动都隐形卡住）
+- **真实性**：✅ 真 bug，根因**未定位**。已有证据：
+  - `error_log.txt`：3.3 正常到 11-25 12:36 交给安装器（`WindowsInstaller.handoff` target=3.4.0），此后 3.4 一条记录都没有（连 `runApp` 之后折入的 `previousExitUnclean` 都没写）。
+  - 进程 dump（运行 42 min）：32 个线程全部空闲等待，总 CPU < 15 s；主线程 `GetMessage` 正常泵消息；Flutter UI / raster / IO 线程与 Intel `igd10um64xe` 驱动线程都在条件变量上；内存里有 Impeller 着色器 uniform 名、ANGLE 程序缓存目录 `fushi.exe.ShaderCache\<ns>\` 已挂上。没有线程停在文件 IO 或驱动编译里，着色器缓存嫌疑因此降低。
+  - fushi.exe 无 PDB、Dart await 状态无法从 dump 还原，定位不到具体哪一步。
+  - 3.3→3.4 在这段路径上的新东西：ANGLE 程序二进制磁盘缓存（`ci/patches/flutter-engine/3.50.0/engine-program-binary-cache.patch`）、`project.set_enable_flutter_gpu(true)`（`fushi/windows/runner/main.cpp`）、`holdHeadlessLaunchUntilUi` 判据改动；`runApp` 前其余 await 与 3.3 相同。
+- **[ ] ① 未修复** — 等 BUG-5483 的取证上线后拿新日志：`hang_watchdog.log` 的 `startup: … last phase reached=<阶段>` 指出卡住的 await，同时附带一份 `hang-*.dmp`。拿到后按该 await 的真实代码路径根因修。
+- **[ ] ② 未加自动化测试** — 随 ① 一起补。
+- **备注**：可先请用户试两件事缩小范围：删除 `%LOCALAPPDATA%\Fushi\fushi.exe.ShaderCache` 后再启动；查看 `%LOCALAPPDATA%\Fushi\present_stall.log` 是否存在（存在 = 已过 `runApp`、卡在首帧上屏）。
