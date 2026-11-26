@@ -24,7 +24,10 @@ void main() {
   });
 
   /// 桩掉 window_manager 通道：记录方法序列，[minimized] 决定 isMinimized 的答复。
-  List<String> mockWindowManager({required bool minimized}) {
+  List<String> mockWindowManager({
+    required bool minimized,
+    bool visible = true,
+  }) {
     final List<String> calls = <String>[];
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(const MethodChannel('window_manager'), (
@@ -36,6 +39,8 @@ void main() {
               return minimized;
             case 'isFocused':
               return false;
+            case 'isVisible':
+              return visible;
             default:
               return null;
           }
@@ -95,6 +100,36 @@ void main() {
 
       expect(calls, isNot(contains('restore')));
       expect(calls, containsAllInOrder(<String>['show', 'focus']));
+    });
+  });
+
+  // 主窗「关闭到托盘」（SW_HIDE）后，托盘菜单 / 剪贴板查词面板这些同进程窗口拿着
+  // 前台，进程级判据为真；不能据此当成「主窗已在前台」而不 show。
+  group('前台属于本进程时', () {
+    test('主窗收在托盘里（不可见）照样 show/focus', () async {
+      if (!DesktopLookupService.isDesktop) return;
+      DesktopForegroundGuard.debugHiddenWindowsRunner = false;
+      DesktopForegroundGuard.debugForegroundOwnedByCurrentProcess = true;
+      final List<String> calls = mockWindowManager(
+        minimized: false,
+        visible: false,
+      );
+
+      await DesktopLookupService.instance.bringMainWindowToFront();
+
+      expect(calls, containsAllInOrder(<String>['show', 'focus']));
+    });
+
+    test('主窗可见就不再 show/focus（避免任务栏闪烁）', () async {
+      if (!DesktopLookupService.isDesktop) return;
+      DesktopForegroundGuard.debugHiddenWindowsRunner = false;
+      DesktopForegroundGuard.debugForegroundOwnedByCurrentProcess = true;
+      final List<String> calls = mockWindowManager(minimized: false);
+
+      await DesktopLookupService.instance.bringMainWindowToFront();
+
+      expect(calls, isNot(contains('show')));
+      expect(calls, isNot(contains('focus')));
     });
   });
 

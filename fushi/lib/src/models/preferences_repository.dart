@@ -1027,6 +1027,24 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// Windows：点关闭按钮 / Alt+F4 时把主窗口收进托盘继续运行，而不是退出。默认关
+  /// （沿用「关闭 = 退出」）；托盘图标本身始终在，菜单里有「退出 Fushi」。
+  bool get desktopCloseToTray =>
+      getPref('desktop_close_to_tray', defaultValue: false) as bool;
+
+  Future<void> setDesktopCloseToTray(bool value) async {
+    await setPref('desktop_close_to_tray', value);
+    notifyListeners();
+  }
+
+  /// 第一次收进托盘时弹过「仍在后台运行」的系统通知了（只提示一次）。
+  bool get desktopTrayHintShown =>
+      getPref('desktop_tray_hint_shown', defaultValue: false) as bool;
+
+  Future<void> setDesktopTrayHintShown(bool value) async {
+    await setPref('desktop_tray_hint_shown', value);
+  }
+
   /// 后台为媒体库里的在线视频作品（在线视频源 / 媒体服务器的剧）补新集。默认开；
   /// 与「番剧新集提醒」是两个开关（那个只管通知）。
   bool get videoLibraryAutoUpdate =>

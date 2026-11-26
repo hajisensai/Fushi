@@ -152,7 +152,10 @@ class DesktopLookupService extends ChangeNotifier {
     // TODO-615：前台判据抖动时此守卫可能漏判，导致先前误触的任务栏 flash 仍残留；
     // 已前台路径 early-return 前主动 clear 一次，把残留高亮幂等熄灭（FLASHW_STOP
     // 对没有 flash 的窗口是 no-op）。
-    if (await _isFushiForeground()) {
+    // 进程级前台判据只说明「前台属于 Fushi 进程」，不说明主窗看得见：主窗「关闭到
+    // 托盘」（SW_HIDE）后，托盘菜单 / 剪贴板查词面板等同进程窗口拿着前台时判据照样
+    // 为真——此时更要 show，否则主窗永远藏着。
+    if (await _isFushiForeground() && await _isMainWindowVisible()) {
       await WindowCaptionChannel.clearTaskbarFlash();
       return;
     }
@@ -215,6 +218,21 @@ class DesktopLookupService extends ChangeNotifier {
       return true;
     }
     return _isWindowFocused();
+  }
+
+  /// 主窗是否可见（没被收进托盘）。查不到时按「可见」答，保持
+  /// [bringMainWindowToFront] 原有的「已前台就不动」行为，不因瞬态失败引出任务栏闪烁。
+  Future<bool> _isMainWindowVisible() async {
+    try {
+      return await windowManager.isVisible();
+    } on MissingPluginException {
+      return true;
+    } on PlatformException {
+      return true;
+    } on TypeError {
+      // 同 [_isWindowFocused]：通道答 null 时隐式 bool 转换抛 TypeError。
+      return true;
+    }
   }
 
   /// 查询主窗口是否已在前台。插件缺失（widget 测试）或平台调用失败时保守返回

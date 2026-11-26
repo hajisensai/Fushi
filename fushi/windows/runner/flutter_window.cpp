@@ -798,6 +798,7 @@ bool FlutterWindow::OnCreate() {
   RegisterMagpieChannel();
   RegisterGameStreamInputChannel();
   RegisterSystemFontListChannel(flutter_controller_->engine()->messenger());
+  RegisterTrayChannel();
   RegisterSystemTransparencyChannel(flutter_controller_->engine()->messenger());
   ::fushi::RegisterStartupTraceChannel(
       flutter_controller_->engine()->messenger());
@@ -5066,6 +5067,10 @@ bool FlutterWindow::ApplyWindowIcon(const std::wstring& path) {
   if (new_small != nullptr) {
     SendMessage(hwnd, WM_SETICON, ICON_SMALL,
                 reinterpret_cast<LPARAM>(new_small));
+    // 托盘图标跟着换；Shell 自己拷一份图标，先换上新的再销毁旧的。
+    if (tray_) {
+      tray_->SetIcon(new_small);
+    }
     if (icon_small_ != nullptr) {
       DestroyIcon(icon_small_);
     }
@@ -5118,6 +5123,12 @@ void FlutterWindow::OnDestroy() {
   // Attached surface callbacks invoke gal_hook_text_channel_; tear the HWND and
   // its follow timer down while the Flutter messenger is still alive.
   attached_text_surface_window_.reset();
+  // 托盘图标先于图标句柄销毁摘掉（它可能还引用着 icon_small_），回调通道一并撤。
+  tray_.reset();
+  if (tray_channel_) {
+    tray_channel_->SetMethodCallHandler(nullptr);
+    tray_channel_.reset();
+  }
   if (icon_big_ != nullptr) {
     DestroyIcon(icon_big_);
     icon_big_ = nullptr;
@@ -5131,6 +5142,127 @@ void FlutterWindow::OnDestroy() {
   }
 
   Win32Window::OnDestroy();
+}
+
+bool FlutterWindow::HideToTray() {
+  HWND hwnd = GetHandle();
+  if (hwnd == nullptr || !tray_ || !tray_->visible()) {
+    return false;
+  }
+  SetPropW(hwnd, ::fushi::kTrayHiddenWindowProp, reinterpret_cast<HANDLE>(1));
+  ShowWindow(hwnd, SW_HIDE);
+  if (tray_channel_) {
+    tray_channel_->InvokeMethod("onHiddenToTray",
+                                std::make_unique<flutter::EncodableValue>());
+  }
+  return true;
+}
+
+namespace {
+
+const flutter::EncodableValue* TrayArg(const flutter::EncodableMap& map,
+                                       const char* key) {
+  const auto it = map.find(flutter::EncodableValue(key));
+  return it == map.end() ? nullptr : &it->second;
+}
+
+bool TrayBoolArg(const flutter::EncodableMap& map, const char* key,
+                 bool fallback) {
+  const flutter::EncodableValue* value = TrayArg(map, key);
+  const bool* b = value != nullptr ? std::get_if<bool>(value) : nullptr;
+  return b != nullptr ? *b : fallback;
+}
+
+std::string TrayStringArg(const flutter::EncodableMap& map, const char* key) {
+  const flutter::EncodableValue* value = TrayArg(map, key);
+  const std::string* s =
+      value != nullptr ? std::get_if<std::string>(value) : nullptr;
+  return s != nullptr ? *s : std::string();
+}
+
+}  // namespace
+
+void FlutterWindow::RegisterTrayChannel() {
+  tray_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(), "app.fushi/tray",
+          &flutter::StandardMethodCodec::GetInstance());
+  tray_channel_->SetMethodCallHandler(
+      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
+             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
+                 result) {
+        const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
+        if (call.method_name() == "configure") {
+          if (args == nullptr) {
+            result->Error("bad_args", "configure expects a map");
+            return;
+          }
+          HWND hwnd = GetHandle();
+          if (!tray_ && hwnd != nullptr) {
+            tray_ = std::make_unique<::fushi::TrayIcon>(
+                hwnd,
+                [this]() {
+                  ::fushi::TrayIcon::RevealWindow(GetHandle());
+                  if (tray_channel_) {
+                    tray_channel_->InvokeMethod(
+                        "onActivate",
+                        std::make_unique<flutter::EncodableValue>());
+                  }
+                },
+                [this](const std::string& id) {
+                  if (tray_channel_) {
+                    tray_channel_->InvokeMethod(
+                        "onMenuItem",
+                        std::make_unique<flutter::EncodableValue>(id));
+                  }
+                });
+            if (icon_small_ != nullptr) {
+              tray_->SetIcon(icon_small_);
+            }
+          }
+          if (!tray_) {
+            result->Error("no_window", "main window not created");
+            return;
+          }
+          std::vector<::fushi::TrayIcon::MenuItem> items;
+          if (const flutter::EncodableValue* raw = TrayArg(*args, "items")) {
+            if (const auto* list = std::get_if<flutter::EncodableList>(raw)) {
+              for (const flutter::EncodableValue& entry : *list) {
+                const auto* map = std::get_if<flutter::EncodableMap>(&entry);
+                if (map == nullptr) continue;
+                ::fushi::TrayIcon::MenuItem item;
+                item.separator = TrayBoolArg(*map, "separator", false);
+                item.id = TrayStringArg(*map, "id");
+                item.label = Utf8ToWideString(TrayStringArg(*map, "label"));
+                item.enabled = TrayBoolArg(*map, "enabled", true);
+                item.is_default = TrayBoolArg(*map, "isDefault", false);
+                item.reveal_window = TrayBoolArg(*map, "revealWindow", false);
+                items.push_back(std::move(item));
+              }
+            }
+          }
+          tray_->SetMenu(std::move(items));
+          tray_->SetTooltip(Utf8ToWideString(TrayStringArg(*args, "tooltip")));
+          tray_->SetVisible(TrayBoolArg(*args, "visible", true));
+          close_to_tray_ = TrayBoolArg(*args, "closeToTray", false);
+          result->Success(flutter::EncodableValue(tray_->visible()));
+        } else if (call.method_name() == "showNotification") {
+          if (args == nullptr) {
+            result->Error("bad_args", "showNotification expects a map");
+            return;
+          }
+          if (tray_) {
+            tray_->ShowNotification(
+                Utf8ToWideString(TrayStringArg(*args, "title")),
+                Utf8ToWideString(TrayStringArg(*args, "body")));
+          }
+          result->Success();
+        } else if (call.method_name() == "hideToTray") {
+          result->Success(flutter::EncodableValue(HideToTray()));
+        } else {
+          result->NotImplemented();
+        }
+      });
 }
 
 void FlutterWindow::OnDisplayRecovered() {
@@ -5153,6 +5285,25 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
   // 主线程卡顿计量的心跳应答（hang_watchdog.h）：最先处理、不往下传。
   if (::fushi::HandleHangWatchdogHeartbeat(message, wparam)) {
     return 0;
+  }
+  // 托盘图标的回调消息 / Explorer 重启广播。
+  if (tray_) {
+    if (std::optional<LRESULT> handled =
+            tray_->HandleMessage(message, wparam, lparam)) {
+      return *handled;
+    }
+  }
+  // 关闭到托盘：只拦 SC_CLOSE（标题栏关闭按钮经 window_manager.close() 投的就是
+  // 它，Alt+F4 与任务栏「关闭窗口」也是），必须排在 window_manager 之前——它会把
+  // SC_CLOSE 交给 DefWindowProc 变成 WM_CLOSE 再走 Dart 的退出链。
+  // **裸 WM_CLOSE 不拦**：安装器 / taskkill（不带 /F）靠它让 app 落盘退出，
+  // 拦成藏到托盘会让升级等满超时后强杀。
+  if (message == WM_SYSCOMMAND && (wparam & 0xFFF0) == SC_CLOSE &&
+      close_to_tray_ && HideToTray()) {
+    return 0;
+  }
+  if (message == WM_SHOWWINDOW && wparam) {
+    RemovePropW(hwnd, ::fushi::kTrayHiddenWindowProp);
   }
   if (message == WM_TIMER && system_ocr_host_ &&
       system_ocr_host_->HandleTimer(wparam)) {
