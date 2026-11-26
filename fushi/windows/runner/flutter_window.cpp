@@ -548,6 +548,14 @@ bool FlutterWindow::OnCreate() {
         } else if (call.method_name() == "endStartupWindowPreparation") {
           EndStartupWindowPreparation();
           result->Success();
+        } else if (call.method_name() == "showStartupWindow") {
+          // BUG-5491: Dart's startup reveal (first frame rasterized), in one
+          // platform round trip: lift the startup cloak, show, bring to the
+          // foreground (what window_manager's show() did). Dart then only
+          // asks for keyboard focus.
+          RevealStartupWindow();
+          SetForegroundWindow(GetHandle());
+          result->Success();
         } else if (call.method_name() == "setCaptionMaxButtonRect") {
           // Physical-pixel rect of the Flutter maximize button in the Flutter
           // view (= child client coordinates); all zero = disabled.

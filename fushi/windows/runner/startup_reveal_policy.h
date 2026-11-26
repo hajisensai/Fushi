@@ -66,6 +66,32 @@ inline bool ShouldForceStartupReveal(ULONGLONG elapsed_ms, bool ever_shown,
          elapsed_ms >= kStartupRevealDeadlineMs;
 }
 
+// 3. 启动期主窗从建窗起就隐身（BUG-5491）：Dart 显窗前，启动阶段的某些窗口操作会
+//    顺带把隐藏的主窗显出来——上次最大化关掉时 applyInitialPlacement 的
+//    windowManager.maximize() 投的是 SC_MAXIMIZE，最大化一个隐藏窗口必然连带显示
+//    （实测这条路径不发 WM_SHOWWINDOW，没法在「显示那一刻」再拦）。那时 Flutter
+//    还没出首帧，用户对着原生兜底底色（#1F4959 青绿）干等好几秒。
+//    所以普通启动（隐藏建窗）的主窗建好就上 DWM 隐身（DWMWA_CLOAK）：窗口照常最大化、
+//    照常合成、首帧按最终尺寸光栅化，只是不呈现给用户；Dart 首帧上屏后的显窗点
+//    （`showStartupWindow`：撤隐身 + 显示 + 前置，一次往返）或看门狗的强制显窗
+//    撤掉隐身。集成测试窗口（FUSHI_TEST_HIDDEN）建窗即可见、要被截图，不隐身。
+inline bool ShouldCloakAtCreation(bool test_hidden_mode) {
+  return !test_hidden_mode;
+}
+
+// 「用户真的看得见」= Win32 可见且没被 DWM 隐身。隐身中的主窗 IsWindowVisible 为真，
+// 但用户什么也看不到：看门狗不能据此挂 kMainWindowShownProp，也不能因此放弃强制显窗。
+inline bool IsWindowUserVisible(bool win32_visible, bool cloaked) {
+  return win32_visible && !cloaked;
+}
+
+// 看门狗（另一线程）请主窗线程完成启动显窗：撤隐身 + ShowWindow。用注册消息而不是
+// 裸 ShowWindowAsync——已最大化（Win32 可见）但隐身的窗口，SW_SHOW 什么也不改。
+inline UINT ForceStartupRevealMessage() {
+  static const UINT message = RegisterWindowMessageW(L"FushiForceStartupReveal");
+  return message;
+}
+
 }  // namespace fushi
 
 #endif  // RUNNER_STARTUP_REVEAL_POLICY_H_

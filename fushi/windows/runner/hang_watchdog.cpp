@@ -1,6 +1,7 @@
 #include "hang_watchdog.h"
 
 #include <windows.h>
+#include <dwmapi.h>
 
 #include <atomic>
 #include <cstdint>
@@ -220,7 +221,15 @@ namespace fushi
     void CheckStartupReveal(WatchdogState& s)
     {
       if (s.main_window_shown) return;
-      if (IsWindowVisible(g_main_window)) {
+      // BUG-5491: a startup maximize shows the window cloaked until Dart's
+      // reveal — Win32-visible, but nothing on screen yet.
+      BOOL cloaked = FALSE;
+      if (FAILED(DwmGetWindowAttribute(g_main_window, DWMWA_CLOAKED, &cloaked,
+            sizeof(cloaked)))) {
+        cloaked = FALSE;
+      }
+      if (IsWindowUserVisible(IsWindowVisible(g_main_window) != FALSE,
+            cloaked != FALSE)) {
         s.main_window_shown = true;
         SetPropW(g_main_window, kMainWindowShownProp,
           reinterpret_cast<HANDLE>(static_cast<INT_PTR>(1)));
@@ -244,7 +253,10 @@ namespace fushi
           L"never revealed it); force-showing it; hang dump=%s",
           elapsed_ms, "startup-hidden: ms=");
       }
-      ShowWindowAsync(g_main_window, SW_SHOW);
+      // Posted, like ShowWindowAsync, so a stuck main thread never blocks the
+      // watchdog; the handler lifts the startup cloak and shows the window
+      // (Win32Window::MessageHandler).
+      PostMessageW(g_main_window, ForceStartupRevealMessage(), 0, 0);
     }
 
     DWORD WINAPI WatchdogMain(LPVOID)

@@ -64,6 +64,26 @@ int main() {
       !ShouldForceStartupReveal(kStartupRevealDeadlineMs * 10, false, true),
       "the forced reveal (and its dump) happens once per process");
 
+  // BUG-5491: the hidden-launch main window is cloaked from creation, so an
+  // early show before Dart's reveal (SC_MAXIMIZE when the last session closed
+  // maximized) puts nothing on screen.
+  using fushi::IsWindowUserVisible;
+  using fushi::ShouldCloakAtCreation;
+  passed &= Expect(ShouldCloakAtCreation(false),
+                   "a normal (hidden) launch is cloaked until the reveal");
+  passed &= Expect(!ShouldCloakAtCreation(true),
+                   "integration-test windows stay capturable, never cloaked");
+  passed &= Expect(IsWindowUserVisible(true, false),
+                   "visible and not cloaked is user-visible");
+  passed &= Expect(!IsWindowUserVisible(true, true),
+                   "a cloaked window is not user-visible even if Win32-visible");
+  passed &= Expect(!IsWindowUserVisible(false, false),
+                   "a hidden window is not user-visible");
+  passed &= Expect(fushi::ForceStartupRevealMessage() != 0 &&
+                       fushi::ForceStartupRevealMessage() ==
+                           fushi::ForceStartupRevealMessage(),
+                   "the force-reveal message is registered once");
+
   if (!passed) {
     return 1;
   }

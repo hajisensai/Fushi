@@ -59,6 +59,16 @@ class Win32Window {
   bool BeginStartupWindowPreparation();
   void EndStartupWindowPreparation();
 
+  // BUG-5491: the startup reveal point. A normally launched (hidden) window is
+  // DWM-cloaked from creation, so an early show (a startup maximize of the
+  // hidden window shows it) puts nothing on screen; see
+  // startup_reveal_policy.h §3. Lifts the cloak and shows the window (keeps a
+  // maximized one maximized); idempotent. Dart calls it (showStartupWindow)
+  // after the first frame rasterized — one platform round trip for the whole
+  // reveal — and the hang watchdog's forced reveal through
+  // ForceStartupRevealMessage().
+  void RevealStartupWindow();
+
   // Returns the backing Window handle to enable clients to set icon and other
   // window properties. Returns nullptr if the window has been destroyed.
   HWND GetHandle();
@@ -232,6 +242,9 @@ class Win32Window {
 
   bool fullscreen_ = false;
   bool startup_window_preparation_ = false;
+  // BUG-5491: true from creation of a normally launched (hidden) window until
+  // RevealStartupWindow lifts its DWM cloak.
+  bool startup_cloaked_ = false;
   bool frame_chrome_suppressed_ = false;
   WINDOWPLACEMENT placement_before_fullscreen_ = {};
   HBITMAP transition_snapshot_ = nullptr;

@@ -2849,7 +2849,16 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
   /// show + focus 抢回前台。
   Future<void> _revealStartupWindow() async {
     if (Platform.isWindows) {
-      await windowManager.show();
+      // BUG-5491：runner 的显窗点一次往返做完撤启动隐身（恢复最大化时窗口已被
+      // SC_MAXIMIZE 显出、但一直隐身到这里）+ 显示 + 前置。分两次往返实测会让
+      // 显示排在首帧后的平台线程忙碌之后、晚 3 秒。通道失败退回 window_manager
+      // 显窗；隐身没撤掉则由 runner 看门狗到期强制显窗（它按「隐身 = 不可见」判）。
+      try {
+        await WindowCaptionChannel.showStartupWindow();
+      } catch (e) {
+        debugPrint('[Fushi] startup window reveal channel failed: $e');
+        await windowManager.show();
+      }
       try {
         await windowManager.focus();
       } catch (e) {
