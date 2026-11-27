@@ -192,8 +192,9 @@ class InterconnectHostClient {
   /// no address answered, the host answered anything but 200, or the body is
   /// not valid JSON (unknown); a JSON body that is not an object counts as
   /// declaring nothing. Goes through the process-wide capability cache
-  /// ([InterconnectHostChannel.capabilities]): repeated probes of the same
-  /// paired host within [kInterconnectCapabilitiesTtl] do not hit the network.
+  /// ([InterconnectHostChannel.capabilities]): every call asks the host, but
+  /// with `If-None-Match`, so an unchanged table costs a body-less 304 and a
+  /// changed one is seen on the very next call.
   Future<Map<Object?, Object?>?> capabilities({
     Duration timeout = const Duration(seconds: 5),
   }) async {

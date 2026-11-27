@@ -354,41 +354,23 @@ Future<InterconnectCandidateSelection> interconnectRankedCandidates(
   );
 }
 
-/// 能力表（`GET /api/capabilities`）缓存的有效期（[InterconnectHostChannel.capabilities]）。
-///
-/// 能力表描述 host 装了哪些功能、开没开，只随 host 的设置 / 版本变化；几分钟的
-/// 陈旧换掉每次切页面、每个入口各打一次的请求。
-const Duration kInterconnectCapabilitiesTtl = Duration(minutes: 2);
-
-/// 一台 host（+ 会话绑定）的能力表缓存槽：[signature] 是写入时的配对配置签名，
-/// [response] 是 200 + JSON 对象的应答（null = 还在飞 / 没拿到可缓存的应答），
-/// [flight] 是在途那一次请求。
+/// 一台 host（+ 会话绑定）的能力表缓存槽（[InterconnectHostChannel.capabilities]）：
+/// [signature] 是写入时的配对配置签名，[response] 是带 ETag 的 200 + JSON 对象应答
+/// （null = 还在飞 / 没拿到可缓存的应答），[etag] 是它的 ETag，[flight] 是在途那一次请求。
 final class _CapabilitiesSlot {
   _CapabilitiesSlot(this.signature);
   final String signature;
   InterconnectChannelResponse? response;
-  Duration storedAt = Duration.zero;
+  String? etag;
   Future<InterconnectChannelResponse>? flight;
 }
 
 final Map<String, _CapabilitiesSlot> _capabilitiesSlots =
     <String, _CapabilitiesSlot>{};
 
-final Stopwatch _capabilitiesStopwatch = Stopwatch()..start();
-Duration Function() _capabilitiesClock = _defaultCapabilitiesClock;
-Duration _defaultCapabilitiesClock() => _capabilitiesStopwatch.elapsed;
-
-/// 测试用：清空能力表缓存（含在途记录）并换回真实时钟。
+/// 测试用：清空能力表缓存（含在途记录）。
 @visibleForTesting
-void resetInterconnectCapabilitiesCache() {
-  _capabilitiesSlots.clear();
-  _capabilitiesClock = _defaultCapabilitiesClock;
-}
-
-/// 测试用：给能力表缓存换一个单调时钟（判过期用）。
-@visibleForTesting
-set debugInterconnectCapabilitiesClock(Duration Function() clock) =>
-    _capabilitiesClock = clock;
+void resetInterconnectCapabilitiesCache() => _capabilitiesSlots.clear();
 
 class InterconnectHostChannel {
   InterconnectHostChannel({
@@ -475,27 +457,25 @@ class InterconnectHostChannel {
     });
   }
 
-  /// `GET /api/capabilities`，经进程级能力表缓存（见 [kInterconnectCapabilitiesTtl]）。
+  /// `GET /api/capabilities`，经进程级能力表缓存做条件请求重验（BUG-5603）。
   ///
   /// 互联 client 上的所有能力探测（视频遥控、远程复习、AI 转发、代下载、任务、
   /// 订阅、漫画 OCR、音乐、BT 引擎…）都走这里，不再各自直发：此前视频页每切一次
-  /// tab 就对每台已配对 host 打一次能力表，各功能入口也各打各的，host 被这些重复
-  /// 请求持续占着。
+  /// tab 就对每台已配对 host 整份拉一次能力表，各功能入口也各拉各的。
   ///
-  /// - **命中**：同一台 host（[InterconnectHostRef.key]）、同一会话绑定、且这台 host
-  ///   的配对配置（地址 / 启用 / 凭据 / 指纹 / 设备名，及全局回落凭据）与缓存时
-  ///   一致，且 200 + JSON 对象的应答存了不到 [maxAge] → 直接返回缓存的应答，不发
-  ///   请求。[maxAge] 为零 = 要当场的能力表（带「就绪 / 缺前置」这类随 host 设置
-  ///   变化的字段的入口），仍合并在途请求，拿到的新应答照常写回缓存供别人复用。
-  /// - **失效**：取消配对、重新配对、地址或身份变了，配置签名随之变化，旧条目当场
-  ///   作废；过期后下一次调用重新请求。
+  /// - **不设有效期**：能力表随 host 的设置实时变化（开关、就绪状态），任何有效期都会让
+  ///   host 改完设置后 client 一段时间内看到旧值。每次调用都问 host，但缓存里有这台
+  ///   host 带 ETag 的应答时带 `If-None-Match`：正文没变 host 回 304 空体，这里返回缓存
+  ///   的那份（`via` 换成这次实际走的地址）；变了 host 回 200 新正文，写回缓存。
+  /// - **老 host**（应答不带 ETag）：不缓存，每次整份请求（同改动前），绝不拿旧值顶替。
+  /// - **失效**：取消配对、重新配对、地址或身份变了，配置签名随之变化，旧条目当场作废
+  ///   （不带旧 ETag 去问新配置）。
   /// - **在途合并**：同一键已有请求在飞时共用它的结局（成功或失败），不另发。发起方
   ///   的通道被关掉（cancelled）而本通道没关时，本通道自己重发一次。
-  /// - **失败不缓存**：连不上 / 凭据被拒 / 非 200 / 非 JSON 一律不进缓存（host 离线
-  ///   时探测打不到 host，不构成 host 负载；下一次调用照常重试）。
+  /// - **失败不缓存**：连不上 / 凭据被拒 / 非 200 / 非 JSON 一律不进缓存，下一次照常
+  ///   整份重试。
   Future<InterconnectChannelResponse> capabilities({
     required Duration timeout,
-    Duration maxAge = kInterconnectCapabilitiesTtl,
   }) async {
     if (_closed) throw _cancelled;
     final InterconnectHostBinding? binding = _binding;
@@ -503,47 +483,91 @@ class InterconnectHostChannel {
         '${host.key}\n${binding?.token ?? ''}\n${binding?.fingerprint ?? ''}';
     final String signature = await _capabilitiesSignature();
     if (_closed) throw _cancelled;
-    final _CapabilitiesSlot? slot = _capabilitiesSlots[key];
-    if (slot != null && slot.signature == signature) {
-      final InterconnectChannelResponse? cached = slot.response;
-      if (cached != null && _capabilitiesClock() - slot.storedAt < maxAge) {
-        return cached;
-      }
-      final Future<InterconnectChannelResponse>? flight = slot.flight;
-      if (flight != null) {
-        try {
-          final InterconnectChannelResponse response = await flight;
-          if (_closed) throw _cancelled;
-          return response;
-        } on InterconnectChannelException catch (e) {
-          if (_closed) throw _cancelled;
-          // 发起方自己的通道被关掉了：那不是这台 host 的结局，本通道重发。
-          if (e.kind != InterconnectChannelFailure.cancelled) rethrow;
-        }
+    final _CapabilitiesSlot? existing = _capabilitiesSlots[key];
+    final _CapabilitiesSlot? slot =
+        existing != null && existing.signature == signature ? existing : null;
+    final Future<InterconnectChannelResponse>? inFlight = slot?.flight;
+    if (inFlight != null) {
+      try {
+        final InterconnectChannelResponse response = await inFlight;
+        if (_closed) throw _cancelled;
+        return response;
+      } on InterconnectChannelException catch (e) {
+        if (_closed) throw _cancelled;
+        // 发起方自己的通道被关掉了：那不是这台 host 的结局，本通道重发。
+        if (e.kind != InterconnectChannelFailure.cancelled) rethrow;
       }
     }
     final _CapabilitiesSlot mine = _CapabilitiesSlot(signature);
+    final InterconnectChannelResponse? cached = slot?.response;
+    final String? cachedEtag = slot?.etag;
+    if (cached != null && cachedEtag != null) {
+      mine
+        ..response = cached
+        ..etag = cachedEtag;
+    }
     _capabilitiesSlots[key] = mine;
-    final Future<InterconnectChannelResponse> flight = send(
-      'GET',
-      '/api/capabilities',
-      timeout: timeout,
+    final Future<InterconnectChannelResponse> flight = _revalidateCapabilities(
+      mine,
+      timeout,
     );
     mine.flight = flight;
     try {
-      final InterconnectChannelResponse response = await flight;
-      if (response.statusCode == 200 && response.jsonObject != null) {
-        mine
-          ..response = response
-          ..storedAt = _capabilitiesClock();
-      }
-      return response;
+      return await flight;
     } finally {
       mine.flight = null;
       if (mine.response == null && identical(_capabilitiesSlots[key], mine)) {
         _capabilitiesSlots.remove(key);
       }
     }
+  }
+
+  /// 发一次能力表请求：[slot] 里有缓存就带 `If-None-Match` 重验；304 → 缓存那份，200 +
+  /// ETag + JSON 对象 → 写回 [slot]，其余（含老 host 不带 ETag 的 200）清掉 [slot] 的缓存。
+  Future<InterconnectChannelResponse> _revalidateCapabilities(
+    _CapabilitiesSlot slot,
+    Duration timeout,
+  ) async {
+    final InterconnectChannelResponse? cached = slot.response;
+    final String? cachedEtag = slot.etag;
+    final InterconnectChannelResponse response;
+    try {
+      response = await send(
+        'GET',
+        '/api/capabilities',
+        timeout: timeout,
+        headers: <String, String>{
+          if (cached != null && cachedEtag != null) 'If-None-Match': cachedEtag,
+        },
+      );
+    } on Object {
+      slot
+        ..response = null
+        ..etag = null;
+      rethrow;
+    }
+    if (response.statusCode == 304 && cached != null) {
+      return InterconnectChannelResponse(
+        statusCode: cached.statusCode,
+        bodyBytes: cached.bodyBytes,
+        headers: cached.headers,
+        via: response.via,
+      );
+    }
+    final String? etag = response.headers['etag'];
+    if (response.statusCode == 200 &&
+        etag != null &&
+        etag.isNotEmpty &&
+        response.jsonObject != null) {
+      slot
+        ..response = response
+        ..etag = etag;
+    } else {
+      slot
+        ..response = null
+        ..etag = null;
+    }
+    return response;
   }
 
   /// 这台 host 当前配对配置的签名：成员行的地址 / 启用 / 凭据 / 指纹 / 设备名 +
@@ -584,6 +608,7 @@ class InterconnectHostChannel {
     InterconnectRequestBody? body,
     required Duration timeout,
     bool? idempotent,
+    Map<String, String> headers = const <String, String>{},
   }) async {
     if (_closed) throw _cancelled;
     final Stopwatch clock = Stopwatch()..start();
@@ -673,6 +698,7 @@ class InterconnectHostChannel {
         token,
         body,
         attempt,
+        headers,
       );
 
       final http.StreamedResponse streamed;
@@ -779,6 +805,7 @@ class InterconnectHostChannel {
     String token,
     InterconnectRequestBody? body,
     _Attempt attempt,
+    Map<String, String> headers,
   ) {
     final Stream<List<int>> Function() open;
     final int? contentLength;
@@ -811,6 +838,7 @@ class InterconnectHostChannel {
         _ChannelRequest(method, uri, attempt: attempt, open: open)
           ..followRedirects = false
           ..contentLength = contentLength
+          ..headers.addAll(headers)
           ..headers['Authorization'] =
               'Basic ${base64Encode(utf8.encode('hibiki:$token'))}';
     if (contentType != null) req.headers['Content-Type'] = contentType;
@@ -995,19 +1023,14 @@ final class InterconnectCapabilityUnavailable<T>
   final int? statusCode;
 }
 
-/// `GET /api/capabilities`（经 [InterconnectHostChannel.capabilities] 的缓存）；[parse]
-/// 返回 null = host 没宣告该能力 → unsupported。
+/// `GET /api/capabilities`（经 [InterconnectHostChannel.capabilities] 的条件请求重验，
+/// 拿到的总是 host 此刻的能力表）；[parse] 返回 null = host 没宣告该能力 → unsupported。
 /// 通道已关闭（cancelled）原样重抛。
-///
-/// [maxAge] 缺省为零：这里的消费方（AI 助手、代下载、任务、订阅、漫画 OCR、音乐、
-/// BT 引擎）的能力段带「就绪 / 缺前置」这类随 host 设置即时变化的字段，默认要当场
-/// 的能力表（同一台 host 的并发探测仍只发一次）；只看静态能力位的调用方可以放宽。
 Future<InterconnectCapabilityOutcome<T>> probeInterconnectCapability<T>(
   InterconnectHostChannel channel, {
   required String label,
   required T? Function(Map<String, dynamic> caps, FushiClientUrl via) parse,
   required Duration timeout,
-  Duration maxAge = Duration.zero,
 }) async {
   InterconnectCapabilityOutcome<T> unavailable(
     InterconnectHostFailure failure, [
@@ -1021,7 +1044,7 @@ Future<InterconnectCapabilityOutcome<T>> probeInterconnectCapability<T>(
 
   final InterconnectChannelResponse response;
   try {
-    response = await channel.capabilities(timeout: timeout, maxAge: maxAge);
+    response = await channel.capabilities(timeout: timeout);
   } on InterconnectChannelException catch (e) {
     return switch (e.kind) {
       InterconnectChannelFailure.cancelled => throw e,

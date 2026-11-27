@@ -115,6 +115,34 @@ void main() {
     expect(changes, 0);
   });
 
+  // 审查后修正 2（BUG-5603）：长轮询失败 / 不支持 / 第一次拿基线都记缺口，进复习 tab 时补经 host 那一路。
+  test('onGap：第一次拿基线、长轮询失败、host 不支持各记一次；正常挂住不记', () async {
+    final List<String> events = <String>[];
+    final Completer<void> done = Completer<void>();
+    int calls = 0;
+    late SrsInterconnectWatcher w;
+    w = SrsInterconnectWatcher(
+      ready: () async => true,
+      maxBackoff: const Duration(milliseconds: 5),
+      unsupportedRecheck: const Duration(milliseconds: 1),
+      onGap: () => events.add('gap@$calls'),
+      wait: (int? after) async {
+        calls++;
+        if (calls == 1) return const SrsChangePoll(1); // 基线
+        if (calls == 2) return const SrsChangePoll(1); // 挂住超时、没变
+        if (calls == 3) throw const SocketExceptionStub(); // 失败
+        if (calls == 4) return null; // 老 host / 404
+        w.stop();
+        if (!done.isCompleted) done.complete();
+        return const SrsChangePoll(1);
+      },
+      onChange: () async {},
+    );
+    w.start();
+    await done.future;
+    expect(events, <String>['gap@1', 'gap@3', 'gap@4']);
+  });
+
   // BUG-4382：本机写完 head，host 推进令牌也叫醒本机自己的长轮询；以前照样空跑一轮，「立即同步」报完「已同步」后
   // 同步状态行又从「准备」走一遍。
   test('令牌推进全是本机自己写的（ownOnly）：只记新令牌、不同步；之后别人写的照常同步', () async {
@@ -310,10 +338,13 @@ void main() {
   });
 
   // BUG-4382：「立即同步」报完「已同步」后，排着的推送去抖到期又各跑一轮空同步，同步状态行在提示后继续走。
+  // BUG-5603：进复习 tab 只在经 host 那一路有缺口、且不在退避 / 节流期时补这一路；云盘 / 文件夹始终只节流拉。
   group('srsSyncOnTabEntry（进复习 tab）', () {
     Future<(SrsTabEntrySync, List<String>)> run({
       bool throttledOnly = false,
       bool gap = false,
+      bool heldOff = false,
+      bool gapOk = true,
       SrsLocalPush? hostPush,
       SrsLocalPush? directPush,
     }) async {
@@ -326,9 +357,10 @@ void main() {
         throttledOnly: () async => throttledOnly,
         throttledRound: () async => calls.add('throttled'),
         hasHostGap: () => gap,
-        gapRound: () async {
+        hostHeldOff: () => heldOff,
+        hostGapRound: () async {
           calls.add('gap');
-          return true;
+          return gapOk;
         },
         pullDirect: () async => calls.add('pull'),
         hostPush: idleHost,
@@ -339,18 +371,28 @@ void main() {
       return (r, calls);
     }
 
-    test('没有缺口：不跑全部通道，只节流拉直连位置', () async {
+    test('没有缺口：不补 host 那一路，只节流拉直连位置', () async {
       for (int i = 0; i < 5; i++) {
         final (SrsTabEntrySync r, List<String> calls) = await run();
         expect(r, SrsTabEntrySync.pushAndPull);
-        expect(calls, <String>['pull'], reason: '反复切 tab 一次也不跑全部通道');
+        expect(calls, <String>['pull'], reason: '反复切 tab 一次也不打 host');
       }
     });
 
-    test('host 那一路有缺口：跑全部通道一轮', () async {
+    test('host 那一路有缺口：只补这一路，云盘 / 文件夹照常走节流拉取', () async {
       final (SrsTabEntrySync r, List<String> calls) = await run(gap: true);
       expect(r, SrsTabEntrySync.gapRound);
-      expect(calls, <String>['gap']);
+      expect(calls, <String>['gap', 'pull']);
+    });
+
+    // 审查后修正 1：host 离线是常态，缺口一直在；选路退避 / 缺口轮节流期内不能每次进 tab 都补。
+    test('有缺口但在选路退避 / 节流期内：不补，只推排着的、节流拉', () async {
+      final (SrsTabEntrySync r, List<String> calls) = await run(
+        gap: true,
+        heldOff: true,
+      );
+      expect(r, SrsTabEntrySync.gapHeldOff);
+      expect(calls, <String>['pull']);
     });
 
     test('自动同步关着 / 首次同步没确认：照旧节流全量', () async {
@@ -362,7 +404,7 @@ void main() {
       expect(calls, <String>['throttled']);
     });
 
-    test('没有缺口但有排着的推送：立即推掉，不另跑全部通道', () {
+    test('没有缺口但有排着的推送：立即推掉，不另跑一轮', () {
       fakeAsync((FakeAsync async) {
         int pushes = 0;
         final SrsLocalPush push = SrsLocalPush(
@@ -386,28 +428,79 @@ void main() {
       });
     });
 
-    test('互联推送失败过：按缺口跑全部通道；云盘推送失败不算', () {
+    test('互联推送失败过：退避期内不补；退避到期按缺口补；云盘推送失败不算', () {
       fakeAsync((FakeAsync async) {
-        final SrsLocalPush failed = SrsLocalPush(push: () async => false);
+        DateTime now = DateTime(2026, 11, 28, 10);
+        final SrsLocalPush failed = SrsLocalPush(
+          push: () async => false,
+          clock: () => now,
+        );
         failed.trigger();
         async.elapse(kSrsLocalPushDebounce);
         expect(failed.failures, 1);
+        expect(failed.backedOff, isTrue);
         SrsTabEntrySync? viaHost;
-        SrsTabEntrySync? viaCloud;
+        run(hostPush: failed).then(((SrsTabEntrySync, List<String>) v) {
+          viaHost = v.$1;
+        });
+        async.flushMicrotasks();
+        expect(viaHost, SrsTabEntrySync.gapHeldOff, reason: '推送退避期内');
+
+        now = now.add(const Duration(minutes: 11));
+        expect(failed.backedOff, isFalse);
         run(hostPush: failed).then(((SrsTabEntrySync, List<String>) v) {
           viaHost = v.$1;
         });
         async.flushMicrotasks();
         expect(viaHost, SrsTabEntrySync.gapRound);
-        failed.trigger();
-        async.elapse(const Duration(minutes: 11));
-        expect(failed.failures, greaterThan(0));
-        run(directPush: failed).then(((SrsTabEntrySync, List<String>) v) {
+        expect(failed.failures, 0, reason: '补成了：推送退避清零');
+
+        final SrsLocalPush cloudFailed = SrsLocalPush(
+          push: () async => false,
+          clock: () => now,
+        );
+        cloudFailed.trigger();
+        async.elapse(kSrsLocalPushDebounce);
+        SrsTabEntrySync? viaCloud;
+        run(directPush: cloudFailed).then(((SrsTabEntrySync, List<String>) v) {
           viaCloud = v.$1;
         });
         async.flushMicrotasks();
         expect(viaCloud, SrsTabEntrySync.pushAndPull);
         failed.dispose();
+        cloudFailed.dispose();
+      });
+    });
+
+    test('补缺口没成：照推送记退避（不清零重来），撤掉的待推按退避排回', () {
+      fakeAsync((FakeAsync async) {
+        DateTime now = DateTime(2026, 11, 28, 10);
+        int pushes = 0;
+        final SrsLocalPush push = SrsLocalPush(
+          push: () async {
+            pushes++;
+            return true;
+          },
+          clock: () => now,
+        );
+        push.trigger();
+        SrsTabEntrySync? r;
+        run(
+          hostPush: push,
+          gap: true,
+          gapOk: false,
+        ).then(((SrsTabEntrySync, List<String>) v) => r = v.$1);
+        async.flushMicrotasks();
+        expect(r, SrsTabEntrySync.gapRound);
+        expect(push.failures, 1);
+        expect(push.backedOff, isTrue);
+        expect(push.pending, isTrue, reason: '本机改动不能因为被撤掉而丢');
+        async.elapse(const Duration(seconds: 29));
+        expect(pushes, 0, reason: '退避期内不推');
+        now = now.add(const Duration(seconds: 31));
+        async.elapse(const Duration(seconds: 2));
+        expect(pushes, 1);
+        push.dispose();
       });
     });
   });

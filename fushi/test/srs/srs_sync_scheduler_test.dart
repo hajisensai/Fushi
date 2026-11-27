@@ -1575,7 +1575,7 @@ void main() {
     expect(runs, 2);
   });
 
-  // 互联 client 同步过频（iPhone「切个模块就在同步」）：进复习 tab 只在经互联 host 那一路确有缺口时跑全部通道。
+  // 互联 client 同步过频（iPhone「切个模块就在同步」，BUG-5603）：进复习 tab 只在经互联 host 那一路确有缺口时补这一路。
   group('进复习 tab 的缺口判据（hasHostLaneGap）', () {
     final LocalDirectoryAssetStore host = LocalDirectoryAssetStore(
       Directory(p.join(Directory.systemTemp.path, 'fushi_srs_gap_host')),
@@ -1617,17 +1617,17 @@ void main() {
       final SrsSyncScheduler s = gapScheduler(failing: failing);
       addTearDown(s.dispose);
       expect(s.hasHostLaneGap, isTrue, reason: '启动后第一次进 tab 要跑一轮');
-      expect((await s.syncTabEntryGapRound()).errors, isEmpty);
+      expect((await s.syncNow()).errors, isEmpty);
       expect(s.hasHostLaneGap, isFalse, reason: '没失败：再进 tab 不跑全部通道');
 
       failing.add(host);
       await s.syncWithBackend(host); // 推送 / 长轮询 / 后置步骤触发的单独一轮
       expect(s.hasHostLaneGap, isTrue);
-      await s.syncTabEntryGapRound();
+      await s.syncNow();
       expect(s.hasHostLaneGap, isTrue, reason: '补的那一轮也没成：缺口还在');
 
       failing.clear();
-      await s.syncTabEntryGapRound();
+      await s.syncNow();
       expect(s.hasHostLaneGap, isFalse);
     });
 
@@ -1635,7 +1635,7 @@ void main() {
       final Set<SyncAssetStore> failing = <SyncAssetStore>{cloud};
       final SrsSyncScheduler s = gapScheduler(failing: failing);
       addTearDown(s.dispose);
-      final SrsSyncNowResult r = await s.syncTabEntryGapRound();
+      final SrsSyncNowResult r = await s.syncNow();
       expect(r.errors, isNotEmpty);
       expect(s.hasHostLaneGap, isFalse);
       await s.syncWithBackend(cloud);
@@ -1655,7 +1655,7 @@ void main() {
         viaHost: (SyncAssetStore b) => identical(b, host),
       );
       addTearDown(s.dispose);
-      await s.syncTabEntryGapRound();
+      await s.syncNow();
       expect(s.hasHostLaneGap, isTrue);
     });
 
@@ -1681,6 +1681,152 @@ void main() {
       now = now.add(const Duration(seconds: 31));
       expect(await s.pullDirectLocationsThrottled(cloudOnly), isTrue);
       expect(ran, <SyncAssetStore>[cloud, cloud]);
+    });
+
+    // 审查后修正 1：缺口轮只补经 host 那一路，不跑云盘 / 文件夹；按 60 s 节流。
+    test(
+      'syncHostLaneGap 只跑给定的互联通道 + 本机目录，补上缺口；开跑后 60 s 内 hostLaneGapThrottled',
+      () async {
+        DateTime now = DateTime(2026, 11, 28, 10);
+        final LocalDirectoryAssetStore localDir = LocalDirectoryAssetStore(
+          Directory(p.join(Directory.systemTemp.path, 'fushi_srs_gap_local')),
+        );
+        final List<SyncAssetStore> ran = <SyncAssetStore>[];
+        int allChannelRuns = 0;
+        final SrsSyncScheduler s = SrsSyncScheduler(
+          readStore: () async => store,
+          channels: (Future<void> Function(SyncAssetStore) body) async {
+            allChannelRuns++;
+            return (ran: 0, errors: const <Object>[]);
+          },
+          directoryKeyOf: (SyncAssetStore b) async =>
+              'k:${identityHashCode(b)}',
+          localDirectories: () async => <SrsLocalDirectory>[
+            SrsLocalDirectory(directoryKey: 'local', store: localDir),
+          ],
+          onDataChanged: () {},
+          onNotice: (_) {},
+          clock: () => now,
+          viaHost: (SyncAssetStore b) => identical(b, host),
+          runner:
+              (
+                SyncAssetStore backend,
+                SrsDbStore st,
+                String key, {
+                SrsLocationKey? locationKey,
+              }) async {
+                ran.add(backend);
+                return SrsSync2Report();
+              },
+        );
+        addTearDown(s.dispose);
+        expect(s.hostLaneGapThrottled, isFalse);
+        final SrsSyncNowResult r = await s.syncHostLaneGap((
+          Future<void> Function(SyncAssetStore) body,
+        ) async {
+          await body(host);
+          return (ran: 1, errors: const <Object>[]);
+        });
+        expect(r.errors, isEmpty);
+        expect(r.ran, 2);
+        expect(ran, <SyncAssetStore>[host, localDir], reason: '云盘不在这一轮');
+        expect(allChannelRuns, 0, reason: '不走全部通道');
+        expect(s.hasHostLaneGap, isFalse);
+        expect(s.hostLaneGapThrottled, isTrue);
+        now = now.add(const Duration(seconds: 61));
+        expect(s.hostLaneGapThrottled, isFalse);
+      },
+    );
+
+    test('syncHostLaneGap：互联通道在认证阶段就抛（restoreAuth 等）→ 缺口还在', () async {
+      final SrsSyncScheduler s = gapScheduler(failing: <SyncAssetStore>{});
+      addTearDown(s.dispose);
+      final SrsSyncNowResult r = await s.syncHostLaneGap(
+        (Future<void> Function(SyncAssetStore) body) async =>
+            (ran: 0, errors: <Object>[StateError('restoreAuth failed')]),
+      );
+      expect(r.errors, hasLength(1));
+      expect(s.hasHostLaneGap, isTrue);
+    });
+
+    // 审查后修正 3：整轮里互联通道在进轮次之前抛的错（目录身份读不到）不能被记成补上。
+    test('整轮里互联通道读目录身份抛错 → 不记补上；云盘那条抛同样的错不影响', () async {
+      SyncAssetStore? throwsOn;
+      final SrsSyncScheduler s = SrsSyncScheduler(
+        readStore: () async => store,
+        channels: (Future<void> Function(SyncAssetStore) body) async {
+          final List<Object> errors = <Object>[];
+          int ran = 0;
+          for (final SyncAssetStore b in <SyncAssetStore>[host, cloud]) {
+            try {
+              await body(b);
+              ran++;
+            } catch (e) {
+              errors.add(e);
+            }
+          }
+          return (ran: ran, errors: errors);
+        },
+        directoryKeyOf: (SyncAssetStore b) async {
+          if (identical(b, throwsOn)) throw StateError('no identity');
+          return 'k:${identityHashCode(b)}';
+        },
+        onDataChanged: () {},
+        onNotice: (_) {},
+        viaHost: (SyncAssetStore b) => identical(b, host),
+        runner:
+            (
+              SyncAssetStore backend,
+              SrsDbStore st,
+              String key, {
+              SrsLocationKey? locationKey,
+            }) async => SrsSync2Report(),
+      );
+      addTearDown(s.dispose);
+      throwsOn = host;
+      expect((await s.syncNow()).errors, hasLength(1));
+      expect(s.hasHostLaneGap, isTrue, reason: '互联通道这一轮没跑到');
+
+      throwsOn = cloud;
+      expect((await s.syncNow()).errors, hasLength(1));
+      expect(s.hasHostLaneGap, isFalse, reason: '只是云盘那条的错');
+    });
+
+    // 审查后修正 2：轮次进行中记了缺口（长轮询拿到基线 / 失败）→ 这一轮不算补上，之后开跑的一轮才算。
+    test('轮次进行中 markHostLaneGap：这一轮不记补上，下一轮才补上', () async {
+      final Completer<void> gate = Completer<void>();
+      bool hold = true;
+      final SrsSyncScheduler s = SrsSyncScheduler(
+        readStore: () async => store,
+        channels: (Future<void> Function(SyncAssetStore) body) async {
+          await body(host);
+          return (ran: 1, errors: const <Object>[]);
+        },
+        directoryKeyOf: (SyncAssetStore b) async => 'k',
+        onDataChanged: () {},
+        onNotice: (_) {},
+        viaHost: (SyncAssetStore b) => identical(b, host),
+        runner:
+            (
+              SyncAssetStore backend,
+              SrsDbStore st,
+              String key, {
+              SrsLocationKey? locationKey,
+            }) async {
+              if (hold) await gate.future;
+              return SrsSync2Report();
+            },
+      );
+      addTearDown(s.dispose);
+      final Future<SrsSyncNowResult> round = s.syncNow();
+      await pumpEventQueue();
+      s.markHostLaneGap();
+      gate.complete();
+      await round;
+      expect(s.hasHostLaneGap, isTrue);
+      hold = false;
+      await s.syncNow();
+      expect(s.hasHostLaneGap, isFalse);
     });
   });
 

@@ -317,10 +317,14 @@ SyncChannelPostRunHook? syncChannelPostRunHook;
 ///
 /// [where] 只挑出其中一部分通道（在认证之前筛，不为用不到的通道刷新令牌）：复习本机写入后的推送按互联 / 云盘分成
 /// 两条、各自退避（反馈 O4MSorhpie，见 `srs_app_runtime.dart`）。null = 全部。
+///
+/// [onChannelError]：某条通道抛错（认证阶段或 [body] 里）时连同通道一起报给调用方——返回的 `errors` 不带通道归属，
+/// 复习同步要据此区分「经互联 host 的那一路没同步成」（BUG-5603）。
 Future<({int ran, List<Object> errors})> runOnAuthenticatedSyncChannels({
   required FushiDatabase db,
   required Future<void> Function(SyncBackend backend) body,
   bool Function(SyncChannel channel)? where,
+  void Function(SyncChannel channel, Object error)? onChannelError,
 }) => runExclusiveWithSync(() async {
   final SyncRepository repo = SyncRepository(db);
   int ran = 0;
@@ -335,6 +339,7 @@ Future<({int ran, List<Object> errors})> runOnAuthenticatedSyncChannels({
       ran++;
     } catch (e, stack) {
       errors.add(e);
+      onChannelError?.call(channel, e);
       // BUG-5262（反馈 w8sFMyflft）：互联对端离线（电脑没开 / 不在同一网络）是预期
       // 状态，不是应用错误：交还给调用方（推送退避、界面显示「对端离线」），不进用户
       // 可见错误日志。此前每次复习自动推送都在这里记一条带整段堆栈的错误。

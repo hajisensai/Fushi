@@ -75,3 +75,43 @@
 - `fushi/test/sync/interconnect_host_client_channel_test.dart`：连续探测只打一次。
 - `fushi/test/sync/interconnect_session_reuse_test.dart`「选路失败退避」：间隔翻倍、封顶、退避期内不探测、
   重置与清零、可达性观察者。
+
+### 审查后修正
+
+独立审查指出四处问题，均已按根因改掉：
+
+1. **host 离线时进 tab 仍跑整轮**：电脑没开 Fushi 是常态，缺口一直在，原来的缺口轮（`syncTabEntryGapRound` → `_syncAll`）
+   不节流地把云盘 / 文件夹 / 本机目录整轮跑一遍，比旧的 60 s 节流还频繁。现在：
+   - 缺口轮改成 `SrsSyncScheduler.syncHostLaneGap(hostChannels)`，只跑互联通道 + 本机目录；云盘 / 文件夹无论有没有缺口都只走
+     `pullDirectLocationsThrottled`。
+   - `srsSyncOnTabEntry` 在互联选路退避（`InterconnectSyncBackend.resolveBackedOff`）、互联推送退避（`SrsLocalPush.backedOff`）
+     或缺口轮 60 s 节流（`hostLaneGapThrottled`）期内不补，结局记为 `gapHeldOff`，只 `flush` 排着的推送（推送自己也守退避）。
+   - 缺口轮经 `SrsLocalPush.runInstead` 代替排着的互联推送：失败照推送的退避翻倍，不像「立即同步」那样清零。
+2. **长轮询失败不计缺口、基线竞态**：`SrsInterconnectWatcher` 新增 `onGap`，在长轮询失败、host 不支持（返回 null）、第一次拿到
+   基线令牌时调用；app 接到 `SrsSyncScheduler.markHostLaneGap()`（推进 `_hostFailureSeq`）。拿基线那一刻之前开跑的轮次因此
+   不会记成补上，之后开跑且无失败的一轮才算。
+3. **互联通道在轮次之外抛的错被误判补上**：`runOnAuthenticatedSyncChannels` 新增 `onChannelError(channel, error)`，app 对互联
+   通道的异常（`restoreAuth` 等认证阶段的错）调 `markHostLaneGap()`；`_syncAllOnce` 里经 host 的后端读目录身份
+   （`_directoryKeyOf`）抛错也记缺口（`_hostLaneGuard`）。
+4. **能力表 2 分钟有效期让 host 改设置后 client 延迟看到**：去掉有效期（`kInterconnectCapabilitiesTtl` / `maxAge` 删除），改成
+   ETag 条件请求重验：
+   - host（`fushi_sync_server/pairing.part.dart` `_capabilitiesRoute`）每次照常现算能力表，ETag = 正文 SHA-256 前 32 位十六进制，
+     带 `Cache-Control: no-cache`；`If-None-Match` 命中（`interconnectEtagMatches`，认列表 / `W/` / `*`）回 304 空体。
+   - client（`InterconnectHostChannel.capabilities`）缓存带 ETag 的 200 应答，下次带 `If-None-Match`：304 复用缓存（`via` 换成
+     这次的地址），200 写回新值。host 改了设置，下一次探测就拿到新正文。
+   - 老 host 不带 ETag：不缓存，每次整份请求。失败 / 非 200 清掉缓存；配对配置变了不带旧 ETag；在途请求仍然合并。
+
+测试：
+
+- `srs_interconnect_watch_test.dart`：
+  - `srsSyncOnTabEntry`：缺口轮只补 host 那一路并照常拉直连位置；退避 / 节流期内不补；推送退避期内不补、到期才补；补缺口失败照
+    推送记退避、撤掉的待推按退避排回。
+  - `onGap`：基线、失败、不支持各记一次。
+- `srs_sync_scheduler_test.dart`：
+  - `syncHostLaneGap` 只跑互联通道 + 本机目录，并且有 60 s 节流；认证阶段抛错时缺口保留。
+  - 整轮里互联通道读目录身份抛错不记补上。
+  - 轮次进行中 `markHostLaneGap` 时这一轮不算补上。
+- `interconnect_host_channel_test.dart`「能力表缓存（ETag 重验）」、`interconnect_host_client_channel_test.dart`：304 复用；host
+  改了能力下一次就看到；老 host 每次整份请求。
+- 新增 `fushi_sync_server_capabilities_etag_test.dart`：真实 host 回 ETag，条件请求回 304，装配变化后回 200 新 ETag；另测
+  `interconnectEtagMatches`。

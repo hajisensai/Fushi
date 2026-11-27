@@ -585,13 +585,55 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     });
   }
 
-  Future<shelf.Response> _handleCapabilities() async {
+  /// `GET /api/capabilities`：能力表 + 强 ETag（正文的 SHA-256），认 `If-None-Match`
+  /// 条件请求（BUG-5603）。
+  ///
+  /// 能力表随 host 的设置 / 装配 / 外部依赖（ffmpeg、模型就绪…）实时变化，没有一个
+  /// 能可靠追踪全部来源的版本号，所以版本就是正文本身：每次照常现算，正文没变就回
+  /// 304 空体，client 复用它缓存的那份；变了就回 200 新正文 + 新 ETag。client 因此不必
+  /// 设有效期（host 改了设置，下一次探测就看到），又省掉每次切页面都整份传一遍、整份
+  /// 解析。`Cache-Control: no-cache` 让中间层也只能「带条件重验后复用」。
+  Future<shelf.Response> _capabilitiesRoute(shelf.Request request) async {
+    final String body = jsonEncode(await _capabilitiesDocument());
+    final String etag =
+        '"${sha256.convert(utf8.encode(body)).toString().substring(0, 32)}"';
+    final Map<String, String> headers = <String, String>{
+      'ETag': etag,
+      'Cache-Control': 'no-cache',
+    };
+    if (interconnectEtagMatches(request.headers['if-none-match'], etag)) {
+      return shelf.Response.notModified(headers: headers);
+    }
+    return jsonRawResponse(body, extraHeaders: headers);
+  }
+
+  /// 完整能力表：基础段（[_capabilitiesBase]）+ 按装配追加的顶层位。键序即线上键序。
+  Future<Map<String, dynamic>> _capabilitiesDocument() async {
+    final Map<String, dynamic> capabilities = await _capabilitiesBase();
+    if (_videoRemoteService != null) {
+      capabilities['videoRemoteControlV1'] = true;
+    }
+    if (_leaderboardLinkAvailable) {
+      capabilities[kInterconnectLeaderboardLinkCapability] = true;
+    }
+    if (srsRemoteStoreProvider?.call() != null) {
+      capabilities[kSrsRemoteStoreCapabilityV2] = true;
+      capabilities[kSrsRemoteStoreCapability] = true;
+    }
+    if (await _screenOcr?.isAvailable() ?? false) {
+      capabilities[kScreenOcrCapability] = true;
+    }
+    if (_aiRelayAdvertised) capabilities[kAiRelayCapability] = true;
+    return capabilities;
+  }
+
+  Future<Map<String, dynamic>> _capabilitiesBase() async {
     final bool lib = _libraryService != null;
     // 互联模块的能力位（漫画 OCR `mangaOcr`、通用任务 `jobs`、代下载 `downloads`、借 BT 引擎
     // `torrentEngine`、订阅 `subscriptions`、助手 `assistant`，以及新模块如 `music`）：模块各给各的，
     // 未接线 → null → 键不出现（老 client 读不到也不崩）。按注册顺序插在这里，键序与迁移前相同。
     final Map<String, Object?> modules = await _modules.capabilities();
-    return jsonResponse(<String, dynamic>{
+    return <String, dynamic>{
       // 复习同步的长轮询通知（`GET /api/srs/changes`）。老 host 没有这一位，客户端只按定时同步。
       'srsChangesV1': true,
       ...modules,
@@ -734,7 +776,7 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         if (_hostFingerprint != null) 'fingerprint': _hostFingerprint,
       },
       'pairing': <String, dynamic>{'v2': true},
-    });
+    };
   }
 
   /// GET /api/host/addresses → `{hostId, deviceName?, addresses:[{url, kind}]}`
@@ -1041,4 +1083,18 @@ InternetAddress? _parseForwardedNode(String raw) {
     v = v.substring(0, v.indexOf(':'));
   }
   return InternetAddress.tryParse(v);
+}
+
+/// `If-None-Match` 请求头 [ifNoneMatch] 是否命中 [etag]（RFC 9110 §13.1.2 的弱比较：
+/// 逗号分隔的列表、`W/` 前缀、`*`）。头缺失 / 为空 → false。
+bool interconnectEtagMatches(String? ifNoneMatch, String etag) {
+  if (ifNoneMatch == null) return false;
+  String opaque(String tag) => tag.startsWith('W/') ? tag.substring(2) : tag;
+  final String want = opaque(etag);
+  for (final String raw in ifNoneMatch.split(',')) {
+    final String tag = raw.trim();
+    if (tag.isEmpty) continue;
+    if (tag == '*' || opaque(tag) == want) return true;
+  }
+  return false;
 }

@@ -5,9 +5,10 @@
 /// 三个触发点，都只在复习模块开着时存在（由 `srs_app_runtime.dart` 装配）：
 /// 1. 常规同步每条通道成功后（`syncChannelPostRunHook`，与常规同步同一把互斥锁、同一个
 ///    已认证后端，云盘与互联都算）；
-/// 2. 进入复习 tab 时（组合见 `srsSyncOnTabEntry`）：经互联 host 的那一路有已知缺口（[hasHostLaneGap]）才跑全部通道
-///    （[syncTabEntryGapRound]）；否则只节流拉不经 host 的位置（[pullDirectLocationsThrottled]）。自动同步关着 /
-///    首次同步没确认时退回节流全量 [syncThrottled]；
+/// 2. 进入复习 tab 时（组合见 `srsSyncOnTabEntry`）：经互联 host 的那一路有已知缺口（[hasHostLaneGap]）、且不在
+///    选路 / 推送退避与 [kSrsSyncMinInterval] 节流期内，才补跑**这一路**（[syncHostLaneGap]：互联通道 + 本机目录）；
+///    不经 host 的位置（云盘 / 文件夹）始终只节流拉（[pullDirectLocationsThrottled]）。自动同步关着 / 首次同步没确认
+///    时退回节流全量 [syncThrottled]；
 /// 3. 牌组列表「立即同步」/ AnkiConnect `sync` 动作（不节流）。
 /// 2、3 除各条通道外还跑本机直接读写的目录（[SrsLocalDirectory]：本机作为互联 host 时
 /// 客户端写进来的那块目录——host 自己不是任何一条通道的客户端）。
@@ -661,6 +662,9 @@ class SrsSyncScheduler {
   /// [pullDirectLocationsThrottled] 上次开跑的时刻。
   DateTime? _lastDirectPullAt;
 
+  /// [syncHostLaneGap] 上次开跑的时刻（[hostLaneGapThrottled]）。
+  DateTime? _lastHostLaneGapAt;
+
   /// [backend] 是不是经互联 host 的那一路（app 侧 = `InterconnectSyncBackend`；null = 没有这一路，测试装配）。
   final bool Function(SyncAssetStore backend)? _viaHost;
 
@@ -676,6 +680,19 @@ class SrsSyncScheduler {
   /// 成功地跑过一轮，或那之后这一路有一轮没同步成。本机还没推出去的改动由 app 侧的推送（[SrsLocalPush.pending] /
   /// 失败退避）另算；host 上的新数据由长轮询（srs_interconnect_watch.dart）即时同步，不算缺口。
   bool get hasHostLaneGap => _hostCleanAt != _hostFailureSeq;
+
+  /// 经 host 那一路记一个缺口：这一刻之前开跑的轮次都不能再记成「补上了」，之后开跑、且整轮没失败的那一轮才算。
+  /// app 侧在这些时候调：互联通道在认证阶段就抛了错（`restoreAuth`，轮次本身没跑到）、复习长轮询失败或 host 不支持
+  /// （没有变更通知可依赖）、长轮询第一次拿到基线令牌（拿基线之前 host 上写入的数据令牌看不出，须由基线之后开跑的
+  /// 一轮补上）。
+  void markHostLaneGap() => _hostFailureSeq++;
+
+  /// [syncHostLaneGap] 距上次开跑不足 [kSrsSyncMinInterval]：进 tab 补缺口的频率不超过改动前的节流全量（host 持续
+  /// 报错 / 长轮询一直被切断时，缺口补不上，不能变成每次进 tab 都打 host）。
+  bool get hostLaneGapThrottled {
+    final DateTime? last = _lastHostLaneGapAt;
+    return last != null && _clock().difference(last) < kSrsSyncMinInterval;
+  }
 
   /// 最近一次检出的 profile 冲突（[SrsSyncNotice.profileNotLinked]）；app 侧据此弹窗。
   SrsProfileConflict? profileConflict;
@@ -1747,15 +1764,20 @@ class SrsSyncScheduler {
     final SrsSyncNowResult result = await _syncAllOnce(
       fullMediaReconcile: fullMediaReconcile,
     );
-    // 经 host 那一路这一轮没有失败（[_hostFailureSeq] 没动），且不是本机此刻同步不了（库没开 / 首次没确认：那样什么
-    // 都没跑，算不上补上了缺口）：记成补上。
+    _noteHostLaneRound(hostSeq, result);
+    return result;
+  }
+
+  /// 一轮覆盖了经 host 那一路（[_syncAll] / [syncHostLaneGap]）跑完：这一路这一轮没有失败（开跑时的序号 [hostSeq]
+  /// 没动——失败、认证阶段的异常、长轮询失败 / 拿基线都会推进它），且不是本机此刻同步不了（库没开 / 首次没确认：那样
+  /// 什么都没跑，算不上补上了缺口）：记成补上。
+  void _noteHostLaneRound(int hostSeq, SrsSyncNowResult result) {
     final bool localBlocked = result.errors.any(
       (Object e) =>
           e is SrsSyncReportError &&
           kSrsSyncLocalStateErrors.contains(e.message),
     );
     if (!localBlocked && _hostFailureSeq == hostSeq) _hostCleanAt = hostSeq;
-    return result;
   }
 
   Future<SrsSyncNowResult> _syncAllOnce({
@@ -1782,7 +1804,11 @@ class SrsSyncScheduler {
       SyncAssetStore backend,
     ) async {
       // 不把 key 传给 syncWithBackend：排队合并按 (backend, directoryKey) 认，自动轮次传的是 null，传了就合并不上。
-      final String? key = await _directoryKeyOf(backend);
+      // 经 host 那一路在进轮次之前就抛（目录身份读不到等）也是这一路没同步成（[_runRound] 只管轮次里的失败）。
+      final String? key = await _hostLaneGuard(
+        backend,
+        () => _directoryKeyOf(backend),
+      );
       if (key != null) liveChannels.add(key);
       final SrsSync2Report report = await syncWithBackend(backend);
       final String? error = report.error;
@@ -2013,10 +2039,60 @@ class SrsSyncScheduler {
     return true;
   }
 
-  /// 进复习 tab、有 [hasHostLaneGap] 时的那一轮：全部通道 + 本机目录 + 文件夹位置，媒体对账照指纹门控（同
-  /// [syncThrottled] 不做全量）。不节流：缺口补上之后 [hasHostLaneGap] 即为假，下次进 tab 不再跑。
-  Future<SrsSyncNowResult> syncTabEntryGapRound() =>
-      _syncAll(fullMediaReconcile: false);
+  /// 进复习 tab、有 [hasHostLaneGap] 时补**经 host 的那一路**：[hostChannels] 给出的那组通道（app 侧 = 互联通道）+
+  /// 本机目录，媒体对账照指纹门控（同 [syncThrottled] 不做全量）。云盘 / 文件夹位置不在这里跑：它们的远端与 host 无关，
+  /// 由 [pullDirectLocationsThrottled] 照自己的节流拉（以前缺口轮跑全部通道，host 离线时缺口一直在，每次进 tab 都把
+  /// 云盘 / 文件夹整轮跑一遍）。
+  ///
+  /// 调用方（`srsSyncOnTabEntry`）负责只在不退避、不节流（[hostLaneGapThrottled]）时调；这里记下开跑时刻。
+  /// [hostChannels] 抛出的通道异常（认证 / 选路失败）全部算这一路没同步成。缺口补上之后 [hasHostLaneGap] 即为假，
+  /// 下次进 tab 不再跑。
+  Future<SrsSyncNowResult> syncHostLaneGap(
+    SrsChannelRunner hostChannels,
+  ) async {
+    if (_halted) return const SrsSyncNowResult(ran: 0);
+    _lastHostLaneGapAt = _clock();
+    final int hostSeq = _hostFailureSeq;
+    if (_firstSyncConfirmed()) await joinExistingCollection();
+    int notSynced = 0;
+    final List<Object> errors = <Object>[];
+    final ({int ran, List<Object> errors}) channels = await hostChannels((
+      SyncAssetStore backend,
+    ) async {
+      final SrsSync2Report report = await syncWithBackend(backend);
+      final String? error = report.error;
+      if (error == null) return;
+      notSynced++;
+      if (error == kSrsSyncLocationDisabled) return;
+      // [_runRound] 只在装配了 [_viaHost] 时按这一路记失败；这组通道本身就是这一路。
+      if (!kSrsSyncLocalStateErrors.contains(error)) markHostLaneGap();
+      errors.add(SrsSyncReportError(error, locationDir: report.locationDir));
+    });
+    if (channels.errors.isNotEmpty) markHostLaneGap();
+    errors.addAll(channels.errors);
+    final SrsSyncNowResult local = await syncLocalDirectories();
+    errors.addAll(local.errors);
+    final SrsSyncNowResult result = SrsSyncNowResult(
+      ran: channels.ran - notSynced + local.ran,
+      errors: errors,
+    );
+    _noteHostLaneRound(hostSeq, result);
+    return result;
+  }
+
+  /// [body] 是 [backend] 上进轮次之前的一步（目录身份等）：[backend] 经 host（[_viaHost]）且 [body] 抛错时记一个
+  /// 缺口（[markHostLaneGap]）再原样抛出。
+  Future<T> _hostLaneGuard<T>(
+    SyncAssetStore backend,
+    Future<T> Function() body,
+  ) async {
+    try {
+      return await body();
+    } catch (_) {
+      if (_viaHost?.call(backend) ?? false) markHostLaneGap();
+      rethrow;
+    }
+  }
 
   /// 进复习 tab 的这一轮（没有 [hasHostLaneGap] 时才走这里）：只拉不经互联 host 的位置——[channels] 给出的那组通道
   /// （app 侧 = 云盘通道）与文件夹位置。它们没有变更通知，远端有没有新数据只能问一遍，所以仍按

@@ -227,6 +227,7 @@ class SrsAppRuntime {
         runOnAuthenticatedSyncChannels(
           db: app.database,
           body: (SyncBackend backend) => body(backend),
+          onChannelError: _noteChannelError,
         ),
     directoryKeyOf: (SyncAssetStore backend) =>
         srsDirectoryKeyOf(backend, SyncRepository(app.database)),
@@ -254,7 +255,7 @@ class SrsAppRuntime {
     locationDisabled: (String id) => app.srsDisabledLocations.contains(id),
     // 一轮跑完问通道那头的设备（互联 host）加入复习同步了没有（BUG-4320）：没加入时摘要 / 立即同步不说「已同步」。
     peerJoined: srsChannelPeerJoined,
-    // 经互联 host 的那一路（进复习 tab 只为它的缺口跑全部通道，见 [SrsSyncScheduler.hasHostLaneGap]）。
+    // 经互联 host 的那一路（进复习 tab 只为它的缺口补跑这一路，见 [SrsSyncScheduler.hasHostLaneGap]）。
     viaHost: (SyncAssetStore backend) => backend is InterconnectSyncBackend,
   );
 
@@ -275,7 +276,15 @@ class SrsAppRuntime {
     }),
     // host 重新可达：推送不必再等退避期满。
     onReachable: () => localPush.resetBackoff(),
+    // 长轮询失败 / host 不支持 / 第一次拿基线：经 host 那一路记一个缺口，进复习 tab 时补（BUG-5603）。
+    onGap: () => sync.markHostLaneGap(),
   );
+
+  /// 复习同步跑某条通道时它抛了错（认证阶段或轮次里）：互联通道的就记成经 host 那一路的缺口——认证阶段的异常轮次本身
+  /// 没跑到，[SrsSyncScheduler] 看不出是哪一路的错（BUG-5603）。
+  void _noteChannelError(SyncChannel channel, Object _) {
+    if (channel.isInterconnect) sync.markHostLaneGap();
+  }
 
   /// 本机变动后去抖推送（设计 §6.3），按通道分两条、各自一个 [SrsLocalPush]（反馈 O4MSorhpie：以前只推互联，云盘
   /// 通道要等进复习 tab / 常规同步 / 「立即同步」才带上答卡记录）：
@@ -347,6 +356,7 @@ class SrsAppRuntime {
               db: app.database,
               where: (SyncChannel c) => c.isInterconnect == interconnect,
               body: (SyncBackend backend) => body(backend),
+              onChannelError: _noteChannelError,
             ),
         lane: interconnect ? kInterconnectPushLane : kCloudPushLane,
         ready: () async => _syncAllowedNow(allowBackground: leaving),
@@ -629,7 +639,7 @@ class SrsAppRuntime {
     );
   }
 
-  /// 进复习 tab：有已知缺口才跑全部通道，否则只推排着的、节流拉云盘 / 文件夹位置（[srsSyncOnTabEntry]）。
+  /// 进复习 tab：经 host 那一路有已知缺口、且不在退避 / 节流期才补跑这一路，云盘 / 文件夹只节流拉（[srsSyncOnTabEntry]）。
   Future<SrsTabEntrySync> _syncOnTabEntry() => srsSyncOnTabEntry(
     throttledOnly: () async =>
         !app.srsSync2MergeConfirmed || !await sync.isAutoSyncEnabled(),
@@ -637,20 +647,38 @@ class SrsAppRuntime {
       await sync.syncThrottled();
     },
     hasHostGap: () => sync.hasHostLaneGap,
-    gapRound: () async => (await sync.syncTabEntryGapRound()).errors.isEmpty,
+    hostHeldOff: () =>
+        InterconnectSyncBackend.instance.resolveBackedOff ||
+        sync.hostLaneGapThrottled,
+    hostGapRound: () async {
+      final SrsSyncNowResult r = await sync.syncHostLaneGap(
+        _srsChannels(interconnect: true),
+      );
+      // 本机状态类原因（库没开等）不算失败，同 [SrsSyncScheduler.autoPush]。
+      return r.errors.every(
+        (Object e) =>
+            e is SrsSyncReportError &&
+            kSrsSyncLocalStateErrors.contains(e.message),
+      );
+    },
     pullDirect: () async {
       await sync.pullDirectLocationsThrottled(
-        (Future<void> Function(SyncAssetStore backend) body) =>
-            runOnAuthenticatedSyncChannels(
-              db: app.database,
-              where: (SyncChannel c) => !c.isInterconnect,
-              body: (SyncBackend backend) => body(backend),
-            ),
+        _srsChannels(interconnect: false),
       );
     },
     hostPush: localPush,
     directPush: cloudPush,
   );
+
+  /// 复习同步用的一组通道：[interconnect] 为真 = 互联通道（经 host 那一路），否则 = 云盘通道。
+  SrsChannelRunner _srsChannels({required bool interconnect}) =>
+      (Future<void> Function(SyncAssetStore backend) body) =>
+          runOnAuthenticatedSyncChannels(
+            db: app.database,
+            where: (SyncChannel c) => c.isInterconnect == interconnect,
+            body: (SyncBackend backend) => body(backend),
+            onChannelError: _noteChannelError,
+          );
 
   void _onReviewSessionsChanged() {
     final int now = srsActiveReviewSessions.value;

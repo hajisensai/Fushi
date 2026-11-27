@@ -1439,32 +1439,7 @@ class FushiSyncServer {
     }
     if (reqPath == '/api/capabilities') {
       if (method != 'GET') return shelf.Response(405);
-      final shelf.Response response = await _handleCapabilities();
-      final bool srsRemoteStore = srsRemoteStoreProvider?.call() != null;
-      final bool screenOcr = await _screenOcr?.isAvailable() ?? false;
-      final bool aiRelay = _aiRelayAdvertised;
-      if (_videoRemoteService == null &&
-          !_leaderboardLinkAvailable &&
-          !srsRemoteStore &&
-          !screenOcr &&
-          !aiRelay) {
-        return response;
-      }
-      final Map<String, dynamic> capabilities =
-          jsonDecode(await response.readAsString()) as Map<String, dynamic>;
-      if (_videoRemoteService != null) {
-        capabilities['videoRemoteControlV1'] = true;
-      }
-      if (_leaderboardLinkAvailable) {
-        capabilities[kInterconnectLeaderboardLinkCapability] = true;
-      }
-      if (srsRemoteStore) {
-        capabilities[kSrsRemoteStoreCapabilityV2] = true;
-        capabilities[kSrsRemoteStoreCapability] = true;
-      }
-      if (screenOcr) capabilities[kScreenOcrCapability] = true;
-      if (aiRelay) capabilities[kAiRelayCapability] = true;
-      return jsonResponse(capabilities);
+      return _capabilitiesRoute(request);
     }
     if (reqPath == '/api/host/addresses') {
       if (method != 'GET') return shelf.Response(405);

@@ -464,6 +464,10 @@ class InterconnectSyncBackend extends SyncBackend
     return remaining > Duration.zero ? remaining : null;
   }
 
+  /// 此刻在选路失败退避期内：下一次请求不会探测、直接按对端离线失败。复习进 tab 据此不去补经 host 那一路的缺口
+  /// （`srsSyncOnTabEntry`，BUG-5603）：host 离线是常态，补也补不上，只是白跑一轮。
+  bool get resolveBackedOff => resolveBackoffRemaining != null;
+
   /// 第 [failures] 次连续失败后的退避时长：[resolveBackoffInitial] × 2^(n-1)，
   /// 封顶 [resolveBackoffMax]。
   @visibleForTesting
