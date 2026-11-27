@@ -234,6 +234,7 @@ class PlexVideoClient
     implements
         RemoteVideoClient,
         RemoteCoverFetcher,
+        DerivedSeriesGroupingSource,
         RemoteVideoDetailFetch,
         RemoteVideoPlaybackSession,
         RemoteVideoCollectionIsWork,

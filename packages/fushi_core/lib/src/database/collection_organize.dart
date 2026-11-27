@@ -70,6 +70,24 @@ Set<String> decodeOrganizeAliases(String? raw) {
   };
 }
 
+/// 媒体服务器剧名派生分组（BUG-5601）在 [MediaCollections.organizeAliases] 里的别名：
+/// `series:<collectionType>:<剧名>`。
+///
+/// 懒收养下，媒体服务器的剧在用户第一次写它时才物化成真合集。物化时把**目录里的
+/// 原剧名**记成真合集吸收过的分组键：之后用户改了名、移出了集，视频库的叠加仍按这个
+/// 别名把同一部剧的集挂到这个真合集上（新集归进来，移出的集按它的成员墓碑判），不会
+/// 以旧剧名另起一组；按原剧名物化（「加入媒体库」、下载落地）也落到它上面，不另建。
+/// 别名列跨端按并集同步，所以重启、换设备后同样成立。
+///
+/// 与整理器的分组键同列而不冲突：整理键只有外部 id（`anilist:` 等）与标题键（`t:`）
+/// 两种，`series:` 前缀不会撞上；别名永远不会被选成主键（[mergeOrganizeIdentity] 只从
+/// 主键里挑），用户合集（`organizeKey` 为空）也不参与整理收敛。
+String derivedSeriesOrganizeAlias(String name, String collectionType) =>
+    'series:$collectionType:${name.trim()}';
+
+/// [alias] 是不是 [derivedSeriesOrganizeAlias] 写的别名。
+bool isDerivedSeriesOrganizeAlias(String alias) => alias.startsWith('series:');
+
 /// 两端各自认为的分组键合并成一个（同一自然键两端键不同时）：取字典序最小者为
 /// 主键，其余并进别名。外部 id 键（不以 `t:` 开头）优先于标题键——两端独立算出的
 /// 外部 id 必然相同，标题键可能不同。返回 `(key, aliases)`。

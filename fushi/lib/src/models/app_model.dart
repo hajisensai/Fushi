@@ -31,6 +31,8 @@ import 'package:fushi/src/utils/misc/build_version.dart'
     show resolveCurrentAppVersion;
 import 'package:fushi/src/updates/app_update_check.dart';
 import 'package:fushi/src/updates/usage_heartbeat.dart';
+import 'package:fushi_engine/media/collections/remote_series_overlay.dart'
+    show VirtualCollectionRegistry;
 import 'package:fushi_engine/media/metadata/books/rakuten_books.dart'
     show RakutenBooksCredentials;
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -1126,6 +1128,7 @@ class AppModel
     DictionaryRepository? dictionaryRepository,
   }) {
     _database = db;
+    VirtualCollectionRegistry.instance.attachDatabase(() => _database);
     _databaseOpened = true;
     if (dictionaryRepository != null) {
       dictRepo = dictionaryRepository;
@@ -1957,6 +1960,7 @@ class AppModel
     try {
       await _prepareRuntimeDirectories();
       _database = FushiDatabase(_databaseDirectory.path, isMainProcess: false);
+      VirtualCollectionRegistry.instance.attachDatabase(() => _database);
       _databaseOpened = true;
       await _resetSrsStorageHost(isMainProcess: true);
       _prefsRepo = PreferencesRepository(_database);
@@ -5858,6 +5862,7 @@ class AppModel
       debugPrint('[Fushi] init: Drift database');
       ErrorLogService.instance.markInitStep('open-database（Drift 打开 fushi.db）');
       _database = FushiDatabase(_databaseDirectory.path);
+      VirtualCollectionRegistry.instance.attachDatabase(() => _database);
       _databaseOpened = true;
       // 媒体服务器请求漏斗的自动换线路：按服务器共享、单飞，写回走现取的数据库
       // （拍板台 design-media-server-failover-transport）。
@@ -6764,6 +6769,7 @@ class AppModel
       // TODO-905 D3: the :popup process must NOT delete a poisoned -wal/-shm
       // sidecar (the main process owns recovery); it backs off on IOERR.
       _database = FushiDatabase(_databaseDirectory.path, isMainProcess: false);
+      VirtualCollectionRegistry.instance.attachDatabase(() => _database);
       _databaseOpened = true;
       await _resetSrsStorageHost(isMainProcess: false);
 

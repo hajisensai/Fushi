@@ -22,6 +22,7 @@ import 'package:fushi/src/media/video/video_library_scrape_maps.dart'
         buildVideoWorksByCollection,
         videoCollectionWorkTitle,
         videoLocalExtraBookUids;
+import 'package:fushi/src/media/video/remote_series_catalog.dart';
 import 'package:fushi/src/sync/remote_video_client.dart' show RemoteVideoSource;
 import 'package:fushi_core/fushi_core.dart'
     show
@@ -36,6 +37,7 @@ import 'package:fushi_core/fushi_core.dart'
         VideoMetadataWorkRow,
         VideoWatchStatisticRow,
         kActivityMediaVideo;
+import 'package:fushi_engine/media/collections/remote_series_overlay.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteVideoInfo;
 
@@ -312,10 +314,12 @@ String videoContinueSeriesSubtitle(
   return t.video_home_continue_episode_number(n: n);
 }
 
-/// 视频库的折叠归属与组内序（复合键 `video|<uid>`）。
+/// 视频库的折叠归属与组内序（复合键 `video|<uid>`），以及媒体服务器剧名临时分组
+/// 叠加出来的虚拟合集行（负 id，BUG-5601；调用方并进自己的合集字典）。
 typedef VideoLibraryMembership = ({
   Map<String, int> primary,
   Map<String, int> memberSortIndex,
+  Map<int, MediaCollectionRow> virtualCollections,
 });
 
 /// 视频条目的折叠主归属（经 [applyVideoFolderCollectionPolicy] 修正）与组内序。
@@ -358,7 +362,11 @@ VideoLibraryMembership resolveVideoLibraryMembership({
         : localSortIndex['$key#$collectionId'];
     if (sortIndex != null) memberSortIndex[key] = sortIndex;
   });
-  return (primary: primary, memberSortIndex: memberSortIndex);
+  return (
+    primary: primary,
+    memberSortIndex: memberSortIndex,
+    virtualCollections: const <int, MediaCollectionRow>{},
+  );
 }
 
 /// 测试开关：为真时 [loadVideoLibraryMembership] 在调用方 isolate 里读库（组件测试
@@ -376,35 +384,61 @@ const String kVideoMembershipIsolateDebugName = 'fushi-video-membership';
 /// 远端主机的视频也要归属，主归属查询收不窄：媒体服务器镜像的播放列表让它达数万行，
 /// 从前在 UI isolate 上解码这批行是首次打开视频页时最大的一段掉帧（BUG-5595）。
 /// [books] 是调用方口径的本机视频（目录合集策略只改这些键的归属）。
+///
+/// [series]：媒体服务器目录的派生剧归属（缺省取 [RemoteSeriesCatalog] 里视频库页最近
+/// 拿到的那份）。非空时同一个后台 isolate 里再叠加剧名临时分组
+/// （[buildRemoteSeriesOverlay]，BUG-5601）：84k 集的叠加在主 isolate 上要一百毫秒上下，
+/// 列式输入跨 isolate 只传引用。叠加出的虚拟行回到主 isolate 后登记进
+/// [VirtualCollectionRegistry]，写入前据此物化。
 Future<VideoLibraryMembership> loadVideoLibraryMembership(
   FushiDatabase db, {
   required List<VideoBookRow> books,
+  RemoteSeriesColumns? series,
 }) async {
-  if (debugVideoMembershipInline) {
-    return _loadVideoLibraryMembershipHere(db, books);
-  }
-  return _loadVideoLibraryMembershipInBackground(
-    await db.backgroundConnection(),
-    books,
-  );
+  final RemoteSeriesColumns columns =
+      series ?? RemoteSeriesCatalog.instance.columns;
+  final VirtualCollectionRegistry registry = VirtualCollectionRegistry.instance;
+  final VirtualCollectionSeed? seed = columns.isEmpty
+      ? null
+      : registry.reserve(columns.length);
+  final _MembershipResult result = debugVideoMembershipInline
+      ? await _loadVideoLibraryMembershipHere(db, books, columns, seed)
+      : await _loadVideoLibraryMembershipInBackground(
+          await db.backgroundConnection(),
+          books,
+          columns,
+          seed,
+        );
+  final RemoteSeriesOverlay? overlay = result.overlay;
+  if (overlay != null) registry.absorb(overlay);
+  return result.membership;
 }
 
-/// 闭包只捕获本函数的两个参数（都可发送），不碰调用方的库对象。
-Future<VideoLibraryMembership> _loadVideoLibraryMembershipInBackground(
+typedef _MembershipResult = ({
+  VideoLibraryMembership membership,
+  RemoteSeriesOverlay? overlay,
+});
+
+/// 闭包只捕获本函数的参数（都可发送），不碰调用方的库对象。
+Future<_MembershipResult> _loadVideoLibraryMembershipInBackground(
   DriftIsolate connection,
   List<VideoBookRow> books,
-) => Isolate.run<VideoLibraryMembership>(() async {
+  RemoteSeriesColumns series,
+  VirtualCollectionSeed? seed,
+) => Isolate.run<_MembershipResult>(() async {
   final FushiDatabase db = FushiDatabase.shared(await connection.connect());
   try {
-    return await _loadVideoLibraryMembershipHere(db, books);
+    return await _loadVideoLibraryMembershipHere(db, books, series, seed);
   } finally {
     await db.close();
   }
 }, debugName: kVideoMembershipIsolateDebugName);
 
-Future<VideoLibraryMembership> _loadVideoLibraryMembershipHere(
+Future<_MembershipResult> _loadVideoLibraryMembershipHere(
   FushiDatabase db,
   List<VideoBookRow> books,
+  RemoteSeriesColumns series,
+  VirtualCollectionSeed? seed,
 ) async {
   final Future<Map<String, ({int collectionId, int sortIndex})>> rawF = db
       .getPrimaryCollectionMembershipOfKind(MediaKind.video);
@@ -421,12 +455,34 @@ Future<VideoLibraryMembership> _loadVideoLibraryMembershipHere(
     collectionsF,
     sourcesF,
   ]);
-  return resolveVideoLibraryMembership(
+  final List<MediaCollectionRow> collections = await collectionsF;
+  final VideoLibraryMembership base = resolveVideoLibraryMembership(
     rawPrimary: await rawF,
     libraryVideoItems: await itemsF,
-    collections: await collectionsF,
+    collections: collections,
     books: books,
     sources: await sourcesF,
+  );
+  if (series.isEmpty || seed == null) return (membership: base, overlay: null);
+  final RemoteSeriesOverlay overlay = buildRemoteSeriesOverlay(
+    series: series,
+    existingPrimary: base.primary,
+    existingMemberSortIndex: base.memberSortIndex,
+    collections: collections,
+    tombstones: RemoteSeriesTombstones.fromRows(
+      await db.getAllCollectionMemberTombstones(),
+    ),
+    maxSortIndexByCollection: await db
+        .maxSortIndexOfManuallyOrderedCollections(),
+    registry: VirtualCollectionRegistry.seeded(seed),
+  );
+  return (
+    membership: (
+      primary: overlay.primary,
+      memberSortIndex: overlay.memberSortIndex,
+      virtualCollections: overlay.virtualCollections,
+    ),
+    overlay: overlay,
   );
 }
 
@@ -584,6 +640,7 @@ Future<VideoContinueLibrary> loadVideoContinueLibrary(
     primaryCollectionByEntry: membership.primary,
     collectionsById: <int, MediaCollectionRow>{
       for (final MediaCollectionRow c in collections) c.id: c,
+      ...membership.virtualCollections,
     },
     memberSortIndex: membership.memberSortIndex,
     recency: buildVideoWatchRecency(await watchRowsF, await segmentsF),

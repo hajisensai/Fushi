@@ -350,7 +350,11 @@ class AppCompanionLibraryData implements CompanionLibraryData {
     );
     return _VideoLibrary(
       books: books,
-      collections: collections,
+      // 媒体服务器剧名临时分组的虚拟合集（负 id，BUG-5601）与真合集一起折叠。
+      collections: <MediaCollectionRow>[
+        ...collections,
+        ...resolved.virtualCollections.values,
+      ],
       membership: <String, ({int collectionId, int sortIndex})>{
         for (final MapEntry<String, int> e in resolved.primary.entries)
           if (resolved.memberSortIndex[e.key] case final int sortIndex)

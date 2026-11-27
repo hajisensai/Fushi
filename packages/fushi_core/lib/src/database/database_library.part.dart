@@ -841,15 +841,31 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
     return mangaKeys;
   }
 
-  Future<MediaCollectionRow?> getMediaCollectionById(int id) => (select(
-    mediaCollections,
-  )..where((t) => t.id.equals(id))).getSingleOrNull();
+  /// 负 id 是视频库叠加出来、还没落库的虚拟合集（BUG-5601）：经
+  /// [VirtualCollectionHooks] 读登记表，不查库。
+  Future<MediaCollectionRow?> getMediaCollectionById(int id) {
+    if (id < 0) {
+      final int? real = VirtualCollectionHooks.materializedIdOf?.call(id);
+      if (real == null) {
+        return Future<MediaCollectionRow?>.value(
+          VirtualCollectionHooks.rowOf?.call(id),
+        );
+      }
+      id = real;
+    }
+    return (select(
+      mediaCollections,
+    )..where((t) => t.id.equals(id))).getSingleOrNull();
+  }
 
   /// 绑定/清除合集的 AniList 系列 id（schema v45，字幕批量下载用）。[anilistId] 为 null
   /// 时清除绑定（回退合集名现解析）。
   Future<void> setMediaCollectionAnilistId(int id, int? anilistId) =>
-      (update(mediaCollections)..where((t) => t.id.equals(id))).write(
-        MediaCollectionsCompanion(anilistId: Value<int?>(anilistId)),
+      _writableCollectionId(id).then(
+        (int id) =>
+            (update(mediaCollections)..where((t) => t.id.equals(id))).write(
+              MediaCollectionsCompanion(anilistId: Value<int?>(anilistId)),
+            ),
       );
 
   /// 更新系列（合集）级音轨偏好（schema v52，恢复同系列音轨记忆）。[audioTrackId]
@@ -857,15 +873,20 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
   Future<void> updateMediaCollectionAudioTrackId(
     int id,
     String? audioTrackId,
-  ) => (update(mediaCollections)..where((t) => t.id.equals(id))).write(
-    MediaCollectionsCompanion(audioTrackId: Value<String?>(audioTrackId)),
+  ) => _writableCollectionId(id).then(
+    (int id) => (update(mediaCollections)..where((t) => t.id.equals(id))).write(
+      MediaCollectionsCompanion(audioTrackId: Value<String?>(audioTrackId)),
+    ),
   );
 
   /// 更新系列（合集）级字幕调轴（音画延迟毫秒，schema v52，恢复同系列调轴记忆）。
   /// [delayMs] 为 null 时清除（加载回退各集 per-book / 0）。
   Future<void> updateMediaCollectionSubtitleDelayMs(int id, int? delayMs) =>
-      (update(mediaCollections)..where((t) => t.id.equals(id))).write(
-        MediaCollectionsCompanion(subtitleDelayMs: Value<int?>(delayMs)),
+      _writableCollectionId(id).then(
+        (int id) =>
+            (update(mediaCollections)..where((t) => t.id.equals(id))).write(
+              MediaCollectionsCompanion(subtitleDelayMs: Value<int?>(delayMs)),
+            ),
       );
 
   /// 更新系列（合集）级**副字幕**独立调轴（毫秒，schema v86，TODO-2837，同系列
@@ -874,8 +895,10 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
   Future<void> updateMediaCollectionSecondarySubtitleDelayMs(
     int id,
     int? delayMs,
-  ) => (update(mediaCollections)..where((t) => t.id.equals(id))).write(
-    MediaCollectionsCompanion(secondarySubtitleDelayMs: Value<int?>(delayMs)),
+  ) => _writableCollectionId(id).then(
+    (int id) => (update(mediaCollections)..where((t) => t.id.equals(id))).write(
+      MediaCollectionsCompanion(secondarySubtitleDelayMs: Value<int?>(delayMs)),
+    ),
   );
 
   /// 更新系列（合集）级默认字幕语言代码（`ja` / `en` …，schema v91）。
@@ -884,8 +907,10 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
   Future<void> updateMediaCollectionSubtitleLanguage(
     int id,
     String? language,
-  ) => (update(mediaCollections)..where((t) => t.id.equals(id))).write(
-    MediaCollectionsCompanion(subtitleLanguage: Value<String?>(language)),
+  ) => _writableCollectionId(id).then(
+    (int id) => (update(mediaCollections)..where((t) => t.id.equals(id))).write(
+      MediaCollectionsCompanion(subtitleLanguage: Value<String?>(language)),
+    ),
   );
 
   /// 更新系列（合集）级偏好的字幕版本组键（`subtitle_version_groups.dart` 的
@@ -893,9 +918,11 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
   Future<void> updateMediaCollectionSubtitleReleaseGroup(
     int id,
     String? releaseGroup,
-  ) => (update(mediaCollections)..where((t) => t.id.equals(id))).write(
-    MediaCollectionsCompanion(
-      subtitleReleaseGroup: Value<String?>(releaseGroup),
+  ) => _writableCollectionId(id).then(
+    (int id) => (update(mediaCollections)..where((t) => t.id.equals(id))).write(
+      MediaCollectionsCompanion(
+        subtitleReleaseGroup: Value<String?>(releaseGroup),
+      ),
     ),
   );
 
@@ -951,13 +978,16 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
     required CollectionOrigin origin,
     required String? organizeKey,
     required Set<String> organizeAliases,
-  }) => (update(mediaCollections)..where((t) => t.id.equals(id))).write(
-    MediaCollectionsCompanion(
-      origin: Value(origin.dbValue),
-      organizeKey: Value(organizeKey),
-      organizeAliases: Value(encodeOrganizeAliases(organizeAliases)),
-    ),
-  );
+  }) =>
+      (update(
+        mediaCollections,
+      )..where((t) => t.id.equals(_persistedCollectionId(id)))).write(
+        MediaCollectionsCompanion(
+          origin: Value(origin.dbValue),
+          organizeKey: Value(organizeKey),
+          organizeAliases: Value(encodeOrganizeAliases(organizeAliases)),
+        ),
+      );
 
   /// 合并时让目标合集吸收 [source] 的分组身份（spec §8.3）：源的键与别名并进目标
   /// 别名；目标还没有键时取两者里的规范键。必须在删源合集**之前**调——删除墓碑上
@@ -1013,87 +1043,92 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
     int id,
     String name, {
     bool userIntent = true,
-  }) => transaction(() async {
-    if (userIntent) await _claimCollectionForUser(id);
-    final MediaCollectionRow? col = await getMediaCollectionById(id);
-    if (col == null || col.name == name) {
+  }) => _writableCollectionId(id).then(
+    (int id) => transaction(() async {
+      if (userIntent) await _claimCollectionForUser(id);
+      final MediaCollectionRow? col = await getMediaCollectionById(id);
+      if (col == null || col.name == name) {
+        await (update(mediaCollections)..where((t) => t.id.equals(id))).write(
+          MediaCollectionsCompanion(name: Value(name)),
+        );
+        return;
+      }
+      final String oldName = col.name;
+      final String type = col.collectionType;
+      // 成员墓碑跟着合集走：「用户移出过 X」是对这个合集的表态，改个名不该把它忘掉
+      // （否则改名后 AI 整理 / 同步并集会把移出过的成员放回来）。只搬成员行，不搬
+      // 合集级哨兵；新名下已有同一成员的墓碑时取较新的 deletedAt。
+      final List<CollectionMemberTombstoneRow> carried =
+          await (select(collectionMemberTombstones)..where(
+                (t) =>
+                    t.collectionName.equals(oldName) &
+                    t.collectionType.equals(type) &
+                    t.mediaType
+                        .equals(FushiDatabase.collectionTombstoneSentinel)
+                        .not(),
+              ))
+              .get();
       await (update(mediaCollections)..where((t) => t.id.equals(id))).write(
         MediaCollectionsCompanion(name: Value(name)),
       );
-      return;
-    }
-    final String oldName = col.name;
-    final String type = col.collectionType;
-    // 成员墓碑跟着合集走：「用户移出过 X」是对这个合集的表态，改个名不该把它忘掉
-    // （否则改名后 AI 整理 / 同步并集会把移出过的成员放回来）。只搬成员行，不搬
-    // 合集级哨兵；新名下已有同一成员的墓碑时取较新的 deletedAt。
-    final List<CollectionMemberTombstoneRow> carried =
-        await (select(collectionMemberTombstones)..where(
-              (t) =>
-                  t.collectionName.equals(oldName) &
-                  t.collectionType.equals(type) &
-                  t.mediaType
-                      .equals(FushiDatabase.collectionTombstoneSentinel)
-                      .not(),
-            ))
-            .get();
-    await (update(mediaCollections)..where((t) => t.id.equals(id))).write(
-      MediaCollectionsCompanion(name: Value(name)),
-    );
-    for (final CollectionMemberTombstoneRow m in carried) {
-      if (m.entryKey.isEmpty) continue;
-      final CollectionMemberTombstoneRow? existing =
-          await (select(collectionMemberTombstones)..where(
-                (t) =>
-                    t.collectionName.equals(name) &
-                    t.collectionType.equals(type) &
-                    t.mediaType.equals(m.mediaType) &
-                    t.entryKey.equals(m.entryKey),
-              ))
-              .getSingleOrNull();
-      if (existing != null && existing.deletedAt >= m.deletedAt) continue;
+      for (final CollectionMemberTombstoneRow m in carried) {
+        if (m.entryKey.isEmpty) continue;
+        final CollectionMemberTombstoneRow? existing =
+            await (select(collectionMemberTombstones)..where(
+                  (t) =>
+                      t.collectionName.equals(name) &
+                      t.collectionType.equals(type) &
+                      t.mediaType.equals(m.mediaType) &
+                      t.entryKey.equals(m.entryKey),
+                ))
+                .getSingleOrNull();
+        if (existing != null && existing.deletedAt >= m.deletedAt) continue;
+        await upsertCollectionMemberTombstone(
+          collectionName: name,
+          collectionType: type,
+          mediaType: m.mediaType,
+          entryKey: m.entryKey,
+          deletedAt: m.deletedAt,
+        );
+      }
+      // 旧 (oldName, type)：清其全部墓碑，只留合集级哨兵（镜像删除，让对端删旧名副本）。
+      await (delete(collectionMemberTombstones)..where(
+            (t) =>
+                t.collectionName.equals(oldName) &
+                t.collectionType.equals(type),
+          ))
+          .go();
       await upsertCollectionMemberTombstone(
-        collectionName: name,
+        collectionName: oldName,
         collectionType: type,
-        mediaType: m.mediaType,
-        entryKey: m.entryKey,
-        deletedAt: m.deletedAt,
+        mediaType: FushiDatabase.collectionTombstoneSentinel,
+        entryKey: FushiDatabase.collectionTombstoneSentinel,
+        deletedAt: DateTime.now().millisecondsSinceEpoch,
       );
-    }
-    // 旧 (oldName, type)：清其全部墓碑，只留合集级哨兵（镜像删除，让对端删旧名副本）。
-    await (delete(collectionMemberTombstones)..where(
-          (t) =>
-              t.collectionName.equals(oldName) & t.collectionType.equals(type),
-        ))
-        .go();
-    await upsertCollectionMemberTombstone(
-      collectionName: oldName,
-      collectionType: type,
-      mediaType: FushiDatabase.collectionTombstoneSentinel,
-      entryKey: FushiDatabase.collectionTombstoneSentinel,
-      deletedAt: DateTime.now().millisecondsSinceEpoch,
-    );
-    // 新 (name, type)：清其合集级哨兵墓碑（否则新名会被自己旧删除墓碑秒杀）。
-    await (delete(collectionMemberTombstones)..where(
-          (t) =>
-              t.collectionName.equals(name) &
-              t.collectionType.equals(type) &
-              t.mediaType.equals(FushiDatabase.collectionTombstoneSentinel) &
-              t.entryKey.equals(FushiDatabase.collectionTombstoneSentinel),
-        ))
-        .go();
-  });
+      // 新 (name, type)：清其合集级哨兵墓碑（否则新名会被自己旧删除墓碑秒杀）。
+      await (delete(collectionMemberTombstones)..where(
+            (t) =>
+                t.collectionName.equals(name) &
+                t.collectionType.equals(type) &
+                t.mediaType.equals(FushiDatabase.collectionTombstoneSentinel) &
+                t.entryKey.equals(FushiDatabase.collectionTombstoneSentinel),
+          ))
+          .go();
+    }),
+  );
 
   /// 改合集卡排序权重（拖拽重排后逐行回写）。
   Future<void> updateMediaCollectionSortOrder(int id, int sortOrder) =>
-      (update(mediaCollections)..where((t) => t.id.equals(id))).write(
-        MediaCollectionsCompanion(sortOrder: Value(sortOrder)),
+      _writableCollectionId(id).then(
+        (int id) => (update(mediaCollections)..where((t) => t.id.equals(id)))
+            .write(MediaCollectionsCompanion(sortOrder: Value(sortOrder))),
       );
 
   /// 设/清自定义封面成员（null = 回到自动推导）。
   Future<void> updateMediaCollectionCover(int id, String? coverSource) =>
-      (update(mediaCollections)..where((t) => t.id.equals(id))).write(
-        MediaCollectionsCompanion(coverSource: Value(coverSource)),
+      _writableCollectionId(id).then(
+        (int id) => (update(mediaCollections)..where((t) => t.id.equals(id)))
+            .write(MediaCollectionsCompanion(coverSource: Value(coverSource))),
       );
 
   /// 设/清**合集自有**封面图路径（[MediaCollections.coverPath]，schema v61）。
@@ -1102,8 +1137,9 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
   /// 合集自己那张图的绝对路径。null = 清掉、回落成员借用链。
   /// **只写 media_collections 一行**——不碰任何 [VideoBooks] 成员（BUG-1211）。
   Future<void> updateMediaCollectionCoverPath(int id, String? coverPath) =>
-      (update(mediaCollections)..where((t) => t.id.equals(id))).write(
-        MediaCollectionsCompanion(coverPath: Value(coverPath)),
+      _writableCollectionId(id).then(
+        (int id) => (update(mediaCollections)..where((t) => t.id.equals(id)))
+            .write(MediaCollectionsCompanion(coverPath: Value(coverPath))),
       );
 
   /// 私密 / 上锁合集（v122 `media_privacy_flags` / v171 `media_locked_flags`）的
@@ -1170,59 +1206,61 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
     bool organizeMerged = false,
     bool userIntent = true,
     int? linksMovedTo,
-  }) => transaction(() async {
-    final MediaCollectionRow? col = await getMediaCollectionById(id);
-    // 作品图谱：给了 [linksMovedTo]（本合集被并进 / 整体搬进的合集）就先把连着本合集
-    // 的连接改挂过去；必须在 [_dropMediaCollectionRow] 之前——它会物理删掉以本合集
-    // 为端点的全部连接（没改挂的那些随合集删，BUG-5457 / BUG-5462）。
-    if (linksMovedTo != null &&
-        linksMovedTo != id &&
-        await getMediaCollectionById(linksMovedTo) != null) {
-      await retargetMediaLinks(
-        from: (
-          kind: MediaLinkKind.videoCollection,
-          key: collectionTagEntryKey(id),
-        ),
-        to: (
-          kind: MediaLinkKind.videoCollection,
-          key: collectionTagEntryKey(linksMovedTo),
-        ),
+  }) => _writableCollectionId(id).then(
+    (int id) => transaction(() async {
+      final MediaCollectionRow? col = await getMediaCollectionById(id);
+      // 作品图谱：给了 [linksMovedTo]（本合集被并进 / 整体搬进的合集）就先把连着本合集
+      // 的连接改挂过去；必须在 [_dropMediaCollectionRow] 之前——它会物理删掉以本合集
+      // 为端点的全部连接（没改挂的那些随合集删，BUG-5457 / BUG-5462）。
+      if (linksMovedTo != null &&
+          linksMovedTo != id &&
+          await getMediaCollectionById(linksMovedTo) != null) {
+        await retargetMediaLinks(
+          from: (
+            kind: MediaLinkKind.videoCollection,
+            key: collectionTagEntryKey(id),
+          ),
+          to: (
+            kind: MediaLinkKind.videoCollection,
+            key: collectionTagEntryKey(linksMovedTo),
+          ),
+        );
+      }
+      await _carryCollectionPrivacyToMembers(
+        id,
+        <({String mediaType, String entryKey})>[
+          for (final MediaCollectionItemRow m in await getCollectionItems(id))
+            (mediaType: m.mediaType, entryKey: m.entryKey),
+        ],
       );
-    }
-    await _carryCollectionPrivacyToMembers(
-      id,
-      <({String mediaType, String entryKey})>[
-        for (final MediaCollectionItemRow m in await getCollectionItems(id))
-          (mediaType: m.mediaType, entryKey: m.entryKey),
-      ],
-    );
-    await (delete(
-      mediaCollectionItems,
-    )..where((t) => t.collectionId.equals(id))).go();
-    final int deleted = await _dropMediaCollectionRow(id);
-    if (col != null && deleted > 0) {
-      await (delete(collectionMemberTombstones)..where(
-            (t) =>
-                t.collectionName.equals(col.name) &
-                t.collectionType.equals(col.collectionType),
-          ))
-          .go();
-      await upsertCollectionMemberTombstone(
-        collectionName: col.name,
-        collectionType: col.collectionType,
-        mediaType: FushiDatabase.collectionTombstoneSentinel,
-        entryKey: FushiDatabase.collectionTombstoneSentinel,
-        deletedAt: deletedAt ?? DateTime.now().millisecondsSinceEpoch,
-        // v124：带上分组键——键若已被别的活合集吸收（合并）就只是去向记录，
-        // 否则就是用户拒绝了这个分组（spec §5.2）。
-        organizeKey: organizeMerged || userIntent
-            ? _deadOrganizeKeySet(col)
-            : null,
-        organizeMerged: organizeMerged,
-      );
-    }
-    return deleted;
-  });
+      await (delete(
+        mediaCollectionItems,
+      )..where((t) => t.collectionId.equals(id))).go();
+      final int deleted = await _dropMediaCollectionRow(id);
+      if (col != null && deleted > 0) {
+        await (delete(collectionMemberTombstones)..where(
+              (t) =>
+                  t.collectionName.equals(col.name) &
+                  t.collectionType.equals(col.collectionType),
+            ))
+            .go();
+        await upsertCollectionMemberTombstone(
+          collectionName: col.name,
+          collectionType: col.collectionType,
+          mediaType: FushiDatabase.collectionTombstoneSentinel,
+          entryKey: FushiDatabase.collectionTombstoneSentinel,
+          deletedAt: deletedAt ?? DateTime.now().millisecondsSinceEpoch,
+          // v124：带上分组键——键若已被别的活合集吸收（合并）就只是去向记录，
+          // 否则就是用户拒绝了这个分组（spec §5.2）。
+          organizeKey: organizeMerged || userIntent
+              ? _deadOrganizeKeySet(col)
+              : null,
+          organizeMerged: organizeMerged,
+        );
+      }
+      return deleted;
+    }),
+  );
 
   /// 某合集全部成员，按 sortIndex 升序、entryKey 升序、mediaType 升序（稳定播放/
   /// 展示序）。
@@ -1238,15 +1276,28 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
   /// 没有能检测其删除的行为测试，别为它编一个假绿守卫。写出来的理由是
   /// [reorderCollectionItems] 拿本查询的结果当槽位基准并**冻结**成永久的致密
   /// sortIndex：喂给冻结操作的读不该依赖计划的巧合。
-  Future<List<MediaCollectionItemRow>> getCollectionItems(int collectionId) =>
-      (select(mediaCollectionItems)
-            ..where((t) => t.collectionId.equals(collectionId))
-            ..orderBy([
-              (t) => OrderingTerm(expression: t.sortIndex),
-              (t) => OrderingTerm(expression: t.entryKey),
-              (t) => OrderingTerm(expression: t.mediaType),
-            ]))
-          .get();
+  ///
+  /// 负 id（虚拟合集，BUG-5601）经 [VirtualCollectionHooks] 给出叠加里的成员，同一排序。
+  Future<List<MediaCollectionItemRow>> getCollectionItems(int collectionId) {
+    if (collectionId < 0) {
+      final int? real = VirtualCollectionHooks.materializedIdOf?.call(
+        collectionId,
+      );
+      if (real != null) return getCollectionItems(real);
+      return Future<List<MediaCollectionItemRow>>.value(
+        VirtualCollectionHooks.itemsOf?.call(collectionId) ??
+            const <MediaCollectionItemRow>[],
+      );
+    }
+    return (select(mediaCollectionItems)
+          ..where((t) => t.collectionId.equals(collectionId))
+          ..orderBy([
+            (t) => OrderingTerm(expression: t.sortIndex),
+            (t) => OrderingTerm(expression: t.entryKey),
+            (t) => OrderingTerm(expression: t.mediaType),
+          ]))
+        .get();
+  }
 
   /// 视频库（`video_books`）里每条视频的**主合集名**：bookUid → 它所在的 id 最小的
   /// 现存合集的名字（最早建立的那个，一般就是下载 / 导入时自动建的作品合集）。
@@ -1460,6 +1511,27 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
           collectionId: r.read<int>('collection_id'),
           sortIndex: r.read<int>('sort_index'),
         ),
+    };
+  }
+
+  /// 写入前把合集 id 解析成真合集 id：负 id（虚拟合集，BUG-5601）先物化。给按 id
+  /// 派生落盘路径的写入口（自设封面文件名等）在写文件**之前**拿到真 id。
+  Future<int> writableCollectionId(int id) => _writableCollectionId(id);
+
+  /// 手排过（`order_updated_at > 0`）的合集 → 现有成员最大 `sort_index`。媒体服务器
+  /// 剧名临时分组（BUG-5601）把还没落库的集接在这之后，与收养的
+  /// [_nextCollectionSortIndex] 同口径；没手排过的合集不在结果里。
+  Future<Map<int, int>> maxSortIndexOfManuallyOrderedCollections() async {
+    final List<QueryRow> rows = await customSelect(
+      'SELECT i.collection_id AS cid, MAX(i.sort_index) AS top '
+      'FROM media_collection_items i '
+      'JOIN media_collections c ON c.id = i.collection_id '
+      'WHERE c.order_updated_at > 0 '
+      'GROUP BY i.collection_id',
+      readsFrom: {mediaCollections, mediaCollectionItems},
+    ).get();
+    return <int, int>{
+      for (final QueryRow r in rows) r.read<int>('cid'): r.read<int>('top'),
     };
   }
 
@@ -2260,6 +2332,113 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
     return (collectionId: collectionId, wrote: wrote);
   }
 
+  /// 持有媒体服务器剧名别名 [alias]（[derivedSeriesOrganizeAlias]）的真合集，多个时取
+  /// 最小 id（与自然键重名同口径）；没有返回 null。
+  Future<MediaCollectionRow?> collectionClaimingDerivedSeries(
+    String alias,
+  ) async {
+    final List<MediaCollectionRow> rows =
+        await (select(mediaCollections)
+              ..where((t) => t.organizeAliases.like('%$alias%'))
+              ..orderBy(<OrderClauseGenerator<$MediaCollectionsTable>>[
+                (t) => OrderingTerm.asc(t.id),
+              ]))
+            .get();
+    for (final MediaCollectionRow r in rows) {
+      if (decodeOrganizeAliases(r.organizeAliases).contains(alias)) return r;
+    }
+    return null;
+  }
+
+  /// 物化一部「懒收养」的远端剧（BUG-5601）：把 [members] 按收养规则
+  /// （[_adoptRemoteCollectionMemberInTransaction]，墓碑 / 自然键 / 排序 / 占位提升同一
+  /// 份裁决）在**一个事务**里落库，并把落成的成员行钉住（`pinned_by_user`：用户动过这
+  /// 部剧——随同步各端可见，存量清理据此保留它）。
+  ///
+  /// [userIntent] 为真（改名、打标签、排序等用户动作）：先清该自然键的合集级删除墓碑，
+  /// 成员全被成员墓碑挡下或没有成员时也照样建出（空）合集，动作有合集可落。为假（下载
+  /// 落地）：用户删过这部剧的合集就让路，返回 null。返回合集 id（重名取最小 id）。
+  Future<int?> materializeRemoteCollection({
+    required String name,
+    required String collectionType,
+    required List<RemoteCollectionMemberAdoption> members,
+    bool userIntent = true,
+  }) => transaction(() async {
+    // 这部剧物化过、之后改了名（或被并进别的合集）：落到持有它别名的真合集上，按它的
+    // 名字 / 墓碑裁决，不以原剧名另建一个。
+    final String alias = derivedSeriesOrganizeAlias(name, collectionType);
+    final MediaCollectionRow? claimant = await collectionClaimingDerivedSeries(
+      alias,
+    );
+    final String targetName = claimant?.name ?? name;
+    final String targetType = claimant?.collectionType ?? collectionType;
+    if (userIntent) {
+      await _clearCollectionDeletionTombstone(targetName, targetType);
+    } else if (await hasCollectionDeletionTombstone(targetName, targetType)) {
+      return null;
+    }
+    for (final RemoteCollectionMemberAdoption m in members) {
+      await _adoptRemoteCollectionMemberInTransaction(
+        claimant == null
+            ? m
+            : RemoteCollectionMemberAdoption(
+                name: targetName,
+                collectionType: targetType,
+                mediaType: m.mediaType,
+                remoteEntryKey: m.remoteEntryKey,
+                sortIndex: m.sortIndex,
+                localEntryKey: m.localEntryKey,
+                userIntent: m.userIntent,
+                organizerRemovedKeys: m.organizerRemovedKeys,
+              ),
+      );
+    }
+    MediaCollectionRow? row =
+        claimant ??
+        await getMediaCollectionByNaturalKey(targetName, targetType);
+    if (row == null) {
+      if (!userIntent) return null;
+      final int id = await into(mediaCollections).insert(
+        MediaCollectionsCompanion.insert(
+          name: name,
+          collectionType: Value(collectionType),
+          sortOrder: Value(await _nextMediaCollectionSortOrder()),
+          createdAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+      row = await getMediaCollectionById(id);
+    }
+    final int collectionId = row!.id;
+    // 目录里的原剧名记成这个真合集的别名（见 [derivedSeriesOrganizeAlias]）。
+    final Set<String> aliases = decodeOrganizeAliases(row.organizeAliases);
+    if (aliases.add(alias)) {
+      await (update(
+        mediaCollections,
+      )..where((t) => t.id.equals(collectionId))).write(
+        MediaCollectionsCompanion(
+          organizeAliases: Value(encodeOrganizeAliases(aliases)),
+        ),
+      );
+    }
+    final Set<String> keys = <String>{
+      for (final RemoteCollectionMemberAdoption m in members) m.targetEntryKey,
+    };
+    if (keys.isNotEmpty) {
+      await customUpdate(
+        'UPDATE media_collection_items SET pinned_by_user = 1 '
+        'WHERE collection_id = ? AND media_type = ? '
+        'AND entry_key IN (SELECT value FROM json_each(?))',
+        variables: <Variable<Object>>[
+          Variable<int>(collectionId),
+          Variable<String>(MediaKind.video.dbValue),
+          Variable<String>(jsonEncode(keys.toList())),
+        ],
+        updates: {mediaCollectionItems},
+      );
+    }
+    return collectionId;
+  });
+
   /// 加条目进合集（尾插；重复成员 INSERT OR IGNORE 幂等）。同事务清同键成员墓碑
   /// （schema v40：重新加入 = 撤销移出——否则跨端同步的成员墓碑会把刚加回的成员
   /// 再删掉，防复活变成禁重加）。
@@ -2295,99 +2474,103 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
     String entryKey, {
     bool userIntent = true,
     bool? pinnedByUser,
-  }) => transaction(() async {
-    if (userIntent) await _claimCollectionForUser(collectionId);
-    final bool pin = pinnedByUser ?? userIntent;
-    bool effectivePin = pin;
-    List<MediaCollectionItemRow> stalePassthrough =
-        const <MediaCollectionItemRow>[];
-    if (mediaType == MediaKind.epub.dbValue && entryKey.isNotEmpty) {
-      final EpubBookRow? book = await (select(
-        epubBooks,
-      )..where((t) => t.uid.equals(entryKey))).getSingleOrNull();
-      if (book != null) {
-        final List<CollectionBookAliasRow> aliases = await (select(
-          collectionBookAliases,
-        )..where((t) => t.localUid.equals(book.uid))).get();
-        final Set<String> staleKeys = <String>{
-          book.bookKey,
-          collectionBookWireKey(
-            bookKey: book.bookKey,
-            sourceMetadata: book.sourceMetadata,
-          ),
-          for (final CollectionBookAliasRow a in aliases) a.remoteKey,
-        }..removeWhere((String k) => k.isEmpty || k == book.uid);
-        if (staleKeys.isNotEmpty) {
-          stalePassthrough =
-              await (select(mediaCollectionItems)
-                    ..where(
-                      (t) =>
-                          t.collectionId.equals(collectionId) &
-                          t.mediaType.equals(mediaType) &
-                          t.entryKey.isIn(staleKeys),
-                    )
-                    ..orderBy([
-                      (t) => OrderingTerm(expression: t.sortIndex),
-                      (t) => OrderingTerm(expression: t.entryKey),
-                    ]))
-                  .get();
-          if (stalePassthrough.any(
-            (MediaCollectionItemRow r) => r.pinnedByUser,
-          )) {
-            effectivePin = true;
+  }) => _writableCollectionId(collectionId).then(
+    (int collectionId) => transaction(() async {
+      if (userIntent) await _claimCollectionForUser(collectionId);
+      final bool pin = pinnedByUser ?? userIntent;
+      bool effectivePin = pin;
+      List<MediaCollectionItemRow> stalePassthrough =
+          const <MediaCollectionItemRow>[];
+      if (mediaType == MediaKind.epub.dbValue && entryKey.isNotEmpty) {
+        final EpubBookRow? book = await (select(
+          epubBooks,
+        )..where((t) => t.uid.equals(entryKey))).getSingleOrNull();
+        if (book != null) {
+          final List<CollectionBookAliasRow> aliases = await (select(
+            collectionBookAliases,
+          )..where((t) => t.localUid.equals(book.uid))).get();
+          final Set<String> staleKeys = <String>{
+            book.bookKey,
+            collectionBookWireKey(
+              bookKey: book.bookKey,
+              sourceMetadata: book.sourceMetadata,
+            ),
+            for (final CollectionBookAliasRow a in aliases) a.remoteKey,
+          }..removeWhere((String k) => k.isEmpty || k == book.uid);
+          if (staleKeys.isNotEmpty) {
+            stalePassthrough =
+                await (select(mediaCollectionItems)
+                      ..where(
+                        (t) =>
+                            t.collectionId.equals(collectionId) &
+                            t.mediaType.equals(mediaType) &
+                            t.entryKey.isIn(staleKeys),
+                      )
+                      ..orderBy([
+                        (t) => OrderingTerm(expression: t.sortIndex),
+                        (t) => OrderingTerm(expression: t.entryKey),
+                      ]))
+                    .get();
+            if (stalePassthrough.any(
+              (MediaCollectionItemRow r) => r.pinnedByUser,
+            )) {
+              effectivePin = true;
+            }
           }
         }
       }
-    }
-    final int insertSortIndex = stalePassthrough.isNotEmpty
-        ? stalePassthrough.first.sortIndex
-        : await _nextCollectionSortIndex(collectionId);
-    await into(mediaCollectionItems).insert(
-      MediaCollectionItemsCompanion.insert(
-        collectionId: collectionId,
-        mediaType: mediaType,
-        entryKey: entryKey,
-        sortIndex: Value(insertSortIndex),
-        pinnedByUser: Value<bool>(effectivePin),
-      ),
-      mode: InsertMode.insertOrIgnore,
-    );
-    if (effectivePin) {
-      await (update(mediaCollectionItems)..where(
-            (t) =>
-                t.collectionId.equals(collectionId) &
-                t.mediaType.equals(mediaType) &
-                t.entryKey.equals(entryKey) &
-                t.pinnedByUser.equals(false),
-          ))
-          .write(
-            const MediaCollectionItemsCompanion(
-              pinnedByUser: Value<bool>(true),
-            ),
-          );
-    }
-    if (stalePassthrough.isNotEmpty) {
-      final Set<String> staleKeys = <String>{
-        for (final MediaCollectionItemRow r in stalePassthrough) r.entryKey,
-      };
-      await (delete(mediaCollectionItems)..where(
-            (t) =>
-                t.collectionId.equals(collectionId) &
-                t.mediaType.equals(mediaType) &
-                t.entryKey.isIn(staleKeys),
-          ))
-          .go();
-    }
-    final MediaCollectionRow? col = await getMediaCollectionById(collectionId);
-    if (col != null) {
-      await deleteCollectionMemberTombstone(
-        collectionName: col.name,
-        collectionType: col.collectionType,
-        mediaType: mediaType,
-        entryKey: await _tombstoneEntryKeyOf(mediaType, entryKey),
+      final int insertSortIndex = stalePassthrough.isNotEmpty
+          ? stalePassthrough.first.sortIndex
+          : await _nextCollectionSortIndex(collectionId);
+      await into(mediaCollectionItems).insert(
+        MediaCollectionItemsCompanion.insert(
+          collectionId: collectionId,
+          mediaType: mediaType,
+          entryKey: entryKey,
+          sortIndex: Value(insertSortIndex),
+          pinnedByUser: Value<bool>(effectivePin),
+        ),
+        mode: InsertMode.insertOrIgnore,
       );
-    }
-  });
+      if (effectivePin) {
+        await (update(mediaCollectionItems)..where(
+              (t) =>
+                  t.collectionId.equals(collectionId) &
+                  t.mediaType.equals(mediaType) &
+                  t.entryKey.equals(entryKey) &
+                  t.pinnedByUser.equals(false),
+            ))
+            .write(
+              const MediaCollectionItemsCompanion(
+                pinnedByUser: Value<bool>(true),
+              ),
+            );
+      }
+      if (stalePassthrough.isNotEmpty) {
+        final Set<String> staleKeys = <String>{
+          for (final MediaCollectionItemRow r in stalePassthrough) r.entryKey,
+        };
+        await (delete(mediaCollectionItems)..where(
+              (t) =>
+                  t.collectionId.equals(collectionId) &
+                  t.mediaType.equals(mediaType) &
+                  t.entryKey.isIn(staleKeys),
+            ))
+            .go();
+      }
+      final MediaCollectionRow? col = await getMediaCollectionById(
+        collectionId,
+      );
+      if (col != null) {
+        await deleteCollectionMemberTombstone(
+          collectionName: col.name,
+          collectionType: col.collectionType,
+          mediaType: mediaType,
+          entryKey: await _tombstoneEntryKeyOf(mediaType, entryKey),
+        );
+      }
+    }),
+  );
 
   /// 配对有声书（`srt_books.book_key` 非空，书架上由 SRT 卡顶替原书卡）继承原书
   /// （`epub|<uid>`，旧行 `epub|<bookKey>`）所属合集：每个「原书在、SRT 不在、且该
@@ -2685,6 +2868,7 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
     String mediaType,
     String entryKey,
   ) => transaction(() async {
+    _requirePersistedCollectionId(collectionId);
     final MediaCollectionItemRow? row =
         await (select(mediaCollectionItems)..where(
               (t) =>
@@ -2711,39 +2895,43 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
     String mediaType,
     String entryKey, {
     bool userIntent = true,
-  }) => transaction(() async {
-    if (userIntent) await _claimCollectionForUser(collectionId);
-    final MediaCollectionRow? col = await getMediaCollectionById(collectionId);
-    await _carryCollectionPrivacyToMembers(
-      collectionId,
-      <({String mediaType, String entryKey})>[
-        (mediaType: mediaType, entryKey: entryKey),
-      ],
-    );
-    await (delete(mediaCollectionItems)..where(
-          (t) =>
-              t.collectionId.equals(collectionId) &
-              t.mediaType.equals(mediaType) &
-              t.entryKey.equals(entryKey),
-        ))
-        .go();
-    if (col != null) {
-      await upsertCollectionMemberTombstone(
-        collectionName: col.name,
-        collectionType: col.collectionType,
-        mediaType: mediaType,
-        // v83：墓碑冻结 bookKey 域（见 [_tombstoneEntryKeyOf]）——uid 域
-        // 墓碑会原样出 wire（本机 uid 泄漏）、对端匹配不上（移出不传播、
-        // 本端下轮并集复活刚移出的成员）。
-        entryKey: await _tombstoneEntryKeyOf(mediaType, entryKey),
-        deletedAt: DateTime.now().millisecondsSinceEpoch,
+  }) => _writableCollectionId(collectionId).then(
+    (int collectionId) => transaction(() async {
+      if (userIntent) await _claimCollectionForUser(collectionId);
+      final MediaCollectionRow? col = await getMediaCollectionById(
+        collectionId,
       );
-    }
-    final List<MediaCollectionItemRow> remaining = await (select(
-      mediaCollectionItems,
-    )..where((t) => t.collectionId.equals(collectionId))).get();
-    if (remaining.isEmpty) await _dropMediaCollectionRow(collectionId);
-  });
+      await _carryCollectionPrivacyToMembers(
+        collectionId,
+        <({String mediaType, String entryKey})>[
+          (mediaType: mediaType, entryKey: entryKey),
+        ],
+      );
+      await (delete(mediaCollectionItems)..where(
+            (t) =>
+                t.collectionId.equals(collectionId) &
+                t.mediaType.equals(mediaType) &
+                t.entryKey.equals(entryKey),
+          ))
+          .go();
+      if (col != null) {
+        await upsertCollectionMemberTombstone(
+          collectionName: col.name,
+          collectionType: col.collectionType,
+          mediaType: mediaType,
+          // v83：墓碑冻结 bookKey 域（见 [_tombstoneEntryKeyOf]）——uid 域
+          // 墓碑会原样出 wire（本机 uid 泄漏）、对端匹配不上（移出不传播、
+          // 本端下轮并集复活刚移出的成员）。
+          entryKey: await _tombstoneEntryKeyOf(mediaType, entryKey),
+          deletedAt: DateTime.now().millisecondsSinceEpoch,
+        );
+      }
+      final List<MediaCollectionItemRow> remaining = await (select(
+        mediaCollectionItems,
+      )..where((t) => t.collectionId.equals(collectionId))).get();
+      if (remaining.isEmpty) await _dropMediaCollectionRow(collectionId);
+    }),
+  );
 
   /// 合集内重排：[ordered] 表达**它点名的那批成员之间的新相对顺序**，本方法负责把它
   /// 合并回全表并把 sortIndex 回写成致密 `0..n-1`（退出重排页一次落盘）。同事务 bump
@@ -2784,34 +2972,36 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
     int collectionId,
     List<CollectionMemberKey> ordered, {
     required bool bumpOrderUpdatedAt,
-  }) => transaction(() async {
-    // 手动排序 = 用户接手（v124）；自动整理序不接手。
-    if (bumpOrderUpdatedAt) await _claimCollectionForUser(collectionId);
-    // 事务内取当前全表顺序作槽位基准（[getCollectionItems] 的
-    // sortIndex→entryKey→mediaType 全序 = 用户此刻看到的顺序；那三段键就是成员
-    // 身份，无并列，故本次冻结出的致密序确定、不随查询计划变）。
-    final List<MediaCollectionItemRow> all = await getCollectionItems(
-      collectionId,
-    );
-    final List<CollectionMemberKey> merged = mergeCollectionOrder(
-      all: <CollectionMemberKey>[
-        for (final MediaCollectionItemRow r in all)
-          (mediaType: r.mediaType, entryKey: r.entryKey),
-      ],
-      subset: ordered,
-      keyOf: (CollectionMemberKey k) => k,
-    );
-    await _writeDenseCollectionOrder(collectionId, merged);
-    if (bumpOrderUpdatedAt) {
-      await (update(
-        mediaCollections,
-      )..where((t) => t.id.equals(collectionId))).write(
-        MediaCollectionsCompanion(
-          orderUpdatedAt: Value(DateTime.now().millisecondsSinceEpoch),
-        ),
+  }) => _writableCollectionId(collectionId).then(
+    (int collectionId) => transaction(() async {
+      // 手动排序 = 用户接手（v124）；自动整理序不接手。
+      if (bumpOrderUpdatedAt) await _claimCollectionForUser(collectionId);
+      // 事务内取当前全表顺序作槽位基准（[getCollectionItems] 的
+      // sortIndex→entryKey→mediaType 全序 = 用户此刻看到的顺序；那三段键就是成员
+      // 身份，无并列，故本次冻结出的致密序确定、不随查询计划变）。
+      final List<MediaCollectionItemRow> all = await getCollectionItems(
+        collectionId,
       );
-    }
-  });
+      final List<CollectionMemberKey> merged = mergeCollectionOrder(
+        all: <CollectionMemberKey>[
+          for (final MediaCollectionItemRow r in all)
+            (mediaType: r.mediaType, entryKey: r.entryKey),
+        ],
+        subset: ordered,
+        keyOf: (CollectionMemberKey k) => k,
+      );
+      await _writeDenseCollectionOrder(collectionId, merged);
+      if (bumpOrderUpdatedAt) {
+        await (update(
+          mediaCollections,
+        )..where((t) => t.id.equals(collectionId))).write(
+          MediaCollectionsCompanion(
+            orderUpdatedAt: Value(DateTime.now().millisecondsSinceEpoch),
+          ),
+        );
+      }
+    }),
+  );
 
   /// 把 [order]（须是该合集**全表**成员的新顺序）落成致密 `sortIndex = 0..n-1`。
   /// 合集成员序的唯一写入口：手动 / 自动重排与配对有声书继承合集
@@ -3011,7 +3201,9 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
   /// 同步应用端专用：orderUpdatedAt 镜像成清单里的值（不是 now——同步应用不是
   /// 人为改序，写 now 会让两端时间戳互相追赶、掩盖真正的手动序 LWW）。
   Future<void> setCollectionOrderUpdatedAt(int id, int orderUpdatedAtMs) =>
-      (update(mediaCollections)..where((t) => t.id.equals(id))).write(
+      (update(
+        mediaCollections,
+      )..where((t) => t.id.equals(_persistedCollectionId(id)))).write(
         MediaCollectionsCompanion(orderUpdatedAt: Value(orderUpdatedAtMs)),
       );
 
@@ -3061,6 +3253,7 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
   /// 墓碑状态由同步应用端按合并后清单镜像（对比用户路径
   /// [deleteMediaCollection] 会写 now 时间戳的合集级墓碑）。
   Future<void> deleteMediaCollectionRaw(int id) => transaction(() async {
+    _requirePersistedCollectionId(id);
     await _carryCollectionPrivacyToMembers(
       id,
       <({String mediaType, String entryKey})>[
@@ -3295,4 +3488,50 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
 
   Future<int> deleteReaderPosition(String bookUid) =>
       (delete(readerPositions)..where((t) => t.bookUid.equals(bookUid))).go();
+}
+
+/// 合集写入口的负 id 解析（BUG-5601）：负 id 是视频库叠加出来、还没落库的虚拟合集。
+/// 用户动作写到它时经 [VirtualCollectionHooks.materialize] 先物化成真合集（同一部剧的
+/// 全部成员按收养规则落库并钉住）再写，各个写入口不必逐个先物化；没装钩子（纯核心 /
+/// 服务端）或物化不出来时报错，不悄悄写出 `collection_id < 0` 的脏行。
+Future<int> _writableCollectionId(int id) async {
+  if (id > 0) return id;
+  final Future<int> Function(int id)? materialize =
+      VirtualCollectionHooks.materialize;
+  if (id == 0 || materialize == null) _requirePersistedCollectionId(id);
+  return materialize!(id);
+}
+
+/// 同步应用端 / 自动路径的护栏：这些入口只会拿到真合集 id，负 id 说明上游漏了物化。
+void _requirePersistedCollectionId(int id) {
+  if (id <= 0) {
+    throw ArgumentError.value(
+      id,
+      'collectionId',
+      'virtual collection must be materialized before writing',
+    );
+  }
+}
+
+int _persistedCollectionId(int id) {
+  _requirePersistedCollectionId(id);
+  return id;
+}
+
+/// 虚拟合集（负 id）的解析钩子（BUG-5601）。
+///
+/// 视频库把媒体服务器目录按剧名叠加成临时分组，分组以负 id 的合集行出现在折叠、详情
+/// 页、菜单里。读路径（[FushiDatabase.getMediaCollectionById] /
+/// [FushiDatabase.getCollectionItems]）经这里认负 id（已物化的转读真合集），用户写
+/// 路径经 [materialize] 先落库，调用方不必逐个分叉。登记表在 fushi_engine
+/// （`VirtualCollectionRegistry`）里，进程单例构造时装上钩子。
+abstract final class VirtualCollectionHooks {
+  static MediaCollectionRow? Function(int id)? rowOf;
+  static List<MediaCollectionItemRow>? Function(int id)? itemsOf;
+
+  /// 已物化的虚拟 id → 真合集 id；还没物化返回 null。
+  static int? Function(int id)? materializedIdOf;
+
+  /// 物化虚拟 id，返回真合集 id（失败抛错）。
+  static Future<int> Function(int id)? materialize;
 }

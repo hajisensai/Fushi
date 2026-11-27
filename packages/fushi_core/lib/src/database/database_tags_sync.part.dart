@@ -372,18 +372,22 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
 
   /// 给合集加标签（幂等；清同名移除墓碑）。
   Future<void> addTagToCollection(int collectionId, int tagId) =>
-      _addTagClocked(
-        TagHostKind.collection,
-        collectionTagEntryKey(collectionId),
-        tagId,
+      _writableCollectionId(collectionId).then(
+        (int collectionId) => _addTagClocked(
+          TagHostKind.collection,
+          collectionTagEntryKey(collectionId),
+          tagId,
+        ),
       );
 
   /// 从合集移除标签（写移除墓碑，经互联标签同步传播到对端）。
   Future<void> removeTagFromCollection(int collectionId, int tagId) =>
-      _removeTagClocked(
-        TagHostKind.collection,
-        collectionTagEntryKey(collectionId),
-        tagId,
+      _writableCollectionId(collectionId).then(
+        (int collectionId) => _removeTagClocked(
+          TagHostKind.collection,
+          collectionTagEntryKey(collectionId),
+          tagId,
+        ),
       );
 
   /// 合集清单（`CollectionManifestEntry.tagNames`）带来的标签名弱并入：清单只有
@@ -694,18 +698,20 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
     String entryKey,
     bool private, {
     int? at,
-  }) => transaction(() async {
-    final int now = at ?? DateTime.now().millisecondsSinceEpoch;
-    final MediaPrivacyClock current = await mediaPrivacyClock(kind, entryKey);
-    await into(mediaPrivacyFlags).insertOnConflictUpdate(
-      MediaPrivacyFlagsCompanion.insert(
-        mediaKind: kind.dbValue,
-        entryKey: entryKey,
-        privateAt: Value(private ? now : current.privateAt),
-        clearedAt: Value(private ? current.clearedAt : now),
-      ),
-    );
-  });
+  }) => _writableHostEntryKey(kind, entryKey).then(
+    (String entryKey) => transaction(() async {
+      final int now = at ?? DateTime.now().millisecondsSinceEpoch;
+      final MediaPrivacyClock current = await mediaPrivacyClock(kind, entryKey);
+      await into(mediaPrivacyFlags).insertOnConflictUpdate(
+        MediaPrivacyFlagsCompanion.insert(
+          mediaKind: kind.dbValue,
+          entryKey: entryKey,
+          privateAt: Value(private ? now : current.privateAt),
+          clearedAt: Value(private ? current.clearedAt : now),
+        ),
+      );
+    }),
+  );
 
   /// 宿主当前的私密时钟（没有行 = 两只戳都为 null）。
   Future<MediaPrivacyClock> mediaPrivacyClock(
@@ -775,18 +781,20 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
     String entryKey,
     bool nsfw, {
     int? at,
-  }) => transaction(() async {
-    final int now = at ?? DateTime.now().millisecondsSinceEpoch;
-    final MediaNsfwClock current = await mediaNsfwClock(kind, entryKey);
-    await into(mediaNsfwFlags).insertOnConflictUpdate(
-      MediaNsfwFlagsCompanion.insert(
-        mediaKind: kind.dbValue,
-        entryKey: entryKey,
-        nsfwAt: Value(nsfw ? now : current.nsfwAt),
-        clearedAt: Value(nsfw ? current.clearedAt : now),
-      ),
-    );
-  });
+  }) => _writableHostEntryKey(kind, entryKey).then(
+    (String entryKey) => transaction(() async {
+      final int now = at ?? DateTime.now().millisecondsSinceEpoch;
+      final MediaNsfwClock current = await mediaNsfwClock(kind, entryKey);
+      await into(mediaNsfwFlags).insertOnConflictUpdate(
+        MediaNsfwFlagsCompanion.insert(
+          mediaKind: kind.dbValue,
+          entryKey: entryKey,
+          nsfwAt: Value(nsfw ? now : current.nsfwAt),
+          clearedAt: Value(nsfw ? current.clearedAt : now),
+        ),
+      );
+    }),
+  );
 
   /// 自动来源的「默认 NSFW」（如 R-18 作品的分级）：只在宿主的 NSFW 标记**从没被
   /// 决定过**（无行，或两只时钟都空）时标上 [at]；用户 / 对端设过或取消过就一律不动。
@@ -877,18 +885,20 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
     String entryKey,
     bool locked, {
     int? at,
-  }) => transaction(() async {
-    final int now = at ?? DateTime.now().millisecondsSinceEpoch;
-    final MediaLockClock current = await mediaLockClock(kind, entryKey);
-    await into(mediaLockedFlags).insertOnConflictUpdate(
-      MediaLockedFlagsCompanion.insert(
-        mediaKind: kind.dbValue,
-        entryKey: entryKey,
-        lockedAt: Value(locked ? now : current.lockedAt),
-        clearedAt: Value(locked ? current.clearedAt : now),
-      ),
-    );
-  });
+  }) => _writableHostEntryKey(kind, entryKey).then(
+    (String entryKey) => transaction(() async {
+      final int now = at ?? DateTime.now().millisecondsSinceEpoch;
+      final MediaLockClock current = await mediaLockClock(kind, entryKey);
+      await into(mediaLockedFlags).insertOnConflictUpdate(
+        MediaLockedFlagsCompanion.insert(
+          mediaKind: kind.dbValue,
+          entryKey: entryKey,
+          lockedAt: Value(locked ? now : current.lockedAt),
+          clearedAt: Value(locked ? current.clearedAt : now),
+        ),
+      );
+    }),
+  );
 
   /// 宿主当前的上锁时钟（没有行 = 两只戳都为 null）。
   Future<MediaLockClock> mediaLockClock(
@@ -1600,4 +1610,13 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
             (t) => t.assetKey.equals(assetKey) & t.dimension.equals(dimension),
           ))
           .go();
+}
+
+/// 合集宿主的条目键是合集 id 的十进制串；负 id 是视频库叠加出的虚拟合集（BUG-5601），
+/// 用户给它设隐私 / NSFW / 上锁时先物化，键换成真合集 id（[_writableCollectionId]）。
+Future<String> _writableHostEntryKey(TagHostKind kind, String entryKey) async {
+  if (kind != TagHostKind.collection) return entryKey;
+  final int? id = collectionIdOfTagEntryKey(entryKey);
+  if (id == null || id > 0) return entryKey;
+  return collectionTagEntryKey(await _writableCollectionId(id));
 }
