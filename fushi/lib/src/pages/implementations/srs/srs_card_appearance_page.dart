@@ -32,6 +32,7 @@ import 'package:fushi/src/srs/srs_card_sample.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/adaptive/shell_style.dart'
     show shellRedesignActive;
+import 'package:fushi/src/utils/components/fushi_followable_color_dialog.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -933,6 +934,7 @@ class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
                 ],
               ),
             ),
+          _rubyColorRow(context, a),
           AdaptiveSettingsSwitchRow(
             key: const ValueKey<String>('srs-card-dict-unified'),
             title: t.srs_card_appearance_dict_unified,
@@ -1123,6 +1125,51 @@ class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
     ],
     onChanged: (int v) => _set(change(v)),
   );
+
+  /// 注音颜色：默认跟随卡面弱化文字色，点开整块取色器可改成自定义色（对话框里的
+  /// 「跟随」按钮改回默认）。色样显示卡面实际用的颜色（[srsCardRubyColor]，与卡面同一函数）。
+  Widget _rubyColorRow(BuildContext context, SrsCardAppearance a) {
+    final ColorScheme app = Theme.of(context).colorScheme;
+    final Color current = srsCardRubyColor(a, srsCardColorScheme(a, app));
+    final String title = t.srs_card_appearance_ruby_color;
+    return AdaptiveSettingsRow(
+      key: const ValueKey<String>('srs-card-ruby-color'),
+      title: title,
+      subtitle: a.followsRubyColor
+          ? t.srs_card_appearance_ruby_color_follow
+          : t.srs_card_appearance_ruby_color_custom,
+      trailing: FushiColorSwatch(
+        color: current,
+        size: 28,
+        shape: FushiColorSwatchShape.dot,
+        borderColor: app.outlineVariant,
+      ),
+      onTap: () => unawaited(() async {
+        final FushiFollowableColorChoice? choice =
+            await showFushiFollowableColorDialog(
+              context,
+              title: title,
+              initial: current,
+              followLabel: a.followsRubyColor
+                  ? null
+                  : t.srs_card_appearance_ruby_color_follow,
+            );
+        if (choice == null || !mounted) return;
+        if (choice.followTheme) {
+          _set(
+            ref
+                .read(srsCardAppearanceProvider)
+                .copyWith(rubyColor: kSrsCardRubyColorFollow),
+          );
+          return;
+        }
+        final int picked = choice.color!.toARGB32();
+        // 跟随中直接按「完成」= 没改：不把此刻的弱化文字色冻结成自定义值。
+        if (a.followsRubyColor && picked == current.toARGB32()) return;
+        _set(ref.read(srsCardAppearanceProvider).copyWith(rubyColor: picked));
+      }()),
+    );
+  }
 
   Widget _switch(
     String key,

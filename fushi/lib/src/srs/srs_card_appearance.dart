@@ -75,6 +75,9 @@ enum SrsCardTextAlign {
   );
 }
 
+/// [SrsCardAppearance.rubyColor] 的「跟随弱化文字色」哨兵（全透明黑不是可选的注音色）。
+const int kSrsCardRubyColorFollow = 0;
+
 /// 卡面外观设置。默认值 = 模板默认外观（不注入任何覆盖时的样子）。
 @immutable
 class SrsCardAppearance {
@@ -105,6 +108,7 @@ class SrsCardAppearance {
     this.separateFrontSize = false,
     this.frontTextScale = 1.0,
     this.frontTermScale = 1.0,
+    this.rubyColor = kSrsCardRubyColorFollow,
   });
 
   /// [glossaryDictLimit] 的上限（UI 只给 全部 / 前 2 本 / 前 3 本）。
@@ -210,6 +214,14 @@ class SrsCardAppearance {
   /// 正面词条字号倍率，[separateFrontSize] 开时生效。
   final double frontTermScale;
 
+  /// 注音（卡片自带的 ruby：词条与例句汉字头顶的读音）颜色，不透明 ARGB；
+  /// [kSrsCardRubyColorFollow] = 跟随卡面的弱化文字色（`--fushi-srs-fg-muted`，默认）。
+  /// 只改颜色，不碰读音来源。
+  final int rubyColor;
+
+  /// 注音颜色是否跟随弱化文字色。
+  bool get followsRubyColor => rubyColor == kSrsCardRubyColorFollow;
+
   /// 正面实际用的正文倍率。
   double get effectiveFrontTextScale =>
       separateFrontSize ? frontTextScale : textScale;
@@ -245,6 +257,7 @@ class SrsCardAppearance {
     bool? separateFrontSize,
     double? frontTextScale,
     double? frontTermScale,
+    int? rubyColor,
   }) => SrsCardAppearance(
     textScale: textScale ?? this.textScale,
     termScale: termScale ?? this.termScale,
@@ -272,6 +285,7 @@ class SrsCardAppearance {
     separateFrontSize: separateFrontSize ?? this.separateFrontSize,
     frontTextScale: frontTextScale ?? this.frontTextScale,
     frontTermScale: frontTermScale ?? this.frontTermScale,
+    rubyColor: rubyColor ?? this.rubyColor,
   );
 
   static double _num(Object? v, double fallback, double min, double max) =>
@@ -281,6 +295,12 @@ class SrsCardAppearance {
 
   static int _int(Object? v, int fallback, int max) =>
       v is int && v >= 0 && v <= max ? v : fallback;
+
+  /// 注音颜色：只认「跟随」或不透明 ARGB（半透明 / 越界 / 非整数一律回到跟随）。
+  static int _rubyColor(Object? v) =>
+      v is int && (v == kSrsCardRubyColorFollow || (v >> 24) == 0xFF)
+      ? v
+      : kSrsCardRubyColorFollow;
 
   /// 从偏好 JSON 读；坏值 / 缺项一律按默认值，绝不抛。
   factory SrsCardAppearance.fromJson(Object? json) {
@@ -342,6 +362,7 @@ class SrsCardAppearance {
         minTermScale,
         maxTermScale,
       ),
+      rubyColor: _rubyColor(json['rubyColor']),
     );
   }
 
@@ -381,6 +402,7 @@ class SrsCardAppearance {
     'separateFrontSize': separateFrontSize,
     'frontTextScale': frontTextScale,
     'frontTermScale': frontTermScale,
+    'rubyColor': rubyColor,
   };
 
   String encode() => jsonEncode(toJson());
@@ -440,6 +462,11 @@ Map<String, Color> srsCardPaletteVars(
   '--fushi-srs-outline-variant': s.outlineVariant,
   '--fushi-srs-highlight': s.primary.withValues(alpha: dark ? 0.34 : 0.26),
 };
+
+/// 注音实际用的颜色：跟随时 = 卡面弱化文字色（[scheme] 是 [srsCardColorScheme] 的结果，
+/// 与 `--fushi-srs-fg-muted` 同一角色），否则是用户选的颜色。原生卡面与模板卡面共用。
+Color srsCardRubyColor(SrsCardAppearance a, ColorScheme scheme) =>
+    a.followsRubyColor ? scheme.onSurfaceVariant : Color(a.rubyColor);
 
 /// 外观实际用的 ColorScheme：跟随 app 时就是 [appScheme]，自定义强调色时以它为种子生成。
 ColorScheme srsCardColorScheme(SrsCardAppearance a, ColorScheme appScheme) =>
@@ -598,11 +625,19 @@ String srsCardAppearanceCss({
   final String surface = a.paintsOwnSurface
       ? ''
       : '.card.card{background-color:transparent;}';
+  // 注音颜色：自定义时才下发（跟随 = 零注入，模板照旧用 --fc-fg-muted）。只管 Fushi 卡片
+  // 模板里卡片自带的注音（词条 `.fc-term`、例句 `.fc-sentence`），释义区词典自带的注音
+  // 不动。`:root` 前缀把特异度抬到模板 `.fc-term ruby rt`（0,1,2）之上，又低于用户在
+  // 笔记类型 CSS 里写的更具体选择器。
+  final String ruby = a.followsRubyColor
+      ? ''
+      : ':root{--fushi-srs-ruby:${srsCardCssColor(Color(a.rubyColor))};}'
+            ':root .fc-term rt,:root .fc-sentence rt{color:var(--fushi-srs-ruby);}';
   // 翻译模糊：开着才下发（关 = 零注入）；规则本身也挂在宿主类名下。
   final String blur = a.showTranslation && a.blurTranslation
       ? kSrsCardTranslationBlurCss
       : '';
-  return '${chain.fontFaces}$vars$spacing$surface$blur';
+  return '${chain.fontFaces}$vars$spacing$surface$ruby$blur';
 }
 
 /// 卡面圆角：模板 `--fc-radius` / `--fc-radius-small` / `--fc-radius-inner` 由当前设计系统的
