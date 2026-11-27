@@ -1,0 +1,16 @@
+## BUG-5588 · RWKV 小模型 int4 卡片 / 笔记状态在超长复习历史上指数发散，之后该卡预测卡死
+- **报告**：2026-11-27（上游 JSchoreels/anki 2dc21da67fed 的发布说明转来：「The earlier int4 card state could drift on very long card histories, stop predicting for that card, or crash the state build.」）
+- **真实性**：✅ 真 bug，Fushi 上复现（单卡长历史，`examples/long_card_drift.rs`，int8 权重）：
+  - sm101（当前 Tiny）一天里连按 Again：2 万次时笔记状态峰值 9.4e3（f32 7.6），之后指数增长到 1.9e36；约 4.2 万次时状态坏掉，该卡此后每次预测都卡在 R = 0.8577。
+  - sm113（新 Small）每天按 Again：2 万次时笔记状态 4.0e33（f32 5.7），2.5 万次起预测卡在 0.8551。
+  - sm130io（新六层 Tiny）每天按 Again：2 万次时卡状态 1.0e4、笔记状态读回 0（已坏），预测与 f32 差 0.85。
+  - sm98（当前 Small）2 万次没发散，10 万次连按 Again 时卡状态 8.7（f32 1.8），也在往上走。
+  - 大模型 int4 早已知发散（每卡 1 万次峰值 1.3e16），由 `ModelKind::supports` 拒绝。
+  - int8 在同样的模式上与 f32 同量级（每卡 10 万次仍是 1～5），预测最大差 ≤ 0.052。
+  - 「崩溃」那一半在 Fushi 不出现：Fushi 的 `write_rows` 用最小二乘比例因子，NaN / inf 被 `max(f32::from_bits(1))` 和 `as i8` 吞成 0，状态静默坏掉而不是 panic——结果就是上面那种卡死的预测。
+  - 根因：4 位行（每行 16 个值、码字 ±7）的量化误差逐次注入 card / note 的 WKV 递推，对某些作答模式递推不阻尼这部分误差；2026-10-20 的最小二乘比例因子只去掉了「舍入抬高一个台阶」的系统性放大，剩下的随机误差照样被放大。小模型默认就是 int4：`native/fushi_rwkv/src/lib.rs:173-178`（`ModelKind::default_precision` 小模型给 `Int4`）、排程内核 `native/fushi_rwkv/src/sched/host.rs:614`（`PRECISION = Int4`）、Dart `packages/fushi_engine/lib/srs/srs_rwkv_service.dart:189`；4 位编码在 `native/fushi_rwkv/src/rwkv/small/model.rs:933-985`（`Layout::write_rows`）。
+- **[x] ① 已修复** — 删掉 int4（不是换个更好的 4 位量化器：每个 4 位方案都要另证长历史稳定，上游也弃用了），card / note 状态一律 int8 行。`StatePrecision::Int4`、两处 4 位编解码、`ModelKind::supports`、C ABI 的 `FRWKV_PRECISION_INT4` 一并删除，ABI 6 → 7（Dart `kFushiRwkvAbiVersion` 同步），`RwkvPrecision.int4` 删除，排程内核 / Dart 服务的精度改 int8。状态格式升版本靠快照头的精度字节：int4 时代的主快照 / 检查点（字节 4）读进来被拒（「taken with another state precision」），排程内核全量重放一次、存成 int8 快照；快照文件名 `rwkv-<profile>-small-int4.snap` 是冻结的持久化名，不改。代价：card + 笔记状态每卡 2,944 → 4,480 B（Small，sm98 / sm113），2,048 → 3,072 B（Tiny，sm101 / sm130io）。比较过上游 11-23 起的低秩分解格式（T24、6 / 8 位因子），见备注。提交 fec310cb87c。
+- **[x] ② 已加自动化测试** — `native/fushi_rwkv/tests/long_history.rs`：`every_small_model_keeps_long_card_states_bounded`（`SmallModelId::ALL` 的每个小模型 × 5 种作答模式 × 单卡 2 万次；int8 状态全程有限、峰值 ≤ f32 的 2 倍，每次作答前的预测有限、与 f32 最大差 ≤ 0.1、平均差 ≤ 0.01；把精度换回 int4 即红，已在 sm113 上实测：笔记峰值 3.96e33）、`int4_is_no_longer_a_precision`；`native/fushi_rwkv/src/snapshot_tests.rs` 的 `int4_snapshots_are_refused`；`native/fushi_rwkv/src/sched/tests.rs` 的 `production_mode_owns_the_runtime_and_matches_direct_runtime_calls` 末段（int4 时代的主快照被拒 → 全量重放 → 新快照是 int8，分数与直接调用逐位相同）；`tests/c_abi.rs` 里精度 4 被拒。
+- **备注**：
+  - 低秩格式（上游 `rslib/src/rwkv/lowrank.rs`）没选：它比 int8 行更省（上游可变长存储下 Small −71%、Tiny −65%；Fushi 的定长槽位只能按秩 4 开，约 −50%），但精度比 int8 差（上游实测 LogLoss +0.034%～+0.089%）、回放更慢（上游优化后单线程长历史仍慢 3%～5%、优化前 17%～24%），要移植约 1,300 行带 SIMD 分派的 Jacobi 特征分解编解码，还要过 Fushi 的跨平台逐位一致（`tests/bitexact.rs`），定长槽位（`slots.rs`）也得改成随答题数变长。它是省内存的另一种取舍，不是这个 bug 的根因修复，交拍板台由维护者定（事项 `design-rwkv-lowrank-state`）。
+  - 与 `pr/rwkv-family-1128`（换 SM113 / 六层 SM130io）改的是同一批文件；修复在新模型上同样成立（上面的长历史测试在那条分支的模型上实测全绿）。

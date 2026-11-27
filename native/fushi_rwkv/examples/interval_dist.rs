@@ -35,7 +35,7 @@ fn main() {
     let precision = match args[2].as_str() {
         "f32" => StatePrecision::F32,
         "int8" => StatePrecision::Int8,
-        _ => StatePrecision::Int4,
+        other => panic!("unknown precision {other}"),
     };
     let retentions: Vec<f32> = args[3].split(',').map(|r| r.parse().unwrap()).collect();
     let max_cards: usize = args[4].parse().unwrap();
