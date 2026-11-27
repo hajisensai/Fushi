@@ -5,6 +5,7 @@ import 'package:archive/archive.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
     show ReaderFushiPage;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
@@ -212,6 +213,22 @@ void main() {
       final dynamic measured = await _popupEval(_collapseAndMeasureJs);
       debugPrint('[compact-visual] $label $measured');
       await tester.pump(const Duration(milliseconds: 900));
+      if (Platform.isMacOS) {
+        // app 进程没有屏幕录制授权，screencapture 抓不到 WebContent 进程画的
+        // WKWebView 像素；词条区另用 WebKit takeSnapshot 取真渲染。
+        final DictionaryPopupWebViewState popup = tester
+            .state<DictionaryPopupWebViewState>(
+              find.byType(DictionaryPopupWebView).last,
+            );
+        final List<int>? png = await popup.debugCaptureWebView();
+        if (png != null) {
+          final File web = File(
+            '${observeScreenshotDir().path}/compact-$label-webview.png',
+          );
+          await web.writeAsBytes(png, flush: true);
+          debugPrint('[compact-visual] $label webview ${png.length}B');
+        }
+      }
       if (Platform.isMacOS && windowNumber != null) {
         final File file = File(
           '${observeScreenshotDir().path}/compact-$label.png',
