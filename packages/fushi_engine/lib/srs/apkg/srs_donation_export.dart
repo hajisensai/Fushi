@@ -283,6 +283,20 @@ Future<SrsDonationPreview> previewSrsDonation({
   );
 }
 
+/// 同 [previewSrsDonation]，整个预览在一次性后台 isolate 里跑（[srsRunWithStoreInBackground]）：它要把本 profile
+/// 全部卡片、笔记与每张卡的历史读一遍重放，大库上是秒级，放 UI isolate 会让捐赠页整页卡住。产品代码一律走这里。
+Future<SrsDonationPreview> previewSrsDonationInBackground({
+  required SrsDbStore store,
+}) => srsRunWithStoreInBackground<SrsDonationPreview>(
+  store,
+  _previewInBackground,
+  debugName: 'srs-donation-preview',
+);
+
+/// [previewSrsDonationInBackground] 的后台一半（顶层函数，可跨 isolate 发送）。
+Future<SrsDonationPreview> _previewInBackground(SrsDbStore store) =>
+    previewSrsDonation(store: store);
+
 /// 同 [exportSrsDonationFile]，整个导出在一次性后台 isolate 里跑（[srsRunWithStoreInBackground]），UI isolate
 /// 只等结果。产品代码一律走这里。
 Future<void> exportSrsDonationFileInBackground({

@@ -11204,6 +11204,7 @@
   "srs_donation_learn_more": "了解并捐赠",
   "srs_donation_never": "不再提示",
   "srs_donation_stats": "$reviews 次复习 · $cards 张卡",
+  "srs_donation_stats_counting": "正在统计复习…",
   "srs_donation_status_donated": "已于 $date 捐出 $reviews 次复习",
   "srs_donation_status_none": "尚未捐赠",
   "srs_donation_status_unknown": "无法查询捐赠状态",

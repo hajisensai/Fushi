@@ -11204,6 +11204,7 @@
   "srs_donation_learn_more": "Learn more and donate",
   "srs_donation_never": "Don't ask again",
   "srs_donation_stats": "$reviews reviews · $cards cards",
+  "srs_donation_stats_counting": "Counting your reviews…",
   "srs_donation_status_donated": "Donated $reviews reviews on $date",
   "srs_donation_status_none": "Not donated yet",
   "srs_donation_status_unknown": "Could not check the donation status",
