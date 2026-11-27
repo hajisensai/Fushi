@@ -209,11 +209,12 @@ fn c_abi_errors_are_codes_with_messages_not_panics() {
     assert!(unsafe { frwkv_model_load(bytes.as_ptr(), bytes.len() - 1) }.is_null());
 
     let handles = Handles::new(FRWKV_PRECISION_F32, 0);
-    for bad in [1, 16, -2] {
+    // 4 是 ABI 6 及以前的 int4（BUG-5588 删除）。
+    for bad in [1, 4, 16, -2] {
         assert!(unsafe { frwkv_runtime_new(handles.model, bad, 0) }.is_null());
         assert!(last_error().contains("precision"));
     }
-    // ABI 2：模型种类、int4 与按模型取推荐精度。
+    // ABI 2：模型种类与按模型取推荐精度。
     assert_eq!(
         unsafe { frwkv_model_kind(handles.model) },
         FRWKV_MODEL_LARGE
@@ -225,9 +226,6 @@ fn c_abi_errors_are_codes_with_messages_not_panics() {
     let runtime = unsafe { frwkv_runtime_new(handles.model, FRWKV_PRECISION_DEFAULT, 0) };
     assert!(!runtime.is_null());
     unsafe { frwkv_runtime_free(runtime) };
-    // 大模型不支持 int4（见 ModelKind::supports）。
-    assert!(unsafe { frwkv_runtime_new(handles.model, FRWKV_PRECISION_INT4, 0) }.is_null());
-    assert!(last_error().contains("int8"));
     assert!(unsafe { frwkv_runtime_new(std::ptr::null(), 0, 0) }.is_null());
 
     let good = FrwkvReview {

@@ -837,9 +837,10 @@ fn silu(values: &mut [f32]) {
 /// Where each layer's parts sit in an entity's state bytes. Per layer:
 /// time shift (64 values), WKV matrix (4 x 16 x 16), channel shift (64,
 /// only for a layer with a channel mixer). f32: raw little-endian floats.
-/// int8 / int4: shifts as float16, the matrix by rows of 16 as a float32
-/// scale + 16 codes (8 or 4 bits, two's complement), as the fork's
-/// `precision.rs` stores card and note states.
+/// int8: shifts as float16, the matrix by rows of 16 as a float32 scale +
+/// 16 int8 codes, as the fork's `precision.rs` stores card and note states.
+/// (Fushi removed int4: its rows let long histories' states grow without
+/// bound, BUG-5588.)
 #[derive(Clone)]
 pub(super) struct Layout {
     pub precision: StatePrecision,
@@ -865,7 +866,6 @@ fn row_bytes(precision: StatePrecision) -> usize {
     match precision {
         StatePrecision::F32 => K * 4,
         StatePrecision::Int8 => 4 + K,
-        StatePrecision::Int4 => 4 + K / 2,
     }
 }
 
@@ -876,7 +876,6 @@ fn matrix_bytes(precision: StatePrecision) -> usize {
 fn limit(precision: StatePrecision) -> f32 {
     match precision {
         StatePrecision::Int8 => 127.0,
-        StatePrecision::Int4 => 7.0,
         StatePrecision::F32 => unreachable!(),
     }
 }
@@ -943,13 +942,6 @@ impl Layout {
                         *o = code as i8 as f32 * scale;
                     }
                 }
-                StatePrecision::Int4 => {
-                    let scale = f32::from_le_bytes(encoded[..4].try_into().unwrap());
-                    for (column, o) in values.iter_mut().enumerate() {
-                        let nibble = (encoded[4 + column / 2] >> (4 * (column % 2))) & 15;
-                        *o = (((nibble as i8) << 4) >> 4) as f32 * scale;
-                    }
-                }
             }
         }
     }
@@ -984,7 +976,9 @@ impl Layout {
             // to a full step (up to 2x) at every committed answer; the card
             // stream's first layer does not damp that, and on a 1.2M-review
             // history 101 heavily reviewed cards grew x1.06 per review under
-            // int4 (0.25 -> 7,962 in 175 reviews, on the way to f32 overflow).
+            // the since removed int4 (0.25 -> 7,962 in 175 reviews). The refit
+            // was not enough for int4: its error alone still diverged on long
+            // cards (BUG-5588).
             let (dot, norm) = codes
                 .iter()
                 .zip(values.iter())
@@ -1000,14 +994,8 @@ impl Layout {
             for (code, v) in codes.iter().zip(values.iter_mut()) {
                 *v = *code as f32 * scale;
             }
-            if self.precision == StatePrecision::Int8 {
-                for (b, code) in encoded[4..].iter_mut().zip(codes) {
-                    *b = code as u8;
-                }
-            } else {
-                for (index, b) in encoded[4..].iter_mut().enumerate() {
-                    *b = (codes[2 * index] as u8 & 15) | ((codes[2 * index + 1] as u8 & 15) << 4);
-                }
+            for (b, code) in encoded[4..].iter_mut().zip(codes) {
+                *b = code as u8;
             }
         }
     }
@@ -1032,11 +1020,7 @@ impl Layout {
             for encoded in encoded.chunks_exact(row) {
                 if self.precision != StatePrecision::F32 {
                     let scale = f32::from_le_bytes(encoded[..4].try_into().unwrap());
-                    let bad_code = match self.precision {
-                        StatePrecision::Int8 => encoded[4..].contains(&128),
-                        _ => encoded[4..].iter().any(|b| b & 15 == 8 || b >> 4 == 8),
-                    };
-                    if !scale.is_finite() || scale <= 0.0 || bad_code {
+                    if !scale.is_finite() || scale <= 0.0 || encoded[4..].contains(&128) {
                         return Err(damaged());
                     }
                 }
@@ -1051,14 +1035,21 @@ impl Layout {
     }
 
     /// Largest absolute WKV matrix value of each layer (diagnostics and the
-    /// long-history stability tests).
+    /// long-history stability tests); infinite when any value is not finite
+    /// (`f32::max` alone would drop a NaN).
     pub(super) fn matrix_peaks(&self, bytes: &[u8]) -> Vec<f32> {
         let mut matrix = [0.0; MATRIX];
         self.layers
             .iter()
             .map(|layer| {
                 self.read_rows(&bytes[layer.matrix..], &mut matrix);
-                matrix.iter().fold(0.0f32, |m, v| m.max(v.abs()))
+                matrix.iter().fold(0.0f32, |m, v| {
+                    if v.is_finite() {
+                        m.max(v.abs())
+                    } else {
+                        f32::INFINITY
+                    }
+                })
             })
             .collect()
     }
@@ -1464,7 +1455,7 @@ mod tests {
             seed ^= seed << 17;
             (seed >> 11) as f32 / (1u64 << 53) as f32
         };
-        for precision in [StatePrecision::Int8, StatePrecision::Int4] {
+        for precision in [StatePrecision::Int8] {
             let layout = layout(precision);
             let mut bytes = vec![0u8; layout.rows_bytes(1)];
             for case in 0..20_000 {

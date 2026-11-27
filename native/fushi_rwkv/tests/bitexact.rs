@@ -28,7 +28,7 @@ use fushi_rwkv::{Model, PORTABLE_KERNELS_ENV, ReviewInput, RwkvRuntime, StatePre
 use sha2::{Digest, Sha256};
 
 /// x86_64 Windows（AVX2+FMA，Ryzen 7 9800X3D）生成：大模型 2026-11-26，小模型 2026-11-27（换 sm113 / sm130io）。
-const GOLDEN: [(&str, &str); 8] = [
+const GOLDEN: [(&str, &str); 6] = [
     (
         "large f32",
         "5a20955b6a8811662bad408a689756ac05d02a1a2149b17ad3ad105639204426",
@@ -42,20 +42,12 @@ const GOLDEN: [(&str, &str); 8] = [
         "b976e3848c243c1b3986d6e88d2528de7917c083c178631d07c59c0fe9913a76",
     ),
     (
-        "sm113 int4",
-        "4462ed9bf0005fee999567fdf6bcddb4869e0e0a110a2f988d5b5446ae26fe97",
-    ),
-    (
         "sm113 int8",
         "ca70bc77ce0efb1f36a7d01967a5722d78c9d8ce48f914ed5e2a4bd5e87f6d0c",
     ),
     (
         "sm130io f32",
         "45e1c9b20e34da9a9a71f25203e952fd3e2acfb080b3a549876e4950fff734a6",
-    ),
-    (
-        "sm130io int4",
-        "dc6ff5c1fbbb00cf0c64b5e147c7ef70fdc448a5829922d421fa87c6d5e81fba",
     ),
     (
         "sm130io int8",
@@ -186,11 +178,7 @@ fn digests() -> &'static BTreeMap<String, String> {
         }
         for id in SmallModelId::ALL {
             let small = Model::from_bytes(small_file_of(id, SmallFile::Int8Weights)).unwrap();
-            for precision in [
-                StatePrecision::F32,
-                StatePrecision::Int8,
-                StatePrecision::Int4,
-            ] {
+            for precision in [StatePrecision::F32, StatePrecision::Int8] {
                 out.insert(
                     format!("{} {}", id.name(), common::precision_key(precision)),
                     digest(&small, precision, &all),

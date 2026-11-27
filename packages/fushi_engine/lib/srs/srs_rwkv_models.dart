@@ -1,11 +1,12 @@
 /// RWKV 权重的按需下载与校验。
 ///
-/// 只用小模型（int4 状态每卡约 2.9 KB）：SM40 在真实复习记录上已比上游大模型（2,762,884 参数，int8 状态
-/// 每卡约 25.7 KB）还略准，大模型已移除（2026-10-21）；之后依次换成 SM56、无泄漏的 sm72e25、Instant-Only 的
-/// sm98（2026-11-15）。2026-11-27 起两档都是上游 release `rwkv-family-2026-11-28` 的 **Instant-Only** 模型
-/// （按出示时刻的间隔训练、只训即时头：Fushi 只用 RWKV-Instant，同尺寸下即时头更准；曲线头没训练过，原生库
-/// 对它们拒绝 RWKV-Curve）：默认的 **六层 Tiny sm130io**（[SrsRwkvModelSize.tiny]）与 **Small sm113**
-/// （[SrsRwkvModelSize.small]）。见 native/fushi_rwkv/README.md「sm113 / sm130io」。
+/// 只用小模型（int8 状态每卡 + 笔记约 4.5 KB；曾经的 int4 约 2.9 KB，超长历史上发散，BUG-5588）：SM40 在真实复习
+/// 记录上已比上游大模型（2,762,884 参数，int8 状态每卡约 25.7 KB）还略准，大模型已移除（2026-10-21）；之后依次换成
+/// SM56、无泄漏的 sm72e25、Instant-Only 的 sm98（2026-11-15）。2026-11-27 起两档都是上游 release
+/// `rwkv-family-2026-11-28` 的 **Instant-Only** 模型（按出示时刻的间隔训练、只训即时头：Fushi 只用 RWKV-Instant，
+/// 同尺寸下即时头更准；曲线头没训练过，原生库对它们拒绝 RWKV-Curve）：默认的 **六层 Tiny sm130io**
+/// （[SrsRwkvModelSize.tiny]）与 **Small sm113**（[SrsRwkvModelSize.small]）。见 native/fushi_rwkv/README.md
+/// 「sm113 / sm130io」。
 /// 换权重后旧快照按权重指纹被拒、自动全量重放一次。
 ///
 /// 权重不随包，用户启用时下载：首选 Fushi 自己的镜像 release（`hajisensai/Fushi` tag `rwkv-models`，文件名带
@@ -54,7 +55,7 @@ const String kSrsRwkvUpstreamBase =
     'https://raw.githubusercontent.com/JSchoreels/anki/6cb164606984c14432ef5e9befdedd6cc070f539/qt/aqt/rwkv_inference';
 
 /// Small Instant-Only 小模型 sm113 的 int8 权重，与 fushi_rwkv `SMALL_MODEL_INT8_SHA256` 一致。即时头 LogLoss
-/// 0.275933（上游 732 用户集，int8 权重 + int8 状态）；Fushi 的 int4 状态每卡 + 笔记约 2.9 KB。
+/// 0.275933（上游 732 用户集，int8 权重 + int8 状态）；Fushi 的 int8 状态每卡 + 笔记约 4.5 KB。
 const SrsRwkvModelFile kSrsRwkvSmallWeights = SrsRwkvModelFile(
   fileName: kSrsRwkvSmallWeightsName,
   urls: <String>[
@@ -72,7 +73,7 @@ const String kSrsRwkvSmallWeightsSha256 =
 
 /// 六层 Tiny Instant-Only 小模型 sm130io 的 int8 权重，与 fushi_rwkv `TINY_MODEL_INT8_SHA256` 一致。
 /// 架构 "w64-c1-d2p1u1"（card / deck / note / preset / user 流 1 / 2 / 1 / 1 / 1 层，185,057 参数）：Fushi 的
-/// int4 状态每卡 + 笔记约 2.0 KB（sm113 约 2.9 KB，约 −30%），即时头 LogLoss 0.27749（比 sm113 差 0.56%）。
+/// int8 状态每卡 + 笔记约 3.1 KB（sm113 约 4.5 KB，约 −30%），即时头 LogLoss 0.27749（比 sm113 差 0.56%）。
 /// 默认档位（[SrsRwkvModelSize.tiny]）。
 const SrsRwkvModelFile kSrsRwkvTinyWeights = SrsRwkvModelFile(
   fileName: kSrsRwkvTinyWeightsName,

@@ -6,7 +6,7 @@
 //! 走的是部署路径（本库的特征构造器、ID 编码、批量回放），不是训练仓库的打分器。
 //!
 //! cargo run --release --example replay_eval -- <large.bin> <small.bin> <dir> <config,...> [user ...]
-//!   config：large:f32 / large:int8 / large:int4 / small:f32 / small:int8 / small:int4
+//!   config：large:f32 / large:int8 / small:f32 / small:int8
 //!   不给 user 时评测目录里全部 *.bin（按文件大小升序）。
 //! 输出每用户每配置一行 TSV：user rows scored logloss seconds peak_card peak_note peak_user nonfinite
 
@@ -36,7 +36,6 @@ fn main() {
             let precision = match precision {
                 "f32" => StatePrecision::F32,
                 "int8" => StatePrecision::Int8,
-                "int4" => StatePrecision::Int4,
                 other => panic!("unknown precision {other}"),
             };
             (config.to_owned(), model, precision)
