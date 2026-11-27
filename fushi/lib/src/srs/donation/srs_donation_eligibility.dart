@@ -8,6 +8,10 @@
 ///
 /// 判据是纯函数 [srsDonationPromptOf]，偏好读写收在 [SrsDonationPrefs]；两者都不碰平台
 /// （平台门是 `store_compliance.dart` 的 `srsDonationAvailable`，由调用方传进 `available`）。
+///
+/// 「捐没捐过、捐了多少、什么时候」只认服务端（[SrsDonationRecord]，来自 GET / PUT 的同一形状响应），
+/// 本机偏好不存镜像：捐赠身份按 profile 算、跨设备共享，镜像在别的设备上必然缺失（电脑上捐了、
+/// 手机上照样弹「了解并捐赠」）。偏好只留本机的横幅选择与预览选项。
 library;
 
 import 'dart:convert';
@@ -38,17 +42,14 @@ const String kSrsDonationNeverPrefKey = 'srs_donation_never';
 /// int（毫秒时间戳，0 = 没有）：「以后再说」到期时刻。
 const String kSrsDonationSnoozeUntilPrefKey = 'srs_donation_snooze_until';
 
-/// int（毫秒时间戳，0 = 没捐过 / 已撤回）：上次成功上传的时刻。
-const String kSrsDonationLastAtPrefKey = 'srs_donation_last_at';
-
-/// int：上次成功上传时包里的复习条数。
-const String kSrsDonationLastReviewsPrefKey = 'srs_donation_last_reviews';
-
 /// String（JSON 字符串数组，笔记 id）：用户在预览里排除的单词。
 const String kSrsDonationExcludedPrefKey = 'srs_donation_excluded';
 
 /// bool（默认 true）：「包含我学的单词」（词头 + 读音）。
 const String kSrsDonationIncludeWordsPrefKey = 'srs_donation_include_words';
+
+/// 服务端记着的一份捐赠（GET / PUT 成功响应）：包里的复习条数、卡片数与上传时刻。
+typedef SrsDonationRecord = ({int reviews, int cards, DateTime updatedAt});
 
 /// 横幅形态。
 enum SrsDonationPromptKind {
@@ -64,54 +65,63 @@ class SrsDonationPrefsState {
   const SrsDonationPrefsState({
     this.never = false,
     this.snoozeUntil,
-    this.lastAt,
-    this.lastReviews = 0,
     this.excludedNoteIds = const <String>{},
     this.includeWords = true,
   });
 
   final bool never;
   final DateTime? snoozeUntil;
-
-  /// 上次成功上传的时刻；null = 没捐过（或已撤回）。
-  final DateTime? lastAt;
-  final int lastReviews;
   final Set<String> excludedNoteIds;
   final bool includeWords;
-
-  bool get donated => lastAt != null;
 }
 
 /// 已捐过时再次提示所需的新增复习数：max(1000, 上次的 50%)。
 int srsDonationUpdateThreshold(int lastReviews) =>
     math.max(kSrsDonationUpdateMinNewReviews, (lastReviews / 2).ceil());
 
-/// 首页该不该出捐赠横幅、出哪一种；null = 不出。
-///
-/// [totalReviews] 是当前 profile 全部历史的评分复习次数，[daysSinceFirstReview] 是最早一次
-/// 复习距今的天数（没有复习时为 null）。
-SrsDonationPromptKind? srsDonationPromptOf({
+/// 横幅的本机前置门：平台可用、没选「不再提示」、不在「以后再说」期内，且复习量过了首次门槛
+/// （1000 次 / 14 天；捐过的人当时必然过过，所以两种横幅共用）。门不开就不必去问服务端。
+bool srsDonationPromptGateOpen({
   required bool available,
   required int totalReviews,
   required int? daysSinceFirstReview,
   required SrsDonationPrefsState prefs,
   required DateTime now,
 }) {
-  if (!available || prefs.never) return null;
+  if (!available || prefs.never) return false;
   final DateTime? snooze = prefs.snoozeUntil;
-  if (snooze != null && now.isBefore(snooze)) return null;
-  final DateTime? lastAt = prefs.lastAt;
-  if (lastAt == null) {
-    final bool enough =
-        totalReviews >= kSrsDonationMinReviews &&
-        daysSinceFirstReview != null &&
-        daysSinceFirstReview >= kSrsDonationMinDays;
-    return enough ? SrsDonationPromptKind.donate : null;
-  }
-  final int fresh = totalReviews - prefs.lastReviews;
+  if (snooze != null && now.isBefore(snooze)) return false;
+  return totalReviews >= kSrsDonationMinReviews &&
+      daysSinceFirstReview != null &&
+      daysSinceFirstReview >= kSrsDonationMinDays;
+}
+
+/// 首页该不该出捐赠横幅、出哪一种；null = 不出。
+///
+/// [totalReviews] 是当前 profile 全部历史的评分复习次数，[daysSinceFirstReview] 是最早一次
+/// 复习距今的天数（没有复习时为 null）。[donation] 是服务端记着的捐赠（null = 没捐过 / 已撤回）；
+/// 服务端状态还不知道（没取到 / 失败）时调用方不该调本函数，直接不出横幅。
+SrsDonationPromptKind? srsDonationPromptOf({
+  required bool available,
+  required int totalReviews,
+  required int? daysSinceFirstReview,
+  required SrsDonationPrefsState prefs,
+  required SrsDonationRecord? donation,
+  required DateTime now,
+}) {
+  final bool gate = srsDonationPromptGateOpen(
+    available: available,
+    totalReviews: totalReviews,
+    daysSinceFirstReview: daysSinceFirstReview,
+    prefs: prefs,
+    now: now,
+  );
+  if (!gate) return null;
+  if (donation == null) return SrsDonationPromptKind.donate;
+  final int fresh = totalReviews - donation.reviews;
   final bool due =
-      fresh >= srsDonationUpdateThreshold(prefs.lastReviews) &&
-      now.difference(lastAt) >= kSrsDonationUpdateInterval;
+      fresh >= srsDonationUpdateThreshold(donation.reviews) &&
+      now.difference(donation.updatedAt) >= kSrsDonationUpdateInterval;
   return due ? SrsDonationPromptKind.update : null;
 }
 
@@ -125,18 +135,12 @@ class SrsDonationPrefs {
       raw is int && raw > 0 ? DateTime.fromMillisecondsSinceEpoch(raw) : null;
 
   SrsDonationPrefsState read() {
-    final Object? lastReviews = _prefs.getPref(
-      kSrsDonationLastReviewsPrefKey,
-      defaultValue: 0,
-    );
     return SrsDonationPrefsState(
       never:
           _prefs.getPref(kSrsDonationNeverPrefKey, defaultValue: false) == true,
       snoozeUntil: _time(
         _prefs.getPref(kSrsDonationSnoozeUntilPrefKey, defaultValue: 0),
       ),
-      lastAt: _time(_prefs.getPref(kSrsDonationLastAtPrefKey, defaultValue: 0)),
-      lastReviews: lastReviews is int ? lastReviews : 0,
       excludedNoteIds: srsDonationDecodeExcluded(
         _prefs.getPref(kSrsDonationExcludedPrefKey, defaultValue: ''),
       ),
@@ -163,22 +167,13 @@ class SrsDonationPrefs {
     jsonEncode((noteIds.toList()..sort())),
   );
 
-  /// 上传成功：记下时刻与条数（「更新捐赠」的基线），并清掉「以后再说」。
-  Future<void> recordDonation({
-    required DateTime at,
-    required int reviews,
-  }) async {
-    await _prefs.setPref(kSrsDonationLastAtPrefKey, at.millisecondsSinceEpoch);
-    await _prefs.setPref(kSrsDonationLastReviewsPrefKey, reviews);
-    await _prefs.setPref(kSrsDonationSnoozeUntilPrefKey, 0);
-  }
+  /// 上传成功：清掉「以后再说」（捐赠记录本身在服务端）。
+  Future<void> clearSnooze() =>
+      _prefs.setPref(kSrsDonationSnoozeUntilPrefKey, 0);
 
-  /// 撤回成功：清掉捐赠记录与排除集合（「不再提示」保留，那是用户对横幅的选择）。
-  Future<void> clearDonation() async {
-    await _prefs.setPref(kSrsDonationLastAtPrefKey, 0);
-    await _prefs.setPref(kSrsDonationLastReviewsPrefKey, 0);
-    await _prefs.setPref(kSrsDonationExcludedPrefKey, '');
-  }
+  /// 撤回成功：清掉排除集合（「不再提示」保留，那是用户对横幅的选择）。
+  Future<void> clearExcluded() =>
+      _prefs.setPref(kSrsDonationExcludedPrefKey, '');
 }
 
 /// 排除集合的解码：空串 / 坏值一律当空集合。

@@ -32,11 +32,14 @@ class SrsDonationBanner extends ConsumerWidget {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final SrsHomeStats? stats = ref.watch(srsHomeStatsProvider).valueOrNull;
     final int total = stats?.totalReviews ?? 0;
-    final String body = kind == SrsDonationPromptKind.donate
-        ? t.srs_donation_banner_body(n: total)
-        : t.srs_donation_banner_update_body(
-            n: total - ref.watch(srsDonationPrefsProvider).lastReviews,
-          );
+    // 「更新捐赠」只在服务端有捐赠记录时出现（srsDonationPromptOf），新增数以服务端记的条数为基线。
+    final SrsDonationRecord? last = ref
+        .watch(srsDonationStatusProvider)
+        .valueOrNull
+        ?.donation;
+    final String body = kind == SrsDonationPromptKind.update && last != null
+        ? t.srs_donation_banner_update_body(n: total - last.reviews)
+        : t.srs_donation_banner_body(n: total);
     return FushiCard(
       key: const ValueKey<String>('srs-donation-banner'),
       tone: FushiCardTone.primary,
