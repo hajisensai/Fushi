@@ -1,12 +1,52 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-27T04:24:23Z",
+ "generatedAt": "2026-11-27T05:22:32Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "8e2fbbf66d81a9e06fcd1cf303458256a3b70d5e",
-  "seq": 32865
+  "sha": "e9563b679e759638e7e2e7b40dd4c9de6a738b6c",
+  "seq": 32866
  },
  "builds": [
+  {
+   "seq": 32865,
+   "version": "3.4.0",
+   "sha": "8e2fbbf66d81a9e06fcd1cf303458256a3b70d5e",
+   "unknown": false,
+   "publishedAt": "2026-11-27T05:22:15Z",
+   "testflight": true,
+   "baseSeq": 32862,
+   "prs": [],
+   "direct": [
+    {
+     "sha": "8e2fbbf66d81a9e06fcd1cf303458256a3b70d5e",
+     "subject": "style: dart format i18n_sync_ops_test（#4523 合并留下的 Dart format 红）"
+    },
+    {
+     "sha": "00be49cda51ba5463282a8ba76d65bef33d64a24",
+     "subject": "chore(readme): refresh star history chart (TODO-1294) [skip ci]"
+    },
+    {
+     "sha": "6d1e2464929f9aceefca6fdf6387ef232f769a78",
+     "subject": "chore(bugs): settle BUG number collisions on 06de0be3b"
+    }
+   ],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45937303973"
+    },
+    "windows": {
+     "state": "ok"
+    },
+    "macos": {
+     "state": "ok"
+    },
+    "ios": {
+     "state": "ok"
+    }
+   }
+  },
   {
    "seq": 32862,
    "version": "3.4.0",
@@ -187,8 +227,8 @@
    "version": "3.4.0",
    "sha": "2704c408960f91bd1baf43eb986d24b1566b0064",
    "unknown": false,
-   "publishedAt": "2026-11-26T12:34:54Z",
-   "testflight": true,
+   "publishedAt": "2026-11-26T12:24:46Z",
+   "testflight": false,
    "baseSeq": 32705,
    "prs": [],
    "direct": [
@@ -319,52 +359,43 @@
      "state": "ok"
     },
     "windows": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45810084399"
     },
     "macos": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45810084399"
     },
     "ios": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45810084399"
     }
    }
   }
  ],
  "pending": {
-  "headSha": "8e2fbbf66d81a9e06fcd1cf303458256a3b70d5e",
-  "headSeq": 32865,
+  "headSha": "e9563b679e759638e7e2e7b40dd4c9de6a738b6c",
+  "headSeq": 32866,
   "prs": [],
   "direct": [
    {
-    "sha": "8e2fbbf66d81a9e06fcd1cf303458256a3b70d5e",
-    "subject": "style: dart format i18n_sync_ops_test（#4523 合并留下的 Dart format 红）"
-   },
-   {
-    "sha": "00be49cda51ba5463282a8ba76d65bef33d64a24",
-    "subject": "chore(readme): refresh star history chart (TODO-1294) [skip ci]"
-   },
-   {
-    "sha": "6d1e2464929f9aceefca6fdf6387ef232f769a78",
-    "subject": "chore(bugs): settle BUG number collisions on 06de0be3b"
+    "sha": "e9563b679e759638e7e2e7b40dd4c9de6a738b6c",
+    "subject": "chore(readme): refresh development activity chart [skip ci]"
    }
   ],
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45937303973"
+    "state": "none"
    },
    "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45937303974"
+    "state": "none"
    },
    "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45937303974"
+    "state": "none"
    },
    "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45937303974"
+    "state": "none"
    }
   }
  },
