@@ -613,6 +613,16 @@ const FROZEN_SIDE: &[(&str, &str, &[&str])] = &[
         ],
     ),
     (
+        "diag.rs",
+        "迁移报告的诊断件：统计行差异逐条摊开协议 3 的日志行、现成 / 重建的统计行与卡缓存行、卡的历史链接（反馈 QW3kL_jEQF）",
+        &[
+            "srs_cards_cache",
+            "srs_field_edits",
+            "srs_review_logs",
+            "srs_stat_reviews",
+        ],
+    ),
+    (
         "dryrun.rs",
         "真实库干跑：旧库只读 → 临时新库 → 对拍",
         &[

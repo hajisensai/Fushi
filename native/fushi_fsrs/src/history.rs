@@ -32,6 +32,7 @@
 
 use std::borrow::Cow;
 use std::cmp::Ordering;
+use std::collections::HashMap;
 
 pub use crate::ordering::{CLOCK_TOLERANCE_MS, cmp_utf16};
 use crate::ordering::{SortKey, is_clamped};
@@ -847,6 +848,88 @@ pub fn stats_from_stored(stored: &[StoredLog<'_>]) -> Result<Vec<StatRow>, Strin
     let (logs, results, extras) = parse_all(stored)?;
     let sel = select(&logs);
     Ok(stat_rows(&sel, &logs, &results, &extras))
+}
+
+/// 一条日志在一份归属组的选取与投影里的去向（诊断用：迁移报告的 `statsTrace`，store/gen4/dryrun.rs）。只有 ID、
+/// 时刻与规则字段，不含内容。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LogFate {
+    pub id: String,
+    pub card: String,
+    pub writer: String,
+    pub physical: i64,
+    pub counter: i64,
+    pub kind: Kind,
+    pub origin: Origin,
+    pub rating_type: bool,
+    pub rating: Option<i64>,
+    pub anki_id: Option<i64>,
+    pub occurred_at: i64,
+    pub revokes: Option<String>,
+    pub has_result: bool,
+    /// 选取的 `STATUS_*` 位；None = 同 ID 有更晚的一条，这条在选取前就被去掉了。
+    pub status: Option<u8>,
+    /// 投影出了统计行（[stats_from_stored] 的输出里有它）。
+    pub produced: bool,
+    /// 投影出的统计行的 Anki 事件身份（[StatRow::anki_event]）。
+    pub anki_event: Option<AnkiEvent>,
+}
+
+/// [stats_from_stored] 同一份输入，逐条给出 [LogFate]（输入顺序）。
+pub fn log_fates(stored: &[StoredLog<'_>]) -> Result<Vec<LogFate>, String> {
+    let (logs, results, extras) = parse_all(stored)?;
+    let sel = select(&logs);
+    let rows = stat_rows(&sel, &logs, &results, &extras);
+    let mut status: Vec<Option<u8>> = vec![None; logs.len()];
+    for (k, &i) in sel.order.iter().enumerate() {
+        status[i] = Some(sel.status[k]);
+    }
+    let produced: HashMap<&str, Option<AnkiEvent>> = rows
+        .iter()
+        .map(|r| (r.log_id.as_str(), r.anki_event))
+        .collect();
+    Ok(logs
+        .iter()
+        .enumerate()
+        .map(|(i, l)| {
+            // 同 ID 的几条里只有留下的那条（有 status 的）算投影了。
+            let row = status[i].and_then(|_| produced.get(l.id.as_ref()));
+            LogFate {
+                id: l.id.clone().into_owned(),
+                card: l.card.clone().into_owned(),
+                writer: l.writer.clone().into_owned(),
+                physical: l.physical,
+                counter: l.counter,
+                kind: l.kind,
+                origin: l.origin,
+                rating_type: l.rating_type,
+                rating: l.rating,
+                anki_id: l.anki_id,
+                occurred_at: l.occurred_at,
+                revokes: l.revokes.as_deref().map(str::to_owned),
+                has_result: l.has_result,
+                status: status[i],
+                produced: row.is_some(),
+                anki_event: row.copied().flatten(),
+            }
+        })
+        .collect())
+}
+
+/// `STATUS_*` 位的名字（诊断用）。
+pub fn status_names(status: u8) -> Vec<&'static str> {
+    [
+        (STATUS_EFFECTIVE, "effective"),
+        (STATUS_REVOKED, "revoked"),
+        (STATUS_EQUIVALENT_IMPORT, "equivalentImport"),
+        (STATUS_REVOKER, "revoker"),
+        (STATUS_CLAMPED, "clamped"),
+        (STATUS_DUPLICATE, "duplicate"),
+    ]
+    .into_iter()
+    .filter(|(bit, _)| status & bit != 0)
+    .map(|(_, name)| name)
+    .collect()
 }
 
 type ParsedAll<'a> = (Vec<Log<'a>>, Vec<Option<WireResult<'a>>>, Vec<Extra<'a>>);

@@ -1,0 +1,27 @@
+## BUG-5558 · 复习库升级对拍不过（统计归属两侧不同）：报告缺定位根因的诊断，出错时连报告都没有
+- **报告**：2026-11-26（应用内反馈 QW3kL_jEQF、同设备 1 小时后的 hX_SnLpapZ；Infinix X6882，Android 3.4.0+1003256302，单 profile `01a14d20…`）。日志一直是 `SrsStoreNotMigrated(migrationFailed)`、`failure.reason = fail`，复习整个不可用。用户拍板：补诊断。
+- **真实性**：✅ 真 bug（对拍中止，安全撤回、旧库未改动）；**根因未定**，本次补的是定位它所需的诊断。两份 f0 报告逐项相同，签名与已修的 BUG-5250 / 5267 / 5269 / 5294 / 5296 都对不上：
+  - `canonical.canonicalStats`：卡 `0c867d79-…` 新代有统计、协议 3 一侧没有（`onlyNew 1`）；这张卡是别名层验不上的（`aliases.unverified`，`derivations: []`），两侧都没有卡行。
+  - `parity.stats`：新代多 5 行（日志 `1590169f` / `1e8877fd` / `21a9411f` / `4a51aa81` / `7ad44aa6`，都挂在 `0c867d79` 上），`sameIdRows 0`——协议 3 冻结重建里这 5 条日志**一行统计都没有**（不是挂到了别的卡上）。
+  - `existingCachesVsRebuilt.stats`：旧库**现成**的缓存比冻结重建多 5 行（`56652696` / `635e05a5` / `688e6083` / `75f1b0c8` / `a11b9b9d`，协议 3 ID）：旧版 app 当初增量算出过这 5 行，冻结的全量重建（对拍基准）却算不出；新代与旧库现成的一致，与基准不一致。
+  - 日志集合两侧相同（`canonicalCounts.logs 97/97`），只是统计归属不同。新代的 5 个日志 ID 在协议 3 里查不到原值（`idTrace.p3 = {}`）：它们是规范 ID，原值是别名类成员，旧的 `idTrace` 不沿别名类查、也不摊开 `existingCachesVsRebuilt` 的例子，所以报告里连「这 5 行是不是同 5 条日志」都对不上。
+  - 冻结全量重建（`store/caches.rs` `refresh_stats`）丢掉一条日志的统计只有三条路：① 跨归属组的 Anki 副本去重落选（`anki_duplicate_log_ids`）；② 卡沿 `historyFrom` 链接并进别的卡的归属组后，在组内选取里不再有效（`history.rs` `select`：`equivalentImport` / `duplicate` / `revoked`，或同 ID 有更晚的一条）；③ 卡不在种子里。新代 `store/gen4/cache.rs` `cache_lineage` 与冻结侧共用 `stat_groups` / `stats_from_stored` / `anki_duplicate_log_ids`，两侧算出不同只能是**输入**不同（链接 / 血统、可见性、日志体的 HLC 或 Anki 事件身份、日志 ID 归一）。旧报告给不出这些中间量，同形合成库（只有日志、无卡行的派生卡）复现不出签名。推测（未验证）：② 的可能大于 ①——`0c867d79` 在协议 3 里经链接并进了某张可见卡的组、它的 Anki 导入日志被判与那张卡上的原生复习等价；新代的血统里没有这条链接，它自成一组、5 条都有效。
+  - 另一处：迁移**出错**（IO、SQL 报错，不是对拍不过）时 `migrate.rs` 直接返回 `Err`，不写任何报告；出错页只有错误原文进日志，开发者拿不到出在哪一步、库是什么样。
+- **[x] ① 已补诊断（根因待用户下一次报告）** —
+  - `native/fushi_fsrs/src/store/gen4/diag.rs`（新）：`environment`（SQLite / 内核版本、OS / 架构、`user_version` 等 PRAGMA、`srs_meta` 短值、每张表 / 索引的 DDL 与行数）、`profile_counts`（本 profile 在每张带 `profile_uid` 列的表里的行数）、`stats_trace`（统计行差异逐条摊开：种子 ID 沿别名类展开成协议 3 原值；每条协议 3 日志的行（卡、本 / 别的 profile、种类、来源、评分、时刻、时长）、旧库现成的与冻结重建的统计行、冻结重建里 Anki 去重的落选记录；每张卡的现成 / 重建卡行、日志数、两份统计行数、`historyFrom` 前身与后继；新代的日志各份、规范统计行、卡行；再按冻结规则重新分组，给出含这些卡的每个归属组：组员可见与否、笔记、链接、血统，组里每条日志的 HLC / 写入者 / 种类 / 来源 / Anki id / 选取状态位 / 是否投影出统计行 / Anki 事件身份）。
+  - `native/fushi_fsrs/src/store/caches.rs`：`rebuild_probed` + `StatsProbe`（全量重建时记下 Anki 副本去重的落选者与留下的那份，只记落选的几条，不改结果）；`explain_stat_groups`（只读重新分组 + `history::log_fates`）。`anki_duplicate_log_ids` 拆出 `anki_duplicate_pairs`（给出留下的那份），行为不变。
+  - `native/fushi_fsrs/src/history.rs`：`log_fates` / `status_names`（与 `stats_from_stored` 同一份输入，逐条给选取状态与投影去向）。
+  - `native/fushi_fsrs/src/store/gen4/dryrun.rs`：对拍不过时 profile 报告加 `statsTrace` 与 `tableCounts`；`existingCachesVsRebuilt` 的例子并进 `idTrace`（`p3` 里看得到它们的日志行）。
+  - `native/fushi_fsrs/src/store/gen4/trace.rs`：`new_rows` 统计行按日志 ID 去重（卡和它名下的日志都在种子里时同一行被查到多次，报告把 `0c867d79` 的 5 条报成 40 条）。
+  - `native/fushi_fsrs/src/store/gen4/migrate.rs`：中止报告加 `environment`；出错（非叫停）时写 `verdict = "error"` 的报告（错误原文、出错时的步骤与进度、旧库身份与环境、每个 profile 各表行数）。它不是中止报告（`status` 只认 `aborted`），出错照旧按「要迁移」报、可直接重试。
+  - `fushi/lib/src/srs/srs_gen4_migration_controller.dart` `errorReportPath` + `srs_generation_view.dart`：出错页认出这一次（`startedAtMs` 相同）的错误报告，同样给「发给开发者」（报告作样本文件自动附上）与「分享 / 保存」。
+- **[x] ② 已加自动化测试** —
+  - `store/gen4/migrate_tests.rs` `a_failed_parity_report_explains_the_stats_difference`：协议 3 落库时长被改坏的重复日志库，断言盘上的中止报告带 `environment`（SQLite 版本、`user_version`、`srs_meta.schema`、`srs_review_logs` 的 DDL 与行数）、`tableCounts`、`statsTrace`（协议 3 日志行 / 现成与重建统计行 / 新代统计行 / 冻结归属组里这条日志 `effective` 且投影了）。
+  - `store/gen4/migrate_tests.rs` `a_disk_full_midway_through_staging_leaves_the_library_as_it_was` 加断言：出错报告 `verdict = error`、错误原文、`step = translate`、环境、各表行数，状态仍是 `NeedsMigration`。
+  - `store/caches.rs` `a_probed_rebuild_names_the_anki_copies_it_dropped`：带探针的重建与不带的逐行相同，落选者与留下的那份对上；`explain_stat_groups` 给出落选卡的组与日志去向。
+  - `fushi/test/srs/srs_gen4_migration_controller_test.dart`（只认这一次的错误报告）、`srs_generation_view_test.dart`（出错页给发送 / 导出，发的就是那份）。
+  - 前两个在修复前的代码上红（报告里没有 `environment`；出错时没有报告文件）。
+- **备注**：
+  - 下一版发布后请用户在复习页恢复界面点「重新升级」并再提交报告；`statsTrace.frozenGroups` 会直接说明 `0c867d79` 的 5 条日志在冻结规则下落进了哪个组、为什么没投影（`equivalentImport` / `duplicate` / 落选 / 不在组里），据此根因修复。
+  - 服务端（`packages/fushi_server`）出错时也会留下这份报告，但管理页没有「发送」入口，未改。
+  - 报告体积：`environment.schema` 是全部建表语句（约几十 KB），`statsTrace` 最多 40 个种子、每个最多 16 个别名成员；只在对拍不过 / 出错时生成。
