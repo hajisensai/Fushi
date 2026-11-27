@@ -487,6 +487,9 @@ void main() {
       );
       expect(find.byKey(SrsGenerationView.reportSendKey), findsNothing);
       await tester.runAsync(() async {
+        // 在真实 zone 里另起 Completer：测试体（FakeAsync zone）里建的 future 完成时把续体排进假时钟的微任务队列，
+        // runAsync 等真实事件时没人冲刷它，start() 永远等不到这次报错（实测整条用例卡到 10 分钟超时）。
+        b.pending = Completer<SrsGen4MigrationOutcome>();
         final Future<void> done = c.start();
         await Future<void>.delayed(const Duration(milliseconds: 30));
         b.pending.completeError(const SrsCoreException(-1, 'disk full'));
