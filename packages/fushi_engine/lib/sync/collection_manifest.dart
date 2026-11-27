@@ -137,6 +137,7 @@ class CollectionManifestEntry {
     this.organizeKey,
     this.organizeAliases = const <String>[],
     this.organizeMerged = false,
+    this.autoPruned = false,
   });
 
   /// 自然键：合集名（跨端身份，同 backup 合并的 (name, collection_type) 对齐）。
@@ -188,6 +189,13 @@ class CollectionManifestEntry {
   /// 死条目：这次删除是整理器把它并进了别的合集（不是用户删的）。两端说法不一时
   /// 以「用户删的」为准（取与）。活条目恒 false。
   final bool organizeMerged;
+
+  /// 死条目：这次删除是存量清理删的「没人动过的媒体服务器剧名合集」（schema v183，
+  /// BUG-5601），不是用户删的。wire 可选字段 `autoPruned`，只在 true 时写出；旧清单缺
+  /// 字段按 false，不升清单 [CollectionManifest.version]。视频库的剧名临时分组不被它
+  /// 挡下；合并时它输给成员带 pinned 的活合集。双死按 [deletedAt] 取新的那条的标记，
+  /// 平手取或（旧客户端转发会丢字段，但 deletedAt 原样镜像）。活条目恒 false。
+  final bool autoPruned;
 
   factory CollectionManifestEntry.fromJson(Object? json) {
     if (json is! Map<String, dynamic>) {
@@ -248,6 +256,8 @@ class CollectionManifestEntry {
             ]
           : const <String>[],
       organizeMerged: json['organizeMerged'] == true,
+      // v183 additive 字段：旧清单缺它即 false。
+      autoPruned: json['autoPruned'] == true,
     );
   }
 
@@ -310,6 +320,7 @@ class CollectionManifestEntry {
             if (a.isNotEmpty) a,
         }.toList()..sort()),
       if (organizeMerged) 'organizeMerged': true,
+      if (autoPruned) 'autoPruned': true,
     };
   }
 }

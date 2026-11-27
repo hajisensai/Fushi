@@ -179,12 +179,11 @@ class MediaCoverService {
             collectionCoversDirectory ??
             await VideoStorage.collectionCoversDir();
         await covers.create(recursive: true);
-        final String destPath = p.join(
-          covers.path,
-          videoCoverFileName('$collectionId'),
-        );
+        // 虚拟合集（BUG-5601）先物化：封面文件按真合集 id 命名。
+        final int id = await database.writableCollectionId(collectionId);
+        final String destPath = p.join(covers.path, videoCoverFileName('$id'));
         await applyCoverFile(source: File(pickedPath), destPath: destPath);
-        await database.updateMediaCollectionCoverPath(collectionId, destPath);
+        await database.updateMediaCollectionCoverPath(id, destPath);
         return destPath;
       });
     } finally {

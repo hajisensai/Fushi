@@ -54,6 +54,7 @@ import 'package:fushi_engine/media/media_extensions.dart'
     show isAudioOnlyMediaPath;
 import 'package:fushi_engine/media/video/metadata/video_local_extra_classifier.dart'
     show classifyLocalVideoExtra;
+import 'package:fushi_engine/media/collections/remote_series_overlay.dart';
 import 'package:fushi_engine/sync/remote_collection_adoption_service.dart';
 import 'package:fushi/src/media/drag_drop/card_drop_registry.dart';
 import 'package:fushi/src/media/music/music_audio_intake.dart';
@@ -79,6 +80,7 @@ import 'package:fushi/src/media/video/video_specs_service.dart';
 import 'package:fushi/src/media/video/video_specs_providers.dart';
 import 'package:fushi/src/media/torrent/anime_download_subscription.dart'
     show AnimeDownloadSubscription, AnimeDownloadSubscriptionStore;
+import 'package:fushi/src/media/video/remote_series_catalog.dart';
 import 'package:fushi/src/media/video/video_continue_watching.dart';
 import 'package:fushi/src/media/video/video_home_layout.dart';
 import 'package:fushi/src/media/video/video_library_memo.dart';
@@ -1949,8 +1951,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     final ShelfSortMode sortMode = ShelfSortMode.fromName(
       appModel.prefsRepo.videoSortModeName,
     );
-    final Map<String, int> manualRanks = decodeShelfManualOrder(
-      appModel.prefsRepo.libraryManualOrder(_manualOrderLibrary),
+    final Map<String, int> manualRanks = _rehomeMaterializedSeriesRanks(
+      decodeShelfManualOrder(
+        appModel.prefsRepo.libraryManualOrder(_manualOrderLibrary),
+      ),
     );
     // 刮削展示日志游标先于全表查询取：下面读到的快照至少包含它之前的全部刮削
     // 写入，之后的由落地前的补齐覆盖（[_catchUpScrapeMaps]）。
@@ -2028,6 +2032,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       _memberSortIndex = memberSortIndex;
       _collectionsById = <int, MediaCollectionRow>{
         for (final MediaCollectionRow c in collections) c.id: c,
+        // 媒体服务器剧名临时分组（负 id，BUG-5601）：与真合集同一张字典折叠。
+        ...membership.virtualCollections,
       };
       _primaryCollectionByEntry = primaryMap;
       _videoSourcesById = <int, MediaSourceRow>{
@@ -2434,6 +2440,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     // [RemoteVideoSource]，所以下面「列清单 → 去重 → 出占位卡」这条主干只写一遍，
     // 不按后端类型分叉，也不再三选一。
     final List<RemoteVideoSource> sources = await _resolveRemoteVideoSources();
+    // 媒体服务器删掉 / 换掉了：它的剧名临时分组跟着撤（BUG-5601）。
+    if (RemoteSeriesCatalog.instance.retainOnly(<String>{
+          for (final RemoteVideoSource s in sources)
+            if (s is DerivedSeriesGroupingSource) s.remoteLibrarySourceId,
+        }) &&
+        mounted) {
+      unawaited(_loadLibraryMaps());
+    }
     if (sources.isEmpty) return null;
     // 来源先于清单落定：首轮整库枚举（媒体服务器大库要几十秒）期间点开合集，详情页
     // 也拿得到远端上下文、按 id 查成员（[_collectionRemoteContext]），不必等清单。
@@ -2560,7 +2574,15 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       // 时一次只读查询、零写入，有变化的条目同一个事务落库），没有任何归属变化
       // 时映射表也不重载。
       final String sourceId = source.remoteLibrarySourceId;
-      if (!identical(videos, _adoptedRemoteVideos[sourceId])) {
+      if (source is DerivedSeriesGroupingSource) {
+        // BUG-5601：媒体服务器的剧名归属是客户端现算的派生分组，不收养进库（从前整台
+        // 服务器按剧名收养成几千个真合集、经同步扩散到所有设备）。只把清单交给
+        // [RemoteSeriesCatalog]，库页的归属加载在后台叠加出临时分组；清单对象没换
+        // （TTL 内的同一份）就不重算。
+        if (RemoteSeriesCatalog.instance.update(sourceId, videos) && mounted) {
+          await _loadLibraryMaps();
+        }
+      } else if (!identical(videos, _adoptedRemoteVideos[sourceId])) {
         final int adopted = await RemoteCollectionAdoptionService(
           appModelNoUpdate.database,
         ).adoptVideos(videos);
@@ -9062,8 +9084,63 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       recentScore: recent,
       title: _workTitle(collection),
       importedAt: imported,
-      tieKey: 'c${collection.id}',
+      tieKey: _collectionUnitKey(collection),
     );
+  }
+
+  /// 媒体服务器剧名临时分组在手动序里的键（自然键，BUG-5601）。
+  static String _seriesUnitKey(String collectionType, String name) =>
+      's:$collectionType:$name';
+
+  /// 本会话物化过的剧：手动序里它按自然键记的名次换到真合集的 `c<id>` 名下，并写回
+  /// 偏好（BUG-5601）。只靠 [_collectionUnitKey] 拿真合集的**当前**名去查 `s:` 键，
+  /// 经改名物化（改名本身就是物化入口）后名字对不上，拖出来的位置就丢了。真合集已有
+  /// 自己的名次时以它为准，`s:` 键直接撤掉。
+  Map<String, int> _rehomeMaterializedSeriesRanks(Map<String, int> ranks) {
+    if (ranks.isEmpty) return ranks;
+    final Map<String, String> rehome = <String, String>{
+      for (final ({String name, String collectionType, int realId}) s
+          in VirtualCollectionRegistry.instance.materializedSeries)
+        _seriesUnitKey(s.collectionType, s.name): 'c${s.realId}',
+    };
+    if (rehome.isEmpty) return ranks;
+    bool changed = false;
+    final List<String> order = <String>[];
+    for (final String key in ranks.keys) {
+      final String? target = rehome[key];
+      if (target == null) {
+        order.add(key);
+        continue;
+      }
+      changed = true;
+      if (!ranks.containsKey(target)) order.add(target);
+    }
+    if (!changed) return ranks;
+    final String encoded = encodeShelfManualOrder(order);
+    unawaited(
+      ref
+          .read(appProvider)
+          .prefsRepo
+          .setLibraryManualOrder(_manualOrderLibrary, encoded),
+    );
+    return decodeShelfManualOrder(encoded);
+  }
+
+  /// 合集单元在手动序里的键。真合集 `c<id>`；媒体服务器剧名临时分组（虚拟行，负 id，
+  /// BUG-5601）的 id 只在本次会话里稳定，改按自然键记 `s:<类型>:<名>`——物化后的真合集
+  /// 没有自己的名次时沿用它，拖过的位置不因物化丢失。
+  String _collectionUnitKey(MediaCollectionRow collection) {
+    final String seriesKey = _seriesUnitKey(
+      collection.collectionType,
+      collection.name,
+    );
+    if (isVirtualCollection(collection)) return seriesKey;
+    final String idKey = 'c${collection.id}';
+    if (!_manualRanks.containsKey(idKey) &&
+        _manualRanks.containsKey(seriesKey)) {
+      return seriesKey;
+    }
+    return idKey;
   }
 
   /// 合集封面卡（用户拍板 2026-07-22 恢复封面形态：「文字合集替换成一个封面」）。

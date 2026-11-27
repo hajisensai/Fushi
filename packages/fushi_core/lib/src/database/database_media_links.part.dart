@@ -235,10 +235,13 @@ mixin _FushiDbMediaLinks on _$FushiDatabase {
     String? role,
     String? episodeRange,
     int? at,
-  }) {
+  }) async {
     if (from.kind == to.kind && from.key == to.key) {
       throw ArgumentError('media link endpoints must differ');
     }
+    // 虚拟合集端点（负 id，BUG-5601）先物化，连接落在真合集上。
+    from = await _writableLinkEndpoint(from);
+    to = await _writableLinkEndpoint(to);
     final MediaLinkId id = mediaLinkIdFor(relation, from, to);
     return transaction(() async {
       final int now = at ?? DateTime.now().millisecondsSinceEpoch;
@@ -1031,4 +1034,14 @@ mixin _FushiDbMediaLinks on _$FushiDatabase {
       updateKind: UpdateKind.delete,
     );
   }
+}
+
+Future<MediaLinkEndpoint> _writableLinkEndpoint(MediaLinkEndpoint e) async {
+  if (e.kind != MediaLinkKind.videoCollection) return e;
+  final int? id = collectionIdOfTagEntryKey(e.key);
+  if (id == null || id > 0) return e;
+  return (
+    kind: e.kind,
+    key: collectionTagEntryKey(await _writableCollectionId(id)),
+  );
 }

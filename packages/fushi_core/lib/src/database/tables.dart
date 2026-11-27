@@ -1561,6 +1561,13 @@ class CollectionMemberTombstones extends Table {
   /// 对端回退它判）或升级前的存量行。本机自己同步时不读它（本端侧按 [deletedAt] 裁决）。
   IntColumn get publishedAt => integer().nullable()();
 
+  /// 合集级删除哨兵行：这次删除是存量清理（`pruneUnusedRemoteSeriesCollections`）删的
+  /// 「没人动过的媒体服务器剧名合集」（true），不是用户删的（false，默认）。schema
+  /// v183（BUG-5601）。视频库的剧名临时分组只被用户删除挡下，自动清理的不挡——清理
+  /// 不改变显示；合集同步里它输给成员带 pinned 的活合集（别的设备上用户认领过）。成员
+  /// 墓碑行恒 false。
+  BoolColumn get autoPruned => boolean().withDefault(const Constant(false))();
+
   /// 一 (合集, 成员) 一行；合集级哨兵行天然也唯一。
   @override
   Set<Column> get primaryKey => {
