@@ -108,8 +108,9 @@ void main() {
       isTrue,
       reason: '书架主网格必须按合集折叠',
     );
-    // 折叠归属来自 getPrimaryCollectionIdByEntry（最小 collectionId），不再靠 seriesId。
-    expect(homeSrc.contains('getPrimaryCollectionIdByEntry'), isTrue);
+    // 折叠归属来自主合集映射（最小 collectionId），不再靠 seriesId。视频页经
+    // loadVideoLibraryMembership（getPrimaryCollectionMembershipOfKind，BUG-5589）。
+    expect(homeSrc.contains('loadVideoLibraryMembership('), isTrue);
     expect(historySrc.contains('getPrimaryCollectionIdByEntry'), isTrue);
   });
 

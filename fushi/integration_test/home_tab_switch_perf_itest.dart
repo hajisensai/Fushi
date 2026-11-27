@@ -196,13 +196,17 @@ Future<void> _measure(
   // timeline 只录切页后的前 400 ms：recorder 是定长环形缓冲，录久了开头被冲掉。
   Future<void> run() async {
     switchedAt = developer.Timeline.now;
+    debugPrint(
+      '[tab-perf] switch $label at=${DateTime.now().millisecondsSinceEpoch}',
+    );
     switchTab();
-    await _wait(trace ? 400 : 1600);
+    await _wait(trace ? _traceMs : 1600);
   }
 
   vm.Timeline? timeline;
   if (trace) {
-    widgets.debugProfileBuildsEnabledUserWidgets = !profileLayout;
+    widgets.debugProfileBuildsEnabledUserWidgets =
+        !profileLayout && !_plainTrace;
     debugProfileLayoutsEnabled = profileLayout;
     try {
       timeline = await binding.traceTimeline(
@@ -236,6 +240,15 @@ Future<void> _measure(
     }
   }
 }
+
+/// 抓 timeline 的轮次录多久（默认 400 ms；recorder 是定长环形缓冲）。
+const int _traceMs = int.fromEnvironment(
+  'FUSHI_PERF_TRACE_MS',
+  defaultValue: 400,
+);
+
+/// 抓 timeline 时不开 build 剖析（事件少，能录更长的窗口）。
+const bool _plainTrace = bool.fromEnvironment('FUSHI_PERF_PLAIN_TRACE');
 
 String _f(num v) => v.toStringAsFixed(1);
 

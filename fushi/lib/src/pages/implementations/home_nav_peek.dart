@@ -425,10 +425,7 @@ Future<NavPeekFeed> _loadBooks({
   }
 
   final _NavPeekCollections collections = await _loadCollections(appModel);
-  final Map<String, int> memberSortIndex = await loadPrimaryMemberSortIndex(
-    appModel.database,
-    collections.primaryByEntry,
-  );
+  final Map<String, int> memberSortIndex = collections.sortIndex;
   final bool Function(MediaNsfwTarget) nsfw = await _loadNsfwJudge(appModel);
   String compositeKeyOf(MediaItem item) => bookCollectionEntryKey(
     item,
@@ -1169,20 +1166,40 @@ String? _peekSubtitle(String? member, String? progress) {
 
 /// 速览折叠用的合集映射（一次读两张表）。
 class _NavPeekCollections {
-  const _NavPeekCollections({required this.byId, required this.primaryByEntry});
+  const _NavPeekCollections({
+    required this.byId,
+    required this.primaryByEntry,
+    required this.sortIndex,
+  });
 
   final Map<int, MediaCollectionRow> byId;
   final Map<String, int> primaryByEntry;
+
+  /// 复合键 → 在主折叠合集里的组内序。
+  final Map<String, int> sortIndex;
 }
 
 Future<_NavPeekCollections> _loadCollections(AppModel appModel) async {
   final List<MediaCollectionRow> rows = await appModel.database
       .getAllMediaCollections();
+  // 书架速览只问书 / 字幕书的归属：只取这两种（媒体服务器镜像的视频成员可达数万行）。
+  final ({Map<String, int> primaryByEntry, Map<String, int> sortIndex})
+  membership = splitPrimaryCollectionMembership(
+    <String, ({int collectionId, int sortIndex})>{
+      ...await appModel.database.getPrimaryCollectionMembershipOfKind(
+        MediaKind.epub,
+      ),
+      ...await appModel.database.getPrimaryCollectionMembershipOfKind(
+        MediaKind.srt,
+      ),
+    },
+  );
   return _NavPeekCollections(
     byId: <int, MediaCollectionRow>{
       for (final MediaCollectionRow c in rows) c.id: c,
     },
-    primaryByEntry: await appModel.database.getPrimaryCollectionIdByEntry(),
+    primaryByEntry: membership.primaryByEntry,
+    sortIndex: membership.sortIndex,
   );
 }
 

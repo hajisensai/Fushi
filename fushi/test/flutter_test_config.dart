@@ -16,6 +16,10 @@ import 'package:fushi/src/utils/components/fushi_continue_card_row.dart'
     show coverColorSchemeCache;
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:fushi_core/fushi_core.dart' show DatabaseBackgroundWork;
+import 'package:fushi/src/media/links/work_graph_store.dart'
+    show debugWorkGraphInline;
+import 'package:fushi/src/media/video/video_continue_watching.dart'
+    show debugVideoMembershipInline;
 import 'package:fushi_engine/stats/stat_facts.dart' show debugStatFactsInline;
 import 'package:fushi_web_core/testing.dart';
 
@@ -81,6 +85,9 @@ Future<void> testExecutable(FutureOr<void> Function() testMain) async {
 /// `packages/fushi_engine/test/stats/stat_facts_parity_test.dart` 钉住。
 void installInlineStatFacts() {
   debugStatFactsInline = true;
+  // 作品图（WorkGraphStore）同理：生产在后台 isolate 建图，组件测试里在调用方建。
+  debugWorkGraphInline = true;
+  debugVideoMembershipInline = true;
 }
 
 /// 封面取色（进程级 [coverColorSchemeCache]）在整个 `test/` 套件里**不设加载超时**。
