@@ -1,0 +1,18 @@
+## BUG-5569 · 来源扫描遇到已入库的书不检查受管内容，丢失的解包书目录与有声书音频字幕永远不会从原件重建
+- **报告**：2026-11-27（用户：应用内反馈 1DaVBFXQEI / GitHub #4521，反馈人 ADB 排查）
+- **真实性**：✅ 真 bug。Android 上受管目录（`<数据根>/fushi_books/<bookKey>/` 解包书、`<数据根>/audiobooks/<hash>/` 音频与字幕副本）大部分丢了，库行 / 进度 / 对齐记录都在，原件仍在本地来源文件夹里、自动扫描开着，扫描却修不回来。根因（develop `e9563b679e` 行号）：
+  - `fushi/lib/src/media/source_library/source_library_scanner.dart:2155-2172`（`_importBookItems`）：索引命中（`knownBookKey`）或按标题预判重复（`rowForTitle`）就直接拿 bookKey 走人，从不看这本书的受管内容还在不在；远端 EPUB 的判重复（`_importOneBook` 的 `DuplicateImportCancelledException`，`:2286-2300`）同样。
+  - 同文件 `:2354`（`_attachAudiobook`）：`findByBookKey(bookKey) != null` 就 return，不看它引用的音频 / 字幕副本是否存在。
+  - 漫画同根：`_importMangaLocal` / `_importRemote*`（`:2844`、`:2873`、`:2894`、`:2720`、`:2908`、`:2946`）`id.isIndexed(path)` 就跳过。
+  - 指纹变了的书：`knownBookKey` 不命中 → 退到按标题判重复 → `record()` 把索引指纹换成新的，书的内容不刷新也不提示。
+- **[x] ① 已修复** — `（提交哈希见 PR）`：
+  - 书（EPUB / PDF）：认出已入库、且是本来源这个文件导入的行（`_BookSourceIdentity.owns`，与认领同一判据）时，先 `bookManagedContentIntact` 判开书必需产物（书目录非空 + EPUB 的 `META-INF/container.xml` / PDF 的 `document.pdf`），缺了就按原条目就地重建：EPUB 走 `EpubImporter.rebuildExtractedInPlace`（原子 `.bak` 替换），PDF 走新加的 `PdfImporter.rebuildBookDirInPlace`；只回写章节元数据（封面列为空时才补），bookKey / uid / 进度 / 统计 / 合集不动。书目录不在当前书库根下时不重建、记逐本失败提示。
+  - 有声书：`_attachAudiobook` 见到已挂的有声书改走 `_repairAudiobookFiles`：丢的副本必须在本书持久目录里、且库里那组文件与原件按位同名（`audiobookPersistedNameMatches`，容忍 ` _<n>` 撞名后缀与转码扩展名），才补：只丢音频 → `replaceAudiobookAudio`（还在的副本零拷贝保留，补回原名，cue 与播放进度不动）；字幕副本也丢 → `alignAndPersistAudiobook` 用原件字幕重新对齐（同一份字幕得到同一组 cue，匹配率照旧写健康度）。对不上的不猜，记逐本失败提示。
+  - 漫画：引擎 `MangaImporter` / `MangaArchiveImporter` 加 `rebuildInto: MangaRebuildTarget`，经 `_copyAndInsert` 的就地重建分支把暂存原子换到原书目录、只回写页数（封面指针失效才换）；扫描器本地 / 远端四条卷路径在索引命中时先 `repairFor` 判缺失再重建。PDF 漫画卷暂不支持就地重建（先落 PDF 书再转漫画，两步都按新行写），明确记失败提示。
+  - 原件变过（指纹与入库时不同、或重建出的章节 / 页数结构不同、或重对齐的 cue 条数不同）时仍按原条目重建（内容已没了，这是唯一能打开的办法），进度不重置，但扫描结果 `lastScanError` 追加「saved reading positions may not match」提示。
+- **[x] ② 已加自动化测试** — `fushi/test/media/source_library/source_library_scan_repair_test.dart`（真 DB + 真文件系统 + 真导入器：EPUB 原件未变 / 原件换过 / 手动导入同名不认领、有声书音频 + 字幕全丢 / 只丢音频 / 库里是另一组音频、漫画 mokuro 卷 / cbz 页数变了，外加纯函数）。修前红：同一份书 / 有声书用例在 develop 上 5 红 1 绿（「手动导入不认领」本来就绿）。
+- **备注**：
+  - 指纹变了但受管内容完好的书仍不自动刷新内容（沿用现状，只在内容丢了时才拿新原件重建）：是否改成「原件变了就刷新已有书并保留进度」属用户可见行为变化，待拍板。
+  - 来源暂时不可达 / 原件不在：app 端扫描本来就不删行、不重置进度（`pruneMissingBookRows` 只在无头服务端调用），本次未改；没有「标为不可用」的 UI 标记，属新功能，待拍板。
+  - 受管文件被删的原因（协调方排查结论）：Fushi 自带的 flutter_logs 插件——`initLogs` 从没传 `logsExportDirectoryName`，RxLogs 把 exportPath 解析成 `getExternalFilesDir(null)` 本身，每 3 天冷启动时对整棵 `Android/data/<pkg>/files` 做 `deleteRecursively`，外置库 `files/data` 随之被清空。插件移除在分支 `claude/fix-flutter-logs-wipe`；本条是已中招用户的恢复路径。
+  - 需真机复测：Android 上删掉一本来源书的解包目录 / 有声书音频后点「重新扫描」，确认能打开、进度还在。
