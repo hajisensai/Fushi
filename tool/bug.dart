@@ -242,6 +242,9 @@ const String headerTemplate = '''# Bug 跟踪
 > 手动改号用 `dart run tool/bug.dart renumber <old> <new>`
 > （文件名 + 正文 H2 + 代码/测试引用一把改 + 自校验；别手改——只改文件名不改正文 H2 会让 `bugs_per_file_guard_test` 变红）。
 > 改完某条 bug 文件后：`dart run tool/bug.dart reindex` 重建下面的索引表。
+> **自动进反馈**：develop 收到 push 时 `bug-feedback-sync.yml`（`tool/bug_feedback_sync.mjs`）把「① 未修复」的条目按 BUG 号
+> 幂等同步成应用内反馈里的一条（开发者处理台可见）；勾上 `[x] ①` 自动标已修复，文件删掉 / 改号 / 标 ❌ 未复现自动结案。
+> 不用再为仓库 BUG 手动 `fushi_cli feedback submit`（细节见 `docs/agent/build.md`「仓库 BUG 同步进反馈」）。
 >
 > 每条 bug 文件里：
 > - **是真 bug** → 记报告日期、根因 `file:line`，然后：

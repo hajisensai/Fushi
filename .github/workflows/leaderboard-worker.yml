@@ -12,11 +12,15 @@ on:
     branches: ['main', 'develop']
     paths:
       - 'services/leaderboard/**'
+      # test/feedback_repo_bugs.test.js 端到端跑这个 CI 脚本。
+      - 'tool/bug_feedback_sync.mjs'
       - '.github/workflows/leaderboard-worker.yml'
   push:
     branches: ['develop']
     paths:
       - 'services/leaderboard/**'
+      # test/feedback_repo_bugs.test.js 端到端跑这个 CI 脚本。
+      - 'tool/bug_feedback_sync.mjs'
       - '.github/workflows/leaderboard-worker.yml'
 
 permissions:
