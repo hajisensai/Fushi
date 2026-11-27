@@ -696,7 +696,7 @@ class MediaPosterDetailHero extends StatelessWidget {
   /// 背景带（含 [topInset]）的高度上限：视口高减去首屏要露出的标题块与主按钮
   /// （[kMediaPosterDetailFirstScreenReserve]），但至少留够页头一行。桌面窗口
   /// 与竖屏手机够高、比各自的视口比例上限宽松，不受影响；只在横屏手机这种矮
-  /// 窗口里收紧（BUG-5550）。
+  /// 窗口里收紧（BUG-5587）。
   double _bandFirstScreenCap(BuildContext context, double topInset) {
     final double viewport = MediaQuery.sizeOf(context).height;
     return math.max(

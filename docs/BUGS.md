@@ -37,6 +37,9 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5587](bugs/BUG-5587-landscape-phone-detail-hero.md) | ✅ | ✅ | 横屏手机：详情页背景带占七成高度，标题与主按钮被挤出首屏 |
+| [BUG-5586](bugs/BUG-5586-landscape-phone-chrome.md) | ✅ | ✅ | 横屏手机：外壳按宽取档给了桌面页头 / 展开侧栏，快捷键页工具区挤没列表 |
+| [BUG-5585](bugs/BUG-5585-android-migrate-case-collision.md) | ✅ | ✅ | Android 书库移到外部：只差大小写的文件在目标上互相覆盖，校验照过、删源后永久丢失 |
 | [BUG-5584](bugs/BUG-5584-feedback-link-push-commits-truncated.md) | ✅ | ✅ | feedback-link-push-commits-truncated |
 | [BUG-5583](bugs/BUG-5583-idle-page-continuous-frames.md) | 🚧 | 🚧 | 页面静止时仍以接近屏幕刷新率持续出帧（视频库页 / 视频合集页） |
 | [BUG-5582](bugs/BUG-5582-route-transition-covered-page-full-replay.md) | ✅ | ✅ | 打开 / 返回二级页（视频合集等）转场掉帧：被盖住的那一页每帧整页重放绘制 |
@@ -66,7 +69,6 @@
 | [BUG-5553](bugs/BUG-5553-review-finished-wake.md) | ✅ | ✅ | 复习做完后几十秒到期的卡不自己出来：完成页只在库变化时重查 |
 | [BUG-5552](bugs/BUG-5552-sync-peer-unreachable-mid-run-raw-errors.md) | ✅ | ✅ | sync-peer-unreachable-mid-run-raw-errors |
 | [BUG-5551](bugs/BUG-5551-srs-import-media-pseudo-conflict.md) | ✅ | ✅ | srs-import-media-pseudo-conflict |
-| [BUG-5550](bugs/BUG-5550-landscape-phone-detail-hero.md) | ✅ | ✅ | 横屏手机：详情页背景带占七成高度，标题与主按钮被挤出首屏 |
 | [BUG-5550](bugs/BUG-5550-gal-tts-loopback-slice-not-voice-evidence.md) | ✅ | ✅ | galgame 自动朗读「仅无原声的句子」在系统 loopback 会话里一句都不读 |
 | [BUG-5549](bugs/BUG-5549-leaderboard-deeplink.md) | ✅ | ✅ | leaderboard-deeplink |
 | [BUG-5548](bugs/BUG-5548-apple-sidebar-scope-rebuilds-hidden-library-pages.md) | ✅ | ✅ | Apple 宽窗侧栏外壳切 tab 后紧跟一帧：所有访问过的保活库页（含藏起的）整页重建 |
@@ -126,7 +128,6 @@
 | [BUG-5494](bugs/BUG-5494-android-screen-ocr-dart-engine-no-block.md) | ✅ | ✅ | Android 应用外截屏识字走本机模型 / Google Lens 时查词不跨 OCR 折行 |
 | [BUG-5493](bugs/BUG-5493-devconsole-sample-file-404.md) | ✅ | ✅ | 网页处理台样本文件下载 404 |
 | [BUG-5492](bugs/BUG-5492-android-external-library-wiped.md) | ✅ | ✅ | Android 外部书库被整树删掉，书与词典全没了 |
-| [BUG-5492](bugs/BUG-5492-landscape-phone-chrome.md) | ✅ | ✅ | 横屏手机：外壳按宽取档给了桌面页头 / 展开侧栏，快捷键页工具区挤没列表 |
 | [BUG-5491](bugs/BUG-5491-rwkv-armv7-portable-fma-slow.md) | 🚧 | 🚧 | armeabi-v7a 与无 FMA 的老 x86 上 RWKV 回放走软件 FMA，比向量路径慢约 4–5 倍 |
 | [BUG-5490](bugs/BUG-5490-data-location-diag-not-retained.md) | ✅ | ✅ | 数据位置诊断只在内存且被普通诊断挤掉 |
 | [BUG-5489](bugs/BUG-5489-dict-files-missing-silent.md) | ✅ | ✅ | 词典文件缺失时界面静默只显示无释义 |
@@ -152,7 +153,6 @@
 | [BUG-5469](bugs/BUG-5469-tts-cast-reasoning-output-limit.md) | ✅ | ✅ | tts-cast-reasoning-output-limit |
 | [BUG-5468](bugs/BUG-5468-ai-reasoning-effort-unsupported-model.md) | ✅ | ✅ | ai-reasoning-effort-unsupported-model |
 | [BUG-5467](bugs/BUG-5467-tts-cast-local-model-timeout.md) | ✅ | ✅ | tts-cast-local-model-timeout |
-| [BUG-5467](bugs/BUG-5467-android-migrate-case-collision.md) | ✅ | ✅ | Android 书库移到外部：只差大小写的文件在目标上互相覆盖，校验照过、删源后永久丢失 |
 | [BUG-5466](bugs/BUG-5466-tts-cast-unclosed-json-array.md) | ✅ | ✅ | tts-cast-unclosed-json-array |
 | [BUG-5465](bugs/BUG-5465-video-subtitle-autoload-hardcoded-ja.md) | ✅ | ✅ | 视频打开时自动挑字幕写死日语：sidecar 只认日语后缀，内封轨不看语言取第一条文本轨，繁 / 简中文不分 |
 | [BUG-5464](bugs/BUG-5464-video-subtitle-episode-inherit.md) | ✅ | ✅ | 合集里上一集选的字幕（内封轨 / sidecar / 关闭）下一集不继承，每集都得重选 |

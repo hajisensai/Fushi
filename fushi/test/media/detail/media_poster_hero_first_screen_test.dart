@@ -26,7 +26,7 @@ class _PendingImage extends ImageProvider<_PendingImage> {
   ) => OneFrameImageStreamCompleter(Completer<ImageInfo>().future);
 }
 
-// BUG-5550：横屏手机（宽 ≥720 走宽式、高只有 ~400）上，16:9 背景带按视口 72%
+// BUG-5587：横屏手机（宽 ≥720 走宽式、高只有 ~400）上，16:9 背景带按视口 72%
 // 给高，标题与「继续阅读 / 开始观看」被挤出首屏。背景带要给首屏标题块让位。
 void main() {
   const ValueKey<String> primaryKey = ValueKey<String>('primary');

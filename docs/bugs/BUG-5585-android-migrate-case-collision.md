@@ -1,4 +1,4 @@
-## BUG-5467 · Android 书库移到外部：只差大小写的文件在目标上互相覆盖，校验照过、删源后永久丢失
+## BUG-5585 · Android 书库移到外部：只差大小写的文件在目标上互相覆盖，校验照过、删源后永久丢失
 - **报告**：2026-11-25（用户转述：Android 3.4.0 移动书库后「词典只剩空壳、书也没了，3.2 GB 一秒掉到 400 MB」；查这条反馈时沿代码路径发现的缺口，不是该反馈的已证实根因）
 - **真实性**：✅ 真 bug（模拟器实测文件系统行为 + 沿代码路径确认）。
   - 模拟器（API 37）：`/storage/emulated/0/Android/data/<包名>/files` 下 `echo one > Img.png; echo twotwo > img.png` 后只剩一个 `Img.png`、内容 `twotwo`；内部 `app_flutter` 下同样两条命令留下两个文件。Android 内部存储区分大小写，外部（`/data/media`，casefold）不区分，还按 Unicode 归一比对文件名。
