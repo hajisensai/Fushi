@@ -192,6 +192,9 @@ import 'package:fushi/src/srs/srs_mining.dart';
 import 'package:fushi_engine/srs/srs_mining_target.dart';
 import 'package:fushi/src/srs/srs_profile_stores.dart';
 import 'package:fushi/src/srs/srs_storage_host.dart';
+import 'package:fushi/src/srs/srs_write_relay.dart';
+import 'package:fushi/src/srs/srs_write_relay_channel.dart';
+import 'package:path_provider/path_provider.dart' show getTemporaryDirectory;
 import 'package:fushi/src/srs/srs_review_gestures.dart';
 import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/models/home_dashboard_panel.dart';
@@ -1861,14 +1864,114 @@ class AppModel
   SrsStorageHost? _srsStorageHost;
 
   /// 换一份 SRS 存储持有者（旧的先关）。[isMainProcess] 为 false 时不搬迁旧库（见 [SrsStorageHost]）。
-  Future<void> _resetSrsStorageHost({required bool isMainProcess}) async {
+  /// [beforePrimaryOpen] 见 [SrsStorageHost]（主界面的引擎开主库前让无界面执行引擎交出主库，BUG-5542）。
+  Future<void> _resetSrsStorageHost({
+    required bool isMainProcess,
+    Future<void> Function()? beforePrimaryOpen,
+  }) async {
     await _closeSrsStorage();
     await useSrsTempDirectory();
     _srsStorageHost = SrsStorageHost(
       dbDirectory: _databaseDirectory.path,
       isMainProcess: isMainProcess,
       legacyDatabase: () => _database,
+      beforePrimaryOpen: beforePrimaryOpen,
     );
+  }
+
+  /// 本进程复习笔记写入的执行方（BUG-5542，见 [SrsNoteWriter]）：只读打开复习库的 Android 辅助进程（`:popup` 查词窗 /
+  /// 第二块屏面板）转交主进程执行，其余进程本地写。每次写入现选：装饰链可能先于本进程的初始化建好。
+  late final SrsNoteWriter srsNoteWriter = SelectingSrsNoteWriter(
+    _selectSrsNoteWriter,
+  );
+
+  SrsNoteWriter? _relaySrsNoteWriter;
+
+  SrsNoteWriter _selectSrsNoteWriter() {
+    final SrsStorageHost? host = _srsStorageHost;
+    if (!Platform.isAndroid || host == null || host.isMainProcess) {
+      return const LocalSrsNoteWriter();
+    }
+    return _relaySrsNoteWriter ??= RelaySrsNoteWriter(
+      transport: srsWriteRelayForward,
+      // 两个进程共用 app 的 cache 目录。
+      spoolDirectory: () async => Directory(
+        path.join((await getTemporaryDirectory()).path, 'srs_write_relay'),
+      ),
+    );
+  }
+
+  /// 主进程执行辅助进程转交来的写入时用的制卡器（BUG-5542，`SrsWriteRelayHost`）：[profileUid] 那份配置的复习副本 +
+  /// 辅助进程取定的 [destination]（它按自己的作品会话 / 激活配置算好，主进程照写，不另叠自己的作品会话）。等本实例
+  /// 初始化完再取；复习不可用时 null；库在换代途中原样抛出代际异常。
+  Future<SrsMiner?> srsRelayMiner(
+    String profileUid,
+    SrsMiningDestination destination,
+  ) async {
+    await _awaitInitialisedForSrsRelay();
+    final SrsProfileStores Function()? reader = srsProfileStoresReader;
+    if (reader == null || !moduleVisibility.isEnabled(ModuleId.srs)) {
+      return null;
+    }
+    return reader().minerFor(
+      profileUid: profileUid,
+      destination: destination,
+      fallbackRolloverHour: () => statDayResetHour,
+    );
+  }
+
+  /// 等 [initialise] / [initialiseForSrsWriteHost] 走完（主界面冷启动时转交的写入可能先到）；初始化失败时抛。
+  Future<void> _awaitInitialisedForSrsRelay() async {
+    if (_isInitialised) return;
+    final Completer<void> done = Completer<void>();
+    void check() {
+      if (done.isCompleted) return;
+      if (_isInitialised) {
+        done.complete();
+      } else if (_initError != null) {
+        done.completeError(
+          StateError('app initialisation failed: $_initError'),
+        );
+      }
+    }
+
+    addListener(check);
+    check();
+    try {
+      await done.future;
+    } finally {
+      removeListener(check);
+    }
+  }
+
+  /// 无界面的复习写入执行引擎（Android 主进程里主界面不在时，由 `SrsWriteRelayService` 拉起，BUG-5542）的初始化：
+  /// 只装执行转交写入要的几样——数据目录、主库（不接手主进程的恢复职责）、复习库（Primary：此刻进程里唯一的写者，
+  /// 主界面的引擎开库之前会先让本引擎交出，见 [closeForSrsWriteHost]）、偏好。不装词典 / 主题 / 媒体源：载荷里的媒体
+  /// 已由辅助进程冻结成字节。
+  Future<void> initialiseForSrsWriteHost() async {
+    if (_isInitialised) return;
+    try {
+      await _prepareRuntimeDirectories();
+      _database = FushiDatabase(_databaseDirectory.path, isMainProcess: false);
+      _databaseOpened = true;
+      await _resetSrsStorageHost(isMainProcess: true);
+      _prefsRepo = PreferencesRepository(_database);
+      await prefsRepo.loadFromDb();
+      _applyStatDayResetHour();
+      _isInitialised = true;
+      notifyListeners();
+    } catch (e, stack) {
+      ErrorLogService.instance.log('AppModel.srsWriteHostInit', e, stack);
+      _initError = '$e';
+      notifyListeners();
+    }
+  }
+
+  /// 无界面执行引擎交出主库（[initialiseForSrsWriteHost] 的反向）：先关复习库、再关主库。
+  Future<void> closeForSrsWriteHost() async {
+    _isInitialised = false;
+    await _closeSrsStorage();
+    if (_databaseOpened) await _database.close();
   }
 
   /// 关 SRS 存储（幂等）。必须在关主库之前：主进程打开时的搬迁读的是主库连接。
@@ -5743,7 +5846,13 @@ class AppModel
       MediaServerRouteFailover.install(
         mediaServerRouteFailoverForRepository(() => SyncRepository(_database)),
       );
-      await _resetSrsStorageHost(isMainProcess: true);
+      // Android 主进程里替辅助进程执行写入的无界面引擎（BUG-5542）在主界面开主库之前交出主库。
+      await _resetSrsStorageHost(
+        isMainProcess: true,
+        beforePrimaryOpen: Platform.isAndroid
+            ? SrsWriteRelayHostChannel.claimPrimary
+            : null,
+      );
       // 服务器曲目的离线副本（v175）：进程内索引跟着表走，播放项据此换成本地文件。
       MusicServerDownloadIndex.instance.attach(_database);
       // 服务器曲目离线 / 配置删了时没送达的播放与收藏（v176 补发队列）：「连不上」的判据补上

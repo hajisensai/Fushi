@@ -47,6 +47,10 @@ import 'package:fushi/src/pages/implementations/collections_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/popup_main.dart' as popup_entrypoint;
 import 'package:fushi/second_screen_main.dart' as second_screen_entrypoint;
+import 'package:fushi/srs_write_host_main.dart' as srs_write_host_entrypoint;
+import 'package:fushi/src/srs/srs_write_relay.dart' show SrsWriteRelayHost;
+import 'package:fushi/src/srs/srs_write_relay_channel.dart'
+    show SrsWriteRelayHostChannel;
 import 'package:fushi/src/second_screen/companion/companion_context.dart'
     show companionContextRouteObserver;
 import 'package:fushi/src/second_screen/second_screen_approval_host.dart';
@@ -332,6 +336,13 @@ void popupMain() {
 @pragma('vm:entry-point')
 void secondScreenMain() {
   second_screen_entrypoint.secondScreenMain();
+}
+
+/// Android 主进程里主界面不在时、替辅助进程（`:popup` / 第二块屏）执行复习写入的无界面引擎（BUG-5542，原生
+/// `SrsWriteRelay` 拉起）。同上，入口要在根库里。
+@pragma('vm:entry-point')
+void srsWriteHostMain() {
+  srs_write_host_entrypoint.srsWriteHostMain();
 }
 
 /// 冷启动恢复 Windows 窗口 / 任务栏图标的在途操作；显窗前等它落定。永不以错误结束。
@@ -907,6 +918,21 @@ void main([List<String> args = const <String>[]]) {
       // 写入后同样刷新牌组列表 / 首页复习条的计数。
       appModel.srsCardsAddedNotifier = () =>
           container.read(srsRevisionProvider.notifier).state++;
+      // BUG-5542：Android 辅助进程（`:popup` 查词窗 / 第二块屏面板）只读打开复习库，它们的写入（制卡、覆写、改字段、
+      // 删卡）经原生 `SrsWriteRelayService` 转交到这里，在主界面的复习副本上执行；写完同样刷新牌组列表 / 计数。
+      if (Platform.isAndroid) {
+        final SrsWriteRelayHost srsRelayHost = SrsWriteRelayHost(
+          resolveMiner: appModel.srsRelayMiner,
+          onWritten: () => container.read(srsRevisionProvider.notifier).state++,
+        );
+        unawaited(
+          SrsWriteRelayHostChannel.install(
+            execute: srsRelayHost.handle,
+          ).catchError((Object e, StackTrace stack) {
+            ErrorLogService.instance.log('SrsWriteRelayHost.install', e, stack);
+          }),
+        );
+      }
       // BUG-5085：复习库要升级时制卡失败提示上的「打开复习」：与小组件「复习」入口同一条路（切到复习 tab、
       // 退回首页层级，编辑页的 PopScope 照常拦未保存改动）。复习 tab 本身就是升级 / 说明页。
       mineFailureOpenReview = () {

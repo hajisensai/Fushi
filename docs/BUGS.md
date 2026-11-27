@@ -37,7 +37,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-5542](bugs/BUG-5542-popup-srs-mining-read-only.md) | 🚧 | 🚧 | Android 应用外查词卡（:popup）制卡到 Fushi 复习报 SrsCoreReadOnlyException |
+| [BUG-5542](bugs/BUG-5542-popup-srs-mining-read-only.md) | ✅ | ✅ | Android 应用外查词卡（:popup）制卡到 Fushi 复习报 SrsCoreReadOnlyException |
 | [BUG-5541](bugs/BUG-5541-popup-favorite-unwired.md) | ✅ | ✅ | Android 应用外查词卡（:popup）点 ☆ 收藏没反应 |
 | [BUG-5536](bugs/BUG-5536-storage-scan-ui-freeze.md) | ✅ | ✅ | 打开 设置 › 存储 扫描期间整窗冻结（有声书逐文件音频路径在 UI isolate 上 O(n²) 去嵌套） |
 | [BUG-5535](bugs/BUG-5535-masthead-icons-title-misaligned.md) | ✅ | ✅ | 页头大字顶栏的返回键、动作图标和页名上下没对齐（二级页收缩后返回键高出一截，库页动作组和页名错开） |
