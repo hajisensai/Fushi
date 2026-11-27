@@ -833,7 +833,9 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
   ///
   /// 「本机有」按成员种类查本机条目表：epub = `epub_books`（uid，或下载落地后尚未
   /// 收敛成 uid 的透传 bookKey）、srt = `srt_books.uid`、video =
-  /// `video_books.book_uid`、game = `galgames.id`。成员行存在但一条都查不上 = 这些
+  /// `video_books.book_uid`、game = `galgames.id`。视频成员只有 `video/` 开头的文件
+  /// 派生键才参与判定：媒体服务器 / 在线视频源收养进来的合集（成员键是服务器条目 id
+  /// 等，用户库实测 3145 个 Jellyfin 系列 playlist）条目不在任何设备上，不归这一类。成员行存在但一条都查不上 = 这些
   /// 条目只在别的设备上（合集同步对本机没有的条目照抄透传，见
   /// `applyCollectionLocalChanges`）。只看本机条目表，与库页的标签筛选、上锁、折叠
   /// 归属（成员被更小 id 的合集折走）都无关。含本机不认识的成员种类（对端新版本的
@@ -861,8 +863,13 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
         'WHERE b.book_key = i.entry_key)) THEN 1 '
         "WHEN i.media_type = 'srt' AND EXISTS (SELECT 1 FROM srt_books s "
         'WHERE s.uid = i.entry_key) THEN 1 '
-        "WHEN i.media_type = 'video' AND EXISTS (SELECT 1 FROM video_books v "
-        'WHERE v.book_uid = i.entry_key) THEN 1 '
+        // 视频只有文件派生的 `video/<文件名>` 键（本机 / 互联对端的文件，
+        // [coreSingleVideoBookUid]）才能断言「在别的设备上」；媒体服务器条目 id、
+        // 在线视频源集 id 等来源键的条目在服务器 / 源上，不是别的设备的文件——判不了，
+        // 当「在」处理（不进只在其它设备上）。
+        "WHEN i.media_type = 'video' AND (substr(i.entry_key, 1, 6) <> 'video/' "
+        'OR EXISTS (SELECT 1 FROM video_books v '
+        'WHERE v.book_uid = i.entry_key)) THEN 1 '
         "WHEN i.media_type = 'game' AND EXISTS (SELECT 1 FROM galgames g "
         'WHERE g.id = i.entry_key) THEN 1 '
         'ELSE 0 END) = 0',

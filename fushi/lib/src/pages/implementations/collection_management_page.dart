@@ -38,7 +38,8 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 ///
 /// 本机一个成员都没有的合集（成员只在别的设备上，合集同步照抄透传落的行，
 /// [FushiDatabase.getCollectionsWithoutLocalMembers]）单独列在「仅在其它设备上」
-/// 一组，副标题写明本机没有、其它设备上有几项（BUG-5597）。判据只看本机条目表，
+/// 一组，副标题写明本机没有、其它设备上有几项（BUG-5597）。媒体服务器 / 在线视频源
+/// 收养进来的视频合集不算（条目在服务器上，不是别的设备的文件）。判据只看本机条目表，
 /// 与库页的标签筛选、上锁、折叠归属无关——被筛掉 / 上锁 / 成员全被别的合集折走的
 /// 合集仍在上面一组。
 class CollectionManagementPage extends StatefulWidget {

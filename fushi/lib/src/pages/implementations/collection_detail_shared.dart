@@ -1,5 +1,6 @@
 import 'package:fushi/src/ai/ai_failure_text.dart';
 import 'package:fushi/src/media/collections/collection_ai_order.dart';
+import 'package:fushi/src/media/collections/collection_remote_only.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/ai/ai_collection_order_assistant.dart'
@@ -221,23 +222,32 @@ mixin CollectionDetailShared<T extends StatefulWidget> on State<T> {
   /// 「删除合集」确认：统一走 PR-0 的 [FushiDestructiveConfirmDialog]。
   /// [checkboxLabel] 非空 = 提供「连同成员本体一起删」勾选行；null = 纯解链删除。
   /// 返回 null = 取消。
+  ///
+  /// 合集只在其它设备上（[isCollectionRemoteOnly]，与库页合集菜单同一判据、同一
+  /// 文案）时正文追加「会经同步一并删除其它设备上的这个合集」，并去掉连带删成员的
+  /// 勾选（本机没有成员本体），结果的 `checked` 恒 false。
   Future<FushiDestructiveConfirmResult?> confirmDetailCollectionDelete({
     String? checkboxLabel,
     String? localFilesSubtitle,
     String? statisticsSubtitle,
     DeletionDisclosure? checkedDisclosure,
     String? deleteSubscriptionsLabel,
-  }) {
+  }) async {
+    final bool remoteOnly = await isCollectionRemoteOnly(
+      detailDatabase,
+      detailCollection.id,
+    );
+    if (!mounted) return null;
     return showAppDialog<FushiDestructiveConfirmResult>(
       context: context,
       builder: (_) => FushiDestructiveConfirmDialog(
         title: t.delete_collection,
-        message: t.delete_collection_confirm,
+        message: collectionDeleteConfirmMessage(remoteOnly: remoteOnly),
         confirmLabel: t.delete_collection,
-        checkboxLabel: checkboxLabel,
-        localFilesSubtitle: localFilesSubtitle,
-        statisticsSubtitle: statisticsSubtitle,
-        checkedDisclosure: checkedDisclosure,
+        checkboxLabel: remoteOnly ? null : checkboxLabel,
+        localFilesSubtitle: remoteOnly ? null : localFilesSubtitle,
+        statisticsSubtitle: remoteOnly ? null : statisticsSubtitle,
+        checkedDisclosure: remoteOnly ? null : checkedDisclosure,
         deleteSubscriptionsLabel: deleteSubscriptionsLabel,
       ),
     );

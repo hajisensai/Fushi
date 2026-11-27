@@ -35,8 +35,29 @@ void main() {
     return db;
   }
 
-  Future<({FushiDatabase db, MediaCollectionRow col})> seed() async {
+  /// [localBooks]：成员书在本机（`epub_books` 行，成员键 = bookKey）。不在本机的
+  /// 成员 = 只在其它设备上，删除确认会改走另一套文案（BUG-5597）。
+  Future<({FushiDatabase db, MediaCollectionRow col})> seed({
+    bool localBooks = false,
+  }) async {
     final FushiDatabase db = await openDb();
+    if (localBooks) {
+      for (final String k in <String>['k1', 'k2', 'k3']) {
+        await db
+            .into(db.epubBooks)
+            .insert(
+              EpubBooksCompanion.insert(
+                bookKey: k,
+                title: k,
+                epubPath: '/tmp/$k.epub',
+                extractDir: '/tmp/$k',
+                chapterCount: 1,
+                chaptersJson: '[]',
+                importedAt: 1000,
+              ),
+            );
+      }
+    }
     final int cid = await db.createMediaCollection('C');
     await db.addToCollection(cid, MediaKind.epub, 'k1');
     await db.addToCollection(cid, MediaKind.epub, 'k2');
@@ -443,7 +464,9 @@ void main() {
 
   testWidgets('删除合集：复选框默认不勾 → 回调不触发，只解散容器', (WidgetTester tester) async {
     useDesktopView(tester);
-    final ({FushiDatabase db, MediaCollectionRow col}) s = await seed();
+    final ({FushiDatabase db, MediaCollectionRow col}) s = await seed(
+      localBooks: true,
+    );
     final List<MediaCollectionItemRow> passed = <MediaCollectionItemRow>[];
     await tester.pumpWidget(
       wrapPageWithDelete(
@@ -473,9 +496,46 @@ void main() {
     expect(await s.db.getMediaCollectionById(s.col.id), isNull);
   });
 
-  testWidgets('删除合集：勾选「同时删除其中的书」→ 回调收到全部成员再解散容器', (WidgetTester tester) async {
+  // BUG-5597：与库页合集菜单同一判据 / 文案（collection_remote_only.dart）。
+  testWidgets('删除合集：成员全不在本机 → 写明会同步删除其它设备上的合集，无连带删勾选', (
+    WidgetTester tester,
+  ) async {
     useDesktopView(tester);
     final ({FushiDatabase db, MediaCollectionRow col}) s = await seed();
+    final List<MediaCollectionItemRow> passed = <MediaCollectionItemRow>[];
+    await tester.pumpWidget(
+      wrapPageWithDelete(
+        s.col,
+        s.db,
+        onDeleteMembersMedia:
+            (
+              List<MediaCollectionItemRow> members,
+              bool deleteLocalFiles,
+              bool deleteStatistics,
+            ) async => passed.addAll(members),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip(t.delete_collection));
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining(t.delete_collection_remote_only_warning),
+      findsOneWidget,
+    );
+    expect(find.text(t.delete_collection_also_books), findsNothing);
+
+    await tester.tap(find.text(t.delete_collection).last);
+    await tester.pumpAndSettle();
+    expect(passed, isEmpty);
+    expect(await s.db.getMediaCollectionById(s.col.id), isNull);
+  });
+
+  testWidgets('删除合集：勾选「同时删除其中的书」→ 回调收到全部成员再解散容器', (WidgetTester tester) async {
+    useDesktopView(tester);
+    final ({FushiDatabase db, MediaCollectionRow col}) s = await seed(
+      localBooks: true,
+    );
     final List<String> passed = <String>[];
     await tester.pumpWidget(
       wrapPageWithDelete(
