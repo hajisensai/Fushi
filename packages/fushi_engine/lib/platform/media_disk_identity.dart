@@ -24,6 +24,7 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:ffi/ffi.dart';
+import 'package:meta/meta.dart' show visibleForTesting;
 import 'package:path/path.dart' as p;
 
 /// [a] 与 [b] 两个盘标识（[mediaDiskIdentity]）**可能**是同一块盘：任一判不出（null）
@@ -58,7 +59,221 @@ Future<Set<String>?> mediaDiskIdentity(String path) {
 }
 
 /// 测试用：清掉按目录的缓存。
-void debugResetMediaDiskIdentityCache() => _identityByDirectory.clear();
+void debugResetMediaDiskIdentityCache() {
+  _identityByDirectory.clear();
+  _remoteByDirectory.clear();
+}
+
+// ---------------------------------------------------------------------------
+// 网络卷判定
+// ---------------------------------------------------------------------------
+
+/// 按所在目录缓存 [isRemoteMediaVolume] 的结果（同一目录必在同一卷上）。
+final Map<String, Future<bool>> _remoteByDirectory = <String, Future<bool>>{};
+
+bool Function(String path)? _remoteOverride;
+
+/// 测试用：让 [isRemoteMediaVolume] 直接按 [predicate] 回答（null = 恢复真实判定）。
+@visibleForTesting
+void debugOverrideRemoteMediaVolume(bool Function(String path)? predicate) {
+  _remoteOverride = predicate;
+  _remoteByDirectory.clear();
+}
+
+/// [path] 所在的卷是不是**网络卷**：SMB / NFS 共享、WebDAV，或 rclone / sshfs 这类
+/// 把云盘挂成本地盘符的 FUSE 挂载。
+///
+/// 这类卷上每读一个字节都要走网络，带宽往往只比视频码率高一点（云盘还限速、断连）。
+/// 播放器自己的顺序读已经吃掉大半，后台再读同一部片（进度条缩略图的随机 seek 取帧、
+/// 下一集的整片字幕抽取）就会把正在播的那条流饿到卡缓冲。消费端据此只在本机盘上
+/// 做这类「锦上添花」的读盘。
+///
+/// - Windows：UNC 路径（`\\server\share`）、`GetDriveTypeW == DRIVE_REMOTE`（映射的
+///   网络驱动器、rclone `--network-mode`），以及文件系统名为 `FUSE*` / `rclone` 的
+///   WinFsp 挂载（rclone 不带 `--network-mode` 时报的是本地盘）。
+/// - Linux / Android：`stat -f -c %T` 的文件系统类型属于 [isRemoteLinuxFsType]。
+/// - macOS：`mount` 输出里该路径所在挂载点的类型属于 [isRemoteMacMountType]。
+/// - 判不出（其它平台 / 任一步失败）按**本机盘**处理：误判成本地只是照旧做后台读，
+///   误判成网络盘会让本机用户平白丢掉缩略图。
+///
+/// 不抛。
+Future<bool> isRemoteMediaVolume(String path) {
+  final bool Function(String path)? override = _remoteOverride;
+  if (override != null) return Future<bool>.value(override(path));
+  if (_isUncPath(path)) return Future<bool>.value(true);
+  final String dir = p.dirname(p.absolute(path));
+  return _remoteByDirectory.putIfAbsent(dir, () async {
+    try {
+      if (Platform.isWindows) {
+        // 断开的网络盘上 FFI 可能阻塞数秒：放后台 isolate。
+        return await Isolate.run(() => _windowsIsRemoteVolume(dir));
+      }
+      if (Platform.isLinux || Platform.isAndroid) {
+        final ProcessResult r = await Process.run('stat', <String>[
+          '-f',
+          '-c',
+          '%T',
+          dir,
+        ]);
+        if (r.exitCode != 0) return false;
+        return isRemoteLinuxFsType((r.stdout as String).trim());
+      }
+      if (Platform.isMacOS) {
+        final ProcessResult r = await Process.run('/sbin/mount', <String>[]);
+        if (r.exitCode != 0) return false;
+        final String? type = macMountTypeForPath(
+          r.stdout as String,
+          await Directory(dir).resolveSymbolicLinks(),
+        );
+        return type != null && isRemoteMacMountType(type);
+      }
+    } on Object {
+      // 落到下面的 false：判不出按本机盘处理。
+    }
+    return false;
+  });
+}
+
+bool _isUncPath(String path) =>
+    (path.startsWith(r'\\') || path.startsWith('//')) &&
+    !path.startsWith(r'\\?\') &&
+    !path.startsWith(r'\\.\');
+
+/// Linux `stat -f -c %T` 报的文件系统类型是不是网络文件系统。
+///
+/// `fuse` 是非块设备的 FUSE（rclone / sshfs / davfs2 等几乎都是网络盘）；本机 NTFS
+/// 分区走的 ntfs-3g 报 `fuseblk`，不算。
+bool isRemoteLinuxFsType(String type) {
+  const Set<String> remote = <String>{
+    'nfs',
+    'nfs4',
+    'cifs',
+    'smb',
+    'smb2',
+    'smb3',
+    'smbfs',
+    'fuse',
+    '9p',
+    'afs',
+    'ceph',
+    'coda',
+    'glusterfs',
+    'davfs',
+    'ncpfs',
+  };
+  return remote.contains(type.trim().toLowerCase());
+}
+
+/// macOS `mount` 输出（每行 `<设备> on <挂载点> (<类型>, <选项>…)`）里，[dir] 所在
+/// 挂载点（最长前缀匹配）的文件系统类型；没有匹配行返回 null。
+String? macMountTypeForPath(String mountOutput, String dir) {
+  final RegExp line = RegExp(r'^.+? on (.+) \(([^,)]+)');
+  String? bestType;
+  int bestLength = -1;
+  for (final String raw in mountOutput.split('\n')) {
+    final RegExpMatch? m = line.firstMatch(raw.trim());
+    if (m == null) continue;
+    final String mountPoint = m.group(1)!;
+    final bool covers =
+        mountPoint == '/' ||
+        dir == mountPoint ||
+        dir.startsWith('$mountPoint/');
+    if (covers && mountPoint.length > bestLength) {
+      bestLength = mountPoint.length;
+      bestType = m.group(2)!.trim();
+    }
+  }
+  return bestType;
+}
+
+/// macOS 挂载类型是不是网络文件系统（含 macFUSE：rclone / sshfs 都挂成它）。
+bool isRemoteMacMountType(String type) {
+  const Set<String> remote = <String>{
+    'smbfs',
+    'nfs',
+    'afpfs',
+    'webdav',
+    'macfuse',
+    'osxfuse',
+    'fusefs',
+    'ftp',
+  };
+  return remote.contains(type.trim().toLowerCase());
+}
+
+typedef _GetDriveTypeNative = Uint32 Function(Pointer<Utf16>);
+typedef _GetDriveTypeDart = int Function(Pointer<Utf16>);
+typedef _GetVolumeInformationNative =
+    Int32 Function(
+      Pointer<Utf16>,
+      Pointer<Utf16>,
+      Uint32,
+      Pointer<Uint32>,
+      Pointer<Uint32>,
+      Pointer<Uint32>,
+      Pointer<Utf16>,
+      Uint32,
+    );
+typedef _GetVolumeInformationDart =
+    int Function(
+      Pointer<Utf16>,
+      Pointer<Utf16>,
+      int,
+      Pointer<Uint32>,
+      Pointer<Uint32>,
+      Pointer<Uint32>,
+      Pointer<Utf16>,
+      int,
+    );
+
+const int _driveRemote = 4;
+
+/// Windows 上 [fileSystemName]（`GetVolumeInformationW` 报的名字）是不是 WinFsp 的
+/// 用户态网络盘挂载。
+bool isRemoteWindowsFileSystemName(String fileSystemName) {
+  final String name = fileSystemName.trim().toLowerCase();
+  return name.startsWith('fuse') || name == 'rclone';
+}
+
+bool _windowsIsRemoteVolume(String dir) {
+  final DynamicLibrary kernel32 = DynamicLibrary.open('kernel32.dll');
+  final _PathBufDart getVolumePathName = kernel32
+      .lookupFunction<_PathBufNative, _PathBufDart>('GetVolumePathNameW');
+  final _GetDriveTypeDart getDriveType = kernel32
+      .lookupFunction<_GetDriveTypeNative, _GetDriveTypeDart>('GetDriveTypeW');
+  final _GetVolumeInformationDart getVolumeInformation = kernel32
+      .lookupFunction<_GetVolumeInformationNative, _GetVolumeInformationDart>(
+        'GetVolumeInformationW',
+      );
+  return using((Arena arena) {
+    final Pointer<Utf16> mount = arena<Uint16>(_maxPath).cast<Utf16>();
+    if (getVolumePathName(
+          dir.toNativeUtf16(allocator: arena),
+          mount,
+          _maxPath,
+        ) ==
+        0) {
+      return false;
+    }
+    if (_isUncPath(mount.toDartString())) return true;
+    if (getDriveType(mount) == _driveRemote) return true;
+    final Pointer<Utf16> fsName = arena<Uint16>(_maxPath).cast<Utf16>();
+    if (getVolumeInformation(
+          mount,
+          nullptr,
+          0,
+          nullptr,
+          nullptr,
+          nullptr,
+          fsName,
+          _maxPath,
+        ) ==
+        0) {
+      return false;
+    }
+    return isRemoteWindowsFileSystemName(fsName.toDartString());
+  });
+}
 
 // ---------------------------------------------------------------------------
 // POSIX

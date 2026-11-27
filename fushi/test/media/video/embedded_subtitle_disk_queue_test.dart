@@ -131,6 +131,7 @@ void main() {
 
   tearDown(() {
     setFfmpegBackendForTesting(null);
+    debugOverrideRemoteMediaVolume(null);
     if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
   });
 
@@ -350,6 +351,80 @@ void main() {
       backend.release(ep3);
       await prewarm3;
       expect(backend.started, <String>[p.normalize(ep2), p.normalize(ep3)]);
+    });
+  });
+
+  group('网络卷上不预热下一集', () {
+    test('下一集在网络卷上：后台预热直接放弃、不读文件，也不留在登记里', () async {
+      final String ep2 = video('ep2');
+      debugOverrideRemoteMediaVolume((String path) => path == ep2);
+      await prewarmEmbeddedSubtitleCache(ep2, background: true);
+      await _settle();
+      expect(backend.started, isEmpty, reason: '网盘上整片抽取会和正在播的流抢带宽');
+      expect(debugRunningBackgroundSubtitlePrewarms(), isEmpty);
+    });
+
+    test('前台（当前集）不受影响：网络卷上照常抽取', () async {
+      final String ep1 = video('ep1');
+      debugOverrideRemoteMediaVolume((String _) => true);
+      final Future<SubtitleCueLoadResult> load = loadSubtitleCueResult(
+        _jpn0,
+        ep1,
+        'video/ep1',
+      );
+      await backend.whenStarted(ep1);
+      backend.release(ep1);
+      expect((await load).isFailure, isFalse);
+    });
+  });
+
+  group('isRemoteMediaVolume 判据', () {
+    test('UNC 路径是网络卷；设备 / 长路径前缀不是', () async {
+      expect(await isRemoteMediaVolume(r'\\nas\share\a.mkv'), isTrue);
+      expect(await isRemoteMediaVolume('//nas/share/a.mkv'), isTrue);
+      expect(await isRemoteMediaVolume(r'\\?\D:\lib\a.mkv'), isFalse);
+    });
+
+    test('本机临时目录不是网络卷', () async {
+      expect(await isRemoteMediaVolume(video('local')), isFalse);
+    }, testOn: 'windows || linux || mac-os');
+
+    test('Linux 文件系统类型', () {
+      for (final String t in <String>['nfs', 'nfs4', 'cifs', 'smb2', 'fuse']) {
+        expect(isRemoteLinuxFsType(t), isTrue, reason: t);
+      }
+      for (final String t in <String>[
+        'ext2/ext3',
+        'btrfs',
+        'fuseblk',
+        'tmpfs',
+      ]) {
+        expect(isRemoteLinuxFsType(t), isFalse, reason: t);
+      }
+    });
+
+    test('macOS mount 输出按最长挂载点取类型', () {
+      const String mount = '''
+/dev/disk3s1s1 on / (apfs, sealed, local, read-only, journaled)
+//user@nas/media on /Volumes/media (smbfs, nodev, nosuid, mounted by u)
+rclone@quark on /Volumes/quark (macfuse, nodev, nosuid, synchronous, mounted by u)
+/dev/disk5s1 on /Volumes/media/usb (exfat, local, nodev, nosuid)
+''';
+      expect(macMountTypeForPath(mount, '/Users/u/Movies'), 'apfs');
+      expect(macMountTypeForPath(mount, '/Volumes/media/show'), 'smbfs');
+      expect(macMountTypeForPath(mount, '/Volumes/media/usb/a'), 'exfat');
+      expect(macMountTypeForPath(mount, '/Volumes/mediax'), 'apfs');
+      expect(isRemoteMacMountType('smbfs'), isTrue);
+      expect(isRemoteMacMountType('macfuse'), isTrue);
+      expect(isRemoteMacMountType('apfs'), isFalse);
+      expect(isRemoteMacMountType('exfat'), isFalse);
+    });
+
+    test('Windows WinFsp 文件系统名', () {
+      expect(isRemoteWindowsFileSystemName('FUSE-rclone'), isTrue);
+      expect(isRemoteWindowsFileSystemName('rclone'), isTrue);
+      expect(isRemoteWindowsFileSystemName('NTFS'), isFalse);
+      expect(isRemoteWindowsFileSystemName('exFAT'), isFalse);
     });
   });
 }

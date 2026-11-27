@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/startup/media_handle_registry.dart';
+import 'package:fushi_engine/platform/media_disk_identity.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 
 /// 缩略图预览浮层的四态（TODO-669）。把所有 if 分支收敛成一个枚举，浮层只 switch
@@ -364,7 +365,8 @@ class OffscreenVideoFrameGrabber {
     this.frameCacheCapacity = 64,
     this.consecutiveFailureLimit = 3,
     this.ffmpegTempDir,
-  }) {
+  }) : _onRemoteVolume = isRemoteMediaVolume(videoPath) {
+    _onRemoteVolume.then((bool remote) => _remoteVolume = remote);
     _mediaHandleRegistration = MediaHandleRegistry.instance.register(
       _releaseMediaHandles,
       mediaPath: () => videoPath,
@@ -412,8 +414,17 @@ class OffscreenVideoFrameGrabber {
   /// 熔断要回答的是「这台机器到底有没有可用的 ffmpeg」，所以**一旦成功过就永不
   /// 熔断**：个别位置取不到帧（片尾、损坏的 GOP）是正常的，不该因此把整个视频的
   /// 缩略图关掉。只有从头到尾一次都没成功过，才认定环境不具备取帧能力。
+  ///
+  /// 视频在网络卷上（[isRemoteMediaVolume]：SMB 共享、rclone 云盘挂载…）时同样停用：
+  /// 每取一帧 ffmpeg 都要 seek 到新位置，挂载层随之从那里另开一路下载（rclone 还带
+  /// 上百 MB 预读），和正在播的那条流抢同一条带宽，播放直接卡缓冲。只显时间戳。
   bool get isUnavailable =>
-      !_everSucceeded && _consecutiveFailures >= consecutiveFailureLimit;
+      _remoteVolume ||
+      (!_everSucceeded && _consecutiveFailures >= consecutiveFailureLimit);
+
+  /// 视频所在卷是不是网络卷（构造时开始判，[grab] 前等它出结果）。
+  final Future<bool> _onRemoteVolume;
+  bool _remoteVolume = false;
 
   /// 预热：hover 刚进入进度条时由调度器调用，取一次片头帧。
   ///
@@ -451,6 +462,7 @@ class OffscreenVideoFrameGrabber {
     final ui.Image? cached = cachedFrame(targetMs);
     if (cached != null) return cached;
     if (isUnavailable) return null;
+    if (await _onRemoteVolume || _disposed) return null;
 
     final Completer<void> done = Completer<void>();
     _inFlightGrab = done.future;

@@ -1460,7 +1460,8 @@ Future<SubtitleCueLoadResult> _readAndParse(
 /// 不能和当前集的整片读盘抢同一块盘——两个顺序读同时压在一块机械盘 / 慢 USB 盘上，
 /// 磁头来回跳、两边都慢得多，当前集的字幕更晚出来、播放也跟着卡。所以后台预热先排队：
 /// 同一块盘（[mediaDiskIdentity]）上还有前台读盘（当前集的预热 / 自动加载 / 菜单切轨）
-/// 或别的已开始的后台预热时，等它们结束（或被取消）再开始。
+/// 或别的已开始的后台预热时，等它们结束（或被取消）再开始。网络卷
+/// （[isRemoteMediaVolume]）上直接不做：那里抢的是网络带宽，排队也躲不开正在播的流。
 Future<void> prewarmEmbeddedSubtitleCache(
   String videoPath, {
   Future<void>? cancel,
@@ -1478,6 +1479,10 @@ Future<void> prewarmEmbeddedSubtitleCache(
   );
   _embeddedDiskReads.add(read);
   try {
+    // 网络卷（SMB / 云盘挂载）上不预热下一集：整片抽取要把那一集从网上再拉一遍，
+    // 和正在播的这集抢同一条带宽，当前集卡缓冲（夸克 rclone 挂载实测）。换集时字幕
+    // 照常现抽，只是不提前。
+    if (await isRemoteMediaVolume(videoPath)) return;
     if (!await _awaitBackgroundDiskTurn(read, cancel)) return;
     await _prewarmEmbeddedSubtitleCacheNow(videoPath, cancel: cancel);
   } finally {
