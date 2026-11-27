@@ -363,12 +363,27 @@ final class VirtualCollectionRegistry {
   /// 记下某自然键已物化成 [realId]：同自然键的所有虚拟 id 都指过去。
   void markMaterialized(String name, String collectionType, int realId) {
     final String nk = remoteSeriesNaturalKey(name, collectionType);
+    _materializedSeries[nk] = (
+      name: name,
+      collectionType: collectionType,
+      realId: realId,
+    );
     _rowsById.forEach((int id, MediaCollectionRow row) {
       if (remoteSeriesNaturalKey(row.name, row.collectionType) == nk) {
         _materialized[id] = realId;
       }
     });
   }
+
+  /// 本会话物化过的剧：物化时的剧名 / 类型 → 真合集 id。真合集之后可能改名（改名本身
+  /// 就是物化入口），按物化时的自然键记名次的消费方（视频库手动序）据此把名次换到
+  /// 真合集名下。
+  Iterable<({String name, String collectionType, int realId})>
+  get materializedSeries => _materializedSeries.values;
+
+  final Map<String, ({String name, String collectionType, int realId})>
+  _materializedSeries =
+      <String, ({String name, String collectionType, int realId})>{};
 
   final Map<String, int> _knownIds = <String, int>{};
   final Map<String, MediaCollectionRow> _rowsByKey =
@@ -457,6 +472,7 @@ final class VirtualCollectionRegistry {
     _rowsByKey.clear();
     _rowsById.clear();
     _materialized.clear();
+    _materializedSeries.clear();
     _members = const <String, List<RemoteSeriesEntry>>{};
     _next = -1;
   }
