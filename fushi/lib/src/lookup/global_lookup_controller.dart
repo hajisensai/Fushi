@@ -2463,9 +2463,9 @@ class GlobalLookupController {
       // 反馈 uEnwXmBIR0：「编辑例句后制卡」的编辑框借主窗弹（覆盖窗收不到键盘）。游戏内
       // 查词卡（galCard）画在游戏画面里、借不了主窗，不给入口。
       preMineSentenceEditor:
-          GlobalLookupChannel.currentRoute.source == 'galCard'
-          ? null
-          : _editMineSentenceInMainWindow,
+          _preMineSentenceEditAvailable(GlobalLookupChannel.currentRoute)
+          ? _editMineSentenceInMainWindow
+          : null,
     )) {
       return;
     }
@@ -3042,6 +3042,7 @@ class GlobalLookupController {
       // the runner's pinned root/bbox relationship would no longer hold.
       clampRootShellToWorkArea: route.source != 'galCard',
       advancedMiningHandoff: _advancedMiningHandoffAvailable(route),
+      preMineSentenceEdit: _preMineSentenceEditAvailable(route),
       staticRevisions: _hostStaticRevisions,
       hostKey: hostKey,
       entriesStore: entriesStore,
@@ -3126,6 +3127,12 @@ class GlobalLookupController {
   /// （`galCard`）同理。制卡模块关着时 popup.js 自己不渲染（「+」都没有）。
   bool _advancedMiningHandoffAvailable(GlobalLookupRoute route) =>
       route.source != 'galCard' && _currentMiningHandler == null;
+
+  /// 这张覆盖窗卡给不给「编辑例句后制卡」入口（反馈 uEnwXmBIR0）。编辑框借主窗弹
+  /// （[_editMineSentenceInMainWindow]），游戏内查词卡（`galCard`）画在游戏画面里、借不了
+  /// 主窗，不给；渲染门控与桥上的编辑出口共用这一处判据。
+  bool _preMineSentenceEditAvailable(GlobalLookupRoute route) =>
+      route.source != 'galCard';
 
   /// 卡上点了「高级制卡」：收起覆盖窗，把这一层的查询串 + 上下文 + 词条身份交给主窗
   /// 出口（[AppModel.queueExternalLookup]），主窗查词页唤到前台、查完后打开对话框。

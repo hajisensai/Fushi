@@ -9,6 +9,8 @@ import 'package:fushi/src/lookup/pre_mine_sentence_edit.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi_anki/fushi_anki_core.dart' show MiningRequestOverrides;
 
+import '../helpers/source_guard.dart';
+
 /// 反馈 uEnwXmBIR0：应用外查词卡「编辑例句后制卡」。标记随 `miningOverrides` 上来，
 /// 宿主在派发制卡前弹编辑框，改好的句子写回 `fields['sentence']` 并打「手改」标记。
 /// 委托路径上宿主不碰 AppModel 的任何成员（碰了就说明走错了路）。
@@ -195,6 +197,51 @@ void main() {
         ),
       );
       expect(body, isNot(contains("callHandler('mineEntry'")));
+    });
+  });
+
+  group('覆盖窗入口按表面门控', () {
+    // flutter test 的 cwd 是 fushi 包根。
+    String read(String path) => compactCode(File(path).readAsStringSync());
+    final String controller = read(
+      'lib/src/lookup/global_lookup_controller.dart',
+    );
+    final String render = read('lib/src/lookup/global_lookup_render.dart');
+    final String injection = read(
+      'lib/src/pages/implementations/popup_settings_injection.dart',
+    );
+
+    test('游戏内查词卡（galCard）借不了主窗：不渲染入口，桥上也不给编辑出口', () {
+      expect(
+        controller,
+        contains(
+          "bool_preMineSentenceEditAvailable(GlobalLookupRouteroute)=>route.source!='galCard';",
+        ),
+      );
+      // 渲染门控与桥上的编辑出口共用同一处判据。
+      expect(
+        controller,
+        contains('preMineSentenceEdit:_preMineSentenceEditAvailable(route),'),
+      );
+      expect(
+        controller,
+        contains(
+          'preMineSentenceEditor:_preMineSentenceEditAvailable(GlobalLookupChannel.currentRoute)?_editMineSentenceInMainWindow:null,',
+        ),
+      );
+    });
+
+    test('门控走每帧 renderJs、在 renderPopup 之前写，不进静态段', () {
+      final int flag = render.indexOf(
+        r'window.__fushiPreMineSentenceEdit=$preMineSentenceEdit;',
+      );
+      expect(flag, greaterThan(0));
+      expect(
+        render.indexOf('window.renderPopup&&window.renderPopup();'),
+        greaterThan(flag),
+      );
+      expect(injection, isNot(contains('window.__fushiPreMineSentenceEdit=')));
+      expect(injection, contains('t.popup_sentence_edit_button'));
     });
   });
 }
