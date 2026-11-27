@@ -34,6 +34,12 @@
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
 > 共 4864 条。点号进各自文件。
+> 共 4859 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5589](bugs/BUG-5589-startup-collection-items-full-scan.md) | ✅ | ✅ | 启动后切模块掉帧：合集成员表被反复整表读进 UI isolate |
+> 共 4863 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|

@@ -156,9 +156,24 @@ class _RecordingEngineLog implements EngineLogSink {
 class _SelectCounter extends QueryInterceptor {
   final List<String> selects = <String>[];
 
+  /// 主 FROM 是 [table] 的语句数（子查询里的 FROM 不算：快照按库内视频收窄合集
+  /// 时子查询会引用 video_books / media_collection_items，那不是又读了一遍整表）。
   int countFrom(String table) => selects
-      .where((String sql) => RegExp('FROM "?$table"?(?![a-z_])').hasMatch(sql))
+      .where(
+        (String sql) => RegExp(
+          '^SELECT .*? FROM "?$table"?(?![a-z_])',
+        ).hasMatch(_withoutSubqueries(sql)),
+      )
       .length;
+
+  static String _withoutSubqueries(String sql) {
+    final RegExp innermost = RegExp(r'\(\s*SELECT[^()]*\)');
+    String out = sql;
+    while (innermost.hasMatch(out)) {
+      out = out.replaceAll(innermost, '_SUBQUERY_');
+    }
+    return out;
+  }
 
   @override
   Future<List<Map<String, Object?>>> runSelect(

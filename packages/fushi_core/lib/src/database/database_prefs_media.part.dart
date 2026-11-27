@@ -64,6 +64,15 @@ mixin _FushiDbPrefsMedia
   /// [getPref]，库越大 N+1 越重；这里一条 `LIKE 'prefix%'` 取完。[prefix] 里的
   /// `%` / `_` 按字面转义，不当通配符。
   Future<Map<String, String>> getPrefsByPrefix(String prefix) async {
+    return <String, String>{
+      for (final PreferenceRow row in await getPrefRowsByPrefix(prefix))
+        row.key: row.value,
+    };
+  }
+
+  /// [getPrefsByPrefix] 的整行版（带 LWW 时间戳）。只返回键**区分大小写**地以
+  /// [prefix] 开头的行（SQLite 的 `LIKE` 对 ASCII 不分大小写，这里再精确筛一遍）。
+  Future<List<PreferenceRow>> getPrefRowsByPrefix(String prefix) async {
     final String escaped = prefix
         .replaceAll(r'\', r'\\')
         .replaceAll('%', r'\%')
@@ -71,10 +80,10 @@ mixin _FushiDbPrefsMedia
     final SimpleSelectStatement<$PreferencesTable, PreferenceRow> q = select(
       preferences,
     )..where((t) => t.key.like('$escaped%', escapeChar: r'\'));
-    final List<PreferenceRow> rows = await q.get();
-    return <String, String>{
-      for (final PreferenceRow row in rows) row.key: row.value,
-    };
+    return <PreferenceRow>[
+      for (final PreferenceRow row in await q.get())
+        if (row.key.startsWith(prefix)) row,
+    ];
   }
 
   /// `ON CONFLICT DO UPDATE` for every local preference write: the value is
