@@ -297,6 +297,52 @@ void main() {
     });
   });
 
+  // 紧约束父级比滑块自身高（视频音量浮层把滑条放进 40 高的行）时，外层
+  // SizedBox(height: m.height) 被撑高、轨道按实际高度画在正中；圆钮也必须按实际
+  // 高度居中，不能按 m.height 算 top（音量浮层把手比轨道高出半个差值）。
+  group('Apple slider thumbs stay centred in a taller tight parent', () {
+    Finder whiteThumbs() => find.byWidgetPredicate((Widget w) {
+      if (w is! Container || w.decoration is! BoxDecoration) return false;
+      final BoxDecoration d = w.decoration! as BoxDecoration;
+      if (d.color != Colors.white) return false;
+      if (d.shape == BoxShape.circle) return true;
+      final double? h = w.constraints?.maxHeight;
+      return h != null && d.borderRadius == BorderRadius.circular(h / 2);
+    });
+
+    for (final bool range in <bool>[false, true]) {
+      testWidgets(range ? 'FushiRangeSlider' : 'FushiSlider', (
+        WidgetTester tester,
+      ) async {
+        await pumpHost(
+          tester,
+          (_) => SizedBox(
+            height: 80,
+            child: range
+                ? FushiRangeSlider(
+                    values: const RangeValues(0.2, 0.8),
+                    onChanged: (_) {},
+                  )
+                : FushiSlider(value: 0.5, onChanged: (_) {}),
+          ),
+          glass: true,
+        );
+        final Rect slider = tester.getRect(
+          find.byType(range ? FushiRangeSlider : FushiAppleSlider),
+        );
+        expect(slider.height, 80, reason: '前提：滑块被紧约束撑到 80 高');
+        final Finder thumbs = whiteThumbs();
+        expect(thumbs, findsNWidgets(range ? 2 : 1));
+        for (final Element e in thumbs.evaluate()) {
+          expect(
+            tester.getRect(find.byWidget(e.widget)).center.dy,
+            closeTo(slider.center.dy, 0.01),
+          );
+        }
+      });
+    }
+  });
+
   group('FushiCheckbox', () {
     testWidgets('MD3 renders Material Checkbox', (WidgetTester tester) async {
       await pumpHost(

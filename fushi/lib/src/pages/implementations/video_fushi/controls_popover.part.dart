@@ -67,8 +67,11 @@ extension _VideoControlsPopover on _VideoFushiPageState {
     final Widget volumeButton = ValueListenableBuilder<double>(
       valueListenable: _volumeDisplay,
       builder: (BuildContext context, double value, Widget? child) {
-        return FushiTooltip(
-          message: t.shortcut_action_video_toggle_mute,
+        // 入口不挂 tooltip（与倍速入口一致）：桌面悬停即弹浮层，tooltip 气泡会压在
+        // 浮层上；而且点它是开浮层、不是静音，「静音切换」只属于浮层里的静音键。
+        // 读屏名由 Semantics 给。
+        return Semantics(
+          label: t.video_control_volume,
           child: _chromeIconButton(
             icon: _volumeIconFor(value),
             desktop: desktop,
