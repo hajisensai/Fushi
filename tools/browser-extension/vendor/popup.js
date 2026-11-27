@@ -988,6 +988,8 @@ const ICON_PATHS = {
     close: 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
     // tune（Niratan「调整上下文」按钮：打开制卡前句子上下文调整模态）
     tune: 'M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z',
+    // Material Symbols「edit_note」：制卡前编辑例句（反馈 uEnwXmBIR0）。
+    editNote: 'M3 10h11v2H3v-2zm0-2h11V6H3v2zm0 8h7v-2H3v2zm15.01-3.13.71-.71c.39-.39 1.02-.39 1.41 0l.71.71c.39.39.39 1.02 0 1.41l-.71.71-2.12-2.12zm-.71.71-5.3 5.3V21h2.12l5.3-5.3-2.12-2.12z',
     // open_in_new（TODO-1360：已制卡的词旁「在 Anki 中打开卡片」按钮，直接跳去
     // Anki 定位该词的已存在卡；仅 data-mined 时显示）
     openInAnki: 'M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z',
@@ -3589,6 +3591,27 @@ function buildCrossAppAudioButton() {
         button.style.display = '';
         button.classList.add('crossapp-audio-revealed');
     });
+    return button;
+}
+
+// 反馈 uEnwXmBIR0：应用外查词卡「编辑例句后制卡」。点了带 {editSentence: true} 回点同一颗
+// 「+」（fushiPopupMineEntryByIndex，制卡桥仍只此一处调用）：宿主先弹编辑框让用户改例句，
+// 改完照常走这张卡的制卡路径，截图 / 句子音频由宿主照旧带上；在编辑框里取消 = 不制这张卡。
+// 编辑框在宿主那边（Flutter 对话框）：桌面覆盖窗收不到键盘，画不了输入框。
+function buildSentenceEditButton() {
+    const button = el('button', {
+        className: 'inline-action-button ctx-adjust-button sentence-edit-button',
+        // BUG-3210：回点「+」那条路没有 pointerdown，选区只能在这里快照。
+        onpointerdown: () => { snapshotSelection(); },
+        ontouchstart: () => { snapshotSelection(); },
+        onclick: () => {
+            window.fushiPopupMineEntryByIndex(
+                __fushiEntryIndexOf(button), { editSentence: true });
+        },
+    });
+    setButtonIcon(button, 'editNote');
+    if (__fushiPopupReducedMotion()) button.classList.add('no-motion');
+    setInlineButtonTip(button, window.i18nSentenceEdit || '');
     return button;
 }
 
@@ -7368,6 +7391,11 @@ function createEntryHeader(entry, idx) {
     // 确认这次查词录到了声音才露出。确认制卡回点的是同一颗「+」，所以「+」不渲染时它也不渲染。
     if (miningEnabled && window.__fushiCrossAppAudioHost === true) {
         buttonsContainer.appendChild(buildCrossAppAudioButton());
+    }
+    // 反馈 uEnwXmBIR0：应用外查词卡（宿主注入 __fushiPreMineSentenceEdit）给「编辑例句后
+    // 制卡」。回点的是同一颗「+」，所以「+」不渲染时它也不渲染。
+    if (miningEnabled && window.__fushiPreMineSentenceEdit === true) {
+        buttonsContainer.appendChild(buildSentenceEditButton());
     }
 
     const advancedMining = window.advancedMiningEnabled === true;

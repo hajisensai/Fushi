@@ -1379,6 +1379,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.onClearSentenceDraft,
     this.onOpenAdvancedMining,
     this.crossAppAudio,
+    this.preMineSentenceEdit = false,
     this.isSearching = false,
     this.keepWebViewWarm = false,
     this.showMiningTargetSwitch = false,
@@ -1545,6 +1546,9 @@ class DictionaryPopupLayer extends StatelessWidget {
 
   /// 跨应用语音缓存的查词快照，透传给 webview（见 [DictionaryPopupWebView.crossAppAudio]）。
   final Future<CrossAppAudioSnapshot?>? crossAppAudio;
+
+  /// 「编辑例句后制卡」入口，透传给 webview（见 [DictionaryPopupWebView.preMineSentenceEdit]）。
+  final bool preMineSentenceEdit;
   final VoidCallback? onTapOutside;
   final VoidCallback? onScrolledToBottom;
   final VoidCallback? onRendered;
@@ -2293,6 +2297,7 @@ class DictionaryPopupLayer extends StatelessWidget {
               onSetSentenceContext: onSetSentenceContext,
               onOpenAdvancedMining: onOpenAdvancedMining,
               crossAppAudio: crossAppAudio,
+              preMineSentenceEdit: preMineSentenceEdit,
               onClearSentenceDraft: onClearSentenceDraft,
               onScrolledToBottom: onScrolledToBottom,
               onScrolledUnderChanged: (bool under) =>

@@ -18,6 +18,8 @@ import 'dart:math' as math;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:fushi/src/anki/mine_failure_notice.dart';
+import 'package:fushi/src/lookup/main_window_excursion.dart';
+import 'package:fushi/src/lookup/pre_mine_sentence_edit.dart';
 import 'package:fushi/src/lookup/overlay_auto_read.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
@@ -366,6 +368,9 @@ class GlobalLookupController {
   // 默认制卡 / 覆写据此截出查词前最后一句语音当句子音频，查词卡的「调整句子音频」面板
   // 据此试听 + 调起止。每次根查词重置（_lookupExternal）。
   Future<CrossAppAudioSnapshot?>? _currentSentenceAudio;
+  // 反馈 uEnwXmBIR0：本次查词的表面借主窗时要的东西（截屏识字：冻结层抢前台前记的
+  // 主窗状态 + 收冻结层）。每次根查词重置（_lookupExternal），关卡清空。
+  OverlayExcursionContext? _currentExcursion;
 
   GlobalLookupStack _stack = GlobalLookupStack.empty;
   final Map<String, DictionarySearchResult> _frameResults =
@@ -1431,6 +1436,7 @@ class GlobalLookupController {
     int? consumeOutsideClicksOwnerHwnd,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
     Future<CrossAppAudioSnapshot?>? sentenceAudio,
+    OverlayExcursionContext? excursion,
   }) async {
     final GlobalLookupRoute inherited = GlobalLookupChannel.currentRoute;
     final GlobalLookupRoute route = inherited.source == 'galCard'
@@ -1448,6 +1454,7 @@ class GlobalLookupController {
         consumeOutsideClicksOwnerHwnd: consumeOutsideClicksOwnerHwnd,
         rubySpans: rubySpans,
         sentenceAudio: sentenceAudio,
+        excursion: excursion,
       ),
     );
   }
@@ -1462,6 +1469,7 @@ class GlobalLookupController {
     int? consumeOutsideClicksOwnerHwnd,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
     Future<CrossAppAudioSnapshot?>? sentenceAudio,
+    OverlayExcursionContext? excursion,
   }) async {
     final String term = text.trim();
     if (!isSupported || !_started || _appModel == null || term.isEmpty) {
@@ -1513,6 +1521,7 @@ class GlobalLookupController {
         rubySpans: termRubySpans,
         pendingSearch: search,
         sentenceAudio: sentenceAudio,
+        excursion: excursion,
       );
       return shown;
     } finally {
@@ -1634,6 +1643,7 @@ class GlobalLookupController {
     Future<DictionarySearchResult>? pendingSearch,
     Future<CrossAppAudioSnapshot?>? sentenceAudio,
     CapturedSentenceContext? capturedContext,
+    OverlayExcursionContext? excursion,
   }) async {
     final AppModel? model = _appModel;
     if (model == null) {
@@ -1676,6 +1686,7 @@ class GlobalLookupController {
       // 自己决定（截屏识字的委托拿的是同一份快照）。查词卡的「调整句子音频」面板两种
       // 表面都读它（拍板 design-cross-app-audio-trim-ui）——调用方不给就没有面板。
       _currentSentenceAudio = sentenceAudio;
+      _currentExcursion = excursion;
       // Retire every acknowledgement belonging to the previous lookup before
       // the asynchronous dictionary search yields. The renderer's epoch itself
       // is host-global and is intentionally NOT reset here.
@@ -2117,6 +2128,7 @@ class GlobalLookupController {
     _originFloorTop = 0;
     _currentMiningHandler = null;
     _currentCapturedContext = null;
+    _currentExcursion = null;
     glog('overlayHidden: dismissed — reveal state reset');
     try {
       // Notify the route owner while its token is still valid. Galgame's owner
@@ -2448,6 +2460,12 @@ class GlobalLookupController {
       // BUG-3652 续：本消息在发起它的查词 route 的 zone 里派发；回包时这张卡还在屏上
       // ⇔ 那条 route 仍是当前 route 且未作废（关窗、换词都会作废它）。
       isOriginOnScreen: _mineOriginProbe(GlobalLookupChannel.currentRoute),
+      // 反馈 uEnwXmBIR0：「编辑例句后制卡」的编辑框借主窗弹（覆盖窗收不到键盘）。游戏内
+      // 查词卡（galCard）画在游戏画面里、借不了主窗，不给入口。
+      preMineSentenceEditor:
+          GlobalLookupChannel.currentRoute.source == 'galCard'
+          ? null
+          : _editMineSentenceInMainWindow,
     )) {
       return;
     }
@@ -3082,6 +3100,23 @@ class GlobalLookupController {
   /// TODO-867 P3c C3 — insertion-order index (stack depth, 0 = root) of the frame
   /// with [frameId], or -1 when unknown. The host stamps tapOutside with the
   /// frame id; Dart maps it to the layer index for closeChildPopups.
+  /// 反馈 uEnwXmBIR0：借主窗弹「编辑例句」框（[runMainWindowExcursion]：收起查词卡、
+  /// 主窗拉到前台；改完无论取消与否都把主窗放回原处、前台还给原程序、卡放回原位，
+  /// 制卡结果照常在卡上说）。返回改好的句子；null = 放弃 / 主窗不可用。
+  Future<String?> _editMineSentenceInMainWindow(String sentence) async {
+    final OverlayExcursionContext? excursion = _currentExcursion;
+    await excursion?.prepare?.call();
+    final MainWindowExcursionResult<String> edited =
+        await runMainWindowExcursion<String>(
+          port: mainWindowExcursionPort,
+          navigatorContext: () => _appModel?.navigatorKey.currentContext,
+          presentation: excursion?.presentation,
+          body: (BuildContext context) =>
+              showPreMineSentenceEditor(context, sentence),
+        );
+    return edited.value;
+  }
+
   /// 这张覆盖窗卡给不给「高级制卡」（转交主窗）入口（拍板台 rf--UcsGta-overlay）。
   ///
   /// 只给走默认制卡路径的卡（[_currentMiningHandler] 为 null：热键查词、悬浮字幕 /

@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4824 条。点号进各自文件。
+> 共 4825 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5567](bugs/BUG-5567-overlay-pre-mine-sentence-edit.md) | ✅ | ✅ | overlay-pre-mine-sentence-edit |
 | [BUG-5554](bugs/BUG-5554-ocr-frame-pick-main-window-stays-front.md) | ✅ | ✅ | ocr-frame-pick-main-window-stays-front |
 | [BUG-5548](bugs/BUG-5548-apple-sidebar-scope-rebuilds-hidden-library-pages.md) | ✅ | ✅ | Apple 宽窗侧栏外壳切 tab 后紧跟一帧：所有访问过的保活库页（含藏起的）整页重建 |
 | [BUG-5547](bugs/BUG-5547-srs-rules7-full-rebuild-killed-loop.md) | ✅ | ✅ | 升级到缓存口径 7 后复习一直在加载：开库整层重建几分钟、切后台被杀就回滚重来 |

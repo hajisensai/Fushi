@@ -1290,6 +1290,12 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
   final String advancedMiningTipJs = options.globalLookup
       ? 'window.i18nCtx = ${jsonEncode(<String, String>{'advancedMining': t.popup_advanced_mining_open_in_app})};'
       : '';
+  // 反馈 uEnwXmBIR0：app 外覆盖窗的「编辑例句后制卡」入口门控（编辑框由宿主借主窗弹，
+  // 见 GlobalLookupController 的 preMineSentenceEditor）。Android 查词窗走
+  // dictionary_popup_webview 的 in-app 固定块；其余 in-app 宿主不注入（undefined ⇒ 不建）。
+  final String preMineSentenceEditJs = options.globalLookup
+      ? 'window.__fushiPreMineSentenceEdit = true;'
+      : '';
   // BUG-1139：Ctrl+滚轮内容缩放只装给 app 外裸 WebView2 表面。in-app 三个表面由
   // dictionary_popup_webview 的 _zoomWheelJs 在 onLoadStop 装同名 guard 的另一套
   // （就地 zoom + 即时反馈），两边永不同装。
@@ -1393,6 +1399,9 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     window.i18nCrossAppAudio = ${jsonEncode(<String, String>{'button': t.popup_cross_app_audio_button, 'title': t.popup_advanced_mining_audio_section, 'hint': t.popup_cross_app_audio_hint, 'loading': t.popup_cross_app_audio_loading, 'unavailable': t.popup_cross_app_audio_unavailable, 'play': t.popup_ctx_preview_audio, 'stop': t.popup_ctx_preview_stop, 'reset': t.popup_advanced_mining_reset, 'start': t.popup_advanced_mining_audio_start, 'end': t.popup_advanced_mining_audio_end, 'cancel': t.dialog_cancel, 'mine': t.popup_cross_app_audio_mine, 'skip': t.popup_cross_app_audio_skip})};
     $crossAppAudioHostJs
     $advancedMiningTipJs
+    // 「编辑例句后制卡」按钮提示（入口门控 window.__fushiPreMineSentenceEdit）。
+    window.i18nSentenceEdit = ${jsonEncode(t.popup_sentence_edit_button)};
+    $preMineSentenceEditJs
     // 制卡模块开关（见上方 miningEnabled 的注释）。false ⇒ popup.js 的
     // createEntryHeader 不 append「+」制卡按钮 / ↗ 在 Anki 中打开按钮，也不发查重探测。
     // 浏览器扩展没有本注入通道 → undefined ⇒ popup.js 按 `!== false` 照旧渲染。

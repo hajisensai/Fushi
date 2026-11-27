@@ -9326,6 +9326,8 @@
   "popup_no_audio_available": "사용 가능한 오디오 없음",
   "popup_sentence_context_next_label": "뒤",
   "popup_sentence_context_prev_label": "앞",
+  "popup_sentence_edit_button": "Edit the sentence, then add card",
+  "popup_sentence_edit_title": "Edit example sentence",
   "popup_source_text_collapse": "Collapse source text",
   "popup_source_text_expand": "Expand source text",
   "popup_wheel_speed": "팝업 스크롤 속도",

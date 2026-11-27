@@ -80,6 +80,21 @@ class MainWindowExcursionPort {
       DesktopLookupService.instance.bringMainWindowToFront();
 }
 
+/// 一次应用外查词借主窗时要用的、只有发起它的表面才知道的东西（反馈 uEnwXmBIR0）：
+/// 随 `GlobalLookupController.lookupText` 交给查词控制器，卡上「编辑例句后制卡」借主窗
+/// 时用。
+@immutable
+class OverlayExcursionContext {
+  const OverlayExcursionContext({this.presentation, this.prepare});
+
+  /// 发起表面早先记下的主窗状态与用户前台（截屏识字：冻结层抢前台之前记的）。null =
+  /// 借主窗那一刻现记。
+  final MainWindowPresentation? presentation;
+
+  /// 借主窗之前要先收掉的东西（截屏识字：盖满屏幕的冻结层，不收会挡住主窗）。
+  final Future<void> Function()? prepare;
+}
+
 /// [runMainWindowExcursion] 的结果。
 @immutable
 class MainWindowExcursionResult<T> {
@@ -128,7 +143,6 @@ Future<MainWindowExcursionResult<T>> runMainWindowExcursion<T>({
   return MainWindowExcursionResult<T>(value, cardRestored: cardRestored);
 }
 
-/// 默认的借主窗原生面（测试替换）。
-@visibleForTesting
+/// 查词控制器借主窗用的原生面（测试替换）。
 MainWindowExcursionPort mainWindowExcursionPort =
     const MainWindowExcursionPort();

@@ -1,0 +1,10 @@
+## BUG-5567 · overlay-pre-mine-sentence-edit
+- **报告**：2026-11-26（应用内反馈 uEnwXmBIR0，建议类：应用外查词 / 截屏识字也要能在制卡前改识别到的例句，且保留框选截图与句子音频）。用户拍板：先做各应用外入口共用的「制卡前编辑例句」，截图和音频照带。
+- **真实性**：✅ 能力缺口属实。应用外查词卡没有任何改例句的入口：桌面覆盖窗的「高级制卡」只给走默认制卡路径的卡（`fushi/lib/src/lookup/global_lookup_controller.dart` 的 `_advancedMiningHandoffAvailable`：`_currentMiningHandler == null`），截屏识字 / galgame 台词浮窗 / 网页视频这些带制卡委托的表面被有意排除（委托里的截图、游戏画面、片段主窗重现不了）；Android `:popup` 查词窗（`popup_dictionary_page.dart`）不接 `onOpenAdvancedMining`。覆盖窗卡片本身是 `WS_EX_NOACTIVATE`、收不到键盘（`popup.js` 快捷键段的注释），也就没法在卡里就地改字。
+- **[x] ① 已实现** — 一个入口、一处判据、各表面共用：
+  - `popup.js`：宿主注入 `window.__fushiPreMineSentenceEdit` 时在「+」旁给「编辑例句后制卡」（`buildSentenceEditButton`），点了经 `fushiPopupMineEntryByIndex(idx, {editSentence: true})` 回点同一颗「+」（制卡桥仍只此一处调用），标记随 `miningOverrides` 上来。注入：桌面覆盖窗在 `popup_settings_injection.dart`（`options.globalLookup`），Android 查词窗在 `dictionary_popup_webview.dart` 的 in-app 固定块（`preMineSentenceEdit`）。
+  - `fushi/lib/src/lookup/pre_mine_sentence_edit.dart`：`applyPreMineSentenceEdit` 摘掉标记（其余覆盖项如句子音频起止原样保留）→ 用宿主的编辑框改句 → 写回 `fields['sentence']` 并打 `sentenceEdited` 标记；取消 = 不制这张卡。
+  - 桌面：共享桥 `_handleMineBridge` / `_handleUpdateBridge`（`overlay_bridge_handlers.dart`）在派发给默认路径或表面委托**之前**调它，所以截屏识字的截图 / 框选、句子音频、galgame 的游戏画面与语音都由各自的委托照旧带上。编辑框由 `GlobalLookupController._editMineSentenceInMainWindow` 借主窗弹，走与框选截图同一个 `runMainWindowExcursion`（BUG-5554）：收起查词卡 → 主窗拉前台 → 改完把主窗放回原处、前台还给原程序、卡放回原位，结果照常在卡上说。截屏识字经 `OverlayExcursionContext` 交来冻结层前记下的主窗状态，并在借主窗前收掉冻结层。galgame 台词浮窗委托 `_mineFromLookup` 认 `sentenceEdited`，手改的句子原样上卡（不再按台词行取句 / 过滤）。游戏内查词卡（`galCard`）借不了主窗，不给编辑框。
+  - Android 查词窗：`popup_dictionary_page.dart` 的 `_editSentenceThen` 在本窗口就地弹同一个编辑框（`showPreMineSentenceEditor`）。
+- **[x] ② 已加自动化测试** — `fushi/test/lookup/pre_mine_sentence_edit_test.dart`（标记解析 / 写回 / 取消 / 保留其余覆盖项 / 共享桥把改好的句子交给委托、取消不调委托、普通「+」不弹框 / popup.js 入口门控与回点同一颗「+」）；`app_floating_ball_host_test.dart` 钉截屏识字点字查词带上借主窗上下文（冻结层前记的主窗状态、先收冻结层）。
+- **备注**：截屏识字同时开着「制卡时框选截图」时，改完例句、再框截图是两次借主窗（主窗会出现两次）。完整「高级制卡」转交（带截图 / 音频进主窗对话框）仍按拍板排在后面。未做真机验证。
