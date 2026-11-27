@@ -2332,6 +2332,24 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
     return (collectionId: collectionId, wrote: wrote);
   }
 
+  /// 持有媒体服务器剧名别名 [alias]（[derivedSeriesOrganizeAlias]）的真合集，多个时取
+  /// 最小 id（与自然键重名同口径）；没有返回 null。
+  Future<MediaCollectionRow?> collectionClaimingDerivedSeries(
+    String alias,
+  ) async {
+    final List<MediaCollectionRow> rows =
+        await (select(mediaCollections)
+              ..where((t) => t.organizeAliases.like('%$alias%'))
+              ..orderBy(<OrderClauseGenerator<$MediaCollectionsTable>>[
+                (t) => OrderingTerm.asc(t.id),
+              ]))
+            .get();
+    for (final MediaCollectionRow r in rows) {
+      if (decodeOrganizeAliases(r.organizeAliases).contains(alias)) return r;
+    }
+    return null;
+  }
+
   /// 物化一部「懒收养」的远端剧（BUG-5601）：把 [members] 按收养规则
   /// （[_adoptRemoteCollectionMemberInTransaction]，墓碑 / 自然键 / 排序 / 占位提升同一
   /// 份裁决）在**一个事务**里落库，并把落成的成员行钉住（`pinned_by_user`：用户动过这
@@ -2346,18 +2364,38 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
     required List<RemoteCollectionMemberAdoption> members,
     bool userIntent = true,
   }) => transaction(() async {
+    // 这部剧物化过、之后改了名（或被并进别的合集）：落到持有它别名的真合集上，按它的
+    // 名字 / 墓碑裁决，不以原剧名另建一个。
+    final String alias = derivedSeriesOrganizeAlias(name, collectionType);
+    final MediaCollectionRow? claimant = await collectionClaimingDerivedSeries(
+      alias,
+    );
+    final String targetName = claimant?.name ?? name;
+    final String targetType = claimant?.collectionType ?? collectionType;
     if (userIntent) {
-      await _clearCollectionDeletionTombstone(name, collectionType);
-    } else if (await hasCollectionDeletionTombstone(name, collectionType)) {
+      await _clearCollectionDeletionTombstone(targetName, targetType);
+    } else if (await hasCollectionDeletionTombstone(targetName, targetType)) {
       return null;
     }
     for (final RemoteCollectionMemberAdoption m in members) {
-      await _adoptRemoteCollectionMemberInTransaction(m);
+      await _adoptRemoteCollectionMemberInTransaction(
+        claimant == null
+            ? m
+            : RemoteCollectionMemberAdoption(
+                name: targetName,
+                collectionType: targetType,
+                mediaType: m.mediaType,
+                remoteEntryKey: m.remoteEntryKey,
+                sortIndex: m.sortIndex,
+                localEntryKey: m.localEntryKey,
+                userIntent: m.userIntent,
+                organizerRemovedKeys: m.organizerRemovedKeys,
+              ),
+      );
     }
-    MediaCollectionRow? row = await getMediaCollectionByNaturalKey(
-      name,
-      collectionType,
-    );
+    MediaCollectionRow? row =
+        claimant ??
+        await getMediaCollectionByNaturalKey(targetName, targetType);
     if (row == null) {
       if (!userIntent) return null;
       final int id = await into(mediaCollections).insert(
@@ -2370,6 +2408,18 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
       );
       row = await getMediaCollectionById(id);
     }
+    final int collectionId = row!.id;
+    // 目录里的原剧名记成这个真合集的别名（见 [derivedSeriesOrganizeAlias]）。
+    final Set<String> aliases = decodeOrganizeAliases(row.organizeAliases);
+    if (aliases.add(alias)) {
+      await (update(
+        mediaCollections,
+      )..where((t) => t.id.equals(collectionId))).write(
+        MediaCollectionsCompanion(
+          organizeAliases: Value(encodeOrganizeAliases(aliases)),
+        ),
+      );
+    }
     final Set<String> keys = <String>{
       for (final RemoteCollectionMemberAdoption m in members) m.targetEntryKey,
     };
@@ -2379,14 +2429,14 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
         'WHERE collection_id = ? AND media_type = ? '
         'AND entry_key IN (SELECT value FROM json_each(?))',
         variables: <Variable<Object>>[
-          Variable<int>(row!.id),
+          Variable<int>(collectionId),
           Variable<String>(MediaKind.video.dbValue),
           Variable<String>(jsonEncode(keys.toList())),
         ],
         updates: {mediaCollectionItems},
       );
     }
-    return row!.id;
+    return collectionId;
   });
 
   /// 加条目进合集（尾插；重复成员 INSERT OR IGNORE 幂等）。同事务清同键成员墓碑

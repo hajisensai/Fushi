@@ -469,6 +469,60 @@ void main() {
     expect(cardIds(tester), hasLength(2));
     expect(await itemKeys(real.id), hasLength(3));
   });
+
+  testWidgets('改名物化后移出一集：不以旧剧名冒出分组，被移出的集散着显示', (WidgetTester tester) async {
+    await pumpPage(tester);
+    final int alpha = (await cardIdsByName(tester))['Alpha']!;
+    await renameViaMenu(tester, alpha, 'My Alpha');
+    final MediaCollectionRow real = (await db.getAllMediaCollections()).single;
+
+    // 详情页里把 a1 移出合集（集卡菜单 → 「移出合集」→ 确认弹窗）。
+    await activate(tester, card(real.id));
+    expect(find.byType(MediaCollectionDetailPage), findsOneWidget);
+    final FushiReorderableGrid grid = tester.widget<FushiReorderableGrid>(
+      find.descendant(
+        of: find.byType(MediaCollectionDetailPage),
+        matching: find.byType(FushiReorderableGrid),
+      ),
+    );
+    final int a1 = <String>[
+      for (int i = 0; i < grid.itemCount; i++)
+        (grid.keyForIndex(i) as ValueKey<String>).value,
+    ].indexOf('collection-episode-row-video/a1');
+    // 集卡没有键盘唤菜单的入口：调网格的右键 / 长按回调本身。
+    grid.onContextMenu!(a1, Offset.zero);
+    await tester.pumpAndSettle();
+    if (find.text(t.collection_remove_member).evaluate().isEmpty) {
+      await activate(
+        tester,
+        find.byKey(const ValueKey<String>('item_menu_more')),
+      );
+    }
+    await activate(tester, find.text(t.collection_remove_member));
+    // 确认弹窗：确认按钮与标题同文案，按钮在页脚、排在最后。
+    await activate(tester, find.text(t.collection_remove_member).last);
+    expect(await itemKeys(real.id), <String>['video/a2', 'video/a3']);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    void expectNoGhost(String when) {
+      expect(
+        find.byKey(const ValueKey<String>('remote_video_card_video_a1')),
+        findsOneWidget,
+        reason: '$when：移出的那一集散着显示',
+      );
+      expect(cardIds(tester), hasLength(2), reason: '$when：只有 My Alpha 与 Beta');
+      expect(find.text('Alpha'), findsNothing, reason: '$when：旧剧名不另起分组');
+    }
+
+    expectNoGhost('移出之后');
+    expect((await cardIdsByName(tester)).keys.toSet(), <String>{
+      'My Alpha',
+      'Beta',
+    });
+
+    expect(await db.getAllMediaCollections(), hasLength(1), reason: '移出不另建合集');
+  });
 }
 
 /// 媒体服务器假来源：`implements JellyfinVideoClient` → 同时是
