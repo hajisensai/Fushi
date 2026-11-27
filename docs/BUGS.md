@@ -57,6 +57,7 @@
 | [BUG-5566](bugs/BUG-5566-srs-donation-page-slow-load.md) | 🚧 | ✅ | srs-donation-page-slow-load |
 | [BUG-5556](bugs/BUG-5556-desktop-gamepad-global-commands.md) | ✅ | ✅ | 桌面手柄绑定的全屏 / AI 助手等 global 动作按了没反应 |
 | [BUG-5557](bugs/BUG-5557-srs-donation-preview-ui-isolate-anr.md) | ✅ | ✅ | 安卓牌组页 ANR：复习历史捐赠页的预览在 UI isolate 上整库读笔记修改记录 / 血统 / 日志 |
+| [BUG-5553](bugs/BUG-5553-review-finished-wake.md) | ✅ | ✅ | 复习做完后几十秒到期的卡不自己出来：完成页只在库变化时重查 |
 | [BUG-5548](bugs/BUG-5548-apple-sidebar-scope-rebuilds-hidden-library-pages.md) | ✅ | ✅ | Apple 宽窗侧栏外壳切 tab 后紧跟一帧：所有访问过的保活库页（含藏起的）整页重建 |
 | [BUG-5547](bugs/BUG-5547-srs-rules7-full-rebuild-killed-loop.md) | ✅ | ✅ | 升级到缓存口径 7 后复习一直在加载：开库整层重建几分钟、切后台被杀就回滚重来 |
 | [BUG-5546](bugs/BUG-5546-curator-auto-retries-ai-failures.md) | ✅ | ✅ | AI 库管家默认开、书架每次重载就跑一趟，额度用完还逐个单元问 AI、下一趟再问一遍 |

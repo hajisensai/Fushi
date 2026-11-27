@@ -5040,6 +5040,10 @@ class SrsDbStore implements SrsSync2Host {
       next: r['next'] as String?,
       after: r['after'] as String?,
       custom: SrsCustomStudyProgress.fromValue(r['custom']),
+      wakeIn: switch (r['wakeIn']) {
+        final int ms => Duration(milliseconds: ms),
+        _ => null,
+      },
     );
   }
 
@@ -6494,6 +6498,7 @@ class SrsStudyState {
     required this.next,
     required this.after,
     this.custom,
+    this.wakeIn,
   });
 
   final SrsDeckSummary summary;
@@ -6506,6 +6511,11 @@ class SrsStudyState {
 
   /// 排除 [next] 之后的下一张（预取的猜测：真正的下一张仍以评分后的排队为准）。
   final String? after;
+
+  /// [next] 为 null（排空）时，再过多久不靠任何写入就又排得出卡：RWKV 同日间隔守卫只差时间的卡到点解除、学习卡
+  /// 进入 20 分钟提前窗口（内核 `Picker::wake`）。null = 没有这样的时刻（只能等跨日或库变化）。复习页「复习完」
+  /// 据此定时重排、亮出「继续」，不改排程。
+  final Duration? wakeIn;
 
   /// 子树里有 RWKV 牌组而 RWKV 还没准备好（下载 / 回放 / 出错）：这些牌组的复习卡这一次一张没出，等就绪后
   /// 再排一次。[next] 为 null 时界面据此说「等 RWKV」，不说「今天复习完了」。与 [summary] 的同名标志同源。

@@ -274,6 +274,11 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   /// 入口（[_recheckFinished]），不自动把卡塞到用户眼前。只在 [_finished] 时有意义，出卡 / 再次排空时清掉。
   bool _moreDue = false;
 
+  /// 「复习完」时等下一张卡自己到点（[SrsStudyState.wakeIn]：RWKV 间隔守卫只差时间的卡解除、学习卡进入提前窗口）
+  /// 的计时器：到点按库重排一次（[_recheckFinished]），排得出就亮出「继续」（[_moreDue]），排程不变。应用内反馈
+  /// LAk5vHGWUe：以前「复习完」只在库变化时重查，几十秒后到期的卡要退出再进才看得到。
+  Timer? _wakeTimer;
+
   /// 队列空了是因为 RWKV 还没准备好（[SrsStudyState.rwkvPending]）：RWKV 牌组的复习卡不退回按 FSRS-7 的到期日
   /// 出，这里显示 RWKV 的准备 / 失败状态，就绪后自动重新排队（[_onRwkvStatus]）。
   bool _rwkvPending = false;
@@ -480,6 +485,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
 
   @override
   void dispose() {
+    _wakeTimer?.cancel();
     _companion.dispose();
     unawaited(_rwkvSubscription?.cancel());
     _activeSessions.value--;
@@ -725,6 +731,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
           _preview = null;
         });
         srsRunLogged('SrsReviewPage.stopAudio', _audio.cancel);
+        _armWake(plan?.wakeIn);
         // 「就绪」可能在这次排队等结果时就已经来过：那时 [_finished] 还是 false，[_onRwkvStatus] 不重排，
         // 之后也不会再有就绪事件——页面会一直停在「等 RWKV」。所以 pending 落定后当场看一次服务：已就绪就
         // 重排。不会空转：服务就绪时打分失败会转「出错」（RWKV 排程内核，native/fushi_rwkv 的 sched），store 也不会
@@ -808,6 +815,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   }) {
     _shownGeneration++;
     _stamp = stamp;
+    _armWake(null);
     SrsReviewPage.debugPhase?.call('show');
     // 换卡：上一张卡上查的词弹窗收起。
     _lookup.closeAll();
@@ -1694,6 +1702,20 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
         if (widget.custom != null) _customProgress = plan.custom;
       }
       _moreDue = plan?.next != null;
+    });
+    // 排不出就按这次排队重新定下一次到点；排得出（入口已亮）就不用再等。
+    _armWake(plan?.next == null ? plan?.wakeIn : null);
+  }
+
+  /// 「复习完」页按 [wakeIn] 定时重排（[_wakeTimer]）；null 或已离开「复习完」= 只取消旧的。等 RWKV 时不定：
+  /// 那边由就绪事件重排（[_onRwkvStatus]）。
+  void _armWake(Duration? wakeIn) {
+    _wakeTimer?.cancel();
+    _wakeTimer = null;
+    if (wakeIn == null || !_finished || _rwkvPending) return;
+    _wakeTimer = Timer(wakeIn, () {
+      _wakeTimer = null;
+      if (mounted && _finished) unawaited(_syncWithStore());
     });
   }
 

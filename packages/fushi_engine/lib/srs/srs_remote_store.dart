@@ -604,6 +604,7 @@ abstract final class SrsRemoteWire {
     'sum': summary(s.summary),
     'next': s.next,
     'after': s.after,
+    'wake': ?s.wakeIn?.inMilliseconds,
     if (s.custom != null)
       'custom': <String, Object?>{
         'left': s.custom!.left,
@@ -625,6 +626,10 @@ abstract final class SrsRemoteWire {
       summary: sum,
       next: _J.optStr(m['next'], '$at.next'),
       after: _J.optStr(m['after'], '$at.after'),
+      wakeIn: switch (_J.optInt(m['wake'], '$at.wake')) {
+        final int ms => Duration(milliseconds: ms),
+        null => null,
+      },
       custom: custom == null
           ? null
           : SrsCustomStudyProgress(

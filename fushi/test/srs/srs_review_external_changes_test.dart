@@ -411,6 +411,65 @@ void main() {
     await _unmount(tester);
   });
 
+  // 应用内反馈 LAk5vHGWUe：「复习完」以前只在库变化时重查，过一会儿自己到期的卡（RWKV 间隔守卫只差时间、学习卡
+  // 进入 20 分钟提前窗口）要退出再进才看得到。现在按排队给的 wakeIn 定时重排，到点亮出入口，排程不变。
+  testWidgets('复习完时学习卡过一会儿才进入提前窗口：到点自己亮出入口，不自动出卡', (WidgetTester tester) async {
+    final SrsTestClock clock = SrsTestClock();
+    final (FushiDatabase db, SrsDbStore store) = (await tester.runAsync(
+      () => openSrsTestStore(clock: clock),
+    ))!;
+    addTearDown(() => tester.runAsync(db.close));
+    await tester.runAsync(
+      () => store.editFields(
+        SrsEntityKind.deck,
+        store.defaultDeckId,
+        <String, Object?>{
+          SrsFieldKeys.deckAlgorithm: <String, Object?>{
+            'alg': SrsAlgorithm.fsrs6.wire,
+            'auto': false,
+          },
+          SrsFieldKeys.deckSteps: <String, Object?>{
+            'learn': <double>[30],
+            'relearn': <double>[30],
+          },
+        },
+      ),
+    );
+    await _addLapis(tester, store, '食べる');
+    final String card = (await tester.runAsync(
+      () => store.cardIdsInDecks(<String>{store.defaultDeckId}),
+    ))!.single;
+    // 新卡按「重来」：进 30 分钟的学习步，离进入 20 分钟提前窗口还有 10 分钟。
+    await tester.runAsync(() => store.answer(card, 1));
+    final List<SrsCardFace> faces = <SrsCardFace>[];
+    await _pumpReview(
+      tester,
+      store: () async => store,
+      faces: faces,
+      deckId: store.defaultDeckId,
+    );
+    expect(find.byKey(finishedKey), findsOneWidget);
+    expect(find.byKey(moreDueKey), findsNothing);
+
+    clock.advance(const Duration(minutes: 9));
+    await tester.pump(const Duration(minutes: 9));
+    await _settle(tester);
+    expect(find.byKey(moreDueKey), findsNothing, reason: '还没到点');
+
+    clock.advance(const Duration(minutes: 1));
+    await tester.pump(const Duration(minutes: 1));
+    await _settle(tester);
+    expect(find.byKey(finishedKey), findsOneWidget, reason: '不自动把卡塞到用户眼前');
+    expect(find.byKey(moreDueKey), findsOneWidget, reason: '到点自己重排，亮出「继续」');
+    expect(faces.where((SrsCardFace f) => f.cardId.isNotEmpty), isEmpty);
+
+    await tester.tap(find.byKey(moreDueKey));
+    await _settle(tester);
+    expect(find.byKey(finishedKey), findsNothing);
+    expect(faces.last.cardId, card);
+    await _unmount(tester);
+  });
+
   group('readSrsStore：打开失败原样抛出', () {
     testWidgets('复习页：打开失败显示真实错误（可重试），不报「排程内核不可用」', (WidgetTester tester) async {
       await _pumpReview(
