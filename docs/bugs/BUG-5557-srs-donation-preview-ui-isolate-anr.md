@@ -1,0 +1,11 @@
+## BUG-5557 · 安卓牌组页 ANR：复习历史捐赠页的预览在 UI isolate 上整库读笔记修改记录 / 血统 / 日志
+- **报告**：2026-11-27（应用内反馈 wo-JxHl6hI：Android Xiaomi M2101K6G，3.4.0-debug.32678，牌组页 ANR「Input dispatching timed out」）
+- **真实性**：✅ 真 bug。
+  - 证据（反馈日志里的内存采样账本，ANR 前最后两个 30 秒窗口）：`core:read:cards 1x rows=6144`（整库卡行）、`core:read:entities 6x rows=2737` + `core:read:edits 6x 7077ms 117.6MB rows=93878`（全部笔记分块物化）、`core:lineages 14x` + `core:read:logs 14x`（约 2800 张卡按 200 一块取血统与日志），同窗平台主线程 `pp.fushi.reader`（安卓上就是 UI isolate）30 秒内 9.8 s、下一个 30 秒 18.9 s CPU；按压记录是 `_FushiPlainButtonState._setPressed`（横幅按钮）。
+  - 这一组读正好是 `previewSrsDonation`（`packages/fushi_engine/lib/srs/apkg/srs_donation_export.dart`）的形状：`cardRowsWhere({})` 整库卡 → `store.notes(全部笔记)` → `store.histories(全部可见卡)`。调用方 `_SrsDonationPageState._load`（`fushi/lib/src/srs/donation/srs_donation_page.dart:104`）直接在 UI isolate 上 `await previewSrsDonation(store: store)`：命令本身在常驻后台 isolate 执行，但 9.4 万条修改记录 / 117 MB 原文回到调用方后在 `SrsDbStore._editItemsById`（`srs_db_store.dart:1330`）逐行建 `SrsEditItem`、再整批过字段寄存器内核与卡片历史内核，全在 UI isolate 上。从牌组页横幅或 ⋯ 菜单进「复习历史捐赠」就触发。
+  - 同文件的导出 `exportSrsDonationFileInBackground` / `exportAnkiPackageFileInBackground` 早就走一次性后台 isolate（`srsRunWithStoreInBackground`），只有预览漏了。
+- **[x] ① 已修复** —
+  - `previewSrsDonationInBackground`：整段预览在一次性后台 isolate 里按句柄号重开只读副本算（与导出同一条 `srsRunWithStoreInBackground`），UI isolate 只收 `SrsDonationPreview`（几个数 + 词表）。捐赠页改调它。
+  - 守卫把「整库读的导出 / 预览只许后台版」钉住：`previewSrsDonation` / `exportSrsDonationFile` / `exportAnkiPackageFile` / `exportAnkiPackage` 在 `fushi/lib` 与 `packages/*/lib`（定义它们的 apkg 目录除外）一律不许直接调。
+- **[x] ② 已加自动化测试** — `fushi/test/build/srs_whole_library_export_off_ui_isolate_guard_test.dart`（修前红：报 `srs_donation_page.dart: previewSrsDonation`）；`packages/fushi_engine/test/srs/apkg/srs_apkg_export_background_test.dart`「捐赠预览：后台 isolate 与当前 isolate 算出的预览相同」。
+- **备注**：同一份日志里更早窗口的 `dart:load_stats` / `core:rwkv_cards` 属 BUG-5525（另案）。没做真机复测（需要几千张卡的大库 + 安卓机）。

@@ -101,7 +101,9 @@ class _SrsDonationPageState extends ConsumerState<SrsDonationPage> {
     try {
       final SrsDbStore? store = await readSrsStore(ref);
       if (store == null) throw StateError('srs store unavailable');
-      final SrsDonationPreview preview = await previewSrsDonation(store: store);
+      final SrsDonationPreview preview = await previewSrsDonationInBackground(
+        store: store,
+      );
       if (!mounted) return;
       setState(() {
         _store = store;

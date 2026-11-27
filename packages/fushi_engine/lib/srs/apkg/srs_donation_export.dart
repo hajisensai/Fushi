@@ -202,7 +202,23 @@ class _WordFieldsCache {
       );
 }
 
+/// 同 [previewSrsDonation]，整个预览在一次性后台 isolate 里跑（[srsRunWithStoreInBackground]），UI isolate
+/// 只等结果。产品代码一律走这里（反馈 wo-JxHl6hI：在 UI isolate 上预览要把全库笔记的修改记录、全部卡的
+/// 血统与日志读回来逐行解码——9.4 万条修改记录 / 117 MB，安卓上 UI isolate 就是平台主线程，直接 ANR）。
+Future<SrsDonationPreview> previewSrsDonationInBackground({
+  required SrsDbStore store,
+}) => srsRunWithStoreInBackground<SrsDonationPreview>(
+  store,
+  _previewInBackground,
+  debugName: 'srs-donation-preview',
+);
+
+/// [previewSrsDonationInBackground] 的后台一半（顶层函数：不捕获任何东西）。
+Future<SrsDonationPreview> _previewInBackground(SrsDbStore store) =>
+    previewSrsDonation(store: store);
+
 /// 预览：数一遍将进包的复习 / 卡片 / 笔记，列出会保留词头的笔记（不看排除集合：词表就是给用户逐词排除用的）。
+/// 整库读：产品代码走 [previewSrsDonationInBackground]，不在 UI isolate 上直接调。
 ///
 /// 范围判据与导出器一致（srs_apkg_export.dart `_Exporter.run` 带 [SrsApkgRedaction] 时）：当前 profile 全部
 /// 牌组、不可见卡不算、已删笔记 / 类型不在的笔记不算、模板已删的卡不算；有效日志里的 [SrsLogKind.review] 才算复习。
