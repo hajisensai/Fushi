@@ -46,6 +46,7 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
+import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
 import 'package:fushi_engine/media/video/bluray/bluray_angle.dart'
     show parseBlurayAnglePath;
 import 'package:fushi_engine/media/video/dvd/dvd_angle.dart'
@@ -63,7 +64,6 @@ import 'package:fushi_engine/media/video/video_duration_probe.dart'
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/i18n/strings.g.dart' show t;
-import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/sync/interconnect_job_client.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
@@ -853,14 +853,15 @@ final class _RemoteEpisodeEnded extends _RemoteEpisodeOutcome {
 
 /// 进程内共用的实例：面板 / 合集页 / 视频页共用任务表（重开面板接回同一个任务）。
 /// 远端视频都来自互联当前连着的 host（[InterconnectSyncBackend.instance]），任务就
-/// 打到那一台。
-RemoteVideoSubtitleService appRemoteVideoSubtitleService(AppModel appModel) =>
-    _sharedRemote ??= RemoteVideoSubtitleService(
-      host: InterconnectVideoSubtitleHostPort(
-        client: InterconnectJobClient(repo: SyncRepository(appModel.database)),
-        activeBaseUrl: () =>
-            InterconnectSyncBackend.instance.resolvedHostBaseUrl,
-      ),
-    );
+/// 打到那一台。只收库（互联凭据在库里），不收 AppModel：服务本体再 import AppModel 就会把它
+/// 连同远端字幕面板拖进 lib/ 的 import 大环（`test/build/import_cycle_guard_test.dart`）。
+RemoteVideoSubtitleService appRemoteVideoSubtitleService(
+  FushiDatabase database,
+) => _sharedRemote ??= RemoteVideoSubtitleService(
+  host: InterconnectVideoSubtitleHostPort(
+    client: InterconnectJobClient(repo: SyncRepository(database)),
+    activeBaseUrl: () => InterconnectSyncBackend.instance.resolvedHostBaseUrl,
+  ),
+);
 
 RemoteVideoSubtitleService? _sharedRemote;

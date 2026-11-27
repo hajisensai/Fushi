@@ -98,7 +98,9 @@ void _providerDeclarationGuards() {
 
     setUpAll(() {
       src = maskComments(
-        File('lib/src/media/video/video_specs_service.dart').readAsStringSync(),
+        File(
+          'lib/src/media/video/video_specs_providers.dart',
+        ).readAsStringSync(),
       );
     });
 

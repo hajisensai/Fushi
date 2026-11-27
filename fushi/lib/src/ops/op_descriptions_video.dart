@@ -6,7 +6,7 @@ import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart'
 import 'package:fushi_engine/media/video/metadata/video_work_claim_snapshot.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:fushi/src/media/video/subtitle/library_subtitle_fill_controller.dart'
+import 'package:fushi/src/media/video/subtitle/library_subtitle_fill_entry.dart'
     show librarySubtitleFillController;
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/store_compliance.dart';

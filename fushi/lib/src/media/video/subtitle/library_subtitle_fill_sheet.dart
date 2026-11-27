@@ -3,7 +3,8 @@
 /// 各结局计数与逐集结果，可取消；跑完可「撤销这次」。
 ///
 /// 编排全部在 [LibrarySubtitleFillController]（与 `fushi_cli video sub-fill` 同一个
-/// 入口）：面板只渲染它的状态。关掉面板不会停任务，重开接回同一个任务。
+/// 入口）：面板只渲染它的状态。关掉面板不会停任务，重开接回同一个任务。控制器由调用方
+/// 传入（`library_subtitle_fill_entry.dart` 的 `librarySubtitleFillController` 装配），面板不碰 AppModel。
 library;
 
 import 'dart:async';
@@ -15,7 +16,6 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/video/subtitle/library_subtitle_fill_controller.dart';
-import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
@@ -40,11 +40,11 @@ const List<String> kSubtitleFillLanguages = <String>['ja', 'zh', 'en'];
 /// 打开面板。[bookUids] 为 null = 全库。
 Future<void> showLibrarySubtitleFillSheet({
   required BuildContext context,
-  required AppModel appModel,
+  required LibrarySubtitleFillController controller,
   required List<String>? bookUids,
 }) {
   Widget build(BuildContext ctx) =>
-      LibrarySubtitleFillSheet(appModel: appModel, bookUids: bookUids);
+      LibrarySubtitleFillSheet(controller: controller, bookUids: bookUids);
   if (isDesktopPlatform) {
     return showAppDialog<void>(
       context: context,
@@ -86,11 +86,11 @@ String subtitleFillActionLabel(SubtitleFillAction action) => switch (action) {
 class LibrarySubtitleFillSheet extends StatefulWidget {
   const LibrarySubtitleFillSheet({
     super.key,
-    required this.appModel,
+    required this.controller,
     required this.bookUids,
   });
 
-  final AppModel appModel;
+  final LibrarySubtitleFillController controller;
   final List<String>? bookUids;
 
   @override
@@ -102,8 +102,7 @@ class _LibrarySubtitleFillSheetState extends State<LibrarySubtitleFillSheet> {
   /// 逐集结果只显示最近这么多条（整库几百集，全列出来面板会很长）。
   static const int _recentLimit = 40;
 
-  late final LibrarySubtitleFillController _controller =
-      librarySubtitleFillController(widget.appModel);
+  late final LibrarySubtitleFillController _controller = widget.controller;
   LibrarySubtitleFillJob? _job;
   String _language = 'ja';
   bool _ocr = true;

@@ -25,6 +25,8 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/background_keyed_derivation.dart';
 import 'package:fushi/src/media/audio_cd/audio_cd_import.dart';
 import 'package:fushi/src/media/collections/collection_owned_subscriptions.dart';
+import 'package:fushi/src/media/video/subtitle/library_subtitle_fill_entry.dart'
+    show librarySubtitleFillController;
 import 'package:fushi/src/media/video/subtitle/library_subtitle_fill_sheet.dart'
     show showLibrarySubtitleFillSheet;
 import 'package:fushi/src/media/video/cover_ui/video_series_meta.dart';
@@ -73,6 +75,7 @@ import 'package:fushi/src/media/video/cover_ui/video_scrape_actions.dart';
 import 'package:fushi/src/media/video/cover_ui/video_specs_badges.dart';
 import 'package:fushi/src/media/video/cover_ui/disc_format_badge.dart';
 import 'package:fushi/src/media/video/video_specs_service.dart';
+import 'package:fushi/src/media/video/video_specs_providers.dart';
 import 'package:fushi/src/media/torrent/anime_download_subscription.dart'
     show AnimeDownloadSubscription, AnimeDownloadSubscriptionStore;
 import 'package:fushi/src/media/video/video_continue_watching.dart';
@@ -5465,7 +5468,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     if (!mounted) return;
     await showLibrarySubtitleFillSheet(
       context: context,
-      appModel: appModel,
+      controller: librarySubtitleFillController(appModel),
       bookUids: <String>{...order}.toList(),
     );
   }

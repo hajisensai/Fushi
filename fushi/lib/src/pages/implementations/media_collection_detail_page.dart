@@ -104,6 +104,8 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/subtitle_collection_panel.dart'
     show SubtitleCollectionPanel;
 import 'package:fushi/src/pages/implementations/subtitle_workbench_page.dart';
+import 'package:fushi/src/media/video/subtitle/library_subtitle_fill_entry.dart'
+    show librarySubtitleFillController;
 import 'package:fushi/src/media/video/subtitle/library_subtitle_fill_sheet.dart'
     show showLibrarySubtitleFillSheet;
 import 'package:fushi/src/storage/app_paths.dart';
@@ -1671,7 +1673,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     // 「已有字幕跳过」按面板里选的语言算（[RemoteVideoSubtitleTarget.forLanguage]）。
     await showRemoteVideoSubtitleSheet(
       context: context,
-      service: appRemoteVideoSubtitleService(appModel),
+      service: appRemoteVideoSubtitleService(appModel.database),
       target: RemoteVideoSubtitleTarget.season(
         title: _workDisplayTitle,
         originalLanguage: _canonicalWork?.originalLanguage,
@@ -3768,10 +3770,9 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       case _CollectionManageAction.fillSubtitles:
         await showLibrarySubtitleFillSheet(
           context: context,
-          appModel: ProviderScope.containerOf(
-            context,
-            listen: false,
-          ).read(appProvider),
+          controller: librarySubtitleFillController(
+            ProviderScope.containerOf(context, listen: false).read(appProvider),
+          ),
           bookUids: <String>[for (final VideoBookRow m in _members) m.bookUid],
         );
         return;
