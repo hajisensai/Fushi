@@ -464,7 +464,7 @@ extension _VideoClipExport on _VideoFushiPageState {
           detail: '$e',
         );
       }
-      if (!source.existsSync() || source.lengthSync() == 0) {
+      if (!await source.exists() || await source.length() == 0) {
         return const VideoClipExportResult.failure(
           VideoClipExportFailure.remoteSourceFailed,
         );
@@ -742,14 +742,19 @@ extension _VideoClipExport on _VideoFushiPageState {
     required String directory,
     required String screenshotName,
   }) async {
+    String? claimedPath;
     try {
       final Directory dir = Directory(directory);
       if (!await dir.exists()) await dir.create(recursive: true);
-      final String finalPath = uniqueVideoScreenshotPath(
+      // 截图目录可以是用户选的网络盘：重名判定异步、且原子占名（独占新建），连按截图
+      // 两次交错 await 也不会拿到同一个名字互相覆盖。
+      final String finalPath = await uniqueVideoScreenshotPath(
         p.join(directory, screenshotName),
-        exists: (String path) => File(path).existsSync(),
+        claim: claimVideoScreenshotFile,
       );
+      claimedPath = finalPath;
       await File(finalPath).writeAsBytes(bytes);
+      claimedPath = null;
       if (!mounted) return;
       _showOsd(
         t.video_screenshot_saved_to(path: finalPath),
@@ -759,6 +764,13 @@ extension _VideoClipExport on _VideoFushiPageState {
       debugPrint(
         '[VideoFushiPage] screenshot directory write failed: $e\n$stack',
       );
+      // 占下了名字却没写成：删掉那个空壳，别在用户目录里留 0 字节截图。
+      final String? orphan = claimedPath;
+      if (orphan != null) {
+        try {
+          await File(orphan).delete();
+        } catch (_) {}
+      }
       if (mounted) _showScreenshotFailure(e);
     }
   }
@@ -776,9 +788,10 @@ extension _VideoClipExport on _VideoFushiPageState {
         Platform.isWindows || Platform.isMacOS || Platform.isLinux;
     try {
       final Directory tmpDir = await getTemporaryDirectory();
-      final String uniqueName = uniqueVideoScreenshotBaseName(
+      final String uniqueName = await uniqueVideoScreenshotBaseName(
         screenshotName,
-        exists: (String name) => File(p.join(tmpDir.path, name)).existsSync(),
+        claim: (String name) =>
+            claimVideoScreenshotFile(p.join(tmpDir.path, name)),
       );
       tmp = File(p.join(tmpDir.path, uniqueName));
       await tmp.writeAsBytes(bytes);
@@ -790,7 +803,7 @@ extension _VideoClipExport on _VideoFushiPageState {
           allowedExtensions: <String>[extension],
         );
         if (savePath != null) {
-          final String finalPath = _uniqueScreenshotSavePath(
+          final String finalPath = await _uniqueScreenshotSavePath(
             savePath,
             extension: extension,
           );
@@ -841,7 +854,7 @@ extension _VideoClipExport on _VideoFushiPageState {
     return title ?? 'video';
   }
 
-  String _uniqueScreenshotSavePath(
+  Future<String> _uniqueScreenshotSavePath(
     String savePath, {
     String extension = 'jpg',
   }) {
@@ -850,7 +863,7 @@ extension _VideoClipExport on _VideoFushiPageState {
         : savePath;
     return uniqueVideoScreenshotPath(
       desiredPath,
-      exists: (String path) => File(path).existsSync(),
+      claim: claimVideoScreenshotFile,
     );
   }
 

@@ -6,7 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:fushi_engine/media/video/anime_source_video_path.dart';
 import 'package:fushi_engine/media/video/media_server_video_path.dart';
 import 'package:fushi_engine/media/video/video_member_file.dart'
-    show videoMemberExists;
+    show MediaPathPresence, probeVideoMember;
 
 /// 纯函数（TODO-897）：判断 [videoPath] 是否需要做「本地文件存在性校验」。
 ///
@@ -41,11 +41,15 @@ bool videoResourceRequiresLocalCheck(String? videoPath) {
 /// 注意：外接盘 / 网络盘暂时离线时 `exists()` 也返 false → 会把「盘没挂」判成缺失。
 /// 这是不可避免的歧义；缓解放在 UI 层——缺失对话框中性文案 + 删除走二次确认、不
 /// 默认 / 不诱导删除（避免误删用户仍想看的活条目，Never-break-userspace 红线）。
+///
+/// BUG-5605：走有界探测 [probeVideoMember]。网络 / 云盘挂载（rclone、WinFsp）卡住时
+/// stat 能挂十几秒；超时答「暂不可用」→ 这里**不判缺失**，照常交给播放内核去开（内核
+/// 自己读得到就能播，读不到会报它的错），既不让起播干等，也不弹「文件丢失」。
 Future<bool> isLocalVideoResourceMissing(String? videoPath) async {
   if (!videoResourceRequiresLocalCheck(videoPath)) return false;
   // Disc members are judged by the file that backs them (a DVD title path is
   // virtual: its VIDEO_TS.IFO or .iso is what must still be there).
-  return !await videoMemberExists(videoPath!.trim());
+  return await probeVideoMember(videoPath!.trim()) == MediaPathPresence.missing;
 }
 
 /// Relocates an app-owned iOS Documents path whose container UUID changed.
@@ -62,7 +66,8 @@ Future<String?> relocateMissingAppDocumentPath(
   if (!videoResourceRequiresLocalCheck(path)) return null;
   final String trimmed = path!.trim();
   if (trimmed.isEmpty || !p.isAbsolute(trimmed)) return null;
-  if (await videoMemberExists(trimmed)) return null;
+  // 卷没答复（暂不可用）时不去猜重定位：只有确实不在才找新容器路径。
+  if (await probeVideoMember(trimmed) != MediaPathPresence.missing) return null;
 
   final List<String> staleSegments = p.split(p.normalize(trimmed));
   final int documentsIndex = _iosAppDocumentsIndex(staleSegments);

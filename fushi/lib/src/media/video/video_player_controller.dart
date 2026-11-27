@@ -1970,26 +1970,22 @@ class VideoPlayerController extends ChangeNotifier
       final MpvCacheDumpPlan? plan = decision.plan;
       if (plan != null) {
         try {
-          final File out = File(outputPath);
-          if (out.existsSync()) out.deleteSync();
+          await _deleteSnapshotFile(outputPath);
           await (player.platform as dynamic).command(
             mpvDumpCacheCommand(plan, outputPath),
           );
         } catch (_) {
           // dump 中途失败可能留下半截文件：调用方拿到 null 不会再管这个路径。
-          _deleteSnapshotFile(outputPath);
+          await _deleteSnapshotFile(outputPath);
           return null;
         }
         // 落盘成功但等待期间换了集 / 空文件：这份副本不会交给任何人，就地删掉，
-        // 不在临时目录里越攒越多。
-        if (!_isCurrentLoad(player, loadToken)) {
-          _deleteSnapshotFile(outputPath);
-          return null;
-        }
+        // 不在临时目录里越攒越多。判存在 / 长度是异步的（BUG-5605），换集检查放在
+        // 它们**之后**：否则检查完、await 期间换了集，照样把上一集的副本交出去。
         final File out = File(outputPath);
-        if (!out.existsSync()) return null;
-        if (out.lengthSync() == 0) {
-          _deleteSnapshotFile(outputPath);
+        final bool written = await out.exists() && await out.length() > 0;
+        if (!written || !_isCurrentLoad(player, loadToken)) {
+          await _deleteSnapshotFile(outputPath);
           return null;
         }
         return CachedMediaSnapshot(path: outputPath, zeroMs: plan.zeroMs);
@@ -2002,10 +1998,10 @@ class VideoPlayerController extends ChangeNotifier
 
   /// 删掉一份不再交出去的缓冲副本。删不掉（被占用 / 已不在）不影响制卡：调用方
   /// 已经拿到 null、会回到远端抽取；这里只是不留垃圾。
-  static void _deleteSnapshotFile(String path) {
+  static Future<void> _deleteSnapshotFile(String path) async {
     try {
       final File file = File(path);
-      if (file.existsSync()) file.deleteSync();
+      if (await file.exists()) await file.delete();
     } on FileSystemException catch (e) {
       debugPrint('[video] cached snapshot cleanup failed: $path: $e');
     }
@@ -3438,7 +3434,7 @@ class VideoPlayerController extends ChangeNotifier
     final Directory dir = Directory(
       p.join(Directory.systemTemp.path, 'fushi_lua_subtitle_mirror'),
     );
-    if (!dir.existsSync()) await dir.create(recursive: true);
+    if (!await dir.exists()) await dir.create(recursive: true);
     final File file = File(
       p.join(
         dir.path,

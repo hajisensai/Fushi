@@ -5965,12 +5965,12 @@ extension _VideoSubtitle on _VideoFushiPageState {
       // 单声道 64k（clipaudio 默认）：与制卡压缩档同规格，波形 / 互相关 / 16 kHz 转录
       // 都绰绰有余，24 分钟一集约 11 MB。
       await download(dest);
-      if (dest.existsSync() && dest.lengthSync() > 0) return dest.path;
+      if (await dest.exists() && await dest.length() > 0) return dest.path;
     } catch (e, st) {
       ErrorLogService.instance.log('video.remoteTimingAudio', e, st);
     }
     try {
-      if (dest != null && dest.existsSync()) dest.deleteSync();
+      if (dest != null && await dest.exists()) await dest.delete();
     } catch (_) {}
     return null;
   }
@@ -5979,10 +5979,10 @@ extension _VideoSubtitle on _VideoFushiPageState {
   void _discardRemoteTimingAudio() {
     for (final Future<String?> fetch in _remoteTimingAudioFetches.values) {
       unawaited(
-        fetch.then((String? path) {
+        fetch.then((String? path) async {
           if (path == null) return;
           try {
-            File(path).deleteSync();
+            await File(path).delete();
           } catch (_) {}
         }),
       );
@@ -6330,7 +6330,7 @@ GraphicSubtitleTimingInput? buildRemoteGraphicSubtitleTimingInput({
         debugPrint('[VideoFushiPage] remote graphic subtitle track: $error');
         return null;
       }
-      if (!payload.existsSync()) return null;
+      if (!await payload.exists()) return null;
       // 轨头：VobSub / DVB 的 extradata 不在载荷里；PGS 没有也能解（host 404 即无）。
       final File header = File('$stem.header.download.json');
       bool hasHeader = true;
@@ -6345,10 +6345,8 @@ GraphicSubtitleTimingInput? buildRemoteGraphicSubtitleTimingInput({
         debugPrint('[VideoFushiPage] remote graphic subtitle header: $error');
         hasHeader = false;
       }
-      return (
-        payload: payload,
-        header: hasHeader && header.existsSync() ? header : null,
-      );
+      final bool headerWritten = hasHeader && await header.exists();
+      return (payload: payload, header: headerWritten ? header : null);
     },
   );
 }

@@ -119,11 +119,11 @@ class _VideoAdvancedMiningSession {
     _snapshot = null;
     if (snapshot == null || _snapshotHandedOff) return;
     unawaited(
-      snapshot.then<void>((CachedMediaSnapshot? value) {
+      snapshot.then<void>((CachedMediaSnapshot? value) async {
         if (value == null) return;
         try {
           final File file = File(value.path);
-          if (file.existsSync()) file.deleteSync();
+          if (await file.exists()) await file.delete();
         } on FileSystemException catch (e) {
           debugPrint('[video] advanced mining snapshot cleanup failed: $e');
         }
@@ -340,7 +340,7 @@ extension _VideoAdvancedMining on _VideoFushiPageState {
     } finally {
       try {
         final File file = File(output);
-        if (file.existsSync()) file.deleteSync();
+        if (await file.exists()) await file.delete();
       } on FileSystemException catch (_) {}
     }
   }
