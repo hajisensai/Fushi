@@ -6,6 +6,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/srs/donation/srs_donation_banner.dart';
+import 'package:fushi/src/srs/donation/srs_donation_client.dart';
 import 'package:fushi/src/srs/donation/srs_donation_eligibility.dart';
 import 'package:fushi/src/srs/donation/srs_donation_page.dart';
 import 'package:fushi/src/srs/donation/srs_donation_providers.dart';
@@ -20,6 +21,16 @@ import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../helpers/test_platform_services.dart';
+
+/// 服务端状态固定成给定值（不走网络）。
+class _FixedStatus extends SrsDonationStatusNotifier {
+  _FixedStatus(this.status);
+
+  final SrsDonationStatus? status;
+
+  @override
+  Future<SrsDonationStatus?> build() async => status;
+}
 
 Widget _app({
   required bool apple,
@@ -84,17 +95,25 @@ void main() {
         countsByDay: const <int, int>{10: 1500, 39: 1700},
       );
       for (final SrsDonationPromptKind kind in SrsDonationPromptKind.values) {
+        // 每种形态一个新 ProviderScope：重建时 Riverpod 不换 overrideWith 的 notifier。
+        await tester.pumpWidget(const SizedBox());
         await tester.pumpWidget(
           _app(
             apple: apple,
             overrides: <Override>[
               srsHomeStatsProvider.overrideWith((Ref ref) async => stats),
               srsDonationPrefsProvider.overrideWithValue(
-                SrsDonationPrefsState(
-                  lastAt: kind == SrsDonationPromptKind.update
-                      ? DateTime(2026)
-                      : null,
-                  lastReviews: kind == SrsDonationPromptKind.update ? 1200 : 0,
+                const SrsDonationPrefsState(),
+              ),
+              srsDonationStatusProvider.overrideWith(
+                () => _FixedStatus(
+                  kind == SrsDonationPromptKind.update
+                      ? SrsDonationStatus.donated((
+                          reviews: 1200,
+                          cards: 100,
+                          updatedAt: DateTime(2026),
+                        ))
+                      : const SrsDonationStatus.none(),
                 ),
               ),
             ],

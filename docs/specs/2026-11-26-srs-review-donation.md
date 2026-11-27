@@ -80,7 +80,7 @@ Future<void> exportSrsDonationFile({
 - `media_usage.donation_bytes INTEGER NOT NULL DEFAULT 0`（同迁移加列，捐赠专用配额池）
 
 接口：
-- `PUT /v1/srs-donations/:donorId`，`Authorization: Bearer <donorKey>`，body = apkg 原始字节（`application/octet-stream`，流式写 R2），头 `x-donation-reviews` / `x-donation-cards` / `x-donation-app-version`。校验：donorId 32 位小写 hex、key 64 位 hex、zip 魔数 `PK\x03\x04`、大小 ≤ 64 MiB；已有记录时 key_hash 必须一致，否则 403。按 donorId 每小时 2 次、按 IP 日字节额度（`budget.js` 口径）；R2 字节占捐赠专用配额池（`media_usage.donation_bytes`，`DONATION_QUOTA_BYTES` 默认 2 GiB，满了 `507 donation_quota`；迁移 0027）。曾撤回的 ID 重新捐赠：删掉撤回记录中尚未 `reported_batch` 的那条，已报告过的保留（作者那边已删，新文件照常进下一批）。→ `200 {donated: true, updatedAt}`。
+- `PUT /v1/srs-donations/:donorId`，`Authorization: Bearer <donorKey>`，body = apkg 原始字节（`application/octet-stream`，流式写 R2），头 `x-donation-reviews` / `x-donation-cards` / `x-donation-app-version`。校验：donorId 32 位小写 hex、key 64 位 hex、zip 魔数 `PK\x03\x04`、大小 ≤ 64 MiB；已有记录时 key_hash 必须一致，否则 403。按 donorId 每小时 2 次、按 IP 日字节额度（`budget.js` 口径）；R2 字节占捐赠专用配额池（`media_usage.donation_bytes`，`DONATION_QUOTA_BYTES` 默认 2 GiB，满了 `507 donation_quota`；迁移 0027）。曾撤回的 ID 重新捐赠：删掉撤回记录中尚未 `reported_batch` 的那条，已报告过的保留（作者那边已删，新文件照常进下一批）。→ `200 {donated: true, reviews, cards, updatedAt}`（与 GET 同一形状，2026-11-27 起；此前只回 `updatedAt`，客户端显示「捐出 0 次」）。
 - `GET /v1/srs-donations/:donorId`（Bearer）→ `200 {donated, reviews, cards, updatedAt}`，无记录 `{donated: false}`。
 - `DELETE /v1/srs-donations/:donorId`（Bearer）→ 删 R2 + 行，写撤回记录 → `200 {donated: false}`。无记录也 200（幂等）。
 - 管理（`checkBasicAuth`）：`POST /v1/admin/srs-donations/batch` 生成批次：快照当前全部捐赠与尚未报告的撤回 ID，随机 32 字节 token，30 天有效，返回 `{url}`；`GET /v1/admin/srs-donations` 列统计。
@@ -92,7 +92,8 @@ Future<void> exportSrsDonationFile({
 
 - 资格：`srsDonationAvailable`（store_compliance）且门槛满足且用户没选「不再提示」。
 - 横幅：SRS 首页顶部一条卡片（公共组件、两套设计系统、带 `FushiStaggeredEntrance` / `FushiPressScale` 动效），按钮「了解并捐赠」「以后再说」（30 天后再出现）「不再提示」。已捐过：复习数比上次捐赠多 ≥ max(1000, 50%) 且距上次 ≥ 30 天时，横幅改为「更新捐赠」。
-- 捐赠页（对话框或全屏页均可，走公共组件）：说明包含什么（复习时间、评分、用时、卡片 / 牌组结构、时区与次日开始时间、可选的词头 + 读音）与不包含什么（其他卡面文字、标签、牌组名、媒体）；同意文案；统计（复习数 / 卡片数）；「包含我学的单词」开关 + 词表预览（可搜索、逐词排除）；显示捐赠 ID 前 8 位；确认后后台 isolate 导出到临时文件 → PUT 上传（进度 + 失败重试按钮，不自动重试）→ 记偏好 `srs_donation_last_at` / `srs_donation_last_reviews` / 排除集合。
+- 捐赠页（对话框或全屏页均可，走公共组件）：说明包含什么（复习时间、评分、用时、卡片 / 牌组结构、时区与次日开始时间、可选的词头 + 读音）与不包含什么（其他卡面文字、标签、牌组名、媒体）；同意文案；统计（复习数 / 卡片数）；「包含我学的单词」开关 + 词表预览（可搜索、逐词排除）；显示捐赠 ID 前 8 位；确认后后台 isolate 导出到临时文件 → PUT 上传（进度 + 失败重试按钮，不自动重试）→ 用 PUT 回的状态更新 `srsDonationStatusProvider`，偏好只记排除集合 / 单词开关。
+- **捐赠状态只认服务端**（2026-11-27）：「捐没捐过 / 捐了多少 / 何时」由 `srsDonationStatusProvider`（GET，按 profileUid 派生的身份）提供，本机不存镜像——身份跨设备共享，镜像在另一台设备上必然缺失（电脑上捐了、手机上照样弹「了解并捐赠」）。横幅先过本机门（平台 / 不再提示 / 以后再说 / 1000 次 14 天），门开了才 GET；状态未知不出横幅。旧偏好 `srs_donation_last_at` / `srs_donation_last_reviews` 已废弃。
 - 设置：SRS 设置页一项「复习历史捐赠」：状态（GET）、更新捐赠、撤回（确认框 → DELETE → 清偏好）。
 - i18n 一律 `dart fushi/tool/i18n_sync.dart --add`，键前缀 `srs_donation_`。
 

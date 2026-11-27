@@ -69,9 +69,6 @@ class _SrsDonationPageState extends ConsumerState<SrsDonationPage> {
   SrsDonationPreview? _preview;
   bool _previewFailed = false;
 
-  SrsDonationStatus? _status;
-  bool _statusFailed = false;
-
   late bool _includeWords;
   late Set<String> _excluded;
 
@@ -93,7 +90,8 @@ class _SrsDonationPageState extends ConsumerState<SrsDonationPage> {
     return store == null ? null : srsDonationIdentity(store.profileUid);
   }
 
-  /// 打开复习库，然后捐赠状态（网络）与预览（后台 isolate 读全库）并行取，互不等待。
+  /// 打开复习库，然后算预览（后台 isolate 读全库）。捐赠状态由 [srsDonationStatusProvider] 自己取（网络），
+  /// 与预览互不等待。
   Future<void> _load() async {
     setState(() => _storeFailed = false);
     final SrsDbStore? store;
@@ -108,7 +106,6 @@ class _SrsDonationPageState extends ConsumerState<SrsDonationPage> {
     }
     if (!mounted) return;
     setState(() => _store = store);
-    unawaited(_loadStatus());
     await _loadPreview(store);
   }
 
@@ -148,23 +145,6 @@ class _SrsDonationPageState extends ConsumerState<SrsDonationPage> {
       ErrorLogService.instance.log('SrsDonationPage.preview', e, stack);
       if (!mounted) return;
       setState(() => _previewFailed = true);
-    }
-  }
-
-  Future<void> _loadStatus() async {
-    final ({String donorId, String donorKey})? id = _identity;
-    if (id == null) return;
-    setState(() => _statusFailed = false);
-    try {
-      final SrsDonationStatus status = await ref
-          .read(srsDonationClientProvider)
-          .status(donorId: id.donorId, donorKey: id.donorKey);
-      if (!mounted) return;
-      setState(() => _status = status);
-    } catch (e, stack) {
-      ErrorLogService.instance.log('SrsDonationPage.status', e, stack);
-      if (!mounted) return;
-      setState(() => _statusFailed = true);
     }
   }
 
@@ -227,18 +207,13 @@ class _SrsDonationPageState extends ConsumerState<SrsDonationPage> {
           setState(() => _progress = sent / total);
         },
       );
+      ref.read(srsDonationStatusProvider.notifier).set(status);
       await updateSrsDonationPrefs(
         ref,
-        (SrsDonationPrefs p) => p.recordDonation(
-          at: ref.read(srsDonationClockProvider)(),
-          reviews: preview.reviewCount,
-        ),
+        (SrsDonationPrefs p) => p.clearSnooze(),
       );
       if (!mounted) return;
-      setState(() {
-        _busy = _Busy.none;
-        _status = status;
-      });
+      setState(() => _busy = _Busy.none);
       FushiToast.show(
         msg: t.srs_donation_done,
         severity: ToastSeverity.success,
@@ -271,14 +246,16 @@ class _SrsDonationPageState extends ConsumerState<SrsDonationPage> {
       await ref
           .read(srsDonationClientProvider)
           .withdraw(donorId: id.donorId, donorKey: id.donorKey);
+      ref
+          .read(srsDonationStatusProvider.notifier)
+          .set(const SrsDonationStatus.none());
       await updateSrsDonationPrefs(
         ref,
-        (SrsDonationPrefs p) => p.clearDonation(),
+        (SrsDonationPrefs p) => p.clearExcluded(),
       );
       if (!mounted) return;
       setState(() {
         _busy = _Busy.none;
-        _status = const SrsDonationStatus(donated: false);
         _excluded = <String>{};
       });
       FushiToast.show(
@@ -300,9 +277,9 @@ class _SrsDonationPageState extends ConsumerState<SrsDonationPage> {
       ? (e.statusCode == null ? e.message : 'HTTP ${e.statusCode}')
       : '$e';
 
-  /// 本机记得捐过、或服务端说捐过。
+  /// 服务端说捐过（状态没到 / 失败时按没捐过显示「捐赠」，上传本身同一 donorId 覆盖，不会重复）。
   bool get _donated =>
-      _status?.donated ?? ref.read(srsDonationPrefsProvider).donated;
+      ref.watch(srsDonationStatusProvider).valueOrNull?.donated ?? false;
 
   @override
   Widget build(BuildContext context) {
@@ -497,29 +474,37 @@ class _SrsDonationPageState extends ConsumerState<SrsDonationPage> {
   }
 
   Widget _statusRow(BuildContext context) {
-    final SrsDonationStatus? status = _status;
+    final AsyncValue<SrsDonationStatus?> remote = ref.watch(
+      srsDonationStatusProvider,
+    );
+    final bool failed = remote.hasError && !remote.isLoading;
+    final SrsDonationRecord? donation = remote.valueOrNull?.donation;
     final String statusText;
-    if (status == null) {
-      statusText = _statusFailed ? t.srs_donation_status_unknown : '…';
-    } else if (!status.donated) {
+    if (failed) {
+      statusText = t.srs_donation_status_unknown;
+    } else if (remote.isLoading || remote.valueOrNull == null) {
+      statusText = '…';
+    } else if (donation == null) {
       statusText = t.srs_donation_status_none;
     } else {
-      final DateTime? at = status.updatedAt;
       statusText = t.srs_donation_status_donated(
-        reviews: status.reviews ?? 0,
-        date: at == null
-            ? '-'
-            : MaterialLocalizations.of(context).formatMediumDate(at.toLocal()),
+        reviews: donation.reviews,
+        date: MaterialLocalizations.of(
+          context,
+        ).formatMediumDate(donation.updatedAt.toLocal()),
       );
     }
     return FushiListItem(
       key: const ValueKey<String>('srs-donation-status'),
       leading: const FushiListLeadingIcon(FushiIcons.cloudSync),
       title: Text(statusText),
-      onTap: _statusFailed
-          ? () => srsRunLogged('SrsDonationPage.status', _loadStatus)
+      onTap: failed
+          ? () => srsRunLogged(
+              'SrsDonationPage.status',
+              () async => ref.invalidate(srsDonationStatusProvider),
+            )
           : null,
-      trailing: _statusFailed ? const FushiIcon(FushiIcons.refresh) : null,
+      trailing: failed ? const FushiIcon(FushiIcons.refresh) : null,
     );
   }
 
