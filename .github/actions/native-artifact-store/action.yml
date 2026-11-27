@@ -105,6 +105,15 @@ runs:
         dest="$(to_posix "$STORE_PATH")"
         rm -rf "$dest"; mkdir -p "$dest"
         cp -a "$work/x/payload/." "$dest/"
+        # Exec bits recorded at save time (EXECUTABLES, see the stage step). Only plain
+        # `./`-relative paths of files that are actually in the payload are honoured.
+        if [ -f "$work/x/EXECUTABLES" ]; then
+          while IFS= read -r rel; do
+            case "$rel" in ./*) ;; *) continue ;; esac
+            case "$rel" in */../*) continue ;; esac
+            [ -f "$dest/$rel" ] && chmod +x "$dest/$rel"
+          done < "$work/x/EXECUTABLES"
+        fi
         rm -rf "$work"
         echo "Restored $STORE_NAME from artifact $pick (run https://github.com/$REPO/actions/runs/$src_run)."
         hit=true
@@ -135,6 +144,11 @@ runs:
         fi
         if command -v sha256sum >/dev/null 2>&1; then sum=(sha256sum); else sum=(shasum -a 256); fi
         (cd "$stage/payload" && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 "${sum[@]}") > "$stage/SHA256SUMS"
+        # actions/upload-artifact does not keep file modes ("Permission Loss" in its README):
+        # every file comes back 0644. Directory payloads such as a jlink image (Mihon runtime,
+        # bin/java and lib/jspawnhelper) need their exec bits, so record them here and the
+        # restore step re-applies them.
+        (cd "$stage/payload" && find . -type f -perm -u+x -print | LC_ALL=C sort) > "$stage/EXECUTABLES"
         # develop/main entries feed every later run for a month; PR entries only feed
         # re-pushes of the same PR, a week is plenty.
         if [ "$IS_TRUSTED_REF" = "true" ]; then retention=30; else retention=7; fi

@@ -2935,7 +2935,8 @@ jobs:
           # The checkout is mounted as is (CI has no host-side .dart_tool to protect,
           # unlike build_in_docker.sh), so the baked secret stubs above are included.
           docker run --rm -v "$PWD:/src" -v "$PWD/build/linux-dist:/out" \
-            -e FUSHI_SOURCE_COMMIT="$GITHUB_SHA" -e FUSHI_BUILD_NAME -e FUSHI_BUILD_NUMBER             -e FUSHI_MIHON_RUNTIME_DIR=/src/build/mihon-runtime \
+            -e FUSHI_SOURCE_COMMIT="$GITHUB_SHA" -e FUSHI_BUILD_NAME -e FUSHI_BUILD_NUMBER \
+            -e FUSHI_MIHON_RUNTIME_DIR=/src/build/mihon-runtime \
             -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0='*' \
             fushi-linux-build bash /src/tool/linux/build_bundle.sh
           sudo chown -R "$(id -u):$(id -g)" .

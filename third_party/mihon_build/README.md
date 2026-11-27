@@ -39,4 +39,4 @@ CI 上 Mihon runtime 本身按输入哈希存进原生产物持久库（`.github
 4. `python3 tool/vendored_binaries.py publish`，再不带 `FUSHI_MIHON_GRADLE_ONLINE_HOME` 离线跑一次确认。
 
 依赖坐标与 OS 无关（JVM 件；jogamp 自带的 natives 走 `third_party/jogamp`），所以一台机器打的包
-三端通用；2026-11-27 的这份在 Windows 上打，Linux / macOS 的发版构建离线验证过。
+三端通用；2026-11-27 的这份在 Windows 上打，也只在 Windows 上离线构建验证过。
