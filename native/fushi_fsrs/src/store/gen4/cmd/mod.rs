@@ -491,9 +491,7 @@ pub(super) fn note_edit_rows_objects(
             rows.push((f, json, st, obj));
         }
     }
-    let p_tags = crate::store::prof::span("nv.tags"); // PROBE
     let tags = tags_row(t, ix, c, profile)?;
-    drop(p_tags); // PROBE
     if let Some(row) = tags {
         let json = canonical(&row);
         let Value::Object(obj) = row else {
