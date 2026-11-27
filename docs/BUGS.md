@@ -103,6 +103,12 @@
 | [BUG-5529](bugs/BUG-5529-windows-update-launcher-locks-bundled-crt.md) | ✅ | ✅ | Windows 应用内更新卡在「Update did not finish」：msvcp140.dll 被 update launcher 占着换不掉 |
 | [BUG-5528](bugs/BUG-5528-bd-subtitle-version-merge.md) | 🚧 | 🚧 | 原盘下载字幕版本对不上时只能整份换 ASR 稿：缺 TV 版 / BD 版逐句合并 |
 | [BUG-5527](bugs/BUG-5527-work-network-duplicate-nodes-floating-labels.md) | ✅ | ✅ | 关系网：单视频合集与其唯一那集画成两个重复节点、建议边标签飘离连线、标题截断分不清前後編 |
+> 共 4805 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5536](bugs/BUG-5536-idle-page-continuous-frames.md) | 🚧 | 🚧 | 页面静止时仍以接近屏幕刷新率持续出帧（视频库页 / 视频合集页） |
+| [BUG-5535](bugs/BUG-5535-route-transition-covered-page-full-replay.md) | ✅ | ✅ | 打开 / 返回二级页（视频合集等）转场掉帧：被盖住的那一页每帧整页重放绘制 |
 | [BUG-5526](bugs/BUG-5526-srs-link-retired-root-writer.md) | ✅ | ✅ | 平板复习同步永远不采用电脑的集合：集合目录里退役旧根的写入者被当成成员，关联判成「已关联」 |
 | [BUG-5525](bugs/BUG-5525-rwkv-cold-start-full-replay.md) | ✅ | ✅ | RWKV 冷启动逐卡重放全部历史，复习页首开等十几二十秒 |
 | [BUG-5524](bugs/BUG-5524-home-apple-collapsed-title-covered.md) | ✅ | ✅ | home-apple-collapsed-title-covered |
