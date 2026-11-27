@@ -30,6 +30,10 @@ import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_content_fingerprint.dart';
+import 'package:fushi_engine/media/video/video_playback_activity.dart';
+import 'package:fushi_engine/media/video/video_source_fingerprint.dart'
+    show VideoFingerprintCancellation, VideoFingerprintCancelledException;
+import 'package:fushi_engine/platform/media_disk_identity.dart';
 import 'package:path/path.dart' as p;
 
 FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
@@ -778,7 +782,7 @@ void main() {
       final VideoContentFullHashUpgrader upgrader =
           VideoContentFullHashUpgrader(
             db,
-            fullHashOf: (String path) async {
+            fullHashOf: (String path, Object? _) async {
               calls++;
               return computeVideoContentFullHash(path);
             },
@@ -811,7 +815,7 @@ void main() {
       // 算 01 的期间：扫描把 video/01 改指到别处；算 02 的期间：扫描重记了 02 的指纹。
       final int written = await upgradeVideoContentFingerprintsToFullHash(
         db,
-        fullHashOf: (String path) async {
+        fullHashOf: (String path, Object? _) async {
           final VideoContentFingerprint? full =
               await computeVideoContentFullHash(path);
           if (path == aFile) {
@@ -1002,6 +1006,133 @@ void main() {
       ]) {
         expect(isGenericVideoDirectoryName(name), isFalse, reason: name);
       }
+    });
+  });
+
+  group('网络卷上的整文件哈希给播放让路（BUG-5598）', () {
+    tearDown(() => debugOverrideRemoteMediaVolume(null));
+
+    test('有播放会话时：本机盘照算，网络卷上的等播放结束再算', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final String localFile = p.join(tmp.path, 'Local', '01.mkv');
+      final String remoteFile = p.join(tmp.path, 'Cloud', '02.mkv');
+      _patterned(localFile, 200 * 1024);
+      _patterned(remoteFile, 200 * 1024, middleFrom: 70000, middleTo: 90000);
+      await _scan(db, await _source(db, tmp.path));
+      debugOverrideRemoteMediaVolume((String path) => path == remoteFile);
+
+      final VideoPlaybackActivity playback = VideoPlaybackActivity();
+      final void Function() endSession = playback.begin();
+      final List<String> hashed = <String>[];
+      final Completer<void> localDone = Completer<void>();
+      final Future<int> upgrade = upgradeVideoContentFingerprintsToFullHash(
+        db,
+        playback: playback,
+        fullHashOf: (String path, Object? _) async {
+          hashed.add(path);
+          final VideoContentFingerprint? full =
+              await computeVideoContentFullHash(path);
+          if (path == localFile) localDone.complete();
+          return full;
+        },
+      );
+      // 本机盘上的那个真算（后台 isolate）；算完后循环轮到网络卷上的那个，它必须等着。
+      await localDone.future;
+      await pumpEventQueue();
+      expect(hashed, <String>[localFile], reason: '网络卷上的不能和正在播的流抢带宽');
+
+      endSession();
+      expect(await upgrade, 2);
+      expect(hashed, <String>[localFile, remoteFile]);
+    });
+
+    test('算到一半有播放开始：取消这一个，播放结束后重算', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final String remoteFile = p.join(tmp.path, 'Cloud', '01.mkv');
+      _patterned(remoteFile, 200 * 1024);
+      await _scan(db, await _source(db, tmp.path));
+      debugOverrideRemoteMediaVolume((String _) => true);
+
+      final VideoPlaybackActivity playback = VideoPlaybackActivity();
+      int attempts = 0;
+      final Completer<void> firstStarted = Completer<void>();
+      bool firstCancelled = false;
+      final Future<int> upgrade = upgradeVideoContentFingerprintsToFullHash(
+        db,
+        playback: playback,
+        fullHashOf: (String path, VideoFingerprintCancellation? cancel) async {
+          attempts++;
+          if (attempts == 1) {
+            // 第一次：一直「读」到被取消为止。
+            firstStarted.complete();
+            await cancel!.whenCancelled;
+            firstCancelled = true;
+            throw VideoFingerprintCancelledException(path);
+          }
+          return computeVideoContentFullHash(path);
+        },
+      );
+      await firstStarted.future;
+      final void Function() endSession = playback.begin();
+      await pumpEventQueue();
+      expect(firstCancelled, isTrue, reason: '播放一开始就要停下整文件读取');
+      expect(attempts, 1, reason: '播放期间不重试');
+
+      endSession();
+      expect(await upgrade, 1);
+      expect(attempts, 2);
+    });
+
+    test('播放期间关库：升级器不卡着等播放结束', () async {
+      final FushiDatabase db = _memDb();
+      final String remoteFile = p.join(tmp.path, 'Cloud', '01.mkv');
+      _patterned(remoteFile, 200 * 1024);
+      await _scan(db, await _source(db, tmp.path));
+      debugOverrideRemoteMediaVolume((String _) => true);
+
+      final VideoPlaybackActivity playback = VideoPlaybackActivity();
+      final void Function() endSession = playback.begin();
+      addTearDown(endSession);
+      int attempts = 0;
+      final VideoContentFullHashUpgrader upgrader =
+          VideoContentFullHashUpgrader(
+            db,
+            playback: playback,
+            fullHashOf: (String path, Object? _) async {
+              attempts++;
+              return computeVideoContentFullHash(path);
+            },
+          );
+      upgrader.request();
+      await pumpEventQueue();
+      await db.close().timeout(const Duration(seconds: 10));
+      expect(attempts, 0);
+    });
+
+    test('VideoPlaybackActivity：会话计数、变忙 / 变闲通知', () async {
+      final VideoPlaybackActivity playback = VideoPlaybackActivity();
+      expect(playback.isActive, isFalse);
+      await playback.whenIdle();
+      int busy = 0;
+      final void Function() unregister = playback.onBecameActive(() => busy++);
+      final void Function() a = playback.begin();
+      final void Function() b = playback.begin();
+      expect(busy, 1, reason: '只在从空闲变忙时通知');
+      bool idle = false;
+      unawaited(playback.whenIdle().then((_) => idle = true));
+      a();
+      a();
+      await pumpEventQueue();
+      expect(idle, isFalse, reason: '结束函数幂等，另一个会话还在');
+      b();
+      await pumpEventQueue();
+      expect(idle, isTrue);
+      expect(playback.isActive, isFalse);
+      unregister();
+      playback.begin()();
+      expect(busy, 1, reason: '摘除后不再通知');
     });
   });
 

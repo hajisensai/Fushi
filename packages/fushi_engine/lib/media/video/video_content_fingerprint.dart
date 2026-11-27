@@ -22,6 +22,7 @@
 /// 不再重读。
 library;
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart' show sha256;
@@ -29,7 +30,9 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart'
     show computeOpenSubtitlesMovieHash;
+import 'package:fushi_engine/media/video/video_playback_activity.dart';
 import 'package:fushi_engine/media/video/video_source_fingerprint.dart';
+import 'package:fushi_engine/platform/media_disk_identity.dart';
 import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
 
@@ -113,14 +116,16 @@ Future<VideoContentFingerprint?> computeVideoContentFingerprint(
 /// （[VideoSourceFingerprint.instance]：与制卡 / 互联回跳共用在途去重、内存与落盘缓存，
 /// 同一文件同一状态只读一遍）。不是普通文件、读不了、或者算的期间文件变了时为 null。
 Future<VideoContentFingerprint?> computeVideoContentFullHash(
-  String path,
-) async {
+  String path, {
+  VideoFingerprintCancellation? cancel,
+}) async {
   try {
     final File file = File(path);
     final FileStat before = await file.stat();
     if (before.type != FileSystemEntityType.file) return null;
     final String digest = await VideoSourceFingerprint.instance.fingerprint(
       path,
+      cancel: cancel,
     );
     final FileStat after = await file.stat();
     if (after.type != FileSystemEntityType.file ||
@@ -282,15 +287,21 @@ Future<bool> _directoryExists(String path) async {
 ///   下一轮再试；
 /// - 一次只算一个文件，每个文件前后查 [isCancelled]（原生整文件哈希本身不可打断，最多
 ///   等当前这一个）；
-/// - 文件原地换过（大小 / 修改时刻与旧指纹不同）照样算：记下的是它现在的内容。
+/// - 文件原地换过（大小 / 修改时刻与旧指纹不同）照样算：记下的是它现在的内容；
+/// - **网络卷**（[isRemoteMediaVolume]：SMB 共享、rclone 云盘挂载…）上的文件排在本机盘
+///   之后，且只在没有视频播放会话（[VideoPlaybackActivity]）时读：整文件哈希要把整集从
+///   网上拉一遍，和正在播的流抢带宽会让播放卡缓冲（BUG-5598）。读到一半有播放开始就
+///   经取消信号停下，等播放结束再从头算这一个。
 ///
-/// [fullHashOf] 供测试替换。
+/// [fullHashOf]、[playback] 供测试替换。
 Future<int> upgradeVideoContentFingerprintsToFullHash(
   FushiDatabase db, {
-  Future<VideoContentFingerprint?> Function(String path) fullHashOf =
-      computeVideoContentFullHash,
+  VideoContentFullHashOf fullHashOf = _defaultFullHashOf,
   bool Function()? isCancelled,
+  VideoPlaybackActivity? playback,
 }) async {
+  final VideoPlaybackActivity activity =
+      playback ?? VideoPlaybackActivity.instance;
   final Map<String, VideoContentFingerprintRow> existing = await db
       .allVideoContentFingerprints();
   final Set<String> pending = <String>{
@@ -302,14 +313,30 @@ Future<int> upgradeVideoContentFingerprintsToFullHash(
     db.videoBooks,
   )..where(($VideoBooksTable t) => t.bookUid.isIn(pending))).get();
   final Map<String, bool> rootOnline = <String, bool>{};
-  int written = 0;
+  // 本机盘在前、网络卷在后：网络卷上的要等播放结束，不能把本机盘上的也挡在后面。
+  final List<VideoBookRow> local = <VideoBookRow>[];
+  final List<VideoBookRow> remote = <VideoBookRow>[];
   for (final VideoBookRow row in rows) {
-    if (isCancelled?.call() ?? false) break;
     if (!isVideoContentFingerprintCandidate(row)) continue;
+    (await isRemoteMediaVolume(row.videoPath) ? remote : local).add(row);
+  }
+  int written = 0;
+  for (final (VideoBookRow row, bool onRemote) in <(VideoBookRow, bool)>[
+    for (final VideoBookRow row in local) (row, false),
+    for (final VideoBookRow row in remote) (row, true),
+  ]) {
+    if (isCancelled?.call() ?? false) break;
     final String root = p.rootPrefix(row.videoPath);
     final bool online = rootOnline[root] ??= await _directoryExists(root);
     if (!online) continue;
-    final VideoContentFingerprint? full = await fullHashOf(row.videoPath);
+    final VideoContentFingerprint? full = onRemote
+        ? await _fullHashWhenNotPlaying(
+            row.videoPath,
+            fullHashOf,
+            activity,
+            isCancelled,
+          )
+        : await fullHashOf(row.videoPath, null);
     if (full == null || !full.isFullHash) continue;
     if (isCancelled?.call() ?? false) break;
     if (await _recordFullHashIfUnchanged(
@@ -322,6 +349,58 @@ Future<int> upgradeVideoContentFingerprintsToFullHash(
     }
   }
   return written;
+}
+
+/// 整文件哈希的计算函数：[cancel] 取消后应尽快停下并抛 [VideoFingerprintCancelledException]
+/// （传 null = 不可打断）。
+typedef VideoContentFullHashOf =
+    Future<VideoContentFingerprint?> Function(
+      String path,
+      VideoFingerprintCancellation? cancel,
+    );
+
+Future<VideoContentFingerprint?> _defaultFullHashOf(
+  String path,
+  VideoFingerprintCancellation? cancel,
+) => computeVideoContentFullHash(path, cancel: cancel);
+
+/// 网络卷上的一个文件：等到没有播放会话再算；算的期间有播放开始就取消，等它结束重来。
+///
+/// 等待与计算都挂在所在后台工作的关库信号上（[DatabaseWorkToken.abortOnCancel]）：
+/// 人看着视频时关库 / 换库不必等播放结束，正在读的整文件哈希也当场停下。
+Future<VideoContentFingerprint?> _fullHashWhenNotPlaying(
+  String path,
+  VideoContentFullHashOf fullHashOf,
+  VideoPlaybackActivity playback,
+  bool Function()? isCancelled,
+) async {
+  final Completer<void> closing = Completer<void>();
+  final void Function() unlinkClosing = DatabaseWorkToken.abortOnCancel(() {
+    if (!closing.isCompleted) closing.complete();
+  });
+  try {
+    while (true) {
+      await Future.any(<Future<void>>[playback.whenIdle(), closing.future]);
+      if (closing.isCompleted || (isCancelled?.call() ?? false)) return null;
+      final VideoFingerprintCancellation cancel =
+          VideoFingerprintCancellation();
+      final void Function() unregister = playback.onBecameActive(cancel.cancel);
+      final void Function() unlinkAbort = DatabaseWorkToken.abortOnCancel(
+        cancel.cancel,
+      );
+      try {
+        return await fullHashOf(path, cancel);
+      } on VideoFingerprintCancelledException {
+        // 播放开始（或库要关）：放下这一个；播放的话回到上面等它结束。
+        if (!cancel.isCancelled) rethrow;
+      } finally {
+        unregister();
+        unlinkAbort();
+      }
+    }
+  } finally {
+    unlinkClosing();
+  }
 }
 
 /// 比较后写入：整文件哈希一份可能要算几分钟，这期间来源扫描可能已把 [row] 改指到
@@ -365,9 +444,10 @@ Future<bool> _recordFullHashIfUnchanged(
 class VideoContentFullHashUpgrader {
   VideoContentFullHashUpgrader(
     this._db, {
-    Future<VideoContentFingerprint?> Function(String path) fullHashOf =
-        computeVideoContentFullHash,
-  }) : _fullHashOf = fullHashOf;
+    VideoContentFullHashOf fullHashOf = _defaultFullHashOf,
+    VideoPlaybackActivity? playback,
+  }) : _fullHashOf = fullHashOf,
+       _playback = playback;
 
   static final Expando<VideoContentFullHashUpgrader> _byDb =
       Expando<VideoContentFullHashUpgrader>('VideoContentFullHashUpgrader');
@@ -377,7 +457,8 @@ class VideoContentFullHashUpgrader {
       _byDb[db] ??= VideoContentFullHashUpgrader(db);
 
   final FushiDatabase _db;
-  final Future<VideoContentFingerprint?> Function(String path) _fullHashOf;
+  final VideoContentFullHashOf _fullHashOf;
+  final VideoPlaybackActivity? _playback;
 
   Future<int>? _running;
   bool _again = false;
@@ -410,8 +491,10 @@ class VideoContentFullHashUpgrader {
           _again = false;
           sum += await upgradeVideoContentFingerprintsToFullHash(
             _db,
-            fullHashOf: (String path) => work.guard(_fullHashOf(path)),
+            fullHashOf: (String path, VideoFingerprintCancellation? cancel) =>
+                work.guard(_fullHashOf(path, cancel)),
             isCancelled: () => _disposed || work.isCancelled,
+            playback: _playback,
           );
         } while (_again && !_disposed && !work.isCancelled);
         return sum;

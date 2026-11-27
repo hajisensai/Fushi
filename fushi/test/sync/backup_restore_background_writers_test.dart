@@ -228,7 +228,7 @@ void main() {
     final Completer<void> hashing = Completer<void>();
     final VideoContentFullHashUpgrader upgrader = VideoContentFullHashUpgrader(
       db,
-      fullHashOf: (String _) {
+      fullHashOf: (String _, Object? _) {
         if (!hashing.isCompleted) hashing.complete();
         return hash.future;
       },

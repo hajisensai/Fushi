@@ -61,6 +61,7 @@ import 'package:fushi_engine/media/video/disc/disc_format.dart'
     show discRootForMemberPath;
 import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart'
     show dvdPlaybackUriForTitlePath, dvdTitlePath, isDvdTitlePath;
+import 'package:fushi_engine/media/video/video_playback_activity.dart';
 import 'package:fushi_engine/media/video/video_subtitle_source.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
@@ -212,6 +213,11 @@ class VideoPlayerController extends ChangeNotifier
   VideoPlayerController() {
     _live.add(this);
   }
+
+  /// 本控制器的播放会话（[VideoPlaybackActivity]）：建好即算、[dispose] 时结束。网络卷上
+  /// 的整文件哈希等后台读盘据此让路，不和正在播（含暂停着）的流抢带宽（BUG-5598）。
+  final void Function() _endPlaybackSession = VideoPlaybackActivity.instance
+      .begin();
 
   /// 本进程里还没 [dispose] 的控制器（本地 libmpv 页与网页播放器页都算）。
   static final Set<VideoPlayerController> _live = <VideoPlayerController>{};
@@ -7417,6 +7423,7 @@ class VideoPlayerController extends ChangeNotifier
   @override
   void dispose() {
     _live.remove(this);
+    _endPlaybackSession();
     _loadToken++;
     _endPlayRange(RangePlaybackEnd.interrupted);
     _loopCurrentCue.dispose();
