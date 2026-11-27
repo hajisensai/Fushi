@@ -75,7 +75,25 @@ class ConvergenceCollection {
 
   bool get participates =>
       origin.isOrganizerManaged ||
-      (origin == CollectionOrigin.user && organizeKey != null);
+      (origin == CollectionOrigin.user &&
+          (organizeKey != null || impliedTitleKeys.isNotEmpty));
+
+  /// 没有分组键的用户合集按**名字**推出的标题键（BUG-5597）：名字就是系列名的用户
+  /// 合集（「薬屋のひとりごと」）与另一端规则归组器给同一批书建的 playlist 是同一个
+  /// 系列，只是用户合集从来没拿到过键。只用于和整理器合集相连（还要成员重叠过半，
+  /// 见 [planOrganizeConvergenceWithProposals]），不进 [identityKeys]、不参与
+  /// [holdsKey]——不会凭名字把别的用户合集或别名吸收者认成同组。书与漫画在 wire 上
+  /// 同为 `epub`，两个域的键都推。只读名字与 wire 成员种类，各端算出同一组键。
+  Set<String> get impliedTitleKeys {
+    if (origin != CollectionOrigin.user || organizeKey != null) {
+      return const <String>{};
+    }
+    return <String>{
+      for (final String d in wireDomains)
+        for (final CollectionShelfDomain shelf in _shelfDomainsOfWire(d))
+          ?titleOrganizeKey(shelf.name, name),
+    };
+  }
 
   /// 本合集算不算持有分组键 [key]：整理器合集认主键与别名，用户合集只认主键。
   bool holdsKey(String key) => origin == CollectionOrigin.user
@@ -209,6 +227,25 @@ ConvergencePlan planOrganizeConvergenceWithProposals(
     });
   });
 
+  // 无键用户合集按名字推出的标题键（[ConvergenceCollection.impliedTitleKeys]）：
+  // 整理器合集持有这个键、同域、成员重叠过半 → 同一个系列，整理器合集并进用户合集
+  // （BUG-5597：一端用户手建「薬屋のひとりごと」合集、另一端规则归组器给同一批书建了
+  // 同名 playlist，同步后两张卡并存永不收敛）。只在用户合集与整理器合集之间连；
+  // 名字碰巧是系列名但成员不重叠的用户合集不受影响。
+  for (int u = 0; u < n; u++) {
+    final Set<String> implied = parts[u].impliedTitleKeys;
+    if (implied.isEmpty) continue;
+    for (int o = 0; o < n; o++) {
+      final ConvergenceCollection org = parts[o];
+      if (!org.origin.isOrganizerManaged) continue;
+      if (org.identityKeys.intersection(implied).isEmpty) continue;
+      if (!_sameDomain(parts[u], org) || !_overlapsEnough(parts[u], org)) {
+        continue;
+      }
+      union(u, o);
+    }
+  }
+
   final Map<int, List<ConvergenceCollection>> components =
       <int, List<ConvergenceCollection>>{};
   for (int i = 0; i < n; i++) {
@@ -265,6 +302,26 @@ List<OrganizeProposal> convergenceOrganizeProposals(
 
 /// [OrganizeProposal]s 的记账 trigger：同步后的收敛。
 const String kOrganizeConvergenceTrigger = 'convergence';
+
+/// wire 粗粒度域 → 可能的库页域（标题键里的 `<domain>`）。
+List<CollectionShelfDomain> _shelfDomainsOfWire(String wireDomain) =>
+    switch (wireDomain) {
+      'video' => const <CollectionShelfDomain>[CollectionShelfDomain.video],
+      'game' => const <CollectionShelfDomain>[CollectionShelfDomain.games],
+      _ => const <CollectionShelfDomain>[
+        CollectionShelfDomain.books,
+        CollectionShelfDomain.manga,
+      ],
+    };
+
+/// 两个合集共享的 wire 成员数是否达到较小一方的 [kConvergenceOverlapRatio]。
+bool _overlapsEnough(ConvergenceCollection a, ConvergenceCollection b) {
+  final int shared = a.memberWireKeys.intersection(b.memberWireKeys).length;
+  final int smaller = a.memberWireKeys.length < b.memberWireKeys.length
+      ? a.memberWireKeys.length
+      : b.memberWireKeys.length;
+  return shared > 0 && shared >= smaller * kConvergenceOverlapRatio;
+}
 
 bool _sameDomain(ConvergenceCollection a, ConvergenceCollection b) =>
     a.wireDomains.intersection(b.wireDomains).isNotEmpty;

@@ -125,6 +125,68 @@ void main() {
       expect(plan.single.sourceIds, <int>[1]);
     });
 
+    test('BUG-5597：无键用户合集与同名规则合集成员重叠 → 规则合集并进用户合集', () {
+      final String key = titleOrganizeKey('books', '薬屋のひとりごと')!;
+      final List<ConvergenceCollection> input = <ConvergenceCollection>[
+        c(
+          1,
+          '薬屋のひとりごと',
+          origin: CollectionOrigin.user,
+          members: <String>['薬屋のひとりごと 1', '薬屋のひとりごと 2'],
+        ),
+        c(
+          2,
+          '薬屋のひとりごと',
+          origin: CollectionOrigin.rule,
+          key: key,
+          members: <String>['薬屋のひとりごと 1', '薬屋のひとりごと 2'],
+        ),
+      ];
+      for (final List<ConvergenceCollection> order
+          in <List<ConvergenceCollection>>[input, input.reversed.toList()]) {
+        final ConvergencePlan plan = planOrganizeConvergenceWithProposals(
+          order,
+        );
+        expect(plan.merges, hasLength(1));
+        expect(plan.merges.single.targetId, 1);
+        expect(plan.merges.single.sourceIds, <int>[2]);
+        expect(plan.proposals, isEmpty);
+      }
+    });
+
+    test('BUG-5597：同名但成员不重叠、重叠但不同名、两个同名用户合集都不连', () {
+      final String key = titleOrganizeKey('books', 'S')!;
+      final ConvergencePlan plan = planOrganizeConvergenceWithProposals(
+        <ConvergenceCollection>[
+          c(1, 'S', origin: CollectionOrigin.user, members: <String>['x']),
+          c(
+            2,
+            'S2',
+            origin: CollectionOrigin.rule,
+            key: key,
+            members: <String>['a', 'b'],
+          ),
+          c(
+            3,
+            'Other',
+            origin: CollectionOrigin.user,
+            members: <String>['a', 'b'],
+          ),
+        ],
+      );
+      expect(plan.merges, isEmpty);
+      expect(plan.proposals, isEmpty);
+      // 两个同名无键用户合集之间不凭名字相连（不出合并建议）。
+      final ConvergencePlan twins = planOrganizeConvergenceWithProposals(
+        <ConvergenceCollection>[
+          c(1, 'S', origin: CollectionOrigin.user, members: <String>['x']),
+          c(4, 'S', origin: CollectionOrigin.user, members: <String>['x']),
+        ],
+      );
+      expect(twins.merges, isEmpty);
+      expect(twins.proposals, isEmpty);
+    });
+
     test('跨域同键不合并；目录合集不参与', () {
       expect(
         planOrganizeConvergence(<ConvergenceCollection>[
@@ -458,6 +520,39 @@ void main() {
       await settle(Random(6));
       for (final _Device d in devices) {
         expect(await d.db.getRejectedOrganizeKeys(), <String>{'k-x'});
+      }
+    });
+
+    test('BUG-5597：一端用户手建同名合集、另一端规则归组建 playlist（成员为本机没有的书）'
+        '→ 同步后各端只剩用户合集', () async {
+      final _Device a = device();
+      final _Device b = device();
+      const String name = '薬屋のひとりごと';
+      final String key = titleOrganizeKey('books', name)!;
+      const List<String> books = <String>['薬屋のひとりごと 1', '薬屋のひとりごと 2'];
+      final int u = await a.db.createMediaCollection(name);
+      for (final String m in books) {
+        await a.db.addToCollection(u, MediaKind.epub, m);
+      }
+      final int r = await b.db.createMediaCollection(
+        name,
+        collectionType: 'playlist',
+        origin: CollectionOrigin.rule,
+        organizeKey: key,
+      );
+      for (final String m in books) {
+        await b.db.addToCollection(r, MediaKind.epub, m, userIntent: false);
+      }
+      await settle(Random(11));
+      for (final _Device d in devices) {
+        final List<_Snapshot> alive = await _snapshot(d.db);
+        expect(alive, hasLength(1), reason: '同一系列不该留两张合集');
+        expect(alive.single.type, 'collection');
+        expect(alive.single.origin, 'user');
+        expect(alive.single.key, key, reason: '用户合集吸收规则合集的分组键');
+        expect(alive.single.members, <String>{
+          for (final String m in books) 'epub|$m',
+        });
       }
     });
 
