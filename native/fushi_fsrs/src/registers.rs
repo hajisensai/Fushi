@@ -2079,4 +2079,100 @@ mod tests {
         assert!(same_value(&v(r#"{"a":1,"b":2}"#), &v(r#"{"b":2,"a":1}"#)));
         assert!(same_value(&v("0.1"), &v("0.10")));
     }
+
+    /// [edit_of_object] 与 [parse_edit] 解同一行写成的文本逐字段相同（BUG-5572：`read note_views` 不再把行写成文本
+    /// 再解析）：好行的每个字段与物化结果一致；缺键、类型不对、ID 与 dot 不符两边都报坏数据；`id` 不是字符串两边都不核对。
+    #[test]
+    fn object_edits_are_the_parsed_lines() {
+        let ns = uuid_bytes(SRS_NAMESPACE);
+        let base = || {
+            json!({
+                "p": "p", "k": "note", "e": "N1", "f": "field/a", "w": "dev", "s": 3,
+                "v": "表", "hlc": "1700000000003:2:dev",
+            })
+        };
+        let with = |k: &str, v: Value| {
+            let mut o = base();
+            o[k] = v;
+            o
+        };
+        let without = |k: &str| {
+            let mut o = base();
+            o.as_object_mut().unwrap().remove(k);
+            o
+        };
+        let good = [
+            base(),
+            with("id", json!(edit_id("dev", 3))),
+            with("id", json!(7)),
+            with("m", json!(true)),
+            with("m", json!("true")),
+            with("ctx", Value::Null),
+            with("v", Value::Null),
+            with("v", json!({"html": "<b>x</b>", "n": [1, 2.5]})),
+            without("v"),
+        ];
+        let bad = [
+            without("p"),
+            without("k"),
+            without("e"),
+            without("f"),
+            without("w"),
+            without("s"),
+            without("hlc"),
+            with("e", json!(1)),
+            with("s", json!("3")),
+            with("s", Value::Null),
+            with("hlc", Value::Null),
+            with("id", json!(edit_id("dev", 4))),
+        ];
+        for (st, o) in good.iter().flat_map(|o| [(None, o), (Some(42i64), o)]) {
+            let text = o.to_string();
+            let a = parse_edit(&text, st, None, &ns).unwrap_or_else(|e| panic!("{o}: {e}"));
+            let b = edit_of_object(o.as_object().unwrap().clone(), st, &ns)
+                .unwrap_or_else(|e| panic!("{o}: {e}"));
+            assert_eq!(
+                (&a.id, a.kind, &*a.entity, &*a.key, &*a.writer, a.seq),
+                (&b.id, b.kind, &*b.entity, &*b.key, &*b.writer, b.seq),
+                "{o}"
+            );
+            assert_eq!(
+                (
+                    a.physical,
+                    a.counter,
+                    &a.hlc_writer,
+                    a.server_time,
+                    a.machine
+                ),
+                (
+                    b.physical,
+                    b.counter,
+                    &b.hlc_writer,
+                    b.server_time,
+                    b.machine
+                ),
+                "{o}"
+            );
+            assert_eq!(a.value, b.value, "{o}");
+            assert_eq!(format!("{:?}", a.ctx), format!("{:?}", b.ctx), "{o}");
+            let payload = json!({"noteTypeId": "NT", "guid": "g1", "createdAt": 5});
+            assert_eq!(
+                note_entity(&[a], &payload).unwrap(),
+                note_entity_of_objects(&payload, vec![(o.as_object().unwrap().clone(), st)])
+                    .unwrap(),
+                "{o}"
+            );
+        }
+        for o in &bad {
+            let text = o.to_string();
+            assert!(
+                parse_edit(&text, None, None, &ns).is_err(),
+                "parse_edit 接受了 {o}"
+            );
+            assert!(
+                edit_of_object(o.as_object().unwrap().clone(), None, &ns).is_err(),
+                "edit_of_object 接受了 {o}"
+            );
+        }
+    }
 }
