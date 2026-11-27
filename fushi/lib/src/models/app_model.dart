@@ -6952,6 +6952,17 @@ class AppModel
   Future<void> setShellSmoothCorners(bool value) =>
       themeNotifier.setShellSmoothCorners(value);
 
+  /// 页面大标题样式（拍板台 DN2p82rNPg）：字号比例 / 粗细 / 颜色。
+  double get pageTitleFontScale => themeNotifier.pageTitleFontScale;
+  Future<void> setPageTitleFontScale(double value) =>
+      themeNotifier.setPageTitleFontScale(value);
+  PageTitleWeight? get pageTitleWeight => themeNotifier.pageTitleWeight;
+  Future<void> setPageTitleWeight(PageTitleWeight? value) =>
+      themeNotifier.setPageTitleWeight(value);
+  PageTitleColor get pageTitleColor => themeNotifier.pageTitleColor;
+  Future<void> setPageTitleColor(PageTitleColor value) =>
+      themeNotifier.setPageTitleColor(value);
+
   // TODO-930: multi custom theme list delegation. The UI (theme swatch row +
   // CustomThemePage) talks to AppModel, so mirror ThemeNotifier's list API here
   // exactly like the legacy flat custom_theme_* getters above.

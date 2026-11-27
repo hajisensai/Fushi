@@ -1,6 +1,9 @@
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/page_title_style.dart';
+
+export 'package:fushi/src/utils/adaptive/page_title_style.dart';
 
 /// 宽屏侧栏样式（偏好 `shell_rail_style`，随 Profile 走）。只影响 MD3 侧栏；
 /// Apple 设计系统的侧栏是 `AppleSidebarTabsShell`，不读这里。
@@ -165,6 +168,7 @@ class FushiShellTheme extends ThemeExtension<FushiShellTheme> {
     this.contentLayout = ShellContentLayout.defaultLayout,
     this.blockArrangement,
     this.smoothCorners = true,
+    this.pageTitle = const FushiPageTitleStyle(),
   });
 
   final ShellRailStyle railStyle;
@@ -177,24 +181,36 @@ class FushiShellTheme extends ThemeExtension<FushiShellTheme> {
   /// 平滑圆角（连续曲率，superellipse）；false = 普通圆弧圆角。
   final bool smoothCorners;
 
+  /// 页面大标题样式（字号比例 / 粗细 / 颜色，拍板台 DN2p82rNPg）。消费端走
+  /// [pageTitleStyleOf]。
+  final FushiPageTitleStyle pageTitle;
+
   @override
   FushiShellTheme copyWith({
     ShellRailStyle? railStyle,
     ShellContentLayout? contentLayout,
     ShellBlockArrangement? blockArrangement,
     bool? smoothCorners,
+    FushiPageTitleStyle? pageTitle,
   }) => FushiShellTheme(
     railStyle: railStyle ?? this.railStyle,
     contentLayout: contentLayout ?? this.contentLayout,
     blockArrangement: blockArrangement ?? this.blockArrangement,
     smoothCorners: smoothCorners ?? this.smoothCorners,
+    pageTitle: pageTitle ?? this.pageTitle,
   );
 
+  /// 外壳样式本身是档位，不插值（过渡期间保持原值，过渡结束换成新主题）；只有
+  /// 页面标题连续插值，换字号时页头大字随主题过渡（AnimatedTheme）平滑缩放，不是
+  /// 一帧跳变。
   @override
   FushiShellTheme lerp(
     covariant ThemeExtension<FushiShellTheme>? other,
     double t,
-  ) => this;
+  ) {
+    if (other is! FushiShellTheme) return this;
+    return copyWith(pageTitle: pageTitle.lerp(other.pageTitle, t));
+  }
 
   @override
   bool operator ==(Object other) =>
@@ -202,16 +218,26 @@ class FushiShellTheme extends ThemeExtension<FushiShellTheme> {
       other.railStyle == railStyle &&
       other.contentLayout == contentLayout &&
       other.blockArrangement == blockArrangement &&
-      other.smoothCorners == smoothCorners;
+      other.smoothCorners == smoothCorners &&
+      other.pageTitle == pageTitle;
 
   @override
-  int get hashCode =>
-      Object.hash(railStyle, contentLayout, blockArrangement, smoothCorners);
+  int get hashCode => Object.hash(
+    railStyle,
+    contentLayout,
+    blockArrangement,
+    smoothCorners,
+    pageTitle,
+  );
 }
 
 /// 当前主题上的外壳样式；读不到扩展（测试裸 ThemeData）给默认值。
 FushiShellTheme shellThemeOf(BuildContext context) =>
     Theme.of(context).extension<FushiShellTheme>() ?? const FushiShellTheme();
+
+/// 当前主题上的页面大标题样式；读不到扩展给出厂值（比例 1、出厂字重、正文色）。
+FushiPageTitleStyle pageTitleStyleOf(BuildContext context) =>
+    shellThemeOf(context).pageTitle;
 
 /// 重设计外壳（色块大字卡、页头大字）是否生效：MD3 与 Apple 设计系统都生效，
 /// 只有墨水屏保持原有外壳（大面积色块 + 弹簧动效在墨水屏上只剩残影）。

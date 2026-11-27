@@ -1997,6 +1997,9 @@ class _FushiFloatingChromeBarState extends State<FushiFloatingChromeBar> {
                       motionEnabled: fushiExpressiveMotionEnabled(context),
                       onGeometry: host == null ? null : _onMastheadGeometry,
                       apple: apple,
+                      appleTitleFontSize:
+                          titleStyle.fontSize ??
+                          FushiMastheadGeometry.appleLargeTitleFont,
                       children: <Widget>[
                         leading ?? const SizedBox.shrink(),
                         if (title != null)
@@ -2255,6 +2258,7 @@ class _MastheadLayout extends MultiChildRenderObjectWidget {
     required this.motionEnabled,
     required this.onGeometry,
     this.apple = false,
+    this.appleTitleFontSize = FushiMastheadGeometry.appleLargeTitleFont,
     required super.children,
   }) : assert(children.length == _kMastheadSlots);
 
@@ -2262,6 +2266,9 @@ class _MastheadLayout extends MultiChildRenderObjectWidget {
 
   /// Apple（Cupertino）导航栏形态（见 [FushiMastheadGeometry.apple]）。
   final bool apple;
+
+  /// Apple 窄窗大标题的展开态字号（见 [FushiMastheadGeometry.appleTitleFontSize]）。
+  final double appleTitleFontSize;
 
   /// 第一行挤的时候动作槽至少要留的宽（有这么多就给这么多）。
   final double minActionsExtent;
@@ -2296,6 +2303,7 @@ class _MastheadLayout extends MultiChildRenderObjectWidget {
         motionEnabled: motionEnabled,
         onGeometry: onGeometry,
         apple: apple,
+        appleTitleFontSize: appleTitleFontSize,
       );
 
   @override
@@ -2315,7 +2323,8 @@ class _MastheadLayout extends MultiChildRenderObjectWidget {
       ..scrollOffset = scrollOffset
       ..motionEnabled = motionEnabled
       ..onGeometry = onGeometry
-      ..apple = apple;
+      ..apple = apple
+      ..appleTitleFontSize = appleTitleFontSize;
   }
 }
 
@@ -2353,7 +2362,9 @@ class _RenderMastheadLayout extends RenderBox
     required bool motionEnabled,
     required this.onGeometry,
     bool apple = false,
+    double appleTitleFontSize = FushiMastheadGeometry.appleLargeTitleFont,
   }) : _apple = apple,
+       _appleTitleFontSize = appleTitleFontSize,
        _compact = compact,
        _minActionsExtent = minActionsExtent,
        _textDirection = textDirection,
@@ -2372,6 +2383,13 @@ class _RenderMastheadLayout extends RenderBox
   set apple(bool value) {
     if (value == _apple) return;
     _apple = value;
+    markNeedsLayout();
+  }
+
+  double _appleTitleFontSize;
+  set appleTitleFontSize(double value) {
+    if (value == _appleTitleFontSize) return;
+    _appleTitleFontSize = value;
     markNeedsLayout();
   }
 
@@ -2732,8 +2750,11 @@ class _RenderMastheadLayout extends RenderBox
         // 收起态：小标题居中，动作组只用它右边的那半行。
         final double inlineHalf =
             c[_kSlotTitle].size.width *
-                FushiMastheadGeometry.appleInlineTitleFont /
-                FushiMastheadGeometry.appleLargeTitleFont /
+                math.min(
+                  1.0,
+                  FushiMastheadGeometry.appleInlineTitleFont /
+                      _appleTitleFontSize,
+                ) /
                 2 +
             gap;
         room = math.min(room, w / 2 - inlineHalf - primarySpace);
@@ -2805,6 +2826,7 @@ class _RenderMastheadLayout extends RenderBox
         primary: c[_kSlotPrimary].size,
         secondary: c[_kSlotSecondary].size,
         apple: _apple,
+        appleTitleFontSize: _appleTitleFontSize,
       );
 
   /// 进度 [p] 下每段的绘制变换（平移到位 + 以左上角缩放），按槽位排。

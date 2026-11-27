@@ -72,6 +72,14 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/settings/shell_style_settings_effect_test.dart（选交错 → 主题扩展带上所选值）',
   'appearance/Smooth corners':
       'test/settings/shell_style_settings_effect_test.dart（关平滑圆角 → 主题扩展跟着变）',
+  // 页面大标题样式三项（拍板台 DN2p82rNPg）：生效点是外壳页头大字与 Apple 大标题，
+  // 设置页 harness 里没有外壳页头。
+  'appearance/Title size':
+      'test/utils/components/page_title_style_test.dart（比例 → 页头大字 / Apple 大标题字号）',
+  'appearance/Title weight':
+      'test/utils/components/page_title_style_test.dart（粗细 → 页名字重）',
+  'appearance/Title color':
+      'test/utils/components/page_title_style_test.dart（强调色 → 页名颜色）',
   // 「目标」子页（通用 › 学习计时与小组件页两处入口）：生效点是首页「今日」格 /
   // 「语言目标」格与小组件快照，harness 设置页里没有首页。目标记录的增删改走目标
   // 面板（自绘行，焦点遍历不产出 id），由面板与首页专项测试咬住；主目标 / 左右

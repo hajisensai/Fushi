@@ -960,6 +960,9 @@ class ThemeNotifier extends ChangeNotifier {
     'shell_content_layout',
     'shell_block_arrangement',
     'shell_smooth_corners',
+    pageTitleFontScalePrefKey,
+    pageTitleWeightPrefKey,
+    pageTitleColorPrefKey,
     tintAppLogoPrefKey,
     mascotGlowPrefKey,
     followAppIconPrefKey,
@@ -2591,6 +2594,7 @@ class ThemeNotifier extends ChangeNotifier {
     contentLayout: shellContentLayout,
     blockArrangement: _shellBlockArrangementPref,
     smoothCorners: shellSmoothCorners,
+    pageTitle: pageTitleStyle,
   );
 
   ShellRailStyle get shellRailStyle => ShellRailStyle.fromPref(
@@ -2699,6 +2703,68 @@ class ThemeNotifier extends ChangeNotifier {
 
   Future<void> setShellSmoothCorners(bool value) async {
     await _set('shell_smooth_corners', value);
+    notifyListeners();
+  }
+
+  // ── 页面大标题样式（拍板台 DN2p82rNPg）──────────────────────────────
+
+  /// 页面大标题字号比例（1 = 出厂字号），随 Profile 走。
+  static const String pageTitleFontScalePrefKey = 'page_title_font_scale';
+
+  /// 页面大标题粗细（[PageTitleWeight.prefValue]；空串 = 没选过，跟出厂字重）。
+  static const String pageTitleWeightPrefKey = 'page_title_weight';
+
+  /// 页面大标题颜色（[PageTitleColor.prefValue]）。
+  static const String pageTitleColorPrefKey = 'page_title_color';
+
+  /// 三项合成的页面大标题样式，经 [FushiShellTheme.pageTitle] 随主题下发。
+  FushiPageTitleStyle get pageTitleStyle => FushiPageTitleStyle(
+    fontScale: pageTitleFontScale,
+    weight: pageTitleWeight,
+    color: pageTitleColor,
+  );
+
+  double get pageTitleFontScale {
+    final Object? raw = _get(
+      pageTitleFontScalePrefKey,
+      defaultValue: FushiPageTitleStyle.defaultFontScale,
+    );
+    return FushiPageTitleStyle.normalizeFontScale(
+      raw is num ? raw.toDouble() : FushiPageTitleStyle.defaultFontScale,
+    );
+  }
+
+  Future<void> setPageTitleFontScale(double value) async {
+    await _set(
+      pageTitleFontScalePrefKey,
+      FushiPageTitleStyle.normalizeFontScale(value),
+    );
+    notifyListeners();
+  }
+
+  /// 选过的粗细；null = 没选过（各处用自己的出厂字重）。
+  PageTitleWeight? get pageTitleWeight => PageTitleWeight.fromPref(
+    _get(pageTitleWeightPrefKey, defaultValue: '') as String?,
+  );
+
+  /// 偏好里是否存了显式粗细（设置页「恢复默认」据此删值回到跟出厂走）。
+  bool get hasStoredPageTitleWeight => pageTitleWeight != null;
+
+  Future<void> setPageTitleWeight(PageTitleWeight? value) async {
+    await _set(pageTitleWeightPrefKey, value?.prefValue ?? '');
+    notifyListeners();
+  }
+
+  PageTitleColor get pageTitleColor => PageTitleColor.fromPref(
+    _get(
+          pageTitleColorPrefKey,
+          defaultValue: PageTitleColor.defaultColor.prefValue,
+        )
+        as String?,
+  );
+
+  Future<void> setPageTitleColor(PageTitleColor value) async {
+    await _set(pageTitleColorPrefKey, value.prefValue);
     notifyListeners();
   }
 

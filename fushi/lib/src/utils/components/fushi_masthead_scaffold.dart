@@ -223,9 +223,12 @@ class _MastheadTitleBoxState extends State<_MastheadTitleBox> {
 
   @override
   Widget build(BuildContext context) {
-    final FushiPageTitleScale titleScale = FushiPageTitleMetrics.forCompact(
-      widget.compact,
-    ).titleScale(widget.tier);
+    // 含用户的页面标题字号比例：行高要与 [fushiMastheadTitleStyle] 画出来的字一致。
+    final FushiPageTitleScale titleScale = FushiPageTitleMetrics.titleScaleOf(
+      context,
+      compact: widget.compact,
+      tier: widget.tier,
+    );
     final TextStyle style = fushiMastheadTitleStyle(
       context,
       compact: widget.compact,
@@ -352,9 +355,11 @@ class FushiMastheadHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool compact = fushiMastheadCompact(context);
-    final FushiPageTitleScale titleScale = FushiPageTitleMetrics.forCompact(
-      compact,
-    ).titleScale(titleTier);
+    final FushiPageTitleScale titleScale = FushiPageTitleMetrics.titleScaleOf(
+      context,
+      compact: compact,
+      tier: titleTier,
+    );
     final double collapsed = titleScale.collapsedFontSize / titleScale.fontSize;
     final double p = progress.clamp(0.0, 1.0);
     final double scale = titleInBody ? collapsed : lerpDouble(1, collapsed, p)!;

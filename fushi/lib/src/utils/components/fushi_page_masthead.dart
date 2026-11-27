@@ -132,6 +132,17 @@ FushiMastheadPalette fushiMastheadPaletteOf(BuildContext context) {
   );
 }
 
+/// 页面大标题（页名大字 / Apple 大标题）的颜色：用户在外观设置里选的
+/// [PageTitleColor]——正文色（出厂，[FushiMastheadPalette.ink]）或强调色
+/// （[FushiMastheadPalette.strong]：MD3 外壳强调色、Apple 主题色）。
+Color fushiPageTitleColorOf(BuildContext context) {
+  final FushiMastheadPalette palette = fushiMastheadPaletteOf(context);
+  return switch (pageTitleStyleOf(context).color) {
+    PageTitleColor.body => palette.ink,
+    PageTitleColor.accent => palette.strong,
+  };
+}
+
 /// 窄窗下页名让位给一级切换时（见 `FushiFloatingChromeBar`），一级切换顶替
 /// 页名当这一行的标题：改用宽窗字号。
 class FushiMastheadSwitchHeadline extends InheritedWidget {
@@ -227,10 +238,21 @@ class FushiMastheadGeometry {
     required this.primary,
     required this.secondary,
     this.apple = false,
+    this.appleTitleFontSize = appleLargeTitleFont,
   });
 
   final bool compact;
   final double width;
+
+  /// Apple 窄窗大标题此刻的展开态字号（出厂 [appleLargeTitleFont]，乘用户的页面
+  /// 标题字号比例）。收起态小标题恒为 iOS 导航栏的 [appleInlineTitleFont]，缩放
+  /// 比例按它算（[appleCollapsedTitleScale]）。
+  final double appleTitleFontSize;
+
+  /// Apple 窄窗大标题收成导航栏小标题时的缩放终点。
+  double get appleCollapsedTitleScale => appleTitleFontSize > 0
+      ? math.min(1.0, appleInlineTitleFont / appleTitleFontSize)
+      : 1;
 
   /// Apple（Cupertino）设计系统的导航栏形态（2026-11 用户拍板，设计稿
   /// `video_topbar_cupertino_design/v5.html`）：
@@ -277,9 +299,7 @@ class FushiMastheadGeometry {
 
   double titleScaleAt(double p) {
     if (apple) {
-      return compact
-          ? _lerp(1, appleInlineTitleFont / appleLargeTitleFont, p)
-          : 1;
+      return compact ? _lerp(1, appleCollapsedTitleScale, p) : 1;
     }
     return _titleFontAt(compact: compact, p: p) /
         _titleFontAt(compact: compact, p: 0);
@@ -555,10 +575,14 @@ TextStyle fushiMastheadTitleStyle(
   required bool compact,
   FushiPageTitleTier tier = FushiPageTitleTier.page,
 }) {
-  return FushiPageTitleMetrics.forCompact(compact).titleStyle(
-    Theme.of(context).textTheme.displayLarge ?? const TextStyle(),
-    color: fushiMastheadPaletteOf(context).ink,
+  // 出厂字阶叠上用户的页面标题样式（字号比例 / 粗细 / 颜色，拍板台 DN2p82rNPg）。
+  return FushiPageTitleMetrics.titleScaleOf(
+    context,
+    compact: compact,
     tier: tier,
+  ).style(
+    Theme.of(context).textTheme.displayLarge ?? const TextStyle(),
+    color: fushiPageTitleColorOf(context),
   );
 }
 
@@ -826,18 +850,24 @@ Widget _mastheadEnter(
 /// 页名大字。换页名时旧字淡出、新字小幅上移淡入。
 /// Apple（Cupertino）库页导航栏标题字阶：窄窗 iOS 大标题 34pt / w700，宽窗
 /// macOS 工具栏标题 15pt / w700（设计稿 `video_topbar_cupertino_design/v5.html`）。
+///
+/// 叠上用户的页面标题样式（拍板台 DN2p82rNPg）：粗细 / 颜色两档都生效；字号比例
+/// 只作用于 iOS 大标题（宽窗是 15pt 的工具栏行内标题，不是大标题）。
 TextStyle fushiAppleNavTitleStyle(
   BuildContext context, {
   required bool compact,
 }) {
   final TextStyle base =
       Theme.of(context).textTheme.displayLarge ?? const TextStyle();
+  final FushiPageTitleStyle user = pageTitleStyleOf(context);
   return base.copyWith(
-    fontSize: compact ? FushiMastheadGeometry.appleLargeTitleFont : 15,
-    fontWeight: FontWeight.w700,
-    letterSpacing: compact ? 0.37 : 0,
+    fontSize: compact
+        ? user.scaleFont(FushiMastheadGeometry.appleLargeTitleFont)
+        : 15,
+    fontWeight: user.weightOr(FontWeight.w700),
+    letterSpacing: compact ? user.scaleFont(0.37) : 0,
     height: compact ? 41 / 34 : 1.25,
-    color: appleColorsOf(context).label,
+    color: fushiPageTitleColorOf(context),
   );
 }
 
@@ -986,7 +1016,10 @@ class FushiMastheadSwitch<T extends Object> extends StatelessWidget {
         ? fushiMastheadSwitchStyle(
             context,
             compact: false,
-            fontSize: kFushiMastheadHeadlineIdleFont,
+            // 未选项与选中项（页名字阶）同比例跟着用户的页面标题字号走。
+            fontSize: pageTitleStyleOf(
+              context,
+            ).scaleFont(kFushiMastheadHeadlineIdleFont),
           )
         : style;
     final double separatorPad = 0.4 * (idleStyle.fontSize ?? 28);
