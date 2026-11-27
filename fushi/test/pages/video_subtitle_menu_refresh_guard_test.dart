@@ -141,7 +141,7 @@ void main() {
     expect(
       afterResolve
           .substring(finallyIdx)
-          .contains('_rebuild(() => _subtitleMenuLoading = false)'),
+          .contains('_subtitleMenuLoading = false'),
       isTrue,
       reason:
           'finally 里必须真把 _subtitleMenuLoading 复位；否则解析异常后字幕轨区'
@@ -163,8 +163,10 @@ void main() {
     );
     final int truePoint = body.indexOf('_subtitleMenuLoading = true');
     final String afterTrue = body.substring(truePoint);
+    // BUG-5590 起复位与写入枚举结果合成一次 `_subtitleMenu.value = (..., loading: false)`
+    // （只重建字幕轨区，不整页重建），复位点按 `loading: false` 计。
     expect(
-      '_subtitleMenuLoading = false'.allMatches(afterTrue).length,
+      'loading: false'.allMatches(afterTrue).length,
       1,
       reason:
           '置真之后有多个复位点，正是「某条 return 忘了复位、加载条永远转」的'

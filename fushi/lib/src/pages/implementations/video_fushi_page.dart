@@ -1591,6 +1591,9 @@ abstract class VideoFushiTestHooks {
   /// 测试直接打开章节侧栏，避免用坐标/私有控件路径模拟点击。
   void debugShowChapterPanel();
 
+  /// 测试直接关掉当前侧栏（与点面板外 barrier 同一路径）。
+  void debugHideSidePanel();
+
   /// 测试直接打开弹幕设置分类（TODO-1376），避免坐标点击设置按钮再切分类。
   void debugOpenDanmakuSettings();
 
@@ -2375,6 +2378,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   String? get debugMiningAudioSource => _controller?.miningAudioSource;
 
   @override
+  void debugHideSidePanel() => _hideVideoSidePanel();
+
+  @override
   void debugShowChapterPanel() {
     final VideoPlayerController? controller = _controller;
     if (controller == null) return;
@@ -2715,8 +2721,30 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   VideoCustomActionBindings get _customActionBindings =>
       _customActionBindingsNotifier.value;
 
-  List<SubtitleSource> _subtitleMenuSources = const <SubtitleSource>[];
-  bool _subtitleMenuLoading = false;
+  /// 字幕轨菜单的枚举状态（字幕源列表 + 加载中）。走 notifier 而不是 `_rebuild`
+  /// 裸字段：枚举在字幕面板挂载那一刻触发（[_ensureSubtitleMenuSourcesLoaded]，
+  /// 侧栏滑入动画正在进行），以前开始 / 结束各一次整页 setState，侧栏整块面板与
+  /// media_kit 控件层（`Video` 拿到新参数 → `VideoViewParameters` 变）各重建两遍，
+  /// 打开动画卡住大半秒（BUG-5590）。只有字幕轨区
+  /// （[_buildSubtitleTrackSettingsSection]）监听它重建；与其它页面状态一起变的
+  /// 写入点仍可放在 `_rebuild` 里（整页重建照样读到新值）。
+  final ValueNotifier<({List<SubtitleSource> sources, bool loading})>
+  _subtitleMenu = ValueNotifier<({List<SubtitleSource> sources, bool loading})>(
+    (sources: const <SubtitleSource>[], loading: false),
+  );
+
+  List<SubtitleSource> get _subtitleMenuSources => _subtitleMenu.value.sources;
+  set _subtitleMenuSources(List<SubtitleSource> sources) =>
+      _subtitleMenu.value = (
+        sources: sources,
+        loading: _subtitleMenu.value.loading,
+      );
+
+  bool get _subtitleMenuLoading => _subtitleMenu.value.loading;
+  set _subtitleMenuLoading(bool loading) => _subtitleMenu.value = (
+    sources: _subtitleMenu.value.sources,
+    loading: loading,
+  );
 
   /// 「按内嵌字幕对齐」进行中：抽轨可能要几十秒，期间再点不重入。
   bool _referenceSyncRunning = false;
@@ -8598,6 +8626,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _controlLayoutNotifier.dispose();
     _immersiveControlLayoutJson.dispose();
     _customActionBindingsNotifier.dispose();
+    _subtitleMenu.dispose();
     _immersiveLocked.dispose();
     _lockButtonHideTimer?.cancel();
     _lockButtonVisible.dispose();

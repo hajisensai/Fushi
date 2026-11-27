@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4862 条。点号进各自文件。
+> 共 4863 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5590](bugs/BUG-5590-video-subtitle-panel-open-full-page-rebuild.md) | ✅ | ✅ | 点开视频字幕侧栏，滑入动画卡住大半秒：字幕源枚举两次整页重建 |
 | [BUG-5587](bugs/BUG-5587-landscape-phone-detail-hero.md) | ✅ | ✅ | 横屏手机：详情页背景带占七成高度，标题与主按钮被挤出首屏 |
 | [BUG-5586](bugs/BUG-5586-landscape-phone-chrome.md) | ✅ | ✅ | 横屏手机：外壳按宽取档给了桌面页头 / 展开侧栏，快捷键页工具区挤没列表 |
 | [BUG-5585](bugs/BUG-5585-android-migrate-case-collision.md) | ✅ | ✅ | Android 书库移到外部：只差大小写的文件在目标上互相覆盖，校验照过、删源后永久丢失 |

@@ -184,10 +184,20 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// 字幕轨侧栏）。用 [Builder] 让配色随设置面板自身主题解析（M3E 面板中性深色主题）；
   /// 行内容（自动获取字幕 / 打开字幕文件 / 关闭 / 本地内嵌+外挂源 / 远端 YouTube+内嵌+host
   /// / 副字幕入口）与选择逻辑与旧侧栏逐行一致，数据随视频页 `_rebuild` 重建。
+  ///
+  /// 字幕源枚举（[_subtitleMenu]：源列表 + 加载条）只重建本区，不经整页 `_rebuild`
+  /// （BUG-5590：枚举在面板挂载那一刻跑，整页重建会卡住侧栏滑入动画）。
   Widget _buildSubtitleTrackSettingsSection(VideoPlayerController controller) {
-    return Builder(
-      builder: (BuildContext context) =>
-          _buildSubtitleTrackRows(context, controller),
+    return ValueListenableBuilder<
+      ({List<SubtitleSource> sources, bool loading})
+    >(
+      valueListenable: _subtitleMenu,
+      builder:
+          (
+            BuildContext context,
+            ({List<SubtitleSource> sources, bool loading}) _,
+            Widget? _,
+          ) => _buildSubtitleTrackRows(context, controller),
     );
   }
 
@@ -805,11 +815,12 @@ extension _VideoSubtitle on _VideoFushiPageState {
       if (_subtitleMenuSources.isNotEmpty ||
           _subtitleMenuLoading ||
           _subtitleMenuSourcesPath != null) {
-        _rebuild(() {
-          _subtitleMenuSources = const <SubtitleSource>[];
-          _subtitleMenuLoading = false;
-          _subtitleMenuSourcesPath = null;
-        });
+        // 只动字幕轨区的 notifier，不整页重建（BUG-5590，见 [_subtitleMenu]）。
+        _subtitleMenu.value = (
+          sources: const <SubtitleSource>[],
+          loading: false,
+        );
+        _subtitleMenuSourcesPath = null;
       }
     }
     // TODO-1351：字幕轨切换收进设置面板「字幕」分类顶部（取代外面浮的字幕轨侧栏）。
@@ -837,11 +848,12 @@ extension _VideoSubtitle on _VideoFushiPageState {
       if (_subtitleMenuSources.isNotEmpty ||
           _subtitleMenuLoading ||
           _subtitleMenuSourcesPath != null) {
-        _rebuild(() {
-          _subtitleMenuSources = const <SubtitleSource>[];
-          _subtitleMenuLoading = false;
-          _subtitleMenuSourcesPath = null;
-        });
+        // 只动字幕轨区的 notifier，不整页重建（BUG-5590，见 [_subtitleMenu]）。
+        _subtitleMenu.value = (
+          sources: const <SubtitleSource>[],
+          loading: false,
+        );
+        _subtitleMenuSourcesPath = null;
       }
       return;
     }
@@ -852,7 +864,10 @@ extension _VideoSubtitle on _VideoFushiPageState {
     // （BUG-1329 [_registerImportedSubtitleSource]），省掉一整趟无谓的容器重探。
     if (_subtitleMenuSourcesPath == videoPath) return;
     if (_subtitleMenuLoading) return;
-    _rebuild(() => _subtitleMenuLoading = true);
+    // 不走 `_rebuild`：这里正是字幕面板挂载后的第一帧，整页重建会把侧栏与 media_kit
+    // 控件层整块重建、卡住滑入动画（BUG-5590）。加载条只在字幕轨区里，它监听
+    // [_subtitleMenu] 自己重建。
+    _subtitleMenuLoading = true;
     // 枚举失败（ffmpeg 偶发失败 / 缺失）用 null 表达，与「枚举出空列表」区分：前者不写
     // 缓存 key（下次打开重试，不被缓存成「已加载空」），后者是有效结果。单出口收敛加载
     // 态，[_subtitleMenuLoading] 不存在任何提前 return 把它留在 true 的分支。
@@ -876,13 +891,11 @@ extension _VideoSubtitle on _VideoFushiPageState {
       return;
     }
     final List<SubtitleSource>? sources = enumerated;
-    _rebuild(() {
-      _subtitleMenuLoading = false;
-      if (sources != null) {
-        _subtitleMenuSources = sources;
-        _subtitleMenuSourcesPath = videoPath;
-      }
-    });
+    if (sources != null) _subtitleMenuSourcesPath = videoPath;
+    _subtitleMenu.value = (
+      sources: sources ?? _subtitleMenuSources,
+      loading: false,
+    );
   }
 
   /// BUG-1329：把刚落盘的外挂字幕档（[_importExternalSubtitleInner] 导入 / Jimaku 下载）
@@ -2828,7 +2841,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     if (client is! UrlStreamVideoClient) return null;
     List<AudioCue> cues = client.cachedCaptionCues(track.trackKey);
     if (cues.isNotEmpty) return cues;
-    if (mounted) _rebuild(() => _subtitleMenuLoading = true);
+    if (mounted) _subtitleMenuLoading = true;
     try {
       cues = await resolveYoutubeCaptionCues(
         track,
@@ -2838,7 +2851,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
       // BUG-1329：cue 解析抛错（网络/解析异常）时也必须收掉加载态。原来靠三条各自
       // 复位的 return 路径，抛错那条谁也没走到，[_subtitleMenuLoading] 就永久留在
       // true——字幕轨区顶部的进度条从此一直转，且再没有任何入口能把它关掉。
-      if (mounted) _rebuild(() => _subtitleMenuLoading = false);
+      if (mounted) _subtitleMenuLoading = false;
     }
     if (!mounted) return null;
     if (loadSeq != null && loadSeq != _episodeLoadSeq) return null;
