@@ -26,6 +26,16 @@
 //     自己返回为止。期间同卷的探测立刻答 [MediaPathPresence.unavailable]，不再发新的
 //     stat。卡住的 stat 一返回（不论结果），卷就恢复，[whenVolumeRecovered] 的等待方
 //     被唤醒——调用方据此「恢复后再起」，而不是靠定时重试。
+//
+// 两个入口，按调用方意图分（审查后修正）：
+//
+//   - [probeMediaPath]：**推测性 / 悬停类**后台路径专用（缩略图预取、悬停取帧、起播
+//     前的「文件丢失」预检）。这类结果拿不到就算了，不能让用户等，所以有界、三态。
+//   - [awaitMediaPathExists]：**必达**路径专用——导入、扫描、回填、用户主动发起的片段
+//     导出 / 制卡截取等。这类结果丢了就是整批静默没封面 / 元数据、或给用户报一个假的
+//     「暂不可用」，所以无时限：卷卡着就等它恢复（[whenMediaVolumeRecovered]）再问，
+//     永远给出真实的「在 / 不在」。同样异步、不占 UI，并共用同路径合并、同卷并发上限与
+//     卡住标记，不往卡住的挂载上叠 stat。
 
 import 'dart:async';
 import 'dart:io';
@@ -146,6 +156,9 @@ Future<void> whenMediaVolumeRecovered(String path) {
 }
 
 /// 有界异步探测 [path] 是否存在（见文件头）。永不抛异常、永不同步碰文件系统。
+///
+/// 只给推测性 / 悬停类路径用：卷卡住时答 [MediaPathPresence.unavailable]，调用方这次
+/// 就不做了。导入 / 扫描 / 回填 / 用户主动操作要用 [awaitMediaPathExists]。
 Future<MediaPathPresence> probeMediaPath(
   String path, {
   Duration timeout = kMediaPathProbeTimeout,
@@ -164,6 +177,40 @@ Future<MediaPathPresence> probeMediaPath(
   } catch (_) {
     // 探测本身出错（权限 / 驱动异常）：说明不了文件不在，按暂不可用。
     return MediaPathPresence.unavailable;
+  }
+}
+
+/// 必达路径的无时限异步判存在（见文件头「两个入口」）：永不同步碰文件系统，也永不
+/// 因为卷慢而给出假答案。
+///
+/// - 卷卡着：先等它恢复（[whenMediaVolumeRecovered]）再发 stat，不往卡住的挂载上压；
+/// - 自己的 stat 过了 [kMediaPathProbeTimeout] 还没回：照样把卷记为卡住（让推测性路径
+///   立刻停手），自己接着等这个 stat 的真实答复；
+/// - 排队期间卷卡住（stat 被跳过）：等恢复后重来；
+/// - stat 本身出错（权限 / 驱动异常）：答 false，与 `File.exists` 的语义一致。
+Future<bool> awaitMediaPathExists(String path) async {
+  if (path.isEmpty) return false;
+  final String volume = mediaVolumeKeyOf(path);
+  while (true) {
+    if (_stalledVolumes.containsKey(volume)) {
+      await whenMediaVolumeRecovered(path);
+      continue; // 恢复后可能又被别的 stat 卡住：重新看一眼再发。
+    }
+    final Future<bool> query = _inFlight[path] ??= _startQuery(path, volume);
+    try {
+      try {
+        return await query.timeout(kMediaPathProbeTimeout);
+      } on TimeoutException {
+        _markStalled(volume, query);
+        return await query;
+      }
+    } on _VolumeStalledSkip {
+      // 这条 stat 排到槽位时卷已卡住、没发出去：清掉它的在飞位，等恢复后重来。
+      if (identical(_inFlight[path], query)) _inFlight.remove(path);
+      continue;
+    } catch (_) {
+      return false;
+    }
   }
 }
 

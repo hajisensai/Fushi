@@ -1980,14 +1980,11 @@ class VideoPlayerController extends ChangeNotifier
           return null;
         }
         // 落盘成功但等待期间换了集 / 空文件：这份副本不会交给任何人，就地删掉，
-        // 不在临时目录里越攒越多。
-        if (!_isCurrentLoad(player, loadToken)) {
-          await _deleteSnapshotFile(outputPath);
-          return null;
-        }
+        // 不在临时目录里越攒越多。判存在 / 长度是异步的（BUG-5605），换集检查放在
+        // 它们**之后**：否则检查完、await 期间换了集，照样把上一集的副本交出去。
         final File out = File(outputPath);
-        if (!await out.exists()) return null;
-        if (await out.length() == 0) {
+        final bool written = await out.exists() && await out.length() > 0;
+        if (!written || !_isCurrentLoad(player, loadToken)) {
           await _deleteSnapshotFile(outputPath);
           return null;
         }

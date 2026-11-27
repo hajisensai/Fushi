@@ -7,7 +7,7 @@ import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
 import 'package:fushi_engine/media/video/video_clip_subtitle.dart';
 import 'package:fushi_engine/media/video/video_clip_subtitle_burn.dart';
 import 'package:fushi_engine/media/video/media_path_probe.dart'
-    show MediaPathPresence, probeMediaPath;
+    show awaitMediaPathExists;
 import 'package:path/path.dart' as p;
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:meta/meta.dart';
@@ -22,10 +22,6 @@ export 'package:fushi_engine/media/video/ffmpeg_backend.dart'
 enum VideoClipExportFailure {
   invalidRange,
   inputMissing,
-
-  /// 输入所在的卷没在时限内答复（网络 / 云盘挂载卡住，BUG-5605）：暂不可用，不是文件
-  /// 丢失。
-  inputUnavailable,
   ffmpegUnavailable,
   ffmpegFailed,
   outputMissing,
@@ -881,15 +877,13 @@ Future<VideoClipExportResult> exportVideoClipViaFfmpeg({
       VideoClipExportFailure.invalidRange,
     );
   }
-  // BUG-5605：导出由播放页在 UI isolate 上发起，输入常在网络盘上——有界异步探测，
-  // 卷卡住报「暂不可用」，不报成文件丢失。
-  final MediaPathPresence inputPresence = await probeMediaPath(inputPath);
-  if (inputPresence != MediaPathPresence.present) {
+  // BUG-5605：导出由播放页在 UI isolate 上发起，输入常在网络盘上——异步判存在，不同步
+  // stat。导出是用户主动操作（审查后修正）：无时限必达检查，卷慢就等它答复，不报假的
+  // 「暂不可用」。
+  if (!await awaitMediaPathExists(inputPath)) {
     _deleteIfPresent(output);
-    return VideoClipExportResult.failure(
-      inputPresence == MediaPathPresence.missing
-          ? VideoClipExportFailure.inputMissing
-          : VideoClipExportFailure.inputUnavailable,
+    return const VideoClipExportResult.failure(
+      VideoClipExportFailure.inputMissing,
     );
   }
 

@@ -455,6 +455,10 @@ class OffscreenVideoFrameGrabber {
   /// 熔断要回答的是「这台机器到底有没有可用的 ffmpeg」，所以**一旦成功过就永不
   /// 熔断**：个别位置取不到帧（片尾、损坏的 GOP）是正常的，不该因此把整个视频的
   /// 缩略图关掉。只有从头到尾一次都没成功过，才认定环境不具备取帧能力。
+  ///
+  /// 源暂停（[isSourceSuspended]）也算不可用，但它是**暂时**的：卷卡住引起的暂停在卷
+  /// 恢复后自动解除；探测答「暂不可用」与 ffmpeg 跑满时限都不计入上面的熔断计数，
+  /// 调度器每次 hover 仍会来问，恢复后缩略图自然回来。
   bool get isUnavailable =>
       _sourceSuspended ||
       (!_everSucceeded && _consecutiveFailures >= consecutiveFailureLimit);
@@ -543,7 +547,10 @@ class OffscreenVideoFrameGrabber {
         _consecutiveTimeouts = 0;
       }
       if (decoded == null) {
-        _consecutiveFailures++;
+        // 跑满时限被杀说明「源此刻读不动」（网络盘卡住），不说明这台机器没有可用的
+        // ffmpeg：不计入 [isUnavailable] 的「从没成功过」熔断，否则冷挂载上头几次超时
+        // 加一次普通失败就把缩略图永久关掉，卷恢复了也回不来（BUG-5605 审查后修正）。
+        if (!timedOut) _consecutiveFailures++;
         return null;
       }
       _consecutiveFailures = 0;

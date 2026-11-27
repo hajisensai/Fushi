@@ -6,6 +6,7 @@ import 'package:fushi/src/media/video/video_resource_check.dart';
 import 'package:fushi/src/media/video/video_thumbnail_preview_controller.dart';
 import 'package:fushi/src/startup/media_handle_registry.dart';
 import 'package:fushi_engine/media/video/media_path_probe.dart';
+import 'package:fushi_engine/media/video/video_clip_exporter.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 
 /// BUG-5605：网络 / 云盘挂载（rclone / WinFsp）上的 stat 能卡十几秒。注入一个「永远不
@@ -168,8 +169,74 @@ void main() {
       fs.instant[r'C:\gone.mkv'] = false;
       expect(await isLocalVideoResourceMissing(r'C:\gone.mkv'), isTrue);
     });
+  });
 
-    test('ffmpeg 取帧：输入卷卡住时有界返回 null，不起 ffmpeg', () {
+  group('awaitMediaPathExists（必达路径：无时限，不给假答案）', () {
+    test('卷慢过有界时限：照样等到真实答复，同时把卷记为卡住让推测性路径停手', () {
+      fakeAsync((FakeAsync async) {
+        bool? exists;
+        awaitMediaPathExists(r'Z:\anime\ep01.mkv').then((r) => exists = r);
+        async.elapse(kMediaPathProbeTimeout * 5);
+        expect(exists, isNull, reason: '冷挂载首个 stat 慢不是「不在」，继续等');
+        expect(isMediaVolumeStalled(r'Z:\anime\ep02.mkv'), isTrue);
+
+        MediaPathPresence? speculative;
+        probeMediaPath(r'Z:\anime\ep02.mkv').then((r) => speculative = r);
+        async.flushMicrotasks();
+        expect(speculative, MediaPathPresence.unavailable);
+
+        fs.release(r'Z:\anime\ep01.mkv', true);
+        async.flushMicrotasks();
+        expect(exists, isTrue);
+        expect(isMediaVolumeStalled(r'Z:\anime\ep02.mkv'), isFalse);
+      });
+    });
+
+    test('卷卡着时不往挂载上压新 stat：等恢复后再问，答复照实给', () {
+      fakeAsync((FakeAsync async) {
+        probeMediaPath(r'Z:\anime\ep01.mkv');
+        async.elapse(kMediaPathProbeTimeout);
+        expect(isMediaVolumeStalled(r'Z:\anime\ep02.mkv'), isTrue);
+
+        bool? exists;
+        awaitMediaPathExists(r'Z:\anime\ep02.mkv').then((r) => exists = r);
+        async.elapse(kMediaPathProbeTimeout * 3);
+        expect(fs.calls, <String>[r'Z:\anime\ep01.mkv'], reason: '卷卡着不发新 stat');
+        expect(exists, isNull);
+
+        fs.instant[r'Z:\anime\ep02.mkv'] = false;
+        fs.release(r'Z:\anime\ep01.mkv', true);
+        async.flushMicrotasks();
+        expect(fs.calls, contains(r'Z:\anime\ep02.mkv'));
+        expect(exists, isFalse, reason: '卷答复了才判不在');
+      });
+    });
+
+    test('排队期间卷卡住（stat 被跳过）：恢复后重来，不当成不在', () {
+      fakeAsync((FakeAsync async) {
+        // 占满同卷并发槽位，第三个排队。
+        probeMediaPath(r'Z:\anime\busy0.mkv');
+        probeMediaPath(r'Z:\anime\busy1.mkv');
+        bool? exists;
+        awaitMediaPathExists(r'Z:\anime\queued.mkv').then((r) => exists = r);
+        async.flushMicrotasks();
+        expect(fs.calls, hasLength(kMediaProbeConcurrencyPerVolume));
+
+        // 占槽的 stat 超时 → 卷卡住；其中一个返回让出槽位，排队那条被跳过。
+        async.elapse(kMediaPathProbeTimeout);
+        fs.release(r'Z:\anime\busy0.mkv', true);
+        async.flushMicrotasks();
+        expect(exists, isNull, reason: '被跳过不是「不在」');
+        expect(fs.calls, isNot(contains(r'Z:\anime\queued.mkv')));
+
+        fs.instant[r'Z:\anime\queued.mkv'] = true;
+        fs.release(r'Z:\anime\busy1.mkv', true);
+        async.flushMicrotasks();
+        expect(exists, isTrue);
+      });
+    });
+
+    test('导入 / 制卡用的 ffmpeg 取帧：输入卷慢时等它答复，不静默返回 null，也不同步等', () {
       fakeAsync((FakeAsync async) {
         bool done = false;
         String? produced = 'sentinel';
@@ -181,10 +248,52 @@ void main() {
           done = true;
         });
         async.flushMicrotasks();
-        expect(done, isFalse);
-        async.elapse(kMediaPathProbeTimeout);
+        expect(done, isFalse, reason: '调用立即返回 Future，不同步等 stat');
+        async.elapse(kMediaPathProbeTimeout * 5);
+        expect(done, isFalse, reason: '冷挂载慢过 2 s 也不放弃（审查后修正）');
+        fs.release(r'Z:\anime\ep01.mkv', false);
+        async.flushMicrotasks();
         expect(done, isTrue);
-        expect(produced, isNull);
+        expect(produced, isNull, reason: '卷答复不在才返回 null');
+      });
+    });
+
+    test('导入抽封面 / 元数据：同样等真实答复，同路径合并成一个 stat', () {
+      fakeAsync((FakeAsync async) {
+        bool coverDone = false;
+        bool metaDone = false;
+        extractEmbeddedCoverViaFfmpeg(
+          audioPath: r'Z:\music\a.flac',
+          outputPath: r'C:\tmp\never.jpg',
+        ).then((_) => coverDone = true);
+        extractAudioMetadataViaFfprobe(
+          inputPath: r'Z:\music\a.flac',
+        ).then((_) => metaDone = true);
+        async.elapse(kMediaPathProbeTimeout * 5);
+        expect(coverDone, isFalse);
+        expect(metaDone, isFalse);
+        expect(fs.calls, <String>[r'Z:\music\a.flac']);
+        fs.release(r'Z:\music\a.flac', false);
+        async.flushMicrotasks();
+        expect(coverDone, isTrue);
+        expect(metaDone, isTrue);
+      });
+    });
+
+    test('片段导出：卷慢不报「暂不可用」，答复不在才报 inputMissing', () {
+      fakeAsync((FakeAsync async) {
+        VideoClipExportResult? result;
+        exportVideoClipViaFfmpeg(
+          inputPath: r'Z:\anime\ep01.mkv',
+          startMs: 0,
+          endMs: 1000,
+          outputPath: r'C:\tmp\never_clip.mp4',
+        ).then((VideoClipExportResult r) => result = r);
+        async.elapse(kMediaPathProbeTimeout * 5);
+        expect(result, isNull);
+        fs.release(r'Z:\anime\ep01.mkv', false);
+        async.flushMicrotasks();
+        expect(result?.failure, VideoClipExportFailure.inputMissing);
       });
     });
   });
@@ -266,6 +375,64 @@ void main() {
       // 卷没卡（源可达只是读不动）：不会因为「恢复」回调立刻完成就又起一轮风暴。
       await Future<void>.delayed(Duration.zero);
       expect(grabber.isSourceSuspended, isTrue);
+    });
+
+    test('卷卡住引起的超时 / 暂停不计入「没 ffmpeg」熔断：卷恢复后缩略图回得来（审查后修正）', () async {
+      // 探测按调用顺序答复（取帧前一次；ffmpeg 连续超时后复查一次）。
+      final List<MediaPathPresence> answers = <MediaPathPresence>[
+        MediaPathPresence.present, // grab(1000)
+        MediaPathPresence.present, // grab(2000)
+        MediaPathPresence.unavailable, // grab(2000) 连续超时后复查：卷卡住
+        MediaPathPresence.present, // grab(3000)
+        MediaPathPresence.unavailable, // grab(4000)
+        MediaPathPresence.present, // grab(5000)
+      ];
+      bool timeOut = true;
+      Completer<void> recovered = Completer<void>();
+      int extracts = 0;
+      final OffscreenVideoFrameGrabber grabber = OffscreenVideoFrameGrabber(
+        videoPath: r'Z:\anime\ep01.mkv',
+        sourceProbe: (_) async => answers.removeAt(0),
+        whenSourceRecovered: (_) => recovered.future,
+        frameExtractor:
+            ({
+              required String inputPath,
+              required String outputPath,
+              required double atSeconds,
+              required int scaleWidth,
+              required void Function() onTimedOut,
+            }) async {
+              extracts++;
+              if (timeOut) onTimedOut();
+              return null;
+            },
+      );
+      addTearDown(grabber.dispose);
+
+      // 冷挂载：两次 ffmpeg 跑满时限，复查时卷已卡住 → 暂停，等恢复。
+      await grabber.grab(1000);
+      await grabber.grab(2000);
+      expect(grabber.isSourceSuspended, isTrue);
+      timeOut = false;
+      recovered.complete();
+      await Future<void>.delayed(Duration.zero);
+      expect(grabber.isUnavailable, isFalse);
+
+      // 恢复后一次普通失败（片尾取不到帧）：旧实现把两次超时也算进「从没成功过」，
+      // 凑满 3 次就永久熔断、只显时间戳。
+      await grabber.grab(3000);
+      expect(grabber.isUnavailable, isFalse);
+
+      // 探测答 unavailable 的暂停同样不计数：再卡一次、再恢复，照样能取。
+      recovered = Completer<void>();
+      await grabber.grab(4000);
+      expect(grabber.isSourceSuspended, isTrue);
+      recovered.complete();
+      await Future<void>.delayed(Duration.zero);
+      await grabber.grab(5000);
+      expect(grabber.isUnavailable, isFalse);
+      expect(extracts, 4);
+      expect(answers, isEmpty);
     });
 
     test('取帧器单飞：ffmpeg 在跑时并发请求只保留最新一个', () async {

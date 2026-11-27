@@ -13693,7 +13693,6 @@
   "video_clip_export_ffmpeg_unavailable": "ffmpeg 不可用",
   "video_clip_export_host_outdated": "The paired host's Fushi is too old for clip export. Update Fushi on the host first",
   "video_clip_export_input_missing": "來源影片不可用",
-  "video_clip_export_input_unavailable": "The video's drive isn't responding right now (network or cloud mount). Try again in a moment.",
   "video_clip_export_invalid_range": "沒有有效的片段範圍",
   "video_clip_export_output_missing": "沒有產生匯出檔案",
   "video_clip_export_remote_download_required": "請先把遠端影片下載到本機，再匯出片段",

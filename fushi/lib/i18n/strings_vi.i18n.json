@@ -13693,7 +13693,6 @@
   "video_clip_export_ffmpeg_unavailable": "ffmpeg không khả dụng",
   "video_clip_export_host_outdated": "The paired host's Fushi is too old for clip export. Update Fushi on the host first",
   "video_clip_export_input_missing": "Video nguồn không khả dụng",
-  "video_clip_export_input_unavailable": "The video's drive isn't responding right now (network or cloud mount). Try again in a moment.",
   "video_clip_export_invalid_range": "Không có khoảng đoạn hợp lệ",
   "video_clip_export_output_missing": "Không có tệp đầu ra nào được tạo",
   "video_clip_export_remote_download_required": "Hãy tải video từ thiết bị kia về máy này trước khi xuất đoạn",

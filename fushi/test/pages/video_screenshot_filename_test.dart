@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_screenshot_filename.dart';
 
@@ -69,9 +71,35 @@ void main() {
       };
 
       expect(
-        await uniqueVideoScreenshotBaseName(desired, exists: existing.contains),
+        await uniqueVideoScreenshotBaseName(desired, claim: existing.add),
         'episode 01_00-01-30 (3).jpg',
       );
+    });
+
+    test('并发占名：两次调用交错 await 也各得一个名字，不互相覆盖（BUG-5605 审查后修正）', () async {
+      const String desired = 'episode 01_00-01-30.jpg';
+      final Set<String> taken = <String>{};
+      // 每次占名都让出一次事件循环，模拟网络盘上的异步 stat / create。
+      Future<bool> slowClaim(String name) async {
+        await Future<void>.delayed(Duration.zero);
+        return taken.add(name);
+      }
+
+      final List<String> names = await Future.wait(<Future<String>>[
+        uniqueVideoScreenshotBaseName(desired, claim: slowClaim),
+        uniqueVideoScreenshotBaseName(desired, claim: slowClaim),
+      ]);
+      expect(names.toSet(), hasLength(2));
+      expect(names, contains(desired));
+    });
+
+    test('claimVideoScreenshotFile：独占新建，同名已存在答 false', () async {
+      final Directory dir = await Directory.systemTemp.createTemp('fushi_shot');
+      addTearDown(() => dir.delete(recursive: true));
+      final String path = '${dir.path}${Platform.pathSeparator}a.jpg';
+      expect(await claimVideoScreenshotFile(path), isTrue);
+      expect(await File(path).exists(), isTrue);
+      expect(await claimVideoScreenshotFile(path), isFalse);
     });
   });
 
