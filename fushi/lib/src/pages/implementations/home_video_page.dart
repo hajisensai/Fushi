@@ -5649,6 +5649,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   ).countsAsWatched;
 
   /// 合集菜单「全部标记已看 / 未看」的目标：本地成员 + 媒体服务器上的成员。
+  ///
+  /// 远端成员只收归属来源有「已播放」协议的那些（[remoteVideoPlayedMarkOf]）：多个
+  /// 远端来源并存时一部合集可能混着云盘 / 互联成员，它们的看完状态归对端，
+  /// [_markWatched] 不会回写——收进来只会让菜单对一部纯云盘合集也露出、点了却什么都
+  /// 没改。与单集菜单、合集详情页（`_canMarkWatched`）同一判据。
   ({List<String> local, List<String> remote}) _collectionWatchedTargets(
     int collectionId,
     Set<String> localUids,
@@ -5661,7 +5666,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     final List<String> remote = <String>[
       for (final RemoteVideoInfo v
           in _lastRemoteState?.videos ?? const <RemoteVideoInfo>[])
-        if (_remoteCollectionId(v) == collectionId && !localUids.contains(v.id))
+        if (_remoteCollectionId(v) == collectionId &&
+            !localUids.contains(v.id) &&
+            remoteVideoPlayedMarkOf(_remoteSourceOf(v.id)) != null)
           v.id,
     ];
     return (local: local, remote: remote);
