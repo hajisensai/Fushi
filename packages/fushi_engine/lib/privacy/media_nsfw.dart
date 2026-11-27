@@ -184,6 +184,21 @@ class MediaNsfwSnapshot {
           (embeddedFromPath != null &&
               _musicCoverSources.contains(embeddedFromPath)));
 
+  /// 一首曲目 / 一张专辑的封面要不要按 NSFW 处理：所在专辑（[albumUid]）被标
+  /// NSFW，或封面图源（[coverPath] / [embeddedFromPath]）属于 NSFW 专辑。服务器 /
+  /// 插件曲目的专辑 uid 不在曲库表里，只能靠图源认。音乐的所有 NSFW 消费端（系统
+  /// 媒体卡、侧栏速览）都问这一处，口径不分叉。
+  bool isMusicItemNsfw({
+    String? albumUid,
+    String? coverPath,
+    String? embeddedFromPath,
+  }) =>
+      (albumUid != null && isMusicAlbumNsfw(albumUid)) ||
+      isMusicCoverNsfw(
+        coverPath: coverPath,
+        embeddedFromPath: embeddedFromPath,
+      );
+
   static const DeepCollectionEquality _deep = DeepCollectionEquality();
 
   /// 内容相同（各宿主的标记与合集继承都一样）。app 端按表变更重读后用它判断要不要

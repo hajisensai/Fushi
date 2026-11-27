@@ -41,6 +41,7 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-5591](bugs/BUG-5591-music-shuffle-always-first.md) | ✅ | ✅ | music-shuffle-always-first |
+| [BUG-5592](bugs/BUG-5592-music-nav-peek-nsfw-cover-not-blurred.md) | ✅ | ✅ | 侧栏音乐速览卡不模糊 NSFW 专辑封面 |
 > 共 4868 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |

@@ -228,7 +228,7 @@ void main() {
 
   group('游戏速览与游戏首页同一份可见口径与「继续」', () {
     AdaptiveNavPeekEntry entryOf(GalgameEntry g) =>
-        AdaptiveNavPeekEntry(title: g.id, onOpen: () {});
+        AdaptiveNavPeekEntry.noCover(title: g.id, onOpen: () {});
 
     test('「隐藏成人向」：库页筛选、首页判据与速览一起藏', () {
       final GalgameEntry adult = _game('adult', lastPlayedMs: 30, nsfw: true);
@@ -329,6 +329,7 @@ void main() {
       final AdaptiveNavPeekEntry entry = navPeekNowPlayingEntry(
         item,
         cover: null,
+        blurCover: false,
         onOpen: () {},
       );
       expect(entry.title, '夜に駆ける');
@@ -336,6 +337,7 @@ void main() {
       final AdaptiveNavPeekEntry bare = navPeekNowPlayingEntry(
         const MusicPlayItem(trackUid: 'plg:1', path: 'plugin://x', title: 'x'),
         cover: null,
+        blurCover: false,
         onOpen: () {},
       );
       expect(bare.subtitle, isNull);
@@ -345,7 +347,7 @@ void main() {
       final String peek = _code(
         'lib/src/pages/implementations/home_nav_peek.dart',
       );
-      expect(peek, contains('navPeekNowPlayingEntry(current'));
+      expect(peek, contains(RegExp(r'navPeekNowPlayingEntry\(\s*current,')));
     });
   });
 }

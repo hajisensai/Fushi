@@ -77,8 +77,10 @@ bool musicMediaSessionArtHidden({
   if (!blur) return false;
   final String? albumUid = item.albumUid;
   if (snapshot == null) return albumUid != null;
-  return (albumUid != null && snapshot.isMusicAlbumNsfw(albumUid)) ||
-      snapshot.isMusicCoverNsfw(coverPath: item.coverPath);
+  return snapshot.isMusicItemNsfw(
+    albumUid: albumUid,
+    coverPath: item.coverPath,
+  );
 }
 
 class MusicSession extends ChangeNotifier {
