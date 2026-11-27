@@ -108,12 +108,24 @@ void main() {
     // macOS $TMPDIR 在 /var/folders 下（/var -> /private/var）。GRADLE_RO_DEP_CACHE
     // 带符号链接时 Kotlin DSL 的 script classpath 会漏掉只读缓存里的插件 jar
     // （"Unresolved reference 'JvmTarget'"），所以工作目录必须先 pwd -P 规范化。
+    // mktemp 必须单独一条赋值：嵌进 `cd "$(mktemp ...)"` 时 mktemp 失败会变成
+    // `cd ""`（bash 3.2 实测留在当前目录且成功），EXIT trap 随后删掉调用方的目录。
     expect(
       RegExp(
-        r'working_root="\$\(cd "\$\(mktemp -d [^\n]*\)" && pwd -P\)"',
+        r'^working_root="\$\(mktemp -d [^\n]*\)"\n'
+        r'''trap 'rm -rf -- "\$working_root"' EXIT\n'''
+        r'working_root="\$\(cd "\$working_root" && pwd -P\)"$',
+        multiLine: true,
       ).hasMatch(sh),
       isTrue,
-      reason: 'working_root must be canonicalized with pwd -P',
+      reason:
+          'working_root must come from a standalone mktemp, be trapped, '
+          'then be canonicalized with pwd -P',
+    );
+    expect(
+      sh,
+      isNot(contains(r'cd "$(mktemp')),
+      reason: r'a failed mktemp inside cd "$(...)" leaves cwd as working_root',
     );
   });
 

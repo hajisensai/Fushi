@@ -85,11 +85,14 @@ case "$output_directory" in
 esac
 
 # 规范路径（pwd -P）：macOS 的 $TMPDIR 在 /var/folders 下，而 /var 是指向 /private/var 的符号链接。
-# GRADLE_RO_DEP_CACHE 若是带符号链接的路径，Gradle 解析出的依赖 jar 在 /private/var 下，Kotlin DSL
-# 编译 build script 时这些插件 jar 进不了 classpath（"Unresolved reference 'JvmTarget'"，在 Apple
-# Silicon Mac 上复现：同一份缓存换成规范路径即 BUILD SUCCESSFUL）。Linux / Windows 无此符号链接。
-working_root="$(cd "$(mktemp -d "${TMPDIR:-/tmp}/fushi-mihon-build.XXXXXX")" && pwd -P)"
+# GRADLE_RO_DEP_CACHE 若是带符号链接的路径，Kotlin DSL 编译 build script 时只读缓存里的插件 jar
+# 进不了 classpath（"Unresolved reference 'JvmTarget'"）。Apple Silicon Mac 上逐项对照过：只把
+# GRADLE_RO_DEP_CACHE 换成 /private/var 规范路径就 BUILD SUCCESSFUL，项目目录走不走符号链接无关。
+# mktemp 与规范化分两步：把 mktemp 嵌进 cd 的命令替换里时，mktemp 失败会让 `cd ""` 留在当前目录，
+# working_root 变成调用方的工作目录，EXIT trap 随后把它整个删掉；分开写则 set -e 在 mktemp 失败时就退出。
+working_root="$(mktemp -d "${TMPDIR:-/tmp}/fushi-mihon-build.XXXXXX")"
 trap 'rm -rf -- "$working_root"' EXIT
+working_root="$(cd "$working_root" && pwd -P)"
 source_root="$working_root/M-Extension-Server"
 staging_root="$working_root/output"
 
