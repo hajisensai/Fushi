@@ -16,6 +16,11 @@ import 'package:fushi_engine/sync/srs_change_feed.dart' show SrsChangePoll;
 /// 长轮询循环。[wait] 返回 host 的当前令牌（老 host 不支持返回 null）；[ready] 为假时（互联没开 / 没配对 /
 /// app 在后台 / 复习模块关着）不发请求，隔一会儿再看。
 ///
+/// **断线 / 没准备好期间令牌不作废**：重连（或回到前台）后带着断开前的令牌接着长轮询。host 在这期间有了新数据（或 host
+/// 重启过：[SrsChangeFeed] 的令牌以启动时刻起步，必然不同）时这次请求立刻回新令牌、跑一轮；没变就照常挂住，什么也不跑。
+/// 以前断线一律在退避后补跑一整轮复习同步——iOS 每次退后台都会掐断长轮询，回来就对 host 空跑一轮（反馈：iPhone
+/// 「一直在同步」、电脑 host 跟着卡）。
+///
 /// 令牌的推进全是本机自己写 head 引起的（[SrsChangePoll.ownOnly]，BUG-4382）就只记下新令牌、不跑一轮：本机刚发
 /// 出去的东西不用再收回来，以前每次「立即同步」/ 推送写完 head 都经 host 把自己叫醒再空跑一轮，同步状态行在
 /// 「已同步」之后又从「准备」走一遍。
@@ -88,7 +93,7 @@ class SrsInterconnectWatcher {
       }
       if (!_running) break;
       if (!ready) {
-        token = null;
+        // 令牌留着：准备好之后与 host 当前令牌一比就知道这期间有没有新数据（见类注释）。
         await _sleep(idleRecheck);
         continue;
       }
@@ -107,29 +112,21 @@ class SrsInterconnectWatcher {
         token = poll.token;
         if (changed) await _onChange();
       } on Object {
-        // 断网 / host 重启 / 换路：退避后重来，令牌作废（重新拿基线，重连后先补一轮）。
+        // 断网 / host 重启 / 换路：退避后带着原令牌重连（见类注释），不盲目补跑整轮。
         failures++;
-        final bool hadToken = token != null;
-        token = null;
-        await _sleep(
-          Duration(
-            milliseconds: min(
-              maxBackoff.inMilliseconds,
-              1000 * pow(2, min(failures, 7)).toInt(),
-            ),
-          ),
-        );
-        if (hadToken && _running) {
-          try {
-            await _onChange();
-          } on Object {
-            // 补的这一轮失败就等下一次唤醒。
-          }
-        }
+        await _sleep(_watchBackoff(failures, maxBackoff));
       }
     }
   }
 }
+
+/// 长轮询第 [failures] 次连续失败后的退避：2 s 起每次翻倍，封顶 [maxBackoff]。
+Duration _watchBackoff(int failures, Duration maxBackoff) => Duration(
+  milliseconds: min(
+    maxBackoff.inMilliseconds,
+    1000 * pow(2, min(failures, 7)).toInt(),
+  ),
+);
 
 /// 跑一轮覆盖 [pushes] 全部通道的同步 [fullSync]（「立即同步」，BUG-4382）：先撤掉此刻排着的推送并清掉退避
 /// （用户明说「现在就同步」），由这一轮一并带上；这一轮没同步成功（[synced] 为假或抛错）就把撤掉的推送排回去。
@@ -160,6 +157,54 @@ Future<T> srsSyncSupersedingPushes<T>(
   }
   if (!synced(result)) restore();
   return result;
+}
+
+/// 进复习 tab 这一次做了什么（[srsSyncOnTabEntry]）。
+enum SrsTabEntrySync {
+  /// 自动同步关着 / 首次同步还没确认：照旧节流跑全部通道（此时没有推送与长轮询，进 tab 是唯一的自动同步）。
+  throttled,
+
+  /// 经互联 host 那一路有已知缺口：跑全部通道（带上排着的推送）。
+  gapRound,
+
+  /// 没有缺口：只把排着的推送立即推掉、节流拉一遍不经互联 host 的位置。
+  pushAndPull,
+}
+
+/// 进复习 tab 时的同步（反馈：iPhone「切个模块就在同步」、电脑 host 跟着卡）。以前每次进 tab 都按 60 s 节流对全部
+/// 通道跑整轮，互联 host 上是一串 PROPFIND / GET / PUT，还占着整轮同步锁。现在按两路分开：
+/// - [throttledOnly] 为真（自动同步关着 / 首次同步没确认）：[throttledRound]，同旧行为；
+/// - 经互联 host 那一路有缺口（[hasHostGap]：上次完整一轮之后这一路没同步成；或 [hostPush] 推送失败过）：
+///   [gapRound] 跑全部通道，经 [srsSyncSupersedingPushes] 带上排着的推送，返回是否同步成；
+/// - 否则：本机还没推出去的改动 = 排着的推送，立即推（[SrsLocalPush.flush]，退避期内照旧等）；host 上的新数据由长
+///   轮询即时同步，不用管；没有变更通知的位置（云盘 / 文件夹）由 [pullDirect] 节流拉一遍，不经 host。
+Future<SrsTabEntrySync> srsSyncOnTabEntry({
+  required Future<bool> Function() throttledOnly,
+  required Future<void> Function() throttledRound,
+  required bool Function() hasHostGap,
+  required Future<bool> Function() gapRound,
+  required Future<void> Function() pullDirect,
+  required SrsLocalPush hostPush,
+  required SrsLocalPush directPush,
+}) async {
+  if (await throttledOnly()) {
+    await throttledRound();
+    return SrsTabEntrySync.throttled;
+  }
+  final List<SrsLocalPush> pushes = <SrsLocalPush>[hostPush, directPush];
+  if (hasHostGap() || hostPush.failures > 0) {
+    await srsSyncSupersedingPushes<bool>(
+      pushes,
+      gapRound,
+      synced: (bool ok) => ok,
+    );
+    return SrsTabEntrySync.gapRound;
+  }
+  for (final SrsLocalPush p in pushes) {
+    p.flush();
+  }
+  await pullDirect();
+  return SrsTabEntrySync.pushAndPull;
 }
 
 /// 不在复习页时本机变动后的去抖（设计 §6.2：防抖 10 s）。

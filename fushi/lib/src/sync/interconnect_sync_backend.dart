@@ -415,6 +415,102 @@ class InterconnectSyncBackend extends SyncBackend
   String? _token;
   bool _sessionResolved = false;
 
+  // ── 选路失败退避 ────────────────────────────────────────────────────────────
+  //
+  // 已选地址一掉线（[_sessionOps] 的 `onConnectivityError`）或重试前 [clearCache]，
+  // 会话就被打回未选路；此前下一次请求（同步的每本书、复习长轮询、各页的 live 读）
+  // 都无条件重跑 [_resolveSession]：对端整台离线时，每个请求都把全部候选地址重探
+  // 一遍（https 候选各一次钉扎 TLS 握手），频率只取决于调用方发请求有多勤——
+  // client 侧「一直在同步」，host 刚恢复时还被这些探测持续拖慢。
+  //
+  // 现在全部候选都探不到（[SyncPeerUnreachableError]）记一次失败，按
+  // [resolveBackoffInitial] 起翻倍、[resolveBackoffMax] 封顶退避；退避期内
+  // [_ensureResolved] 直接抛同一种 [SyncPeerUnreachableError]（调用方的处理不变），
+  // 不发任何探测。出现「对端可能回来了」的证据就清零（[resetResolveBackoff]）：选路
+  // 成功、配置身份变了、登出 / 显式认证、别的互联请求经这台 host 的地址拿到了应答
+  // （[addInterconnectReachabilityObserver]）、系统网络变化 / 回到前台、用户手动同步。
+
+  /// 第一次选路失败后的退避时长。
+  static const Duration resolveBackoffInitial = Duration(seconds: 2);
+
+  /// 退避时长上限。
+  static const Duration resolveBackoffMax = Duration(minutes: 2);
+
+  /// 连续选路失败（全部候选都探不到）的次数；0 = 不在退避。
+  int _resolveFailures = 0;
+
+  /// 退避到期的单调时刻（[monotonicNow] 的读数）；null = 不在退避。
+  Duration? _resolveRetryAt;
+
+  /// 每次 [resetResolveBackoff] 加一：在途那轮选路若跨过了一次清零（配置变了 /
+  /// 网络变了），它的失败不再记进新一轮的退避。
+  int _resolveBackoffEpoch = 0;
+
+  /// 是否已挂上可达性观察者（只在退避期间挂，清零即撤，一次性会话不泄漏）。
+  bool _observingReachability = false;
+
+  static final Stopwatch _monotonicClock = Stopwatch()..start();
+
+  /// 退避计时用的单调时钟（不受系统改时间影响）。实例可变仅供测试注入。
+  @visibleForTesting
+  Duration Function() monotonicNow = () => _monotonicClock.elapsed;
+
+  /// 当前退避剩余时长；不在退避（或已到期）返回 null。
+  @visibleForTesting
+  Duration? get resolveBackoffRemaining {
+    final Duration? retryAt = _resolveRetryAt;
+    if (retryAt == null) return null;
+    final Duration remaining = retryAt - monotonicNow();
+    return remaining > Duration.zero ? remaining : null;
+  }
+
+  /// 第 [failures] 次连续失败后的退避时长：[resolveBackoffInitial] × 2^(n-1)，
+  /// 封顶 [resolveBackoffMax]。
+  @visibleForTesting
+  static Duration resolveBackoffFor(int failures) {
+    if (failures <= 0) return Duration.zero;
+    Duration delay = resolveBackoffInitial;
+    for (int i = 1; i < failures && delay < resolveBackoffMax; i++) {
+      delay *= 2;
+    }
+    return delay > resolveBackoffMax ? resolveBackoffMax : delay;
+  }
+
+  /// 清零选路退避：下一次请求立即重新探测候选地址。手动「立即同步」、网络变化等
+  /// 「对端可能已经回来了」的入口调它。
+  void resetResolveBackoff() {
+    _resolveBackoffEpoch++;
+    _resolveFailures = 0;
+    _resolveRetryAt = null;
+    if (_observingReachability) {
+      _observingReachability = false;
+      removeInterconnectReachabilityObserver(_onPeerReachability);
+    }
+  }
+
+  void _noteResolveFailure() {
+    _resolveFailures++;
+    _resolveRetryAt = monotonicNow() + resolveBackoffFor(_resolveFailures);
+    if (!_observingReachability) {
+      _observingReachability = true;
+      addInterconnectReachabilityObserver(_onPeerReachability);
+    }
+  }
+
+  /// 别的互联请求（能力探测、远程复习、代下载…）经本会话某条候选地址拿到了应答：
+  /// 对端活着，退避作废。
+  void _onPeerReachability(FushiClientUrl candidate, bool reached) {
+    if (!reached || _resolveRetryAt == null) return;
+    final String? hostId = candidate.hostId;
+    final String persisted = interconnectPersistedUrl(candidate.url);
+    final bool ours = _candidates.any(
+      (FushiClientUrl u) =>
+          (hostId != null && hostId.isNotEmpty && u.hostId == hostId) ||
+          interconnectPersistedUrl(u.url) == persisted,
+    );
+    if (ours) resetResolveBackoff();
+  }
+
   /// 上一次 [_loadConfig] 读到的配置身份（见 [_sessionSignature]）。BUG-1183：用它
   /// 判断 `restoreAuth` 是否真需要作废已解析的地址。null = 还没读过配置。
   String? _configSignature;
@@ -708,6 +804,8 @@ class InterconnectSyncBackend extends SyncBackend
       _configSignature = signature;
       _sessionResolved = false;
       _resolveFlight = null;
+      // 换了配置（重新配对 / 改地址）：旧配置的失败说明不了新配置。
+      resetResolveBackoff();
       // BUG-1180：身份变了 = 远端清单缓存里的东西属于**上一个**对端，必须作废。
       // 监听者同步收到通知，所以本次 restoreAuth 返回时缓存已经是空的，紧随其后的
       // 那次 read() 必然重新向新对端取数。
@@ -813,10 +911,16 @@ class InterconnectSyncBackend extends SyncBackend
   /// 若不同（组内排序随谁先答而变），后完成的那轮会 `_ops?.close()` 掉前一轮刚交给
   /// 调用方的连接句柄，在途请求被拒连、`onConnectivityError` 再把会话置脏。
   /// 一轮结束（成功或失败）就清掉，下一次调用按 [_sessionResolved] 重新判断。
+  ///
+  /// 选路退避期内（见 [resolveBackoffInitial]）不探测，直接抛
+  /// [SyncPeerUnreachableError]。
   Future<void> _ensureResolved() {
     if (_sessionResolved) return Future<void>.value();
     final Future<void>? inFlight = _resolveFlight;
     if (inFlight != null) return inFlight;
+    if (resolveBackoffRemaining != null) {
+      return Future<void>.error(SyncPeerUnreachableError());
+    }
     late final Future<void> flight;
     flight = _resolveSession().whenComplete(() {
       if (identical(_resolveFlight, flight)) _resolveFlight = null;
@@ -839,14 +943,22 @@ class InterconnectSyncBackend extends SyncBackend
     }
     // 同一台 host 的多条地址先组内并发选路，把可达者排到组首；老条目（无 hostId）
     // 原样不探测（docs/specs/2026-09-28-interconnect-remote-reach.md §2）。
+    final int epoch = _resolveBackoffEpoch;
     final List<FushiClientUrl> ranked = await rankInterconnectCandidates(
       _candidates,
     );
-    final FushiClientUrl chosen = await resolveReachableFushiCandidate(
-      ranked,
-      _token ?? '',
-      _probe,
-    );
+    final FushiClientUrl chosen;
+    try {
+      chosen = await resolveReachableFushiCandidate(
+        ranked,
+        _token ?? '',
+        _probe,
+      );
+    } on SyncPeerUnreachableError {
+      if (epoch == _resolveBackoffEpoch) _noteResolveFailure();
+      rethrow;
+    }
+    resetResolveBackoff();
     // BUG-1550：连接用的是**选中那台**的凭据（自带优先），不再是唯一全局 token。
     // resolveReachableFushiCandidate 已保证选中的候选必有可用凭据。
     final String token = interconnectTokenFor(chosen, _token)!;
@@ -917,6 +1029,8 @@ class InterconnectSyncBackend extends SyncBackend
 
   @override
   Future<void> authenticate({required SyncRepository repo}) async {
+    // 用户显式登录 / 测试连接：当场探测，不受选路退避约束。
+    resetResolveBackoff();
     await _loadConfig(repo);
     if (_candidates.isEmpty || !_hasAnyCredential) {
       throw SyncAuthError(
@@ -938,6 +1052,7 @@ class InterconnectSyncBackend extends SyncBackend
     _sessionResolved = false;
     _resolveFlight = null;
     _activeCandidate = null;
+    resetResolveBackoff();
     // 登出后配置身份归零，下次 restoreAuth 必然重探测（BUG-1183）。
     _configSignature = null;
     await repo.updateFushiClientUrls(
@@ -989,6 +1104,8 @@ class InterconnectSyncBackend extends SyncBackend
     _sessionResolved = false;
     _resolveFlight = null;
     _activeCandidate = null;
+    // 撤掉退避期间挂的可达性观察者：一次性实例用完即弃，不能留在全局表里。
+    resetResolveBackoff();
   }
 
   // ── Folder operations ─────────────────────────────────────────────

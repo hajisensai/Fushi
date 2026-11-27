@@ -83,6 +83,33 @@ void main() {
     expect(clock.elapsed, lessThan(const Duration(milliseconds: 800)));
   });
 
+  test('declaresCapability：同一台 host 的多次探测（换 client 实例也一样）只打一次能力表', () async {
+    const FushiClientUrl live = FushiClientUrl(
+      url: 'https://h.example:38766',
+      token: 'secret',
+      hostId: 'H',
+    );
+    await repository.setFushiClientUrls(<FushiClientUrl>[live]);
+    debugInterconnectAddressProbeOverride =
+        (FushiClientUrl c, String? hostId) async => hostId == 'H';
+    int hits = 0;
+    final MockClient plain = MockClient((http.Request r) async {
+      if (r.url.path == '/api/capabilities') hits++;
+      return http.Response('{"videoRemoteControlV1":true}', 200);
+    });
+    for (int i = 0; i < 3; i++) {
+      final InterconnectHostClient client = InterconnectHostClient(
+        repository: repository,
+        peer: live,
+        httpClient: plain,
+      );
+      expect(await client.declaresCapability('videoRemoteControlV1'), isTrue);
+      expect(await client.declaresCapability('other'), isFalse);
+      client.cancelPending();
+    }
+    expect(hits, 1, reason: '视频页每次切 tab 都探一遍时不再每次打 host');
+  });
+
   test(
     'postJson：缓存胜者是同组的死 LAN（连接被拒）→ 换到活地址，不再整次失败（评审 compat-1 / tests-1）',
     () async {

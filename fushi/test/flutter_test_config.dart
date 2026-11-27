@@ -15,6 +15,8 @@ import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/utils/components/fushi_continue_card_row.dart'
     show coverColorSchemeCache;
 import 'package:fushi/src/utils/net/app_http_image.dart';
+import 'package:fushi/src/sync/interconnect_host_channel.dart'
+    show resetInterconnectCapabilitiesCache;
 import 'package:fushi_core/fushi_core.dart' show DatabaseBackgroundWork;
 import 'package:fushi/src/media/links/work_graph_store.dart'
     show debugWorkGraphInline;
@@ -55,6 +57,8 @@ import 'package:fushi_web_core/testing.dart';
 /// 10. Lets `FushiDatabase.close()` stop waiting for background work whose
 ///    continuations are parked in a finished test's FakeAsync zone. See
 ///    [installReleaseOfParkedDatabaseWork].
+/// 11. Clears the interconnect capability cache before every test. See
+///    [installPerTestInterconnectCapabilitiesCache].
 Future<void> testExecutable(FutureOr<void> Function() testMain) async {
   // 引擎（fushi_engine）的日志 / 数据根 / ffmpeg 平台后端装配点：与 main() 同一份，
   // 让测试里的引擎代码拿到与从前逐字节一致的行为（AppPaths 路径、ErrorLogService）。
@@ -73,8 +77,14 @@ Future<void> testExecutable(FutureOr<void> Function() testMain) async {
   // 网页内容核心（fushi_web_core）是硬依赖：指向本仓刚编好的原生库（或 FUSHI_WEB_CORE_LIB）。
   // 找不到不在这里报错——用到它的测试第一次加载时抛 FushiWebCoreLibraryMissing，照常失败。
   useDevFushiWebCoreLibrary();
+  installPerTestInterconnectCapabilitiesCache();
   await testMain();
 }
+
+/// 互联能力表缓存（[resetInterconnectCapabilitiesCache]）是进程级的：同一个测试文件里
+/// 前一条用例的假 host 应答不能被后一条用例当缓存命中。每条用例开始前清空。
+void installPerTestInterconnectCapabilitiesCache() =>
+    setUp(resetInterconnectCapabilitiesCache);
 
 /// 统计事实面（`loadStatFacts`）在整个 app 测试套件里**在调用方 isolate 里**读库与派生
 /// （BUG-4960 起生产路径是一次性后台 isolate）。

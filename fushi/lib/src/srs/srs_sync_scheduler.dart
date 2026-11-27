@@ -5,7 +5,9 @@
 /// 三个触发点，都只在复习模块开着时存在（由 `srs_app_runtime.dart` 装配）：
 /// 1. 常规同步每条通道成功后（`syncChannelPostRunHook`，与常规同步同一把互斥锁、同一个
 ///    已认证后端，云盘与互联都算）；
-/// 2. 进入复习 tab 时（节流：距上次至少 [kSrsSyncMinInterval]）；
+/// 2. 进入复习 tab 时（组合见 `srsSyncOnTabEntry`）：经互联 host 的那一路有已知缺口（[hasHostLaneGap]）才跑全部通道
+///    （[syncTabEntryGapRound]）；否则只节流拉不经 host 的位置（[pullDirectLocationsThrottled]）。自动同步关着 /
+///    首次同步没确认时退回节流全量 [syncThrottled]；
 /// 3. 牌组列表「立即同步」/ AnkiConnect `sync` 动作（不节流）。
 /// 2、3 除各条通道外还跑本机直接读写的目录（[SrsLocalDirectory]：本机作为互联 host 时
 /// 客户端写进来的那块目录——host 自己不是任何一条通道的客户端）。
@@ -425,9 +427,11 @@ class SrsSyncScheduler {
     Future<bool?> Function(SyncAssetStore backend)? peerJoined,
     Set<String> Function()? pendingForgets,
     Future<void> Function(String locationId)? onForgotten,
+    bool Function(SyncAssetStore backend)? viaHost,
     // 先加入是有时限的一次性关联：固定时长（与改成按进度判之前的旧库迁移拉取预算同值）。
     Duration joinBudget = const Duration(minutes: 2),
-  }) : _profileLinker = profileLinker,
+  }) : _viaHost = viaHost,
+       _profileLinker = profileLinker,
        _peerJoined = peerJoined,
        _pendingForgets = pendingForgets,
        _onForgotten = onForgotten,
@@ -653,6 +657,25 @@ class SrsSyncScheduler {
 
   final Set<SrsSyncNotice> _noticed = <SrsSyncNotice>{};
   DateTime? _lastThrottledAt;
+
+  /// [pullDirectLocationsThrottled] 上次开跑的时刻。
+  DateTime? _lastDirectPullAt;
+
+  /// [backend] 是不是经互联 host 的那一路（app 侧 = `InterconnectSyncBackend`；null = 没有这一路，测试装配）。
+  final bool Function(SyncAssetStore backend)? _viaHost;
+
+  /// 经互联 host 那一路（互联通道，及本机作为 host 时的本机目录）一轮没同步成就加一（[_noteRoundFailure] /
+  /// [syncLocalDirectories]），含推送、长轮询、常规同步后置步骤触发的轮次。云盘 / 文件夹位置的失败不算：它们由进
+  /// tab 的节流拉取自己重试，不该因为一条坏掉的云盘通道让每次进 tab 都去打 host。
+  int _hostFailureSeq = 0;
+
+  /// 最近一次完整一轮（[_syncAll]）里经 host 那一路全部同步成时的 [_hostFailureSeq]；null = 本进程还没有这样的一轮。
+  int? _hostCleanAt;
+
+  /// 经互联 host 那一路此刻有没有已知缺口（进复习 tab 据此决定要不要跑全部通道，见文件头第 2 条）：本进程还没完整
+  /// 成功地跑过一轮，或那之后这一路有一轮没同步成。本机还没推出去的改动由 app 侧的推送（[SrsLocalPush.pending] /
+  /// 失败退避）另算；host 上的新数据由长轮询（srs_interconnect_watch.dart）即时同步，不算缺口。
+  bool get hasHostLaneGap => _hostCleanAt != _hostFailureSeq;
 
   /// 最近一次检出的 profile 冲突（[SrsSyncNotice.profileNotLinked]）；app 侧据此弹窗。
   SrsProfileConflict? profileConflict;
@@ -969,6 +992,7 @@ class SrsSyncScheduler {
         countedOf: (SrsSync2Report r) =>
             !kSrsSyncLocalStateErrors.contains(r.error) &&
             r.error != kSrsSync2Stopped,
+        hostLane: _viaHost?.call(backend) ?? false,
       );
     });
     _queuedRounds[requestKey] = round;
@@ -1014,6 +1038,7 @@ class SrsSyncScheduler {
     Future<T> Function() body, {
     required String? Function(T result) errorOf,
     bool Function(T result)? countedOf,
+    bool hostLane = false,
   }) async {
     stats.running++;
     String describe(String stage) =>
@@ -1042,11 +1067,16 @@ class SrsSyncScheduler {
         _noteRoundRecovered(backendLabel, stats);
         srsSyncRoundsSucceeded.value++;
       } else {
-        _noteRoundFailure(stats, describe, 'report error: $error');
+        _noteRoundFailure(
+          stats,
+          describe,
+          'report error: $error',
+          hostLane: hostLane,
+        );
       }
       return result;
     } catch (e) {
-      _noteRoundFailure(stats, describe, e);
+      _noteRoundFailure(stats, describe, e, hostLane: hostLane);
       rethrow;
     } finally {
       srsSyncProgress.removeListener(onProgress);
@@ -1059,8 +1089,10 @@ class SrsSyncScheduler {
   void _noteRoundFailure(
     SrsSyncRoundStats stats,
     String Function(String) describe,
-    Object error,
-  ) {
+    Object error, {
+    bool hostLane = false,
+  }) {
+    if (hostLane) _hostFailureSeq++;
     final DateTime now = _clock();
     final DateTime? previous = stats.lastFailureAt;
     stats
@@ -1711,6 +1743,24 @@ class SrsSyncScheduler {
   /// 页的节流同步也清空对账时刻，每次进页都把几万个媒体整套对一遍）。
   Future<SrsSyncNowResult> _syncAll({required bool fullMediaReconcile}) async {
     if (_halted) return const SrsSyncNowResult(ran: 0);
+    final int hostSeq = _hostFailureSeq;
+    final SrsSyncNowResult result = await _syncAllOnce(
+      fullMediaReconcile: fullMediaReconcile,
+    );
+    // 经 host 那一路这一轮没有失败（[_hostFailureSeq] 没动），且不是本机此刻同步不了（库没开 / 首次没确认：那样什么
+    // 都没跑，算不上补上了缺口）：记成补上。
+    final bool localBlocked = result.errors.any(
+      (Object e) =>
+          e is SrsSyncReportError &&
+          kSrsSyncLocalStateErrors.contains(e.message),
+    );
+    if (!localBlocked && _hostFailureSeq == hostSeq) _hostCleanAt = hostSeq;
+    return result;
+  }
+
+  Future<SrsSyncNowResult> _syncAllOnce({
+    required bool fullMediaReconcile,
+  }) async {
     // 首次同步确认之后（复习页弹框「开始同步」接着就是这一轮；这里还没拿通道锁、也不在 [_serially] 里，可以走
     // [_channels]）。旧库在开库之前已整库换代迁移（SrsGen4Migration），没有推迟的迁移。
     if (_firstSyncConfirmed()) {
@@ -1929,6 +1979,7 @@ class SrsSyncScheduler {
         final String? error = report.error;
         if (error == kSrsSyncLocationDisabled) continue;
         if (error != null) {
+          if (!kSrsSyncLocalStateErrors.contains(error)) _hostFailureSeq++;
           errors.add(
             SrsSyncReportError(error, locationDir: report.locationDir),
           );
@@ -1937,6 +1988,7 @@ class SrsSyncScheduler {
           if (report.uploaded > 0) _onLocalDirectoryPublished?.call();
         }
       } catch (e, stack) {
+        _hostFailureSeq++;
         errors.add(e);
         ErrorLogService.instance.log(
           'SrsSyncScheduler.localDirectory',
@@ -1958,6 +2010,30 @@ class SrsSyncScheduler {
     }
     _lastThrottledAt = now;
     await _syncAll(fullMediaReconcile: false);
+    return true;
+  }
+
+  /// 进复习 tab、有 [hasHostLaneGap] 时的那一轮：全部通道 + 本机目录 + 文件夹位置，媒体对账照指纹门控（同
+  /// [syncThrottled] 不做全量）。不节流：缺口补上之后 [hasHostLaneGap] 即为假，下次进 tab 不再跑。
+  Future<SrsSyncNowResult> syncTabEntryGapRound() =>
+      _syncAll(fullMediaReconcile: false);
+
+  /// 进复习 tab 的这一轮（没有 [hasHostLaneGap] 时才走这里）：只拉不经互联 host 的位置——[channels] 给出的那组通道
+  /// （app 侧 = 云盘通道）与文件夹位置。它们没有变更通知，远端有没有新数据只能问一遍，所以仍按
+  /// [kSrsSyncMinInterval] 节流；互联通道与本机目录不在这里跑（有长轮询即时同步，进 tab 再跑一轮只是让 host 白做一串
+  /// 读写）。距上次不足间隔返回 false。这里没同步成的下次进 tab 照样按间隔再拉，不记成 host 那一路的缺口。
+  Future<bool> pullDirectLocationsThrottled(SrsChannelRunner channels) async {
+    if (_halted) return false;
+    final DateTime now = _clock();
+    final DateTime? last = _lastDirectPullAt;
+    if (last != null && now.difference(last) < kSrsSyncMinInterval) {
+      return false;
+    }
+    _lastDirectPullAt = now;
+    await channels((SyncAssetStore backend) async {
+      await syncWithBackend(backend);
+    });
+    await syncFolderLocations();
     return true;
   }
 

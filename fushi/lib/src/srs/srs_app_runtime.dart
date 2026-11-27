@@ -254,6 +254,8 @@ class SrsAppRuntime {
     locationDisabled: (String id) => app.srsDisabledLocations.contains(id),
     // 一轮跑完问通道那头的设备（互联 host）加入复习同步了没有（BUG-4320）：没加入时摘要 / 立即同步不说「已同步」。
     peerJoined: srsChannelPeerJoined,
+    // 经互联 host 的那一路（进复习 tab 只为它的缺口跑全部通道，见 [SrsSyncScheduler.hasHostLaneGap]）。
+    viaHost: (SyncAssetStore backend) => backend is InterconnectSyncBackend,
   );
 
   /// 互联快速通道（srs_interconnect_watch.dart）：长轮询所连 host，有新数据立刻同步这一条通道。
@@ -606,22 +608,49 @@ class SrsAppRuntime {
   /// 这一轮跑遍全部通道与本机目录，是两条推送的超集：此刻排着的推送由它带上、撤掉（[SrsLocalPush.takePending]，
   /// BUG-4382）。以前排着的推送在「已同步」提示之后去抖到期又各跑一轮空同步，同步状态行在提示后继续走。这一轮
   /// 没同步成功（有错 / 抛错）就把撤掉的推送排回去，本机改动照常等推送补上。
-  Future<SrsSyncNowResult> syncNow() => srsSyncSupersedingPushes(
-    <SrsLocalPush>[localPush, cloudPush],
-    sync.syncNow,
-    synced: (SrsSyncNowResult r) => r.errors.isEmpty,
-  );
+  Future<SrsSyncNowResult> syncNow() {
+    // 用户明说「现在就同步」：互联选路的失败退避也一并清掉。
+    InterconnectSyncBackend.instance.resetResolveBackoff();
+    return srsSyncSupersedingPushes(
+      <SrsLocalPush>[localPush, cloudPush],
+      sync.syncNow,
+      synced: (SrsSyncNowResult r) => r.errors.isEmpty,
+    );
+  }
 
   void _onHomeTabChanged() {
     if (homeShellTabNotifier.value != HomeTab.srs) return;
     _maybeShowProfileConflict(tabEntry: true);
     unawaited(
-      sync.syncThrottled().catchError((Object e, StackTrace stack) {
+      _syncOnTabEntry().catchError((Object e, StackTrace stack) {
         ErrorLogService.instance.log('SrsAppRuntime.tabSync', e, stack);
-        return false;
+        return SrsTabEntrySync.pushAndPull;
       }),
     );
   }
+
+  /// 进复习 tab：有已知缺口才跑全部通道，否则只推排着的、节流拉云盘 / 文件夹位置（[srsSyncOnTabEntry]）。
+  Future<SrsTabEntrySync> _syncOnTabEntry() => srsSyncOnTabEntry(
+    throttledOnly: () async =>
+        !app.srsSync2MergeConfirmed || !await sync.isAutoSyncEnabled(),
+    throttledRound: () async {
+      await sync.syncThrottled();
+    },
+    hasHostGap: () => sync.hasHostLaneGap,
+    gapRound: () async => (await sync.syncTabEntryGapRound()).errors.isEmpty,
+    pullDirect: () async {
+      await sync.pullDirectLocationsThrottled(
+        (Future<void> Function(SyncAssetStore backend) body) =>
+            runOnAuthenticatedSyncChannels(
+              db: app.database,
+              where: (SyncChannel c) => !c.isInterconnect,
+              body: (SyncBackend backend) => body(backend),
+            ),
+      );
+    },
+    hostPush: localPush,
+    directPush: cloudPush,
+  );
 
   void _onReviewSessionsChanged() {
     final int now = srsActiveReviewSessions.value;

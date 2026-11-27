@@ -4,6 +4,8 @@ import 'dart:io' show Platform;
 import 'package:flutter/widgets.dart'
     show AppLifecycleListener, AppLifecycleState;
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
+import 'package:fushi/src/sync/interconnect_sync_backend.dart'
+    show InterconnectSyncBackend;
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi_engine/sync/interconnect_p2p.dart';
@@ -107,16 +109,30 @@ void installInterconnectP2pNetworkWatch(
           ? _appLifecycleStates()
           : const Stream<AppLifecycleState>.empty());
   _networkWatch
-    ..add(bindInterconnectP2pNetworkSignals(runtime, platformChanges))
     ..add(
       bindInterconnectP2pNetworkSignals(
         runtime,
-        states
-            .where((AppLifecycleState s) => s == AppLifecycleState.resumed)
-            .map((AppLifecycleState _) {}),
+        _alsoResetSyncResolveBackoff(platformChanges),
+      ),
+    )
+    ..add(
+      bindInterconnectP2pNetworkSignals(
+        runtime,
+        _alsoResetSyncResolveBackoff(
+          states
+              .where((AppLifecycleState s) => s == AppLifecycleState.resumed)
+              .map((AppLifecycleState _) {}),
+        ),
       ),
     );
 }
+
+/// 网络变了 / 回到前台：互联同步会话的选路退避也作废——之前探不到的 host 换个网络
+/// 可能就通了，下一次同步请求应立即重探，而不是等满退避。
+Stream<void> _alsoResetSyncResolveBackoff(Stream<void> signals) =>
+    signals.map<void>(
+      (void _) => InterconnectSyncBackend.instance.resetResolveBackoff(),
+    );
 
 /// app 生命周期状态流：有人订阅时才挂 [AppLifecycleListener]，取消即撤。
 Stream<AppLifecycleState> _appLifecycleStates() {
