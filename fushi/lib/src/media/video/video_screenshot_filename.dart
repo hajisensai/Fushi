@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/utils/misc/safe_file_name.dart';
@@ -32,29 +34,31 @@ String videoScreenshotBaseName({
 }
 
 /// Returns [desiredName] or appends ` (n)` before the extension until it is new.
-String uniqueVideoScreenshotBaseName(
+///
+/// [exists] 是异步的（BUG-5605）：截图目录可以在网络盘上，同步 stat 会冻住 UI。
+Future<String> uniqueVideoScreenshotBaseName(
   String desiredName, {
-  required bool Function(String name) exists,
-}) {
-  if (!exists(desiredName)) return desiredName;
+  required FutureOr<bool> Function(String name) exists,
+}) async {
+  if (!await exists(desiredName)) return desiredName;
   final String stem = p.basenameWithoutExtension(desiredName);
   final String ext = p.extension(desiredName);
   for (int counter = 2; counter < 10000; counter++) {
     final String candidate = '$stem ($counter)$ext';
-    if (!exists(candidate)) return candidate;
+    if (!await exists(candidate)) return candidate;
   }
   final int fallback = DateTime.now().millisecondsSinceEpoch;
   return '${stem}_$fallback$ext';
 }
 
 /// Returns [desiredPath] or a sibling path with a count suffix when occupied.
-String uniqueVideoScreenshotPath(
+Future<String> uniqueVideoScreenshotPath(
   String desiredPath, {
-  required bool Function(String path) exists,
-}) {
+  required FutureOr<bool> Function(String path) exists,
+}) async {
   final String dir = p.dirname(desiredPath);
   final String desiredName = p.basename(desiredPath);
-  final String uniqueName = uniqueVideoScreenshotBaseName(
+  final String uniqueName = await uniqueVideoScreenshotBaseName(
     desiredName,
     exists: (String name) => exists(p.join(dir, name)),
   );

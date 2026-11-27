@@ -13693,6 +13693,7 @@
   "video_clip_export_ffmpeg_unavailable": "ffmpeg 不可用",
   "video_clip_export_host_outdated": "对端 Fushi 版本过低，不支持片段导出，请先在对端更新 Fushi",
   "video_clip_export_input_missing": "源视频不可用",
+  "video_clip_export_input_unavailable": "视频所在的盘暂时没有响应（网络盘 / 云盘挂载），稍后再试。",
   "video_clip_export_invalid_range": "没有有效片段",
   "video_clip_export_output_missing": "没有生成导出文件",
   "video_clip_export_remote_download_required": "请先把远端视频下载到本机后再导出片段",

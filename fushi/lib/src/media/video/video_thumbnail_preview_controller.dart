@@ -5,6 +5,10 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/startup/media_handle_registry.dart';
+import 'package:fushi_engine/media/video/media_path_probe.dart'
+    show whenMediaVolumeRecovered;
+import 'package:fushi_engine/media/video/video_member_file.dart'
+    show MediaPathPresence, probeVideoMember;
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 
 /// 缩略图预览浮层的四态（TODO-669）。把所有 if 分支收敛成一个枚举，浮层只 switch
@@ -357,14 +361,35 @@ class VideoThumbnailPreviewController extends ChangeNotifier {
 /// 键是**已量化的请求时间**（调度器侧 [thumbnailBucketTargetMs] 保证同一格给出同
 /// 一个值），LRU 淘汰。ffmpeg 的 `-ss` 输入定位自带关键帧对齐，落点不可读回，也
 /// 不需要读回——同一格必然复用同一条缓存。
+///
+/// ## 源读不动时停手（BUG-5605）
+///
+/// 片源常在网络 / 云盘挂载上（rclone / WinFsp 挂的 OpenList）。挂载卡住时旧实现每次
+/// 取帧都同步 stat 一次（UI 冻 7～23 s）、再起一个注定跑满 30 s 的 ffmpeg；调度器 6 s
+/// 就放掉单飞闸门，预热又与 hover 并发，于是 ffmpeg 一个接一个叠起来。现在：
+///
+/// - 取帧前用有界异步探测（[probeVideoMember]）问源在不在，不在 UI isolate 上同步碰
+///   文件系统；
+/// - 取帧器自己单飞：同一时刻只有一个 ffmpeg，在跑时新请求只保留最新那一个；
+/// - 探测答「暂不可用」、或 ffmpeg 连续 [ffmpegTimeoutLimit] 次跑满时限，就进入
+///   **源暂停**（[isSourceSuspended]）：不再起 ffmpeg、不再探测，所有请求立刻返回 null
+///   （调度器降级只显时间戳）。暂停按状态解除——挂载上卡住的 stat 返回、卷恢复
+///   （[whenMediaVolumeRecovered]）就自动恢复取帧；源可达却仍读不动（卷没卡、ffmpeg
+///   照样超时）的，本取帧器不再重试，换集 / 重开播放页会建新的取帧器重新判断。
 class OffscreenVideoFrameGrabber {
   OffscreenVideoFrameGrabber({
     required this.videoPath,
     this.thumbnailWidth = 320,
     this.frameCacheCapacity = 64,
     this.consecutiveFailureLimit = 3,
+    this.ffmpegTimeoutLimit = 2,
     this.ffmpegTempDir,
-  }) {
+    ThumbnailFrameExtractor? frameExtractor,
+    Future<MediaPathPresence> Function(String videoPath)? sourceProbe,
+    Future<void> Function(String videoPath)? whenSourceRecovered,
+  }) : _frameExtractor = frameExtractor ?? _extractThumbnailFrameViaFfmpeg,
+       _sourceProbe = sourceProbe ?? _probeSource,
+       _whenSourceRecovered = whenSourceRecovered ?? whenMediaVolumeRecovered {
     _mediaHandleRegistration = MediaHandleRegistry.instance.register(
       _releaseMediaHandles,
       mediaPath: () => videoPath,
@@ -386,8 +411,26 @@ class OffscreenVideoFrameGrabber {
   /// timestampOnly（只显时间戳），这正是移动端一直在走的路径。
   final int consecutiveFailureLimit;
 
+  /// ffmpeg 连续跑满时限多少次后暂停取帧（见类注释「源读不动时停手」）。与
+  /// [consecutiveFailureLimit] 不同，成功过也照样生效：成功过只说明机器有 ffmpeg，
+  /// 说明不了网络盘此刻还读得动。
+  final int ffmpegTimeoutLimit;
+
   /// ffmpeg 输出临时目录（默认系统临时目录）。
   final String? ffmpegTempDir;
+
+  final ThumbnailFrameExtractor _frameExtractor;
+  final Future<MediaPathPresence> Function(String videoPath) _sourceProbe;
+  final Future<void> Function(String videoPath) _whenSourceRecovered;
+
+  /// 源暂停（见类注释）：为真时不探测、不起 ffmpeg。
+  bool _sourceSuspended = false;
+
+  /// ffmpeg 连续跑满时限的次数；任何一次正常返回（成功或失败）清零。
+  int _consecutiveTimeouts = 0;
+
+  /// 取帧器自己的单飞序号：在跑的那个取帧收尾后，只有最新的等待者接着取。
+  int _grabTicket = 0;
 
   bool _disposed = false;
   int _ffmpegSeq = 0;
@@ -413,7 +456,11 @@ class OffscreenVideoFrameGrabber {
   /// 熔断**：个别位置取不到帧（片尾、损坏的 GOP）是正常的，不该因此把整个视频的
   /// 缩略图关掉。只有从头到尾一次都没成功过，才认定环境不具备取帧能力。
   bool get isUnavailable =>
-      !_everSucceeded && _consecutiveFailures >= consecutiveFailureLimit;
+      _sourceSuspended ||
+      (!_everSucceeded && _consecutiveFailures >= consecutiveFailureLimit);
+
+  /// 源是否处于暂停（挂载卡住 / ffmpeg 连续超时，见类注释）。
+  bool get isSourceSuspended => _sourceSuspended;
 
   /// 预热：hover 刚进入进度条时由调度器调用，取一次片头帧。
   ///
@@ -423,6 +470,8 @@ class OffscreenVideoFrameGrabber {
   Future<void> warmUp() async {
     if (_disposed || isUnavailable) return;
     if (_frames.isNotEmpty) return; // 已经取过帧，可用性无需再探。
+    // 已有取帧在跑：它本身就在探可用性，预热再排一个只会挤掉用户真正 hover 的那格。
+    if (_inFlightGrab != null) return;
     try {
       final ui.Image? image = await grab(0);
       image?.dispose();
@@ -452,10 +501,47 @@ class OffscreenVideoFrameGrabber {
     if (cached != null) return cached;
     if (isUnavailable) return null;
 
+    // 单飞：已有取帧在跑就等它收尾；期间又来了更新的请求，这个就作废（调度器会去追
+    // 最新那一格）。挂载卡住时这样最多只有一个 ffmpeg / 一个探测压在上面。
+    final int ticket = ++_grabTicket;
+    while (_inFlightGrab != null) {
+      await _inFlightGrab;
+      if (_disposed || ticket != _grabTicket) return null;
+    }
+    final ui.Image? recached = cachedFrame(targetMs);
+    if (recached != null) return recached;
+    if (isUnavailable) return null;
+
     final Completer<void> done = Completer<void>();
     _inFlightGrab = done.future;
     try {
-      final ui.Image? decoded = await _grabViaFfmpeg(targetMs);
+      // 有界异步探测：卷卡住就暂停，绝不在 UI isolate 上同步 stat。
+      final MediaPathPresence presence = await _sourceProbe(videoPath);
+      if (_disposed) return null;
+      if (presence == MediaPathPresence.unavailable) {
+        _suspendSource(volumeStalled: true);
+        return null;
+      }
+      if (presence == MediaPathPresence.missing) {
+        _consecutiveFailures++;
+        return null;
+      }
+      bool timedOut = false;
+      final ui.Image? decoded = await _grabViaFfmpeg(
+        targetMs,
+        onTimedOut: () => timedOut = true,
+      );
+      if (timedOut) {
+        if (++_consecutiveTimeouts >= ffmpegTimeoutLimit) {
+          // 连续跑满时限：先停手，再问一次卷是不是卡着，决定能不能等它恢复后自动再起。
+          _sourceSuspended = true;
+          final MediaPathPresence after = await _sourceProbe(videoPath);
+          _sourceSuspended = false;
+          _suspendSource(volumeStalled: after == MediaPathPresence.unavailable);
+        }
+      } else {
+        _consecutiveTimeouts = 0;
+      }
       if (decoded == null) {
         _consecutiveFailures++;
         return null;
@@ -483,24 +569,44 @@ class OffscreenVideoFrameGrabber {
     return image.clone();
   }
 
-  Future<ui.Image?> _grabViaFfmpeg(int targetMs) async {
+  /// 进入源暂停。[volumeStalled]：源所在的卷此刻卡着——等它恢复（卡住的 stat 返回）就
+  /// 自动解除，状态驱动、不靠定时重试；卷没卡（源可达、只是 ffmpeg 读不动）则本取帧器
+  /// 不再解除，否则就又是一轮 30 s 的超时风暴。
+  void _suspendSource({required bool volumeStalled}) {
+    if (_sourceSuspended || _disposed) return;
+    _sourceSuspended = true;
+    if (!volumeStalled) return;
+    unawaited(
+      _whenSourceRecovered(videoPath).then<void>((_) {
+        if (_disposed) return;
+        _sourceSuspended = false;
+        _consecutiveTimeouts = 0;
+      }, onError: (Object _) {}),
+    );
+  }
+
+  Future<ui.Image?> _grabViaFfmpeg(
+    int targetMs, {
+    required void Function() onTimedOut,
+  }) async {
     try {
       final String dir = ffmpegTempDir ?? Directory.systemTemp.path;
       final String outPath =
           '$dir/fushi_thumb_${identityHashCode(this)}_${_ffmpegSeq++}.jpg';
-      final String? produced = await extractVideoFrameViaFfmpeg(
+      final String? produced = await _frameExtractor(
         inputPath: _sourceUri(),
         outputPath: outPath,
         atSeconds: targetMs / 1000.0,
         // 缩放发生在编码之前：缩略图最终只显示 [thumbnailWidth] 宽，全尺寸编码 +
         // 落盘 + 读回 + 解码全是白花的钱。
         scaleWidth: thumbnailWidth,
+        onTimedOut: onTimedOut,
       );
       if (produced == null) return null;
       final File outFile = File(produced);
       final Uint8List bytes = await outFile.readAsBytes();
       try {
-        outFile.deleteSync();
+        await outFile.delete();
       } catch (_) {}
       if (bytes.isEmpty) return null;
       return await _decode(bytes);
@@ -560,4 +666,40 @@ class OffscreenVideoFrameGrabber {
       // ffmpeg 自身有 30s 上限；再等不到就不能无限阻塞迁移。
     }
   }
+}
+
+/// 缩略图取帧函数（[OffscreenVideoFrameGrabber] 注入点；测试换成假实现）。成功返回写出
+/// 的图片路径，失败 null；ffmpeg 跑满时限被杀时先调 [onTimedOut]。
+typedef ThumbnailFrameExtractor =
+    Future<String?> Function({
+      required String inputPath,
+      required String outputPath,
+      required double atSeconds,
+      required int scaleWidth,
+      required void Function() onTimedOut,
+    });
+
+Future<String?> _extractThumbnailFrameViaFfmpeg({
+  required String inputPath,
+  required String outputPath,
+  required double atSeconds,
+  required int scaleWidth,
+  required void Function() onTimedOut,
+}) => extractVideoFrameViaFfmpeg(
+  inputPath: inputPath,
+  outputPath: outputPath,
+  atSeconds: atSeconds,
+  scaleWidth: scaleWidth,
+  // 取帧器刚用有界探测确认过源在（[OffscreenVideoFrameGrabber.grab]）。
+  inputPresenceChecked: true,
+  onTimedOut: onTimedOut,
+);
+
+/// 默认源探测：远端 URL（本类不该收到，防御）直接当在；本地路径走有界异步探测。
+Future<MediaPathPresence> _probeSource(String videoPath) {
+  final Uri? uri = Uri.tryParse(videoPath);
+  if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
+    return Future<MediaPathPresence>.value(MediaPathPresence.present);
+  }
+  return probeVideoMember(videoPath);
 }

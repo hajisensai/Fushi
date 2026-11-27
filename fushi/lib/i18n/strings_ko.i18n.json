@@ -13693,6 +13693,7 @@
   "video_clip_export_ffmpeg_unavailable": "ffmpeg를 사용할 수 없습니다",
   "video_clip_export_host_outdated": "The paired host's Fushi is too old for clip export. Update Fushi on the host first",
   "video_clip_export_input_missing": "원본 비디오를 사용할 수 없습니다",
+  "video_clip_export_input_unavailable": "The video's drive isn't responding right now (network or cloud mount). Try again in a moment.",
   "video_clip_export_invalid_range": "유효한 클립 범위가 없습니다",
   "video_clip_export_output_missing": "내보낸 파일이 생성되지 않았습니다",
   "video_clip_export_remote_download_required": "클립을 내보내기 전에 원격 비디오를 이 기기로 다운로드하세요",

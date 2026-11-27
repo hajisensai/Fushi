@@ -272,7 +272,11 @@ Future<Uint8List> alignSubtitleForAutomaticPath(
   SubtitleReferenceTrackLoader loadReferences = loadEmbeddedReferenceTracks,
   Future<int?> Function(String videoPath) probeDurationMs = _probeDurationMs,
 }) async {
-  if (!hasLocalMediaFileSync(videoPath)) return subtitleBytes;
+  // BUG-5605：自动对轴在播放页挂字幕时跑在 UI isolate 上——有界异步探测，网络盘卡住
+  // 按「这次不对轴」原样返回，不在 UI 上同步 stat。
+  if (await probeLocalMediaFile(videoPath) != MediaPathPresence.present) {
+    return subtitleBytes;
+  }
   final EmbeddedReferenceSyncResult result =
       await syncSubtitleToEmbeddedReferences(
         subtitleBytes: subtitleBytes,

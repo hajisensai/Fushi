@@ -1033,7 +1033,9 @@ extension _VideoLookupMining on _VideoFushiPageState {
                 audioChannels: ac,
                 audioBitrate: bitrate,
               );
-              if (dest.existsSync() && dest.lengthSync() > 0) return dest.path;
+              if (await dest.exists() && await dest.length() > 0) {
+                return dest.path;
+              }
             } catch (e, st) {
               // 老 host 无端点(404)/网络失败：记录并回 null，让引擎回退直连 ffmpeg 抽取。
               ErrorLogService.instance.log(
@@ -1042,11 +1044,9 @@ extension _VideoLookupMining on _VideoFushiPageState {
                 st,
               );
             }
-            if (dest.existsSync()) {
-              try {
-                dest.deleteSync();
-              } catch (_) {}
-            }
+            try {
+              if (await dest.exists()) await dest.delete();
+            } catch (_) {}
             return null;
           };
     }

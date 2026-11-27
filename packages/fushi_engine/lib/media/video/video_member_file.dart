@@ -43,6 +43,10 @@ import 'package:fushi_engine/media/video/disc/disc_format.dart'
     show discMemberBackingFilePath;
 import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart'
     show isDvdTitlePath;
+import 'package:fushi_engine/media/video/media_path_probe.dart';
+
+export 'package:fushi_engine/media/video/media_path_probe.dart'
+    show MediaPathPresence, kMediaPathProbeTimeout;
 import 'package:fushi_engine/media/video/strm_file.dart'
     show lacksLocalMediaFile;
 
@@ -61,6 +65,32 @@ bool videoMemberExistsSync(String videoPath) {
 Future<bool> videoMemberExists(String videoPath) async {
   if (videoPath.isEmpty) return false;
   return File(videoMemberPresencePath(videoPath)).exists();
+}
+
+/// [videoMemberExists] 的有界三态版（BUG-5605）：UI isolate 上的播放 / 缩略图 / 制卡路径
+/// 用它。库条目常在网络盘上，卷卡住时答 [MediaPathPresence.unavailable]，调用方按「暂不
+/// 可用」处理，不当成文件丢失（见 `media_path_probe.dart`）。
+Future<MediaPathPresence> probeVideoMember(
+  String videoPath, {
+  Duration timeout = kMediaPathProbeTimeout,
+}) {
+  if (videoPath.isEmpty) {
+    return Future<MediaPathPresence>.value(MediaPathPresence.missing);
+  }
+  return probeMediaPath(videoMemberPresencePath(videoPath), timeout: timeout);
+}
+
+/// [hasLocalMediaFile] 的有界三态版（BUG-5605）。没有本机媒体字节的路径（网络流、
+/// `.strm`）恒 [MediaPathPresence.missing]，不碰文件系统。
+Future<MediaPathPresence> probeLocalMediaFile(
+  String videoPath, {
+  Duration timeout = kMediaPathProbeTimeout,
+}) {
+  final String? backing = _mediaBackingPath(videoPath);
+  if (backing == null) {
+    return Future<MediaPathPresence>.value(MediaPathPresence.missing);
+  }
+  return probeMediaPath(backing, timeout: timeout);
 }
 
 /// [videoPath] 这个路径本身是不是磁盘上的一个文件（见文件头第 4 种问法）：DVD title

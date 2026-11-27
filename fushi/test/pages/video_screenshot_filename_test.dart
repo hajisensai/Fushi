@@ -61,7 +61,7 @@ void main() {
   });
 
   group('uniqueVideoScreenshotBaseName', () {
-    test('已存在同名时追加递增计数后缀（同一视频同一播放秒连点截图靠这层兜唯一）', () {
+    test('已存在同名时追加递增计数后缀（同一视频同一播放秒连点截图靠这层兜唯一）', () async {
       const String desired = 'episode 01_00-01-30.jpg';
       final Set<String> existing = <String>{
         desired,
@@ -69,7 +69,7 @@ void main() {
       };
 
       expect(
-        uniqueVideoScreenshotBaseName(desired, exists: existing.contains),
+        await uniqueVideoScreenshotBaseName(desired, exists: existing.contains),
         'episode 01_00-01-30 (3).jpg',
       );
     });

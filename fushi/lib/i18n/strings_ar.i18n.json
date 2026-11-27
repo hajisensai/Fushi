@@ -13693,6 +13693,7 @@
   "video_clip_export_ffmpeg_unavailable": "ffmpeg غير متاح",
   "video_clip_export_host_outdated": "The paired host's Fushi is too old for clip export. Update Fushi on the host first",
   "video_clip_export_input_missing": "الفيديو المصدر غير متاح",
+  "video_clip_export_input_unavailable": "The video's drive isn't responding right now (network or cloud mount). Try again in a moment.",
   "video_clip_export_invalid_range": "لا يوجد نطاق مقطع صالح",
   "video_clip_export_output_missing": "لم يُنشأ أي ملف إخراج",
   "video_clip_export_remote_download_required": "نزّل الفيديو البعيد إلى هذا الجهاز قبل تصدير مقطع",

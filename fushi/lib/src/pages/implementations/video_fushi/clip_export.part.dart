@@ -464,7 +464,7 @@ extension _VideoClipExport on _VideoFushiPageState {
           detail: '$e',
         );
       }
-      if (!source.existsSync() || source.lengthSync() == 0) {
+      if (!await source.exists() || await source.length() == 0) {
         return const VideoClipExportResult.failure(
           VideoClipExportFailure.remoteSourceFailed,
         );
@@ -562,6 +562,8 @@ extension _VideoClipExport on _VideoFushiPageState {
         return t.video_clip_export_invalid_range;
       case VideoClipExportFailure.inputMissing:
         return t.video_clip_export_input_missing;
+      case VideoClipExportFailure.inputUnavailable:
+        return t.video_clip_export_input_unavailable;
       case VideoClipExportFailure.ffmpegUnavailable:
         return t.video_clip_export_ffmpeg_unavailable;
       case VideoClipExportFailure.ffmpegFailed:
@@ -745,9 +747,10 @@ extension _VideoClipExport on _VideoFushiPageState {
     try {
       final Directory dir = Directory(directory);
       if (!await dir.exists()) await dir.create(recursive: true);
-      final String finalPath = uniqueVideoScreenshotPath(
+      // 截图目录可以是用户选的网络盘：重名判定走异步 stat，不在 UI isolate 上同步等。
+      final String finalPath = await uniqueVideoScreenshotPath(
         p.join(directory, screenshotName),
-        exists: (String path) => File(path).existsSync(),
+        exists: (String path) => File(path).exists(),
       );
       await File(finalPath).writeAsBytes(bytes);
       if (!mounted) return;
@@ -776,9 +779,9 @@ extension _VideoClipExport on _VideoFushiPageState {
         Platform.isWindows || Platform.isMacOS || Platform.isLinux;
     try {
       final Directory tmpDir = await getTemporaryDirectory();
-      final String uniqueName = uniqueVideoScreenshotBaseName(
+      final String uniqueName = await uniqueVideoScreenshotBaseName(
         screenshotName,
-        exists: (String name) => File(p.join(tmpDir.path, name)).existsSync(),
+        exists: (String name) => File(p.join(tmpDir.path, name)).exists(),
       );
       tmp = File(p.join(tmpDir.path, uniqueName));
       await tmp.writeAsBytes(bytes);
@@ -790,7 +793,7 @@ extension _VideoClipExport on _VideoFushiPageState {
           allowedExtensions: <String>[extension],
         );
         if (savePath != null) {
-          final String finalPath = _uniqueScreenshotSavePath(
+          final String finalPath = await _uniqueScreenshotSavePath(
             savePath,
             extension: extension,
           );
@@ -841,7 +844,7 @@ extension _VideoClipExport on _VideoFushiPageState {
     return title ?? 'video';
   }
 
-  String _uniqueScreenshotSavePath(
+  Future<String> _uniqueScreenshotSavePath(
     String savePath, {
     String extension = 'jpg',
   }) {
@@ -850,7 +853,7 @@ extension _VideoClipExport on _VideoFushiPageState {
         : savePath;
     return uniqueVideoScreenshotPath(
       desiredPath,
-      exists: (String path) => File(path).existsSync(),
+      exists: (String path) => File(path).exists(),
     );
   }
 
