@@ -245,6 +245,10 @@ extension _VideoLookupMining on _VideoFushiPageState {
           // 时用副轨生效轴，否则副轨独立调轴后锚错句）。
           delayMs: controller.miningDelayMs,
         );
+    // 拍板台 lmJyeqpCaO：锚点是「无字幕时间」猜出的区间时，区间本身就是要裁的那段
+    // （人声检测已按余量外扩、固定窗口就是用户选的长度），不再按字幕邻句加余量；封面
+    // 「字幕开头」帧取查词那一刻——画面上的字就是那时显示的。
+    final _UntimedAudioAnchor? untimed = _untimedAudioAnchorFor(cue);
     // 草稿全部句 + 当前查词句合成 sentence（草稿空 → 单句 _lastLookupSentence trim）。
     final String mergedSentence = _miningDraft.composeText(_lastLookupSentence);
     // 草稿全部句区间 + 当前 cue 区间合并成首句起→末句止（草稿空 → 单 cue 区间）。
@@ -270,7 +274,9 @@ extension _VideoLookupMining on _VideoFushiPageState {
     // 之后再整体逆变换回播放器轴（先 pad 再 shift，与有声书链同序）。非正区间（无
     // cue → `0..0`）不 pad——那是下游「不抽媒体」的哨兵，pad 了会把哨兵变成真区间。
     final AudioPlaybackRange? paddedRange =
-        (mergedRange == null || mergedRange.endMs <= mergedRange.startMs)
+        (mergedRange == null ||
+            mergedRange.endMs <= mergedRange.startMs ||
+            untimed != null)
         ? mergedRange
         : padSentenceRange(
             mergedRange,
@@ -288,7 +294,9 @@ extension _VideoLookupMining on _VideoFushiPageState {
       // BUG-3319：没有任何区间（无 cue、草稿空）时锚在**当前播放位置**（已是播放器轴，
       // 不再逆变换），与 [_mineVideoCard] 的 `sourceStartMs` 同一口径——以前落 0，静帧
       // 抽的是片头黑帧。
-      stillFrameAtMs: mergedRange == null
+      stillFrameAtMs: untimed != null
+          ? untimed.lookupPositionMs
+          : mergedRange == null
           ? (controller.positionMs ?? 0)
           : miningClipTimeMs(mergedRange.startMs, clipDelayMs),
       // 多句时 cueSentence 用合并文本与 sentence 一致；草稿空时退回单 cue 文本作 fallback。
@@ -324,6 +332,14 @@ extension _VideoLookupMining on _VideoFushiPageState {
     final MiningRequestOverrides? overrides = MiningRequestOverrides.readFrom(
       fields,
     );
+    // 拍板台 lmJyeqpCaO：「无字幕时间」的人声检测还没跑完就等它（只在真在跑时 await，
+    // 已完成时不让出事件循环——高级制卡回点「+」要求上面那段同步读完后立刻用上）。
+    if (_untimedSentenceAudioPending) {
+      await _settleUntimedSentenceAudio();
+      if (!mounted || !identical(_controller, controller)) {
+        return const MinePopupResult();
+      }
+    }
     final ({
       int clipStartMs,
       int clipEndMs,
@@ -337,6 +353,14 @@ extension _VideoLookupMining on _VideoFushiPageState {
     );
     final String queuedEpisode = _playingEpisodeScope;
     final AudioCue? historyCue = _lastLookupCue;
+    // 快速制卡（没进高级制卡）用了猜出的区间：提示一次是怎么截的。高级制卡里已经
+    // 看过「来源」小字、也可能改过区间，不再弹。
+    final _UntimedAudioAnchor? untimedAnchor = overrides == null
+        ? _untimedAudioAnchorFor(historyCue)
+        : null;
+    if (untimedAnchor != null && range.clipEndMs > range.clipStartMs) {
+      _noticeUntimedSentenceAudio(untimedAnchor);
+    }
     // 制卡历史的回跳锚点按句子所属那一行的时间轴记（原盘「全部播放」= 那一集，
     // BUG-5356），与收藏句同一口径。
     final ({String bookUid, int ms})? historyAnchor = historyCue == null
@@ -423,6 +447,12 @@ extension _VideoLookupMining on _VideoFushiPageState {
     final MiningRequestOverrides? overrides = MiningRequestOverrides.readFrom(
       fields,
     );
+    if (_untimedSentenceAudioPending) {
+      await _settleUntimedSentenceAudio();
+      if (!mounted || !identical(_controller, controller)) {
+        return const MinePopupResult();
+      }
+    }
     final ({
       int clipStartMs,
       int clipEndMs,

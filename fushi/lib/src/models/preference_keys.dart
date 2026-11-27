@@ -670,6 +670,12 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 制卡单词音频的 TTS 兜底声音。值可能指向本机声音预设，与 tts_active_preset_id
   // 同族：设备本地（deviceLocalPrefKeys），不进 Profile 快照 / 备份 / 同步。
   'mining_tts_fallback_voice',
+  // String（UntimedSentenceAudioMode.wireName：'off' 默认 / 'fixed_window' /
+  // 'voice_detection'）：没有字幕时间（无字幕轨视频的画面 OCR 查词）时句子音频怎么截
+  // （拍板台 lmJyeqpCaO）。
+  'mining_untimed_audio_mode',
+  // int（毫秒，2000..15000，默认 6000）：上面那项的固定窗口长度 / 人声检测最长上限。
+  'mining_untimed_audio_window_ms',
   'module_books_enabled',
   'module_browser_extension_enabled',
   'module_dictionaries_enabled',

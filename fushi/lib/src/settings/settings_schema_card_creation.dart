@@ -536,6 +536,18 @@ SettingsDestination _buildAnkiPanel(AnkiSettingsPanel panel, String title) {
           subtitle: t.mining_audio_tail_pad_hint,
         ),
         SettingsBodySearchEntry(
+          id: 'card_creation.anki.mining_untimed_audio',
+          hasRevealTarget: true,
+          title: t.mining_untimed_audio,
+          subtitle: t.mining_untimed_audio_hint,
+        ),
+        SettingsBodySearchEntry(
+          id: 'card_creation.anki.mining_untimed_audio_window',
+          hasRevealTarget: true,
+          title: t.mining_untimed_audio_window,
+          subtitle: t.mining_untimed_audio_window_hint,
+        ),
+        SettingsBodySearchEntry(
           id: 'card_creation.anki.mining_audio_follow_playback_speed',
           hasRevealTarget: true,
           title: t.mining_audio_follow_playback_speed,

@@ -287,6 +287,7 @@ class AdvancedMiningAudioSection {
     this.nudgeStepMs = kAdvancedMiningAudioNudgeStepDefaultMs,
     this.onNudgeStepChanged,
     this.sources,
+    this.originNote,
   });
 
   /// 当前会写进卡片的区间；null = 这句没有可用音频（对话框显示「无音频」，不给微调）。
@@ -317,6 +318,10 @@ class AdvancedMiningAudioSection {
 
   /// 句子音频来源的临时切换（视频，反馈 pNF2ZL7Kfc）；null = 这个页面不给选。
   final AdvancedMiningAudioSources? sources;
+
+  /// 区间不是字幕给的、是猜出来的时，告诉用户怎么来的那一行小字（拍板台 lmJyeqpCaO：
+  /// 无字幕轨视频按人声检测 / 固定窗口截取）。null = 区间来自字幕，不显示。
+  final String? originNote;
 }
 
 /// 句子音频来源的可选项（只对这一张卡生效，不改设置）。

@@ -644,6 +644,7 @@ import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/mining/immersion_mining_engine.dart';
 import 'package:fushi/src/mining/mining_image_mode_target.dart';
 import 'package:fushi/src/mining/video_online_mining_mode.dart';
+import 'package:fushi/src/mining/untimed_sentence_audio.dart';
 import 'package:fushi_engine/mining/sentence_audio_source.dart'
     show SentenceAudioSourcePick;
 import 'package:fushi/src/media/video/video_pause_ocr_scope.dart';
@@ -13718,6 +13719,15 @@ class AppModel
   void setMiningAudioHeadPadMs(int ms) => prefsRepo.setMiningAudioHeadPadMs(ms);
   int get miningAudioTailPadMs => prefsRepo.miningAudioTailPadMs;
   void setMiningAudioTailPadMs(int ms) => prefsRepo.setMiningAudioTailPadMs(ms);
+
+  /// 没有字幕时间时的句子音频（拍板台 lmJyeqpCaO），视频画面 OCR 制卡读。
+  UntimedSentenceAudioMode get miningUntimedAudioMode =>
+      prefsRepo.miningUntimedAudioMode;
+  Future<void> setMiningUntimedAudioMode(UntimedSentenceAudioMode mode) =>
+      prefsRepo.setMiningUntimedAudioMode(mode);
+  int get miningUntimedAudioWindowMs => prefsRepo.miningUntimedAudioWindowMs;
+  Future<void> setMiningUntimedAudioWindowMs(int ms) =>
+      prefsRepo.setMiningUntimedAudioWindowMs(ms);
 
   /// 有声书倍速制卡：句子音频跟随播放倍速（默认开）。
   bool get miningAudioFollowPlaybackSpeed =>
