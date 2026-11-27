@@ -38,6 +38,7 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-5590](bugs/BUG-5590-srs-donation-status-device-local-mirror.md) | ✅ | ✅ | srs-donation-status-device-local-mirror |
+| [BUG-5589](bugs/BUG-5589-music-mv-auto-match-stalls.md) | ✅ | ✅ | 本地 MV 自动匹配停在几首整片音轨上，CD 曲目一首没对过 |
 | [BUG-5588](bugs/BUG-5588-notarize-poll-network-blip-drops-submission.md) | ✅ | ✅ | notarize-poll-network-blip-drops-submission |
 | [BUG-5587](bugs/BUG-5587-landscape-phone-detail-hero.md) | ✅ | ✅ | 横屏手机：详情页背景带占七成高度，标题与主按钮被挤出首屏 |
 | [BUG-5586](bugs/BUG-5586-landscape-phone-chrome.md) | ✅ | ✅ | 横屏手机：外壳按宽取档给了桌面页头 / 展开侧栏，快捷键页工具区挤没列表 |
