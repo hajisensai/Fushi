@@ -133,15 +133,17 @@ void main() {
       },
     );
 
-    test('_loadShelfMaps 用 getAllCollectionItems，不再逐合集 getCollectionItems', () {
+    test('_loadShelfMaps 一次查书架种类的成员，不再逐合集 getCollectionItems', () {
       final String body = chainBody(historyPageSrc, <String>[
         'Future<void> _loadShelfMaps() async {',
         'Future<void> _loadShelfMapsInner(int requestGeneration) async {',
       ]);
       expect(
-        body.contains('getAllCollectionItems()'),
+        body.contains('getCollectionItemsOfKinds(shelfKinds)'),
         isTrue,
-        reason: '书架页合集分组必须一次查全部成员（BUG-959）。',
+        reason:
+            '书架页合集分组必须一次查全部书 / 字幕书成员（BUG-959），且不读别的'
+            '种类：媒体服务器镜像的视频成员可达数万行（BUG-5589）。',
       );
       expect(
         body.contains('getCollectionItems('),

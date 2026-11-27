@@ -615,8 +615,17 @@ class VideoBookRepository {
   /// 合集子篇 → 所属多成员合集 id：属于任一**成员数 ≥2** 合集的视频条目。自动
   /// 刮削据此对子篇**不落作品级海报**、并把海报改落到这个 collectionId 上（判据
   /// 与理由见 [multiMemberCollectionIdByVideoUid]）。
-  Future<Map<String, int>> multiMemberCollectionIds() async =>
-      multiMemberCollectionIdByVideoUid(await _db.getAllCollectionItems());
+  ///
+  /// 只覆盖库内视频（调用方只按 `video_books` 行问）：给了 [forVideos] 时只算这几部
+  /// 所在的合集，否则算含库内视频的全部合集。不读整张成员表——媒体服务器镜像的
+  /// 播放列表成员可达数万行，自动封面刮削一本一问，从前每本都整表读一次。
+  Future<Map<String, int>> multiMemberCollectionIds({
+    Iterable<String>? forVideos,
+  }) async => multiMemberCollectionIdByVideoUid(
+    forVideos == null
+        ? await _db.getCollectionItemsOfLibraryVideos()
+        : await _db.getCollectionItemsOfVideos(forVideos),
+  );
 
   /// 统一合集：写合集**自有**封面绝对路径（`MediaCollections.coverPath`）。
   /// 作品级竖版海报的唯一归宿（用户 2026-08-02）。

@@ -81,7 +81,9 @@ bool videoBookJoinsScrapePlan(VideoBookRow book) =>
     !isYtDlpYoutubeDownloadPath(book.videoPath) &&
     !isDiscStreamFilePath(book.videoPath);
 
-/// [VideoSourceWorkPlanner.plan] 要读的三张整表的一次性快照。
+/// [VideoSourceWorkPlanner.plan] 要读的三张表的一次性快照。合集与成员只取含库内
+/// 视频的那些（[FushiDatabase.getCollectionItemsOfLibraryVideos]）：计划只为库内
+/// 视频归组，别的合集（媒体服务器镜像的播放列表）贡献不了任何一条。
 ///
 /// 计划只按 `sourceId` 过滤、按合集归组，三张表与来源无关；一轮里要规划多个
 /// 来源的调用方（后台补刮的待确认清单）读一次、每个来源复用，而不是每个来源
@@ -100,8 +102,8 @@ class VideoLibraryPlanSnapshot {
   static Future<VideoLibraryPlanSnapshot> load(FushiDatabase database) async =>
       VideoLibraryPlanSnapshot(
         books: await database.allVideoBooks(),
-        collectionItems: await database.getAllCollectionItems(),
-        collections: await database.getAllMediaCollections(),
+        collectionItems: await database.getCollectionItemsOfLibraryVideos(),
+        collections: await database.getCollectionsOfLibraryVideos(),
       );
 }
 
@@ -136,10 +138,12 @@ class VideoSourceWorkPlanner {
     );
 
     final List<MediaCollectionItemRow> allItems =
-        snapshot?.collectionItems ?? await _database.getAllCollectionItems();
+        snapshot?.collectionItems ??
+        await _database.getCollectionItemsOfLibraryVideos();
     final Map<int, MediaCollectionRow> collections = <int, MediaCollectionRow>{
       for (final MediaCollectionRow row
-          in snapshot?.collections ?? await _database.getAllMediaCollections())
+          in snapshot?.collections ??
+              await _database.getCollectionsOfLibraryVideos())
         row.id: row,
     };
     // 目录合集是用户组织容器，切回作品模式后仍保留，但不能充当动画身份。

@@ -15,7 +15,6 @@ import 'package:vm_service/vm_service.dart' as vm;
 
 import 'helpers/library_fixture.dart';
 import 'support/test_app_launcher.dart';
-import 'test_helpers.dart';
 
 /// 顶层 tab 切换耗时探针（本地测速用，profile 构建跑）。
 ///
@@ -47,10 +46,23 @@ void main() {
 
   testWidgets('home tab switch timing', (WidgetTester tester) async {
     await launchFushiTestApp();
-    expect(await waitForHome(tester), isTrue);
+    // 不用 waitForHome：它只认 Material / Cupertino 导航根，玻璃设计的真实库认不出。
+    expect(await _waitForHomePage(tester), isTrue);
     final AppModel appModel = await readyAppModel(tester);
     binding.framePolicy = LiveTestWidgetsFlutterBindingFramePolicy.fullyLive;
-    await _wait(3000);
+    // 首页出来后先空等多久再开切（默认 3 s）。量「刚启动就切」用 0，与等 30 s
+    // 对照，分得清首切慢是「各页首次挂载本身贵」还是「启动后台活抢 UI 线程」。
+    const int warmupMs = int.fromEnvironment(
+      'FUSHI_PERF_WARMUP_MS',
+      defaultValue: 3000,
+    );
+    // 不切页、只看 UI 线程：首页出来后的这段时间里事件循环被堵了多少次、多久。
+    const int idleProbeMs = int.fromEnvironment('FUSHI_PERF_IDLE_PROBE_MS');
+    if (idleProbeMs > 0) {
+      await _idleProbe(binding, idleProbeMs);
+      if (const bool.fromEnvironment('FUSHI_PERF_IDLE_ONLY')) return;
+    }
+    await _wait(warmupMs);
 
     // `HomePage.debugSelectTab` 只在 debug 构建注册（assert）；profile 下走生产
     // 的共享 notifier，它同样落到 `_selectTab`（`_onShellTabRequested`）。
@@ -93,6 +105,68 @@ void main() {
     }
     debugPrint('[tab-perf] done');
   });
+}
+
+/// 首页出来后不做任何操作，按 1 s 分桶报 UI 线程被堵的次数与最长一次。
+Future<void> _idleProbe(
+  IntegrationTestWidgetsFlutterBinding binding,
+  int totalMs,
+) async {
+  // 可选：从第几毫秒起录一段 1.5 s 的 GC + Dart timeline，看堵塞是谁。
+  const int traceAt = int.fromEnvironment(
+    'FUSHI_PERF_IDLE_TRACE_AT_MS',
+    defaultValue: -1,
+  );
+  final int origin = developer.Timeline.now;
+  final List<({int at, int late})> stalls = <({int at, int late})>[];
+  int lastBeat = origin;
+  final Timer watchdog = Timer.periodic(const Duration(milliseconds: 2), (_) {
+    final int now = developer.Timeline.now;
+    if (now - lastBeat > 20000) {
+      stalls.add((at: lastBeat - origin, late: now - lastBeat));
+    }
+    lastBeat = now;
+  });
+  if (traceAt >= 0 && traceAt + 1500 < totalMs) {
+    await _wait(traceAt);
+    final vm.Timeline timeline = await binding.traceTimeline(
+      () => _wait(1500),
+      streams: const <String>['Dart', 'GC', 'API', 'Isolate'],
+    );
+    _printLongEvents('idle-trace', timeline);
+    _printGc('idle-trace', timeline);
+    const String dump = String.fromEnvironment('FUSHI_PERF_DUMP');
+    if (dump.isNotEmpty) {
+      File('$dump/idle.json').writeAsStringSync(jsonEncode(timeline.toJson()));
+    }
+    await _wait(totalMs - traceAt - 1500);
+  } else {
+    await _wait(totalMs);
+  }
+  watchdog.cancel();
+  final Map<int, List<int>> buckets = <int, List<int>>{};
+  for (final ({int at, int late}) s in stalls) {
+    (buckets[s.at ~/ 1000000] ??= <int>[]).add(s.late);
+  }
+  for (final int sec in buckets.keys.toList()..sort()) {
+    final List<int> l = buckets[sec]!;
+    final int total = l.fold(0, (int a, int b) => a + b);
+    final int max = l.reduce((int a, int b) => a > b ? a : b);
+    debugPrint(
+      '[tab-perf] idle t=${sec}s stalls=${l.length} '
+      'total=${_f(total / 1000)}ms max=${_f(max / 1000)}ms',
+    );
+  }
+  debugPrint('[tab-perf] idle done stalls=${stalls.length}');
+}
+
+/// 等首页（[HomePage]）挂载，与设计系统无关。
+Future<bool> _waitForHomePage(WidgetTester tester) async {
+  for (int i = 0; i < 180; i++) {
+    await tester.pump(const Duration(milliseconds: 100));
+    if (find.byType(HomePage).evaluate().isNotEmpty) return true;
+  }
+  return false;
 }
 
 Future<void> _wait(int ms) => Future<void>.delayed(Duration(milliseconds: ms));
@@ -198,6 +272,49 @@ void _printFrames(String label, List<FrameTiming> timings, int origin) {
     'maxBuild=${_f(maxBuild)} maxRaster=${_f(maxRaster)} '
     'maxGap=${_f(maxGap)} slow:$slow',
   );
+}
+
+/// GC 事件按名字与线程汇总（次数 / 总时长 / 最长）。
+void _printGc(String label, vm.Timeline timeline) {
+  final Map<String, List<double>> byName = <String, List<double>>{};
+  final Map<String, String> threadNames = <String, String>{};
+  final Map<String, List<Map<String, dynamic>>> stacks =
+      <String, List<Map<String, dynamic>>>{};
+  for (final vm.TimelineEvent ev
+      in timeline.traceEvents ?? <vm.TimelineEvent>[]) {
+    final Map<String, dynamic> e = ev.json ?? <String, dynamic>{};
+    final String tid = '${e['tid']}';
+    final String ph = '${e['ph']}';
+    if (ph == 'M' && e['name'] == 'thread_name') {
+      final Object? args = e['args'];
+      if (args is Map) threadNames[tid] = '${args['name']}';
+      continue;
+    }
+    if (e['cat'] != 'GC') continue;
+    double? ms;
+    if (ph == 'X') {
+      ms = ((e['dur'] as int?) ?? 0) / 1000;
+    } else if (ph == 'B') {
+      (stacks[tid] ??= <Map<String, dynamic>>[]).add(e);
+    } else if (ph == 'E') {
+      final List<Map<String, dynamic>>? st = stacks[tid];
+      if (st != null && st.isNotEmpty) {
+        final Map<String, dynamic> b = st.removeLast();
+        ms = ((e['ts'] as int) - (b['ts'] as int)) / 1000;
+        e['name'] = b['name'];
+      }
+    }
+    if (ms == null) continue;
+    (byName['${e['name']} @${threadNames[tid] ?? tid}'] ??= <double>[]).add(ms);
+  }
+  for (final MapEntry<String, List<double>> m in byName.entries) {
+    final double total = m.value.fold(0, (double a, double b) => a + b);
+    final double max = m.value.reduce((double a, double b) => a > b ? a : b);
+    debugPrint(
+      '[tab-perf] $label gc ${m.key} n=${m.value.length} '
+      'total=${_f(total)}ms max=${_f(max)}ms',
+    );
+  }
 }
 
 /// UI / raster 线程上最长的同步事件（B/E 配对 + X 完整事件），按时长取前若干条。
