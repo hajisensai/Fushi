@@ -282,6 +282,8 @@ library_organize_changes(id, runId, kind 'create'|'add'|'merge'|'evict'|'tag',
 
 此外加一条**不依赖 AI 的重叠规则**：同域两个 `ai` / `rule` 合集共享的成员（按 wire 成员键比较）≥ 较小一方成员数的一半，直接按 §8.4 合并。这条覆盖两端用同一批书、只是键不同的常见情况，不需要等下一次 AI 运行。
 
+**无键用户合集按名字认亲**（[BUG-5597](../bugs/BUG-5597-collection-ghost-duplicate.md)，2026-11-27）：没有 `organizeKey` 的 `user` 合集，按「名字 + wire 成员域」推出标题键（`titleOrganizeKey`，书 / 漫画在 wire 上同为 `epub`，两个域都推）；某个 `ai` / `rule` 合集的键或别名命中它、同域、且两者成员重叠过半，就连进同一组，整理器合集并进这个用户合集（用户合集照常当胜方，并入后吸收分组键）。只在用户合集与整理器合集之间连：两个同名无键用户合集不凭名字相连，名字是系列名但成员不重叠的用户合集也不动。起因：一端用户手建「薬屋のひとりごと」合集、另一端规则归组器给同一批书建了同名 playlist，同步后两张同成员的合集并存、永不收敛。
+
 ### 8.4 收敛规整：一个确定性纯函数
 
 `convergeOrganizedCollections(CollectionManifest m)` 在两处运行：每次 `CollectionSyncEngine.merge` / `combinePeers` 之后，以及每次本地整理落盘之后。它只读清单里的 wire 字段，不读墙钟、不读本地库、不问 AI。
