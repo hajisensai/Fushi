@@ -224,4 +224,20 @@ void main() {
       expect(b[name], a[name], reason: '条目 $name');
     }
   });
+
+  // 反馈 wo-JxHl6hI：捐赠页的预览要整库读笔记修改记录 + 全部卡的血统与日志，曾在 UI isolate 上跑（安卓 ANR）。
+  test('捐赠预览：后台 isolate 与当前 isolate 算出的预览相同', () async {
+    final SrsDonationPreview here = await previewSrsDonation(store: s);
+    final SrsDonationPreview bg = await previewSrsDonationInBackground(
+      store: s,
+    );
+    expect(here.reviewCount, greaterThan(0), reason: '夹具要有复习，否则比较无意义');
+    expect(bg.reviewCount, here.reviewCount);
+    expect(bg.cardCount, here.cardCount);
+    expect(bg.noteCount, here.noteCount);
+    expect(bg.firstReviewAt, here.firstReviewAt);
+    String word(SrsDonationWord w) => '${w.noteId}|${w.headword}|${w.reading}';
+    expect(bg.words.map(word).toList(), here.words.map(word).toList());
+    expect(here.words, isNotEmpty);
+  });
 }
