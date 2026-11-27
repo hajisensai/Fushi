@@ -47,6 +47,7 @@
 |---|:--:|:--:|---|
 | [BUG-5571](bugs/BUG-5571-diag-log-trim-on-every-append-freezes-ui.md) | ✅ | ✅ | diag-log-trim-on-every-append-freezes-ui |
 | [BUG-5568](bugs/BUG-5568-windows-hang-dump-dart-frames-unsymbolizable.md) | ✅ | ✅ | windows-hang-dump-dart-frames-unsymbolizable |
+| [BUG-5550](bugs/BUG-5550-gal-tts-loopback-slice-not-voice-evidence.md) | ✅ | ✅ | galgame 自动朗读「仅无原声的句子」在系统 loopback 会话里一句都不读 |
 | [BUG-5548](bugs/BUG-5548-apple-sidebar-scope-rebuilds-hidden-library-pages.md) | ✅ | ✅ | Apple 宽窗侧栏外壳切 tab 后紧跟一帧：所有访问过的保活库页（含藏起的）整页重建 |
 | [BUG-5547](bugs/BUG-5547-srs-rules7-full-rebuild-killed-loop.md) | ✅ | ✅ | 升级到缓存口径 7 后复习一直在加载：开库整层重建几分钟、切后台被杀就回滚重来 |
 | [BUG-5546](bugs/BUG-5546-curator-auto-retries-ai-failures.md) | ✅ | ✅ | AI 库管家默认开、书架每次重载就跑一趟，额度用完还逐个单元问 AI、下一趟再问一遍 |

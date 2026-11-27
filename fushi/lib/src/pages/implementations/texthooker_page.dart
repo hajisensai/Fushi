@@ -5767,7 +5767,10 @@ class _LineAudioChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // 语义化 reason 优先于通用状态：无配音是常态不是故障；超长切片是可疑不是正常。
-    if (status == TexthookerLineAudioStatus.missing &&
+    // loopback 兜底切片经人声检测判定无人声（BUG-5550）时状态仍是 fallback（切片照样
+    // 留着可入卡），但对用户说的是同一件事：这句没配音。
+    if ((status == TexthookerLineAudioStatus.missing ||
+            status == TexthookerLineAudioStatus.fallback) &&
         fallbackReason == kGalLineNoVoiceReason) {
       return _chip(t.game_line_audio_no_voice, FushiTagTone.neutral);
     }
