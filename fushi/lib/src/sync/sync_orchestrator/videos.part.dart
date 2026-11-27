@@ -279,7 +279,7 @@ extension _SyncOrchestratorVideos on SyncOrchestrator {
           }
         }
       } catch (e) {
-        report.noteError('live video playback "$uid"', e);
+        _noteDimensionError(report, 'live video playback "$uid"', e);
       }
     }
   }
@@ -498,7 +498,7 @@ extension _SyncOrchestratorVideos on SyncOrchestrator {
           report.videosExported++;
           videoOk = true;
         } catch (e) {
-          report.noteError('live push video "${v.title}"', e);
+          _noteDimensionError(report, 'live push video "${v.title}"', e);
         }
       }
       // 字幕跟着视频走：视频本轮失败就不推字幕（host 侧无行可挂）。
@@ -547,7 +547,11 @@ extension _SyncOrchestratorVideos on SyncOrchestrator {
         );
         if (!supported) return false;
       } catch (e) {
-        report.noteError('live push subtitle "${p.basename(sub.path)}"', e);
+        _noteDimensionError(
+          report,
+          'live push subtitle "${p.basename(sub.path)}"',
+          e,
+        );
       }
     }
     return true;

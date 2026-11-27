@@ -127,7 +127,7 @@ extension _SyncOrchestratorAudiobooks on SyncOrchestrator {
           );
         }
       } catch (e) {
-        report.noteError('live audiobook delay "$identity"', e);
+        _noteDimensionError(report, 'live audiobook delay "$identity"', e);
       }
     }
   }
@@ -298,7 +298,7 @@ extension _SyncOrchestratorAudiobooks on SyncOrchestrator {
         );
         report.audiobooksExported++;
       } catch (e) {
-        report.noteError('live push audiobook "$key"', e);
+        _noteDimensionError(report, 'live push audiobook "$key"', e);
       } finally {
         _safeDelete(tmp);
       }
@@ -399,7 +399,7 @@ extension _SyncOrchestratorAudiobooks on SyncOrchestrator {
           }
           report.audiobooksImported++;
         } catch (e) {
-          report.noteError('live pull audiobook "$key"', e);
+          _noteDimensionError(report, 'live pull audiobook "$key"', e);
         }
         index++;
       }

@@ -11,6 +11,7 @@ library;
 
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:fushi/src/sync/sync_activity.dart';
+import 'package:fushi/src/sync/sync_failure.dart';
 import 'package:fushi/src/sync/sync_module_gate.dart';
 import 'package:fushi/src/sync/sync_progress.dart';
 import 'package:fushi_engine/sync/sync_channel_scope.dart';
@@ -33,10 +34,13 @@ final ValueNotifier<SyncActivity?> syncActivity = ValueNotifier<SyncActivity?>(
 /// 一轮同步里记下的一条失败。
 @immutable
 class SyncTaskError {
-  const SyncTaskError({required this.message, this.phase, this.itemKind});
+  const SyncTaskError({required this.failure, this.phase, this.itemKind});
+
+  /// 这条失败的结构化形态（维度 / 原因），面板据此本地化与合并同因（反馈 L60rttoC0U）。
+  final SyncFailure failure;
 
   /// 报告里的那一行原文（`<维度/条目>: <异常>`，与 `SyncRunReport.errors` 逐字相同）。
-  final String message;
+  String get message => failure.message;
 
   /// 出错时这一轮所处的阶段（单本 / 合集这类无阶段的路径为 null）。
   final SyncPhase? phase;
@@ -47,12 +51,12 @@ class SyncTaskError {
   @override
   bool operator ==(Object other) =>
       other is SyncTaskError &&
-      other.message == message &&
+      other.failure == failure &&
       other.phase == phase &&
       other.itemKind == itemKind;
 
   @override
-  int get hashCode => Object.hash(message, phase, itemKind);
+  int get hashCode => Object.hash(failure, phase, itemKind);
 }
 
 /// 任务表里的一项（不可变快照）。
@@ -200,13 +204,16 @@ class SyncTaskHandle {
     ),
   );
 
+  /// 记一条只有原文的失败（没有结构可依）。
+  void error(String message) => fail(SyncFailure.raw(message));
+
   /// 记一条失败；阶段与条目种类取此刻最近的那个 tick。
-  void error(String message) => _board._update(id, (SyncTask t) {
+  void fail(SyncFailure failure) => _board._update(id, (SyncTask t) {
     final SyncProgress? p = t.progress;
     return t._copy(
       errors: <SyncTaskError>[
         ...t.errors,
-        SyncTaskError(message: message, phase: p?.phase, itemKind: p?.itemKind),
+        SyncTaskError(failure: failure, phase: p?.phase, itemKind: p?.itemKind),
       ],
     );
   });

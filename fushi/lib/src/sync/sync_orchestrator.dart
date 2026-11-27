@@ -63,6 +63,7 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/manga_chapter_progress_sync.dart'
     show kMangaChapterProgressCapability;
 import 'package:fushi/src/sync/sync_peer_gap.dart';
+import 'package:fushi/src/sync/sync_failure.dart';
 import 'package:fushi/src/sync/remote_dictionary_catalog_service.dart'
     show RemoteDictionaryCatalogService;
 import 'package:fushi_engine/foundation/engine_log.dart';
@@ -94,6 +95,7 @@ import 'package:path/path.dart' as p;
 
 // 报告里的「对端缺能力」类型随 SyncRunReport 一起给到消费方。
 export 'package:fushi/src/sync/sync_peer_gap.dart';
+export 'package:fushi/src/sync/sync_failure.dart';
 
 part 'sync_orchestrator/aggregate.part.dart';
 part 'sync_orchestrator/collections.part.dart';
@@ -334,9 +336,13 @@ class SyncConflict {
 class SyncRunReport {
   /// [onError]：每记下一条 [errors] 就同步回调一次（同步任务面板据此实时显示每项的
   /// 失败，反馈 kM-Gb_Xnu-）。不论错误是经 [noteError] 还是直接 `errors.add` 进来的
-  /// 都会回调——观察点在列表本身，漏不掉。
-  SyncRunReport({void Function(String error)? onError})
+  /// 都会回调——观察点在列表本身，漏不掉。回调拿到的是结构化的 [SyncFailure]
+  /// （反馈 L60rttoC0U：面板要据此本地化、合并同因，而不是把日志行原样上屏）。
+  SyncRunReport({void Function(SyncFailure failure)? onError})
     : errors = _ObservedErrorList(onError);
+
+  /// 与 [errors] 一一对应的结构化形态（同序同长）。
+  List<SyncFailure> get failures => (errors as _ObservedErrorList).failures;
 
   int booksImported = 0;
 
@@ -551,7 +557,7 @@ class SyncRunReport {
       outdated: outdated,
     );
     peerGaps.add(gap);
-    errors.add(gap.message);
+    (errors as _ObservedErrorList).addFailure(SyncFailure.peerGap(gap));
   }
 
   /// 本轮是否已记过 [dimension] 的「对端缺能力」。
@@ -653,7 +659,9 @@ class SyncRunReport {
     sourceShareSignerChanged.addAll(other.sourceShareSignerChanged);
     settingsImported += other.settingsImported;
     settingsExported += other.settingsExported;
-    errors.addAll(other.errors);
+    // 带结构合并：只拼字符串会把对端那份的维度 / 原因丢掉。
+    final _ObservedErrorList mine = errors as _ObservedErrorList;
+    other.failures.forEach(mine.addFailure);
     for (final SyncAuthFailure f in other.authFailures) {
       _addAuthFailure(f);
     }
@@ -682,7 +690,7 @@ class SyncRunReport {
   /// 既有日志/断言一行不变）；它若是 [SyncAuthError]，**额外**在
   /// [authFailures] 里留一份带类型的。信息只增不减。
   void noteError(String label, Object error) {
-    errors.add('$label: $error');
+    (errors as _ObservedErrorList).addFailure(SyncFailure.of(label, error));
     if (error is! SyncAuthError) return;
     _addAuthFailure(
       SyncAuthFailure(
@@ -803,30 +811,42 @@ enum SyncAssetKind {
 /// 下载」动作驱动（[runAssetTransferOnly]），方向由用户在点击时给出，而不是从一个
 /// 开关反推。互联通道的词典也一样：原来的「上传词典到互联对端」自动 union 开关已删除
 /// （BUG-2762）。
-/// [SyncRunReport.errors] 的实现：普通列表，外加「每加一条就回调」。
+/// [SyncRunReport.errors] 的实现：普通列表，外加「每加一条就回调」，并在旁边留一份
+/// 结构化的 [failures]（同序同长）。
 class _ObservedErrorList extends ListBase<String> {
   _ObservedErrorList(this._onAdd);
 
-  final void Function(String error)? _onAdd;
+  final void Function(SyncFailure failure)? _onAdd;
   final List<String> _items = <String>[];
+  final List<SyncFailure> failures = <SyncFailure>[];
+
+  /// 记一条带结构的失败：日志行进列表，结构进 [failures]，回调拿结构。
+  void addFailure(SyncFailure failure) {
+    _items.add(failure.message);
+    failures.add(failure);
+    _onAdd?.call(failure);
+  }
 
   @override
   int get length => _items.length;
 
   @override
-  set length(int value) => _items.length = value;
+  set length(int value) {
+    _items.length = value;
+    failures.length = value;
+  }
 
   @override
   String operator [](int index) => _items[index];
 
   @override
-  void operator []=(int index, String value) => _items[index] = value;
+  void operator []=(int index, String value) {
+    _items[index] = value;
+    failures[index] = SyncFailure.raw(value);
+  }
 
   @override
-  void add(String element) {
-    _items.add(element);
-    _onAdd?.call(element);
-  }
+  void add(String element) => addFailure(SyncFailure.raw(element));
 
   @override
   void addAll(Iterable<String> iterable) {
@@ -834,6 +854,19 @@ class _ObservedErrorList extends ListBase<String> {
       add(e);
     }
   }
+}
+
+/// 编排器各维度 / 条目 catch 块记失败的唯一入口（反馈 L60rttoC0U）。
+///
+/// [SyncPeerUnreachableError] = 所有候选地址都探不到对端，是**通道级**事实，不是这一个
+/// 维度的失败：此前它被各维度的 catch-all 逐个吞成报告行，后面每个维度再各自把全部
+/// 候选串行探一遍、各记一条一模一样的失败（任务面板「全量同步 7 项失败」，7 行都是
+/// `No reachable Fushi server address`），自动 sweep 也因此绕过了 BUG-5368 「对端离线
+/// 不算失败、只推进退避」的通道级判定。这里把它原样抛出本轮，交给通道层统一处理：
+/// 自动 sweep 记 peerOffline，手动同步报一条通道级的本地化失败。
+void _noteDimensionError(SyncRunReport report, String label, Object error) {
+  if (error is SyncPeerUnreachableError) throw error;
+  report.noteError(label, error);
 }
 
 class SyncOrchestrator {
@@ -1018,7 +1051,7 @@ class SyncOrchestrator {
   final SyncProgressCallback? onProgress;
 
   /// 本轮每记下一条失败就回调一次（见 [SyncRunReport.new] 的 onError）。
-  final void Function(String error)? onError;
+  final void Function(SyncFailure failure)? onError;
 
   void _emit(
     SyncPhase phase, {
@@ -1141,7 +1174,7 @@ class SyncOrchestrator {
       } on SyncCancelledException {
         rethrow;
       } on Exception catch (e) {
-        report.noteError('recover books from peer', e);
+        _noteDimensionError(report, 'recover books from peer', e);
       }
       // 互联内容（EPUB / 漫画包）走 live 端点，书籍或漫画任一开关开时执行，进去后
       // 按格式各看各的开关。
@@ -1610,7 +1643,7 @@ class SyncOrchestrator {
   }) async {
     final FontSyncLocal? local = fontSync;
     if (local == null) {
-      report.noteError('fonts', StateError('font sync not wired'));
+      _noteDimensionError(report, 'fonts', StateError('font sync not wired'));
       return;
     }
     final FontSyncService service = FontSyncService(
@@ -1632,19 +1665,20 @@ class SyncOrchestrator {
         _noteFontIssues(report, r);
       }
     } catch (e) {
-      report.noteError('fonts', e);
+      _noteDimensionError(report, 'fonts', e);
     }
   }
 
   void _noteFontIssues(SyncRunReport report, FontSyncReport r) {
     for (final String name in r.skippedOversize) {
-      report.noteError(
+      _noteDimensionError(
+        report,
         'font "$name"',
         'larger than ${kFontSyncMaxFileBytes ~/ (1024 * 1024)} MB, skipped',
       );
     }
     for (final String line in r.errors) {
-      report.noteError('font', line);
+      _noteDimensionError(report, 'font', line);
     }
   }
 
@@ -1702,14 +1736,16 @@ class SyncOrchestrator {
           // 基线越过未读知识造成误判）。任一情况都绝不整轮 return。
           if (isOwn) {
             ownCorrupt = true;
-            report.noteError(
+            _noteDimensionError(
+              report,
               'own collections manifest "${e.name}" unreadable;'
               ' republishing from local+peers this run (self-heal)',
               err,
             );
           } else {
             skippedPeer = true;
-            report.noteError(
+            _noteDimensionError(
+              report,
               'peer collections manifest "${e.name}" '
               'unreadable; skipped this run (baseline held)',
               err,
@@ -1782,7 +1818,7 @@ class SyncOrchestrator {
         () => convergeCollectionsAfterSync(_db, baselineMs: nextBaseline),
       );
     } catch (e) {
-      report.noteError('collections sync', e);
+      _noteDimensionError(report, 'collections sync', e);
     }
   }
 
@@ -1947,7 +1983,8 @@ class SyncOrchestrator {
                   : TombstoneCloudFolderState.deleted,
             );
           } catch (err) {
-            report.noteError(
+            _noteDimensionError(
+              report,
               'deletion tombstone: cloud book folder "$folderName" '
               'not deleted, retried next sync',
               err,
@@ -2015,14 +2052,16 @@ class SyncOrchestrator {
           try {
             json = await _readManifestJson(_kTombstoneBundleMirror, b);
             if (json == null) {
-              report.noteError(
+              _noteDimensionError(
+                report,
                 'deletion tombstone bundle "${b.name}" unreadable',
                 'empty response',
               );
             }
           } catch (err) {
             json = null;
-            report.noteError(
+            _noteDimensionError(
+              report,
               'deletion tombstone bundle "${b.name}" unreadable',
               err,
             );
@@ -2038,7 +2077,8 @@ class SyncOrchestrator {
           if (parsed == null) {
             // 永久坏文件（同逐条标记的 malformed 口径：不扣基线）。自己的那份坏了就由
             // 本轮重写覆盖。
-            report.noteError(
+            _noteDimensionError(
+              report,
               'deletion tombstone bundle "${b.name}" malformed',
               'skipped',
             );
@@ -2085,7 +2125,11 @@ class SyncOrchestrator {
         } catch (err) {
           scanComplete = false;
           readFailures++;
-          report.noteError('deletion tombstone "${e.name}" unreadable', err);
+          _noteDimensionError(
+            report,
+            'deletion tombstone "${e.name}" unreadable',
+            err,
+          );
           continue;
         }
         if (json == null) {
@@ -2095,7 +2139,8 @@ class SyncOrchestrator {
           // 按不完整处理——静默 continue 会让后者变成一次无声的永久压制。
           scanComplete = false;
           readFailures++;
-          report.noteError(
+          _noteDimensionError(
+            report,
             'deletion tombstone "${e.name}" unreadable',
             'empty response',
           );
@@ -2106,7 +2151,8 @@ class SyncOrchestrator {
           // 读到了但内容不合法（截断上传 / 非本协议文件）。这是**永久**状态，重试不会
           // 变好，故不置 scanComplete=false（否则基线被一个坏文件永久钉死，用户每轮
           // 重看同一批确认框）。如实记一条；有指纹就记进清单，同一份坏内容不再每轮重下。
-          report.noteError(
+          _noteDimensionError(
+            report,
             'deletion tombstone "${e.name}" malformed',
             'skipped',
           );
@@ -2148,7 +2194,7 @@ class SyncOrchestrator {
             ownNext.toJson(deviceId),
           );
         } catch (err) {
-          report.noteError('deletion tombstone bundle write', err);
+          _noteDimensionError(report, 'deletion tombstone bundle write', err);
         }
       }
 
@@ -2158,7 +2204,7 @@ class SyncOrchestrator {
         nextBaseline: nextBaseline,
       );
     } catch (e) {
-      report.noteError('deletion tombstones sync', e);
+      _noteDimensionError(report, 'deletion tombstones sync', e);
       return null;
     }
   }
@@ -2251,7 +2297,7 @@ class SyncOrchestrator {
         );
       }
     } catch (e) {
-      report.noteError('deletion tombstones sync', e);
+      _noteDimensionError(report, 'deletion tombstones sync', e);
     }
   }
 
@@ -2437,7 +2483,7 @@ class SyncOrchestrator {
             tagTombstones: mergedTagTombstones,
           );
         } catch (e) {
-          report.noteError('video "${v.title}"', e);
+          _noteDimensionError(report, 'video "${v.title}"', e);
         }
         index++;
       }
@@ -2459,7 +2505,7 @@ class SyncOrchestrator {
     } on SyncCancelledException {
       rethrow;
     } catch (e) {
-      report.noteError('video assets sync', e);
+      _noteDimensionError(report, 'video assets sync', e);
     }
   }
 
@@ -2536,7 +2582,7 @@ class SyncOrchestrator {
           report.booksImported++;
         }
       } catch (e) {
-        report.noteError('import book "${folder.name}"', e);
+        _noteDimensionError(report, 'import book "${folder.name}"', e);
       }
     }
   }
@@ -2665,7 +2711,7 @@ class SyncOrchestrator {
         now: DateTime.now().millisecondsSinceEpoch,
       );
     } catch (e) {
-      report.noteError('refresh server dictionary catalog', e);
+      _noteDimensionError(report, 'refresh server dictionary catalog', e);
     }
     return outcome;
   }
@@ -2819,7 +2865,7 @@ class SyncOrchestrator {
         report.localAudioExported++;
         await _writeLocalAudioIdentityMarker(ns, base, l.contentId, report);
       } catch (e) {
-        report.noteError('export local audio "${d.displayName}"', e);
+        _noteDimensionError(report, 'export local audio "${d.displayName}"', e);
       } finally {
         _safeDelete(tmp);
       }
@@ -2874,7 +2920,7 @@ class SyncOrchestrator {
           );
         }
       } catch (err) {
-        report.noteError('import local audio "${e.name}"', err);
+        _noteDimensionError(report, 'import local audio "${e.name}"', err);
       } finally {
         _safeDelete(tmp);
         _safeDelete(stagingDb);
@@ -2900,7 +2946,7 @@ class SyncOrchestrator {
         const <String, Object?>{},
       );
     } catch (e) {
-      report.noteError('write local audio identity "$base"', e);
+      _noteDimensionError(report, 'write local audio identity "$base"', e);
     }
   }
 
@@ -2982,7 +3028,7 @@ class SyncOrchestrator {
         bookFolderNames?.noteUploaded(folderId, kSyncAudiobookAssetName);
         report.audiobooksExported++;
       } catch (e) {
-        report.noteError('audiobook "${book.title}"', e);
+        _noteDimensionError(report, 'audiobook "${book.title}"', e);
       } finally {
         _safeDelete(tmp);
       }
@@ -3020,7 +3066,7 @@ class SyncOrchestrator {
         }
         work.add((book: book, srt: srt));
       } catch (e) {
-        report.noteError('audiobook "${book.title}"', e);
+        _noteDimensionError(report, 'audiobook "${book.title}"', e);
       }
     }
     return work;
@@ -3048,7 +3094,7 @@ class SyncOrchestrator {
     try {
       children = await _backend.listChildren(root);
     } catch (e) {
-      report.noteError('prune root spill (list root)', e);
+      _noteDimensionError(report, 'prune root spill (list root)', e);
       return;
     }
     for (final AssetEntry e in children) {
@@ -3057,7 +3103,7 @@ class SyncOrchestrator {
         await _backend.deleteAsset(e.id);
         report.rootSpillFilesRemoved++;
       } catch (err) {
-        report.noteError('prune root spill "${e.name}"', err);
+        _noteDimensionError(report, 'prune root spill "${e.name}"', err);
       }
     }
   }
