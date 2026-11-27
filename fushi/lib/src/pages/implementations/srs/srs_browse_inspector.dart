@@ -50,6 +50,7 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_backdrop_frost.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_loading_view.dart';
@@ -61,6 +62,8 @@ import 'package:fushi/src/utils/components/fushi_tag.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show FushiGroupedListItem;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/srs/srs_action_error_text.dart';
@@ -357,45 +360,51 @@ class _SrsBrowseInspectorState extends ConsumerState<SrsBrowseInspector> {
             ),
           ),
         ),
-        Row(
-          spacing: tokens.spacing.gap,
-          children: <Widget>[
-            Expanded(
-              child: FushiFilledButton.tonalIcon(
-                key: const ValueKey<String>('srs-browse-open-source'),
-                onPressed: link == null
-                    ? null
-                    : () => srsRunLogged(
-                        'SrsBrowse.openSource',
-                        () => openCardSource(ref: ref, link: link),
-                      ),
-                icon: const FushiIcon(FushiIcons.openInNew),
-                label: Text(t.srs_browse_open_source),
+        // 三个页签共用的底栏直接坐在页底上：自定义背景图时垫毛玻璃底（BUG-5549，
+        // 只画不占位；没有背景图时原样），图标与停用的「回到出处」不糊进图里。
+        FushiBackdropFrost(
+          key: const ValueKey<String>('srs-browse-inspector-actions'),
+          outset: const EdgeInsets.all(4),
+          child: Row(
+            spacing: tokens.spacing.gap,
+            children: <Widget>[
+              Expanded(
+                child: FushiFilledButton.tonalIcon(
+                  key: const ValueKey<String>('srs-browse-open-source'),
+                  onPressed: link == null
+                      ? null
+                      : () => srsRunLogged(
+                          'SrsBrowse.openSource',
+                          () => openCardSource(ref: ref, link: link),
+                        ),
+                  icon: const FushiIcon(FushiIcons.openInNew),
+                  label: Text(t.srs_browse_open_source),
+                ),
               ),
-            ),
-            FushiIconButton(
-              key: const ValueKey<String>('srs-browse-inspector-suspend'),
-              icon: widget.actions.suspended
-                  ? FushiIcons.play
-                  : FushiIcons.pause,
-              tooltip: widget.actions.suspended
-                  ? t.srs_browse_swipe_unsuspend
-                  : t.srs_browse_swipe_suspend,
-              onTap: widget.actions.onSuspend,
-            ),
-            FushiIconButton(
-              key: const ValueKey<String>('srs-browse-inspector-flag'),
-              icon: FushiIcons.flag,
-              tooltip: t.srs_card_flag,
-              onTap: widget.actions.onFlag,
-            ),
-            FushiIconButton(
-              key: const ValueKey<String>('srs-browse-inspector-more'),
-              icon: FushiIcons.moreHoriz,
-              tooltip: t.srs_browse_batch_actions,
-              onTap: widget.actions.onMore,
-            ),
-          ],
+              FushiIconButton(
+                key: const ValueKey<String>('srs-browse-inspector-suspend'),
+                icon: widget.actions.suspended
+                    ? FushiIcons.play
+                    : FushiIcons.pause,
+                tooltip: widget.actions.suspended
+                    ? t.srs_browse_swipe_unsuspend
+                    : t.srs_browse_swipe_suspend,
+                onTap: widget.actions.onSuspend,
+              ),
+              FushiIconButton(
+                key: const ValueKey<String>('srs-browse-inspector-flag'),
+                icon: FushiIcons.flag,
+                tooltip: t.srs_card_flag,
+                onTap: widget.actions.onFlag,
+              ),
+              FushiIconButton(
+                key: const ValueKey<String>('srs-browse-inspector-more'),
+                icon: FushiIcons.moreHoriz,
+                tooltip: t.srs_browse_batch_actions,
+                onTap: widget.actions.onMore,
+              ),
+            ],
+          ),
         ),
       ],
     );
@@ -1091,33 +1100,50 @@ class _HistoryTabState extends ConsumerState<_HistoryTab> {
             ],
           ),
         ),
-      Text(
-        t.srs_browse_history_added(
-          date: MaterialLocalizations.of(
-            context,
-          ).formatShortDate(DateTime.fromMillisecondsSinceEpoch(row.addedAt)),
+      // 直接压在页底上的说明小字：自定义背景图时垫毛玻璃底（BUG-5549）。
+      Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: FushiBackdropFrost(
+          key: const ValueKey<String>('srs-browse-history-added'),
+          child: Text(
+            t.srs_browse_history_added(
+              date: MaterialLocalizations.of(context).formatShortDate(
+                DateTime.fromMillisecondsSinceEpoch(row.addedAt),
+              ),
+            ),
+            style: context.fushiType.bodySmall.copyWith(color: muted),
+          ),
         ),
-        style: context.fushiType.bodySmall.copyWith(color: muted),
       ),
       if (data != null && data.logs.isEmpty)
         FushiPlaceholderMessage(
           icon: FushiIcons.history,
           message: t.srs_browse_history_empty,
         ),
-      if (data != null)
-        for (final SrsReviewLog l in data.logs) _LogRow(log: l),
     ];
+    // 逐次评分记录读作一个分组列表（MD3 分段卡 / Apple inset grouped），与上面
+    // 四格、曲线同为卡面，不再是直接压在页底（背景图）上的裸行（BUG-5549）；仍按行懒建。
+    final List<SrsReviewLog> logs = data?.logs ?? const <SrsReviewLog>[];
     return FushiEntranceScope(
       replayKey: widget.detail.card.id,
       child: ListView.builder(
         key: const ValueKey<String>('srs-browse-history'),
-        itemCount: children.length,
-        itemBuilder: fushiStaggeredItemBuilder(
-          (BuildContext context, int i) => Padding(
-            padding: EdgeInsets.only(bottom: tokens.spacing.gap),
-            child: children[i],
-          ),
-        ),
+        itemCount: children.length + logs.length,
+        itemBuilder: fushiStaggeredItemBuilder((BuildContext context, int i) {
+          if (i < children.length) {
+            return Padding(
+              padding: EdgeInsets.only(bottom: tokens.spacing.gap),
+              child: children[i],
+            );
+          }
+          final int j = i - children.length;
+          return FushiGroupedListItem(
+            key: ValueKey<String>('srs-browse-history-log-$j'),
+            index: j,
+            count: logs.length,
+            child: _LogRow(log: logs[j]),
+          );
+        }),
       ),
     );
   }

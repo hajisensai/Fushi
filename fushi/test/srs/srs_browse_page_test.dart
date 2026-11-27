@@ -18,10 +18,16 @@ import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_deck_list_page.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart';
+import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart';
+import 'package:fushi/src/utils/components/fushi_backdrop_frost.dart'
+    show FushiBackdropFrostPlate;
 import 'package:fushi/src/utils/components/fushi_material_components.dart'
     show FushiCard, kFushiHeaderOverflowMenuKey;
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart'
     show FushiCheckbox, FushiFilledButton;
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show FushiGroupedListItem;
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_browse.dart' show srsDeckQuery;
@@ -139,6 +145,7 @@ Future<void> _pump(
   Widget page = const SrsBrowsePage(),
   AppModel? app,
   List<Override> overrides = const <Override>[],
+  bool backdrop = false,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -168,7 +175,8 @@ Future<void> _pump(
           ),
           builder: (BuildContext context, Widget? child) =>
               FushiGlassScope(child: child!),
-          home: page,
+          // backdrop：像路由层那样垫页面背景（背景图 / 形状），页底换成透明。
+          home: backdrop ? FushiPageBackdrop(child: page) : page,
         ),
       ),
     ),
@@ -461,6 +469,74 @@ void main() {
       );
       expect(card.contains(list.topLeft), isTrue);
       expect(card.contains(list.bottomRight - const Offset(1, 1)), isTrue);
+      await _unmount(tester);
+    });
+
+    testWidgets('[$ds] BUG-5549：自定义背景图下检查器三个页签直接压在页底上的说明字与按钮行都垫毛玻璃，评分记录成组', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      final String noteId = await _add(tester, store, '素人', 'amateur');
+      await tester.runAsync(() async {
+        final String cardId = (await store.cardsOfNote(noteId)).first.id;
+        await store.answer(cardId, 3);
+        await store.answer(cardId, 1);
+      });
+      final PageBackdropSettings saved = pageBackdropSettings.value;
+      addTearDown(() => pageBackdropSettings.value = saved);
+      // 不存在的文件：图片层画空，这里只验「页底是自定义图片」这条分支。
+      pageBackdropSettings.value = const PageBackdropSettings(
+        preset: PageBackdropPreset.custom,
+        landscapeImagePath: 'missing-wallpaper.png',
+      );
+      await _pump(
+        tester,
+        store: store,
+        apple: apple,
+        size: const Size(1300, 900),
+        backdrop: true,
+      );
+      Finder plateIn(String key) => find.descendant(
+        of: find.byKey(ValueKey<String>(key)),
+        matching: find.byType(FushiBackdropFrostPlate),
+      );
+      Future<void> openTab(String label) async {
+        await tester.tap(
+          find
+              .descendant(
+                of: find.byKey(const ValueKey<String>('srs-browse-inspector')),
+                matching: find.text(label),
+              )
+              .first,
+        );
+        await _settle(tester, rounds: 6);
+      }
+
+      // 预览：卡面上方的说明行、卡面下的按钮行、三页共用的底栏。
+      expect(plateIn('srs-browse-preview-caption'), findsOneWidget);
+      expect(plateIn('srs-browse-preview-controls'), findsOneWidget);
+      expect(plateIn('srs-browse-inspector-actions'), findsOneWidget);
+
+      // 历史：「添加于」小字垫毛玻璃；两次评分读作一组分段卡。
+      await openTab(t.srs_browse_tab_history);
+      expect(plateIn('srs-browse-history-added'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('srs-browse-history')),
+          matching: find.byType(FushiGroupedListItem),
+        ),
+        findsNWidgets(2),
+      );
+
+      // 编辑：字段坐在卡上。
+      await openTab(t.srs_browse_tab_edit);
+      expect(
+        tester.widget(
+          find.byKey(const ValueKey<String>('srs-browse-edit-panel')),
+        ),
+        isA<FushiCard>(),
+      );
+      expect(plateIn('srs-browse-inspector-actions'), findsOneWidget);
       await _unmount(tester);
     });
   }

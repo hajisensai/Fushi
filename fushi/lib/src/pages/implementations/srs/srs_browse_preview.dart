@@ -29,6 +29,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_backdrop_frost.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_loading_view.dart';
@@ -317,12 +318,24 @@ class _SrsBrowsePreviewState extends ConsumerState<SrsBrowsePreview> {
                     padding: EdgeInsets.only(
                       bottom: caption.isEmpty ? 0 : tokens.spacing.gap,
                     ),
-                    child: Text(
-                      caption,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: context.fushiType.labelLarge.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    // 卡面上方的说明行直接压在页底上：自定义背景图时垫毛玻璃底
+                    // （BUG-5549，只画不占位）；底板贴着文字宽度，不铺满整行。
+                    child: Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: FushiBackdropFrost(
+                        key: const ValueKey<String>(
+                          'srs-browse-preview-caption',
+                        ),
+                        child: Text(
+                          caption,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: context.fushiType.labelLarge.copyWith(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -334,29 +347,44 @@ class _SrsBrowsePreviewState extends ConsumerState<SrsBrowsePreview> {
               SizedBox(
                 key: const ValueKey<String>('srs-browse-preview-rail'),
                 width: 136,
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  spacing: tokens.spacing.gap,
-                  children: <Widget>[
-                    edit,
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: <Widget>[prev, next],
+                // 按钮组贴底（同原来的 MainAxisAlignment.end），自定义背景图时
+                // 只在按钮组背后垫毛玻璃底（BUG-5549）。
+                child: Align(
+                  alignment: Alignment.bottomCenter,
+                  child: FushiBackdropFrost(
+                    key: const ValueKey<String>('srs-browse-preview-controls'),
+                    outset: const EdgeInsets.all(6),
+                    borderRadius: tokens.radii.groupRadius,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      spacing: tokens.spacing.gap,
+                      children: <Widget>[
+                        edit,
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: <Widget>[prev, next],
+                        ),
+                        flip,
+                      ],
                     ),
-                    flip,
-                  ],
+                  ),
                 ),
               )
             else
-              Row(
-                spacing: tokens.spacing.gap,
-                children: <Widget>[
-                  prev,
-                  Expanded(child: flip),
-                  next,
-                  edit,
-                ],
+              // 卡面下的按钮行直接压在页底上：自定义背景图时垫毛玻璃底（BUG-5549）。
+              FushiBackdropFrost(
+                key: const ValueKey<String>('srs-browse-preview-controls'),
+                outset: const EdgeInsets.all(4),
+                child: Row(
+                  spacing: tokens.spacing.gap,
+                  children: <Widget>[
+                    prev,
+                    Expanded(child: flip),
+                    next,
+                    edit,
+                  ],
+                ),
               ),
           ],
         );
