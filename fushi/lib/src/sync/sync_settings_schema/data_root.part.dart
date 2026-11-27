@@ -278,8 +278,14 @@ Future<DataRootMigrationRunOutcome> runDataRootMigration({
           appModel.updateDataRootMigrationProgress(copied, total),
       // 成功时的取证摘要（怎么搬的、复制了多少）：用户报「迁移后书库空了」时靠它分清
       // 「没复制到」和「复制完之后被别的东西删了」。迁移完马上重启，只记内存诊断日志
-      // 会随进程一起丢，所以落盘、之后每次启动再记（data_root_move_log.dart）。
-      onDiagnostic: recordDataRootMove,
+      // 会随进程一起丢，所以记进跨运行保留的数据位置取证环（BUG-5490）并等它落盘。
+      onDiagnostic: (String summary) async {
+        ErrorLogService.instance.logDataLocation(
+          'DataRootMigration.last',
+          summary,
+        );
+        await ErrorLogService.instance.flush();
+      },
       // TODO-1182：引擎据此二次拒绝安装目录/exe 目录，回滚也绝不删含运行 exe 的根。
       resolvedExecutablePath: Platform.resolvedExecutable,
       // TODO-1226：默认根 = 共享用户 Documents → 只搬 Fushi 自有顶层项白名单，

@@ -138,7 +138,6 @@ import 'package:fushi/src/diagnostics/fushi_binding.dart';
 import 'package:fushi/src/diagnostics/ui_activity_probe.dart';
 import 'package:fushi/src/diagnostics/previous_exit_log.dart';
 import 'package:fushi/src/diagnostics/storage_footprint_log.dart';
-import 'package:fushi/src/diagnostics/data_root_move_log.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/stats/study_cover_tracker.dart';
 import 'package:fushi/src/stats/study_diag_log.dart';
@@ -854,8 +853,6 @@ void main([List<String> args = const <String>[]]) {
           ErrorLogService.instance.logDiagnostic('SrsOpLedger.heavy', line);
       // 同一 bug：启动后在后台量一遍 App 数据根的目录 / 大文件分项，记进诊断日志随反馈上传。
       scheduleStorageFootprintLog();
-      // BUG-5467：上次书库迁移的摘要（迁移进程随即重启，摘要落盘后在这里每次启动再记）。
-      unawaited(logLastDataRootMove());
       // 闪退报告（crash_report.dart）：上次是崩溃 / 异常退出就记进待报，下次问用户要不要
       // 把日志发给开发者。debug 构建（停 `flutter run` 就是强杀）与集成测试根下不问不发——
       // 测试绝不能往线上反馈服务交东西。
