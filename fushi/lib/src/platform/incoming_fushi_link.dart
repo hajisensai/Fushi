@@ -2,6 +2,7 @@ import 'package:fushi_engine/sync/pairing/fushi_pair_link.dart';
 
 import 'package:fushi/src/anki/ankimobile_repository.dart'
     show fushiAnkiFetchCallback, fushiAnkiSuccessCallback;
+import 'package:fushi/src/leaderboard/leaderboard_link.dart';
 import 'package:fushi/src/lookup/lookup_deep_link.dart';
 import 'package:fushi/src/platform/app_shortcuts.dart';
 import 'package:fushi/src/platform/widget_links.dart';
@@ -29,6 +30,9 @@ enum FushiIncomingLinkKind {
 
   /// `fushi://widget/…`：主屏小组件 / 菜单栏播放条。
   widget(host: 'widget', routedByNativeShell: true),
+
+  /// `fushi://leaderboard/user|work/<id>`：排行榜分享页「在 Fushi 中打开」。
+  leaderboard(host: LeaderboardDeepLink.host, routedByNativeShell: true),
 
   /// `fushi://lookup?word=`：快捷指令 / 其它 app 发来的查词。
   lookup(host: 'lookup', routedByNativeShell: true),
@@ -72,6 +76,8 @@ sealed class FushiIncomingLink {
     if (shortcut != null) return ShortcutIncomingLink(shortcut);
     final WidgetLink? widgetLink = WidgetLink.tryParse(data);
     if (widgetLink != null) return WidgetIncomingLink(widgetLink);
+    final LeaderboardDeepLink? leaderboard = LeaderboardDeepLink.tryParse(data);
+    if (leaderboard != null) return LeaderboardIncomingLink(leaderboard);
     final String? word = lookupWordFromDeepLink(data);
     if (word != null) return LookupIncomingLink(word);
     final String normalized = data.toLowerCase();
@@ -114,6 +120,13 @@ final class WidgetIncomingLink extends FushiIncomingLink {
   final WidgetLink link;
   @override
   FushiIncomingLinkKind get kind => FushiIncomingLinkKind.widget;
+}
+
+final class LeaderboardIncomingLink extends FushiIncomingLink {
+  const LeaderboardIncomingLink(this.link);
+  final LeaderboardDeepLink link;
+  @override
+  FushiIncomingLinkKind get kind => FushiIncomingLinkKind.leaderboard;
 }
 
 final class LookupIncomingLink extends FushiIncomingLink {

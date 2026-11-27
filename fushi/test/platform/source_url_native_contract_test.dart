@@ -26,6 +26,7 @@ String _sampleLink(FushiIncomingLinkKind kind) => switch (kind) {
   ).toUri(),
   FushiIncomingLinkKind.shortcut => AppShortcut.values.first.url,
   FushiIncomingLinkKind.widget => 'fushi://widget/srs',
+  FushiIncomingLinkKind.leaderboard => 'fushi://leaderboard/user/abc',
   FushiIncomingLinkKind.lookup => 'fushi://lookup?word=%E7%8C%AB',
   FushiIncomingLinkKind.oauthRedirect => 'fushi://auth/callback?code=x',
   FushiIncomingLinkKind.ankiFetch => fushiAnkiFetchCallback,

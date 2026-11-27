@@ -118,6 +118,8 @@ import 'package:fushi/src/shortcuts/global_hotkey_backend.dart'
 import 'package:fushi/src/shortcuts/global_navigation.dart';
 import 'package:fushi/src/lookup/global_lookup_log.dart';
 import 'package:fushi/src/lookup/lookup_deep_link.dart';
+import 'package:fushi/src/leaderboard/leaderboard_deep_link.dart';
+import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/lookup/lookup_overlay_navigator.dart';
 import 'package:fushi/src/lookup/desktop_lookup_startup.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
@@ -290,6 +292,10 @@ final List<String> _pendingCardSourceUrls = <String>[];
 /// （docs/specs/2026-09-28-interconnect-remote-reach.md §4）。
 final List<String> _pendingPairLinks = <String>[];
 
+/// 桌面冷启动 argv 里的排行榜深链（`fushi://leaderboard/user|work/<id>`，分享页
+/// 「在 Fushi 中打开」）。根 build 就绪后交给 `_leaderboardLinks` 队列。
+LeaderboardDeepLink? _pendingArgvLeaderboardLink;
+
 /// Single source of truth for the status/navigation bar overlay style.
 ///
 /// Maps an app [brightness] to the matching system bar icon brightness while
@@ -397,6 +403,13 @@ void main([List<String> args = const <String>[]]) {
       }
       if (FushiPairLink.tryParse(arg) != null) {
         _pendingPairLinks.add(arg);
+        break;
+      }
+      final LeaderboardDeepLink? leaderboardLink = LeaderboardDeepLink.tryParse(
+        arg,
+      );
+      if (leaderboardLink != null) {
+        _pendingArgvLeaderboardLink = leaderboardLink;
         break;
       }
       final String? word = lookupWordFromDeepLink(arg);
@@ -1214,6 +1227,14 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     run: _runWidgetLink,
   );
 
+  /// 排行榜分享页「在 Fushi 中打开」的深链（`fushi://leaderboard/user|work/<id>`），
+  /// 冷启动排队同上。
+  late final LeaderboardDeepLinkQueue _leaderboardLinks =
+      LeaderboardDeepLinkQueue(
+        isActive: () => mounted,
+        run: _runLeaderboardLink,
+      );
+
   /// 桌面小组件的快照采集 / 推送（Android / iOS / macOS 同一份 JSON）；其余平台整个不工作。
   late final WidgetSnapshotSource _widgetSnapshots = WidgetSnapshotSource(
     ref: ref,
@@ -1962,6 +1983,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
         _queueAppShortcut(shortcut);
       case WidgetIncomingLink(:final WidgetLink link):
         _queueWidgetLink(link);
+      case LeaderboardIncomingLink(:final LeaderboardDeepLink link):
+        _queueLeaderboardLink(link);
       // iOS：快捷指令 / 其它 app 打开的 `fushi://lookup?word=` 交给应用内查词弹窗
       // （Android 的这条链接由 manifest 直接路由到 :popup 查词窗，到不了这里；
       // Windows 走 argv / WM_COPYDATA，见 [lookupWordFromDeepLink]）。
@@ -2091,6 +2114,25 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       selectHomeTab: (HomeTab tab) => homeShellTabNotifier.value = tab,
       // 用户点「查词」就是要打字：送进搜索框。
       openLookup: () => appModel.requestHomeDictionaryTab(focusSearch: true),
+    );
+  }
+
+  void _queueLeaderboardLink(LeaderboardDeepLink link) {
+    final bool ready = mounted && ref.read(appProvider).isInitialised;
+    _leaderboardLinks.enqueue(link, ready: ready);
+    // 未初始化：初始化完成后的根 build 会调 [LeaderboardDeepLinkQueue.schedule]。
+    if (mounted && !ready) setState(() {});
+  }
+
+  Future<void> _runLeaderboardLink(LeaderboardDeepLink link) {
+    return openLeaderboardDeepLink(
+      link,
+      navigator: ref.read(appProvider).navigatorKey.currentState,
+      isLeaderboardActive: () async {
+        final LeaderboardService service = ref.read(leaderboardServiceProvider);
+        await service.load();
+        return service.status == LeaderboardStatus.active;
+      },
     );
   }
 
@@ -2359,6 +2401,13 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     }
     if (FushiPairLink.tryParse(videoPath) != null) {
       _queuePairLink(videoPath);
+      return null;
+    }
+    final LeaderboardDeepLink? leaderboardLink = LeaderboardDeepLink.tryParse(
+      videoPath,
+    );
+    if (leaderboardLink != null) {
+      _queueLeaderboardLink(leaderboardLink);
       return null;
     }
     // BUG-1666：单实例转交的是「候选 argv 字符串」，不只视频路径——Anki 卡片上的
@@ -3354,6 +3403,13 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     _schedulePairLinks();
     _appShortcuts.schedule();
     _widgetLinks.schedule();
+    final LeaderboardDeepLink? argvLeaderboardLink =
+        _pendingArgvLeaderboardLink;
+    if (argvLeaderboardLink != null) {
+      _pendingArgvLeaderboardLink = null;
+      _leaderboardLinks.enqueue(argvLeaderboardLink, ready: false);
+    }
+    _leaderboardLinks.schedule();
     // 小组件快照：初始化完成后的首帧起订阅一次（只启动一次，不在 build 里订阅）；
     // 之后界面语言 / 模块开关变化由 [onContextChanged] 去重后触发。
     if (!_widgetSnapshotsStartScheduled && _widgetSnapshots.enabled) {

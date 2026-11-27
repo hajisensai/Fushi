@@ -108,6 +108,15 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="fushi" android:host="pair" />
             </intent-filter>
+            <!-- 排行榜公开分享页（rank.fushi.moe /u/<id>、/w/<id>）的「在 Fushi 中打开」：
+                 fushi://leaderboard/user/<id>、fushi://leaderboard/work/<id>
+                 （services/leaderboard/src/pages.js；Dart 解析 leaderboard_deep_link.dart）。 -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="fushi" android:host="leaderboard" />
+            </intent-filter>
             <intent-filter>
                 <action android:name="android.nfc.action.NDEF_DISCOVERED" />
                 <category android:name="android.intent.category.DEFAULT" />

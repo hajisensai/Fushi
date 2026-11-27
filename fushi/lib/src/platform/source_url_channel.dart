@@ -5,7 +5,8 @@ import 'package:fushi/src/platform/incoming_fushi_link.dart';
 /// macOS source links from Launch Services, including links queued during launch.
 ///
 /// Besides card-source links it carries the home-widget / menu-bar links
-/// ([routedHosts]: card sources, pairing links, widget links, shortcuts, lookup);
+/// ([routedHosts]: card sources, pairing links, widget links, shortcuts,
+/// leaderboard share-page links, lookup);
 /// main.dart routes every event through `handleIncomingUrl`.
 ///
 /// Android uses ReceiveIntent, iOS uses IosUrlEventChannel and Windows uses the
