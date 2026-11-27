@@ -37,6 +37,8 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5583](bugs/BUG-5583-idle-page-continuous-frames.md) | 🚧 | 🚧 | 页面静止时仍以接近屏幕刷新率持续出帧（视频库页 / 视频合集页） |
+| [BUG-5582](bugs/BUG-5582-route-transition-covered-page-full-replay.md) | ✅ | ✅ | 打开 / 返回二级页（视频合集等）转场掉帧：被盖住的那一页每帧整页重放绘制 |
 | [BUG-5581](bugs/BUG-5581-import-cycle-626-donation-subtitle-fill.md) | 🚧 | 🚧 | import-cycle-626-donation-subtitle-fill |
 | [BUG-5580](bugs/BUG-5580-manga-epub-raster-spine.md) | ✅ | ✅ | spine 直接引用位图的漫画 EPUB 打不开、导不进（no readable chapters） |
 | [BUG-5579](bugs/BUG-5579-debug-manifest-release-page-404.md) | ✅ | ✅ | 调试通道「打开发布页」落到 404：清单发布页按版本印记拼，包其实挂在滚动 release 上 |
@@ -78,8 +80,6 @@
 | [BUG-5538](bugs/BUG-5538-curator-ai-blocked-no-auto-recovery.md) | 🚧 | 🚧 | curator-ai-blocked-no-auto-recovery |
 | [BUG-5537](bugs/BUG-5537-i18n-merge-driver-corrupts-flutter-sdk.md) | ✅ | ✅ | i18n-merge-driver-corrupts-flutter-sdk |
 | [BUG-5536](bugs/BUG-5536-storage-scan-ui-freeze.md) | ✅ | ✅ | 打开 设置 › 存储 扫描期间整窗冻结（有声书逐文件音频路径在 UI isolate 上 O(n²) 去嵌套） |
-| [BUG-5536](bugs/BUG-5536-idle-page-continuous-frames.md) | 🚧 | 🚧 | 页面静止时仍以接近屏幕刷新率持续出帧（视频库页 / 视频合集页） |
-| [BUG-5535](bugs/BUG-5535-route-transition-covered-page-full-replay.md) | ✅ | ✅ | 打开 / 返回二级页（视频合集等）转场掉帧：被盖住的那一页每帧整页重放绘制 |
 | [BUG-5535](bugs/BUG-5535-masthead-icons-title-misaligned.md) | ✅ | ✅ | 页头大字顶栏的返回键、动作图标和页名上下没对齐（二级页收缩后返回键高出一截，库页动作组和页名错开） |
 | [BUG-5534](bugs/BUG-5534-feedback-video-diag-missing.md) | ✅ | ✅ | 反馈附带的日志里没有视频性能诊断（上屏 / 丢帧 / 帧耗时） |
 | [BUG-5533](bugs/BUG-5533-subtitle-fill-incomplete-download-stalls.md) | 🚧 | 🚧 | 整库补字幕遇到没下完的视频，每集卡到 5 分钟停滞超时才失败 |

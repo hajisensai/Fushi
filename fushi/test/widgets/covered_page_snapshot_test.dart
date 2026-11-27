@@ -6,7 +6,7 @@ import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart';
 import 'package:material_ui/material_ui.dart';
 
-/// BUG-5535：推入 / 弹出二级页时，被盖住的那一页在转场途中画快照
+/// BUG-5582：推入 / 弹出二级页时，被盖住的那一页在转场途中画快照
 /// （[FushiCoveredPageSnapshot]），不逐帧实时重画整页。
 ///
 /// 用 Apple 设计系统的主题（用户报掉帧时的设置：Cupertino 推入，旧页视差左移）。

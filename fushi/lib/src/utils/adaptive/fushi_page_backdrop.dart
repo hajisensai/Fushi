@@ -425,7 +425,7 @@ class FushiBackdropPageTransitionsBuilder extends PageTransitionsBuilder {
 /// `isCurrent` / `RouteAware.didPushNext` 引起的重建也在第一帧。快照拍下后子树
 /// 再变不会反映到图上（[SnapshotWidget] 的语义），拍早了就会留下一个重影 Hero。
 ///
-/// 起因（2026-11-27「打开视频系列这种二级页面会掉帧」，BUG-5535）：被盖住的页在
+/// 起因（2026-11-27「打开视频系列这种二级页面会掉帧」，BUG-5582）：被盖住的页在
 /// UI 侧并不重画（路由的 RepaintBoundary 层原样复用），但桌面 Impeller 没有 raster
 /// cache，转场的每一帧都要把上下两页的绘制命令整页重放。视频库页静止一帧的 raster
 /// 就要 5.5–6.4 ms（4K、RTX 4070 Ti，真实库），合集页约 2 ms，转场 600 ms 内平均

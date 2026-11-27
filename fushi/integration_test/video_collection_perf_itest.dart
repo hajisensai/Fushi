@@ -116,7 +116,7 @@ void main() {
     }
 
     // 2) 合集详情：打开 + 滚动。与用户同一条路径：从视频库页推进来（转场途中
-    // 下层是视频库页，BUG-5535）。
+    // 下层是视频库页，BUG-5582）。
     homeShellTabNotifier.value = HomeTab.video;
     await _wait(6000);
     UiActivityProbe.install();
