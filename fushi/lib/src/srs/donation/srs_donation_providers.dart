@@ -2,6 +2,8 @@
 library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi_engine/srs/apkg/srs_donation_export.dart';
+import 'package:fushi_engine/srs/srs_db_store.dart';
 
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/store_compliance.dart';
@@ -18,6 +20,19 @@ final StateProvider<int> srsDonationPrefsRevisionProvider = StateProvider<int>(
 /// 捐赠接口客户端（测试里覆盖成 MockClient 版）。
 final Provider<SrsDonationClient> srsDonationClientProvider =
     Provider<SrsDonationClient>((Ref ref) => SrsDonationClient());
+
+/// 一份算好的捐赠预览，记着它是哪个 profile、哪一版库内容（[SrsDbStore.contentFingerprint]）算出来的。
+typedef SrsDonationPreviewSnapshot = ({
+  String profileUid,
+  String fingerprint,
+  SrsDonationPreview preview,
+});
+
+/// 上一次算好的捐赠预览：库内容没变时再进捐赠页直接用，不再后台重读全库（大库上是秒级）。
+final StateProvider<SrsDonationPreviewSnapshot?>
+srsDonationPreviewCacheProvider = StateProvider<SrsDonationPreviewSnapshot?>(
+  (Ref ref) => null,
+);
 
 /// 当前时刻（测试覆盖）。
 final Provider<DateTime Function()> srsDonationClockProvider =

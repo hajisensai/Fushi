@@ -54,6 +54,7 @@
 | [BUG-5561](bugs/BUG-5561-srs-review-dismiss-dict-shortcut.md) | ✅ | ✅ | 复习时「关闭词典」快捷键无效：复习页查词弹窗只认写死的 Esc，「返回上一级」开着弹窗直接退出复习 |
 | [BUG-5554](bugs/BUG-5554-ocr-frame-pick-main-window-stays-front.md) | ✅ | ✅ | ocr-frame-pick-main-window-stays-front |
 | [BUG-5559](bugs/BUG-5559-macos-pair-link-not-routed.md) | ✅ | ✅ | macOS 原生侧没放行 fushi://pair，配对链接到不了 Dart |
+| [BUG-5566](bugs/BUG-5566-srs-donation-page-slow-load.md) | 🚧 | ✅ | srs-donation-page-slow-load |
 | [BUG-5548](bugs/BUG-5548-apple-sidebar-scope-rebuilds-hidden-library-pages.md) | ✅ | ✅ | Apple 宽窗侧栏外壳切 tab 后紧跟一帧：所有访问过的保活库页（含藏起的）整页重建 |
 | [BUG-5547](bugs/BUG-5547-srs-rules7-full-rebuild-killed-loop.md) | ✅ | ✅ | 升级到缓存口径 7 后复习一直在加载：开库整层重建几分钟、切后台被杀就回滚重来 |
 | [BUG-5546](bugs/BUG-5546-curator-auto-retries-ai-failures.md) | ✅ | ✅ | AI 库管家默认开、书架每次重载就跑一趟，额度用完还逐个单元问 AI、下一趟再问一遍 |
