@@ -44,6 +44,8 @@
 //                                             只记最早包含修复的版本（已有记录不覆盖）；当前 fix_sha ≠ 该条 sha
 //                                             （其间被重新标记修复）的静默跳过；只写 fixed_in，
 //                                             不刷 dev_reply_at / updated_at（回填不是开发者回复）
+//   GET  /v1/ci/feedback/bugs                 → {items:[{bug, id, hash, status}]}：已同步进来的仓库 BUG 行
+//   POST /v1/ci/feedback/bugs                 {sha?, upsert, close}：按 BUG 号幂等建 / 改 / 结案（feedback_repo_bugs.js）
 // 反馈人 / 开发者接口的摘要都带 `fix`（null 或 {sha, scope, at, releases}，见 fixView）。
 //
 // ticket 是提交时服务端生成、只返回这一次的随机串；库里只存 SHA-256。ticket 泄露 = 那一条反馈
@@ -92,6 +94,7 @@ import {
   stripHiddenChars,
   textFlags,
 } from './feedback_guard.js';
+import { REPO_BUG_LIMITS, ciRepoBugList, ciRepoBugSync } from './feedback_repo_bugs.js';
 
 export const CATEGORIES = ['bug', 'suggestion', 'other'];
 export const STATUSES = ['open', 'in_progress', 'resolved', 'wont_fix', 'duplicate', 'closed'];
@@ -373,7 +376,8 @@ function summary(row) {
 
 /** 开发者侧摘要：多带风险标记（反馈人侧不给，别教投毒者绕过）。 */
 function devSummary(row) {
-  return { ...summary(row), flags: parseFlags(row) };
+  // repoBug：由 CI 从 docs/bugs 同步进来的条目的 BUG 号（feedback_repo_bugs.js），普通反馈 null。
+  return { ...summary(row), flags: parseFlags(row), repoBug: row.repo_bug ?? null };
 }
 
 /** 开发者私有批注（AI 总结 / 开发者批改）：只进开发者出口，反馈人接口永远不带。 */
@@ -1082,7 +1086,7 @@ export async function devList(env, { status, cursor, limit, q }) {
   const n = clampInt(limit, 1, 100, 30);
   const after = parseCursor(cursor);
   const cols = 'id, category, title, status, created_at, updated_at, dev_reply_at, user_reply_at, account_id, attachments, flags, parent_id, '
-    + 'fix_sha, fix_scope, fix_at, fixed_in, '
+    + 'fix_sha, fix_scope, fix_at, fixed_in, repo_bug, '
     // 列表只露一行预览：截 200 字，全文看详情（devView），省得一页 50 条整段下发。
     + 'substr(ai_summary, 1, 200) AS ai_summary, dev_note IS NOT NULL AS has_dev_note';
   const page = after
@@ -1525,6 +1529,7 @@ const RE = {
   ciFixed: /^\/v1\/ci\/feedback\/fixed$/,
   ciPending: /^\/v1\/ci\/feedback\/pending$/,
   ciReleased: /^\/v1\/ci\/feedback\/released$/,
+  ciBugs: /^\/v1\/ci\/feedback\/bugs$/,
 };
 
 export function isFeedbackPath(path) {
@@ -1563,6 +1568,12 @@ export async function routeFeedback(request, env, url, now, io) {
     }
     if (method === 'POST' && RE.ciReleased.test(path)) {
       return json(await ciMarkReleased(env, io.parse(await io.readBody(64 * 1024)), now), 200, noStore);
+    }
+    if (method === 'GET' && RE.ciBugs.test(path)) {
+      return json(await ciRepoBugList(env), 200, noStore);
+    }
+    if (method === 'POST' && RE.ciBugs.test(path)) {
+      return json(await ciRepoBugSync(env, io.parse(await io.readBody(REPO_BUG_LIMITS.bodyMaxBytes)), now), 200, noStore);
     }
     return null;
   }

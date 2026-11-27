@@ -76,7 +76,8 @@ pub use sched::{
 /// `frwkv_runtime_restore_from_file`），文件格式与 `frwkv_runtime_snapshot` 的字节逐位相同。
 /// 6：排程内核（`frwkv_sched_alloc` / `frwkv_sched_new` / `frwkv_sched_step` / `frwkv_sched_free`，
 /// 见 `sched/mod.rs`）：RWKV 排程的编排状态机搬进本库，宿主只递命令、替它取数。
-pub const ABI_VERSION: i32 = 6;
+/// 7：去掉 int4 精度（`FRWKV_PRECISION_INT4` 不再接受；小模型推荐精度改 int8，BUG-5594）。
+pub const ABI_VERSION: i32 = 7;
 
 #[cfg(test)]
 mod snapshot_tests;
@@ -170,20 +171,15 @@ impl ModelKind {
         }
     }
 
-    /// 推荐的状态精度：大模型 int8（与 f32 的 LogLoss 差 < 0.01%），小模型 int4。
+    /// 推荐的状态精度：大小模型都是 int8（card / note 状态按 16 个一行、f32 比例因子 + int8 码）。
+    ///
+    /// 曾经的 int4 已删（BUG-5594）：4 位行的量化误差在超长复习历史上被状态递推放大，
+    /// card / note 状态指数增长到 f32 溢出、该卡预测卡死在一个常数上——大模型每卡 1 万次复习
+    /// 峰值 1.3e16，小模型 sm101 / sm113 / sm130io 每卡 2 万次复习就到 1e4～4e33（f32 为 2～8）；
+    /// 最小二乘比例因子救不回。int8 在同样的历史（每卡 10 万次）上与 f32 同量级，见
+    /// tests/long_history.rs。
     pub fn default_precision(self) -> StatePrecision {
-        match self {
-            Self::Large => StatePrecision::Int8,
-            Self::Small => StatePrecision::Int4,
-        }
-    }
-
-    /// 这个模型能不能用该精度。大模型不支持 int4：它 card 状态第一层的递推会放大量化误差，
-    /// int4 下高频卡的状态指数增长直到 f32 溢出（tests/long_history.rs：每卡 1 万次复习时峰值
-    /// 1.3e16，f32 为 3.7；最小二乘比例因子也救不回）。上游 kuma3 给大模型留了 int4 card 状态。
-    /// 小模型 int4 与大模型 int8 在同样的历史上与 f32 同量级。
-    pub fn supports(self, precision: StatePrecision) -> bool {
-        !(self == Self::Large && precision == StatePrecision::Int4)
+        StatePrecision::Int8
     }
 }
 
@@ -416,13 +412,6 @@ impl RwkvRuntime {
         precision: StatePrecision,
         threads: usize,
     ) -> Result<Self, RwkvError> {
-        if !model.kind().supports(precision) {
-            return Err(RwkvError::Input(format!(
-                "{:?} model does not support {precision:?} state (its card states diverge; \
-                 use int8)",
-                model.kind()
-            )));
-        }
         let pool = if threads == 0 {
             None
         } else {
@@ -1135,11 +1124,10 @@ pub const FRWKV_HAS_ELAPSED_DAYS: u32 = 1 << 6;
 pub const FRWKV_HAS_ELAPSED_SECONDS: u32 = 1 << 7;
 const FRWKV_KNOWN_BITS: u32 = (1 << 8) - 1;
 
-/// precision 参数：f32 状态 / int8 / int4 紧凑 card+note 状态 / 按模型取推荐值
-/// （[ModelKind::default_precision]：大模型 int8、小模型 int4）。
+/// precision 参数：f32 状态 / int8 紧凑 card+note 状态 / 按模型取推荐值
+/// （[ModelKind::default_precision]：int8）。4（曾经的 int4）自 ABI 7 起拒收（BUG-5594）。
 pub const FRWKV_PRECISION_F32: i32 = 0;
 pub const FRWKV_PRECISION_INT8: i32 = 8;
-pub const FRWKV_PRECISION_INT4: i32 = 4;
 pub const FRWKV_PRECISION_DEFAULT: i32 = -1;
 
 /// [frwkv_model_kind] 的返回值。
@@ -1427,7 +1415,7 @@ pub unsafe extern "C" fn frwkv_model_free(model: *mut FrwkvModel) {
 }
 
 /// 新建 runtime。`precision`：[FRWKV_PRECISION_F32] / [FRWKV_PRECISION_INT8] /
-/// [FRWKV_PRECISION_INT4] / [FRWKV_PRECISION_DEFAULT]；
+/// [FRWKV_PRECISION_DEFAULT]；
 /// `threads`：0 = 全部核心，1 = 单线程（墨水屏 / 省电）。失败返回空指针。
 ///
 /// # Safety
@@ -1444,7 +1432,6 @@ pub unsafe extern "C" fn frwkv_runtime_new(
         let precision = match precision {
             FRWKV_PRECISION_F32 => StatePrecision::F32,
             FRWKV_PRECISION_INT8 => StatePrecision::Int8,
-            FRWKV_PRECISION_INT4 => StatePrecision::Int4,
             FRWKV_PRECISION_DEFAULT => model.0.kind().default_precision(),
             other => return Err(argument(&format!("unsupported precision {other}"))),
         };

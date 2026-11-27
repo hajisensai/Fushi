@@ -74,8 +74,7 @@ fn runtimes() -> Vec<(&'static str, Model, StatePrecision)> {
         ("large f32", large.clone(), StatePrecision::F32),
         ("large int8", large, StatePrecision::Int8),
         ("small f32", small.clone(), StatePrecision::F32),
-        ("small int8", small.clone(), StatePrecision::Int8),
-        ("small int4", small, StatePrecision::Int4),
+        ("small int8", small, StatePrecision::Int8),
     ]
 }
 
@@ -225,7 +224,7 @@ fn next_intervals_are_the_first_day_below_target_on_the_answer_curve() {
 #[test]
 fn forecast_rejects_bad_input() {
     let (reviews, answer) = history();
-    let mut runtime = RwkvRuntime::new(&small_model(), StatePrecision::Int4, 1).unwrap();
+    let mut runtime = RwkvRuntime::new(&small_model(), StatePrecision::Int8, 1).unwrap();
     runtime.replay(&reviews, false).unwrap();
     assert!(runtime.forecast(&answer, &[0], &[1]).is_err());
     assert!(runtime.forecast(&answer, &[3], &[0]).is_err());

@@ -358,12 +358,17 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
     final FushiDatabase db = _appModel.database;
     final List<MediaCollectionRow> collections = await db
         .getAllMediaCollections();
-    final Map<String, int> primaryMap = await db
-        .getPrimaryCollectionIdByEntry();
+    // 游戏库只按游戏键问归属：只取游戏成员（媒体服务器镜像的视频成员可达数万行）。
+    const Set<MediaKind> gameKinds = <MediaKind>{MediaKind.game};
+    final Map<String, int> primaryMap = await db.getPrimaryCollectionIdByEntry(
+      kinds: gameKinds,
+    );
     final Map<String, int> memberSortIndex = <String, int>{};
     // 有游戏成员的合集：只给它们探系列色块的背景图 / 艺术字文件。
     final Set<int> gameCollectionIds = <int>{};
-    for (final MediaCollectionItemRow m in await db.getAllCollectionItems()) {
+    for (final MediaCollectionItemRow m in await db.getCollectionItemsOfKinds(
+      gameKinds,
+    )) {
       final String key = '${m.mediaType}|${m.entryKey}';
       if (primaryMap[key] == m.collectionId) memberSortIndex[key] = m.sortIndex;
       if (m.mediaType == MediaKind.game.dbValue) {

@@ -2,7 +2,7 @@ import 'dart:developer' as developer;
 import 'dart:io';
 
 import 'package:drift/drift.dart'
-    show BooleanExpressionOperators, QueryRow, Value;
+    show BooleanExpressionOperators, OrderingTerm, QueryRow, Value;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_audio/fushi_audio_core.dart';
@@ -608,6 +608,18 @@ class VideoBookRepository {
   Future<List<MediaCollectionItemRow>> getAllCollectionItems() =>
       _db.getAllCollectionItems();
 
+  /// 这一部视频自己的合集成员行（它在各合集里的那一行）。打开播放页解析系列归属用，
+  /// 不必整表读完再按 uid 过滤。
+  Future<List<MediaCollectionItemRow>> memberRowsOfVideo(String bookUid) =>
+      (_db.select(_db.mediaCollectionItems)
+            ..where(
+              (t) =>
+                  t.mediaType.equals(MediaKind.video.dbValue) &
+                  t.entryKey.equals(bookUid),
+            )
+            ..orderBy([(t) => OrderingTerm(expression: t.collectionId)]))
+          .get();
+
   /// 按 id 取来源库（视频来源的分组模式决定目录合集是否算系列归属）。
   Future<MediaSourceRow?> getMediaSourceById(int id) =>
       _db.getMediaSourceById(id);
@@ -615,8 +627,17 @@ class VideoBookRepository {
   /// 合集子篇 → 所属多成员合集 id：属于任一**成员数 ≥2** 合集的视频条目。自动
   /// 刮削据此对子篇**不落作品级海报**、并把海报改落到这个 collectionId 上（判据
   /// 与理由见 [multiMemberCollectionIdByVideoUid]）。
-  Future<Map<String, int>> multiMemberCollectionIds() async =>
-      multiMemberCollectionIdByVideoUid(await _db.getAllCollectionItems());
+  ///
+  /// 只覆盖库内视频（调用方只按 `video_books` 行问）：给了 [forVideos] 时只算这几部
+  /// 所在的合集，否则算含库内视频的全部合集。不读整张成员表——媒体服务器镜像的
+  /// 播放列表成员可达数万行，自动封面刮削一本一问，从前每本都整表读一次。
+  Future<Map<String, int>> multiMemberCollectionIds({
+    Iterable<String>? forVideos,
+  }) async => multiMemberCollectionIdByVideoUid(
+    forVideos == null
+        ? await _db.getCollectionItemsOfLibraryVideos()
+        : await _db.getCollectionItemsOfVideos(forVideos),
+  );
 
   /// 统一合集：写合集**自有**封面绝对路径（`MediaCollections.coverPath`）。
   /// 作品级竖版海报的唯一归宿（用户 2026-08-02）。

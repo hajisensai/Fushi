@@ -350,6 +350,39 @@ void main() {
     expect((await db.listMusicVideos('op')).single.ref, ncop);
   });
 
+  test('一对出错只跳过这一对：同轮后面的歌照样对，出错的那对不记已对过、下一轮再试', () async {
+    await addTrack('a', p.join(cd, 'a.flac'));
+    await addTrack('b', p.join(cd, 'b.flac'));
+    final f = fresh();
+    final _ThrowingService svc = _ThrowingService(
+      database: db,
+      inner: f.svc,
+      failing: <String>{'a'},
+    );
+    final MusicVideoAutoMatcher matcher = MusicVideoAutoMatcher(
+      database: () => db,
+      enabled: () => true,
+      service: (_) => svc,
+      collect: (Map<String, List<MusicReleaseVideoCandidate>> dirs) async =>
+          <String, MusicVideoNearbyFiles>{
+            for (final String d in dirs.keys)
+              d: collectMusicVideoFilesNear(d, minDiscBytes: 1),
+          },
+    );
+    await matcher.schedule();
+
+    expect(svc.attempted, <String>['a', 'b'], reason: 'a 出错后接着对 b');
+    final Map<(String, String), MusicVideoMatchCheckRow> checks = await db
+        .allMusicVideoMatchChecks();
+    expect(checks.keys, contains(('b', stream)));
+    expect(checks.keys, isNot(contains(('a', stream))), reason: '出错不算对过');
+
+    // 下一轮（例如启动补跑）：a 不再出错，补上绑定。
+    svc.failing.clear();
+    await matcher.schedule();
+    expect((await db.listMusicVideos('a')).single.ref, stream);
+  });
+
   test('声纹落库编码往返', () {
     final Uint32List print = Uint32List.fromList(<int>[0, 1, 0xFFFFFFFF, 42]);
     expect(decodeMusicVideoPrint(encodeMusicVideoPrint(print)), print);
@@ -431,5 +464,30 @@ class _PairEngine implements ThemeSongFingerprintEngine {
       matchedItems: 700,
       runItems: 720,
     );
+  }
+}
+
+/// 对齐替身：[failing] 里的曲目抛错（模拟读不了的文件 / 解码失败），其余交给 [inner]。
+class _ThrowingService extends MusicVideoService {
+  _ThrowingService({
+    required super.database,
+    required this.inner,
+    required this.failing,
+  });
+
+  final MusicVideoService inner;
+  final Set<String> failing;
+  final List<String> attempted = <String>[];
+
+  @override
+  Future<({AudioFingerprintMatch? match, bool bound})> alignLocal(
+    MusicTrackRow track,
+    MusicVideoFileStamp video,
+  ) async {
+    attempted.add(track.trackUid);
+    if (failing.contains(track.trackUid)) {
+      throw const FileSystemException('unreadable');
+    }
+    return inner.alignLocal(track, video);
   }
 }

@@ -306,6 +306,7 @@ class DesktopSystemBallActionTarget extends MainWindowExcursionPort {
     GlobalLookupPhysicalPlacement? physicalPlacement,
     OverlayMiningHandler? miningHandler,
     Future<CrossAppAudioSnapshot?>? sentenceAudio,
+    OverlayExcursionContext? excursion,
   }) => GlobalLookupController.instance.lookupText(
     text,
     sentence: sentence,
@@ -313,6 +314,7 @@ class DesktopSystemBallActionTarget extends MainWindowExcursionPort {
     physicalPlacement: physicalPlacement,
     miningHandler: miningHandler,
     sentenceAudio: sentenceAudio,
+    excursion: excursion,
   );
 
   /// 识别一张截图：[engine] 是宿主按截屏识字引擎设置解析出的识别器（本机模型
@@ -1434,6 +1436,16 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
           sentenceAudio: sentenceAudio,
           pickFrame: (ScreenOcrCardImage source) =>
               _pickDesktopScreenOcrCardFrame(source, session.presentation),
+        ),
+        // 反馈 uEnwXmBIR0：卡上「编辑例句后制卡」借主窗前先收冻结层（它盖满屏幕、会挡住
+        // 主窗），主窗状态与用户前台用冻结层抢前台之前记下的那份。
+        excursion: OverlayExcursionContext(
+          presentation: session.presentation,
+          prepare: () async {
+            if (!identical(_desktopOcr, session)) return;
+            _desktopOcr = null;
+            await FloatingBallChannel.stopScreenOcr();
+          },
         ),
       ),
     );

@@ -21,6 +21,10 @@ import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_text_coverage.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
+    show FushiGlassMaterial, FushiGlassTheme;
+import 'package:fushi/src/utils/components/settings_shared.dart'
+    show AdaptiveSettingsSection;
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 import 'package:path/path.dart' as p;
 
@@ -757,6 +761,35 @@ void main() {
     );
     expect(r, isFalse);
   });
+
+  for (final bool apple in <bool>[false, true]) {
+    testWidgets('状态块按设计系统分：MD3 是模块色色块，Apple 是分组卡不画块色（apple=$apple）', (
+      WidgetTester tester,
+    ) async {
+      final _FakeService service = _FakeService(ready: true, jobsDir: tmp);
+      await tester.pumpWidget(
+        wrap(
+          service,
+          (String? _) {},
+          theme: ThemeData(
+            extensions: <ThemeExtension<dynamic>>[
+              FushiGlassTheme(FushiGlassMaterial.off, glassDesign: apple),
+            ],
+          ),
+        ),
+      );
+      await tester.tap(find.byKey(const ValueKey<String>('open')));
+      await tester.pumpAndSettle();
+      final Widget card = tester.widget(
+        find.byKey(const ValueKey<String>('asr-transcribe-status-card')),
+      );
+      if (apple) {
+        expect(card, isA<AdaptiveSettingsSection>());
+      } else {
+        expect(card, isA<AnimatedContainer>());
+      }
+    });
+  }
 
   testWidgets('阶段轨：待下载高亮第一格，下完后打勾（本弹层下过，不算跳过）', (WidgetTester tester) async {
     final _FakeService service = _FakeService(ready: false, jobsDir: tmp);

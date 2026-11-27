@@ -1,3 +1,7 @@
+import 'dart:isolate';
+
+import 'package:drift/isolate.dart' show DriftIsolate;
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/collections/collection_continue.dart'
@@ -308,6 +312,124 @@ String videoContinueSeriesSubtitle(
   return t.video_home_continue_episode_number(n: n);
 }
 
+/// 视频库的折叠归属与组内序（复合键 `video|<uid>`）。
+typedef VideoLibraryMembership = ({
+  Map<String, int> primary,
+  Map<String, int> memberSortIndex,
+});
+
+/// 视频条目的折叠主归属（经 [applyVideoFolderCollectionPolicy] 修正）与组内序。
+///
+/// 与「[FushiDatabase.getPrimaryCollectionIdByEntry] + 整张成员表 +
+/// [buildVideoMemberSortIndex]」在视频键上逐条相同，但只吃两份小得多的输入：
+/// [rawPrimary]（[FushiDatabase.getPrimaryCollectionMembershipOfKind]，每条目一行
+/// 主合集 + 组内序）与 [libraryVideoItems]（[FushiDatabase.getLibraryVideoMemberRows]，
+/// 本机视频自己的成员行）。目录合集策略只改本机视频（`books` 里的）的归属，其余
+/// 条目（远端主机的视频）维持原始主归属，组内序就是 [rawPrimary] 里那一行。媒体
+/// 服务器镜像的播放列表让成员表达数万行，从前三个入口（视频库页、首页继续观看、
+/// 伴屏）每次各把整表连同一遍整表 GROUP BY 搬进 UI isolate。
+VideoLibraryMembership resolveVideoLibraryMembership({
+  required Map<String, ({int collectionId, int sortIndex})> rawPrimary,
+  required List<MediaCollectionItemRow> libraryVideoItems,
+  required List<MediaCollectionRow> collections,
+  required List<VideoBookRow> books,
+  required List<MediaSourceRow> sources,
+}) {
+  final Map<String, int> primary = applyVideoFolderCollectionPolicy(
+    primary: <String, int>{
+      for (final MapEntry<String, ({int collectionId, int sortIndex})> e
+          in rawPrimary.entries)
+        e.key: e.value.collectionId,
+    },
+    collections: collections,
+    items: libraryVideoItems,
+    books: books,
+    sources: sources,
+  );
+  final Map<String, int> localSortIndex = <String, int>{
+    for (final MediaCollectionItemRow m in libraryVideoItems)
+      '${m.mediaType}|${m.entryKey}#${m.collectionId}': m.sortIndex,
+  };
+  final Map<String, int> memberSortIndex = <String, int>{};
+  primary.forEach((String key, int collectionId) {
+    final ({int collectionId, int sortIndex})? raw = rawPrimary[key];
+    final int? sortIndex = raw != null && raw.collectionId == collectionId
+        ? raw.sortIndex
+        : localSortIndex['$key#$collectionId'];
+    if (sortIndex != null) memberSortIndex[key] = sortIndex;
+  });
+  return (primary: primary, memberSortIndex: memberSortIndex);
+}
+
+/// 测试开关：为真时 [loadVideoLibraryMembership] 在调用方 isolate 里读库（组件测试
+/// 跑在 FakeAsync 里，跨 isolate 消息推不动）。生产恒为假。
+@visibleForTesting
+bool debugVideoMembershipInline = false;
+
+/// 后台 isolate 的调试名（timeline / 栈里认得出）。
+const String kVideoMembershipIsolateDebugName = 'fushi-video-membership';
+
+/// 读出视频的折叠归属与组内序（[resolveVideoLibraryMembership]），读库与套策略都在
+/// 一次性后台 isolate 里（经 [FushiDatabase.backgroundConnection] 接同一个库），结果经
+/// `Isolate.exit` 交回、不逐对象拷贝。
+///
+/// 远端主机的视频也要归属，主归属查询收不窄：媒体服务器镜像的播放列表让它达数万行，
+/// 从前在 UI isolate 上解码这批行是首次打开视频页时最大的一段掉帧（BUG-5595）。
+/// [books] 是调用方口径的本机视频（目录合集策略只改这些键的归属）。
+Future<VideoLibraryMembership> loadVideoLibraryMembership(
+  FushiDatabase db, {
+  required List<VideoBookRow> books,
+}) async {
+  if (debugVideoMembershipInline) {
+    return _loadVideoLibraryMembershipHere(db, books);
+  }
+  return _loadVideoLibraryMembershipInBackground(
+    await db.backgroundConnection(),
+    books,
+  );
+}
+
+/// 闭包只捕获本函数的两个参数（都可发送），不碰调用方的库对象。
+Future<VideoLibraryMembership> _loadVideoLibraryMembershipInBackground(
+  DriftIsolate connection,
+  List<VideoBookRow> books,
+) => Isolate.run<VideoLibraryMembership>(() async {
+  final FushiDatabase db = FushiDatabase.shared(await connection.connect());
+  try {
+    return await _loadVideoLibraryMembershipHere(db, books);
+  } finally {
+    await db.close();
+  }
+}, debugName: kVideoMembershipIsolateDebugName);
+
+Future<VideoLibraryMembership> _loadVideoLibraryMembershipHere(
+  FushiDatabase db,
+  List<VideoBookRow> books,
+) async {
+  final Future<Map<String, ({int collectionId, int sortIndex})>> rawF = db
+      .getPrimaryCollectionMembershipOfKind(MediaKind.video);
+  final Future<List<MediaCollectionItemRow>> itemsF = db
+      .getLibraryVideoMemberRows();
+  final Future<List<MediaCollectionRow>> collectionsF = db
+      .getAllMediaCollections();
+  final Future<List<MediaSourceRow>> sourcesF = db.getMediaSourcesByKind(
+    'video',
+  );
+  await Future.wait<Object?>(<Future<Object?>>[
+    rawF,
+    itemsF,
+    collectionsF,
+    sourcesF,
+  ]);
+  return resolveVideoLibraryMembership(
+    rawPrimary: await rawF,
+    libraryVideoItems: await itemsF,
+    collections: await collectionsF,
+    books: books,
+    sources: await sourcesF,
+  );
+}
+
 /// 层次 C：条目在其主折叠合集里的组内序（复合键 → sortIndex）。只记归属合集的
 /// 行——一条目属多合集时组内序跟随折叠归属。
 Map<String, int> buildVideoMemberSortIndex({
@@ -430,12 +552,9 @@ Future<VideoContinueLibrary> loadVideoContinueLibrary(
   final Future<List<MediaCollectionRow>> collectionsF = db
       .getAllMediaCollections();
   final Future<List<VideoBookRow>> booksF = listBooks();
-  final Future<List<MediaSourceRow>> sourcesF = db.getMediaSourcesByKind(
-    'video',
+  final Future<VideoLibraryMembership> membershipF = booksF.then(
+    (List<VideoBookRow> books) => loadVideoLibraryMembership(db, books: books),
   );
-  final Future<Map<String, int>> primaryF = db.getPrimaryCollectionIdByEntry();
-  final Future<List<MediaCollectionItemRow>> itemsF = db
-      .getAllCollectionItems();
   final Future<List<VideoWatchStatisticRow>> watchRowsF = db
       .getAllVideoWatchStatistics();
   final Future<Map<String, int>> segmentsF = db.getLatestStudyEndAtByMedia(
@@ -452,33 +571,21 @@ Future<VideoContinueLibrary> loadVideoContinueLibrary(
     collectionScrapeMetaF,
     collectionsF,
     booksF,
-    sourcesF,
-    primaryF,
-    itemsF,
+    membershipF,
     watchRowsF,
     segmentsF,
     extrasF,
   ]);
   final List<MediaCollectionRow> collections = await collectionsF;
   final List<VideoBookRow> books = await booksF;
-  final List<MediaCollectionItemRow> items = await itemsF;
-  final Map<String, int> primary = applyVideoFolderCollectionPolicy(
-    primary: await primaryF,
-    collections: collections,
-    items: items,
-    books: books,
-    sources: await sourcesF,
-  );
+  final VideoLibraryMembership membership = await membershipF;
   return VideoContinueLibrary(
     books: books,
-    primaryCollectionByEntry: primary,
+    primaryCollectionByEntry: membership.primary,
     collectionsById: <int, MediaCollectionRow>{
       for (final MediaCollectionRow c in collections) c.id: c,
     },
-    memberSortIndex: buildVideoMemberSortIndex(
-      primaryCollectionByEntry: primary,
-      items: items,
-    ),
+    memberSortIndex: membership.memberSortIndex,
     recency: buildVideoWatchRecency(await watchRowsF, await segmentsF),
     localExtraBookUids: videoLocalExtraBookUids(await extrasF),
     metadataWorkByCollection: buildVideoWorksByCollection(await worksF),

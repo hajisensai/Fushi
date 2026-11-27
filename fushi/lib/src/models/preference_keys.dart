@@ -1017,8 +1017,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'srs_card_appearance',
   // 复习历史捐赠（srs/donation/srs_donation_eligibility.dart），跟随 Profile（捐赠身份按 profile 算）：
   // String（JSON 字符串数组，笔记 id）：预览里排除的单词；bool（默认 true）：包含词头 + 读音；
-  // int（毫秒，0 = 没有）：上次成功上传时刻；int：上次上传的复习条数；bool：「不再提示」；
-  // int（毫秒，0 = 没有）：「以后再说」到期时刻。非凭据（donorKey 每次由 profileUid 现算，不落盘）。
+  // bool：「不再提示」；int（毫秒，0 = 没有）：「以后再说」到期时刻。非凭据（donorKey 每次由 profileUid
+  // 现算，不落盘）。srs_donation_last_at / srs_donation_last_reviews 已废弃（2026-11-27 起捐赠记录只认
+  // 服务端 GET，本机镜像换设备必然缺失）；旧值无人读取，key 冻结保留。
   'srs_donation_excluded',
   'srs_donation_include_words',
   'srs_donation_last_at',

@@ -1,6 +1,6 @@
 /// RWKV 权重的按需下载与校验。
 ///
-/// 只用小模型（int4 状态每卡约 2.9 KB）：SM40 在真实复习记录上已比上游大模型（2,762,884 参数，int8 状态
+/// 只用小模型（int8 状态每卡 + 笔记约 4.5 KB；曾经的 int4 约 2.9 KB，超长历史上发散，BUG-5594）：SM40 在真实复习记录上已比上游大模型（2,762,884 参数，int8 状态
 /// 每卡约 25.7 KB）还略准，大模型已移除（2026-10-21）；之后依次换成 SM56、无泄漏的 sm72e25，2026-11-15 换成
 /// **Instant-Only 的 sm98**（同架构，按出示时刻的间隔训练、只训即时头：Fushi 只用 RWKV-Instant，同尺寸下
 /// 即时头更准；它的曲线头没训练过，原生库对它拒绝 RWKV-Curve。见 native/fushi_rwkv/README.md「sm98」）。
@@ -70,7 +70,7 @@ const String kSrsRwkvSmallWeightsSha256 =
     'b2f335bd712b9d602150201de41ab5a0f0a4c291644705e2aa1ed2a1bf1592c3';
 
 /// 省内存的 Tiny Instant-Only 小模型 sm101 的 int8 权重，与 fushi_rwkv `TINY_MODEL_INT8_SHA256` 一致。
-/// card / note 流各 1 层：Fushi 的 int4 状态每卡 + 笔记约 2.0 KB（sm98 约 2.9 KB，约 −30%），即时头
+/// card / note 流各 1 层：Fushi 的 int8 状态每卡 + 笔记约 3.1 KB（sm98 约 4.5 KB，约 −30%），即时头
 /// LogLoss 0.27672（sm98 0.276191）。设置里选（[SrsRwkvModelSize.tiny]）。
 const SrsRwkvModelFile kSrsRwkvTinyWeights = SrsRwkvModelFile(
   fileName: kSrsRwkvTinyWeightsName,

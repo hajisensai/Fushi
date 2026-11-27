@@ -6479,6 +6479,12 @@ class AppModel
       // 上次离线时没送达服务器的播放 / 收藏：偏好（Subsonic 配置）已就绪，补发一轮（连不上
       // 的条目留着，打开服务器页 / 下一次请求成功时再发）。
       unawaited(MusicServerOfflineQueue.instance.flushAll());
+      // 音乐后台补算（响度 / 本地 MV 匹配）的待办就在库里（缺 r128_scanned_at / 缺
+      // match_check 的配对），两者按数据幂等：启动消费一轮，不只靠偶发的来源扫描事件——
+      // 上一轮被更新交接 / 退出杀掉时，没有下一次扫描就永远不会补上（MV 匹配因此停在
+      // 几首整片音轨上、CD 曲目一首没对过）。
+      unawaited(musicLoudness.schedule());
+      unawaited(musicVideoAutoMatch.schedule());
 
       StartupTimeline.mark('post-init-kicks');
       debugPrint('[Fushi] init: DONE');

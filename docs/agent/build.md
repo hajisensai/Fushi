@@ -313,6 +313,19 @@ GitHub 默认分支是 `develop`（用户 2026-11-25 拍板：开发分支才是
 
 应用内反馈的状态挂在**修复 commit** 上：`.github/workflows/feedback-link.yml` 只挂 push develop/main，由 `tool/feedback_link.mjs` 逐个 commit 解析 message，并用 `GITHUB_TOKEN` 查 `GET /repos/{repo}/commits/{sha}/pulls` 取关联 PR（只认已合并、base 是本分支的）解析其描述，把 `Feedback: <id>[, <id>…]` / `Feedback-NoApp: <id>…` 行（行首、不区分大小写）登记到反馈服务 `POST /v1/ci/feedback/fixed`（幂等：sha 与 scope 不变的重登记不重置发布记录）。commit message 里的 id 归该 commit，PR 描述里的 id 归该 PR 在这次 push 里最后一个 commit，同一 id 多次出现取 push 顺序最后的那个；main 上只处理 distinct 的 commit（正式版后 develop 同步进 main 不重登记）。不用 `pull_request_target`：它要在有 secret 的上下文里处理外部 PR，而合并本身就是 push。两条发布 workflow 在「Publish mirror update manifest」之后各有回填步骤（`release.yml` = android；`release-desktop.yml` 的 publish job 按本次真实存在的产物分别回填 windows / macos / ios），跑 `tool/feedback_mark_released.sh`：GET `pending?channel&platform` → 本地 `git cat-file -e` + `git merge-base --is-ancestor <fix> <github.sha>` → POST `released`，把「这个通道 / 平台的这个版本已包含修复」记下（`manifest_channel` 的 `formal` 映射成 `stable`）。回填与登记**都不会让 workflow 变红**：步骤 `continue-on-error: true`，脚本任何失败只打 `::warning`。需要仓库 **secret `FEEDBACK_CI_TOKEN`**（与反馈 Worker 的同名 secret 一致；未配置时两个脚本 `::notice` 后直接跳过）与可选的仓库 **variable `FEEDBACK_API_BASE`**（接口根，缺省 `https://rank.fushi.moe`）。守卫 `fushi/test/build/feedback_workflow_guard_test.dart`，脚本离线测试 `fushi/test/tools/feedback_{mark_released,link}_script_test.dart`。
 
+### 仓库 BUG 同步进反馈（2026-11-27）
+
+`docs/bugs/BUG-*.md` 里「① 未修复」的条目自动出现在应用内反馈（开发者处理台 `/dev` 与 App 开发者视图，列表项带 `repoBug`），不再靠 agent 手动 `fushi_cli feedback submit`。`.github/workflows/bug-feedback-sync.yml` 在 push develop（`docs/bugs/**` 变化）时跑 `tool/bug_feedback_sync.mjs`，做的是**对账**而不是追加，跑多少次结果都一样：
+
+- 文件状态与 `tool/bug.dart statusIcons` 同一口径：有 ① 没勾 = open；勾了 `[x] ①` = fixed；没勾但「真实性」行有 ❌ = dropped；既无 ① 也无 ② = record。同号多个文件（develop 上还没 settle）的号整轮跳过。
+- `GET /v1/ci/feedback/bugs` 拿服务端已同步的 `{bug, id, hash, status}`，本地算差异后 `POST /v1/ci/feedback/bugs`（每批 ≤ 25）：open 且服务端没有 → 新建（category bug、无反馈人、`origin {"source":"repo_bug"}`，标题 `BUG-NNNN · 标题`，正文是 BUG 文件全文 + 仓库链接，截到 8000 字）；open 且 `SHA-256(标题\n正文)` 变了 → 改文字（服务端那条是「已解决」的 = 回归，拉回 open、清修复记录、时间线记一笔；开发者手动 wont_fix / duplicate / closed 的只改文字不动状态）；服务端 open / in_progress 而文件 fixed → 走与 `/v1/ci/feedback/fixed` 同一份 `MARK_FIXED_SQL`，修复 commit 记本次 push 的 `github.sha`（scope app，发布回填照常跟进）；文件 dropped / record / 已删除或改号 → `closed`。
+- 服务端：`services/leaderboard/src/feedback_repo_bugs.js` + 迁移 `0028_feedback_repo_bug.sql`（`repo_bug` 部分唯一索引保证一个号只有一条，INSERT … ON CONFLICT 原子 upsert）。不扣用户提交的 `feedback` 日预算，只扣 `write_rows`。
+- 凭据沿用 secret `FEEDBACK_CI_TOKEN` 与 variable `FEEDBACK_API_BASE`；没配 token、或 Worker 还没部署带迁移 0028 的版本（接口 404）→ `::notice` 跳过；其他接口错误让这条 workflow 变红（不重试，下一次 push 重新对账）。
+- 回填范围：仓库 variable `BUG_FEEDBACK_MIN_NUMBER`，只为号 ≥ 它的 BUG **新建**反馈（不设 = 全部未修复的都建），已建的照常更新 / 结案。首次上线：先手动部署 Worker（`leaderboard-worker-deploy.yml`，会先跑迁移 0028），再 `gh workflow run bug-feedback-sync.yml -f dry_run=true` 看 `PLAN` 行，确认后 `-f dry_run=false` 跑一次正式对账（之后每次 develop push 自动跑）。
+- 归属（所有者 2026-11-27 拍板挂上）：仓库 variable `BUG_FEEDBACK_AS` = 开发者账户 id 或昵称，服务端按 `scripts/feedback.mjs --as` 同一口径解析（只认 `role='dev'`，查不到 / 昵称重名整批 400 `bad_account`），新建 / 改写的行 `account_id` 挂到该账户，App「我的反馈」里也看得到、能追加说明 / 结案；不设 = 不挂账户、只在开发者视图出现。不带 `as` 的改写不清已有归属。
+- `bug-number-settle.yml` 用 `GITHUB_TOKEN` 推的改号提交不触发 workflow，改号由下一次 develop push 一并对账。
+- 测试：`services/leaderboard/test/feedback_repo_bugs.test.js`（真迁移 + 真 Worker 路由端到端跑脚本：两次同步只一条、勾 ① 结案、改回重开、删除结案、撞号跳过、回填下限、分批）；守卫 `fushi/test/build/feedback_workflow_guard_test.dart`。
+
 ### 设置项目录自动同步到官网（2026-11-16）
 
 官网 `fushi.moe/settings.md`、`/settings.json` 是给 AI 读的全量设置项目录（键、中英标题、位置、类型、可选值、范围、默认值），**不手工维护**：

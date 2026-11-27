@@ -15,8 +15,7 @@ typedef OverrideTitleEntry = ({String title, int updatedAt});
 ///  - client 推书给 host（`SyncOrchestrator._syncBooksContentLive` 填
 ///    `putRemoteBook` 的两个 header，BUG-1503）。
 ///
-/// 一趟全表扫（偏好表本就整表加载进各源的内存缓存），按 `override_title://`
-/// 命名空间前缀过滤。清除改名写的是 **null 值行**而不是删行，所以解出来非 String
+/// 按 `override_title://` 命名空间前缀一条 `LIKE` 查询取回（不整表扫偏好）。清除改名写的是 **null 值行**而不是删行，所以解出来非 String
 /// 即「无 override」，必须跳过——否则会把「清掉的名字」当成一次改名发出去。
 Future<Map<String, OverrideTitleEntry>> readOverrideTitlesByBookKey(
   FushiDatabase db,
@@ -26,8 +25,7 @@ Future<Map<String, OverrideTitleEntry>> readOverrideTitlesByBookKey(
     overrideTitleKeyFor(readerBookMediaIdentifierFor('')),
   );
   final Map<String, OverrideTitleEntry> out = <String, OverrideTitleEntry>{};
-  for (final PreferenceRow row in await db.getAllPrefRows()) {
-    if (!row.key.startsWith(prefix)) continue;
+  for (final PreferenceRow row in await db.getPrefRowsByPrefix(prefix)) {
     final String bookKey = row.key.substring(prefix.length);
     if (bookKey.isEmpty) continue;
     final Object? decoded = PrefCodec.decodeUntyped(row.value);

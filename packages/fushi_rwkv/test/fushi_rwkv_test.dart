@@ -224,10 +224,7 @@ void main() {
           worker.kind,
           which == 'small' ? RwkvModelKind.small : RwkvModelKind.large,
         );
-        expect(
-          worker.precision,
-          which == 'small' ? RwkvPrecision.int4 : RwkvPrecision.int8,
-        );
+        expect(worker.precision, RwkvPrecision.int8);
         final (RwkvRows history, RwkvRows answer) = _history();
         final Float32List? predictions = await worker.replay(
           history,
