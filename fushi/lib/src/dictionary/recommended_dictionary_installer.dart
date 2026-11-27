@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
+import 'package:fushi/src/dictionary/dictionary_file_health.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/dictionary_download_controller.dart';
 import 'package:fushi/src/models/dictionary_download_resume.dart';
@@ -12,20 +13,43 @@ import 'package:fushi/src/models/dictionary_repository.dart';
 ///
 /// 词典管理页的「推荐词典」弹窗（已装项不可勾选）与控制通道 `dict install` 共用这一处，
 /// 不各写一份。
+///
+/// 文件不在的那本（[fileHealth] 判 [DictionaryFileIssue.missing]）不算已装：只剩元数据，
+/// 用户得能勾上重下（反馈 ujt4V8GdT8）；重下时以它为显式替换目标
+/// （[recommendedDictionaryRestoreTarget]），保住顺序 / 开关 / 改名。暂时读不到的照算已装。
 bool isRecommendedDictionaryInstalled(
   Iterable<Dictionary> installed,
-  RecommendedDictionary rec,
-) {
-  return installed.any((Dictionary d) {
-    final String base = DictionaryRepository.baseName(d.name);
-    if (base == rec.matchPrefix) return true;
-    if (d.name == rec.matchPrefix) return true;
-    if (d.name.startsWith(rec.matchPrefix) &&
-        d.name.substring(rec.matchPrefix.length).trimLeft().startsWith('[')) {
-      return true;
+  RecommendedDictionary rec, {
+  required DictionaryFileHealth fileHealth,
+}) => installed.any(
+  (Dictionary d) =>
+      _claims(d, rec) &&
+      fileHealth.issueOf(d.name) != DictionaryFileIssue.missing,
+);
+
+/// 推荐词典 [rec] 认领的已装词典里文件不在的那本（重下时的显式替换目标）；没有为 null。
+/// 只在 [isRecommendedDictionaryInstalled] 为 false 时有意义。
+Dictionary? recommendedDictionaryRestoreTarget(
+  Iterable<Dictionary> installed,
+  RecommendedDictionary rec, {
+  required DictionaryFileHealth fileHealth,
+}) {
+  for (final Dictionary d in installed) {
+    if (_claims(d, rec) &&
+        fileHealth.issueOf(d.name) == DictionaryFileIssue.missing) {
+      return d;
     }
-    return false;
-  });
+  }
+  return null;
+}
+
+/// 已装词典 [d] 是不是推荐条目 [rec] 那一本（按 [RecommendedDictionary.matchPrefix] 认领）。
+bool _claims(Dictionary d, RecommendedDictionary rec) {
+  final String base = DictionaryRepository.baseName(d.name);
+  if (base == rec.matchPrefix) return true;
+  if (d.name == rec.matchPrefix) return true;
+  return d.name.startsWith(rec.matchPrefix) &&
+      d.name.substring(rec.matchPrefix.length).trimLeft().startsWith('[');
 }
 
 /// TODO-1075：初装即把「可更新性」权威信号锚定在 catalog 来源真值上。
@@ -57,6 +81,9 @@ Directory recommendedDictionaryTempDir(AppModel model) => Directory(
 /// 先下载（可取消，进度写 [job.progress]，字节数经 [onBytes] 回调给调用方拼文案），
 /// 下完调 [onDownloaded]（调用方在这里切导入阶段 UI / 记录「下载已成功」），
 /// 再经 [AppModel.importDictionary] 导入。失败原样抛出，由调用方分类。
+///
+/// 这本推荐词典认领的已装词典文件不在时（[recommendedDictionaryRestoreTarget]）以它为显式
+/// 替换目标导入：同名不会被判「已是最新」跳过，顺序 / 开关 / 改名照旧（反馈 ujt4V8GdT8）。
 Future<void> downloadAndImportRecommendedDictionary({
   required AppModel appModel,
   required RecommendedDictionary rec,
@@ -65,6 +92,11 @@ Future<void> downloadAndImportRecommendedDictionary({
   void Function(int received, int total)? onBytes,
   void Function()? onDownloaded,
 }) async {
+  final Dictionary? restoreTarget = recommendedDictionaryRestoreTarget(
+    appModel.dictionaries,
+    rec,
+    fileHealth: DictionaryFileHealthMonitor.instance.value,
+  );
   final File zipFile = await DictionaryDownloader.download(
     url: rec.url,
     tempDir: tempDir,
@@ -72,10 +104,18 @@ Future<void> downloadAndImportRecommendedDictionary({
     cancelToken: job.cancelToken,
     onBytes: onBytes ?? (int received, int total) {},
     // BUG-3887 续：iOS 进程被回收后新进程据此接着下、按同一配方导入。
-    handoffPayload: DictionaryImportRecipe.install(
-      name: rec.name,
-      sourceOverride: recommendedDictionarySourceOverride(rec),
-    ).toPayload(),
+    handoffPayload:
+        (restoreTarget == null
+                ? DictionaryImportRecipe.install(
+                    name: rec.name,
+                    sourceOverride: recommendedDictionarySourceOverride(rec),
+                  )
+                : DictionaryImportRecipe.update(
+                    name: rec.name,
+                    replaceTargetName: restoreTarget.name,
+                    sourceOverride: recommendedDictionarySourceOverride(rec),
+                  ))
+            .toPayload(),
   );
   onDownloaded?.call();
   await appModel.importDictionary(
@@ -83,5 +123,6 @@ Future<void> downloadAndImportRecommendedDictionary({
     progressNotifier: job.message,
     onImportSuccess: () {},
     sourceOverride: recommendedDictionarySourceOverride(rec),
+    replaceTarget: restoreTarget,
   );
 }
