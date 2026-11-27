@@ -281,7 +281,7 @@ void main() {
       final EpubBook book = EpubParser.parseSyncFromPath(
         path,
         extract.path,
-        includeSvgSpineDocuments: true,
+        includeImageSpineItems: true,
       );
       final Directory staging = Directory.systemTemp.createTempSync(
         'epub_svg_pages_',
@@ -296,6 +296,83 @@ void main() {
       ]);
       expect(pages[0].readAsBytesSync(), _png(30), reason: 'spine 第一页是 p-002');
       expect(pages[1].readAsBytesSync(), _png(20));
+    });
+
+    test('spine 直接引用位图（image/jpeg）→ 认成漫画并按 spine 序整卷导入', () async {
+      // 反馈 8NPHawEd0I：Open Manga Format 的集英社电子版，spine 逐页直接引用
+      // JPEG、没有 XHTML 页。修复前 spine 项全被跳过、整本 0 章，探测抛
+      // 「EPUB spine contains no readable chapters」，漫画判否、书籍也打不开。
+      final String path = _writeEpub(
+        root,
+        name: 'rasterspine.epub',
+        manifest: '''
+    <item id="nav" href="nav.xhtml" properties="nav" media-type="application/xhtml+xml"/>
+    <item id="image001" href="images/cover.jpg" media-type="image/jpeg"/>
+    <item id="image002" href="images/p 001.jpg" media-type="image/jpeg"/>
+    <item id="image003" href="images/p 002.png" media-type="image/png"/>''',
+        // 故意与文件名序不同：页序必须跟 spine 走。
+        spine:
+            '<itemref idref="image001"/>'
+            '<itemref idref="image003" properties="page-spread-left"/>'
+            '<itemref idref="image002" properties="page-spread-right"/>',
+        files: <String, List<int>>{
+          'item/nav.xhtml': utf8.encode(
+            '<html xmlns="http://www.w3.org/1999/xhtml"><body><nav/></body></html>',
+          ),
+          'item/images/cover.jpg': _png(10),
+          'item/images/p 001.jpg': _png(20),
+          'item/images/p 002.png': _png(30),
+        },
+      );
+      final List<String> logged = <String>[];
+      final EngineLogSink previous = engineLog;
+      engineLog = _CapturingSink(logged);
+      addTearDown(() => engineLog = previous);
+      expect(MangaArchiveImporter.looksLikeImageArchive(path), isTrue);
+      expect(logged, isEmpty);
+
+      final Directory staging = Directory.systemTemp.createTempSync(
+        'epub_raster_pages_',
+      );
+      addTearDown(() => staging.deleteSync(recursive: true));
+      final ({String? rejection, String? seriesMetadata}) staged =
+          await MangaArchiveImporter.stageImageEpub(
+            archivePath: path,
+            extractionPath: extract.path,
+            stagingPath: staging.path,
+            maxTotalBytes: 1 << 30,
+            maxEntryBytes: 1 << 30,
+            onEntryExtracted: () {},
+          );
+      expect(staged.rejection, isNull);
+      final List<File> pages = staging.listSync().whereType<File>().toList()
+        ..sort((File a, File b) => a.path.compareTo(b.path));
+      expect(pages.map((File f) => p.basename(f.path)), <String>[
+        'page_000000.jpg',
+        'page_000001.png',
+        'page_000002.jpg',
+      ]);
+      expect(pages[0].readAsBytesSync(), _png(10));
+      expect(pages[1].readAsBytesSync(), _png(30), reason: 'spine 第二项是 p 002');
+      expect(pages[2].readAsBytesSync(), _png(20));
+    });
+
+    test('书籍口径（默认）不收位图 spine 项', () {
+      final String path = _writeEpub(
+        root,
+        manifest: '''
+    <item id="p-001" href="xhtml/p-001.xhtml" media-type="application/xhtml+xml"/>
+    <item id="i-001" href="image/i-001.jpg" media-type="image/jpeg"/>''',
+        spine: '<itemref idref="i-001"/><itemref idref="p-001"/>',
+        files: <String, List<int>>{
+          'item/xhtml/p-001.xhtml': utf8.encode(_svgPage('../image/i-001.jpg')),
+          'item/image/i-001.jpg': _png(20),
+        },
+      );
+      final EpubBook book = EpubParser.parseSyncFromPath(path, extract.path);
+      expect(book.chapters.map((EpubChapter c) => c.href), <String>[
+        'item/xhtml/p-001.xhtml',
+      ]);
     });
 
     test('书籍口径（默认）仍不收 SVG spine 项：阅读器只渲染 HTML 章节', () {
