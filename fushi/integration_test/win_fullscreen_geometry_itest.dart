@@ -31,7 +31,14 @@ import 'test_helpers.dart';
 ///   .\tool\run_windows_itest.ps1 integration_test\win_fullscreen_geometry_itest.dart
 ///   ... -DartDefine PROBE_MAXIMIZED=true
 void main() {
-  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  final IntegrationTestWidgetsFlutterBinding binding =
+      IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  // Frames as in the real app (vsync-driven), not only on tester.pump: the
+  // engine's resize wait and the rasterized-size report are part of what the
+  // trace measures. With the default policy no frame is produced until the
+  // next pump, so every child resize hit the engine's 100 ms timeout and the
+  // new size was reported a second late (measured).
+  binding.framePolicy = LiveTestWidgetsFlutterBindingFramePolicy.fullyLive;
 
   testWidgets('fullscreen enter / exit: one step, exact restore', (
     WidgetTester tester,
@@ -68,15 +75,9 @@ void main() {
     );
 
     await WindowCaptionChannel.setFullscreen(true);
-    await tester.pump(const Duration(seconds: 1));
-    final List<_Event> enter = _parse(
-      await WindowCaptionChannel.fullscreenTrace(),
-    );
+    final List<_Event> enter = await _settledTrace(tester);
     await WindowCaptionChannel.setFullscreen(false);
-    await tester.pump(const Duration(seconds: 1));
-    final List<_Event> exit = _parse(
-      await WindowCaptionChannel.fullscreenTrace(),
-    );
+    final List<_Event> exit = await _settledTrace(tester);
     FlutterError.onError = testOnError;
     _dump('enter', enter);
     _dump('exit', exit);
@@ -247,6 +248,32 @@ class _Event {
   String toString() =>
       '${tUs}us ${kind.name} win=$window client=$client '
       'zoomed=$zoomed iconic=$iconic a=$a b=$b c=$c';
+}
+
+/// The trace once the view has reported a rasterized frame at the client size
+/// the transition ended on (at most 5 s of live frames).
+Future<List<_Event>> _settledTrace(WidgetTester tester) async {
+  List<_Event> trace = const <_Event>[];
+  for (int i = 0; i < 50; i++) {
+    await tester.pump(const Duration(milliseconds: 100));
+    trace = _parse(await WindowCaptionChannel.fullscreenTrace());
+    final _Event? end = trace
+        .where((_Event e) => e.kind == _Kind.end)
+        .firstOrNull;
+    if (end == null) continue;
+    if (end.client.width <= 0 || end.client.height <= 0) {
+      if (i >= 5) return trace;
+      continue;
+    }
+    if (trace.any(
+      (_Event e) => e.kind == _Kind.rasterized && e.ab == end.client,
+    )) {
+      // A little longer, so a late geometry change would still be caught.
+      await tester.pump(const Duration(milliseconds: 300));
+      return _parse(await WindowCaptionChannel.fullscreenTrace());
+    }
+  }
+  return trace;
 }
 
 List<_Event> _parse(List<Map<Object?, Object?>> raw) => <_Event>[

@@ -20,5 +20,6 @@
   - 守卫 `fushi/test/build/win_fullscreen_flash_guard_test.dart`：DWM 动画关闭包住所有几何调用；进入无 `ShowWindow`、只一次 `SetWindowPlacement` 且走 `FullscreenUnzoomPlacement`；退出无 restore-to-normal、`ShowWindow(SW_MAXIMIZE)` 在记账 `SetWindowPlacement` 之前；透底表面只在光栅化回报后清快照。
 - **备注**：
   - 复测（第一轮修复后，60 fps，玻璃 + 浅色，最大化）：进入一步到位、无任务栏残帧；退出不再出现小窗口，直接回最大化；残留 0–3 帧纯 243，见根因 4，已按上文修。
+  - 离屏时间线实测（`win_fullscreen_geometry_itest`，普通窗口 2384x1591 起步，窗口停在 -32000）：进入 6.7 ms 一次 `WM_WINDOWPOSCHANGED` 直达 3856x2169、客户区 3840x2160 = 显示器，过程中无其它尺寸；退出 12.7 ms 一次直回 2400x1600 原矩形、客户区 2384x1591，逐项与进入前相等。最大化起步在离屏 runner 里只能验几何（进 / 出各一个尺寸、退出后 zoomed 与矩形与进入前相等，已过）：停在 -32000 的 zoomed 窗口被 window_manager 按工作区算出负的客户区（-60134x-61814），视图没有尺寸，客户区 / 光栅化断言在这条路径跳过。首轮跑法用默认帧策略（只在 pump 时出帧），子窗 resize 次次撞引擎 100 ms 超时、新尺寸光栅化回报晚 1 s，测试已改 `fullyLive` 并等到新尺寸光栅化回报再读时间线。
   - 仍会露材质的只剩「半透明内容 + Mica」时的全屏跳变（首页上按 F11、网页视频页）：那里底下必须是真材质，跳变后到视图新帧上屏之间露出的就是材质（与系统里任何 Mica 窗口缩放时一样），要消除得拿到「DWM 已合成视图新缓冲」的信号，Flutter Windows 引擎不暴露，记录在此不做。
   - 测试期间用户要求不再做前台可见录屏；上述像素数据是要求前采的。多显示器、任务栏在左 / 上的真机路径只由单测覆盖，未实机测。
