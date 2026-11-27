@@ -17,7 +17,6 @@ fn precision(name: &str) -> StatePrecision {
     match name {
         "f32" => StatePrecision::F32,
         "int8" => StatePrecision::Int8,
-        "int4" => StatePrecision::Int4,
         other => panic!("{other}"),
     }
 }
