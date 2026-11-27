@@ -104,6 +104,19 @@ void main() {
     expect(byPath['$kit/gradle-ro-dep-cache.tar.gz']?['group'], 'mihon-build');
   });
 
+  test('sh build runs from a canonical (symlink-free) working directory', () {
+    // macOS $TMPDIR 在 /var/folders 下（/var -> /private/var）。GRADLE_RO_DEP_CACHE
+    // 带符号链接时 Kotlin DSL 的 script classpath 会漏掉只读缓存里的插件 jar
+    // （"Unresolved reference 'JvmTarget'"），所以工作目录必须先 pwd -P 规范化。
+    expect(
+      RegExp(
+        r'working_root="\$\(cd "\$\(mktemp -d [^\n]*\)" && pwd -P\)"',
+      ).hasMatch(sh),
+      isTrue,
+      reason: 'working_root must be canonicalized with pwd -P',
+    );
+  });
+
   test('JDK pins in the scripts agree with the vendored manifest', () {
     final String corretto = pinned(
       sh,

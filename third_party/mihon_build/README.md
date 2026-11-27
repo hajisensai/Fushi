@@ -39,4 +39,4 @@ CI 上 Mihon runtime 本身按输入哈希存进原生产物持久库（`.github
 4. `python3 tool/vendored_binaries.py publish`，再不带 `FUSHI_MIHON_GRADLE_ONLINE_HOME` 离线跑一次确认。
 
 依赖坐标与 OS 无关（JVM 件；jogamp 自带的 natives 走 `third_party/jogamp`），所以一台机器打的包
-三端通用；2026-11-27 的这份在 Windows 上打，也只在 Windows 上离线构建验证过。
+三端通用；2026-11-27 的这份在 Windows 上打，Linux / Windows 的发版构建（CI）与 Apple Silicon Mac 的完整脚本都离线验证过。macOS 上缓存路径必须是规范路径（`/private/var/...`，脚本用 `pwd -P` 取）：`/var` 是符号链接，带它的 `GRADLE_RO_DEP_CACHE` 会让 Kotlin DSL 编译 build script 时找不到插件类（`Unresolved reference 'JvmTarget'`）。
