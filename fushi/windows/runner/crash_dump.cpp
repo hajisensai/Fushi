@@ -1,5 +1,7 @@
 #include "crash_dump.h"
 
+#include "dart_aot_image.h"
+
 #include <windows.h>
 #include <dbghelp.h>
 #include <shlobj.h>
@@ -354,8 +356,28 @@ namespace fushi
             MiniDumpWithUnloadedModules);
           // 没有异常上下文（hang dump）时不传 exception stream：dbghelp 对
           // ExceptionPointers==nullptr 的 MEI 会失败，全线程栈本身已够看主线程卡在哪。
+          // Dart AOT 镜像（app.so）不在模块表里，Dart 帧在 cdb 里只是裸地址：把装载
+          // 基址与 build-id 写成一条 user stream，tool/windows_dump_symbolize.dart
+          // 据此挑对符号文件、把帧换成 Dart 函数与 file:line（dart_aot_image.h）。
+          char aot_line[160];
+          MINIDUMP_USER_STREAM aot_stream{};
+          MINIDUMP_USER_STREAM_INFORMATION user_streams{};
+          DartAotImageInfo aot;
+          if (FindDartAotImage(&aot)) {
+            const size_t len = FormatDartAotImageLine(aot, aot_line,
+              sizeof(aot_line));
+            if (len > 0) {
+              aot_stream.Type = kDartAotImageStreamType;
+              aot_stream.BufferSize = static_cast<ULONG>(len);
+              aot_stream.Buffer = aot_line;
+              user_streams.UserStreamCount = 1;
+              user_streams.UserStreamArray = &aot_stream;
+            }
+          }
           written = write_dump(GetCurrentProcess(), GetCurrentProcessId(), file,
-            type, exception_pointers ? &mei : nullptr, nullptr, nullptr) != FALSE;
+            type, exception_pointers ? &mei : nullptr,
+            user_streams.UserStreamCount ? &user_streams : nullptr,
+            nullptr) != FALSE;
           CloseHandle(file);
         }
       }

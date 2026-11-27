@@ -63,6 +63,16 @@ namespace fushi
   // 每进程最多因 Dart 失联抓几份 dump（与主线程停泵的份数分开计）。
   constexpr int kMaxDartSilenceDumpsPerProcess = 2;
 
+  // 看门狗线程两圈循环之间隔了这么久（不含系统睡眠），就记一行「看门狗没被调度」
+  // （毫秒）。它本该每 kPollIntervalMs（100 ms）醒一次；隔 2 s 以上说明整个进程都没
+  // 在跑（被挂起、严重换页），这段时间里其它判据全都量不到（BUG-5568）。
+  constexpr ULONGLONG kWatchdogStarvedLogThresholdMs = 2000;
+
+  inline bool IsWatchdogLoopStarved(ULONGLONG unbiased_gap_ms)
+  {
+    return unbiased_gap_ms >= kWatchdogStarvedLogThresholdMs;
+  }
+
   // Dart 侧心跳到达（平台线程的 channel 处理器调用）。
   void NoteDartHeartbeat();
 

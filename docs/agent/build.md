@@ -470,6 +470,29 @@ GitHub 默认分支是 `develop`（用户 2026-11-25 拍板：开发分支才是
   `llvm-symbolizer --obj=arm64-v8a/app.so 0x05cbbc30 0x0249c48c …`（NDK 的 `toolchains/llvm/prebuilt/*/bin/` 里有）
   得到 Dart 函数名与 `文件:行`。
 
+### Windows 卡死 / 崩溃 dump 的符号（2026-11-27，BUG-5568）
+
+- Windows 上 gen_snapshot 默认 `--strip`，包里 `data/app.so` 只剩节头；app.so 由 Dart 自己的 ELF loader
+  装进私有内存（不是 LoadLibrary），dump 的模块表里没有它，cdb 里 Dart 帧全是 ``0x0000021e`f3f2966f`` 裸地址。
+- **出包另存调试信息**：`release-desktop.yml` 的 `flutter build windows --release` 带
+  `--extra-gen-snapshot-options=--save-debugging-info=…/fushi/build/windows-dart-symbols/app.windows-x64.symbols`，
+  出包后 `dart tool/windows_dump_symbolize.dart verify <app.so> <symbols>` 核对 build-id，按发布序号上传 artifact
+  `windows-dart-symbols-<序号>`（debug 通道 14 天、其余 90 天，`continue-on-error`、不进 Release 资产）。
+  包里的 app.so 与 app 内 Dart 栈格式都不变；**不用 `--split-debug-info`**（理由同 Android）。守卫
+  `fushi/test/build/windows_dart_symbols_guard_test.dart`。
+- **dump 自带基址**：runner（`fushi/windows/runner/dart_aot_image.h`）找到装载中的 app.so，把
+  `dart_aot base=0x… span=0x… build_id=…` 写进每份 minidump（user stream `0x46555348`），hang dump 时
+  `hang_watchdog.log` 也记一行。BUG-5568 之前的 dump 没有这条，基址要从活进程扫（见 BUG 文件）。
+- **引擎符号**：`flutter_windows.dll`（含 Dart VM 与 GC）的 pdb 在补丁引擎 zip 里——
+  `ci/patches/flutter-engine/<Flutter 版本>/artifacts.json` 的 `url`，解压取 `windows-x64-release/`。
+  装了补丁引擎的包签过名，md5 与 zip 里的 dll 不同，但 pdb GUID 一致，cdb 能直接匹配。
+- **还原**：装的版本号 `3.4.0-debug.<序号>`（`fushi.exe` 文件版本）→ `gh run download <run-id> -n windows-dart-symbols-<序号>`，然后
+  `dart tool/windows_dump_symbolize.dart stack --dump hang-….dmp --dart-symbols app.windows-x64.symbols --engine-symbols <引擎 pdb 目录>`
+  （`--threads main` 只看主线程；旧 dump 加 `--base 0x…`）。输出是 cdb 的栈，Dart 帧后面接
+  `[dart] 函数 (文件:行)`（经 `flutter symbolize`）。
+- **看门狗自己没跑也会记**：看门狗线程两圈之间隔了 ≥2 s（不含系统睡眠）就往 `hang_watchdog.log` 写
+  `watchdog thread did not run for … ms (wall clock … ms)`——整个进程没被调度时其它判据全都量不到。
+
 ### iOS 包体积与崩溃符号（2026-11-15）
 
 - **slang 不生成 flat map**（`fushi/slang.yaml` 的 `flat_map: false`，BUG-4640）：17 个

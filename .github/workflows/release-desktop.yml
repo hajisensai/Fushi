@@ -674,6 +674,13 @@ jobs:
       # 所以它绿不代表这条 release 路径绿——「CI 全绿」从来没覆盖过发布构建。
       #
       # -v 的日志量（本机实测约 2500 行）远小于「红了但不知道为什么」的代价。
+      # BUG-5568：Windows 上 gen_snapshot 默认 --strip，包里的 app.so 没有符号，hang / 崩溃
+      # dump 里的 Dart 帧全是裸地址、对不上源码。--save-debugging-info 另存一份带 .symtab +
+      # DWARF 的 ELF（build-id 与包里一致），包里的 app.so 与 app 内的 Dart 栈格式都不变——
+      # 不用 --split-debug-info（它连带 --dwarf-stack-traces，诊断归因会退化，同 Android 口径）。
+      - name: Prepare Windows Dart symbols directory
+        shell: pwsh
+        run: New-Item -ItemType Directory -Force -Path fushi/build/windows-dart-symbols | Out-Null
       - name: Build Windows release
         working-directory: fushi
         run: >-
@@ -681,6 +688,23 @@ jobs:
           --build-name "${{ steps.channel.outputs.build_version_name }}"
           --build-number "${{ steps.channel.outputs.release_sequence }}"
           --dart-define="FUSHI_BUILD_VERSION=${{ steps.channel.outputs.build_version_name }}"
+          --extra-gen-snapshot-options=--save-debugging-info=${{ github.workspace }}/fushi/build/windows-dart-symbols/app.windows-x64.symbols
+      # 符号文件必须属于包里这份 app.so（build-id 一致）且真带符号 / 行号表，否则留了也白留。
+      # 只是诊断件，不挡发版（continue-on-error，同 Android）。
+      - name: Verify Windows Dart symbols
+        continue-on-error: true
+        working-directory: fushi
+        run: dart tool/windows_dump_symbolize.dart verify build/windows/x64/runner/Release/data/app.so build/windows-dart-symbols/app.windows-x64.symbols
+      # 还原：docs/agent/build.md「Windows 卡死 / 崩溃 dump 的符号」。不进 Release 资产、不挡发版。
+      - name: Upload Windows Dart symbols
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-dart-symbols-${{ steps.channel.outputs.release_sequence }}
+          path: fushi/build/windows-dart-symbols/
+          if-no-files-found: warn
+          # debug 通道每次 push 都出一份，留 14 天；正式 / 测试版与 Android / iOS 符号同为 90 天。
+          retention-days: ${{ steps.channel.outputs.channel == 'debug' && 14 || 90 }}
       # 失败时把 CMake 自己的日志捞出来：-v 打的是 flutter 侧，CMake 配置期的
       # 报错只在这两个文件里。artifact 而不是 echo，避免再被日志截断吃掉。
       - name: Upload Windows build logs on failure

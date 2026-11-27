@@ -28,6 +28,7 @@ add_executable(${BINARY_NAME} WIN32
   "layer_origin_solver.cpp"
   "voice_hook_reader.cpp"
   "crash_dump.cpp"
+  "dart_aot_image.cpp"
   "external_video_handoff.cpp"
   "flutter_window.cpp"
   "floating_ball_window.cpp"
@@ -227,6 +228,22 @@ add_custom_target(fushi_windows_code_integrity_report_gate
   VERBATIM
 )
 add_dependencies(${BINARY_NAME} fushi_windows_code_integrity_report_gate)
+
+# BUG-5568: hang / crash dumps record where the Dart AOT image (app.so) is
+# loaded and its build-id (dart_aot_image.h) so Dart frames can be symbolized;
+# keep the ELF parsing and the watchdog starvation threshold executable.
+add_executable(fushi_windows_dart_aot_image_test
+  "tests/dart_aot_image_test.cpp"
+)
+apply_standard_settings(fushi_windows_dart_aot_image_test)
+target_compile_definitions(fushi_windows_dart_aot_image_test PRIVATE
+  "NOMINMAX")
+add_custom_target(fushi_windows_dart_aot_image_gate
+  COMMAND "$<TARGET_FILE:fushi_windows_dart_aot_image_test>"
+  DEPENDS fushi_windows_dart_aot_image_test
+  VERBATIM
+)
+add_dependencies(${BINARY_NAME} fushi_windows_dart_aot_image_gate)
 
 # BUG-3768: the FUSHI_TEST_HIDDEN window must stay where the runner parked it;
 # Dart startup placement (setBounds / maximize) otherwise pulls it onto the

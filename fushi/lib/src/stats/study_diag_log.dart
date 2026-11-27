@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/storage/app_paths.dart';
+import 'package:fushi/src/utils/misc/capped_log_file.dart';
 
 /// 学习统计诊断日志（用户 2026-09-12：「要有个导出日志的方式用于排查阅读速度异常」）。
 ///
@@ -38,6 +39,9 @@ class StudyDiagLog {
 
   final List<String> _lines = <String>[];
   File? _file;
+
+  /// [_file] 的追加 / 保尾（BUG-5571）。
+  CappedLogFile? _log;
   Future<void> _chain = Future<void>.value();
 
   /// 本次运行内存流水（只读快照，最旧在前）。
@@ -51,8 +55,11 @@ class StudyDiagLog {
     try {
       final Directory dir =
           directoryOverride ?? await AppPaths.diagnosticsDirectory();
-      _file = File('${dir.path}/$fileName');
-      await _trimFile();
+      final File file = File('${dir.path}/$fileName');
+      _file = file;
+      final CappedLogFile log = CappedLogFile(file, maxBytes: maxFileBytes);
+      _log = log;
+      await log.trimIfOver();
     } catch (e) {
       debugPrint('[StudyDiagLog] init failed: $e');
     }
@@ -65,9 +72,9 @@ class StudyDiagLog {
     final String line = formatLine(DateTime.now(), source, message);
     _lines.add(line);
     if (_lines.length > maxEntries) _lines.removeAt(0);
-    final File? file = _file;
-    if (file == null) return;
-    _chain = _chain.then((_) => _append(file, line)).catchError((Object e) {
+    final CappedLogFile? log = _log;
+    if (log == null) return;
+    _chain = _chain.then((_) => log.append('$line\n')).catchError((Object e) {
       debugPrint('[StudyDiagLog] append failed: $e');
     });
   }
@@ -77,34 +84,6 @@ class StudyDiagLog {
     final String ts = at.toIso8601String().replaceFirst('T', ' ');
     final String flat = message.replaceAll('\r', '').replaceAll('\n', '⏎');
     return '$ts [$source] $flat';
-  }
-
-  Future<void> _append(File file, String line) async {
-    await file.writeAsString('$line\n', mode: FileMode.append);
-    if (await file.length() > maxFileBytes) await _trimFile();
-  }
-
-  /// 超限保尾：截到 [maxFileBytes] 再丢掉第一段残行。
-  Future<void> _trimFile() async {
-    final File? file = _file;
-    if (file == null || !await file.exists()) return;
-    if (await file.length() <= maxFileBytes) return;
-    final List<int> bytes = await file.readAsBytes();
-    await file.writeAsString(trimTail(bytes));
-  }
-
-  /// 纯函数：保尾到 [maxFileBytes] 并对齐到行首（第一段残行丢弃）。
-  static String trimTail(List<int> bytes, {int maxBytes = maxFileBytes}) {
-    if (bytes.length <= maxBytes) {
-      return utf8.decode(bytes, allowMalformed: true);
-    }
-    final String content = utf8.decode(
-      bytes.sublist(bytes.length - maxBytes),
-      allowMalformed: true,
-    );
-    final int nl = content.indexOf('\n');
-    if (nl < 0 || nl + 1 >= content.length) return content;
-    return content.substring(nl + 1);
   }
 
   /// 等在途落盘写完（导出 / 退出前）。
@@ -129,6 +108,7 @@ class StudyDiagLog {
     await flush();
     try {
       await _file?.writeAsString('');
+      _log?.forgetSize();
     } catch (e) {
       debugPrint('[StudyDiagLog] clear failed: $e');
     }
