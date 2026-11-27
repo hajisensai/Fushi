@@ -74,6 +74,7 @@
 | [BUG-5544](bugs/BUG-5544-masthead-tabs-hittest.md) | ✅ | ✅ | 页头大字收缩后嵌套标签行 / 工具行点不动 |
 | [BUG-5543](bugs/BUG-5543-web-video-subtitles.md) | ✅ | ✅ | web-video-subtitles |
 | [BUG-5542](bugs/BUG-5542-popup-srs-mining-read-only.md) | 🚧 | 🚧 | Android 应用外查词卡（:popup）制卡到 Fushi 复习报 SrsCoreReadOnlyException |
+| [BUG-5542](bugs/BUG-5542-popup-srs-mining-read-only.md) | ✅ | ✅ | Android 应用外查词卡（:popup）制卡到 Fushi 复习报 SrsCoreReadOnlyException |
 | [BUG-5541](bugs/BUG-5541-popup-favorite-unwired.md) | ✅ | ✅ | Android 应用外查词卡（:popup）点 ☆ 收藏没反应 |
 | [BUG-5540](bugs/BUG-5540-music-tags-ext-hint.md) | ✅ | ✅ | music-tags-ext-hint |
 | [BUG-5539](bugs/BUG-5539-v182-collection-side-orphans-not-purged.md) | 🚧 | 🚧 | v182-collection-side-orphans-not-purged |

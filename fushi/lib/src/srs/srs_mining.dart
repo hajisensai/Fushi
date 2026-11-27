@@ -44,6 +44,86 @@ typedef SrsMinerResolver = Future<SrsMiner?> Function();
 /// 打开一条 SRS 笔记的编辑页（导航器不可用时返回 false）。
 typedef SrsNoteOpener = Future<bool> Function(String noteId);
 
+/// 复习笔记的**写入**由谁执行（BUG-5542）。
+///
+/// 制卡链上的读（查重、同词反查、读字段、落点解析）一律在本进程的库上做；写（新建、覆写、改字段、删除）交给它。
+/// 主进程（复习库的唯一写者，Primary）用 [LocalSrsNoteWriter] 直接写；只读打开复习库的辅助进程（Android `:popup`
+/// 查词窗、第二块屏面板，Secondary）用转交主进程的实现（`srs_write_relay.dart` 的 `RelaySrsNoteWriter`，拍板 D10
+/// 「弹窗里的制卡转交主进程」）——在这些进程里直接写，内核报 [SrsCoreReadOnlyException]。
+///
+/// [miner] 是本进程为这次写入取定的制卡器：转交实现从它读落点（[SrsMiner.destination]）与配置副本
+/// （[SrsDbStore.profileUid]），让主进程按同一份配置、同一个落点写。
+abstract interface class SrsNoteWriter {
+  /// 新建一张卡（[SrsMiner.mine] 的契约：永不抛，失败变成 [MineOutcome]）。
+  Future<MineOutcome> mine(
+    SrsMiner miner, {
+    required AnkiSettings settings,
+    required String rawPayloadJson,
+    required AnkiMiningContext context,
+  });
+
+  /// 覆写现存笔记 [noteId]（[SrsMiner.overwrite] 的契约）。
+  Future<MineOutcome> overwrite(
+    SrsMiner miner, {
+    required String noteId,
+    required AnkiSettings settings,
+    required String rawPayloadJson,
+    required AnkiMiningContext context,
+  });
+
+  /// 按字段名改现存笔记 [noteId] 的部分字段（[SrsMiner.writeFieldsByName]：失败抛）。
+  Future<void> writeFieldsByName(
+    SrsMiner miner,
+    String noteId,
+    Map<String, String> fields,
+  );
+
+  /// 删除笔记 [noteId]（[SrsDbStore.deleteNote]：失败抛）。
+  Future<void> deleteNote(SrsMiner miner, String noteId);
+}
+
+/// 在本进程的库上直接写（主进程）。
+final class LocalSrsNoteWriter implements SrsNoteWriter {
+  const LocalSrsNoteWriter();
+
+  @override
+  Future<MineOutcome> mine(
+    SrsMiner miner, {
+    required AnkiSettings settings,
+    required String rawPayloadJson,
+    required AnkiMiningContext context,
+  }) => miner.mine(
+    settings: settings,
+    rawPayloadJson: rawPayloadJson,
+    context: context,
+  );
+
+  @override
+  Future<MineOutcome> overwrite(
+    SrsMiner miner, {
+    required String noteId,
+    required AnkiSettings settings,
+    required String rawPayloadJson,
+    required AnkiMiningContext context,
+  }) => miner.overwrite(
+    noteId: noteId,
+    settings: settings,
+    rawPayloadJson: rawPayloadJson,
+    context: context,
+  );
+
+  @override
+  Future<void> writeFieldsByName(
+    SrsMiner miner,
+    String noteId,
+    Map<String, String> fields,
+  ) => miner.writeFieldsByName(noteId, fields);
+
+  @override
+  Future<void> deleteNote(SrsMiner miner, String noteId) =>
+      miner.store.deleteNote(noteId);
+}
+
 /// 一张后台制卡写完（或没写成）后的结果：[expression] 是提示用的词条（取不到用句子），
 /// [outcome] 是那次写入的真实结果（成功 / 重复 / 失败）。
 ///
@@ -82,7 +162,9 @@ class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
     bool Function()? backgroundMining,
     SrsBackgroundMineReporter? onBackgroundOutcome,
     ForwardedMinePayloadBuilder? payloadBuilder,
+    SrsNoteWriter writer = const LocalSrsNoteWriter(),
   }) : _miner = miner,
+       _writer = writer,
        _openNote = openNote,
        _onCardsAdded = onCardsAdded,
        _backgroundMining = backgroundMining,
@@ -91,6 +173,9 @@ class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
 
   final SrsMinerResolver _miner;
   final SrsNoteOpener? _openNote;
+
+  /// 写入的执行方（见 [SrsNoteWriter]）：主进程本地写，只读的辅助进程转交主进程。
+  final SrsNoteWriter _writer;
 
   /// 「后台制卡」开关，每次制卡现读（改完立即生效，不必重建装饰链）。null = 恒同步
   /// （互联主机替对端制卡、浏览器扩展：对端要的是确定的结果，不能回「已入队」）。
@@ -195,7 +280,8 @@ class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
     String rawPayloadJson,
     AnkiMiningContext context,
   ) async {
-    final MineOutcome outcome = await miner.mine(
+    final MineOutcome outcome = await _writer.mine(
+      miner,
       settings: await inner.loadSettings(),
       rawPayloadJson: rawPayloadJson,
       context: context,
@@ -364,7 +450,8 @@ class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
         stackTrace: stack,
       );
     }
-    return miner.overwrite(
+    return _writer.overwrite(
+      miner,
       noteId: id,
       settings: await inner.loadSettings(),
       rawPayloadJson: rawPayloadJson,
@@ -446,7 +533,7 @@ class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
     final SrsMiner miner = await _requireMiner();
     final String? id = await _noteIdOf(miner, noteId);
     if (id == null) return false;
-    await miner.store.deleteNote(id);
+    await _writer.deleteNote(miner, id);
     _onCardsAdded?.call();
     return true;
   }
@@ -558,7 +645,7 @@ class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
         throw StateError('Source note field changed: $field');
       }
     }
-    await (await _requireMiner()).writeFieldsByName(srsId, fields);
+    await _writer.writeFieldsByName(await _requireMiner(), srsId, fields);
     final AnkiSourceNote? verified = await readSourceNote(original.sourceId);
     if (verified == null || verified.noteId != current.noteId) {
       throw StateError('Source note identity changed after writing');
