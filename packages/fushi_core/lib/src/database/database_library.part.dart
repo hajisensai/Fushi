@@ -1429,6 +1429,60 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
     };
   }
 
+  /// [kind] 条目的折叠主归属（与 [getPrimaryCollectionIdByEntry] 同口径的
+  /// MIN(collection_id)）及其在主合集里的组内 sortIndex，一条查询、每条目一行。
+  ///
+  /// 视频库要给远端主机的视频（不在本机 `video_books`）也按合集归组，不能只按本机
+  /// 条目收窄；但它只要「主合集 + 组内序」，不必把整张成员表（再加一遍整表
+  /// GROUP BY）搬进 Dart。键形同 [getPrimaryCollectionIdByEntry]。
+  Future<Map<String, ({int collectionId, int sortIndex})>>
+  getPrimaryCollectionMembershipOfKind(MediaKind kind) async {
+    final List<QueryRow> rows = await customSelect(
+      'SELECT i.entry_key, i.collection_id, i.sort_index '
+      'FROM ('
+      '  SELECT entry_key, MIN(collection_id) AS cid '
+      '  FROM media_collection_items WHERE media_type = ? '
+      '  GROUP BY entry_key'
+      ') p '
+      'JOIN media_collection_items i '
+      '  ON i.collection_id = p.cid '
+      ' AND i.media_type = ? '
+      ' AND i.entry_key = p.entry_key',
+      variables: <Variable<Object>>[
+        Variable<String>(kind.dbValue),
+        Variable<String>(kind.dbValue),
+      ],
+      readsFrom: {mediaCollectionItems},
+    ).get();
+    return <String, ({int collectionId, int sortIndex})>{
+      for (final QueryRow r in rows)
+        kind.compositeKey(r.read<String>('entry_key')): (
+          collectionId: r.read<int>('collection_id'),
+          sortIndex: r.read<int>('sort_index'),
+        ),
+    };
+  }
+
+  /// 本机视频（`video_books` 行）自己的合集成员行（每部视频在各合集里的那一行，
+  /// 不含合集里别的成员）。视频库的目录合集策略只改本机视频的归属，喂它这些行
+  /// 与喂整张成员表结果相同。
+  Future<List<MediaCollectionItemRow>> getLibraryVideoMemberRows() =>
+      (select(mediaCollectionItems)
+            ..where(
+              (t) =>
+                  t.mediaType.equals(MediaKind.video.dbValue) &
+                  t.entryKey.isInQuery(
+                    selectOnly(videoBooks)
+                      ..addColumns(<Expression<Object>>[videoBooks.bookUid]),
+                  ),
+            )
+            ..orderBy([
+              (t) => OrderingTerm(expression: t.collectionId),
+              (t) => OrderingTerm(expression: t.sortIndex),
+              (t) => OrderingTerm(expression: t.entryKey),
+            ]))
+          .get();
+
   /// 首页 dashboard 专用：**只为本机库里还存在的条目**（视频 / EPUB / SRT 书 /
   /// 游戏）一次查出折叠归属主合集（与 [getPrimaryCollectionIdByEntry] 同口径的
   /// MIN(collection_id)）及其在该主合集里的组内 sortIndex。

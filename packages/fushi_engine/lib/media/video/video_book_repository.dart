@@ -2,7 +2,7 @@ import 'dart:developer' as developer;
 import 'dart:io';
 
 import 'package:drift/drift.dart'
-    show BooleanExpressionOperators, QueryRow, Value;
+    show BooleanExpressionOperators, OrderingTerm, QueryRow, Value;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_audio/fushi_audio_core.dart';
@@ -607,6 +607,18 @@ class VideoBookRepository {
   /// 「这一集属于哪个系列」用（与视频库折叠归属同一份输入）。
   Future<List<MediaCollectionItemRow>> getAllCollectionItems() =>
       _db.getAllCollectionItems();
+
+  /// 这一部视频自己的合集成员行（它在各合集里的那一行）。打开播放页解析系列归属用，
+  /// 不必整表读完再按 uid 过滤。
+  Future<List<MediaCollectionItemRow>> memberRowsOfVideo(String bookUid) =>
+      (_db.select(_db.mediaCollectionItems)
+            ..where(
+              (t) =>
+                  t.mediaType.equals(MediaKind.video.dbValue) &
+                  t.entryKey.equals(bookUid),
+            )
+            ..orderBy([(t) => OrderingTerm(expression: t.collectionId)]))
+          .get();
 
   /// 按 id 取来源库（视频来源的分组模式决定目录合集是否算系列归属）。
   Future<MediaSourceRow?> getMediaSourceById(int id) =>
