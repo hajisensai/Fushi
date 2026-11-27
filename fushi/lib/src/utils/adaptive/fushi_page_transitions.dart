@@ -133,6 +133,28 @@ class FushiSharedAxisPageTransitionsBuilder extends PageTransitionsBuilder {
   @override
   Duration get reverseTransitionDuration => FushiMotion.longReverse;
 
+  /// 被盖住的那页来自别的转场类型（如 Apple 设计系统下推入
+  /// `FushiMaterialTransitionPageRoute`）时，也只做本转场的「原地压暗」，不让
+  /// 它按自己的转场（Cupertino 视差左移）动。与同类型路由叠放时它走自己的
+  /// secondaryAnimation，观感相同。
+  @override
+  DelegatedTransitionBuilder? get delegatedTransition => _coveredTransition;
+
+  static Widget? _coveredTransition(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    bool allowSnapshotting,
+    Widget? child,
+  ) {
+    if (child == null) return null;
+    return FushiSharedAxisTransition(
+      animation: kAlwaysCompleteAnimation,
+      secondaryAnimation: secondaryAnimation,
+      child: child,
+    );
+  }
+
   @override
   Widget buildTransitions<T>(
     PageRoute<T> route,

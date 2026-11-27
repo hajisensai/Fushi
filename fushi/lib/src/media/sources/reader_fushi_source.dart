@@ -586,6 +586,11 @@ class ReaderFushiSource extends ReaderMediaSource {
     required AppModel appModel,
   }) async {}
 
+  /// 小说进出阅读器两套设计系统统一用 Material 的转场：Apple 设计系统的横向推入
+  /// 要把整块 WebView 平台视图跟着平移合成，进出时闪一下（用户 2026-11-27）。
+  @override
+  bool get launchesWithMaterialTransition => true;
+
   @override
   Widget buildLaunchPage({MediaItem? item, Bookmark? initialBookmarkJump}) {
     final String bookKey = _extractBookKey(item?.mediaIdentifier ?? '');
