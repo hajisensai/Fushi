@@ -140,8 +140,9 @@ extension _FushiSyncServerSyncState on FushiSyncServer {
   /// 编解码都在 host 服务的后台所有者里做（`host_manifest_bodies.dart`），这里只搬
   /// 字节——app 当 host 时本 isolate 就是 UI isolate。
   ///
-  /// GET 带强 ETag；请求带的 `If-None-Match` 命中就回 304 空体（老 client 不发这个
-  /// 头，照旧拿 200 全量）。POST 回并入后的清单，与旧对象接口同形（400 文案一致）。
+  /// GET 带弱 ETag（`W/"…"`，gzip 与明文共用，见 [hostManifestEtag]）；请求带的
+  /// `If-None-Match` 按弱比较命中就回 304 空体（老 client 不发这个头，照旧拿 200
+  /// 全量）。POST 回并入后的清单，与旧对象接口同形（400 文案一致）。
   Future<shelf.Response> _handleManifestBody(
     shelf.Request request,
     String method,

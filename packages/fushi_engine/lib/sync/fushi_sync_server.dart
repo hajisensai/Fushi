@@ -1292,16 +1292,22 @@ class FushiSyncServer {
   shelf.Middleware _gzipTextMiddleware() {
     return (shelf.Handler innerHandler) {
       return (shelf.Request request) async {
-        final shelf.Response response = await innerHandler(request);
+        final shelf.Response innerResponse = await innerHandler(request);
+        final String type = (innerResponse.headers['content-type'] ?? '')
+            .toLowerCase();
+        final bool compressible =
+            (type.contains('application/json') || type.contains('xml')) &&
+            innerResponse.headers['content-encoding'] == null;
+        if (!compressible) return innerResponse;
+        // 表示随 Accept-Encoding 变（RFC 9110 §12.5.5）：发不发 gzip 都声明，缓存
+        // 才不会把 gzip 体交给不认 gzip 的请求。清单端点的 ETag 因此是弱的
+        // （hostManifestEtag）：两种表示共用一个验证器。
+        final shelf.Response response = innerResponse.change(
+          headers: <String, String>{'Vary': 'Accept-Encoding'},
+        );
         final String accept = (request.headers['accept-encoding'] ?? '')
             .toLowerCase();
         if (!accept.contains('gzip')) return response;
-        final String type = (response.headers['content-type'] ?? '')
-            .toLowerCase();
-        final bool compressible =
-            type.contains('application/json') || type.contains('xml');
-        if (!compressible) return response;
-        if (response.headers['content-encoding'] != null) return response;
         // 按块攒进 BytesBuilder：展开成 List<int> 会把每字节装箱成 8 字节槽，几百 KB
         // 的清单要多拷一份、多占 8 倍内存（同 game_stream.part.dart 的上传体）。
         final BytesBuilder body = BytesBuilder(copy: false);

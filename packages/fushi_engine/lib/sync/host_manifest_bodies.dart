@@ -43,7 +43,8 @@ enum HostManifestKind {
   mediaLinks,
 }
 
-/// 编码好的清单报文体（UTF-8 JSON）+ 它的强 ETag（带引号，可直接放进响应头）。
+/// 编码好的清单报文体（UTF-8 JSON）+ 它的弱 ETag（[hostManifestEtag]，可直接放进
+/// 响应头）。
 final class HostManifestBody {
   const HostManifestBody({required this.bytes, required this.etag});
 
@@ -87,10 +88,16 @@ abstract interface class HostManifestBodyHost {
   });
 }
 
-/// [bytes] 的强 ETag（SHA-256 前 128 位，带引号）。内容相等 ⇔ ETag 相等：清单是
-/// canonical JSON，同一份数据恒编出同一串字节。
+/// [bytes] 的**弱** ETag：`W/"<SHA-256 前 128 位 hex>"`。内容相等 ⇔ ETag 相等：
+/// 清单是 canonical JSON，同一份数据恒编出同一串字节。
+///
+/// 为什么是弱的：`_gzipTextMiddleware` 按 `Accept-Encoding` 把同一份清单发成 gzip
+/// 或明文，两种字节不同的表示共用一个验证器。RFC 9110 §8.8.3 要求强 ETag 在字节
+/// 不同的表示之间不同；弱 ETag 只声明「语义等价」，正合这里（清单端点不支持 Range
+/// / If-Range，用不到强验证器）。`If-None-Match` 本就按弱比较（[ifNoneMatchHits]），
+/// client 把收到的 ETag 原样回传即可，带不带 `W/` 都命中。
 String hostManifestEtag(List<int> bytes) =>
-    '"${sha256.convert(bytes).toString().substring(0, 32)}"';
+    'W/"${sha256.convert(bytes).toString().substring(0, 32)}"';
 
 /// `If-None-Match` 头 [header] 是否命中 [etag]（RFC 9110 §13.1.2 弱比较：逗号分隔
 /// 列表、`W/` 前缀忽略、`*` 恒命中）。
@@ -241,45 +248,107 @@ AggregateOwnerCommand<TransferableTypedData> applyIncomingLwwManifestCommand(
 ///
 /// 正确性：先订阅再开算；算的途中来过作废（代数变了）就只把结果交给这一批读者、
 /// 不进缓存，下一个读者重算。所以缓存里的报文体一定读自「最后一次作废之后」。
+///
+/// **投影依赖**（可选，[projectedUpdates] + [projection]）：有些表写得勤、但清单
+/// 只依赖它们的一小块投影（合集清单之于下载任务表：只看「哪些合集由下载管理」）。
+/// 这些表的写入不直接作废，只把缓存标成「待核对」；下一个读者先在调用方读一次
+/// [projection]（廉价），与缓存报文体当初的投影相等就继续用，不等才重算。保证
+/// 「缓存报文体的投影 = 记下的投影」：重算前先读投影，读投影到重算结束之间来过
+/// 投影表写入就不进缓存（那段时间里投影可能先变后变回，记下的值不再可信）。
 final class HostManifestBodyCache {
   HostManifestBodyCache({
     required Stream<Object?> Function() invalidations,
     required Future<HostManifestBody> Function() compute,
-  }) : _invalidations = invalidations,
-       _compute = compute;
+    Stream<Object?> Function()? projectedUpdates,
+    Future<String> Function()? projection,
+  }) : assert(
+         (projectedUpdates == null) == (projection == null),
+         'projectedUpdates 与 projection 要么都给、要么都不给',
+       ),
+       _invalidations = invalidations,
+       _compute = compute,
+       _projectedUpdates = projectedUpdates,
+       _projection = projection;
 
   final Stream<Object?> Function() _invalidations;
   final Future<HostManifestBody> Function() _compute;
+  final Stream<Object?> Function()? _projectedUpdates;
+  final Future<String> Function()? _projection;
 
   StreamSubscription<Object?>? _subscription;
+  StreamSubscription<Object?>? _projectedSubscription;
   int _generation = 0;
+  int _projectedGeneration = 0;
   HostManifestBody? _body;
+
+  /// [_body] 读自的投影（无投影依赖时恒 null）。
+  String? _bodyProjection;
+
+  /// [_body] 已核对到的投影表写入代数：小于 [_projectedGeneration] 即「待核对」。
+  int _bodyProjectedGeneration = 0;
   Future<HostManifestBody>? _inFlight;
   int _inFlightGeneration = -1;
+  int _inFlightProjectedGeneration = -1;
 
-  /// 当前报文体（命中缓存直接给，否则后台重算）。
+  /// 当前报文体（命中缓存直接给，待核对先核对投影，否则后台重算）。
   Future<HostManifestBody> get() {
     // 退订在 [_invalidate] 里（作废即退订，见类注释）。
     _subscription ??= _invalidations().listen((Object? _) => _invalidate());
+    final Stream<Object?> Function()? projectedUpdates = _projectedUpdates;
+    if (projectedUpdates != null) {
+      _projectedSubscription ??= projectedUpdates().listen(
+        (Object? _) => _projectedGeneration++,
+      );
+    }
     final HostManifestBody? cached = _body;
-    if (cached != null) return Future<HostManifestBody>.value(cached);
+    if (cached != null && _bodyProjectedGeneration == _projectedGeneration) {
+      return Future<HostManifestBody>.value(cached);
+    }
     final Future<HostManifestBody>? running = _inFlight;
-    if (running != null && _inFlightGeneration == _generation) return running;
+    if (running != null &&
+        _inFlightGeneration == _generation &&
+        _inFlightProjectedGeneration == _projectedGeneration) {
+      return running;
+    }
     final int generation = _generation;
-    final Future<HostManifestBody> computing = _compute().then((
-      HostManifestBody body,
-    ) {
-      if (generation == _generation) _body = body;
-      return body;
-    });
-    _inFlight = computing;
+    final int projected = _projectedGeneration;
+    final Future<HostManifestBody> refreshing = _refresh(generation, projected);
+    _inFlight = refreshing;
     _inFlightGeneration = generation;
-    computing
+    _inFlightProjectedGeneration = projected;
+    refreshing
         .then<void>((HostManifestBody _) {}, onError: (Object _) {})
         .whenComplete(() {
-          if (identical(_inFlight, computing)) _inFlight = null;
+          if (identical(_inFlight, refreshing)) _inFlight = null;
         });
-    return computing;
+    return refreshing;
+  }
+
+  /// [generation] / [projected] = 本次读开始时的两种代数（[projected] 在读投影之前
+  /// 取，见类注释的保证）。
+  Future<HostManifestBody> _refresh(int generation, int projected) async {
+    final Future<String> Function()? projection = _projection;
+    final String? key = projection == null ? null : await projection();
+    final HostManifestBody? cached = _body;
+    if (cached != null && generation == _generation) {
+      if (key == _bodyProjection) {
+        // 投影没变：缓存的报文体就是此刻的清单。核对到 [projected] 为止，之后再来
+        // 的投影表写入仍让它待核对。
+        if (_bodyProjectedGeneration < projected) {
+          _bodyProjectedGeneration = projected;
+        }
+        return cached;
+      }
+      _body = null;
+      _bodyProjection = null;
+    }
+    final HostManifestBody body = await _compute();
+    if (generation == _generation && projected == _projectedGeneration) {
+      _body = body;
+      _bodyProjection = key;
+      _bodyProjectedGeneration = projected;
+    }
+    return body;
   }
 
   /// 直接作废（调用方确知数据变了时用；表写入经 [invalidations] 自动作废）。
@@ -288,8 +357,11 @@ final class HostManifestBodyCache {
   void _invalidate() {
     _generation++;
     _body = null;
+    _bodyProjection = null;
     unawaited(_subscription?.cancel());
     _subscription = null;
+    unawaited(_projectedSubscription?.cancel());
+    _projectedSubscription = null;
   }
 }
 
@@ -297,4 +369,11 @@ final class HostManifestBodyCache {
 Stream<Object?> collectionManifestInvalidations(FushiDatabase db) =>
     db.tableUpdates(
       TableUpdateQuery.onAllTables(collectionManifestSourceTables(db)),
+    );
+
+/// [db] 里合集清单投影依赖表（[collectionManifestProjectedTables]）的写入流；配
+/// [collectionManifestProjection] 交给 [HostManifestBodyCache]。
+Stream<Object?> collectionManifestProjectedUpdates(FushiDatabase db) =>
+    db.tableUpdates(
+      TableUpdateQuery.onAllTables(collectionManifestProjectedTables(db)),
     );

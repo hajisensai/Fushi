@@ -227,11 +227,15 @@ mixin _LocalLibraryHostSyncState
 
   // ── 清单报文体（后台现算，host_manifest_bodies.dart）─────────────────────
 
-  /// 合集清单报文体缓存：数据源表有写入即作废（[collectionManifestSourceTables]）。
+  /// 合集清单报文体缓存：数据源表有写入即作废（[collectionManifestSourceTables]）；
+  /// 下载任务 / 订阅表的写入只在「由下载管理的合集」变了时作废
+  /// （[collectionManifestProjectedTables]，下载进行中它们写得勤）。
   /// 标签 / 作品图谱清单只有几 KB，现算代价远小于维护一份表清单的风险，不缓存。
   late final HostManifestBodyCache _collectionsBodyCache =
       HostManifestBodyCache(
         invalidations: () => collectionManifestInvalidations(_db),
+        projectedUpdates: () => collectionManifestProjectedUpdates(_db),
+        projection: () => collectionManifestProjection(_db),
         compute: () =>
             _encodeManifestInBackground(HostManifestKind.collections),
       );

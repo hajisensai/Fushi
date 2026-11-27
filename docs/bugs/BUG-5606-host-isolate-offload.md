@@ -3,7 +3,7 @@
 - **真实性**：✅ 真 bug。app 当 host 时 `FushiSyncServer` 由 `shelf_io.serve` 起在 UI isolate 上（`packages/fushi_engine/lib/sync/fushi_sync_server.dart` `_bindListener`），清单端点的读库结果映射、清单组装、JSON 编解码、gzip 与逐书同步文件探测都在这个 isolate 上做。用户规模库（3184 合集 / 85044 成员）实测 `GET /api/library/collections` 7 MB、单次 UI isolate 停顿 70～308 ms，`POST` 126～189 ms。
 - **[x] ① 已修复** — 见下「修复」（分支 `pr/host-isolate-offload`）
 - **[x] ② 已加自动化测试** — `fushi/test/sync/host_manifest_body_test.dart`、`fushi/test/sync/host_request_observer_test.dart`、守卫 `fushi/test/build/host_route_sync_io_guard_test.dart`；合并语义回归由 `fushi/test/sync/fushi_library_collections_test.dart` 全链路覆盖（现在走后台报文体路径）
-- **备注**：client 侧（`interconnect_sync_backend.dart`）不在本次范围，还没发 `If-None-Match`；host 已带强 ETag、支持 304，client 接上即可省掉稳态的 7 MB 传输与解析。
+- **备注**：client 侧（`interconnect_sync_backend.dart`）不在本次范围，还没发 `If-None-Match`；host 已带弱 ETag（`W/"…"`，见下「审查后修正」）、支持 304，client 接上即可省掉稳态的 7 MB 传输与解析。
 
 ### 根因
 
@@ -62,3 +62,33 @@
 | GET books | 17 / 7 ms | 7 / 6 ms |
 
 报文体字节数前后一致（明文 7037911、gzip 1557612）。
+
+### 审查后修正
+
+1. **长轮询误判慢、计时器常驻**：`GET /api/srs/changes` 按设计挂 25 s，观测器把它当在飞
+   请求，50 ms 周期计时器因此常驻 UI isolate（client 一直挂着长轮询）、每条长轮询记一行
+   slow、期间别的请求造成的 loopLag 也记到它头上。修：`isHostSuspendingRequest`
+   （`GET /api/srs/changes`、`GET /api/assistant/sessions/<id>?wait=N>0`）判为挂起类，
+   只进频率汇总（键标 `(hold)`），不进在飞集合——计时器只在有普通请求在飞时跑，loopLag
+   只归普通请求。测试：`host_request_observer_test.dart`「长轮询挂着…」「isHostSuspendingRequest…」。
+2. **gzip 与明文共用强 ETag**（违反 RFC 9110 §8.8.3）：清单 ETag 改为弱的
+   `W/"<SHA-256 前 128 位 hex>"`（`hostManifestEtag`），`If-None-Match` 本就按弱比较
+   （`ifNoneMatchHits`：逗号列表、忽略 `W/`、`*` 命中）；gzip 中间件对可压缩响应一律加
+   `Vary: Accept-Encoding`。只有三个清单 GET 带 ETag：`/api/library/collections`、
+   `/api/library/tags`、`/api/library/media-links`（POST 不带）。不发 `If-None-Match` 的
+   老 client 行为不变。测试：`host_manifest_body_test.dart`「ETag 是弱的、gzip 与明文共用…」。
+3. **合集清单缓存的作废表**：
+   - `galgames` 不影响清单（合集成员只做书键换算，游戏键原样透传）却被读、被登记。
+     `CollectionBookIdentityIndex.load` 加 `withGames`，合集清单 loader 与卷序
+     （`loadBookSeriesRuleOrder`）传 `false` 不再读 `galgames`，作废表里去掉它；录 SQL 的
+     测试同时钉住「loader 读的表都已登记」与「不读 galgames」。
+   - `video_download_jobs` / `video_download_subscriptions` 下载进行中写得勤（租约每 40 s
+     续期、阶段推进），清单却只依赖「哪些合集由下载管理」这一小块投影。改为投影依赖
+     （`collectionManifestProjectedTables` + `collectionManifestProjection`）：这两张表的
+     写入只把缓存标成待核对，下个读者在 host isolate 读一次投影（几十个 int），不变就继续
+     用缓存，变了才重算；读投影到重算结束之间来过这两张表的写入则结果不进缓存（防 ABA）。
+     测试：`HostManifestBodyCache` 两条投影用例 + 真库用例（续租不重算、任务挂到新合集才
+     重算，结果与 loader 逐字节相同）。
+   - `epub_books` 留在直接作废表里：清单只用它的 uid / bookKey / sourceMetadata，但它没有
+     高频写入（阅读进度不在这张表，写入来自导入 / 刮削 / 元数据编辑），而按列收窄要在每次
+     写入后重读全表这三列比对，代价与重算时读它那一步相当，省不下什么。
