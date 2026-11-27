@@ -51,6 +51,7 @@ import 'package:fushi_server/src/admin/admin_dictionaries.dart';
 import 'package:fushi_server/src/admin/resource_indexer_settings.dart';
 import 'package:fushi_server/src/admin/subtitle_provider_settings.dart';
 import 'package:fushi_server/src/anki_landing.dart';
+import 'package:fushi_server/src/admin/fs_browse.dart';
 import 'package:fushi_server/src/admin/upload_store.dart';
 import 'package:fushi_server/src/config/server_ai_config.dart';
 import 'package:fushi_server/src/commands/dict_commands.dart'
@@ -366,6 +367,8 @@ class AdminApi {
         );
       case ('GET', '/api/admin/p2p'):
         return _json(ctx.host.p2pStatus());
+      case ('GET', '/api/admin/fs/browse'):
+        return _fsBrowse(request);
       case ('GET', '/api/admin/upload/folders'):
         return _json(<String, Object?>{
           'folders': await UploadStore.subfolders(_libraryFor(request)),
@@ -1814,6 +1817,20 @@ class AdminApi {
       urls.add(url);
     }
     return urls;
+  }
+
+  // ── 路径框「浏览…」 ───────────────────────────────────────────────────
+
+  /// WebUI 路径框的目录选择器：只列名字，见 [FsBrowser]。
+  Future<shelf.Response> _fsBrowse(shelf.Request request) async {
+    final Map<String, String> q = request.url.queryParameters;
+    try {
+      return _json(
+        await FsBrowser().browse(q['path'], includeFiles: q['files'] == '1'),
+      );
+    } on FsBrowseException catch (e) {
+      return _err(e.status, e.message);
+    }
   }
 
   // ── 上传 ─────────────────────────────────────────────────────────────
