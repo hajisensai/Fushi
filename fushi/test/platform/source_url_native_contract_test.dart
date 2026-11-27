@@ -3,7 +3,34 @@ import 'dart:io';
 import 'package:test/test.dart';
 import 'package:xml/xml.dart';
 
+import 'package:fushi/src/anki/ankimobile_repository.dart'
+    show fushiAnkiFetchCallback, fushiAnkiSuccessCallback;
+import 'package:fushi/src/platform/app_shortcuts.dart';
+import 'package:fushi/src/platform/incoming_fushi_link.dart';
 import 'package:fushi/src/platform/source_url_channel.dart';
+import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
+import 'package:fushi_engine/sync/pairing/fushi_pair_link.dart';
+
+/// 每类外部链接一条真实样例（由各自的生成端 / 解析器的格式造出）。switch 穷尽
+/// [FushiIncomingLinkKind]：新增一类链接不补样例就编不过，host 也就逃不出下面的对齐。
+String _sampleLink(FushiIncomingLinkKind kind) => switch (kind) {
+  FushiIncomingLinkKind.cardSource => 'fushi://source?v=1',
+  FushiIncomingLinkKind.pair => const FushiPairLink(
+    hostId: 'H',
+    addresses: <InterconnectHostAddress>[
+      InterconnectHostAddress(
+        url: 'http://192.168.1.5:38765',
+        kind: InterconnectAddressKind.lan,
+      ),
+    ],
+  ).toUri(),
+  FushiIncomingLinkKind.shortcut => AppShortcut.values.first.url,
+  FushiIncomingLinkKind.widget => 'fushi://widget/srs',
+  FushiIncomingLinkKind.lookup => 'fushi://lookup?word=%E7%8C%AB',
+  FushiIncomingLinkKind.oauthRedirect => 'fushi://auth/callback?code=x',
+  FushiIncomingLinkKind.ankiFetch => fushiAnkiFetchCallback,
+  FushiIncomingLinkKind.ankiSuccess => fushiAnkiSuccessCallback,
+};
 
 void main() {
   test(
@@ -100,6 +127,26 @@ void main() {
     expect(SourceUrlChannel.isRoutedUrl('fushi://widget/srs'), isTrue);
     expect(SourceUrlChannel.isRoutedUrl('fushi://source/x'), isTrue);
     expect(SourceUrlChannel.isRoutedUrl('fushi://auth/callback'), isFalse);
+  });
+
+  test('every link kind handleIncomingUrl dispatches is pinned to its parser, '
+      'and macOS forwards exactly the app-owned kinds', () {
+    for (final FushiIncomingLinkKind kind in FushiIncomingLinkKind.values) {
+      final String link = _sampleLink(kind);
+      expect(FushiIncomingLink.classify(link)?.kind, kind, reason: link);
+      expect(Uri.parse(link).host.toLowerCase(), kind.host, reason: link);
+      expect(
+        SourceUrlChannel.isRoutedUrl(link),
+        kind.routedByNativeShell,
+        reason: link,
+      );
+    }
+    // 回归：配对链接（扫码 / NFC / 系统相机唤起）在 macOS 必须进 Dart 事件流。
+    expect(SourceUrlChannel.routedHosts, contains(FushiPairLink.host));
+    expect(
+      SourceUrlChannel.isRoutedUrl(_sampleLink(FushiIncomingLinkKind.pair)),
+      isTrue,
+    );
   });
 
   test(

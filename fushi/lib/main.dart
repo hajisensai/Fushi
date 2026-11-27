@@ -188,6 +188,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
 import 'package:fushi/src/platform/app_exit_coordinator.dart';
 import 'package:fushi/src/platform/desktop/windows_native_pre_exit.dart';
 import 'package:fushi/src/platform/platform_services.dart';
+import 'package:fushi/src/platform/incoming_fushi_link.dart';
 import 'package:fushi/src/platform/source_url_channel.dart';
 import 'package:fushi/src/platform/desktop/desktop_ctl_host.dart';
 import 'package:fushi/src/platform/desktop/desktop_tray.dart';
@@ -1972,46 +1973,32 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     required bool isInitial,
   }) async {
     if (data == null || !mounted) return false;
-    if (SourceUrlChannel.isSourceUrl(data)) {
-      _queueCardSourceUrl(data);
-      return true;
+    // 分类与 macOS 转交白名单（SourceUrlChannel.routedHosts）同一份判据，见
+    // [FushiIncomingLink]；新增一类链接在那里加，两端一起生效。
+    switch (FushiIncomingLink.classify(data)) {
+      case null:
+        return false;
+      case CardSourceIncomingLink(:final String url):
+        _queueCardSourceUrl(url);
+      case PairIncomingLink(:final String url):
+        _queuePairLink(url);
+      case ShortcutIncomingLink(:final AppShortcut shortcut):
+        _queueAppShortcut(shortcut);
+      case WidgetIncomingLink(:final WidgetLink link):
+        _queueWidgetLink(link);
+      // iOS：快捷指令 / 其它 app 打开的 `fushi://lookup?word=` 交给应用内查词弹窗
+      // （Android 的这条链接由 manifest 直接路由到 :popup 查词窗，到不了这里；
+      // Windows 走 argv / WM_COPYDATA，见 [lookupWordFromDeepLink]）。
+      case LookupIncomingLink(:final String word):
+        deliverExternalLookup(word);
+      case OAuthRedirectIncomingLink(:final String url):
+        await _handleOAuthRedirect(url);
+      case AnkiFetchIncomingLink():
+        await _handleAnkiMobileInfoCallback();
+      case AnkiSuccessIncomingLink(:final String url):
+        await _recordAnkiMobileMinedNote(url);
     }
-    if (FushiPairLink.tryParse(data) != null) {
-      _queuePairLink(data);
-      return true;
-    }
-    final AppShortcut? shortcut = AppShortcut.tryParse(data);
-    if (shortcut != null) {
-      _queueAppShortcut(shortcut);
-      return true;
-    }
-    final WidgetLink? widgetLink = WidgetLink.tryParse(data);
-    if (widgetLink != null) {
-      _queueWidgetLink(widgetLink);
-      return true;
-    }
-    // iOS：快捷指令 / 其它 app 打开的 `fushi://lookup?word=` 交给应用内查词弹窗
-    // （Android 的这条链接由 manifest 直接路由到 :popup 查词窗，到不了这里；
-    // Windows 走 argv / WM_COPYDATA，见 [lookupWordFromDeepLink]）。
-    final String? lookupWord = lookupWordFromDeepLink(data);
-    if (lookupWord != null) {
-      deliverExternalLookup(lookupWord);
-      return true;
-    }
-    final String normalized = data.toLowerCase();
-    if (normalized.startsWith('fushi://auth/')) {
-      await _handleOAuthRedirect(data);
-      return true;
-    }
-    if (normalized.startsWith(fushiAnkiFetchCallback.toLowerCase())) {
-      await _handleAnkiMobileInfoCallback();
-      return true;
-    }
-    if (normalized.startsWith(fushiAnkiSuccessCallback.toLowerCase())) {
-      await _recordAnkiMobileMinedNote(data);
-      return true;
-    }
-    return false;
+    return true;
   }
 
   /// The companion on the second screen asked to open a `fushi://widget/...`
