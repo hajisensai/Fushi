@@ -189,12 +189,19 @@ String _themeVariablesJs({
       .platformDispatcher
       .accessibilityFeatures
       .disableAnimations;
+  // 触屏平台（Android / iOS）：popup.css 的紧凑词典行（用户 2026-11-27「收起时更
+  // 紧凑」）桌面压到 24 / 28px，触屏保留 36px 命中区，靠 html.fushi-touch 区分
+  // （CSS 不能写 @media，见生成器）。
+  final bool touch =
+      theme.platform == TargetPlatform.android ||
+      theme.platform == TargetPlatform.iOS;
   final String glassLine =
       "document.documentElement.classList.toggle('fushi-glass-host', $glassHost);\n"
       "document.documentElement.classList.toggle('fushi-solid-backdrop', $solidBackdrop);\n"
       "document.documentElement.classList.toggle('fushi-apple', $appleDesign);\n"
       "document.documentElement.classList.toggle('fushi-m3e', $m3e);\n"
-      "document.documentElement.classList.toggle('fushi-reduced-motion', $reducedMotion);\n";
+      "document.documentElement.classList.toggle('fushi-reduced-motion', $reducedMotion);\n"
+      "document.documentElement.classList.toggle('fushi-touch', $touch);\n";
   return '''
       $classLine      $einkLine      $glassLine      document.documentElement.setAttribute('data-theme', '${isDark ? 'dark' : 'light'}');
       document.documentElement.style.setProperty('--fushi-primary-highlight', '${vars['--fushi-primary-highlight']}');
