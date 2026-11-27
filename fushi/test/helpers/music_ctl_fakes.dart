@@ -21,6 +21,7 @@ class FakeMusicPlayer implements MusicCtlPlayer {
   bool playing = false;
   MusicQueueContext? lastContext;
   bool? lastShuffle;
+  int? lastStartIndex;
 
   @override
   List<MusicPlayItem> get queue => List<MusicPlayItem>.unmodifiable(_queue);
@@ -41,13 +42,14 @@ class FakeMusicPlayer implements MusicCtlPlayer {
   @override
   Future<void> playQueue(
     List<MusicPlayItem> items, {
-    int startIndex = 0,
+    int? startIndex,
     MusicQueueContext context = MusicQueueContext.mixed,
     bool shuffle = false,
   }) async {
     if (items.isEmpty) return;
     _queue = List<MusicPlayItem>.of(items);
-    _index = startIndex.clamp(0, items.length - 1);
+    lastStartIndex = startIndex;
+    _index = (startIndex ?? 0).clamp(0, items.length - 1);
     lastContext = context;
     lastShuffle = shuffle;
     playing = true;

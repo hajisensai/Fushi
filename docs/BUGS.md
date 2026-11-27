@@ -36,6 +36,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
+> 共 4864 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5591](bugs/BUG-5591-music-shuffle-always-first.md) | ✅ | ✅ | music-shuffle-always-first |
 > 共 4868 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |

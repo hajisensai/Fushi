@@ -218,7 +218,7 @@ class _MusicCdDetailPanelState extends ConsumerState<MusicCdDetailPanel>
 
   void _play(
     List<MusicTrackRow> tracks, {
-    int start = 0,
+    int? start,
     bool shuffle = false,
     bool openPlayer = false,
   }) {

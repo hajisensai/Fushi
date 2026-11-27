@@ -672,16 +672,20 @@ class MusicPlayerEngine extends ChangeNotifier {
   /// 换一个队列，从 [startIndex] 开始播。[source] 是这个队列从哪张专辑 / 哪个歌单点开
   /// 的（最近播放用；不传 = 来源未知）。[resume] 为 false = 这一次从头放（「从头播放」，
   /// 断点本身保留，放过开头后被新位置覆盖）。
+  ///
+  /// [startIndex] 为 null = 调用方没指定起点：顺序播放从第一首开始；[shuffle] 时整队
+  /// 打乱、第一首也随机（「随机播放全部」）。给了起点再开随机 = 用户点了某一首：那首
+  /// 排第一，其余打乱。
   Future<void> playQueue(
     List<MusicPlayItem> items, {
-    int startIndex = 0,
+    int? startIndex,
     MusicQueueContext context = MusicQueueContext.mixed,
     bool shuffle = false,
     MusicPlaySource? source,
     bool resume = true,
   }) async {
     if (items.isEmpty) return;
-    final int start = startIndex.clamp(0, items.length - 1);
+    final int? start = startIndex?.clamp(0, items.length - 1);
     // 自管队列的原项记录（电台在旧队列第几格）只对旧队列有意义：整队替换前丢掉，否则
     // [_openCurrent] 里的 [_restoreExternalRoot] 会拿旧下标把旧电台写进新队列。
     _clearExternalRoot();
@@ -691,16 +695,15 @@ class MusicPlayerEngine extends ChangeNotifier {
     _source = source;
     _shuffled = shuffle;
     if (shuffle) {
-      // 选中的那首排第一，其余打乱。
-      final MusicPlayItem first = items[start];
-      final List<MusicPlayItem> rest = List<MusicPlayItem>.of(items)
-        ..removeAt(start)
-        ..shuffle(_random);
-      _queue = <MusicPlayItem>[first, ...rest];
+      // 点了某一首再随机：那首排第一，其余打乱；没指定起点：整队打乱。
+      final List<MusicPlayItem> rest = List<MusicPlayItem>.of(items);
+      final MusicPlayItem? first = start == null ? null : rest.removeAt(start);
+      rest.shuffle(_random);
+      _queue = <MusicPlayItem>[?first, ...rest];
       _index = 0;
     } else {
       _queue = List<MusicPlayItem>.of(items);
-      _index = start;
+      _index = start ?? 0;
     }
     await _openCurrent(
       play: true,

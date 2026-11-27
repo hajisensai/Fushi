@@ -149,7 +149,7 @@ void main() {
     });
 
     test('随机模式下移除，关随机后原始顺序里也没有它', () async {
-      await engine.playQueue(_items('abcde'), shuffle: true);
+      await engine.playQueue(_items('abcde'), startIndex: 0, shuffle: true);
       final MusicPlayItem victim = engine.queue[2];
       await engine.removeFromQueue(2);
       await engine.setShuffle(false);

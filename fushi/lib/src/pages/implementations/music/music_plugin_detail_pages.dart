@@ -692,7 +692,7 @@ class _MusicPluginCollectionPageState
           if (c == null) return const FushiLoadingView();
           final String title = c.album?.title ?? c.playlist!.title;
           final String? cover = _collectionCover(c);
-          void play({int start = 0, bool shuffle = false}) => _playTracks(
+          void play({int? start, bool shuffle = false}) => _playTracks(
             ref,
             widget.manifest.id,
             c.tracks,
