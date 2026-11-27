@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, mapEquals;
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -832,7 +833,8 @@ class DictCssEditorDialog extends StatefulWidget {
   State<DictCssEditorDialog> createState() => _DictCssEditorDialogState();
 }
 
-class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
+class _DictCssEditorDialogState extends State<DictCssEditorDialog>
+    with StateResourceScope<DictCssEditorDialog> {
   late int _selectedIndex;
   late TextEditingController _cssController;
   late List<String> _dictNames;
@@ -896,7 +898,7 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
     _cssController = TextEditingController(text: _currentDraftCss);
     // 复用的会话草稿在对话框关着期间没人监听：先对齐一次磁盘，再开始监听。
     _draft.rebaseStyleRules(_appModel.dictStyleRules);
-    _appModel.addListener(_onAppModelChanged);
+    listenTo(_appModel, _onAppModelChanged);
   }
 
   /// 规则表落盘后 `AppModel.saveDictStyleRules` 会通知：没改过的规则跟随刷新。
@@ -907,7 +909,8 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
 
   @override
   void dispose() {
-    _appModel.removeListener(_onAppModelChanged);
+    // 先摘掉 AppModel 监听，再落草稿 / 释放自有控制器。
+    releaseResources();
     if (!_draftFinalized) {
       _stashCurrentScope();
     }

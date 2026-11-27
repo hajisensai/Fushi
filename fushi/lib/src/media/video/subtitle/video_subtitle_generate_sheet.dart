@@ -54,6 +54,7 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 识别模型判定 / 下载所属的那一套选择（见 `_planKey`）。
 typedef _AsrPlanKey = ({VideoSubtitleLanguage language, bool separateVocals});
@@ -364,8 +365,8 @@ class VideoSubtitleGenerateSheet extends StatefulWidget {
       _VideoSubtitleGenerateSheetState();
 }
 
-class _VideoSubtitleGenerateSheetState
-    extends State<VideoSubtitleGenerateSheet> {
+class _VideoSubtitleGenerateSheetState extends State<VideoSubtitleGenerateSheet>
+    with StateResourceScope<VideoSubtitleGenerateSheet> {
   AppVideoSubtitleService get _service => widget.service;
   AppVideoSubtitleTarget get _target => widget.target;
 
@@ -544,15 +545,9 @@ class _VideoSubtitleGenerateSheetState
     }
   }
 
-  @override
-  void dispose() {
-    _job?.removeListener(_onJobChanged);
-    super.dispose();
-  }
-
   void _attach(AppVideoSubtitleJob job) {
-    _job?.removeListener(_onJobChanged);
-    _job = job..addListener(_onJobChanged);
+    _job = job;
+    listenTo(job, _onJobChanged, slot: #job);
   }
 
   void _onJobChanged() {

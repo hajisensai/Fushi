@@ -13,6 +13,7 @@ import 'package:flutter/rendering.dart'
         RenderShiftedBox;
 import 'package:flutter/scheduler.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 
@@ -535,7 +536,7 @@ class FushiSectionTabBar<T extends Object> extends StatefulWidget {
 
 class _FushiSectionTabBarState<T extends Object>
     extends State<FushiSectionTabBar<T>>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, StateResourceScope<FushiSectionTabBar<T>> {
   /// 自持形态下由本 State 创建并负责 dispose；宿主持有形态下恒为 null。
   TabController? _owned;
 
@@ -603,8 +604,12 @@ class _FushiSectionTabBarState<T extends Object>
         ? LibrarySectionFollowScope.maybeOf(context)
         : null;
     if (!identical(follow, _follow)) {
-      _follow?.removeListener(_onFollowChanged);
-      _follow = follow?..addListener(_onFollowChanged);
+      _follow = follow;
+      if (follow != null) {
+        listenTo(follow, _onFollowChanged, slot: #follow);
+      } else {
+        onTeardown(() {}, slot: #follow);
+      }
     }
     final Duration duration = fushiMotionDuration(context, kTabScrollDuration);
     if (duration == _animationDuration) return;
@@ -637,7 +642,6 @@ class _FushiSectionTabBarState<T extends Object>
 
   @override
   void dispose() {
-    _follow?.removeListener(_onFollowChanged);
     _owned?.dispose();
     _display?.dispose();
     super.dispose();

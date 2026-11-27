@@ -744,7 +744,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     if (visible != _sectionVisible) {
       _sectionVisible = visible;
       if (visible) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
+        schedulePostFrame((_) {
           if (!mounted || !_sectionVisible) return;
           _onDesktopLookupPending();
           _consumeFocusRequest();

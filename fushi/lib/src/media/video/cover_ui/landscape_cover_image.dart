@@ -3,6 +3,7 @@ import 'package:fushi/src/media/video/cover_ui/cover_aspect_probe.dart';
 import 'package:fushi/src/media/video/cover_ui/cover_backdrop_color.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/prebaked_blur_image.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 宽幅（约 2.7:1）封面槽的填充组件 —— [PortraitCoverImage] 的镜像。
 ///
@@ -77,7 +78,9 @@ class LandscapeCoverImage extends StatefulWidget {
 }
 
 class _LandscapeCoverImageState extends State<LandscapeCoverImage>
-    with CoverAspectProbe<LandscapeCoverImage> {
+    with
+        StateResourceScope<LandscapeCoverImage>,
+        CoverAspectProbe<LandscapeCoverImage> {
   @override
   ImageProvider probedImageOf(LandscapeCoverImage widget) => widget.image;
 

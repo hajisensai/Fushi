@@ -49,6 +49,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 列表最多取几句（6×4 的格子也放不下更多）。
 const int kHomeFavoritesRecentLimit = 12;
@@ -430,7 +431,8 @@ class HomeFavoritesCard extends StatefulWidget {
   State<HomeFavoritesCard> createState() => _HomeFavoritesCardState();
 }
 
-class _HomeFavoritesCardState extends State<HomeFavoritesCard> {
+class _HomeFavoritesCardState extends State<HomeFavoritesCard>
+    with StateResourceScope<HomeFavoritesCard> {
   StreamSubscription<HomeFavoritesSnapshot>? _subscription;
   MediaVisibility? _visibility;
   HomeFavoritesSnapshot? _data;
@@ -454,30 +456,22 @@ class _HomeFavoritesCardState extends State<HomeFavoritesCard> {
     unawaited(_subscription?.cancel());
     _visibility = visibility;
     _data = null;
-    _subscription =
-        watchHomeFavorites(
-          widget.database,
-          visibility,
-          todayKey: widget.todayKey,
-          titleOf: widget.titleOf,
-        ).listen(
-          (HomeFavoritesSnapshot snapshot) {
-            if (mounted) setState(() => _data = snapshot);
-          },
-          onError: (Object error, StackTrace stack) {
-            ErrorLogService.instance.log(
-              'HomeFavoritesCard.load',
-              error,
-              stack,
-            );
-          },
-        );
-  }
-
-  @override
-  void dispose() {
-    unawaited(_subscription?.cancel());
-    super.dispose();
+    _subscription = ownSubscription(
+      watchHomeFavorites(
+        widget.database,
+        visibility,
+        todayKey: widget.todayKey,
+        titleOf: widget.titleOf,
+      ).listen(
+        (HomeFavoritesSnapshot snapshot) {
+          if (mounted) setState(() => _data = snapshot);
+        },
+        onError: (Object error, StackTrace stack) {
+          ErrorLogService.instance.log('HomeFavoritesCard.load', error, stack);
+        },
+      ),
+      slot: #subscription,
+    );
   }
 
   @override

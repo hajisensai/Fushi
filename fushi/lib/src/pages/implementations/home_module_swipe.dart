@@ -20,6 +20,7 @@
 /// - **只认触摸**：桌面鼠标 / 触控板拖不切（窄窗桌面也走底栏布局）。
 library;
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'dart:ui' show PointerDeviceKind;
 
 import 'package:material_ui/material_ui.dart';
@@ -162,7 +163,9 @@ class HomeModuleSwipeDetector extends StatefulWidget {
 }
 
 class _HomeModuleSwipeDetectorState extends State<HomeModuleSwipeDetector>
-    with SingleTickerProviderStateMixin {
+    with
+        SingleTickerProviderStateMixin,
+        StateResourceScope<HomeModuleSwipeDetector> {
   late final AnimationController _enter = AnimationController(
     vsync: this,
     value: 1,
@@ -179,25 +182,28 @@ class _HomeModuleSwipeDetectorState extends State<HomeModuleSwipeDetector>
   @override
   void initState() {
     super.initState();
-    widget.controller?._state = this;
+    final HomeModuleSwipeController? controller = widget.controller;
+    controller?._state = this;
+    onTeardown(() {
+      if (identical(controller?._state, this)) controller?._state = null;
+    }, slot: #controller);
   }
 
   @override
   void didUpdateWidget(HomeModuleSwipeDetector oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.controller, widget.controller)) {
-      if (identical(oldWidget.controller?._state, this)) {
-        oldWidget.controller?._state = null;
-      }
-      widget.controller?._state = this;
+      // 旧 controller 的清理由 slot 顶替时的撤销完成。
+      final HomeModuleSwipeController? controller = widget.controller;
+      controller?._state = this;
+      onTeardown(() {
+        if (identical(controller?._state, this)) controller?._state = null;
+      }, slot: #controller);
     }
   }
 
   @override
   void dispose() {
-    if (identical(widget.controller?._state, this)) {
-      widget.controller?._state = null;
-    }
     _enter.dispose();
     super.dispose();
   }

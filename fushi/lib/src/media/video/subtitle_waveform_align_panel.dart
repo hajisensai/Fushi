@@ -547,8 +547,7 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView>
   @override
   void initState() {
     super.initState();
-    widget.segments.addListener(_onSegmentsChanged);
-    onTeardown(() => widget.segments.removeListener(_onSegmentsChanged));
+    listenTo(widget.segments, _onSegmentsChanged, slot: #segments);
     // 横向滚动时重建：文本条按新视口裁剪出可见 cue 片段（[_cullMarginPx] 余量）。
     _scrollController.addListener(_onScroll);
     // 字幕列表展示行（过滤空文本）：cue 弹窗内不变，一次算好。
@@ -579,8 +578,7 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView>
   void didUpdateWidget(SubtitleWaveformZoomView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.segments, widget.segments)) {
-      oldWidget.segments.removeListener(_onSegmentsChanged);
-      widget.segments.addListener(_onSegmentsChanged);
+      listenTo(widget.segments, _onSegmentsChanged, slot: #segments);
     }
   }
 

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/media/kavita/kavita_manga_sync.dart';
 import 'package:fushi/src/media/kavita/kavita_api_registry.dart';
 import 'package:fushi/src/media/kavita/kavita_server_config.dart';
@@ -219,7 +220,8 @@ class MangaSeriesPage extends ConsumerStatefulWidget {
   ConsumerState<MangaSeriesPage> createState() => _MangaSeriesPageState();
 }
 
-class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
+class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage>
+    with StateResourceScope<MangaSeriesPage> {
   EpubBookRow? _row;
   OnlineMangaLibraryEntry? _entry;
   OnlineMangaLibraryService? _service;
@@ -414,7 +416,10 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   void _watchOcr(String bookKey) {
     if (_ocrChangesWatch != null) return;
     final MangaOcrJobRegistry registry = ref.read(mangaOcrJobRegistryProvider);
-    _ocrChangesWatch = registry.changes.listen((_) => _syncOcrJob(bookKey));
+    _ocrChangesWatch = ownSubscription(
+      registry.changes.listen((_) => _syncOcrJob(bookKey)),
+      slot: #ocrChanges,
+    );
     _syncOcrJob(bookKey);
   }
 
@@ -425,13 +430,18 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     final List<String> queued = registry.queuedDirectories(bookKey);
     if (!identical(job, _ocrJob)) {
       unawaited(_ocrEventsWatch?.cancel());
-      _ocrEventsWatch = job?.events.listen(
-        (MangaOcrBackgroundEvent event) {
-          if (mounted) setState(() => _ocrEvent = event);
-        },
-        onError: (Object _, StackTrace __) => _syncOcrJob(bookKey),
-        onDone: () => _syncOcrJob(bookKey),
-      );
+      _ocrEventsWatch = job == null
+          ? null
+          : ownSubscription(
+              job.events.listen(
+                (MangaOcrBackgroundEvent event) {
+                  if (mounted) setState(() => _ocrEvent = event);
+                },
+                onError: (Object _, StackTrace __) => _syncOcrJob(bookKey),
+                onDone: () => _syncOcrJob(bookKey),
+              ),
+              slot: #ocrEvents,
+            );
       _ocrEvent = job?.lastEvent;
     }
     // 任务起止（尤其是跑完）都可能改了某章 manga.json 的识别结果。
@@ -3180,8 +3190,11 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   void _watchScrapeDetail(EpubBookRow row) {
     if (row.uid.isEmpty || _scrapeChanges != null) return;
     final FushiDatabase db = _appModel.database;
-    _scrapeChanges = db.watchItemScrapeChanged().listen(
-      (_) => unawaited(_reloadScrapeDetail()),
+    _scrapeChanges = ownSubscription(
+      db.watchItemScrapeChanged().listen(
+        (_) => unawaited(_reloadScrapeDetail()),
+      ),
+      slot: #scrapeChanges,
     );
     unawaited(_reloadScrapeDetail());
   }
@@ -3248,17 +3261,20 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   void _watchLocalVolume(String bookKey) {
     if (_localVolumeChanges != null) return;
     final FushiDatabase db = _appModel.database;
-    _localVolumeChanges = db
-        .tableUpdates(
-          TableUpdateQuery.onAllTables(
-            <ResultSetImplementation<dynamic, dynamic>>[
-              db.epubBooks,
-              db.readerPositions,
-              db.preferences,
-            ],
-          ),
-        )
-        .listen((Set<TableUpdate> _) => unawaited(_syncLocalVolume(bookKey)));
+    _localVolumeChanges = ownSubscription(
+      db
+          .tableUpdates(
+            TableUpdateQuery.onAllTables(
+              <ResultSetImplementation<dynamic, dynamic>>[
+                db.epubBooks,
+                db.readerPositions,
+                db.preferences,
+              ],
+            ),
+          )
+          .listen((Set<TableUpdate> _) => unawaited(_syncLocalVolume(bookKey))),
+      slot: #localVolumeChanges,
+    );
   }
 
   Future<void> _syncLocalVolume(String bookKey) async {

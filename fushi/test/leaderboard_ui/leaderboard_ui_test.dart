@@ -7,7 +7,10 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart'
     show LogicalKeyboardKey, MethodCall, SystemChannels;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_test/flutter_test.dart' hide testWidgets;
+import 'package:flutter_test/flutter_test.dart' as ft show testWidgets;
+
+import '../helpers/pending_file_writes.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/leaderboard/leaderboard_features.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
@@ -235,6 +238,13 @@ class _FakeServer {
 
 void main() {
   late Directory root;
+
+  // 每条用例末尾摘树并等页面起的落盘写完，tearDown 才删得掉 root（BUG-5608）。
+  void testWidgets(String description, WidgetTesterCallback body) =>
+      ft.testWidgets(description, (WidgetTester tester) async {
+        await body(tester);
+        await drainPendingFileWrites(tester, root);
+      });
   late _FakeServer server;
   late int now;
 

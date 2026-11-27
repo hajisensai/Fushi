@@ -180,6 +180,7 @@ import 'package:fushi/src/media/links/media_link_opener.dart'
     show mediaLinkRemoteVideoSources, mediaLinkSearchAction, openMediaLinkEntry;
 import 'package:fushi/src/media/links/media_links_section.dart'
     show MediaLinksSection;
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 统一合集 Phase 4：合集详情页（Jellyfin 式）。playlist 合集 = 有序剧集列表：点某集从
 /// 该集开始播放（带剧集面板 / 上下集 / 连播，调用方经 playlistCollectionId 打开播放器）；
@@ -292,7 +293,8 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     with
         CollectionDetailShared<MediaCollectionDetailPage>,
         LibraryReorderHost<MediaCollectionDetailPage>,
-        TickerProviderStateMixin {
+        TickerProviderStateMixin,
+        StateResourceScope<MediaCollectionDetailPage> {
   late String _name;
 
   /// 封面 / 海报 / 附加图缩略图的「文件在不在」异步记忆表（BUG-3756）：合集海报常落在
@@ -550,7 +552,6 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   @override
   void dispose() {
     _coverExists.dispose();
-    _backdropRotationTimer?.cancel();
     _seasonTabs?.dispose();
     super.dispose();
   }
@@ -1070,14 +1071,16 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     _backdropRotationTimer = null;
     if (!mounted || _backdropSources.length < 2) return;
     if (MediaQuery.maybeDisableAnimationsOf(context) ?? false) return;
-    _backdropRotationTimer = Timer.periodic(const Duration(seconds: 10), (
-      Timer _,
-    ) {
-      if (!mounted || _backdropSources.length < 2) return;
-      setState(() {
-        _heroBackdropIndex = (_heroBackdropIndex + 1) % _backdropSources.length;
-      });
-    });
+    _backdropRotationTimer = ownTimer(
+      Timer.periodic(const Duration(seconds: 10), (Timer _) {
+        if (!mounted || _backdropSources.length < 2) return;
+        setState(() {
+          _heroBackdropIndex =
+              (_heroBackdropIndex + 1) % _backdropSources.length;
+        });
+      }),
+      slot: #backdropRotation,
+    );
   }
 
   /// 重建分节并让季 tab 控制器跟上节数。**必须在 setState 内调用**（会改

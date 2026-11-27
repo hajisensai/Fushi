@@ -653,6 +653,10 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       ),
     );
     _popup.bodyStaticLayer.resolveBody = () => popupBodyWebViewId;
+    onTeardown(
+      () => _popup.bodyStaticLayer.resolveBody = null,
+      slot: #resolveBody,
+    );
     _controller.addListener(_onControllerChanged);
     assert(() {
       WebVideoFushiPage.debugSnapshot = () => (
@@ -869,7 +873,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     if (widget.returnHostingAfterMining == null) {
       _beginRestore(widget.mineReturnState);
     }
-    WidgetsBinding.instance.addPostFrameCallback((_) => _seedWarmPopup());
+    schedulePostFrame((_) => _seedWarmPopup());
   }
 
   /// WebView 进程死后、表面重建前（BUG-4983，[WebVideoSession.onProcessGone]）。会话已作废死

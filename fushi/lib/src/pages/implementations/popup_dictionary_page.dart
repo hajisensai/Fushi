@@ -431,7 +431,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     _sourceTextCollapsed = widget.sourceTextCollapsed;
     // 热复用下的新请求独占原文视口：即便原文与上次相同也从头开始，再由原文条把被点的字
     // 滚进视口（[SourceLookupTextPanel.revealHighlight]）。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       if (mounted && _sourceScrollController.hasClients) {
         _sourceScrollController.jumpTo(0);
       }
@@ -450,7 +450,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     if (trimmed.isEmpty) {
       // 悬浮球「查词」/ 剪贴板为空：宿主有意推来空词，常驻热页回到只有搜索栏的
       // 初始态（隐藏上一次的结果、清空搜索框与源文本条），否则用户看到的是上一个词。
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+      schedulePostFrame((_) {
         if (!mounted || widget.searchTerm.trim().isNotEmpty) return;
         setState(() {
           _popup.dismissAt(0);
@@ -463,7 +463,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       return;
     }
     if (!appModel.isInitialised) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       if (!mounted) return;
       _lookupWidgetSource();
     });

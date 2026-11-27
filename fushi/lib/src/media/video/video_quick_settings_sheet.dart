@@ -216,7 +216,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
   void _notifySubtitleCategoryShownAfterFrame() {
     final VoidCallback? cb = widget.host.onSubtitleCategoryShown;
     if (cb == null) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       if (mounted) cb();
     });
   }

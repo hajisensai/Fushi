@@ -206,16 +206,24 @@ class _VideoImportPageState extends ConsumerState<VideoImportPage>
   @override
   void initState() {
     super.initState();
-    widget.scrapeTaskController?.addListener(_taskChanged);
-    onTeardown(() => widget.scrapeTaskController?.removeListener(_taskChanged));
+    _listenScrapeTask();
+  }
+
+  void _listenScrapeTask() {
+    final VideoSourceScrapeTaskController? task = widget.scrapeTaskController;
+    if (task != null) {
+      task.addListener(_taskChanged);
+      onTeardown(() => task.removeListener(_taskChanged), slot: #scrapeTask);
+    } else {
+      onTeardown(() {}, slot: #scrapeTask);
+    }
   }
 
   @override
   void didUpdateWidget(covariant VideoImportPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.scrapeTaskController == widget.scrapeTaskController) return;
-    oldWidget.scrapeTaskController?.removeListener(_taskChanged);
-    widget.scrapeTaskController?.addListener(_taskChanged);
+    _listenScrapeTask();
   }
 
   void _taskChanged() {

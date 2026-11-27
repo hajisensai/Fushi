@@ -62,7 +62,7 @@ class _VideoChapterPanelState extends State<VideoChapterPanel>
     super.didUpdateWidget(oldWidget);
     // 当前章由父级刷新（异步读 chapter 属性）：变化时滚动到它。
     if (oldWidget.currentIndex != widget.currentIndex) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+      schedulePostFrame((_) {
         if (mounted) _scrollToCurrentChapter();
       });
     }

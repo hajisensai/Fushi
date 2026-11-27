@@ -151,6 +151,16 @@ class _MusicLyricVisualizerViewState extends State<MusicLyricVisualizerView>
     });
   }
 
+  /// 挂 / 换 AI 主题控制器的监听；没有时用空撤销顶掉旧槽位。
+  void _listenAiTheme() {
+    final LyricVisualizerAiThemeController? theme = widget.aiTheme;
+    if (theme != null) {
+      listenTo(theme, _onAiTheme, slot: #aiTheme);
+    } else {
+      onTeardown(() {}, slot: #aiTheme);
+    }
+  }
+
   void _onAiTheme() {
     if (mounted) setState(() {});
   }
@@ -170,8 +180,7 @@ class _MusicLyricVisualizerViewState extends State<MusicLyricVisualizerView>
   void didUpdateWidget(covariant MusicLyricVisualizerView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.aiTheme, widget.aiTheme)) {
-      oldWidget.aiTheme?.removeListener(_onAiTheme);
-      widget.aiTheme?.addListener(_onAiTheme);
+      _listenAiTheme();
     }
     if (!identical(oldWidget.aiTheme, widget.aiTheme) ||
         oldWidget.trackUid != widget.trackUid ||
@@ -183,8 +192,7 @@ class _MusicLyricVisualizerViewState extends State<MusicLyricVisualizerView>
   @override
   void initState() {
     super.initState();
-    widget.aiTheme?.addListener(_onAiTheme);
-    onTeardown(() => widget.aiTheme?.removeListener(_onAiTheme));
+    _listenAiTheme();
     _attachAiTheme();
     schedulePostFrame((_) {
       if (mounted) _focus.requestFocus();

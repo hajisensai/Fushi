@@ -284,7 +284,7 @@ class FushiCard extends StatefulWidget {
 }
 
 class _FushiCardState extends State<FushiCard>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, StateResourceScope<FushiCard> {
   late final FushiFocusId _fallbackFocusId = FushiFocusId(
     'fushi-card-${identityHashCode(this)}',
   );
@@ -351,9 +351,8 @@ class _FushiCardState extends State<FushiCard>
     if (oldWidget.selected != widget.selected && _spring != null) {
       // didUpdateWidget 在构建期：弹簧重定向挪到帧后（直接改 controller 会在
       // 构建中把子孙标脏），并补一帧确保回调真的跑。
-      SchedulerBinding.instance
-        ..addPostFrameCallback((_) => _retarget())
-        ..ensureVisualUpdate();
+      schedulePostFrame((_) => _retarget());
+      SchedulerBinding.instance.ensureVisualUpdate();
     }
   }
 
@@ -2222,16 +2221,14 @@ class _FushiFieldFocusRevealState extends State<FushiFieldFocusReveal>
   @override
   void initState() {
     super.initState();
-    widget.fieldFocus.addListener(_onFieldFocus);
-    onTeardown(() => widget.fieldFocus.removeListener(_onFieldFocus));
+    listenTo(widget.fieldFocus, _onFieldFocus, slot: #fieldFocus);
   }
 
   @override
   void didUpdateWidget(FushiFieldFocusReveal oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.fieldFocus != widget.fieldFocus) {
-      oldWidget.fieldFocus.removeListener(_onFieldFocus);
-      widget.fieldFocus.addListener(_onFieldFocus);
+      listenTo(widget.fieldFocus, _onFieldFocus, slot: #fieldFocus);
     }
   }
 
@@ -8350,28 +8347,22 @@ class _AppleHeaderSearchField extends StatefulWidget {
       _AppleHeaderSearchFieldState();
 }
 
-class _AppleHeaderSearchFieldState extends State<_AppleHeaderSearchField> {
+class _AppleHeaderSearchFieldState extends State<_AppleHeaderSearchField>
+    with StateResourceScope<_AppleHeaderSearchField> {
   FocusNode get _focus => widget.controller.fieldFocusNode;
 
   @override
   void initState() {
     super.initState();
-    _focus.addListener(_onFocus);
+    listenTo(_focus, _onFocus, slot: #focus);
   }
 
   @override
   void didUpdateWidget(_AppleHeaderSearchField oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.controller, widget.controller)) {
-      oldWidget.controller.fieldFocusNode.removeListener(_onFocus);
-      _focus.addListener(_onFocus);
+      listenTo(_focus, _onFocus, slot: #focus);
     }
-  }
-
-  @override
-  void dispose() {
-    _focus.removeListener(_onFocus);
-    super.dispose();
   }
 
   void _onFocus() {

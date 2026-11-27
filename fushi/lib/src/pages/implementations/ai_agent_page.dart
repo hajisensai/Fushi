@@ -872,7 +872,7 @@ class _AiAgentConversationState extends State<AiAgentConversation>
   void initState() {
     super.initState();
     AiAgentConversation._openCount++;
-    _controller.addListener(_onChanged);
+    listenTo(_controller, _onChanged);
     final String? prompt = widget.initialPrompt?.take();
     if (prompt != null) {
       _input.text = prompt;
@@ -889,7 +889,6 @@ class _AiAgentConversationState extends State<AiAgentConversation>
   void dispose() {
     AiAgentConversation._openCount--;
     _screenText.dispose();
-    _controller.removeListener(_onChanged);
     _input.dispose();
     _inputFocus.dispose();
     _scroll.dispose();

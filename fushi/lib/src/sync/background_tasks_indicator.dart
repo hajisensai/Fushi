@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/sync/background_task.dart';
 import 'package:fushi/src/srs/srs_sync_progress.dart';
 import 'package:fushi/src/srs/srs_sync_progress_ui.dart';
@@ -330,7 +331,8 @@ class _BackgroundTaskRow extends StatefulWidget {
   State<_BackgroundTaskRow> createState() => _BackgroundTaskRowState();
 }
 
-class _BackgroundTaskRowState extends State<_BackgroundTaskRow> {
+class _BackgroundTaskRowState extends State<_BackgroundTaskRow>
+    with StateResourceScope<_BackgroundTaskRow> {
   /// 「这一步已多久」每秒走一格；没有起点（复习同步、补刮、已结束）时不开计时器。
   Timer? _clock;
   bool _errorsExpanded = false;
@@ -352,9 +354,12 @@ class _BackgroundTaskRowState extends State<_BackgroundTaskRow> {
       _clock?.cancel();
       _clock = null;
     } else {
-      _clock ??= Timer.periodic(const Duration(seconds: 1), (_) {
-        if (mounted) setState(() {});
-      });
+      _clock ??= ownTimer(
+        Timer.periodic(const Duration(seconds: 1), (_) {
+          if (mounted) setState(() {});
+        }),
+        slot: #clock,
+      );
     }
   }
 

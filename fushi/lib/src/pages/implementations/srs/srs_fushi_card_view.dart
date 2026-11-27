@@ -356,6 +356,16 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView>
     if (mounted) setState(() {});
   }
 
+  /// 底部留白通知：槽位化，换通知器时重挂；为 null 时空撤销顶掉旧槽位。
+  void _bindBottomInset() {
+    final Listenable? inset = widget.bottomInset;
+    if (inset == null) {
+      onTeardown(() {}, slot: #bottomInset);
+      return;
+    }
+    listenTo(inset, _onBottomInset, slot: #bottomInset);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -364,17 +374,13 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView>
       srsCardAppearanceProvider,
       (SrsCardAppearance? _, SrsCardAppearance _) => _declareSentenceAudio(),
     );
-    widget.bottomInset?.addListener(_onBottomInset);
-    onTeardown(() => widget.bottomInset?.removeListener(_onBottomInset));
+    _bindBottomInset();
   }
 
   @override
   void didUpdateWidget(SrsFushiCardView old) {
     super.didUpdateWidget(old);
-    if (old.bottomInset != widget.bottomInset) {
-      old.bottomInset?.removeListener(_onBottomInset);
-      widget.bottomInset?.addListener(_onBottomInset);
-    }
+    if (old.bottomInset != widget.bottomInset) _bindBottomInset();
     _declareSentenceAudio();
     if (old.face.cardId != widget.face.cardId) {
       // 内容高度保留上一张的：页面只在高度变化时上报，新卡同高时不会再报。

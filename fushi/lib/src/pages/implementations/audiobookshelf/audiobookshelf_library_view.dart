@@ -8,6 +8,7 @@ library;
 
 import 'dart:async';
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/pages/implementations/audiobookshelf/audiobookshelf_item_page.dart';
@@ -60,7 +61,8 @@ class AudiobookshelfLibraryView extends StatefulWidget {
       _AudiobookshelfLibraryViewState();
 }
 
-class _AudiobookshelfLibraryViewState extends State<AudiobookshelfLibraryView> {
+class _AudiobookshelfLibraryViewState extends State<AudiobookshelfLibraryView>
+    with StateResourceScope<AudiobookshelfLibraryView> {
   late AudiobookshelfServerConfig _server = widget.servers.first;
   List<AudiobookshelfLibrary> _libraries = const <AudiobookshelfLibrary>[];
   AudiobookshelfLibrary? _library;
@@ -275,7 +277,7 @@ class _AudiobookshelfLibraryViewState extends State<AudiobookshelfLibraryView> {
 
   /// 第一页没填满视口就没有滚动可言，补取下一页（否则永远翻不动）。
   void _fillViewportIfShort() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       if (!mounted || !_scroll.hasClients) return;
       if (_scroll.position.maxScrollExtent <= 0) unawaited(_loadMore());
     });

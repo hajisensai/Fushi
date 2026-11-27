@@ -2520,7 +2520,7 @@ class _SlidingIndicatorScopeState extends State<_SlidingIndicatorScope>
 
   /// 选中项在可滚动的侧栏里超出可视区时滚进来（底栏没有 Scrollable，空操作）。
   void _revealSelected() {
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
+    schedulePostFrame((_) async {
       if (!mounted) return;
       final BuildContext? slot = _slots[widget.selectedId]?.currentContext;
       if (slot == null || !slot.mounted) return;

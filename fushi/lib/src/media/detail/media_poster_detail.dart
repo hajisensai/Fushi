@@ -69,6 +69,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/prebaked_blur_image.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 // =============================================================================
 // 配色
@@ -1423,7 +1424,9 @@ class _HeroImageAspect extends StatefulWidget {
 }
 
 class _HeroImageAspectState extends State<_HeroImageAspect>
-    with CoverAspectProbe<_HeroImageAspect> {
+    with
+        StateResourceScope<_HeroImageAspect>,
+        CoverAspectProbe<_HeroImageAspect> {
   @override
   ImageProvider probedImageOf(_HeroImageAspect widget) => widget.image;
 
@@ -1478,7 +1481,9 @@ class _HeroPosterAspect extends StatefulWidget {
 }
 
 class _HeroPosterAspectState extends State<_HeroPosterAspect>
-    with CoverAspectProbe<_HeroPosterAspect> {
+    with
+        StateResourceScope<_HeroPosterAspect>,
+        CoverAspectProbe<_HeroPosterAspect> {
   @override
   ImageProvider probedImageOf(_HeroPosterAspect widget) => widget.image;
 

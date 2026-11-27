@@ -1,3 +1,4 @@
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
@@ -125,7 +126,8 @@ class MangaDiscoveryPage extends ConsumerStatefulWidget {
   ConsumerState<MangaDiscoveryPage> createState() => _MangaDiscoveryPageState();
 }
 
-class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
+class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage>
+    with StateResourceScope<MangaDiscoveryPage> {
   MihonManager? _mihonManager;
   final MihonSourceImageLoadQueue _imageQueue = MihonSourceImageLoadQueue(
     maxConcurrent: 4,
@@ -174,8 +176,8 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
     if (!MihonRuntimeFactory.isSupported) return;
     final MihonManager manager = ref.read(appProvider).mihonManager;
     if (identical(manager, _mihonManager)) return;
-    _mihonManager?.removeListener(_managerChanged);
-    _mihonManager = manager..addListener(_managerChanged);
+    _mihonManager = manager;
+    listenTo(manager, _managerChanged, slot: #manager);
   }
 
   void _managerChanged() {
@@ -184,7 +186,6 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
 
   @override
   void dispose() {
-    _mihonManager?.removeListener(_managerChanged);
     _searchController.dispose();
     _searchFocusNode.dispose();
     super.dispose();
@@ -998,7 +999,8 @@ class MangaDiscoverySourceGrid extends StatefulWidget {
       _MangaDiscoverySourceGridState();
 }
 
-class _MangaDiscoverySourceGridState extends State<MangaDiscoverySourceGrid> {
+class _MangaDiscoverySourceGridState extends State<MangaDiscoverySourceGrid>
+    with StateResourceScope<MangaDiscoverySourceGrid> {
   List<MangaDiscoverySourceItem>? _items;
   bool _failed = false;
   int _page = 1;
@@ -1022,14 +1024,12 @@ class _MangaDiscoverySourceGridState extends State<MangaDiscoverySourceGrid> {
     super.didChangeDependencies();
     final ScrollPosition? position = Scrollable.maybeOf(context)?.position;
     if (identical(position, _position)) return;
-    _position?.removeListener(_onScroll);
-    _position = position?..addListener(_onScroll);
-  }
-
-  @override
-  void dispose() {
-    _position?.removeListener(_onScroll);
-    super.dispose();
+    _position = position;
+    if (position != null) {
+      listenTo(position, _onScroll, slot: #position);
+    } else {
+      onTeardown(() {}, slot: #position);
+    }
   }
 
   void _onScroll() {
@@ -1040,7 +1040,7 @@ class _MangaDiscoverySourceGridState extends State<MangaDiscoverySourceGrid> {
 
   /// 首页内容不够撑满视口时没有滚动事件可等：画完这一帧再判一次。
   void _checkFillAfterFrame() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       if (mounted) _onScroll();
     });
   }

@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/video/cover_ui/cover_backdrop_color.dart';
 import 'package:fushi/src/utils/cover_provider_epoch.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 一张封面的探测结论：固有宽高比 + 垫底主色（[seedAspect] 非空 = 已按该宽高比
 /// 采过色，[seed] 为 null 表示「采过、不需要底色」）。
@@ -123,7 +124,8 @@ abstract final class CoverProbeMemo {
 /// 用法：State 类 `with CoverAspectProbe<自己的 Widget>`，实现 [probedImageOf]，
 /// 在 build 里读 [coverAspect] / [coverFailed]。生命周期钩子由本 mixin 提供，
 /// 子类不要再自己写 `didChangeDependencies` / `didUpdateWidget` / `dispose`。
-mixin CoverAspectProbe<T extends StatefulWidget> on State<T> {
+mixin CoverAspectProbe<T extends StatefulWidget>
+    on State<T>, StateResourceScope<T> {
   /// 从 widget 取出要探测的图片源。前景 [Image] 必须用同一个 provider——两者共享
   /// 同一 [ImageStream]，宽高比探测因此是零额外解码成本。
   ImageProvider probedImageOf(T widget);
@@ -146,7 +148,6 @@ mixin CoverAspectProbe<T extends StatefulWidget> on State<T> {
   bool get holdsAspectAcrossImageChange => false;
 
   ImageStream? _stream;
-  ImageStreamListener? _listener;
 
   /// 拿到 [_stream] 时 provider 的 [CoverProviderEpoch]。解码结果按它写 memo：
   /// resolve 之后才发生的驱逐（旧字节还在解码）会让它过期，旧图结果不进 memo。
@@ -197,11 +198,10 @@ mixin CoverAspectProbe<T extends StatefulWidget> on State<T> {
     super.dispose();
   }
 
+  /// 只清字段：流上的监听由 [_resolveProbedImage] 登记的撤销槽位摘（换流时下一次
+  /// 登记顶掉上一条，退场 / 成孤儿时随清单撤）。
   void _detachListener() {
-    final ImageStreamListener? listener = _listener;
-    if (listener != null) _stream?.removeListener(listener);
     _stream = null;
-    _listener = null;
   }
 
   void _resolveProbedImage() {
@@ -230,8 +230,8 @@ mixin CoverAspectProbe<T extends StatefulWidget> on State<T> {
     );
     _stream = newStream;
     _streamEpoch = CoverProviderEpoch.of(provider);
-    _listener = listener;
     newStream.addListener(listener);
+    onTeardown(() => newStream.removeListener(listener), slot: #probedImage);
   }
 
   void _onImage(ImageInfo info, bool syncCall) {

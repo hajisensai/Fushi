@@ -36,10 +36,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4877 条。点号进各自文件。
+> 共 4878 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5608](bugs/BUG-5608-widget-test-pending-file-writes-teardown.md) | ✅ | ✅ | 反馈页 / 排行榜 widget 测试偶发 tearDown 删临时目录 errno 32（落盘写到一半就收尾） |
 | [BUG-5604](bugs/BUG-5604-initstate-failed-mount-orphan-resources.md) | ✅ | ✅ | State 的 initState 半途抛错后，已挂上的订阅 / 监听 / Timer 成孤儿（全页面通用） |
 | [BUG-5602](bugs/BUG-5602-video-page-failed-mount-orphan-ref-read.md) | ✅ | ✅ | 视频库页 initState 半途抛错后，后台自动刮削在停用的元素上读 ref |
 | [BUG-5600](bugs/BUG-5600-jellyfin-show-in-library-hides-cloud-videos.md) | ✅ | ✅ | 开了 Jellyfin「显示在视频库」后云盘远端视频全部消失 |

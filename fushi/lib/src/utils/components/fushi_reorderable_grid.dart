@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_reorderable_column.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 网格单元内容构造器：返回**纯视觉**卡片内容（自身手势由本组件统一接管，
 /// 调用方应把卡片包在 [IgnorePointer] 里避免内部 InkWell 的 long-press 与本组件的
@@ -117,7 +118,8 @@ class FushiReorderableGrid extends StatefulWidget {
   State<FushiReorderableGrid> createState() => _FushiReorderableGridState();
 }
 
-class _FushiReorderableGridState extends State<FushiReorderableGrid> {
+class _FushiReorderableGridState extends State<FushiReorderableGrid>
+    with StateResourceScope<FushiReorderableGrid> {
   /// 显示顺序：display 位置 → 原始 index（拖拽中实时变化；提交后重置为恒等）。
   late List<int> _display;
 
@@ -192,16 +194,13 @@ class _FushiReorderableGridState extends State<FushiReorderableGrid> {
     _viewportScrollable = scrollable;
     final ScrollPosition? position = scrollable?.position;
     if (!identical(position, _viewportPosition)) {
-      _viewportPosition?.removeListener(_scheduleWindowCheck);
       _viewportPosition = position;
-      position?.addListener(_scheduleWindowCheck);
+      if (position != null) {
+        listenTo(position, _scheduleWindowCheck, slot: #viewportPosition);
+      } else {
+        onTeardown(() {}, slot: #viewportPosition);
+      }
     }
-  }
-
-  @override
-  void dispose() {
-    _viewportPosition?.removeListener(_scheduleWindowCheck);
-    super.dispose();
   }
 
   /// 布局 / 滚动之后（帧末，几何已是本帧的）重新量窗口，行区间变了才重建。

@@ -3,6 +3,7 @@ import 'package:fushi/src/media/video/cover_ui/cover_aspect_probe.dart';
 import 'package:fushi/src/media/video/cover_ui/cover_backdrop_color.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/prebaked_blur_image.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 槽向自适应封面（Kazumi 式，用户拍板 2026-07-24 统一竖版；BUG-1299 推广为
 /// 横竖槽通用）。
@@ -65,7 +66,9 @@ class PortraitCoverImage extends StatefulWidget {
 }
 
 class _PortraitCoverImageState extends State<PortraitCoverImage>
-    with CoverAspectProbe<PortraitCoverImage> {
+    with
+        StateResourceScope<PortraitCoverImage>,
+        CoverAspectProbe<PortraitCoverImage> {
   @override
   ImageProvider probedImageOf(PortraitCoverImage widget) => widget.image;
 

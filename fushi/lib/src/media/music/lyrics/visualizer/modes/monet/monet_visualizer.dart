@@ -137,16 +137,14 @@ class _MonetStageState extends State<_MonetStage>
   void initState() {
     super.initState();
     _lastTimeMs = widget.ticks.value.timeMs;
-    widget.ticks.addListener(_onTick);
-    onTeardown(() => widget.ticks.removeListener(_onTick));
+    listenTo(widget.ticks, _onTick, slot: #ticks);
   }
 
   @override
   void didUpdateWidget(covariant _MonetStage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.ticks, widget.ticks)) {
-      oldWidget.ticks.removeListener(_onTick);
-      widget.ticks.addListener(_onTick);
+      listenTo(widget.ticks, _onTick, slot: #ticks);
     }
     final LyricVisualizerContext a = oldWidget.visualizer;
     final LyricVisualizerContext b = widget.visualizer;

@@ -522,7 +522,6 @@ class _HomePageState extends BasePageState<HomePage>
   /// 于是每次都回到第一个「首页」分区。持有 [GlobalKey] 让换布局变成同一子树换父节点。
   final GlobalKey _homeBodyKey = GlobalKey(debugLabel: 'home-tab-body');
 
-
   /// Android games tab（串流接收端）的依赖装配；只在首次切到该 tab 时构造。
   late final GameStreamLibraryServices _gameStreamLibraryServices =
       GameStreamLibraryServices.interconnect(appModel: appModelNoUpdate);
@@ -652,6 +651,13 @@ class _HomePageState extends BasePageState<HomePage>
     // 当前偏好惰性建，所以解析器每次都返回配置正确的那一个。
     appModelNoUpdate.videoScrapeControllerResolver = () async =>
         _videoSourceScrapeController;
+    // 退场 / 成了孤儿（BUG-5604）都把借出去的控制器与运行时收回来。
+    onTeardown(() {
+      appModelNoUpdate.videoScrapeControllerResolver = null;
+      if (identical(appModelNoUpdate.videoScrapeRuntime, _videoScrapeRuntime)) {
+        appModelNoUpdate.videoScrapeRuntime = null;
+      }
+    });
     appModelNoUpdate.videoScrapeRuntime = _videoScrapeRuntime;
     listenTo(syncBackgroundTasksListenable, _onSyncTasksChanged);
     listenTo(_interconnectDownloads, _onInterconnectDownloadsChanged);
@@ -1148,10 +1154,6 @@ class _HomePageState extends BasePageState<HomePage>
     _appleChrome.dispose();
     _largeTitle.dispose();
     _shellActions.dispose();
-    appModelNoUpdate.videoScrapeControllerResolver = null;
-    if (identical(appModelNoUpdate.videoScrapeRuntime, _videoScrapeRuntime)) {
-      appModelNoUpdate.videoScrapeRuntime = null;
-    }
     assert(() {
       HomePage.debugSelectTab = null;
       HomePage.debugVideoDiscoveryActions = null;

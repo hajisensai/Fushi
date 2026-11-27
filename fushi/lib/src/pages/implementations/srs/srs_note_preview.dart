@@ -47,6 +47,7 @@ import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 字段里出现的填空编号（`{{c2::…}}` → 2），升序去重；没有填空返回空表。
 List<int> srsClozeOrdinals(Iterable<String> values) {
@@ -285,7 +286,8 @@ class SrsNotePreview extends ConsumerStatefulWidget {
   ConsumerState<SrsNotePreview> createState() => _SrsNotePreviewState();
 }
 
-class _SrsNotePreviewState extends ConsumerState<SrsNotePreview> {
+class _SrsNotePreviewState extends ConsumerState<SrsNotePreview>
+    with StateResourceScope<SrsNotePreview> {
   bool _showAnswer = false;
   String? _templateId;
   int _clozeOrd = 1;
@@ -300,7 +302,6 @@ class _SrsNotePreviewState extends ConsumerState<SrsNotePreview> {
   SrsPreviewNativeFushiCard? _shownNative;
   Timer? _debounce;
   int _seq = 0;
-  Listenable? _listening;
 
   @override
   void initState() {
@@ -323,14 +324,15 @@ class _SrsNotePreviewState extends ConsumerState<SrsNotePreview> {
   @override
   void dispose() {
     _debounce?.cancel();
-    _listening?.removeListener(_onFieldChanged);
     super.dispose();
   }
 
   void _listen() {
-    _listening?.removeListener(_onFieldChanged);
-    _listening = Listenable.merge(widget.fields.values.toList());
-    _listening!.addListener(_onFieldChanged);
+    listenTo(
+      Listenable.merge(widget.fields.values.toList()),
+      _onFieldChanged,
+      slot: #fields,
+    );
   }
 
   void _onFieldChanged() {

@@ -93,18 +93,16 @@ void main() {
       isTrue,
     );
     // 封面取色异步到达 / 覆盖层撤下时宿主发布新主题，弹窗主题跟着重算。
+    // 换宿主时经同一槽位重挂（BUG-5604：退场 / 成了孤儿都会摘掉）。
     expect(
-      page.contains(
-        'themeHost?.themeChanges.addListener(_onLyricsThemeHostChanged)',
-      ),
+      RegExp(
+        r'listenTo\(\s*themeHost\?\.themeChanges,\s*_onLyricsThemeHostChanged,',
+      ).hasMatch(page),
       isTrue,
     );
-    expect(
-      page.contains(
-        '_lyricsThemeHost?.themeChanges.removeListener(_onLyricsThemeHostChanged)',
-      ),
-      isTrue,
-    );
+    // 摘旧宿主不再手写 removeListener：同一槽位重挂即先摘旧的，dispose / 孤儿由
+    // StateResourceScope 收尾。
+    expect(page.contains('slot: #lyricsThemeHost'), isTrue);
     // Apple 歌词页恒深色档：弹窗经 lyricsMode 走同一配方。
     expect(body.contains('lyricsMode: _lyricsMode,'), isTrue);
     // 进入歌词模式当场重算（app 已是深色时宿主主题不变、不会发通知）。

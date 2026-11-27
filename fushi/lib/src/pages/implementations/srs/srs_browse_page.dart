@@ -72,6 +72,7 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/srs/srs_navigation.dart';
 import 'package:fushi/src/srs/srs_action_error_text.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 「更改笔记类型」的入口（由别的模块提供）：传入要改的笔记 ID。
 typedef SrsChangeNoteTypeFlow =
@@ -129,7 +130,8 @@ class SrsBrowsePage extends ConsumerStatefulWidget {
   ConsumerState<SrsBrowsePage> createState() => _SrsBrowsePageState();
 }
 
-class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
+class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage>
+    with StateResourceScope<SrsBrowsePage> {
   /// 已拆成积木的条件（查询的顶层「且」链）。
   late List<SrsBrowseChip> _chips = srsParseBrowseChips(
     widget.initialQuery ?? '',
@@ -337,7 +339,7 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
     unawaited(_refreshMeta(session, first: first));
     // 带着 initialCardId 打开：列表首次出现后把这一行滚进视口。
     if (first && widget.initialCardId != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+      schedulePostFrame((_) {
         if (!mounted) return;
         final int i = _currentIndex;
         if (i >= 0) _scrollToIndex(i);

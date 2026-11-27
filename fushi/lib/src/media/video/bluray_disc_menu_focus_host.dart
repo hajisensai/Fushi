@@ -1,5 +1,7 @@
 import 'package:flutter/widgets.dart';
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
+
 /// Replaces the regular media controls' Focus host while a disc menu is shown.
 /// Attachment, rather than a native menu event, determines when the page can
 /// reclaim this node: the old controls must have finished detaching first.
@@ -20,7 +22,8 @@ class BlurayDiscMenuFocusHost extends StatefulWidget {
       _BlurayDiscMenuFocusHostState();
 }
 
-class _BlurayDiscMenuFocusHostState extends State<BlurayDiscMenuFocusHost> {
+class _BlurayDiscMenuFocusHostState extends State<BlurayDiscMenuFocusHost>
+    with StateResourceScope<BlurayDiscMenuFocusHost> {
   @override
   void initState() {
     super.initState();
@@ -36,7 +39,7 @@ class _BlurayDiscMenuFocusHostState extends State<BlurayDiscMenuFocusHost> {
   }
 
   void _notifyAfterAttachment() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       if (mounted && widget.focusNode.context != null) {
         widget.onAttached(context);
       }

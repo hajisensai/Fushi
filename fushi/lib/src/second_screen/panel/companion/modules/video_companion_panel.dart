@@ -22,6 +22,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart'
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:material_ui/material_ui.dart';
 
 /// One subtitle line of the snapshot window.
@@ -577,7 +578,7 @@ class _CueList extends StatefulWidget {
   State<_CueList> createState() => _CueListState();
 }
 
-class _CueListState extends State<_CueList> {
+class _CueListState extends State<_CueList> with StateResourceScope<_CueList> {
   final GlobalKey _currentKey = GlobalKey();
 
   @override
@@ -594,7 +595,7 @@ class _CueListState extends State<_CueList> {
 
   void _followCurrent() {
     if (widget.currentStart < 0) return;
-    WidgetsBinding.instance.addPostFrameCallback((Duration _) {
+    schedulePostFrame((Duration _) {
       final BuildContext? target = _currentKey.currentContext;
       final RenderObject? line = target?.findRenderObject();
       if (!mounted || target == null || line == null) return;

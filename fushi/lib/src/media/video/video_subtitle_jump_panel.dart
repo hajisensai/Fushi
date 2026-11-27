@@ -1289,10 +1289,8 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel>
     _retainRowKeyFor(_scrollTargetRawIndex);
     // 滚动控制器在首次 [didChangeDependencies] 里建：初始偏移要按**真实**的行形态
     // （M3E / 经典）与排版环境估算，这些只能从 context 读。
-    widget.controller.addListener(_onControllerChanged);
-    onTeardown(() => widget.controller.removeListener(_onControllerChanged));
-    widget.searchRequests?.addListener(_onSearchRequested);
-    onTeardown(() => widget.searchRequests?.removeListener(_onSearchRequested));
+    listenTo(widget.controller, _onControllerChanged, slot: #controller);
+    _listenSearchRequests();
     // PR#1032 审查 B1：挂载即对齐水位线。Ctrl+F 在列表关着时按下，页面会先开列表再立刻 +1，
     // 而面板要到下一帧才 mount —— 那一刻 notifier 上零监听者。只靠 addListener 的边沿
     // 通知必然丢掉这次请求（症状：第一次 Ctrl+F 只把列表开出来，要再按一次才出搜索框）。
@@ -1401,8 +1399,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel>
   void didUpdateWidget(covariant VideoSubtitleJumpPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.controller != widget.controller) {
-      oldWidget.controller.removeListener(_onControllerChanged);
-      widget.controller.addListener(_onControllerChanged);
+      listenTo(widget.controller, _onControllerChanged, slot: #controller);
       _lastControllerCueIndex = _followCueIndex();
       _lastSubtitleCuesLoading = widget.controller.isSubtitleCuesLoading;
       _lastScrolledIndex = -1;
@@ -1416,8 +1413,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel>
     }
     // PR#1032 审查 B1：换了请求通道就重挂监听并重新对齐水位线（新通道可能已经有未服务的请求）。
     if (oldWidget.searchRequests != widget.searchRequests) {
-      oldWidget.searchRequests?.removeListener(_onSearchRequested);
-      widget.searchRequests?.addListener(_onSearchRequested);
+      _listenSearchRequests();
       _handledSearchRequests = 0;
       _syncSearchRequests();
     }
@@ -1504,7 +1500,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel>
     if (!_autoScroll) return;
     if (_scrollPostFrameScheduled) return;
     _scrollPostFrameScheduled = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       _scrollPostFrameScheduled = false;
       if (mounted) _scrollToCurrentCueIfNeeded();
     });
@@ -1679,6 +1675,16 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel>
   /// BUG-1907：页面层（整表快捷键）请求打开搜索。
   void _onSearchRequested() => _syncSearchRequests();
 
+  /// 挂 / 换搜索请求通道；没有时用空撤销顶掉旧槽位。
+  void _listenSearchRequests() {
+    final Listenable? requests = widget.searchRequests;
+    if (requests != null) {
+      listenTo(requests, _onSearchRequested, slot: #searchRequests);
+    } else {
+      onTeardown(() {}, slot: #searchRequests);
+    }
+  }
+
   /// PR#1032 审查 B1：把面板对齐到页面层的搜索请求水位线。
   ///
   /// 水位比自己服务过的高就进入搜索态并重新抢焦点（连按两次 Ctrl+F 也要每次重聚焦），
@@ -1718,7 +1724,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel>
 
   /// 搜索框要等这一帧布局出来才存在，焦点请求必须排到帧后。
   void _focusSearchAfterFrame() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       if (mounted) _searchFocusNode.requestFocus();
     });
   }

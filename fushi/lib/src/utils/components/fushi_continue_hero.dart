@@ -24,6 +24,7 @@ import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 import 'package:fushi/src/utils/components/section_swipe_navigator.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 书架 / 漫画书架 / 游戏 / 音乐 / 首页共用的「继续」大卡（2026-10-28 统一）：
 /// tonal 纯色卡，起始侧封面，「眉标 → 标题 → 元信息 → 进度」。
@@ -565,7 +566,9 @@ class _EntryAspectProbe extends StatefulWidget {
 }
 
 class _EntryAspectProbeState extends State<_EntryAspectProbe>
-    with CoverAspectProbe<_EntryAspectProbe> {
+    with
+        StateResourceScope<_EntryAspectProbe>,
+        CoverAspectProbe<_EntryAspectProbe> {
   @override
   ImageProvider probedImageOf(_EntryAspectProbe widget) => widget.image;
 

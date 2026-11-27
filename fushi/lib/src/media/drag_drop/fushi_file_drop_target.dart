@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter/widgets.dart';
 
 import 'package:fushi/src/media/drag_drop/drop_surface_scope.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
@@ -125,7 +126,8 @@ class FushiFileDropTarget extends StatefulWidget {
   }
 }
 
-class _FushiFileDropTargetState extends State<FushiFileDropTarget> {
+class _FushiFileDropTargetState extends State<FushiFileDropTarget>
+    with StateResourceScope<FushiFileDropTarget> {
   bool _hovering = false;
 
   void _setHovering(bool value) {
@@ -139,7 +141,7 @@ class _FushiFileDropTargetState extends State<FushiFileDropTarget> {
     super.didUpdateWidget(oldWidget);
     // 关掉落点时一并熄灭悬停位：desktop_drop 在 enable=false 后不再报 exit。
     if (!widget.enabled && _hovering) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+      schedulePostFrame((_) {
         if (mounted) _setHovering(false);
       });
     }

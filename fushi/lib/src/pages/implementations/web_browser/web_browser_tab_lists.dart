@@ -630,8 +630,7 @@ class _SidebarBookmarksState extends State<_SidebarBookmarks>
   @override
   void initState() {
     super.initState();
-    widget.store.addListener(_load);
-    onTeardown(() => widget.store.removeListener(_load));
+    listenTo(widget.store, _load, slot: #store);
     _load();
   }
 
@@ -639,8 +638,7 @@ class _SidebarBookmarksState extends State<_SidebarBookmarks>
   void didUpdateWidget(_SidebarBookmarks oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.store, widget.store)) {
-      oldWidget.store.removeListener(_load);
-      widget.store.addListener(_load);
+      listenTo(widget.store, _load, slot: #store);
       _load();
     }
   }

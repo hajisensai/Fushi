@@ -43,6 +43,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// [MihonExtensionsPage] 内嵌时可单独渲染的两节。
 enum MihonExtensionsSection {
@@ -109,7 +110,8 @@ class MihonExtensionsPage extends ConsumerStatefulWidget {
       _MihonExtensionsPageState();
 }
 
-class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
+class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage>
+    with StateResourceScope<MihonExtensionsPage> {
   MihonManager? _manager;
   String _language = '*';
 
@@ -134,13 +136,12 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
     final MihonManager manager =
         widget.manager ?? ref.read(appProvider).mihonManager;
     if (identical(_manager, manager)) return;
-    _manager?.removeListener(_onChanged);
-    _manager = manager..addListener(_onChanged);
+    _manager = manager;
+    listenTo(manager, _onChanged, slot: #manager);
   }
 
   @override
   void dispose() {
-    _manager?.removeListener(_onChanged);
     _searchController.dispose();
     super.dispose();
   }

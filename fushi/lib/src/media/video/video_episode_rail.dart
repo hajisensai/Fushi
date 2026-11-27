@@ -140,9 +140,9 @@ class VideoEpisodeRailState extends State<VideoEpisodeRail>
   /// 无动画定位到当前集（面板本身在 spring 进场），下一帧再把焦点交给当前集
   /// 卡——卡片可能本来在懒加载范围外，要等定位后的那一帧建出来。
   void _claimCurrent() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       _revealCurrent(animate: false);
-      WidgetsBinding.instance.addPostFrameCallback((_) => _focusCurrent());
+      schedulePostFrame((_) => _focusCurrent());
       WidgetsBinding.instance.scheduleFrame();
     });
     WidgetsBinding.instance.scheduleFrame();
@@ -158,7 +158,7 @@ class VideoEpisodeRailState extends State<VideoEpisodeRail>
     }
     if (oldWidget.currentIndex != widget.currentIndex ||
         oldWidget.episodes.length != widget.episodes.length) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _revealCurrent());
+      schedulePostFrame((_) => _revealCurrent());
     }
   }
 

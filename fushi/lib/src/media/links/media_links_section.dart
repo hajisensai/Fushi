@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:drift/drift.dart' show TableUpdate, TableUpdateQuery;
+import 'package:drift/drift.dart' show TableUpdateQuery;
 
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/media/links/adaptation_progress_section.dart';
@@ -22,6 +22,7 @@ import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
@@ -183,7 +184,8 @@ class _SectionData {
 /// 横滚行里的一项：一张卡，带它所在分组（分组首卡上方画组名）。
 typedef _RowItem = ({WorkCardSpec card, String? groupLabel});
 
-class _MediaLinksSectionState extends State<MediaLinksSection> {
+class _MediaLinksSectionState extends State<MediaLinksSection>
+    with StateResourceScope<MediaLinksSection> {
   static const double _cardWidth = 116;
   static const double _coverHeight = _cardWidth * 3 / 2;
   static const double _gap = 12;
@@ -194,7 +196,6 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
 
   /// 持久化在 State 里（BUG-2010：build 里现取 = 每次重建都多查一次库）。
   late Future<_SectionData> _data;
-  StreamSubscription<Set<TableUpdate>>? _tableSub;
   late WorkGraphStore _store;
   bool _inferring = false;
 
@@ -213,15 +214,18 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
   void initState() {
     super.initState();
     _store = WorkGraphStore.of(widget.database);
-    _store.addListener(_reload);
+    listenTo(_store, _reload, slot: #store);
     _data = _load();
     _subscribe();
   }
 
   void _subscribe() {
-    _tableSub = widget.database
-        .tableUpdates(TableUpdateQuery.onTable(widget.database.mediaLinks))
-        .listen((_) => _reload());
+    ownSubscription(
+      widget.database
+          .tableUpdates(TableUpdateQuery.onTable(widget.database.mediaLinks))
+          .listen((_) => _reload()),
+      slot: #tableSub,
+    );
   }
 
   void _reload() {
@@ -237,10 +241,8 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
   void didUpdateWidget(covariant MediaLinksSection oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.database != widget.database) {
-      _store.removeListener(_reload);
       _store = WorkGraphStore.of(widget.database);
-      _store.addListener(_reload);
-      unawaited(_tableSub?.cancel());
+      listenTo(_store, _reload, slot: #store);
       _subscribe();
       _remoteSources = null;
       _remotePosters.clear();
@@ -250,13 +252,6 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
         oldWidget.database != widget.database) {
       _data = _load();
     }
-  }
-
-  @override
-  void dispose() {
-    _store.removeListener(_reload);
-    unawaited(_tableSub?.cancel());
-    super.dispose();
   }
 
   Future<_SectionData> _load() async {

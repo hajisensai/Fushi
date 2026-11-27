@@ -1,3 +1,4 @@
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -64,7 +65,7 @@ const Duration kWavyProgressFlowSettle = Duration(seconds: 3);
 /// 详情、选集栏）。原先确定态无条件常驻 ticker，静止进度条也每个 vsync 整帧
 /// 重绘，首页一张继续观看卡片就让主线程常年 ~17% 占用（启动后持续卡顿的来源）。
 mixin _RepeatingTicker<T extends StatefulWidget>
-    on State<T>, SingleTickerProviderStateMixin<T> {
+    on State<T>, SingleTickerProviderStateMixin<T>, StateResourceScope<T> {
   AnimationController? _ticker;
   Timer? _settleTimer;
   double? _lastValue;
@@ -100,10 +101,13 @@ mixin _RepeatingTicker<T extends StatefulWidget>
     if (value != null && _lastValue != null && value != _lastValue) {
       _valueMoving = true;
       _settleTimer?.cancel();
-      _settleTimer = Timer(kWavyProgressFlowSettle, () {
-        _valueMoving = false;
-        if (mounted) syncTicker();
-      });
+      _settleTimer = ownTimer(
+        Timer(kWavyProgressFlowSettle, () {
+          _valueMoving = false;
+          if (mounted) syncTicker();
+        }),
+        slot: #settle,
+      );
     }
     _lastValue = value;
   }
@@ -192,6 +196,7 @@ class FushiWavyLinearProgress extends StatefulWidget {
 class _FushiWavyLinearProgressState extends State<FushiWavyLinearProgress>
     with
         SingleTickerProviderStateMixin<FushiWavyLinearProgress>,
+        StateResourceScope<FushiWavyLinearProgress>,
         _RepeatingTicker<FushiWavyLinearProgress> {
   // 不定态一轮 1.8 秒（与 Material 线性不定态同节拍）；确定态复用同一个控制器
   // 推波形相位（一轮流过一个波长）。
@@ -484,6 +489,7 @@ class FushiWavyCircularProgress extends StatefulWidget {
 class _FushiWavyCircularProgressState extends State<FushiWavyCircularProgress>
     with
         SingleTickerProviderStateMixin<FushiWavyCircularProgress>,
+        StateResourceScope<FushiWavyCircularProgress>,
         _RepeatingTicker<FushiWavyCircularProgress> {
   // 不定态：一轮 8 秒里 6 次「伸长—收缩」呼吸（每次 1.333 秒，与 Material
   // 圆形不定态同节拍）；确定态同一个控制器推波形相位。
@@ -724,6 +730,7 @@ class FushiSegmentedProgressRing extends StatefulWidget {
 class _FushiSegmentedProgressRingState extends State<FushiSegmentedProgressRing>
     with
         SingleTickerProviderStateMixin<FushiSegmentedProgressRing>,
+        StateResourceScope<FushiSegmentedProgressRing>,
         _RepeatingTicker<FushiSegmentedProgressRing> {
   // 不定态的滑块一个来回 2.4 秒；确定态同一个控制器推波形相位。
   @override
@@ -948,6 +955,7 @@ class _FushiExpressiveLoadingIndicatorState
     extends State<FushiExpressiveLoadingIndicator>
     with
         SingleTickerProviderStateMixin<FushiExpressiveLoadingIndicator>,
+        StateResourceScope<FushiExpressiveLoadingIndicator>,
         _RepeatingTicker<FushiExpressiveLoadingIndicator> {
   /// 每次变形 650ms，一轮走完全部形状。
   static const int _morphMs = 650;

@@ -1545,7 +1545,11 @@ class _FushiProgressDialogState extends State<_FushiProgressDialog>
   @override
   void initState() {
     super.initState();
-    widget.handle._dismiss = _pop;
+    final FushiProgressDialogHandle handle = widget.handle;
+    onTeardown(() {
+      if (handle._dismiss == _pop) handle._dismiss = null;
+    }, slot: #dismiss);
+    handle._dismiss = _pop;
     if (widget.handle.isClosed) {
       schedulePostFrame((_) => _pop());
       WidgetsBinding.instance.ensureVisualUpdate();
@@ -1568,12 +1572,6 @@ class _FushiProgressDialogState extends State<_FushiProgressDialog>
   void _cancel() {
     widget.onCancel?.call();
     widget.handle.close();
-  }
-
-  @override
-  void dispose() {
-    widget.handle._dismiss = null;
-    super.dispose();
   }
 
   @override

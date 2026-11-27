@@ -13,6 +13,7 @@ import 'dart:async';
 import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart'
     show FushiMenuAnchor;
 
@@ -329,7 +330,8 @@ class MusicBarReserve extends ConsumerStatefulWidget {
   ConsumerState<MusicBarReserve> createState() => _MusicBarReserveState();
 }
 
-class _MusicBarReserveState extends ConsumerState<MusicBarReserve> {
+class _MusicBarReserveState extends ConsumerState<MusicBarReserve>
+    with StateResourceScope<MusicBarReserve> {
   MusicSession? _session;
   bool _active = false;
 
@@ -338,16 +340,10 @@ class _MusicBarReserveState extends ConsumerState<MusicBarReserve> {
     super.didChangeDependencies();
     final MusicSession session = ref.read(appProvider).musicSession;
     if (!identical(session, _session)) {
-      _session?.removeListener(_onSession);
-      _session = session..addListener(_onSession);
+      _session = session;
+      listenTo(session, _onSession, slot: #session);
       _active = session.isActive;
     }
-  }
-
-  @override
-  void dispose() {
-    _session?.removeListener(_onSession);
-    super.dispose();
   }
 
   /// 会话频繁通知（位置等），只在「有没有在播」翻转时才重建。

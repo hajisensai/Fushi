@@ -3,6 +3,7 @@
 /// [srs_browse_query.dart]，这里只画界面；查询串仍是唯一真相（页面持有积木 + 草稿，拼成查询交给内核）。
 library;
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'dart:async';
 
 import 'package:flutter/services.dart';
@@ -338,7 +339,8 @@ class _SrsChipEditor extends StatefulWidget {
   State<_SrsChipEditor> createState() => _SrsChipEditorState();
 }
 
-class _SrsChipEditorState extends State<_SrsChipEditor> {
+class _SrsChipEditorState extends State<_SrsChipEditor>
+    with StateResourceScope<_SrsChipEditor> {
   late bool _negated = widget.chip.negated;
   late final List<String> _values = <String>[...widget.chip.values];
   late final TextEditingController _raw = TextEditingController(
@@ -386,16 +388,19 @@ class _SrsChipEditorState extends State<_SrsChipEditor> {
   void _recount() {
     final int seq = ++_seq;
     _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 150), () async {
-      final int n;
-      try {
-        n = await widget.count(_candidate);
-      } catch (e, stack) {
-        ErrorLogService.instance.log('SrsBrowse.chipCount', e, stack);
-        return;
-      }
-      if (mounted && seq == _seq) setState(() => _count = n);
-    });
+    _debounce = ownTimer(
+      Timer(const Duration(milliseconds: 150), () async {
+        final int n;
+        try {
+          n = await widget.count(_candidate);
+        } catch (e, stack) {
+          ErrorLogService.instance.log('SrsBrowse.chipCount', e, stack);
+          return;
+        }
+        if (mounted && seq == _seq) setState(() => _count = n);
+      }),
+      slot: #debounce,
+    );
   }
 
   void _toggle(String value) {

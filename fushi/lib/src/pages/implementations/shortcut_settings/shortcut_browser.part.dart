@@ -292,16 +292,14 @@ class _ShortcutBindingsBrowserState extends State<ShortcutBindingsBrowser>
   @override
   void initState() {
     super.initState();
-    widget.registry.addListener(_onRegistryChanged);
-    onTeardown(() => widget.registry.removeListener(_onRegistryChanged));
+    listenTo(widget.registry, _onRegistryChanged, slot: #registry);
   }
 
   @override
   void didUpdateWidget(ShortcutBindingsBrowser oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.registry, widget.registry)) {
-      oldWidget.registry.removeListener(_onRegistryChanged);
-      widget.registry.addListener(_onRegistryChanged);
+      listenTo(widget.registry, _onRegistryChanged, slot: #registry);
     }
     if (oldWidget.platform != widget.platform) {
       _defaults = ShortcutDefaults.forPlatform(widget.platform);

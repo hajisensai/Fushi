@@ -736,7 +736,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   void didUpdateWidget(TexthookerPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!oldWidget.captureSetupEnabled && widget.captureSetupEnabled) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+      schedulePostFrame((_) {
         _maybeScheduleCaptureSetupDialog();
       });
     }

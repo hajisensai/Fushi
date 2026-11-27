@@ -36,6 +36,7 @@ import 'package:fushi/src/media/panorama/panorama_book_flip.dart';
 import 'package:fushi/src/media/panorama/panorama_library.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 分享动画里封面停稳（交给翻书）的时刻，与 pano.rs `T_HANDOFF` 一致。
 const double kPanoramaHandoffSeconds = 13.5;
@@ -149,7 +150,7 @@ class PanoramaStage extends StatefulWidget {
 }
 
 class _PanoramaStageState extends State<PanoramaStage>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, StateResourceScope<PanoramaStage> {
   static Future<ui.FragmentProgram>? _program;
 
   late final FfcPanorama _pano;
@@ -200,18 +201,26 @@ class _PanoramaStageState extends State<PanoramaStage>
     );
     _enterMode();
     _pano.input(FfcPanoInput.idleDrift, widget.idleDrift.clamp(0, 1));
-    widget.controller?._setStage = _setStage;
+    _bindStageController();
+  }
+
+  /// 把 [_setStage] 交给外部控制器；撤销只清掉仍是自己的那一份（换控制器 / 退场时）。
+  void _bindStageController() {
+    final PanoramaStageController? controller = widget.controller;
+    if (controller == null) {
+      onTeardown(() {}, slot: #stageController);
+      return;
+    }
+    controller._setStage = _setStage;
+    onTeardown(() {
+      if (controller._setStage == _setStage) controller._setStage = null;
+    }, slot: #stageController);
   }
 
   @override
   void didUpdateWidget(PanoramaStage old) {
     super.didUpdateWidget(old);
-    if (old.controller != widget.controller) {
-      if (old.controller?._setStage == _setStage) {
-        old.controller!._setStage = null;
-      }
-      widget.controller?._setStage = _setStage;
-    }
+    if (old.controller != widget.controller) _bindStageController();
     if (old.idleDrift != widget.idleDrift) {
       _pano.input(FfcPanoInput.idleDrift, widget.idleDrift.clamp(0, 1));
       _wake();
@@ -239,15 +248,12 @@ class _PanoramaStageState extends State<PanoramaStage>
       if (_ticker.isActive) _ticker.stop();
       // 不跑动画：交互模式停在球幕静帧（分享动画由入口直接跳过，不会走到这里）。
       _t = 0;
-      WidgetsBinding.instance.addPostFrameCallback((_) => _renderOnce());
+      schedulePostFrame((_) => _renderOnce());
     }
   }
 
   @override
   void dispose() {
-    if (widget.controller?._setStage == _setStage) {
-      widget.controller!._setStage = null;
-    }
     _ticker.dispose();
     _pano.dispose();
     _shader?.dispose();

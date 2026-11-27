@@ -70,6 +70,7 @@ import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 一面卡（问题面或答案面）。
 @immutable
@@ -2123,6 +2124,7 @@ class SrsWebCardFace extends ConsumerStatefulWidget {
 }
 
 class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
+    with StateResourceScope<SrsWebCardFace>
     implements SrsCardLookupSurface, PopupBodyWebViewProvider {
   InAppWebViewController? _controller;
 
@@ -2353,7 +2355,14 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
   // ---------------------------------------------------------------- 窗口态（BUG-4038）
 
   void _attachPageWindow(SrsPageWindowLink? link) {
-    link?._apply = _applyPageWindow;
+    if (link == null) {
+      onTeardown(() {}, slot: #pageWindow);
+      return;
+    }
+    link._apply = _applyPageWindow;
+    onTeardown(() {
+      if (link._apply == _applyPageWindow) link._apply = null;
+    }, slot: #pageWindow);
   }
 
   void _detachPageWindow(SrsPageWindowLink? link) {
@@ -3054,7 +3063,8 @@ class SrsPlainCardFace extends StatefulWidget {
   State<SrsPlainCardFace> createState() => _SrsPlainCardFaceState();
 }
 
-class _SrsPlainCardFaceState extends State<SrsPlainCardFace> {
+class _SrsPlainCardFaceState extends State<SrsPlainCardFace>
+    with StateResourceScope<SrsPlainCardFace> {
   @override
   void initState() {
     super.initState();
@@ -3074,7 +3084,7 @@ class _SrsPlainCardFaceState extends State<SrsPlainCardFace> {
   void _scheduleReport() {
     final SrsCardFace face = widget.face;
     if (face.onVisibleSounds == null) return;
-    WidgetsBinding.instance.addPostFrameCallback((Duration _) {
+    schedulePostFrame((Duration _) {
       if (!mounted) return;
       face.onVisibleSounds?.call(
         face.cardId,

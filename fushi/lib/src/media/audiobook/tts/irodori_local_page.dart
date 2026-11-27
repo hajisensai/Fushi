@@ -9,6 +9,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/tts/local/irodori_local_engine.dart';
 import 'package:fushi_engine/tts/local/irodori_local_package.dart';
@@ -91,7 +92,8 @@ class IrodoriLocalPage extends StatefulWidget {
   State<IrodoriLocalPage> createState() => _IrodoriLocalPageState();
 }
 
-class _IrodoriLocalPageState extends State<IrodoriLocalPage> {
+class _IrodoriLocalPageState extends State<IrodoriLocalPage>
+    with StateResourceScope<IrodoriLocalPage> {
   IrodoriLocalEngine get _engine => widget.services.localIrodori;
 
   String? _installDir;
@@ -110,16 +112,12 @@ class _IrodoriLocalPageState extends State<IrodoriLocalPage> {
   @override
   void initState() {
     super.initState();
-    _engine.addListener(_onEngine);
+    final IrodoriLocalEngine engine = _engine;
+    engine.addListener(_onEngine);
+    onTeardown(() => engine.removeListener(_onEngine));
     _wasRunning = _engine.server.isRunning;
     if (_wasRunning) unawaited(_loadVoices());
     unawaited(_init());
-  }
-
-  @override
-  void dispose() {
-    _engine.removeListener(_onEngine);
-    super.dispose();
   }
 
   void _onEngine() {

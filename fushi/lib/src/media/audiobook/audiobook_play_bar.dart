@@ -573,8 +573,7 @@ class _AudiobookMiniPlayerState extends State<AudiobookMiniPlayer>
   @override
   void initState() {
     super.initState();
-    widget.controller.addListener(_onController);
-    onTeardown(() => widget.controller.removeListener(_onController));
+    listenTo(widget.controller, _onController, slot: #controller);
   }
 
   @override
@@ -590,8 +589,7 @@ class _AudiobookMiniPlayerState extends State<AudiobookMiniPlayer>
   void didUpdateWidget(AudiobookMiniPlayer oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.controller, widget.controller)) {
-      oldWidget.controller.removeListener(_onController);
-      widget.controller.addListener(_onController);
+      listenTo(widget.controller, _onController, slot: #controller);
     }
     _syncTicker();
   }
@@ -613,9 +611,12 @@ class _AudiobookMiniPlayerState extends State<AudiobookMiniPlayer>
   void _syncTicker() {
     final bool run = widget.controller.isPlaying && _tickerModeEnabled;
     if (run && _ticker == null) {
-      _ticker = Timer.periodic(widget.tick, (_) {
-        if (mounted) setState(() {});
-      });
+      _ticker = ownTimer(
+        Timer.periodic(widget.tick, (_) {
+          if (mounted) setState(() {});
+        }),
+        slot: #ticker,
+      );
     } else if (!run) {
       _ticker?.cancel();
       _ticker = null;

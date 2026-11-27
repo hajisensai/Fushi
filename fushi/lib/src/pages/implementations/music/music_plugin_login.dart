@@ -34,6 +34,7 @@ import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 交给插件的平台名（契约 `login({op:'methods', platform})`）。
 String musicPluginHostPlatform() {
@@ -528,7 +529,8 @@ class MusicPluginWebLoginPage extends StatefulWidget {
       _MusicPluginWebLoginPageState();
 }
 
-class _MusicPluginWebLoginPageState extends State<MusicPluginWebLoginPage> {
+class _MusicPluginWebLoginPageState extends State<MusicPluginWebLoginPage>
+    with StateResourceScope<MusicPluginWebLoginPage> {
   WebViewEnvironment? _environment;
   bool _ready = false;
   Timer? _timer;
@@ -553,13 +555,10 @@ class _MusicPluginWebLoginPageState extends State<MusicPluginWebLoginPage> {
       _environment = env;
       _ready = true;
     });
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) => _check());
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
+    _timer = ownTimer(
+      Timer.periodic(const Duration(seconds: 1), (_) => _check()),
+      slot: #check,
+    );
   }
 
   Future<void> _check() async {

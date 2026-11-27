@@ -197,9 +197,12 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage>
     final FushiGameStreamHost? host =
         _appModel.syncServerController.activeGameStreamHost;
     if (!identical(_streamHost, host)) {
-      _streamHost?.removeListener(_onStreamChanged);
       _streamHost = host;
-      host?.addListener(_onStreamChanged);
+      if (host != null) {
+        listenTo(host, _onStreamChanged, slot: #streamHost);
+      } else {
+        onTeardown(() {}, slot: #streamHost);
+      }
     }
     _onStreamChanged();
   }
@@ -271,12 +274,6 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage>
       _onSyncChanged();
     }
     unawaited(_reload());
-  }
-
-  @override
-  void dispose() {
-    _streamHost?.removeListener(_onStreamChanged);
-    super.dispose();
   }
 
   /// 仓储变化（库页增删 / 刮削）→ 重算首屏（不再触发仓储写，避免回环）。

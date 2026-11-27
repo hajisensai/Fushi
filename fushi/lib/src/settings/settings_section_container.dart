@@ -1,3 +1,4 @@
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_expansion_state.dart';
@@ -36,7 +37,8 @@ class SettingsSectionContainer extends StatefulWidget {
       _SettingsSectionContainerState();
 }
 
-class _SettingsSectionContainerState extends State<SettingsSectionContainer> {
+class _SettingsSectionContainerState extends State<SettingsSectionContainer>
+    with StateResourceScope<SettingsSectionContainer> {
   SettingsExpansionState get _state =>
       widget.expansionState ?? SettingsExpansionState.instance;
   bool _searchExpanded = false;
@@ -45,7 +47,7 @@ class _SettingsSectionContainerState extends State<SettingsSectionContainer> {
   @override
   void initState() {
     super.initState();
-    _state.addListener(_refresh);
+    listenTo(_state, _refresh, slot: #state);
     _load();
   }
 
@@ -72,21 +74,13 @@ class _SettingsSectionContainerState extends State<SettingsSectionContainer> {
       _searchGeneration = -1;
     }
     if (oldWidget.expansionState != widget.expansionState) {
-      (oldWidget.expansionState ?? SettingsExpansionState.instance)
-          .removeListener(_refresh);
-      _state.addListener(_refresh);
+      listenTo(_state, _refresh, slot: #state);
       _load();
     }
   }
 
   void _refresh() {
     if (mounted) setState(() {});
-  }
-
-  @override
-  void dispose() {
-    _state.removeListener(_refresh);
-    super.dispose();
   }
 
   Future<void> _toggle(bool expanded) async {

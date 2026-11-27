@@ -3449,12 +3449,20 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final SourceReviewSession? session =
         widget.sourceReviewSession ?? SourceReviewScope.maybeOf(context);
     if (identical(session, _sourceReviewSession)) return;
-    _sourceReviewSession?.removeListener(_onSourceReviewChanged);
     _sourceReviewSession = session;
     // A manually opened next episode can inherit an already-continued session.
     // Its later draft/busy notifications are not another request to play.
     _reviewContinued = session != null && !session.isReview;
-    session?.addListener(_onSourceReviewChanged);
+    // 换了会话：同一槽位再登记先摘旧的；退场 / 成了孤儿时摘当下那个（BUG-5604）。
+    if (session != null) {
+      session.addListener(_onSourceReviewChanged);
+      onTeardown(
+        () => session.removeListener(_onSourceReviewChanged),
+        slot: #sourceReviewSession,
+      );
+    } else {
+      onTeardown(() {}, slot: #sourceReviewSession);
+    }
     _registerExternalNavigation();
   }
 
@@ -8518,7 +8526,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _companionHook.dispose();
     unawaited(_favoriteChangesSub?.cancel());
     _favoriteChangesSub = null;
-    _sourceReviewSession?.removeListener(_onSourceReviewChanged);
     // BUG-2043：加载中就被退出（ESC / 系统返回）而还没压上全屏路由 → 接管来的原生
     // 全屏由本页亲自退，不能把窗口留在「原生全屏、栈上无全屏路由」的悬空态。
     _handedOverFullscreenRelease.release();

@@ -149,7 +149,7 @@ class _FushiFocusRingState extends State<FushiFocusRing>
     // By post-frame time the element tree is finalized: every element is either
     // active (safe to query) or unmounted/defunct (caught by ctx.mounted).
     // Inactive elements no longer exist, so the geometry read cannot assert.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       if (!mounted) {
         _recomputeScheduled = false;
         return;
@@ -185,7 +185,7 @@ class _FushiFocusRingState extends State<FushiFocusRing>
       return;
     }
     _frameTrackerArmed = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       _frameTrackerArmed = false;
       if (!mounted ||
           !widget.enabled ||
@@ -209,7 +209,7 @@ class _FushiFocusRingState extends State<FushiFocusRing>
       return;
     }
     _ensureVisibleScheduled = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       _ensureVisibleScheduled = false;
       if (!mounted) return;
       _ensureVisibleIfHidden();

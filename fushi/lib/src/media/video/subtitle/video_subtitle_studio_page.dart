@@ -417,10 +417,8 @@ class _VideoSubtitleStudioPageState extends State<VideoSubtitleStudioPage>
   @override
   void initState() {
     super.initState();
-    _ref.listenable.addListener(_onPosition);
-    onTeardown(() => _ref.listenable.removeListener(_onPosition));
-    _ref.noticeListenable?.addListener(_onNotice);
-    onTeardown(() => _ref.noticeListenable?.removeListener(_onNotice));
+    listenTo(_ref.listenable, _onPosition, slot: #position);
+    _listenNotice();
     if (_ref.captureFrame != null) unawaited(_capture());
     // 首帧排完版才有滚动范围：直接跳到当前句（不做动画，打开就在位置上）。
     schedulePostFrame((_) {
@@ -437,15 +435,23 @@ class _VideoSubtitleStudioPageState extends State<VideoSubtitleStudioPage>
   void didUpdateWidget(VideoSubtitleStudioPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.reference.listenable, _ref.listenable)) {
-      oldWidget.reference.listenable.removeListener(_onPosition);
-      _ref.listenable.addListener(_onPosition);
+      listenTo(_ref.listenable, _onPosition, slot: #position);
     }
     if (!identical(
       oldWidget.reference.noticeListenable,
       _ref.noticeListenable,
     )) {
-      oldWidget.reference.noticeListenable?.removeListener(_onNotice);
-      _ref.noticeListenable?.addListener(_onNotice);
+      _listenNotice();
+    }
+  }
+
+  /// 挂 / 换提示通知源；没有时用空撤销顶掉旧槽位。
+  void _listenNotice() {
+    final Listenable? notice = _ref.noticeListenable;
+    if (notice != null) {
+      listenTo(notice, _onNotice, slot: #notice);
+    } else {
+      onTeardown(() {}, slot: #notice);
     }
   }
 

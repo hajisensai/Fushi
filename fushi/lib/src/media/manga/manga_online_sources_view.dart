@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi/src/media/manga/mihon/mihon_extensions_page.dart';
@@ -54,8 +55,8 @@ class MangaOnlineSourcesView extends ConsumerStatefulWidget {
       _MangaOnlineSourcesViewState();
 }
 
-class _MangaOnlineSourcesViewState
-    extends ConsumerState<MangaOnlineSourcesView> {
+class _MangaOnlineSourcesViewState extends ConsumerState<MangaOnlineSourcesView>
+    with StateResourceScope<MangaOnlineSourcesView> {
   MihonManager? _manager;
 
   @override
@@ -64,14 +65,8 @@ class _MangaOnlineSourcesViewState
     if (!MihonRuntimeFactory.isSupported) return;
     final MihonManager manager = ref.read(appProvider).mihonManager;
     if (identical(manager, _manager)) return;
-    _manager?.removeListener(_changed);
-    _manager = manager..addListener(_changed);
-  }
-
-  @override
-  void dispose() {
-    _manager?.removeListener(_changed);
-    super.dispose();
+    _manager = manager;
+    listenTo(manager, _changed, slot: #manager);
   }
 
   void _changed() {

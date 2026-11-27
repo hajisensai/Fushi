@@ -11,6 +11,7 @@ import 'package:intl/intl.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/leaderboard/leaderboard_watermelon_layout.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_common.dart';
@@ -133,7 +134,7 @@ class _WatermelonCanvas extends StatefulWidget {
 }
 
 class _WatermelonCanvasState extends State<_WatermelonCanvas>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, StateResourceScope<_WatermelonCanvas> {
   final TransformationController _transform = TransformationController();
   late final AnimationController _fitAnim = AnimationController(vsync: this);
   Animation<Matrix4>? _fitTween;
@@ -156,7 +157,7 @@ class _WatermelonCanvasState extends State<_WatermelonCanvas>
     super.didUpdateWidget(old);
     if (!identical(old.rows, widget.rows)) {
       _pile = _layout(widget.rows, _aspect);
-      WidgetsBinding.instance.addPostFrameCallback((_) => fit());
+      schedulePostFrame((_) => fit());
     }
   }
 

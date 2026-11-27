@@ -72,8 +72,7 @@ class _NoticeLayerState extends State<NoticeLayer>
   @override
   void initState() {
     super.initState();
-    widget.feed.notices.addListener(_onNoticesChanged);
-    onTeardown(() => widget.feed.notices.removeListener(_onNoticesChanged));
+    listenTo(widget.feed.notices, _onNoticesChanged, slot: #notices);
     _onNoticesChanged();
     final Future<RemoteNotice?> Function()? local = widget.localDialog;
     if (local != null) {
@@ -94,8 +93,7 @@ class _NoticeLayerState extends State<NoticeLayer>
   void didUpdateWidget(NoticeLayer oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.feed, widget.feed)) {
-      oldWidget.feed.notices.removeListener(_onNoticesChanged);
-      widget.feed.notices.addListener(_onNoticesChanged);
+      listenTo(widget.feed.notices, _onNoticesChanged, slot: #notices);
       _onNoticesChanged();
     }
   }
@@ -105,7 +103,7 @@ class _NoticeLayerState extends State<NoticeLayer>
         (_localPending == null && widget.feed.pendingDialogs.isEmpty)) {
       return;
     }
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       if (mounted) unawaited(_showPendingDialogs());
     });
   }

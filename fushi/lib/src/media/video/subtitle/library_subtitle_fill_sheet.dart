@@ -7,6 +7,7 @@
 /// 传入（`library_subtitle_fill_entry.dart` 的 `librarySubtitleFillController` 装配），面板不碰 AppModel。
 library;
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'dart:async';
 
 import 'package:fushi_engine/media/video/jimaku_client.dart'
@@ -98,7 +99,8 @@ class LibrarySubtitleFillSheet extends StatefulWidget {
       _LibrarySubtitleFillSheetState();
 }
 
-class _LibrarySubtitleFillSheetState extends State<LibrarySubtitleFillSheet> {
+class _LibrarySubtitleFillSheetState extends State<LibrarySubtitleFillSheet>
+    with StateResourceScope<LibrarySubtitleFillSheet> {
   /// 逐集结果只显示最近这么多条（整库几百集，全列出来面板会很长）。
   static const int _recentLimit = 40;
 
@@ -119,17 +121,11 @@ class _LibrarySubtitleFillSheetState extends State<LibrarySubtitleFillSheet> {
     _attach(_controller.active);
   }
 
-  @override
-  void dispose() {
-    _job?.removeListener(_onJob);
-    super.dispose();
-  }
-
   void _attach(LibrarySubtitleFillJob? job) {
     if (identical(job, _job)) return;
-    _job?.removeListener(_onJob);
     _job = job;
     job?.addListener(_onJob);
+    onTeardown(() => job?.removeListener(_onJob), slot: #job);
     if (job != null) {
       _language = job.options.language;
       _ocr = job.options.allowOcr;

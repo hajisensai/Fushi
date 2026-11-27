@@ -51,6 +51,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/prebaked_blur_image.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 宽度 ≥ 它时 [MediaDetailLayout] 无条件切两栏。
 const double kMediaDetailTwoPaneMinWidth = 1080;
@@ -2359,7 +2360,8 @@ class _MediaDetailFabHost extends StatefulWidget {
   State<_MediaDetailFabHost> createState() => _MediaDetailFabHostState();
 }
 
-class _MediaDetailFabHostState extends State<_MediaDetailFabHost> {
+class _MediaDetailFabHostState extends State<_MediaDetailFabHost>
+    with StateResourceScope<_MediaDetailFabHost> {
   final GlobalKey _anchor = GlobalKey(debugLabel: 'media-detail-primary');
   bool _visible = false;
 
@@ -2384,7 +2386,7 @@ class _MediaDetailFabHostState extends State<_MediaDetailFabHost> {
   void _scheduleEvaluate() {
     if (_evaluateScheduled) return;
     _evaluateScheduled = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       _evaluateScheduled = false;
       _evaluate();
     });

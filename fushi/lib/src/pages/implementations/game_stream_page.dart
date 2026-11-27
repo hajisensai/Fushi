@@ -372,19 +372,10 @@ class _GameStreamPageState extends State<GameStreamPage>
     WidgetsBinding.instance.addObserver(this);
     onTeardown(() => WidgetsBinding.instance.removeObserver(this));
     _lookupController = widget.lookupController;
-    _lookupController?.addListener(_onLookupChanged);
-    onTeardown(() => _lookupController?.removeListener(_onLookupChanged));
+    _listenLookupController();
     _caretLine = _currentCaretLine();
-    widget.receiver?.addListener(_onReceiverChanged);
-    onTeardown(() => widget.receiver?.removeListener(_onReceiverChanged));
-    widget.receiver?.renderer.addListener(_schedulePointerGeometryCheck);
-    onTeardown(
-      () => widget.receiver?.renderer.removeListener(
-        _schedulePointerGeometryCheck,
-      ),
-    );
-    widget.inputComposer.addListener(_onReceiverChanged);
-    onTeardown(() => widget.inputComposer.removeListener(_onReceiverChanged));
+    _listenReceiver();
+    _listenInputComposer();
     // Every controller button goes to the remote game: the companion's
     // lookup mode (hold L1) and R1 panel drive must not take one, also when
     // this stream leaves the second screen to the companion.
@@ -392,6 +383,35 @@ class _GameStreamPageState extends State<GameStreamPage>
     onTeardown(() => widget.controllerLookupMode.releaseRawInput(this));
     _syncVolumeBoost();
     unawaited(_startCompanion());
+  }
+
+  // 登记按槽位走：换了对象再调一次，上一条监听自动摘掉。
+  void _listenLookupController() {
+    final GameStreamLookupController? controller = _lookupController;
+    if (controller != null) {
+      listenTo(controller, _onLookupChanged, slot: #lookupController);
+    } else {
+      onTeardown(() {}, slot: #lookupController);
+    }
+  }
+
+  void _listenReceiver() {
+    final FushiGameStreamReceiver? receiver = widget.receiver;
+    if (receiver != null) {
+      listenTo(receiver, _onReceiverChanged, slot: #receiver);
+      listenTo(
+        receiver.renderer,
+        _schedulePointerGeometryCheck,
+        slot: #receiverRenderer,
+      );
+    } else {
+      onTeardown(() {}, slot: #receiver);
+      onTeardown(() {}, slot: #receiverRenderer);
+    }
+  }
+
+  void _listenInputComposer() {
+    listenTo(widget.inputComposer, _onReceiverChanged, slot: #inputComposer);
   }
 
   @override
@@ -405,23 +425,16 @@ class _GameStreamPageState extends State<GameStreamPage>
     }
     if (oldWidget.inputComposer != widget.inputComposer) {
       unawaited(_releasePointer());
-      oldWidget.inputComposer.removeListener(_onReceiverChanged);
-      widget.inputComposer.addListener(_onReceiverChanged);
+      _listenInputComposer();
     }
     if (oldWidget.lookupController != widget.lookupController) {
-      oldWidget.lookupController?.removeListener(_onLookupChanged);
       _lookupController = widget.lookupController;
-      _lookupController?.addListener(_onLookupChanged);
+      _listenLookupController();
       _onLookupChanged();
     }
     if (oldWidget.receiver != widget.receiver) {
       unawaited(_releasePointer());
-      oldWidget.receiver?.removeListener(_onReceiverChanged);
-      oldWidget.receiver?.renderer.removeListener(
-        _schedulePointerGeometryCheck,
-      );
-      widget.receiver?.addListener(_onReceiverChanged);
-      widget.receiver?.renderer.addListener(_schedulePointerGeometryCheck);
+      _listenReceiver();
       _syncVolumeBoost();
     }
   }
@@ -444,11 +457,13 @@ class _GameStreamPageState extends State<GameStreamPage>
   Future<void> _startCompanion() async {
     final GameStreamPanelHost? display = widget.companionDisplay;
     if (display == null) return;
-    display.displays.addListener(_placeCompanion);
-    display.displays.addListener(_syncVolumeBoost);
-    display.attached.addListener(_onCompanionAttached);
-    display.resets.addListener(_onCompanionReset);
-    _companionMessages = display.messages.listen(_onCompanionMessage);
+    listenTo(display.displays, _placeCompanion);
+    listenTo(display.displays, _syncVolumeBoost);
+    listenTo(display.attached, _onCompanionAttached);
+    listenTo(display.resets, _onCompanionReset);
+    _companionMessages = ownSubscription(
+      display.messages.listen(_onCompanionMessage),
+    );
     try {
       await display.start();
     } catch (error, stack) {

@@ -65,8 +65,7 @@ class _SeriesCardTrackingSectionState extends State<SeriesCardTrackingSection>
   @override
   void initState() {
     super.initState();
-    widget.service.statusRevision.addListener(_reload);
-    onTeardown(() => widget.service.statusRevision.removeListener(_reload));
+    _listenRevision();
     unawaited(_reload());
   }
 
@@ -74,13 +73,18 @@ class _SeriesCardTrackingSectionState extends State<SeriesCardTrackingSection>
   void didUpdateWidget(SeriesCardTrackingSection oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.service != widget.service) {
-      oldWidget.service.statusRevision.removeListener(_reload);
-      widget.service.statusRevision.addListener(_reload);
+      _listenRevision();
     }
     if (oldWidget.collectionId != widget.collectionId ||
         oldWidget.service != widget.service) {
       unawaited(_reload());
     }
+  }
+
+  void _listenRevision() {
+    final revision = widget.service.statusRevision;
+    revision.addListener(_reload);
+    onTeardown(() => revision.removeListener(_reload), slot: #statusRevision);
   }
 
   Future<void> _reload() async {

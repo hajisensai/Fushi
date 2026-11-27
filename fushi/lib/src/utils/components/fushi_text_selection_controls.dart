@@ -234,18 +234,23 @@ class _FushiSelectionToolbarState extends State<_FushiSelectionToolbar>
   @override
   void initState() {
     super.initState();
-    widget.clipboardStatus?.addListener(_onChangedClipboardStatus);
-    onTeardown(
-      () => widget.clipboardStatus?.removeListener(_onChangedClipboardStatus),
-    );
+    _listenClipboard();
   }
 
   @override
   void didUpdateWidget(_FushiSelectionToolbar oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.clipboardStatus != oldWidget.clipboardStatus) {
-      widget.clipboardStatus?.addListener(_onChangedClipboardStatus);
-      oldWidget.clipboardStatus?.removeListener(_onChangedClipboardStatus);
+      _listenClipboard();
+    }
+  }
+
+  void _listenClipboard() {
+    final ValueListenable<ClipboardStatus>? status = widget.clipboardStatus;
+    if (status != null) {
+      listenTo(status, _onChangedClipboardStatus, slot: #clipboardStatus);
+    } else {
+      onTeardown(() {}, slot: #clipboardStatus);
     }
   }
 

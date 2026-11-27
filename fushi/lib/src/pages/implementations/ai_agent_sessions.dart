@@ -12,6 +12,7 @@ import 'dart:async';
 
 import 'package:fushi_core/fushi_core.dart' show AiAgentSessionSummary;
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 import 'package:fushi/src/ai/agent/ai_agent_conversation_controller.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
@@ -88,7 +89,8 @@ class AiAgentSessionList extends StatefulWidget {
   State<AiAgentSessionList> createState() => _AiAgentSessionListState();
 }
 
-class _AiAgentSessionListState extends State<AiAgentSessionList> {
+class _AiAgentSessionListState extends State<AiAgentSessionList>
+    with StateResourceScope<AiAgentSessionList> {
   List<AiAgentSessionSummary>? _sessions;
 
   /// 进场动画只在首次载入时播；之后的增删改走高度过渡，不整列重放。
@@ -116,26 +118,14 @@ class _AiAgentSessionListState extends State<AiAgentSessionList> {
   void didUpdateWidget(AiAgentSessionList oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.library, widget.library)) {
-      _unsubscribe(oldWidget.library);
       _subscribe(widget.library);
       unawaited(_reload());
     }
   }
 
-  @override
-  void dispose() {
-    _unsubscribe(_library);
-    super.dispose();
-  }
-
   void _subscribe(AiAgentSessionLibrary library) {
-    library.addListener(_onLibraryChanged);
-    library.sessionsRevision.addListener(_onRevision);
-  }
-
-  void _unsubscribe(AiAgentSessionLibrary library) {
-    library.removeListener(_onLibraryChanged);
-    library.sessionsRevision.removeListener(_onRevision);
+    listenTo(library, _onLibraryChanged, slot: #library);
+    listenTo(library.sessionsRevision, _onRevision, slot: #revision);
   }
 
   void _onLibraryChanged() {

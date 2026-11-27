@@ -24,6 +24,7 @@ import 'package:fushi_engine/tts/manga_audio/manga_audio_script.dart';
 import 'package:fushi_engine/tts/render/tts_render_queue.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_layout.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_service.dart';
@@ -330,10 +331,10 @@ class MangaAudioWorkbenchPage extends StatefulWidget {
       _MangaAudioWorkbenchPageState();
 }
 
-class _MangaAudioWorkbenchPageState extends State<MangaAudioWorkbenchPage> {
+class _MangaAudioWorkbenchPageState extends State<MangaAudioWorkbenchPage>
+    with StateResourceScope<MangaAudioWorkbenchPage> {
   late final TtsRenderQueue _queue = ttsRenderQueueFor(widget.appModel);
   MangaOcrJobRegistry? _ocr;
-  StreamSubscription<void>? _ocrChanges;
 
   MangaAudioWorkbenchSnapshot? _snapshot;
   MangaAudioWorkbenchStep? _step;
@@ -345,6 +346,7 @@ class _MangaAudioWorkbenchPageState extends State<MangaAudioWorkbenchPage> {
     super.initState();
     _lastStatus = _queue.latestFor(widget.bookKey)?.status;
     _queue.addListener(_onQueue);
+    onTeardown(() => _queue.removeListener(_onQueue));
     unawaited(_reload());
   }
 
@@ -358,16 +360,12 @@ class _MangaAudioWorkbenchPageState extends State<MangaAudioWorkbenchPage> {
     ).read(mangaOcrJobRegistryProvider);
     _ocr = registry;
     // 任务集合变了（排上 / 跑完）：识别结果写回 manga.json 后重读。
-    _ocrChanges = registry.changes.listen((_) {
-      if (mounted) unawaited(_reload());
-    });
-  }
-
-  @override
-  void dispose() {
-    _queue.removeListener(_onQueue);
-    unawaited(_ocrChanges?.cancel());
-    super.dispose();
+    ownSubscription(
+      registry.changes.listen((_) {
+        if (mounted) unawaited(_reload());
+      }),
+      slot: #ocrChanges,
+    );
   }
 
   /// 本卷生成任务结束（完成 / 失败 / 取消）时重读成品状态。

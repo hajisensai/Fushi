@@ -418,6 +418,11 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
     // Windows 11 贴靠布局：最大化按钮的点击可能由原生命中区回传
     // （caption_snap_button.h），与 Flutter 侧点击走同一个处理。
     WindowCaptionChannel.onCaptionMaxButtonClick = _toggleMaximize;
+    onTeardown(() {
+      if (WindowCaptionChannel.onCaptionMaxButtonClick == _toggleMaximize) {
+        WindowCaptionChannel.onCaptionMaxButtonClick = null;
+      }
+    }, slot: #captionMaxClick);
     unawaited(_readInitialWindowState());
   }
 
@@ -459,9 +464,6 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
   @override
   void dispose() {
     releaseResources();
-    if (WindowCaptionChannel.onCaptionMaxButtonClick == _toggleMaximize) {
-      WindowCaptionChannel.onCaptionMaxButtonClick = null;
-    }
     if (FushiDesktopTitleBar._hostIsMacOS) {
       FushiDesktopTitleBar.setContentFullscreen(
         owner: _macosNativeFullscreenOwner,
@@ -1279,7 +1281,8 @@ class _FushiCaptionButton extends StatefulWidget {
   State<_FushiCaptionButton> createState() => _FushiCaptionButtonState();
 }
 
-class _FushiCaptionButtonState extends State<_FushiCaptionButton> {
+class _FushiCaptionButtonState extends State<_FushiCaptionButton>
+    with StateResourceScope<_FushiCaptionButton> {
   bool _hovered = false;
   bool _pressed = false;
   bool _focusHighlight = false;
@@ -1301,20 +1304,23 @@ class _FushiCaptionButtonState extends State<_FushiCaptionButton> {
     }
   }
 
-  @override
-  void dispose() {
-    if (widget.snapLayouts) _unlistenNative();
-    super.dispose();
-  }
-
   void _listenNative() {
-    WindowCaptionChannel.captionMaxButtonHovered.addListener(_onNativeState);
-    WindowCaptionChannel.captionMaxButtonPressed.addListener(_onNativeState);
+    listenTo(
+      WindowCaptionChannel.captionMaxButtonHovered,
+      _onNativeState,
+      slot: #nativeHovered,
+    );
+    listenTo(
+      WindowCaptionChannel.captionMaxButtonPressed,
+      _onNativeState,
+      slot: #nativePressed,
+    );
   }
 
   void _unlistenNative() {
-    WindowCaptionChannel.captionMaxButtonHovered.removeListener(_onNativeState);
-    WindowCaptionChannel.captionMaxButtonPressed.removeListener(_onNativeState);
+    // 同槽位再登记会先撤上一条（摘掉 listenTo 挂的监听）。
+    onTeardown(() {}, slot: #nativeHovered);
+    onTeardown(() {}, slot: #nativePressed);
   }
 
   void _onNativeState() {
@@ -1785,7 +1791,8 @@ class FushiTitleBarColorScope extends StatefulWidget {
       _FushiTitleBarColorScopeState();
 }
 
-class _FushiTitleBarColorScopeState extends State<FushiTitleBarColorScope> {
+class _FushiTitleBarColorScopeState extends State<FushiTitleBarColorScope>
+    with StateResourceScope<FushiTitleBarColorScope> {
   Animation<double>? _coverAnimation;
 
   @override
@@ -1793,9 +1800,16 @@ class _FushiTitleBarColorScopeState extends State<FushiTitleBarColorScope> {
     super.didChangeDependencies();
     final Animation<double>? next = ModalRoute.of(context)?.secondaryAnimation;
     if (identical(next, _coverAnimation)) return;
-    _coverAnimation?.removeStatusListener(_onCoverStatus);
     _coverAnimation = next;
-    _coverAnimation?.addStatusListener(_onCoverStatus);
+    if (next != null) {
+      next.addStatusListener(_onCoverStatus);
+      onTeardown(
+        () => next.removeStatusListener(_onCoverStatus),
+        slot: #coverStatus,
+      );
+    } else {
+      onTeardown(() {}, slot: #coverStatus);
+    }
   }
 
   void _onCoverStatus(AnimationStatus _) => _publish();
@@ -1813,7 +1827,6 @@ class _FushiTitleBarColorScopeState extends State<FushiTitleBarColorScope> {
 
   @override
   void dispose() {
-    _coverAnimation?.removeStatusListener(_onCoverStatus);
     FushiDesktopTitleBar.setPageColors(owner: this, colors: null);
     super.dispose();
   }
@@ -1844,7 +1857,8 @@ class FushiTitleBarPassthroughScope extends StatefulWidget {
 }
 
 class _FushiTitleBarPassthroughScopeState
-    extends State<FushiTitleBarPassthroughScope> {
+    extends State<FushiTitleBarPassthroughScope>
+    with StateResourceScope<FushiTitleBarPassthroughScope> {
   Animation<double>? _coverAnimation;
 
   @override
@@ -1852,9 +1866,16 @@ class _FushiTitleBarPassthroughScopeState
     super.didChangeDependencies();
     final Animation<double>? next = ModalRoute.of(context)?.secondaryAnimation;
     if (identical(next, _coverAnimation)) return;
-    _coverAnimation?.removeStatusListener(_onCoverStatus);
     _coverAnimation = next;
-    _coverAnimation?.addStatusListener(_onCoverStatus);
+    if (next != null) {
+      next.addStatusListener(_onCoverStatus);
+      onTeardown(
+        () => next.removeStatusListener(_onCoverStatus),
+        slot: #coverStatus,
+      );
+    } else {
+      onTeardown(() {}, slot: #coverStatus);
+    }
   }
 
   void _onCoverStatus(AnimationStatus _) => _publish();
@@ -1871,7 +1892,6 @@ class _FushiTitleBarPassthroughScopeState
 
   @override
   void dispose() {
-    _coverAnimation?.removeStatusListener(_onCoverStatus);
     FushiDesktopTitleBar.setCaptionPassthrough(owner: this, enabled: false);
     super.dispose();
   }
@@ -1984,7 +2004,8 @@ class _FushiTitleBarContentFullscreenScopeState
 /// `secondaryAnimation`（PopupRoute 不推动它，弹窗不撤回），build 里上报，
 /// dispose 撤回（[publish] 传 `covered: true`）。
 abstract class _CoverAwareTitleBarScopeState<T extends StatefulWidget>
-    extends State<T> {
+    extends State<T>
+    with StateResourceScope<T> {
   Animation<double>? _coverAnimation;
 
   /// 把本页此刻的表态推给 [FushiDesktopTitleBar]（值不变时那边直接返回）。
@@ -2001,16 +2022,22 @@ abstract class _CoverAwareTitleBarScopeState<T extends StatefulWidget>
     super.didChangeDependencies();
     final Animation<double>? next = ModalRoute.of(context)?.secondaryAnimation;
     if (identical(next, _coverAnimation)) return;
-    _coverAnimation?.removeStatusListener(_onCoverStatus);
     _coverAnimation = next;
-    _coverAnimation?.addStatusListener(_onCoverStatus);
+    if (next != null) {
+      next.addStatusListener(_onCoverStatus);
+      onTeardown(
+        () => next.removeStatusListener(_onCoverStatus),
+        slot: #coverStatus,
+      );
+    } else {
+      onTeardown(() {}, slot: #coverStatus);
+    }
   }
 
   void _onCoverStatus(AnimationStatus _) => publish(covered: _covered);
 
   @override
   void dispose() {
-    _coverAnimation?.removeStatusListener(_onCoverStatus);
     publish(covered: true);
     super.dispose();
   }

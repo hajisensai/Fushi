@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:fushi/src/pages/base_page.dart';
@@ -67,7 +65,6 @@ abstract class BaseModuleTabPageState<T extends BaseModuleTabPage>
 
   @override
   void dispose() {
-    _tickerMode?.removeListener(_onTickerModeChanged);
     _tickerMode = null;
     super.dispose();
   }
@@ -89,8 +86,8 @@ abstract class BaseModuleTabPageState<T extends BaseModuleTabPage>
     final ValueListenable<TickerModeData> notifier =
         TickerMode.getValuesNotifier(context);
     if (identical(notifier, _tickerMode)) return;
-    _tickerMode?.removeListener(_onTickerModeChanged);
-    _tickerMode = notifier..addListener(_onTickerModeChanged);
+    _tickerMode = notifier;
+    listenTo(notifier, _onTickerModeChanged, slot: #tickerMode);
     _onTickerModeChanged();
   }
 
@@ -101,7 +98,7 @@ abstract class BaseModuleTabPageState<T extends BaseModuleTabPage>
     if (!shownAgain) return;
     // 通知在构建期内到达（祖先 TickerMode 正在重建），钩子里要 setState / 改
     // provider，挪到这一帧之后。
-    scheduleMicrotask(() {
+    scheduleScopedMicrotask(() {
       if (mounted && isShownToUser) onShownToUserAgain();
     });
   }

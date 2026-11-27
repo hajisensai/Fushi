@@ -36,6 +36,7 @@ import 'dart:math' as math;
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/shell_style.dart';
@@ -633,7 +634,8 @@ class _CoverRing extends StatefulWidget {
   State<_CoverRing> createState() => _CoverRingState();
 }
 
-class _CoverRingState extends State<_CoverRing> {
+class _CoverRingState extends State<_CoverRing>
+    with StateResourceScope<_CoverRing> {
   Timer? _ticker;
   bool _tickerModeEnabled = true;
 
@@ -650,19 +652,16 @@ class _CoverRingState extends State<_CoverRing> {
     _sync();
   }
 
-  @override
-  void dispose() {
-    _ticker?.cancel();
-    super.dispose();
-  }
-
   void _sync() {
     final bool run =
         widget.bar.isPlaying && widget.bar.clock != null && _tickerModeEnabled;
     if (run && _ticker == null) {
-      _ticker = Timer.periodic(kFushiNowPlayingProgressTick, (_) {
-        if (mounted) setState(() {});
-      });
+      _ticker = ownTimer(
+        Timer.periodic(kFushiNowPlayingProgressTick, (_) {
+          if (mounted) setState(() {});
+        }),
+        slot: #ticker,
+      );
     } else if (!run) {
       _ticker?.cancel();
       _ticker = null;

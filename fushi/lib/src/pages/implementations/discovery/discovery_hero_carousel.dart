@@ -22,6 +22,7 @@ import 'dart:async';
 
 import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
     show FushiTooltip;
 import 'package:flutter/services.dart';
@@ -78,7 +79,8 @@ const Duration kDiscoveryHeroAutoAdvanceInterval = Duration(seconds: 8);
 /// 横向滚轮累计到多少逻辑像素翻一页（触控板一次轻扫约 50–150）。
 const double _kWheelPageThreshold = 48;
 
-class _DiscoveryHeroCarouselState extends State<DiscoveryHeroCarousel> {
+class _DiscoveryHeroCarouselState extends State<DiscoveryHeroCarousel>
+    with StateResourceScope<DiscoveryHeroCarousel> {
   final PageController _controller = PageController();
   final FocusNode _focusNode = FocusNode(
     debugLabel: 'discovery-hero-carousel',
@@ -140,10 +142,13 @@ class _DiscoveryHeroCarouselState extends State<DiscoveryHeroCarousel> {
         !fushiMotionEnabled(context)) {
       return;
     }
-    _autoTimer = Timer(interval, () {
-      if (!mounted) return;
-      unawaited(_goTo((_page + 1) % widget.itemCount));
-    });
+    _autoTimer = ownTimer(
+      Timer(interval, () {
+        if (!mounted) return;
+        unawaited(_goTo((_page + 1) % widget.itemCount));
+      }),
+      slot: #autoAdvance,
+    );
   }
 
   void _onPageChanged(int page) {

@@ -8,6 +8,7 @@ import 'package:flutter/rendering.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_segment_widths.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 // Material 3 Expressive（Google 2025-05，Android 16）的按钮动效：Flutter 3.44
 // 核心库还没有 Expressive 组件，这里自己实现三样共享件——
@@ -442,7 +443,7 @@ class FushiPressMorph extends StatefulWidget {
 }
 
 class _FushiPressMorphState extends State<FushiPressMorph>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, StateResourceScope<FushiPressMorph> {
   late final FushiSpring _press = FushiSpring(vsync: this);
   late final FushiSpring _select = FushiSpring(
     vsync: this,
@@ -475,7 +476,11 @@ class _FushiPressMorphState extends State<FushiPressMorph>
     if (identical(next, _listened)) return;
     _listened?.removeListener(_onStates);
     _listened = next;
-    _listened?.addListener(_onStates);
+    if (next != null) {
+      listenTo(next, _onStates, slot: #states);
+    } else {
+      onTeardown(() {}, slot: #states);
+    }
   }
 
   @override

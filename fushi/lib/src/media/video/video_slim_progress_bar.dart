@@ -1,3 +1,4 @@
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -98,7 +99,8 @@ class VideoSlimProgressBar extends StatefulWidget {
   State<VideoSlimProgressBar> createState() => _VideoSlimProgressBarState();
 }
 
-class _VideoSlimProgressBarState extends State<VideoSlimProgressBar> {
+class _VideoSlimProgressBarState extends State<VideoSlimProgressBar>
+    with StateResourceScope<VideoSlimProgressBar> {
   Timer? _timer;
   double _fraction = 0;
 
@@ -141,7 +143,10 @@ class _VideoSlimProgressBarState extends State<VideoSlimProgressBar> {
 
   void _startTimer() {
     _timer?.cancel();
-    _timer = Timer.periodic(widget.refreshInterval, (_) => _tick());
+    _timer = ownTimer(
+      Timer.periodic(widget.refreshInterval, (_) => _tick()),
+      slot: #timer,
+    );
   }
 
   double _readFraction() => videoSlimProgressFraction(

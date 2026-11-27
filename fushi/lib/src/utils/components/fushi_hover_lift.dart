@@ -1,3 +1,4 @@
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
@@ -232,7 +233,7 @@ const double kFushiHoverLiftOverflow = (kFushiHoverLiftScale - 1) / 2;
 const Duration kFushiHoverLiftDuration = Duration(milliseconds: 120);
 
 class _FushiHoverLiftState extends State<FushiHoverLift>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, StateResourceScope<FushiHoverLift> {
   /// 指针是否真的在这张卡上（[MouseRegion] 的真值，滚动**不得**改它）。
   bool _hovering = false;
 
@@ -396,9 +397,12 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
       context,
     );
     if (!identical(hostPointer, _hostPointer)) {
-      _hostPointer?.removeListener(_onHostPointer);
       _hostPointer = hostPointer;
-      _hostPointer?.addListener(_onHostPointer);
+      if (hostPointer != null) {
+        listenTo(hostPointer, _onHostPointer, slot: #hostPointer);
+      } else {
+        onTeardown(() {}, slot: #hostPointer);
+      }
     }
     if (hostHovering != _hostHovering) {
       _hostHovering = hostHovering;
@@ -412,9 +416,16 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
     final ScrollNotificationObserverState? next =
         ScrollNotificationObserver.maybeOf(context);
     if (identical(next, _scrollObserver)) return;
-    _scrollObserver?.removeListener(_onScrollNotification);
     _scrollObserver = next;
-    _scrollObserver?.addListener(_onScrollNotification);
+    if (next != null) {
+      next.addListener(_onScrollNotification);
+      onTeardown(
+        () => next.removeListener(_onScrollNotification),
+        slot: #scrollObserver,
+      );
+    } else {
+      onTeardown(() {}, slot: #scrollObserver);
+    }
   }
 
   @override
@@ -430,9 +441,7 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
 
   @override
   void dispose() {
-    _scrollObserver?.removeListener(_onScrollNotification);
     _scrollObserver = null;
-    _hostPointer?.removeListener(_onHostPointer);
     _hostPointer = null;
     _tilt.dispose();
     _curved.dispose();

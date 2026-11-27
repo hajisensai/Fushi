@@ -45,6 +45,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 打开本页。返回在本页新建的声音预设 id（没新建返回 null）。
 Future<String?> openGptSovitsLocalPage(
@@ -73,7 +74,8 @@ class GptSovitsLocalPage extends StatefulWidget {
   State<GptSovitsLocalPage> createState() => _GptSovitsLocalPageState();
 }
 
-class _GptSovitsLocalPageState extends State<GptSovitsLocalPage> {
+class _GptSovitsLocalPageState extends State<GptSovitsLocalPage>
+    with StateResourceScope<GptSovitsLocalPage> {
   GptSovitsLocalEngine get _engine => widget.services.localGptSovits;
 
   String? _installDir;
@@ -85,14 +87,10 @@ class _GptSovitsLocalPageState extends State<GptSovitsLocalPage> {
   @override
   void initState() {
     super.initState();
+    // EngineChangeNotifier 不是 Listenable，不能走 listenTo。
     _engine.addListener(_onEngine);
+    onTeardown(() => _engine.removeListener(_onEngine));
     unawaited(_init());
-  }
-
-  @override
-  void dispose() {
-    _engine.removeListener(_onEngine);
-    super.dispose();
   }
 
   void _onEngine() {

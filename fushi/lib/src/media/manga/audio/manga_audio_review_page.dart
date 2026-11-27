@@ -18,6 +18,7 @@ import 'package:fushi_engine/tts/render/tts_cast.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/ai/ai_manga_audio_assistant.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_annotate_flow.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_annotate_tasks.dart';
@@ -217,7 +218,8 @@ class MangaAudioReviewPage extends StatefulWidget {
   State<MangaAudioReviewPage> createState() => _MangaAudioReviewPageState();
 }
 
-class _MangaAudioReviewPageState extends State<MangaAudioReviewPage> {
+class _MangaAudioReviewPageState extends State<MangaAudioReviewPage>
+    with StateResourceScope<MangaAudioReviewPage> {
   late final MangaAnnotateTasks _tasks = mangaAnnotateTasksFor(widget.appModel);
   MangaAudioAnnotateSession? _session;
   String? _loadError;
@@ -245,16 +247,10 @@ class _MangaAudioReviewPageState extends State<MangaAudioReviewPage> {
   @override
   void initState() {
     super.initState();
-    _tasks.addListener(_syncTask);
+    listenTo(_tasks, _syncTask);
     _task = _tasks.runningFor(widget.bookKey);
     _gate.taskChanged(running: _task != null);
     unawaited(_load(_gate.beginLoad(), page: widget.startPage));
-  }
-
-  @override
-  void dispose() {
-    _tasks.removeListener(_syncTask);
-    super.dispose();
   }
 
   void _syncTask() {

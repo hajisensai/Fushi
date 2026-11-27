@@ -247,25 +247,33 @@ class _PendingIdentityBannerHostState extends State<PendingIdentityBannerHost>
     with StateResourceScope<PendingIdentityBannerHost> {
   Set<String> _pending = const <String>{};
   Set<String> _dismissed = const <String>{};
-  StreamSubscription<void>? _sub;
   bool _inFlight = false;
   bool _queued = false;
 
   @override
   void initState() {
     super.initState();
-    _sub = widget.changes?.listen((_) => unawaited(_reload()));
-    onTeardown(() => unawaited(_sub?.cancel()));
+    _subscribe();
     unawaited(_reload());
+  }
+
+  /// （重新）订阅变更流：同一槽位，换流时上一条自动取消；流为 null 时空撤销顶掉旧槽位。
+  void _subscribe() {
+    final Stream<void>? changes = widget.changes;
+    if (changes == null) {
+      onTeardown(() {}, slot: #changes);
+      return;
+    }
+    ownSubscription(
+      changes.listen((_) => unawaited(_reload())),
+      slot: #changes,
+    );
   }
 
   @override
   void didUpdateWidget(PendingIdentityBannerHost oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.changes != widget.changes) {
-      unawaited(_sub?.cancel());
-      _sub = widget.changes?.listen((_) => unawaited(_reload()));
-    }
+    if (oldWidget.changes != widget.changes) _subscribe();
   }
 
   /// 在飞时又来一次：在飞那次读到的可能是旧状态，完成后再补一次（同视频页

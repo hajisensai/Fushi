@@ -1,4 +1,5 @@
 import 'package:flutter/widgets.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 浮层面板的焦点圈地（手柄重设计 P3）。
 ///
@@ -50,7 +51,8 @@ class PanelFocusScope extends StatefulWidget {
   State<PanelFocusScope> createState() => _PanelFocusScopeState();
 }
 
-class _PanelFocusScopeState extends State<PanelFocusScope> {
+class _PanelFocusScopeState extends State<PanelFocusScope>
+    with StateResourceScope<PanelFocusScope> {
   final FocusScopeNode _scope = FocusScopeNode(debugLabel: 'PanelFocusScope');
 
   @override
@@ -79,7 +81,7 @@ class _PanelFocusScopeState extends State<PanelFocusScope> {
 
   /// 后帧认领：等本帧布局完成（FadingChromeGate 的 ExcludeFocus 已放开）再进。
   void _claimFocusNextFrame() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       if (!mounted || !widget.visible) return;
       // 子节点 autofocus 已落在面板内 → 尊重更精准的落点，不抢。
       if (_scope.hasFocus) return;

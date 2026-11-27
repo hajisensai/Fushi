@@ -304,7 +304,7 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
         _episodeEpoch += 1;
       });
       unawaited(_loadEpisodeVersions(generation));
-      WidgetsBinding.instance.addPostFrameCallback((_) => _onScroll());
+      schedulePostFrame((_) => _onScroll());
     } catch (e) {
       if (!mounted || generation != _generation) return;
       setState(() {

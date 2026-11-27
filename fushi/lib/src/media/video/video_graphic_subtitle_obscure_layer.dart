@@ -152,47 +152,57 @@ class _VideoGraphicSubtitleObscureLayerState
   @override
   void initState() {
     super.initState();
-    widget.controller.addListener(_onControllerChanged);
-    onTeardown(() => widget.controller.removeListener(_onControllerChanged));
-    widget.controller.positionMsListenable.addListener(_onPositionChanged);
-    onTeardown(
-      () => widget.controller.positionMsListenable.removeListener(
-        _onPositionChanged,
-      ),
-    );
-    widget.regionTrack?.addListener(_onRegionTrackChanged);
-    onTeardown(() => widget.regionTrack?.removeListener(_onRegionTrackChanged));
-    widget.touchControlsVisible?.addListener(_onTouchControlsChanged);
-    onTeardown(
-      () =>
-          widget.touchControlsVisible?.removeListener(_onTouchControlsChanged),
-    );
+    _bindController();
+    _bindRegionTrack();
+    _bindTouchControls();
     _syncVisibility();
     _syncRegions();
+  }
+
+  // 三组外部监听各占一个槽位：换对象时重挂，上一条自动摘掉；对象为 null 时用空撤销顶掉旧槽位。
+  void _bindController() {
+    final VideoPlayerController controller = widget.controller;
+    listenTo(controller, _onControllerChanged, slot: #controller);
+    listenTo(
+      controller.positionMsListenable,
+      _onPositionChanged,
+      slot: #position,
+    );
+  }
+
+  void _bindRegionTrack() {
+    final Listenable? track = widget.regionTrack;
+    if (track == null) {
+      onTeardown(() {}, slot: #regionTrack);
+      return;
+    }
+    listenTo(track, _onRegionTrackChanged, slot: #regionTrack);
+  }
+
+  void _bindTouchControls() {
+    final Listenable? visible = widget.touchControlsVisible;
+    if (visible == null) {
+      onTeardown(() {}, slot: #touchControls);
+      return;
+    }
+    listenTo(visible, _onTouchControlsChanged, slot: #touchControls);
   }
 
   @override
   void didUpdateWidget(VideoGraphicSubtitleObscureLayer oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.controller, widget.controller)) {
-      oldWidget.controller.removeListener(_onControllerChanged);
-      oldWidget.controller.positionMsListenable.removeListener(
-        _onPositionChanged,
-      );
       unawaited(oldWidget.controller.setGraphicSubtitleVisible(true));
-      widget.controller.addListener(_onControllerChanged);
-      widget.controller.positionMsListenable.addListener(_onPositionChanged);
+      _bindController();
     }
     if (!identical(oldWidget.regionTrack, widget.regionTrack)) {
-      oldWidget.regionTrack?.removeListener(_onRegionTrackChanged);
-      widget.regionTrack?.addListener(_onRegionTrackChanged);
+      _bindRegionTrack();
     }
     if (!identical(
       oldWidget.touchControlsVisible,
       widget.touchControlsVisible,
     )) {
-      oldWidget.touchControlsVisible?.removeListener(_onTouchControlsChanged);
-      widget.touchControlsVisible?.addListener(_onTouchControlsChanged);
+      _bindTouchControls();
     }
     _syncVisibility();
     _syncRegions();

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart' show SchedulerPhase;
@@ -594,7 +595,9 @@ class FushiFloatingChromeOverlay extends StatefulWidget {
 }
 
 class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
-    with TickerProviderStateMixin {
+    with
+        TickerProviderStateMixin,
+        StateResourceScope<FushiFloatingChromeOverlay> {
   /// 工具区的实测高度（展开态的版面高度；收起不改它）。
   double _chromeHeight = 0;
 
@@ -670,7 +673,7 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
 
   /// 把「本层要不要实底」报给最外层；构建期不能改外层的通知值，推到帧末。
   void _reportOpaque() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       if (!mounted) return;
       _root._setOpaqueLayer(
         this,
@@ -775,7 +778,7 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
         initial: controller.visible ? 1 : 0,
         spring: fushiChromeRevealSpring(context, fushiExpressiveDefaultSpatial),
       );
-      created.animation.addListener(_syncVisibleBottom);
+      listenTo(created.animation, _syncVisibleBottom);
       _shown = created;
       _fade = FushiSpring(
         vsync: this,
@@ -791,7 +794,8 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
 
   @override
   void dispose() {
-    _shown?.animation.removeListener(_syncVisibleBottom);
+    // 先摘掉弹簧上的监听，再释放弹簧。
+    releaseResources();
     _shown?.dispose();
     _fade?.dispose();
     _visibleBottom.dispose();
@@ -3070,7 +3074,8 @@ class FushiMastheadCollapseAway extends StatefulWidget {
       _FushiMastheadCollapseAwayState();
 }
 
-class _FushiMastheadCollapseAwayState extends State<FushiMastheadCollapseAway> {
+class _FushiMastheadCollapseAwayState extends State<FushiMastheadCollapseAway>
+    with StateResourceScope<FushiMastheadCollapseAway> {
   ValueListenable<double>? _offset;
   bool _compact = false;
   bool _motion = true;
@@ -3100,19 +3105,16 @@ class _FushiMastheadCollapseAwayState extends State<FushiMastheadCollapseAway> {
     final ValueListenable<double>? offset =
         host != null && isGlassDesign(context) ? host.scrollOffset : null;
     if (!identical(offset, _offset)) {
-      _offset?.removeListener(_onOffset);
       _offset = offset;
-      _offset?.addListener(_onOffset);
+      if (offset != null) {
+        listenTo(offset, _onOffset, slot: #offset);
+      } else {
+        onTeardown(() {}, slot: #offset);
+      }
     }
     _compact = fushiMastheadCompact(context);
     _motion = fushiExpressiveMotionEnabled(context);
     _collapsed = _computeCollapsed();
-  }
-
-  @override
-  void dispose() {
-    _offset?.removeListener(_onOffset);
-    super.dispose();
   }
 
   @override

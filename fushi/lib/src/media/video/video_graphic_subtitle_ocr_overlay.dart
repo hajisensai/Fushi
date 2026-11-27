@@ -261,8 +261,7 @@ class _VideoGraphicSubtitleOcrOverlayState
   @override
   void initState() {
     super.initState();
-    widget.controller.addListener(_onControllerChanged);
-    onTeardown(() => widget.controller.removeListener(_onControllerChanged));
+    listenTo(widget.controller, _onControllerChanged, slot: #controller);
     // 首帧 build 之前：直接赋值，不走 setState。
     _offerEnable = _enableHintWanted();
     _onControllerChanged();
@@ -272,8 +271,7 @@ class _VideoGraphicSubtitleOcrOverlayState
   void didUpdateWidget(VideoGraphicSubtitleOcrOverlay oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.controller, widget.controller)) {
-      oldWidget.controller.removeListener(_onControllerChanged);
-      widget.controller.addListener(_onControllerChanged);
+      listenTo(widget.controller, _onControllerChanged, slot: #controller);
       _reset();
       _key = null;
       _manualKey = null;
@@ -400,7 +398,10 @@ class _VideoGraphicSubtitleOcrOverlayState
     _reset();
     _key = key;
     if (key == null) return;
-    _settle = Timer(kGraphicSubtitleOcrSettleDelay, () => _recognize());
+    _settle = ownTimer(
+      Timer(kGraphicSubtitleOcrSettleDelay, () => _recognize()),
+      slot: #settle,
+    );
   }
 
   /// 丢弃当前结果与在途识别（播放 / seek / 换轨）。
@@ -419,11 +420,14 @@ class _VideoGraphicSubtitleOcrOverlayState
     _statusFade = null;
     if (graphicSubtitlePauseOcrStatusAutoHides(status)) {
       final int generation = _generation;
-      _statusFade = Timer(kGraphicSubtitleOcrStatusHintDuration, () {
-        if (mounted && generation == _generation) {
-          _setStatus(GraphicSubtitlePauseOcrStatus.idle);
-        }
-      });
+      _statusFade = ownTimer(
+        Timer(kGraphicSubtitleOcrStatusHintDuration, () {
+          if (mounted && generation == _generation) {
+            _setStatus(GraphicSubtitlePauseOcrStatus.idle);
+          }
+        }),
+        slot: #statusFade,
+      );
     }
     if (status == _status) return;
     if (mounted) {
@@ -485,9 +489,12 @@ class _VideoGraphicSubtitleOcrOverlayState
   /// 返回是否排了重截。
   bool _retryCapture(int attempt) {
     if (attempt < kGraphicSubtitleOcrCaptureRetryDelays.length) {
-      _settle = Timer(
-        kGraphicSubtitleOcrCaptureRetryDelays[attempt],
-        () => _recognize(attempt: attempt + 1),
+      _settle = ownTimer(
+        Timer(
+          kGraphicSubtitleOcrCaptureRetryDelays[attempt],
+          () => _recognize(attempt: attempt + 1),
+        ),
+        slot: #settle,
       );
       return true;
     }

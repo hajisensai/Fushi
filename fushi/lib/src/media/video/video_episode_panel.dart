@@ -1,3 +1,4 @@
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/video/video_episode_rail.dart';
 import 'package:fushi/src/media/video/video_side_panel.dart';
@@ -73,7 +74,8 @@ class VideoEpisodePanel extends StatefulWidget {
   State<VideoEpisodePanel> createState() => _VideoEpisodePanelState();
 }
 
-class _VideoEpisodePanelState extends State<VideoEpisodePanel> {
+class _VideoEpisodePanelState extends State<VideoEpisodePanel>
+    with StateResourceScope<VideoEpisodePanel> {
   /// 按季切成的分节（元素是**全局下标**；季升序、PV/特典殿后，与合集详情页
   /// 季 tab 同序）。单季 → 1 节，不出 chip。
   List<CollectionSeasonSection<int>> _sections =
@@ -114,7 +116,7 @@ class _VideoEpisodePanelState extends State<VideoEpisodePanel> {
     }
     if (reopened) {
       _claimFocusOnMount = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+      schedulePostFrame((_) {
         _claimFocusOnMount = false;
       });
     }

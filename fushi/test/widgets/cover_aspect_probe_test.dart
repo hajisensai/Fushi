@@ -36,7 +36,8 @@ void main() {
       for (final String path in componentPaths) {
         final String src = File(path).readAsStringSync();
         expect(
-          containsCodeLine(src, 'with CoverAspectProbe<'),
+          // CoverAspectProbe 要求先 with StateResourceScope（BUG-5604）。
+          containsCodeLine(src, 'CoverAspectProbe<'),
           isTrue,
           reason: '$path 必须复用共享的宽高比探测内核，不得自建',
         );

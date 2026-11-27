@@ -1088,7 +1088,8 @@ class _GlassTextFieldView extends StatefulWidget {
   State<_GlassTextFieldView> createState() => _GlassTextFieldViewState();
 }
 
-class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
+class _GlassTextFieldViewState extends State<_GlassTextFieldView>
+    with StateResourceScope<_GlassTextFieldView> {
   TextEditingController? _ownController;
   FocusNode? _ownFocusNode;
 
@@ -1099,11 +1100,28 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
 
   FocusNode get _focusNode => _c.focusNode ?? (_ownFocusNode ??= FocusNode());
 
+  // 监听挂在哪个对象上就在哪个对象被换下 / 释放之前摘：留住 ScopedRelease，
+  // didUpdateWidget 与 dispose 在原来的位置显式 release（之后才 dispose 自有对象）。
+  ScopedRelease? _focusRelease;
+  ScopedRelease? _textRelease;
+
+  void _attachFocus() {
+    final FocusNode node = _focusNode;
+    _focusRelease = onTeardown(() => node.removeListener(_onFocusChanged));
+    node.addListener(_onFocusChanged);
+  }
+
+  void _attachText() {
+    final TextEditingController controller = _controller;
+    _textRelease = onTeardown(() => controller.removeListener(_onTextChanged));
+    controller.addListener(_onTextChanged);
+  }
+
   @override
   void initState() {
     super.initState();
-    _focusNode.addListener(_onFocusChanged);
-    _controller.addListener(_onTextChanged);
+    _attachFocus();
+    _attachText();
     _syncStates();
   }
 
@@ -1112,30 +1130,30 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
     super.didUpdateWidget(oldWidget);
     final FushiTextFieldControl old = oldWidget.config;
     if (old.focusNode != _c.focusNode) {
-      (old.focusNode ?? _ownFocusNode)?.removeListener(_onFocusChanged);
+      _focusRelease?.release();
       if (_c.focusNode != null) {
         _ownFocusNode?.dispose();
         _ownFocusNode = null;
       }
-      _focusNode.addListener(_onFocusChanged);
+      _attachFocus();
     }
     if (old.controller != _c.controller) {
-      (old.controller ?? _ownController)?.removeListener(_onTextChanged);
+      _textRelease?.release();
       if (_c.controller != null) {
         _ownController?.dispose();
         _ownController = null;
       } else if (old.controller != null) {
         _ownController = TextEditingController.fromValue(old.controller!.value);
       }
-      _controller.addListener(_onTextChanged);
+      _attachText();
     }
     _syncStates();
   }
 
   @override
   void dispose() {
-    _focusNode.removeListener(_onFocusChanged);
-    _controller.removeListener(_onTextChanged);
+    _focusRelease?.release();
+    _textRelease?.release();
     _ownFocusNode?.dispose();
     _ownController?.dispose();
     super.dispose();
@@ -2298,11 +2316,7 @@ class _GlassTextFormFieldState extends FormFieldState<String>
     if (external == null) {
       _controller = TextEditingController(text: widget.initialValue);
     } else {
-      external.addListener(_handleControllerChanged);
-      onTeardown(
-        () =>
-            _field.config.controller?.removeListener(_handleControllerChanged),
-      );
+      listenTo(external, _handleControllerChanged, slot: #controller);
     }
     _initialValue = _field.config.initialValue ?? external?.text;
   }
@@ -2314,8 +2328,11 @@ class _GlassTextFormFieldState extends FormFieldState<String>
         (oldWidget as _GlassTextFormField).config.controller;
     final TextEditingController? newController = _field.config.controller;
     if (oldController != newController) {
-      oldController?.removeListener(_handleControllerChanged);
-      newController?.addListener(_handleControllerChanged);
+      if (newController != null) {
+        listenTo(newController, _handleControllerChanged, slot: #controller);
+      } else {
+        onTeardown(() {}, slot: #controller);
+      }
       if (oldController != null && newController == null) {
         _controller = TextEditingController.fromValue(oldController.value);
       }

@@ -2246,9 +2246,12 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
     // BUG-1554：重扫前先退订上一条，否则每次重扫都留下一条仍在派发的订阅
     // （设备列表被多份同源事件反复刷、页面关闭时只取消得掉最后一条）。
     await _devicesSub?.cancel();
-    _devicesSub = discovery.devices.listen((List<FushiDevice> devices) {
-      if (mounted) setState(() => _devices = devices);
-    });
+    _devicesSub = ownSubscription(
+      discovery.devices.listen((List<FushiDevice> devices) {
+        if (mounted) setState(() => _devices = devices);
+      }),
+      slot: #devices,
+    );
     try {
       await discovery.startDiscovery();
     } catch (e, stack) {

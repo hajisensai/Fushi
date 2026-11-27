@@ -429,27 +429,25 @@ class _SettingsSearchBarState extends State<SettingsSearchBar>
   @override
   void initState() {
     super.initState();
-    _focusNode.addListener(_onFocusChanged);
-    widget.controller.addListener(_onTextChanged);
-    onTeardown(() => widget.controller.removeListener(_onTextChanged));
+    listenTo(_focusNode, _onFocusChanged, slot: #focus);
+    listenTo(widget.controller, _onTextChanged, slot: #text);
   }
 
   @override
   void didUpdateWidget(SettingsSearchBar oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.controller != widget.controller) {
-      oldWidget.controller.removeListener(_onTextChanged);
-      widget.controller.addListener(_onTextChanged);
+      listenTo(widget.controller, _onTextChanged, slot: #text);
     }
     if (oldWidget.focusNode != widget.focusNode) {
-      (oldWidget.focusNode ?? _ownFocusNode)?.removeListener(_onFocusChanged);
-      _focusNode.addListener(_onFocusChanged);
+      listenTo(_focusNode, _onFocusChanged, slot: #focus);
     }
   }
 
   @override
   void dispose() {
-    _focusNode.removeListener(_onFocusChanged);
+    // 先摘监听再释放自有 FocusNode。
+    releaseResources();
     _ownFocusNode?.dispose();
     super.dispose();
   }
@@ -785,17 +783,24 @@ class _SettingsFloatingHeaderState extends State<SettingsFloatingHeader>
   @override
   void initState() {
     super.initState();
-    widget.scrollController?.addListener(_onScroll);
-    onTeardown(() => widget.scrollController?.removeListener(_onScroll));
+    _listenScroll();
   }
 
   @override
   void didUpdateWidget(SettingsFloatingHeader oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.scrollController != widget.scrollController) {
-      oldWidget.scrollController?.removeListener(_onScroll);
-      widget.scrollController?.addListener(_onScroll);
+      _listenScroll();
       _onScroll();
+    }
+  }
+
+  void _listenScroll() {
+    final ScrollController? controller = widget.scrollController;
+    if (controller != null) {
+      listenTo(controller, _onScroll, slot: #scroll);
+    } else {
+      onTeardown(() {}, slot: #scroll);
     }
   }
 
@@ -1151,7 +1156,8 @@ class SettingsSectionJumpBar extends StatefulWidget {
   State<SettingsSectionJumpBar> createState() => _SettingsSectionJumpBarState();
 }
 
-class _SettingsSectionJumpBarState extends State<SettingsSectionJumpBar> {
+class _SettingsSectionJumpBarState extends State<SettingsSectionJumpBar>
+    with StateResourceScope<SettingsSectionJumpBar> {
   final ScrollController _controller = ScrollController();
 
   /// 每个分组胶囊一把 key，按分组 id 取：定位当前胶囊的几何用。分组集合变了就
@@ -1192,7 +1198,7 @@ class _SettingsSectionJumpBarState extends State<SettingsSectionJumpBar> {
   void _scheduleRevealActive({required bool animate}) {
     final String? id = widget.activeId;
     if (id == null) return;
-    WidgetsBinding.instance.addPostFrameCallback((Duration _) {
+    schedulePostFrame((Duration _) {
       if (!mounted || !_controller.hasClients) return;
       final BuildContext? chipContext = _chipKeys[id]?.currentContext;
       final RenderObject? chip = chipContext?.findRenderObject();

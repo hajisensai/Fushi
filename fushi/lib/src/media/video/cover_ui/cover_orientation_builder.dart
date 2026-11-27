@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/video/cover_ui/cover_aspect_probe.dart';
 import 'package:fushi/src/media/video/video_home_layout.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 按封面固有朝向重建子树（TODO-2486 视频首页混排墙/横滚行的卡宽分流）。
 ///
@@ -62,7 +63,9 @@ class _CoverOrientationProbe extends StatefulWidget {
 }
 
 class _CoverOrientationProbeState extends State<_CoverOrientationProbe>
-    with CoverAspectProbe<_CoverOrientationProbe> {
+    with
+        StateResourceScope<_CoverOrientationProbe>,
+        CoverAspectProbe<_CoverOrientationProbe> {
   @override
   ImageProvider probedImageOf(_CoverOrientationProbe widget) => widget.image;
 

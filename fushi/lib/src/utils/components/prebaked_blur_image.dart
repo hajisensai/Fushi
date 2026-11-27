@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/cover_provider_epoch.dart';
@@ -111,9 +112,9 @@ class _BakeKey {
   );
 }
 
-class _PrebakedBlurImageState extends State<PrebakedBlurImage> {
+class _PrebakedBlurImageState extends State<PrebakedBlurImage>
+    with StateResourceScope<PrebakedBlurImage> {
   ImageStream? _stream;
-  ImageStreamListener? _listener;
   ui.Image? _source;
 
   /// 拿到 [_source] 所属 [ImageStream]（resolve）时 [widget.image] 的
@@ -153,7 +154,7 @@ class _PrebakedBlurImageState extends State<PrebakedBlurImage> {
     _pendingKey = null;
     final int epoch = CoverProviderEpoch.of(widget.image);
     _stream = next;
-    _listener = ImageStreamListener(
+    final ImageStreamListener listener = ImageStreamListener(
       (ImageInfo info, bool _) {
         if (!mounted) {
           info.dispose();
@@ -169,14 +170,14 @@ class _PrebakedBlurImageState extends State<PrebakedBlurImage> {
       // 解码失败：保持空白（与原 FadeInImage 的透明占位一致），不抛到框架。
       onError: (Object _, StackTrace? __) {},
     );
-    next.addListener(_listener!);
+    next.addListener(listener);
+    onTeardown(() => next.removeListener(listener), slot: #imageStream);
   }
 
   void _detach() {
-    final ImageStreamListener? listener = _listener;
-    if (listener != null) _stream?.removeListener(listener);
+    // 只经槽位摘：清单收尾还会再摘，流已销毁时重复 removeListener 会抛。
+    releaseSlot(#imageStream);
     _stream = null;
-    _listener = null;
   }
 
   @override

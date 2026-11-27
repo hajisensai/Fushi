@@ -581,16 +581,14 @@ class _FushiScrollAwayChromeState extends State<FushiScrollAwayChrome>
   @override
   void initState() {
     super.initState();
-    widget.controller.addListener(_sync);
-    onTeardown(() => widget.controller.removeListener(_sync));
+    listenTo(widget.controller, _sync, slot: #controller);
   }
 
   @override
   void didUpdateWidget(FushiScrollAwayChrome oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.controller, widget.controller)) {
-      oldWidget.controller.removeListener(_sync);
-      widget.controller.addListener(_sync);
+      listenTo(widget.controller, _sync, slot: #controller);
       _sync();
     }
   }

@@ -190,7 +190,13 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel>
         anim.status == AnimationStatus.forward &&
         fushiMotionEnabled(context);
     _routeSettled = !animating;
-    if (animating) anim.addStatusListener(_onRouteStatus);
+    if (animating) {
+      onTeardown(
+        () => anim.removeStatusListener(_onRouteStatus),
+        slot: #routeStatus,
+      );
+      anim.addStatusListener(_onRouteStatus);
+    }
   }
 
   void _onRouteStatus(AnimationStatus status) {
@@ -1232,7 +1238,8 @@ class _AudiobookChapterList extends StatefulWidget {
   State<_AudiobookChapterList> createState() => _AudiobookChapterListState();
 }
 
-class _AudiobookChapterListState extends State<_AudiobookChapterList> {
+class _AudiobookChapterListState extends State<_AudiobookChapterList>
+    with StateResourceScope<_AudiobookChapterList> {
   /// 目标行没被懒构建时最多迭代估算几轮；每轮一帧，收敛不了就放手（不无界重试）。
   static const int _maxRevealAttempts = 12;
 
@@ -1285,7 +1292,7 @@ class _AudiobookChapterListState extends State<_AudiobookChapterList> {
   }
 
   void _revealStep(int entry, int attempt) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       if (!mounted) return;
       if (entry != widget.currentEntry) {
         // 当前章在定位途中变了：放弃这一轮，交给新章的定位。

@@ -35,6 +35,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
     show FushiAppleMetrics;
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 首载骨架块：中性底色圆角块（MD3 surfaceContainer 档 / Apple tertiaryFill /
 /// 墨水屏描边），尺寸即最终内容的大致轮廓，数据到达时整块换成真实内容——
@@ -1456,7 +1457,8 @@ class HomeTodayGoalPager extends StatefulWidget {
   State<HomeTodayGoalPager> createState() => _HomeTodayGoalPagerState();
 }
 
-class _HomeTodayGoalPagerState extends State<HomeTodayGoalPager> {
+class _HomeTodayGoalPagerState extends State<HomeTodayGoalPager>
+    with StateResourceScope<HomeTodayGoalPager> {
   late int _page = _wanted;
   late final PageController _controller = PageController(initialPage: _page);
 
@@ -1470,7 +1472,7 @@ class _HomeTodayGoalPagerState extends State<HomeTodayGoalPager> {
     _page = wanted;
     // 构建期不能滚动（跳页会同步发滚动通知 → onPageChanged → 写偏好）：等这一帧
     // 布局完再跳。期间又换了目标页就跳最新的那个。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       if (!mounted || !_controller.hasClients || _page != wanted) return;
       if (_controller.page?.round() != wanted) _controller.jumpToPage(wanted);
     });

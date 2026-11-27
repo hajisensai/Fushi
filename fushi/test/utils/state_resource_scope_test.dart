@@ -134,6 +134,65 @@ void main() {
     await tester.pumpWidget(_PostFrame(log: log, fail: false));
     expect(log, <String>['frame']);
   });
+
+  testWidgets('首次 didChangeDependencies 抛错：已登记的资源在帧后按孤儿撤销', (
+    WidgetTester tester,
+  ) async {
+    final ValueNotifier<int> notifier = ValueNotifier<int>(0);
+    await tester.pumpWidget(_ThrowingDeps(notifier: notifier));
+    expect(tester.takeException().toString(), contains(_Probe.failure));
+    await tester.pump();
+    // ignore: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
+    expect(notifier.hasListeners, isFalse);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('didUpdateWidget 抛错：父级丢掉的旧子树（含子孙）在帧后撤销', (
+    WidgetTester tester,
+  ) async {
+    final ValueNotifier<int> own = ValueNotifier<int>(0);
+    final ValueNotifier<int> child = ValueNotifier<int>(0);
+    await tester.pumpWidget(
+      _ThrowingUpdate(generation: 0, own: own, child: child),
+    );
+    // ignore: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
+    expect(own.hasListeners && child.hasListeners, isTrue);
+    await tester.pumpWidget(
+      _ThrowingUpdate(generation: 1, own: own, child: child),
+    );
+    expect(tester.takeException().toString(), contains(_Probe.failure));
+    await tester.pump();
+    // ignore: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
+    expect(own.hasListeners, isFalse, reason: '抛错的 State 自己的登记');
+    // ignore: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
+    expect(child.hasListeners, isFalse, reason: '子树没被停用，也一并撤');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('slot：同一槽位再登记先撤上一条；dispose 只撤当下那条', (WidgetTester tester) async {
+    final ValueNotifier<int> a = ValueNotifier<int>(0);
+    final ValueNotifier<int> b = ValueNotifier<int>(0);
+    final List<String> log = <String>[];
+    await tester.pumpWidget(_Slotted(listenable: a, log: log));
+    await tester.pumpWidget(_Slotted(listenable: b, log: log));
+    // ignore: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
+    expect(a.hasListeners, isFalse, reason: '换了 listenable：旧的已摘');
+    // ignore: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
+    expect(b.hasListeners, isTrue);
+    expect(log, <String>['tick 0']);
+    await tester.pumpWidget(const SizedBox());
+    // ignore: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
+    expect(b.hasListeners, isFalse);
+    expect(log, <String>['tick 0', 'tick 1']);
+  });
+
+  testWidgets('正常停用后 dispose：帧后检查不误撤、不重复撤', (WidgetTester tester) async {
+    final List<String> log = <String>[];
+    await tester.pumpWidget(_EarlyRelease(log: log));
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+    expect(log, <String>['a', 'mid', 'b']);
+  });
 }
 
 class _Resources {
@@ -338,6 +397,127 @@ class _PostFrameState extends State<_PostFrame>
     schedulePostFrame((_) => widget.log.add('frame'));
     if (widget.fail) throw StateError('initState failed');
   }
+
+  @override
+  Widget build(BuildContext context) => const SizedBox();
+}
+
+class _ThrowingDeps extends StatefulWidget {
+  const _ThrowingDeps({required this.notifier});
+
+  final ValueNotifier<int> notifier;
+
+  @override
+  State<_ThrowingDeps> createState() => _ThrowingDepsState();
+}
+
+class _ThrowingDepsState extends State<_ThrowingDeps>
+    with StateResourceScope<_ThrowingDeps> {
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    listenTo(widget.notifier, _on);
+    throw StateError(_Probe.failure);
+  }
+
+  void _on() {}
+
+  @override
+  Widget build(BuildContext context) => const SizedBox();
+}
+
+class _ThrowingUpdate extends StatefulWidget {
+  const _ThrowingUpdate({
+    required this.generation,
+    required this.own,
+    required this.child,
+  });
+
+  final int generation;
+  final ValueNotifier<int> own;
+  final ValueNotifier<int> child;
+
+  @override
+  State<_ThrowingUpdate> createState() => _ThrowingUpdateState();
+}
+
+class _ThrowingUpdateState extends State<_ThrowingUpdate>
+    with StateResourceScope<_ThrowingUpdate> {
+  @override
+  void initState() {
+    super.initState();
+    listenTo(widget.own, _on);
+  }
+
+  @override
+  void didUpdateWidget(_ThrowingUpdate oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.generation != oldWidget.generation) {
+      throw StateError(_Probe.failure);
+    }
+  }
+
+  void _on() {}
+
+  @override
+  Widget build(BuildContext context) => _Listening(notifier: widget.child);
+}
+
+class _Listening extends StatefulWidget {
+  const _Listening({required this.notifier});
+
+  final ValueNotifier<int> notifier;
+
+  @override
+  State<_Listening> createState() => _ListeningState();
+}
+
+class _ListeningState extends State<_Listening>
+    with StateResourceScope<_Listening> {
+  @override
+  void initState() {
+    super.initState();
+    listenTo(widget.notifier, _on);
+  }
+
+  void _on() {}
+
+  @override
+  Widget build(BuildContext context) => const SizedBox();
+}
+
+class _Slotted extends StatefulWidget {
+  const _Slotted({required this.listenable, required this.log});
+
+  final ValueNotifier<int> listenable;
+  final List<String> log;
+
+  @override
+  State<_Slotted> createState() => _SlottedState();
+}
+
+class _SlottedState extends State<_Slotted> with StateResourceScope<_Slotted> {
+  int _ticks = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _bind();
+  }
+
+  @override
+  void didUpdateWidget(_Slotted oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.listenable != widget.listenable) _bind();
+  }
+
+  void _bind() {
+    listenTo(widget.listenable, _on, slot: #listenable);
+    final int n = _ticks++;
+    onTeardown(() => widget.log.add('tick $n'), slot: #tick);
+  }
+
+  void _on() {}
 
   @override
   Widget build(BuildContext context) => const SizedBox();

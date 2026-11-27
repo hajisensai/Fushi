@@ -230,7 +230,8 @@ class TtsVoiceSettingsPage extends StatefulWidget {
   State<TtsVoiceSettingsPage> createState() => _TtsVoiceSettingsPageState();
 }
 
-class _TtsVoiceSettingsPageState extends State<TtsVoiceSettingsPage> {
+class _TtsVoiceSettingsPageState extends State<TtsVoiceSettingsPage>
+    with StateResourceScope<TtsVoiceSettingsPage> {
   late List<TtsVoicePreset> _presets = widget.services.store.loadPresets();
   late String? _activeId = widget.services.store.activePreset()?.id;
 
@@ -257,7 +258,7 @@ class _TtsVoiceSettingsPageState extends State<TtsVoiceSettingsPage> {
   /// 选中 [id]；窄屏再推进它的编辑页（宽屏右侧窗格已经显示它）。
   void _focusPreset(String id) {
     _selectedId = id;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       if (!mounted) return;
       if (!ttsUsesWideLayout(MediaQuery.sizeOf(context).width)) {
         unawaited(_openEditor(id));

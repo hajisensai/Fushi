@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
     show FushiTooltip;
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
@@ -995,7 +996,8 @@ class MediaServerPageFrame extends StatefulWidget {
   State<MediaServerPageFrame> createState() => _MediaServerPageFrameState();
 }
 
-class _MediaServerPageFrameState extends State<MediaServerPageFrame> {
+class _MediaServerPageFrameState extends State<MediaServerPageFrame>
+    with StateResourceScope<MediaServerPageFrame> {
   /// 不在库页浮动外壳里时自备的显隐 controller（外壳在时不用）。
   final FushiFloatingChromeController _ownChrome =
       FushiFloatingChromeController();
@@ -1009,7 +1011,7 @@ class _MediaServerPageFrameState extends State<MediaServerPageFrame> {
     final bool current = ModalRoute.isCurrentOf(context) ?? true;
     if (current && !_wasCurrent) {
       // 依赖变化发生在 build 阶段，controller 通知会标脏祖先：等这一帧画完。
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+      schedulePostFrame((_) {
         if (!mounted) return;
         (FushiFloatingChromeScope.peek(context) ?? _ownChrome).resetToTop();
       });

@@ -1,3 +1,4 @@
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoIcons;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart' show FushiFocusId;
@@ -1016,7 +1017,9 @@ class _GlassExpansionTile extends StatefulWidget {
 }
 
 class _GlassExpansionTileState extends State<_GlassExpansionTile>
-    with SingleTickerProviderStateMixin {
+    with
+        SingleTickerProviderStateMixin,
+        StateResourceScope<_GlassExpansionTile> {
   static const Duration _kExpand = Duration(milliseconds: 200);
 
   late ExpansibleController _controller;
@@ -1037,7 +1040,7 @@ class _GlassExpansionTileState extends State<_GlassExpansionTile>
       value: _controller.isExpanded ? 1 : 0,
     );
     _curved = _makeCurve();
-    _controller.addListener(_onExpansionChanged);
+    listenTo(_controller, _onExpansionChanged, slot: #controller);
   }
 
   CurvedAnimation _makeCurve() => CurvedAnimation(
@@ -1051,10 +1054,11 @@ class _GlassExpansionTileState extends State<_GlassExpansionTile>
     super.didUpdateWidget(oldWidget);
     final FushiExpansionTile old = oldWidget.config;
     if (old.controller != _c.controller) {
-      _controller.removeListener(_onExpansionChanged);
+      // 同槽位的空登记会先摘掉旧 controller 上的监听，再释放它。
+      onTeardown(() {}, slot: #controller);
       if (old.controller == null) _controller.dispose();
       _controller = _c.controller ?? ExpansibleController();
-      _controller.addListener(_onExpansionChanged);
+      listenTo(_controller, _onExpansionChanged, slot: #controller);
     }
     if (old.expansionAnimationStyle != _c.expansionAnimationStyle) {
       _animation.duration = _c.expansionAnimationStyle?.duration ?? _kExpand;
@@ -1066,7 +1070,8 @@ class _GlassExpansionTileState extends State<_GlassExpansionTile>
 
   @override
   void dispose() {
-    _controller.removeListener(_onExpansionChanged);
+    // 先摘监听（listenTo 登记），再释放自建 controller。
+    releaseResources();
     if (_c.controller == null) _controller.dispose();
     _curved.dispose();
     _animation.dispose();

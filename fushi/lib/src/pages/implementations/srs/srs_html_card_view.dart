@@ -190,16 +190,24 @@ class _SrsHtmlCardViewState extends ConsumerState<SrsHtmlCardView>
   @override
   void initState() {
     super.initState();
-    widget.bottomInset?.addListener(_onBottomInset);
-    onTeardown(() => widget.bottomInset?.removeListener(_onBottomInset));
+    _listenBottomInset();
+  }
+
+  /// 挂 / 换底部留白监听；没有时用空撤销顶掉旧槽位。
+  void _listenBottomInset() {
+    final Listenable? inset = widget.bottomInset;
+    if (inset != null) {
+      listenTo(inset, _onBottomInset, slot: #bottomInset);
+    } else {
+      onTeardown(() {}, slot: #bottomInset);
+    }
   }
 
   @override
   void didUpdateWidget(SrsHtmlCardView old) {
     super.didUpdateWidget(old);
     if (old.bottomInset != widget.bottomInset) {
-      old.bottomInset?.removeListener(_onBottomInset);
-      widget.bottomInset?.addListener(_onBottomInset);
+      _listenBottomInset();
     }
     if (old.face.cardId != widget.face.cardId ||
         old.face.showingAnswer != widget.face.showingAnswer) {

@@ -1066,8 +1066,8 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
       context,
     );
     if (!identical(values, _tickerValues)) {
-      _tickerValues?.removeListener(_syncSrsLive);
-      _tickerValues = values..addListener(_syncSrsLive);
+      listenTo(values, _syncSrsLive, slot: #tickerValues);
+      _tickerValues = values;
     }
     _syncSrsLive();
   }
@@ -1078,7 +1078,7 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
     final bool live = _tickerValues?.value.enabled ?? true;
     if (ref.read(homeSrsLiveProvider) == live) return;
     // TickerMode 的通知与依赖变化回调都在构建期内，不能当场改 provider。
-    scheduleMicrotask(() {
+    scheduleScopedMicrotask(() {
       if (mounted) ref.read(homeSrsLiveProvider.notifier).state = live;
     });
   }
@@ -1323,8 +1323,6 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
   @override
   void dispose() {
     _reloadDebounce?.cancel();
-    _tickerValues?.removeListener(_syncSrsLive);
-    _midnightReload?.cancel();
     _profileCheckDebounce?.cancel();
     _dashboardScrollController.dispose();
     _toolbarScroll.dispose();
@@ -1356,9 +1354,12 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
   /// 到下一个本地午夜整页重拉（每次加载重新排一次；页面已卸载则不动）。
   void _armMidnightReload(DateTime now) {
     _midnightReload?.cancel();
-    _midnightReload = Timer(StatWindow.untilNextStatDayBoundary(now), () {
-      if (mounted) _scheduleReload();
-    });
+    _midnightReload = ownTimer(
+      Timer(StatWindow.untilNextStatDayBoundary(now), () {
+        if (mounted) _scheduleReload();
+      }),
+      slot: #midnightReload,
+    );
   }
 
   Future<void> _loadDashboardDataUnsafe(int generation) async {

@@ -121,15 +121,20 @@ class _GameStreamCompanionPageState extends State<GameStreamCompanionPage>
   @override
   void initState() {
     super.initState();
-    _commands = ownSubscription(_controller.commands.listen(_runCommand));
+    _commands = ownSubscription(
+      _controller.commands.listen(_runCommand),
+      slot: #commands,
+    );
   }
 
   @override
   void didUpdateWidget(GameStreamCompanionPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.controller != widget.controller) {
-      unawaited(_commands?.cancel());
-      _commands = _controller.commands.listen(_runCommand);
+      _commands = ownSubscription(
+        _controller.commands.listen(_runCommand),
+        slot: #commands,
+      );
     }
   }
 

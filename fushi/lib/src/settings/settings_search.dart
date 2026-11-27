@@ -8,6 +8,7 @@ import 'package:fushi/src/utils/components/settings_shared.dart'
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_search_synonyms.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// item 的可搜索标题：普通项就是 [SettingsItem.title]；[SettingsCustomItem]
 /// 的 title 通常为空（正文由 builder 自绘），可用
@@ -435,7 +436,8 @@ class SettingsRevealTarget extends StatefulWidget {
   State<SettingsRevealTarget> createState() => _SettingsRevealTargetState();
 }
 
-class _SettingsRevealTargetState extends State<SettingsRevealTarget> {
+class _SettingsRevealTargetState extends State<SettingsRevealTarget>
+    with StateResourceScope<SettingsRevealTarget> {
   double? _topInset;
   ScrollPosition? _position;
   bool _following = true;
@@ -451,9 +453,13 @@ class _SettingsRevealTargetState extends State<SettingsRevealTarget> {
     super.didChangeDependencies();
     final ScrollPosition? position = Scrollable.maybeOf(context)?.position;
     if (!identical(position, _position)) {
-      _position?.removeListener(_onScroll);
-      _position = _following ? position : null;
-      _position?.addListener(_onScroll);
+      final ScrollPosition? next = _following ? position : null;
+      _position = next;
+      if (next != null) {
+        listenTo(next, _onScroll, slot: #position);
+      } else {
+        onTeardown(() {}, slot: #position);
+      }
     }
     final double topInset = MediaQuery.paddingOf(context).top;
     final double? previous = _topInset;
@@ -476,7 +482,7 @@ class _SettingsRevealTargetState extends State<SettingsRevealTarget> {
   }
 
   void _scheduleReveal() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       if (!mounted || !_following) return;
       // eink 下滚动动画归零（连续重绘=残影），直接跳到目标位置。
       FushiFocusScroll.ensureVisible(
@@ -484,12 +490,6 @@ class _SettingsRevealTargetState extends State<SettingsRevealTarget> {
         duration: fushiMotionDuration(context, FushiMotion.medium),
       );
     });
-  }
-
-  @override
-  void dispose() {
-    _position?.removeListener(_onScroll);
-    super.dispose();
   }
 
   @override

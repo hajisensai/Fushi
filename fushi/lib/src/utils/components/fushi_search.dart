@@ -4,6 +4,7 @@ import 'dart:ui' show lerpDouble;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter/services.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -216,7 +217,8 @@ class FushiSearchBar extends StatefulWidget {
   State<FushiSearchBar> createState() => _FushiSearchBarState();
 }
 
-class _FushiSearchBarState extends State<FushiSearchBar> {
+class _FushiSearchBarState extends State<FushiSearchBar>
+    with StateResourceScope<FushiSearchBar> {
   TextEditingController? _ownedController;
   FocusNode? _ownedFocusNode;
   late FushiSearchQueryDriver _driver;
@@ -232,7 +234,7 @@ class _FushiSearchBarState extends State<FushiSearchBar> {
   void initState() {
     super.initState();
     _driver = _createDriver();
-    _focusNode.addListener(_onFocus);
+    listenTo(_focusNode, _onFocus, slot: #focus);
   }
 
   FushiSearchQueryDriver _createDriver() => FushiSearchQueryDriver(
@@ -251,15 +253,15 @@ class _FushiSearchBarState extends State<FushiSearchBar> {
       _driver.debounce = widget.debounce;
     }
     if (oldWidget.focusNode != widget.focusNode) {
-      (oldWidget.focusNode ?? _ownedFocusNode)?.removeListener(_onFocus);
-      _focusNode.addListener(_onFocus);
+      listenTo(_focusNode, _onFocus, slot: #focus);
     }
   }
 
   @override
   void dispose() {
     _driver.dispose();
-    _focusNode.removeListener(_onFocus);
+    // 先摘焦点监听，再释放自有对象。
+    releaseResources();
     _ownedController?.dispose();
     _ownedFocusNode?.dispose();
     super.dispose();

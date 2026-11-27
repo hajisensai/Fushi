@@ -14,6 +14,7 @@ library;
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
@@ -246,7 +247,8 @@ const int _kMaxPeeks = 2;
 /// 计数徽标的命中方块边长：视觉 24 的徽标居中其中，方块中心压在最前那张卡的右上角。
 const double _kBadgeHit = 36;
 
-class _FushiMineNoticeStackState extends State<FushiMineNoticeStack> {
+class _FushiMineNoticeStackState extends State<FushiMineNoticeStack>
+    with StateResourceScope<FushiMineNoticeStack> {
   bool _hovering = false;
   bool _focused = false;
   bool _pinnedOpen = false;
@@ -264,22 +266,15 @@ class _FushiMineNoticeStackState extends State<FushiMineNoticeStack> {
   @override
   void initState() {
     super.initState();
-    _c.addListener(_onChanged);
+    listenTo(_c, _onChanged, slot: #controller);
   }
 
   @override
   void didUpdateWidget(FushiMineNoticeStack oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.controller != widget.controller) {
-      oldWidget.controller.removeListener(_onChanged);
-      widget.controller.addListener(_onChanged);
+      listenTo(widget.controller, _onChanged, slot: #controller);
     }
-  }
-
-  @override
-  void dispose() {
-    _c.removeListener(_onChanged);
-    super.dispose();
   }
 
   void _onChanged() {

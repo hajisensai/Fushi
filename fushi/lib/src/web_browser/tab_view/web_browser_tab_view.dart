@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:share_plus/share_plus.dart' show XFile;
 import 'package:url_launcher/url_launcher.dart';
 
@@ -97,6 +98,7 @@ class WebBrowserTabView extends ConsumerStatefulWidget {
 }
 
 class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
+    with StateResourceScope<WebBrowserTabView>
     implements SrsCardLookupSurface, PopupBodyWebViewProvider {
   late final WebViewDeathGuard _deathGuard = WebViewDeathGuard(
     surface: 'web-browser-tab',
@@ -210,8 +212,8 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
         ),
       );
     }
-    _tab.addListener(_onTabChanged);
-    _prefs.addListener(_onPrefsChanged);
+    listenTo(_tab, _onTabChanged);
+    listenTo(_prefs, _onPrefsChanged);
     if (WebBrowserTabView.debugWebViewBuilder == null) {
       _settings = _buildSettings();
       if (_mobile) {
@@ -271,8 +273,8 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
   @override
   void dispose() {
     _closed = true;
-    _tab.removeListener(_onTabChanged);
-    _prefs.removeListener(_onPrefsChanged);
+    // 监听在摘控制器（会 notify 标签页）之前撤掉。
+    releaseResources();
     _lookup?.unregister(this);
     _recorder?.flush();
     // 插件的前后台 / 关闭回调只由标签控制器（WebBrowserTabsController）发：视图被

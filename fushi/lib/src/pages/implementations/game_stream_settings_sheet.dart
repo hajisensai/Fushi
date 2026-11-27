@@ -63,18 +63,23 @@ class _GameStreamSettingsSheetState extends State<GameStreamSettingsSheet>
   @override
   void initState() {
     super.initState();
-    widget.volumeAvailable?.addListener(_onVolumeAvailableChanged);
-    onTeardown(
-      () => widget.volumeAvailable?.removeListener(_onVolumeAvailableChanged),
-    );
+    _listenVolumeAvailable();
+  }
+
+  void _listenVolumeAvailable() {
+    final ValueListenable<bool>? listenable = widget.volumeAvailable;
+    if (listenable != null) {
+      listenTo(listenable, _onVolumeAvailableChanged, slot: #volumeAvailable);
+    } else {
+      onTeardown(() {}, slot: #volumeAvailable);
+    }
   }
 
   @override
   void didUpdateWidget(GameStreamSettingsSheet oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.volumeAvailable != widget.volumeAvailable) {
-      oldWidget.volumeAvailable?.removeListener(_onVolumeAvailableChanged);
-      widget.volumeAvailable?.addListener(_onVolumeAvailableChanged);
+      _listenVolumeAvailable();
     }
   }
 

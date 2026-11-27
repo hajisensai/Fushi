@@ -281,10 +281,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     _appModel = ref.read(appProvider);
     _db = _appModel.database;
     _withdrawFromLeaderboard = ref.read(leaderboardPrivacyWithdrawProvider);
-    widget.scrapeTaskController?.addListener(_onScrapeTaskChanged);
-    onTeardown(
-      () => widget.scrapeTaskController?.removeListener(_onScrapeTaskChanged),
-    );
+    _bindScrapeTask();
     if (widget.mediaKind == 'video') {
       listenTo(videoScrapeCleanupRevision, _onVideoScrapeCleanupChanged);
     }
@@ -366,12 +363,27 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     await _refreshCount(id);
   }
 
+  /// 抓取任务控制器的监听：槽位化，换控制器时重挂；为 null 时空撤销顶掉旧槽位。
+  void _bindScrapeTask() {
+    final VideoSourceScrapeTaskController? controller =
+        widget.scrapeTaskController;
+    if (controller == null) {
+      onTeardown(() {}, slot: #scrapeTask);
+      return;
+    }
+    // EngineChangeNotifier 不是 Listenable，不能走 listenTo。
+    controller.addListener(_onScrapeTaskChanged);
+    onTeardown(
+      () => controller.removeListener(_onScrapeTaskChanged),
+      slot: #scrapeTask,
+    );
+  }
+
   @override
   void didUpdateWidget(covariant MediaSourcesView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.scrapeTaskController == widget.scrapeTaskController) return;
-    oldWidget.scrapeTaskController?.removeListener(_onScrapeTaskChanged);
-    widget.scrapeTaskController?.addListener(_onScrapeTaskChanged);
+    _bindScrapeTask();
   }
 
   void _onInterconnectEnabledChanged() {

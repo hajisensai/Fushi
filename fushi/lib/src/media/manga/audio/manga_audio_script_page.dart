@@ -44,6 +44,7 @@ import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 Future<void> openMangaAudioScriptPage(
   BuildContext context, {
@@ -71,7 +72,8 @@ class MangaAudioScriptPage extends StatefulWidget {
 
 enum _FailureAction { retry, retryOther, hand }
 
-class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
+class _MangaAudioScriptPageState extends State<MangaAudioScriptPage>
+    with StateResourceScope<MangaAudioScriptPage> {
   MangaAudioAnnotateSession? _session;
   String? _loadError;
   List<EpubBookRow> _seriesVolumes = const <EpubBookRow>[];
@@ -101,19 +103,13 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
   @override
   void initState() {
     super.initState();
-    _tasks.addListener(_syncTasks);
+    listenTo(_tasks, _syncTasks);
     _syncTasks();
     unawaited(_load(_gate.beginLoad()));
   }
 
-  @override
-  void dispose() {
-    // 只摘掉观察者；任务照跑（已标的页随时落盘，跑完弹全局提示）。
-    _tasks.removeListener(_syncTasks);
-    _task?.removeListener(_onTaskChanged);
-    _seriesRun?.removeListener(_onTaskChanged);
-    super.dispose();
-  }
+  // 退场只摘掉观察者（StateResourceScope 登记的监听）；任务照跑（已标的页随时落盘，
+  // 跑完弹全局提示）。
 
   /// 任务表变了（有任务开始 / 结束）：接上本卷的任务与本系列的按系列跑。
   void _syncTasks() {
@@ -121,8 +117,11 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
     if (!identical(task, _task)) {
       // 任务跑完：同一拍里先开新一轮读盘，锁一直挂到新会话装上（[_load]）。
       final bool ended = _gate.taskChanged(running: task != null);
-      _task?.removeListener(_onTaskChanged);
-      task?.addListener(_onTaskChanged);
+      if (task != null) {
+        listenTo(task, _onTaskChanged, slot: #task);
+      } else {
+        onTeardown(() {}, slot: #task);
+      }
       _task = task;
       if (ended) unawaited(_load(_gate.beginLoad()));
     }
@@ -137,8 +136,11 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
         ? active
         : null;
     if (!identical(run, _seriesRun)) {
-      _seriesRun?.removeListener(_onTaskChanged);
-      run?.addListener(_onTaskChanged);
+      if (run != null) {
+        listenTo(run, _onTaskChanged, slot: #seriesRun);
+      } else {
+        onTeardown(() {}, slot: #seriesRun);
+      }
       _seriesRun = run;
     }
     if (mounted) setState(() {});

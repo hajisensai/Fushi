@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/sync/interconnect_p2p_app.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi_engine/sync/interconnect_p2p.dart';
 
 /// 已配对 host 的 `p2p://` 地址行下方：当前隧道路径（直连 / 中继 + RTT），
@@ -24,7 +25,8 @@ class InterconnectP2pPathBadge extends StatefulWidget {
       _InterconnectP2pPathBadgeState();
 }
 
-class _InterconnectP2pPathBadgeState extends State<InterconnectP2pPathBadge> {
+class _InterconnectP2pPathBadgeState extends State<InterconnectP2pPathBadge>
+    with StateResourceScope<InterconnectP2pPathBadge> {
   InterconnectP2pPathTracker _tracker = InterconnectP2pPathTracker();
   Timer? _timer;
   String? _nodeId;
@@ -59,19 +61,17 @@ class _InterconnectP2pPathBadgeState extends State<InterconnectP2pPathBadge> {
     // P2P 的平台）也不轮询：两种情况都不起定时器。
     if (_nodeId == null || currentAppInterconnectP2pRuntime == null) return;
     // 首拍放到 initState 之外：轮询里的 FFI 调用不在 build 阶段执行。
-    _timer = Timer(Duration.zero, () {
-      _timer = Timer.periodic(
-        InterconnectP2pPathBadge.pollInterval,
-        (_) => _poll(),
-      );
-      _poll();
-    });
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
+    _timer = ownTimer(
+      Timer(Duration.zero, () {
+        if (resourcesReleased) return;
+        _timer = ownTimer(
+          Timer.periodic(InterconnectP2pPathBadge.pollInterval, (_) => _poll()),
+          slot: #poll,
+        );
+        _poll();
+      }),
+      slot: #poll,
+    );
   }
 
   void _poll() {

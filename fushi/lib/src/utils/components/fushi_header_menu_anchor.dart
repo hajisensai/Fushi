@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 页头动作打开的菜单（库页「排序」菜单）的控制器（BUG-4715）。
 ///
@@ -59,31 +60,32 @@ class FushiHeaderMenuAnchor extends StatefulWidget {
   State<FushiHeaderMenuAnchor> createState() => _FushiHeaderMenuAnchorState();
 }
 
-class _FushiHeaderMenuAnchorState extends State<FushiHeaderMenuAnchor> {
+class _FushiHeaderMenuAnchorState extends State<FushiHeaderMenuAnchor>
+    with StateResourceScope<FushiHeaderMenuAnchor> {
   /// 触发控件在本锚点坐标系里的矩形；null = 没有触发控件（锚在末端下沿）。
   Rect? _triggerRect;
 
   @override
   void initState() {
     super.initState();
-    widget.controller._anchor = this;
+    _attach(widget.controller);
+  }
+
+  /// 把本 State 装成 [controller] 的锚点；退场 / 换 controller 时只在它还指着本
+  /// State 时摘掉（槽位重登记会先撤上一条）。
+  void _attach(FushiHeaderMenuController controller) {
+    controller._anchor = this;
+    onTeardown(() {
+      if (controller._anchor == this) controller._anchor = null;
+    }, slot: #anchor);
   }
 
   @override
   void didUpdateWidget(FushiHeaderMenuAnchor oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.controller != widget.controller) {
-      if (oldWidget.controller._anchor == this) {
-        oldWidget.controller._anchor = null;
-      }
-      widget.controller._anchor = this;
+      _attach(widget.controller);
     }
-  }
-
-  @override
-  void dispose() {
-    if (widget.controller._anchor == this) widget.controller._anchor = null;
-    super.dispose();
   }
 
   /// 量出 [trigger] 相对本锚点的矩形并据此重排锚框。与 [MenuController.open]

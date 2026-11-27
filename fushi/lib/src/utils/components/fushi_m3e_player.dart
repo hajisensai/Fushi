@@ -657,8 +657,17 @@ class _FushiWavySeekBarState extends State<FushiWavySeekBar>
     super.initState();
     _position = widget.clock.position;
     _duration = widget.clock.duration;
-    widget.clockListenable?.addListener(_onClockChanged);
-    onTeardown(() => widget.clockListenable?.removeListener(_onClockChanged));
+    _listenClock();
+  }
+
+  /// 推送源上挂 [_onClockChanged]；换推送源 / 没有推送源时槽位顶掉上一条登记。
+  void _listenClock() {
+    final Listenable? clock = widget.clockListenable;
+    if (clock != null) {
+      listenTo(clock, _onClockChanged, slot: #clockListenable);
+    } else {
+      onTeardown(() {}, slot: #clockListenable);
+    }
   }
 
   /// 推送源通知：读一次时钟，有变化才重建（拖动中不打断拖动显示）。
@@ -683,8 +692,7 @@ class _FushiWavySeekBarState extends State<FushiWavySeekBar>
       _syncMotion(animate: true);
     }
     if (!identical(oldWidget.clockListenable, widget.clockListenable)) {
-      oldWidget.clockListenable?.removeListener(_onClockChanged);
-      widget.clockListenable?.addListener(_onClockChanged);
+      _listenClock();
       _syncMotion(animate: false);
     }
     if (!identical(oldWidget.clock, widget.clock)) _readClock();
@@ -741,10 +749,13 @@ class _FushiWavySeekBarState extends State<FushiWavySeekBar>
     if (_idlePoll != null && _idlePollInterval == interval) return;
     _idlePoll?.cancel();
     _idlePollInterval = interval;
-    _idlePoll = Timer.periodic(interval, (_) {
-      if (!mounted) return;
-      if (_readClock()) setState(() {});
-    });
+    _idlePoll = ownTimer(
+      Timer.periodic(interval, (_) {
+        if (!mounted) return;
+        if (_readClock()) setState(() {});
+      }),
+      slot: #idlePoll,
+    );
   }
 
   /// 读一次时钟；有变化返回 true。

@@ -623,7 +623,8 @@ class _AppleProgressLine extends StatefulWidget {
   State<_AppleProgressLine> createState() => _AppleProgressLineState();
 }
 
-class _AppleProgressLineState extends State<_AppleProgressLine> {
+class _AppleProgressLineState extends State<_AppleProgressLine>
+    with StateResourceScope<_AppleProgressLine> {
   Timer? _ticker;
   bool _tickerModeEnabled = true;
 
@@ -650,9 +651,12 @@ class _AppleProgressLineState extends State<_AppleProgressLine> {
     final bool run =
         widget.bar.isPlaying && widget.bar.clock != null && _tickerModeEnabled;
     if (run && _ticker == null) {
-      _ticker = Timer.periodic(kFushiNowPlayingProgressTick, (_) {
-        if (mounted) setState(() {});
-      });
+      _ticker = ownTimer(
+        Timer.periodic(kFushiNowPlayingProgressTick, (_) {
+          if (mounted) setState(() {});
+        }),
+        slot: #ticker,
+      );
     } else if (!run) {
       _ticker?.cancel();
       _ticker = null;

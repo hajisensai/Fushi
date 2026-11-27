@@ -19,6 +19,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 「设置 › 存储 › 本机 OCR 模型」正文：**每个本机模型一行**，逐个下载 / 取消 /
 /// 删除。
@@ -68,7 +69,8 @@ class _ModelRow {
 }
 
 class _MangaOcrModelsStorageSectionState
-    extends ConsumerState<MangaOcrModelsStorageSection> {
+    extends ConsumerState<MangaOcrModelsStorageSection>
+    with StateResourceScope<MangaOcrModelsStorageSection> {
   late final MangaOcrModelDownloads _downloads;
   late final List<_ModelRow> _rows;
 
@@ -82,17 +84,11 @@ class _MangaOcrModelsStorageSectionState
         _ModelRow(model, widget.serviceFor(model))
           ..wasDownloading = _downloads.isActive(model),
     ];
-    _downloads.addListener(_onDownloadsChanged);
+    // 退场只摘监听：下载在后台继续。
+    listenTo(_downloads, _onDownloadsChanged);
     for (final _ModelRow row in _rows) {
       unawaited(_loadStatus(row));
     }
-  }
-
-  @override
-  void dispose() {
-    // 只摘监听：下载在后台继续。
-    _downloads.removeListener(_onDownloadsChanged);
-    super.dispose();
   }
 
   void _onDownloadsChanged() {

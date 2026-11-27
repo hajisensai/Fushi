@@ -1339,9 +1339,10 @@ class _NavPeekImageAspects extends StatefulWidget {
   State<_NavPeekImageAspects> createState() => _NavPeekImageAspectsState();
 }
 
-class _NavPeekImageAspectsState extends State<_NavPeekImageAspects> {
-  final List<ImageStream?> _streams = <ImageStream?>[];
-  final List<ImageStreamListener?> _listeners = <ImageStreamListener?>[];
+class _NavPeekImageAspectsState extends State<_NavPeekImageAspects>
+    with StateResourceScope<_NavPeekImageAspects> {
+  final List<(ImageStream, ImageStreamListener)> _attached =
+      <(ImageStream, ImageStreamListener)>[];
   List<double> _aspects = const <double>[];
   bool _resolved = false;
 
@@ -1364,17 +1365,23 @@ class _NavPeekImageAspectsState extends State<_NavPeekImageAspects> {
   }
 
   void _detach() {
-    for (int i = 0; i < _streams.length; i++) {
-      final ImageStreamListener? listener = _listeners[i];
-      if (listener != null) _streams[i]?.removeListener(listener);
+    for (final (ImageStream stream, ImageStreamListener listener)
+        in _attached) {
+      stream.removeListener(listener);
     }
-    _streams.clear();
-    _listeners.clear();
+    _attached.clear();
   }
 
   void _resolve() {
     _resolved = true;
     _detach();
+    // 先登记「若挂着就摘」：下面挂的每条图流监听都在 [_attached] 里。
+    onTeardown(() {
+      for (final (ImageStream stream, ImageStreamListener listener)
+          in _attached) {
+        stream.removeListener(listener);
+      }
+    }, slot: #images);
     _aspects = <double>[
       for (int i = 0; i < widget.images.length; i++) kNavPeekDefaultCoverAspect,
     ];
@@ -1382,8 +1389,6 @@ class _NavPeekImageAspectsState extends State<_NavPeekImageAspects> {
     for (int i = 0; i < widget.images.length; i++) {
       final ImageProvider? image = widget.images[i];
       if (image == null) {
-        _streams.add(null);
-        _listeners.add(null);
         continue;
       }
       final int index = i;
@@ -1407,8 +1412,7 @@ class _NavPeekImageAspectsState extends State<_NavPeekImageAspects> {
         }
       }, onError: (Object error, StackTrace? stack) {});
       stream.addListener(listener);
-      _streams.add(stream);
-      _listeners.add(listener);
+      _attached.add((stream, listener));
     }
   }
 

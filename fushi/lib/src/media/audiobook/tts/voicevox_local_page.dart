@@ -5,6 +5,7 @@
 /// 两家引擎（按 [VoicevoxLocalEngine.manifest] 区分文案）。桌面三端有入口。
 library;
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -94,7 +95,8 @@ class VoicevoxLocalPage extends StatefulWidget {
   State<VoicevoxLocalPage> createState() => _VoicevoxLocalPageState();
 }
 
-class _VoicevoxLocalPageState extends State<VoicevoxLocalPage> {
+class _VoicevoxLocalPageState extends State<VoicevoxLocalPage>
+    with StateResourceScope<VoicevoxLocalPage> {
   VoicevoxLocalEngine get _engine => widget.engine;
   String get _name => voicevoxLocalEngineName(_engine);
   String get _keyPrefix => 'voicevox-local-${_engine.manifest.installSubdir}';
@@ -104,14 +106,10 @@ class _VoicevoxLocalPageState extends State<VoicevoxLocalPage> {
   @override
   void initState() {
     super.initState();
-    _engine.addListener(_onEngine);
+    final VoicevoxLocalEngine engine = _engine;
+    engine.addListener(_onEngine);
+    onTeardown(() => engine.removeListener(_onEngine));
     unawaited(_init());
-  }
-
-  @override
-  void dispose() {
-    _engine.removeListener(_onEngine);
-    super.dispose();
   }
 
   void _onEngine() {

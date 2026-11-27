@@ -102,8 +102,7 @@ class _MascotGlowState extends State<MascotGlow>
   void initState() {
     super.initState();
     listenTo(mascotGlowEnabled, _onChanged);
-    _busyListenable.addListener(_onChanged);
-    onTeardown(() => _busyListenable.removeListener(_onChanged));
+    listenTo(_busyListenable, _onChanged, slot: #busy);
   }
 
   @override
@@ -112,8 +111,7 @@ class _MascotGlowState extends State<MascotGlow>
     final Listenable old =
         oldWidget.busyListenable ?? syncBackgroundTasksListenable;
     if (!identical(old, _busyListenable)) {
-      old.removeListener(_onChanged);
-      _busyListenable.addListener(_onChanged);
+      listenTo(_busyListenable, _onChanged, slot: #busy);
     }
   }
 

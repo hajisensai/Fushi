@@ -1124,7 +1124,6 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
         SystemChrome.setPreferredOrientations(kWebBrowserIdleOrientations),
       );
     }
-    _watched?.removeListener(_onActiveTabChanged);
     _tabs.removeListener(_onTabsChanged);
     // 功能的 actionsChanged 监听要先于 f.dispose 撤销（对已 dispose 的 notifier 摘监听会断言）。
     releaseResources();
@@ -1157,9 +1156,12 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
   void _bindActiveTab() {
     final WebBrowserTab? active = _tabs.activeTab;
     if (identical(active, _watched)) return;
-    _watched?.removeListener(_onActiveTabChanged);
     _watched = active;
-    active?.addListener(_onActiveTabChanged);
+    if (active != null) {
+      listenTo(active, _onActiveTabChanged, slot: #activeTab);
+    } else {
+      onTeardown(() {}, slot: #activeTab);
+    }
     _collapse = const WebBrowserCollapseState();
     _applyFullscreenDisplay(active);
     _refreshBookmark();

@@ -30,6 +30,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
     show FushiTooltip;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 part 'lyrics_player_md3_modern.part.dart';
 
@@ -649,7 +650,8 @@ class _CoverTile extends StatefulWidget {
   State<_CoverTile> createState() => _CoverTileState();
 }
 
-class _CoverTileState extends State<_CoverTile> with TickerProviderStateMixin {
+class _CoverTileState extends State<_CoverTile>
+    with TickerProviderStateMixin, StateResourceScope<_CoverTile> {
   late final FushiSpring _playScale = FushiSpring(
     vsync: this,
     initial: widget.isPlaying ? 1 : 0,
@@ -662,7 +664,6 @@ class _CoverTileState extends State<_CoverTile> with TickerProviderStateMixin {
   /// 封面宽高比（宽 / 高）；解码前按常见书封 0.72。
   double _aspect = 0.72;
   ImageStream? _stream;
-  ImageStreamListener? _listener;
 
   @override
   void didChangeDependencies() {
@@ -702,15 +703,15 @@ class _CoverTileState extends State<_CoverTile> with TickerProviderStateMixin {
       final double aspect = (w / h).clamp(0.5, 1.5);
       if ((aspect - _aspect).abs() > 0.001) setState(() => _aspect = aspect);
     });
-    _stream = next..addListener(listener);
-    _listener = listener;
+    next.addListener(listener);
+    onTeardown(() => next.removeListener(listener), slot: #cover);
+    _stream = next;
   }
 
   void _detach() {
-    final ImageStreamListener? listener = _listener;
-    if (listener != null) _stream?.removeListener(listener);
+    // 只经槽位摘：清单收尾还会再摘，流已销毁时重复 removeListener 会抛。
+    releaseSlot(#cover);
     _stream = null;
-    _listener = null;
   }
 
   @override

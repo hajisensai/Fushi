@@ -1077,9 +1077,10 @@ class _VideoDownloadJobListState extends State<_VideoDownloadJobList>
   @override
   void initState() {
     super.initState();
-    widget.snapshotRefresh.addListener(_onSnapshotRefreshRequested);
-    onTeardown(
-      () => widget.snapshotRefresh.removeListener(_onSnapshotRefreshRequested),
+    listenTo(
+      widget.snapshotRefresh,
+      _onSnapshotRefreshRequested,
+      slot: #snapshotRefresh,
     );
     _restartMetrics();
   }
@@ -1090,8 +1091,11 @@ class _VideoDownloadJobListState extends State<_VideoDownloadJobList>
   void didUpdateWidget(_VideoDownloadJobList oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.snapshotRefresh, widget.snapshotRefresh)) {
-      oldWidget.snapshotRefresh.removeListener(_onSnapshotRefreshRequested);
-      widget.snapshotRefresh.addListener(_onSnapshotRefreshRequested);
+      listenTo(
+        widget.snapshotRefresh,
+        _onSnapshotRefreshRequested,
+        slot: #snapshotRefresh,
+      );
     }
     final bool jobsChanged =
         _jobIdentity(oldWidget.jobs) != _jobIdentity(widget.jobs);
@@ -1119,12 +1123,12 @@ class _VideoDownloadJobListState extends State<_VideoDownloadJobList>
       _snapshots = const <String, TorrentSnapshot>{};
       return;
     }
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       if (mounted) unawaited(_refreshMetrics());
     });
-    _timer = Timer.periodic(
-      _refreshInterval,
-      (_) => unawaited(_refreshMetrics()),
+    _timer = ownTimer(
+      Timer.periodic(_refreshInterval, (_) => unawaited(_refreshMetrics())),
+      slot: #metrics,
     );
   }
 
@@ -1153,12 +1157,6 @@ class _VideoDownloadJobListState extends State<_VideoDownloadJobList>
     } finally {
       _loading = false;
     }
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
   }
 
   @override

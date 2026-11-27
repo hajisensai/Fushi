@@ -156,7 +156,7 @@ class _MediaServerGridViewState extends State<MediaServerGridView>
   /// 把关后首页可以是「0 条命中但 hasMore」（BUG-2608 的第三种形状），这时要绕过
   /// 滚动控制器直接续扫，否则用户永远停在「无结果」。
   void _fillViewportAfterPage() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       if (!mounted) return;
       if (_scrollController.hasClients) {
         _onScroll();

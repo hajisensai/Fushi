@@ -479,17 +479,25 @@ class _FushiCoveredPageSnapshotState extends State<FushiCoveredPageSnapshot>
   @override
   void initState() {
     super.initState();
-    widget.secondaryAnimation.addStatusListener(_onStatus);
-    onTeardown(() => widget.secondaryAnimation.removeStatusListener(_onStatus));
+    _listenStatus();
     _sync();
+  }
+
+  /// 挂 / 换被盖进度的状态监听：同槽位先撤上一条（先登记撤销再挂）。
+  void _listenStatus() {
+    final Animation<double> animation = widget.secondaryAnimation;
+    onTeardown(
+      () => animation.removeStatusListener(_onStatus),
+      slot: #secondaryAnimation,
+    );
+    animation.addStatusListener(_onStatus);
   }
 
   @override
   void didUpdateWidget(FushiCoveredPageSnapshot oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.secondaryAnimation != widget.secondaryAnimation) {
-      oldWidget.secondaryAnimation.removeStatusListener(_onStatus);
-      widget.secondaryAnimation.addStatusListener(_onStatus);
+      _listenStatus();
     }
     _sync();
   }

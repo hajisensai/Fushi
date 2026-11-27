@@ -69,8 +69,7 @@ class _LnReaderInstalledSourcesSectionState
   @override
   void initState() {
     super.initState();
-    widget.manager.addListener(_changed);
-    onTeardown(() => widget.manager.removeListener(_changed));
+    listenTo(widget.manager, _changed, slot: #manager);
     unawaited(
       widget.manager.initialise().whenComplete(() {
         if (mounted) setState(() => _ready = true);
@@ -82,8 +81,7 @@ class _LnReaderInstalledSourcesSectionState
   void didUpdateWidget(covariant LnReaderInstalledSourcesSection oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (identical(oldWidget.manager, widget.manager)) return;
-    oldWidget.manager.removeListener(_changed);
-    widget.manager.addListener(_changed);
+    listenTo(widget.manager, _changed, slot: #manager);
   }
 
   @override

@@ -70,7 +70,6 @@ class WebBrowserAddressBarState extends State<WebBrowserAddressBar>
   final OverlayPortalController _portal = OverlayPortalController();
   final LayerLink _link = LayerLink();
   final GlobalKey _box = GlobalKey(debugLabel: 'web-browser-address-box');
-  StreamSubscription<List<WebBrowserSuggestion>>? _sub;
   List<WebBrowserSuggestion> _items = const <WebBrowserSuggestion>[];
   int _highlight = -1;
   bool _editing = false;
@@ -78,10 +77,10 @@ class WebBrowserAddressBarState extends State<WebBrowserAddressBar>
   @override
   void initState() {
     super.initState();
-    widget.focusNode.addListener(_onFocus);
-    onTeardown(() => widget.focusNode.removeListener(_onFocus));
-    _sub = ownSubscription(
+    listenTo(widget.focusNode, _onFocus, slot: #focusNode);
+    ownSubscription(
       widget.suggestions.suggestions.listen(_onSuggestions),
+      slot: #suggestions,
     );
     _editing = widget.focusNode.hasFocus;
   }
@@ -90,18 +89,18 @@ class WebBrowserAddressBarState extends State<WebBrowserAddressBar>
   void didUpdateWidget(WebBrowserAddressBar oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.focusNode, widget.focusNode)) {
-      oldWidget.focusNode.removeListener(_onFocus);
-      widget.focusNode.addListener(_onFocus);
+      listenTo(widget.focusNode, _onFocus, slot: #focusNode);
     }
     if (!identical(oldWidget.suggestions, widget.suggestions)) {
-      unawaited(_sub?.cancel());
-      _sub = widget.suggestions.suggestions.listen(_onSuggestions);
+      ownSubscription(
+        widget.suggestions.suggestions.listen(_onSuggestions),
+        slot: #suggestions,
+      );
     }
   }
 
   @override
   void dispose() {
-    unawaited(_sub?.cancel());
     _text.dispose();
     super.dispose();
   }

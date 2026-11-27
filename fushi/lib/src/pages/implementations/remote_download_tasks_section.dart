@@ -29,6 +29,7 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 class RemoteDownloadTasksSection extends ConsumerStatefulWidget {
@@ -118,12 +119,12 @@ DownloadTaskKind _taskKindOf(String? discoveryKind) => discoveryKind == null
           DownloadTaskKind.video;
 
 class _RemoteDownloadTasksSectionState
-    extends ConsumerState<RemoteDownloadTasksSection> {
+    extends ConsumerState<RemoteDownloadTasksSection>
+    with StateResourceScope<RemoteDownloadTasksSection> {
   late final InterconnectDownloadClient _client;
 
   /// hostRef.key → 状态；顺序 = 「下载执行设备」那台在前，其余按配对清单组序。
   final Map<String, _RemoteHostState> _hosts = <String, _RemoteHostState>{};
-  Timer? _timer;
 
   @override
   void initState() {
@@ -138,7 +139,6 @@ class _RemoteDownloadTasksSectionState
 
   @override
   void dispose() {
-    _timer?.cancel();
     if (widget.clientOverride == null) _client.close();
     DownloadTaskShare.instance.clearOwner(
       DownloadTaskSharedPart.remoteHosts,
@@ -158,7 +158,7 @@ class _RemoteDownloadTasksSectionState
       if (e.kind == InterconnectChannelFailure.cancelled) return;
       rethrow;
     }
-    if (!mounted) return;
+    if (!mounted || resourcesReleased) return;
     final String preferredUrl = appModel.prefsRepo.downloadExecutionHostUrl;
     final InterconnectHostRef? preferred = preferredUrl.isEmpty
         ? null
@@ -185,7 +185,7 @@ class _RemoteDownloadTasksSectionState
     });
     if (_hosts.isEmpty) return;
     _tick();
-    _timer = Timer.periodic(widget.pollInterval, (_) => _tick());
+    ownTimer(Timer.periodic(widget.pollInterval, (_) => _tick()), slot: #poll);
   }
 
   /// 一拍：可用的 host 拉任务，瞬时失败的 host 重探；在途的跳过。

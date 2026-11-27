@@ -336,7 +336,9 @@ void main() {
     // 滚动必须委托 FushiFocusScroll（焦点架构守卫禁止 lib/src 自持
     // Scrollable.ensureVisible，见 focus_architecture_static_test）。
     expect(search, contains('FushiFocusScroll.ensureVisible('));
-    expect(search, contains('addPostFrameCallback'));
+    // 帧后再滚：StateResourceScope.schedulePostFrame（成了孤儿 / 已 dispose 时不回调，
+    // BUG-5604）或裸 addPostFrameCallback。
+    expect(search, matches(RegExp(r'schedulePostFrame|addPostFrameCallback')));
   });
 
   test('阶段F：搜索「快捷键」同时命中快捷键设置导航项与上下文抓取行（标题命中优先于摘要命中）', () {

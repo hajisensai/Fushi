@@ -888,8 +888,7 @@ class _VideoM3eChromeSlideState extends State<VideoM3eChromeSlide>
   @override
   void initState() {
     super.initState();
-    widget.visible.addListener(_sync);
-    onTeardown(() => widget.visible.removeListener(_sync));
+    listenTo(widget.visible, _sync, slot: #visible);
   }
 
   @override
@@ -909,8 +908,7 @@ class _VideoM3eChromeSlideState extends State<VideoM3eChromeSlide>
   void didUpdateWidget(VideoM3eChromeSlide oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.visible != widget.visible) {
-      oldWidget.visible.removeListener(_sync);
-      widget.visible.addListener(_sync);
+      listenTo(widget.visible, _sync, slot: #visible);
     }
     if (!widget.enabled) {
       _c
@@ -1526,12 +1524,10 @@ class VideoM3ePositionIndicator extends StatefulWidget {
       _VideoM3ePositionIndicatorState();
 }
 
-class _VideoM3ePositionIndicatorState extends State<VideoM3ePositionIndicator> {
+class _VideoM3ePositionIndicatorState extends State<VideoM3ePositionIndicator>
+    with StateResourceScope<VideoM3ePositionIndicator> {
   late Duration _position = _floor(widget.player.state.position);
   late Duration _duration = widget.player.state.duration;
-  final List<StreamSubscription<Duration>> _subs =
-      <StreamSubscription<Duration>>[];
-
   static Duration _floor(Duration d) => Duration(seconds: d.inSeconds);
 
   @override
@@ -1540,43 +1536,31 @@ class _VideoM3ePositionIndicatorState extends State<VideoM3ePositionIndicator> {
     _listen();
   }
 
+  // 两条订阅各占一个槽位：换 player 时重订，上一条自动取消。
   void _listen() {
-    _subs
-      ..add(
-        widget.player.stream.position.listen((Duration p) {
-          final Duration next = _floor(p);
-          if (next != _position && mounted) setState(() => _position = next);
-        }),
-      )
-      ..add(
-        widget.player.stream.duration.listen((Duration d) {
-          if (d != _duration && mounted) setState(() => _duration = d);
-        }),
-      );
-  }
-
-  void _cancel() {
-    for (final StreamSubscription<Duration> s in _subs) {
-      unawaited(s.cancel());
-    }
-    _subs.clear();
+    ownSubscription(
+      widget.player.stream.position.listen((Duration p) {
+        final Duration next = _floor(p);
+        if (next != _position && mounted) setState(() => _position = next);
+      }),
+      slot: #position,
+    );
+    ownSubscription(
+      widget.player.stream.duration.listen((Duration d) {
+        if (d != _duration && mounted) setState(() => _duration = d);
+      }),
+      slot: #duration,
+    );
   }
 
   @override
   void didUpdateWidget(VideoM3ePositionIndicator oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.player, widget.player)) {
-      _cancel();
       _position = _floor(widget.player.state.position);
       _duration = widget.player.state.duration;
       _listen();
     }
-  }
-
-  @override
-  void dispose() {
-    _cancel();
-    super.dispose();
   }
 
   @override
@@ -1641,16 +1625,14 @@ class _VideoM3eDoubleTapRippleState extends State<VideoM3eDoubleTapRipple>
   @override
   void initState() {
     super.initState();
-    widget.events.addListener(_onEvent);
-    onTeardown(() => widget.events.removeListener(_onEvent));
+    listenTo(widget.events, _onEvent, slot: #events);
   }
 
   @override
   void didUpdateWidget(VideoM3eDoubleTapRipple oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.events != widget.events) {
-      oldWidget.events.removeListener(_onEvent);
-      widget.events.addListener(_onEvent);
+      listenTo(widget.events, _onEvent, slot: #events);
     }
   }
 

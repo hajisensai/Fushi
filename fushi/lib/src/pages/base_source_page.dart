@@ -107,6 +107,10 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   void initState() {
     super.initState();
     _popup.bodyStaticLayer.resolveBody = () => popupBodyWebViewId;
+    onTeardown(
+      () => _popup.bodyStaticLayer.resolveBody = null,
+      slot: #resolveBody,
+    );
 
     ExternalMediaNavigation.instance.register(
       this,

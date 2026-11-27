@@ -241,6 +241,9 @@ dependencies:
     path: ../packages/fushi_ffi_view
 
 dev_dependencies:
+  # BUG-5604：test/build/initstate_resource_scan.dart 在测试里直接解析语法树扫生命周期
+  # 方法（不走分析器插件）。drift_dev 的传递依赖，声明只为测试 import。
+  analyzer: ^13.3.0
   # BUG-3003: native hot-restart regression waits for worker IsolateExit events.
   vm_service: ^15.1.0
   build_runner: ^2.3.3

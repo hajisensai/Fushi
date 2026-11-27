@@ -38,6 +38,7 @@ import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart'
     show HorizontalDragScrollable;
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
     show GlassAppBar;
 
@@ -2673,7 +2674,8 @@ class _FushiGlassTabBar extends StatefulWidget {
   State<_FushiGlassTabBar> createState() => _FushiGlassTabBarState();
 }
 
-class _FushiGlassTabBarState extends State<_FushiGlassTabBar> {
+class _FushiGlassTabBarState extends State<_FushiGlassTabBar>
+    with StateResourceScope<_FushiGlassTabBar> {
   TabController? _controller;
   int _shown = 0;
   List<GlobalKey> _segmentKeys = <GlobalKey>[];
@@ -2707,16 +2709,16 @@ class _FushiGlassTabBarState extends State<_FushiGlassTabBar> {
       );
     }
     if (identical(next, _controller)) return;
-    _detach();
     _controller = next;
-    next.animation?.addListener(_onAnimation);
-    next.addListener(_onIndex);
+    // 两条监听各占一个槽位：换控制器时重挂，上一条自动摘掉。
+    final Animation<double>? animation = next.animation;
+    if (animation == null) {
+      onTeardown(() {}, slot: #tabAnimation);
+    } else {
+      listenTo(animation, _onAnimation, slot: #tabAnimation);
+    }
+    listenTo(next, _onIndex, slot: #tabController);
     _shown = next.index;
-  }
-
-  void _detach() {
-    _controller?.animation?.removeListener(_onAnimation);
-    _controller?.removeListener(_onIndex);
   }
 
   int get _selected {
@@ -2738,7 +2740,7 @@ class _FushiGlassTabBarState extends State<_FushiGlassTabBar> {
 
   void _scrollSelectedIntoView() {
     if (!_bar.isScrollable) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       if (!mounted) return;
       final int index = _controller!.index;
       if (index >= _segmentKeys.length) return;
@@ -2755,12 +2757,6 @@ class _FushiGlassTabBarState extends State<_FushiGlassTabBar> {
   void _select(int index) {
     _controller!.animateTo(index);
     _bar.onTap?.call(index);
-  }
-
-  @override
-  void dispose() {
-    _detach();
-    super.dispose();
   }
 
   static String _semanticLabelOf(Widget tab) {

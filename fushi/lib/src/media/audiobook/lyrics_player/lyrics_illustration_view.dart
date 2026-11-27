@@ -264,11 +264,11 @@ class _IllustrationCard extends StatefulWidget {
   State<_IllustrationCard> createState() => _IllustrationCardState();
 }
 
-class _IllustrationCardState extends State<_IllustrationCard> {
+class _IllustrationCardState extends State<_IllustrationCard>
+    with StateResourceScope<_IllustrationCard> {
   /// 插图宽高比；解码前按常见竖版插图 0.7。
   double _aspect = 0.7;
   ImageStream? _stream;
-  ImageStreamListener? _listener;
 
   ImageProvider get _image {
     final int cache =
@@ -319,14 +319,13 @@ class _IllustrationCardState extends State<_IllustrationCard> {
       },
     );
     _stream = next..addListener(listener);
-    _listener = listener;
+    onTeardown(() => next.removeListener(listener), slot: #stream);
   }
 
   void _detach() {
-    final ImageStreamListener? listener = _listener;
-    if (listener != null) _stream?.removeListener(listener);
+    // 只经槽位摘：清单收尾还会再摘，流已销毁时重复 removeListener 会抛。
+    releaseSlot(#stream);
     _stream = null;
-    _listener = null;
   }
 
   @override
@@ -817,16 +816,14 @@ class _LyricsIllustrationViewerState extends State<LyricsIllustrationViewer>
   @override
   void initState() {
     super.initState();
-    widget.controller.addListener(_onControllerChanged);
-    onTeardown(() => widget.controller.removeListener(_onControllerChanged));
+    listenTo(widget.controller, _onControllerChanged, slot: #controller);
   }
 
   @override
   void didUpdateWidget(covariant LyricsIllustrationViewer oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.controller, widget.controller)) {
-      oldWidget.controller.removeListener(_onControllerChanged);
-      widget.controller.addListener(_onControllerChanged);
+      listenTo(widget.controller, _onControllerChanged, slot: #controller);
     }
   }
 

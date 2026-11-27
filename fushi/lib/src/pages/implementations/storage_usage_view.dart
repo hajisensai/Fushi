@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart' show DatabaseSnapshotDeletionResult;
 import 'package:fushi_engine/sync/interconnect_file_box_prune.dart'
@@ -162,7 +163,8 @@ class StorageUsageView extends ConsumerStatefulWidget {
   ConsumerState<StorageUsageView> createState() => _StorageUsageViewState();
 }
 
-class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
+class _StorageUsageViewState extends ConsumerState<StorageUsageView>
+    with StateResourceScope<StorageUsageView> {
   /// 明细默认最多展示条数（书可能几百本，全展开把设置页拖成长卷轴）。
   static const int kMaxVisibleEntries = 20;
 
@@ -227,33 +229,36 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
     } catch (e) {
       debugPrint('[storage] listing failed: $e');
     }
-    if (!mounted || epoch != _scanEpoch) return;
+    if (!mounted || resourcesReleased || epoch != _scanEpoch) return;
     await _scanSub?.cancel();
-    if (!mounted || epoch != _scanEpoch) return;
-    _scanSub = widget.service
-        .scanCategories(
-          books: books,
-          dictionaryNames: dictNames,
-          dictionaryDisplayNames: dictDisplayNames,
-          videos: videos,
-        )
-        .listen(
-          (StorageCategoryUsage usage) {
-            if (!mounted || epoch != _scanEpoch) return;
-            setState(() => _usage[usage.id] = usage);
-          },
-          onError: (Object e) {
-            debugPrint('[storage] scan failed: $e');
-            if (mounted && epoch == _scanEpoch) {
-              setState(() => _scanning = false);
-            }
-          },
-          onDone: () {
-            if (mounted && epoch == _scanEpoch) {
-              setState(() => _scanning = false);
-            }
-          },
-        );
+    if (!mounted || resourcesReleased || epoch != _scanEpoch) return;
+    _scanSub = ownSubscription(
+      widget.service
+          .scanCategories(
+            books: books,
+            dictionaryNames: dictNames,
+            dictionaryDisplayNames: dictDisplayNames,
+            videos: videos,
+          )
+          .listen(
+            (StorageCategoryUsage usage) {
+              if (!mounted || epoch != _scanEpoch) return;
+              setState(() => _usage[usage.id] = usage);
+            },
+            onError: (Object e) {
+              debugPrint('[storage] scan failed: $e');
+              if (mounted && epoch == _scanEpoch) {
+                setState(() => _scanning = false);
+              }
+            },
+            onDone: () {
+              if (mounted && epoch == _scanEpoch) {
+                setState(() => _scanning = false);
+              }
+            },
+          ),
+      slot: #scan,
+    );
   }
 
   /// 总览之外的附加信息：Anime4K 预设占用（决定着色器类目行给不给删除按钮）

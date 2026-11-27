@@ -17,6 +17,7 @@ import 'package:fushi_engine/tts/providers/irodori_server_tts_provider.dart'
 import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/tts/irodori_voice_packs.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_local_log_dialog.dart';
@@ -143,7 +144,8 @@ class IrodoriVoicePackPage extends ConsumerStatefulWidget {
       _IrodoriVoicePackPageState();
 }
 
-class _IrodoriVoicePackPageState extends ConsumerState<IrodoriVoicePackPage> {
+class _IrodoriVoicePackPageState extends ConsumerState<IrodoriVoicePackPage>
+    with StateResourceScope<IrodoriVoicePackPage> {
   IrodoriLocalEngine get _engine => widget.services.localIrodori;
   late final IrodoriVoicePackStore _store =
       widget.store ?? irodoriVoicePackStoreFor(ref.read(appProvider));
@@ -153,12 +155,7 @@ class _IrodoriVoicePackPageState extends ConsumerState<IrodoriVoicePackPage> {
   void initState() {
     super.initState();
     _engine.addListener(_onEngine);
-  }
-
-  @override
-  void dispose() {
-    _engine.removeListener(_onEngine);
-    super.dispose();
+    onTeardown(() => _engine.removeListener(_onEngine));
   }
 
   void _onEngine() {

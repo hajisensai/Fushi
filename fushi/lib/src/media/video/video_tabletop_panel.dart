@@ -195,9 +195,10 @@ class _AppleTabletopPanelState extends State<_AppleTabletopPanel>
   @override
   void initState() {
     super.initState();
-    widget.panel.positionListenable.addListener(_onPositionChanged);
-    onTeardown(
-      () => widget.panel.positionListenable.removeListener(_onPositionChanged),
+    listenTo(
+      widget.panel.positionListenable,
+      _onPositionChanged,
+      slot: #position,
     );
   }
 
@@ -207,8 +208,7 @@ class _AppleTabletopPanelState extends State<_AppleTabletopPanel>
     final Listenable previous = oldWidget.panel.positionListenable;
     final Listenable next = widget.panel.positionListenable;
     if (!identical(previous, next)) {
-      previous.removeListener(_onPositionChanged);
-      next.addListener(_onPositionChanged);
+      listenTo(next, _onPositionChanged, slot: #position);
     }
   }
 

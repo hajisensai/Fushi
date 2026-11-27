@@ -4413,7 +4413,6 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     _clearGamepadAHold();
     VolumeKeyChannel.instance.setHandlers();
     VolumeKeyChannel.instance.setInterceptEnabled(false);
-    _lyricsThemeHost?.themeChanges.removeListener(_onLyricsThemeHostChanged);
     _lyricsThemeHost = null;
     appModel.setOverrideDictionaryTheme(null);
     appModel.setOverrideDictionaryColor(null);
@@ -4721,9 +4720,13 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     _companion.attach(ModalRoute.of(context));
     final LyricsThemeHostState? themeHost = LyricsThemeHost.maybeOf(context);
     if (!identical(themeHost, _lyricsThemeHost)) {
-      _lyricsThemeHost?.themeChanges.removeListener(_onLyricsThemeHostChanged);
       _lyricsThemeHost = themeHost;
-      themeHost?.themeChanges.addListener(_onLyricsThemeHostChanged);
+      // 同一槽位再挂先摘旧宿主；退场 / 成了孤儿时摘当下那个（BUG-5604）。
+      listenTo(
+        themeHost?.themeChanges,
+        _onLyricsThemeHostChanged,
+        slot: #lyricsThemeHost,
+      );
     }
     final EdgeInsets vp = MediaQuery.of(context).viewPadding;
     // TODO-1375：inset（系统安全区 / notch / 全屏进出改变的 viewPadding）变化时，

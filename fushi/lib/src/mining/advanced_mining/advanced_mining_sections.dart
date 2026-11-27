@@ -2026,7 +2026,8 @@ class AdvancedMiningFrameThumb extends StatefulWidget {
       _AdvancedMiningFrameThumbState();
 }
 
-class _AdvancedMiningFrameThumbState extends State<AdvancedMiningFrameThumb> {
+class _AdvancedMiningFrameThumbState extends State<AdvancedMiningFrameThumb>
+    with StateResourceScope<AdvancedMiningFrameThumb> {
   Timer? _timer;
   int _gen = 0;
   Uint8List? _bytes;
@@ -2051,9 +2052,12 @@ class _AdvancedMiningFrameThumbState extends State<AdvancedMiningFrameThumb> {
   }
 
   void _schedule() {
-    _timer?.cancel();
     final int gen = ++_gen;
-    _timer = Timer(AdvancedMiningFrameThumb.debounce, () => _fetch(gen));
+    _timer?.cancel();
+    _timer = ownTimer(
+      Timer(AdvancedMiningFrameThumb.debounce, () => _fetch(gen)),
+      slot: #thumbTimer,
+    );
   }
 
   Future<void> _fetch(int gen) async {

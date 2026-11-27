@@ -369,8 +369,7 @@ class WebBrowserSubtitlePanelState$ extends State<WebBrowserSubtitlePanel>
   void initState() {
     super.initState();
     _readPrefs();
-    widget.storage?.addListener(_onStorageChanged);
-    onTeardown(() => widget.storage?.removeListener(_onStorageChanged));
+    _listenStorage();
     _offsetFocus.addListener(_onOffsetFocusChanged);
     if (!WebBrowserExtensionStrings.instance.isLoaded) {
       unawaited(
@@ -388,9 +387,12 @@ class WebBrowserSubtitlePanelState$ extends State<WebBrowserSubtitlePanel>
     super.didChangeDependencies();
     final SrsCardLookupController? next = SrsCardLookupScope.of(context);
     if (!identical(next, _lookup)) {
-      _lookup?.removeListener(_onLookupChanged);
       _lookup = next;
-      next?.addListener(_onLookupChanged);
+      if (next != null) {
+        listenTo(next, _onLookupChanged, slot: #lookup);
+      } else {
+        onTeardown(() {}, slot: #lookup);
+      }
     }
   }
 
@@ -398,15 +400,22 @@ class WebBrowserSubtitlePanelState$ extends State<WebBrowserSubtitlePanel>
   void didUpdateWidget(WebBrowserSubtitlePanel oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.storage, widget.storage)) {
-      oldWidget.storage?.removeListener(_onStorageChanged);
-      widget.storage?.addListener(_onStorageChanged);
+      _listenStorage();
       _readPrefs();
+    }
+  }
+
+  void _listenStorage() {
+    final WebBrowserExtensionStorage? storage = widget.storage;
+    if (storage != null) {
+      listenTo(storage, _onStorageChanged, slot: #storage);
+    } else {
+      onTeardown(() {}, slot: #storage);
     }
   }
 
   @override
   void dispose() {
-    _lookup?.removeListener(_onLookupChanged);
     _scroll.dispose();
     _offsetText.dispose();
     _offsetFocus.dispose();
@@ -533,7 +542,7 @@ class WebBrowserSubtitlePanelState$ extends State<WebBrowserSubtitlePanel>
   }
 
   void _scheduleFollow(int index, {required bool animate}) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       if (!mounted || !_scroll.hasClients) return;
       final BuildContext? row = _rowKeys[index]?.currentContext;
       final Duration d = animate
@@ -556,7 +565,7 @@ class WebBrowserSubtitlePanelState$ extends State<WebBrowserSubtitlePanel>
         _scroll.position.maxScrollExtent,
       );
       _scroll.jumpTo(approx);
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+      schedulePostFrame((_) {
         final BuildContext? again = _rowKeys[index]?.currentContext;
         if (again != null && mounted) {
           unawaited(

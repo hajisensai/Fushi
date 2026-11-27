@@ -4,7 +4,6 @@ import 'dart:ui' show PointerDeviceKind;
 import 'package:flutter/foundation.dart' show ValueListenable, listEquals;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi_anki/fushi_anki.dart' show AnkiOpenWordOutcome;
-import 'package:flutter/scheduler.dart' show SchedulerBinding;
 import 'package:flutter/services.dart' show KeyDownEvent, KeyEvent;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/dictionary/dictionary_file_health.dart';
@@ -589,16 +588,14 @@ class _DictionaryPopupEntryBindingState
   @override
   void initState() {
     super.initState();
-    widget.controller.addListener(_onControllerChanged);
-    onTeardown(() => widget.controller.removeListener(_onControllerChanged));
+    listenTo(widget.controller, _onControllerChanged, slot: #controller);
   }
 
   @override
   void didUpdateWidget(DictionaryPopupEntryBinding oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.controller, widget.controller)) {
-      oldWidget.controller.removeListener(_onControllerChanged);
-      widget.controller.addListener(_onControllerChanged);
+      listenTo(widget.controller, _onControllerChanged, slot: #controller);
     }
   }
 
@@ -933,7 +930,9 @@ class _PopupEntranceFade extends StatefulWidget {
 }
 
 class _PopupEntranceFadeState extends State<_PopupEntranceFade>
-    with SingleTickerProviderStateMixin {
+    with
+        SingleTickerProviderStateMixin,
+        StateResourceScope<_PopupEntranceFade> {
   // 在 initState 里建，不能写成 `late final` 懒初始化：停在屏外、从没可见过的层
   // （热槽 / 停驻 realm）会拖到 dispose 才第一次建 controller，那时已不能查祖先
   // （TickerMode），直接断言失败。
@@ -968,7 +967,7 @@ class _PopupEntranceFadeState extends State<_PopupEntranceFade>
   void _scheduleSettledReport() {
     if (widget.onSettledChanged == null || _settledReportScheduled) return;
     _settledReportScheduled = true;
-    SchedulerBinding.instance.addPostFrameCallback((Duration _) {
+    schedulePostFrame((Duration _) {
       _settledReportScheduled = false;
       if (!mounted) return;
       final bool settled = _settled;

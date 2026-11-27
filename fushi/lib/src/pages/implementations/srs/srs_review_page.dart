@@ -428,7 +428,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   /// 下一帧结束后 [_reclaim]（换卡后卡面先 build 完）。`addPostFrameCallback` 本身不排帧，
   /// 树静止时要 [WidgetsBinding.ensureVisualUpdate] 把帧要出来（BUG-1168）。
   void _reclaimAfterFrame(FocusReclaimCause cause) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       if (mounted) _reclaim(cause);
     });
     WidgetsBinding.instance.ensureVisualUpdate();
@@ -554,7 +554,12 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     if (!mounted) return;
     _rwkv = rwkv;
     _rwkvStatus = rwkv?.status;
-    _rwkvSubscription = rwkv?.statusChanges.listen(_onRwkvStatus);
+    final StreamSubscription<SrsRwkvStatus>? rwkvSubscription = rwkv
+        ?.statusChanges
+        .listen(_onRwkvStatus);
+    _rwkvSubscription = rwkvSubscription == null
+        ? null
+        : ownSubscription(rwkvSubscription, slot: #rwkv);
     SrsReviewPage.debugPhase?.call('store');
     await _loadNext();
   }
@@ -1714,10 +1719,13 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     _wakeTimer?.cancel();
     _wakeTimer = null;
     if (wakeIn == null || !_finished || _rwkvPending) return;
-    _wakeTimer = Timer(wakeIn, () {
-      _wakeTimer = null;
-      if (mounted && _finished) unawaited(_syncWithStore());
-    });
+    _wakeTimer = ownTimer(
+      Timer(wakeIn, () {
+        _wakeTimer = null;
+        if (mounted && _finished) unawaited(_syncWithStore());
+      }),
+      slot: #wake,
+    );
   }
 
   /// 「复习完」页的入口：重新排队出卡（与加载同一条路径 [_loadNext]）。
@@ -3525,7 +3533,8 @@ class SrsRatedFeedbackChip extends StatefulWidget {
   State<SrsRatedFeedbackChip> createState() => _SrsRatedFeedbackChipState();
 }
 
-class _SrsRatedFeedbackChipState extends State<SrsRatedFeedbackChip> {
+class _SrsRatedFeedbackChipState extends State<SrsRatedFeedbackChip>
+    with StateResourceScope<SrsRatedFeedbackChip> {
   /// 正在计时的那次评分；null = 当前没有提示在计时。
   int? _armedSerial;
 
@@ -3560,14 +3569,17 @@ class _SrsRatedFeedbackChipState extends State<SrsRatedFeedbackChip> {
     _dwell?.cancel();
     _armedSerial = f.serial;
     final int serial = f.serial;
-    _dwell = Timer(FushiNoticeDwell.flash, () {
-      if (!mounted) return;
-      setState(() {
-        _expiredSerial = serial;
-        _armedSerial = null;
-        _dwell = null;
-      });
-    });
+    _dwell = ownTimer(
+      Timer(FushiNoticeDwell.flash, () {
+        if (!mounted) return;
+        setState(() {
+          _expiredSerial = serial;
+          _armedSerial = null;
+          _dwell = null;
+        });
+      }),
+      slot: #dwell,
+    );
   }
 
   @override

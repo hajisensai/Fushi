@@ -2551,16 +2551,20 @@ class _SrsSwitchPrimaryScopeState extends State<_SrsSwitchPrimaryScope>
   @override
   void initState() {
     super.initState();
-    widget.animation.addStatusListener(_onStatus);
-    onTeardown(() => widget.animation.removeStatusListener(_onStatus));
+    _listenStatus();
+  }
+
+  void _listenStatus() {
+    final Animation<double> animation = widget.animation;
+    animation.addStatusListener(_onStatus);
+    onTeardown(() => animation.removeStatusListener(_onStatus), slot: #status);
   }
 
   @override
   void didUpdateWidget(_SrsSwitchPrimaryScope oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.animation != widget.animation) {
-      oldWidget.animation.removeStatusListener(_onStatus);
-      widget.animation.addStatusListener(_onStatus);
+      _listenStatus();
     }
   }
 

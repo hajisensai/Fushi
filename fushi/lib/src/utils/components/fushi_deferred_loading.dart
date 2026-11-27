@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_loading_view.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 加载指示器的显示门：查询开始后先等 [kDeferredLoadingDelay] 才露出指示器（快
 /// 查询根本不闪），一旦露出至少停留 [kDeferredLoadingMinVisible]（避免一闪而过），
@@ -56,7 +57,8 @@ class FushiDeferredLoading extends StatefulWidget {
   State<FushiDeferredLoading> createState() => _FushiDeferredLoadingState();
 }
 
-class _FushiDeferredLoadingState extends State<FushiDeferredLoading> {
+class _FushiDeferredLoadingState extends State<FushiDeferredLoading>
+    with StateResourceScope<FushiDeferredLoading> {
   /// 延迟露出 / 淡出收尾的计时器。
   Timer? _timer;
 
@@ -98,18 +100,24 @@ class _FushiDeferredLoadingState extends State<FushiDeferredLoading> {
     _present = true;
     _fadingOut = false;
     if (_indicatorShown) return; // 撤场途中又开始：指示器原样留着
-    _timer = Timer(kDeferredLoadingDelay, () {
-      if (!mounted || !widget.active) return;
-      setState(() {
-        _indicatorShown = true;
-        _minVisibleElapsed = false;
-      });
-      _minVisibleTimer?.cancel();
-      _minVisibleTimer = Timer(kDeferredLoadingMinVisible, () {
-        _minVisibleElapsed = true;
-        if (mounted && !widget.active) _fadeOut();
-      });
-    });
+    _timer = ownTimer(
+      Timer(kDeferredLoadingDelay, () {
+        if (!mounted || !widget.active) return;
+        setState(() {
+          _indicatorShown = true;
+          _minVisibleElapsed = false;
+        });
+        _minVisibleTimer?.cancel();
+        _minVisibleTimer = ownTimer(
+          Timer(kDeferredLoadingMinVisible, () {
+            _minVisibleElapsed = true;
+            if (mounted && !widget.active) _fadeOut();
+          }),
+          slot: #minVisible,
+        );
+      }),
+      slot: #timer,
+    );
   }
 
   void _end() {
@@ -136,22 +144,18 @@ class _FushiDeferredLoadingState extends State<FushiDeferredLoading> {
     if (!mounted || widget.active || _fadingOut) return;
     setState(() => _fadingOut = true);
     _timer?.cancel();
-    _timer = Timer(kDeferredLoadingFade, () {
-      if (!mounted || widget.active) return;
-      setState(() {
-        _present = false;
-        _indicatorShown = false;
-        _minVisibleElapsed = false;
-        _fadingOut = false;
-      });
-    });
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    _minVisibleTimer?.cancel();
-    super.dispose();
+    _timer = ownTimer(
+      Timer(kDeferredLoadingFade, () {
+        if (!mounted || widget.active) return;
+        setState(() {
+          _present = false;
+          _indicatorShown = false;
+          _minVisibleElapsed = false;
+          _fadingOut = false;
+        });
+      }),
+      slot: #timer,
+    );
   }
 
   @override

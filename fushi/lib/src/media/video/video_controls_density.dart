@@ -253,8 +253,7 @@ class _VideoControlsDensityBuilderState
   void didUpdateWidget(VideoControlsDensityBuilder oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.surface != widget.surface) {
-      oldWidget.surface.removeListener(_onSurfaceChanged);
-      widget.surface.addListener(_onSurfaceChanged);
+      listenTo(widget.surface, _onSurfaceChanged, slot: #surface);
     }
     _child = null;
   }
@@ -262,8 +261,7 @@ class _VideoControlsDensityBuilderState
   @override
   void initState() {
     super.initState();
-    widget.surface.addListener(_onSurfaceChanged);
-    onTeardown(() => widget.surface.removeListener(_onSurfaceChanged));
+    listenTo(widget.surface, _onSurfaceChanged, slot: #surface);
   }
 
   // 小窗表面变了：让 LayoutBuilder 重跑一次解档（换档才会重建子树）。

@@ -141,8 +141,16 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
   @override
   void initState() {
     super.initState();
-    widget.libraryHost?.addListener(_onLibraryRows);
-    onTeardown(() => widget.libraryHost?.removeListener(_onLibraryRows));
+    _listenLibraryHost();
+  }
+
+  void _listenLibraryHost() {
+    final AppleSidebarLibraryHost? host = widget.libraryHost;
+    if (host != null) {
+      listenTo(host, _onLibraryRows, slot: #libraryHost);
+    } else {
+      onTeardown(() {}, slot: #libraryHost);
+    }
   }
 
   void _onLibraryRows() {
@@ -153,8 +161,7 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
   void didUpdateWidget(covariant AppleSidebarTabsShell oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.libraryHost != widget.libraryHost) {
-      oldWidget.libraryHost?.removeListener(_onLibraryRows);
-      widget.libraryHost?.addListener(_onLibraryRows);
+      _listenLibraryHost();
     }
     if (oldWidget.tabBar != widget.tabBar) {
       _t.animateTo(

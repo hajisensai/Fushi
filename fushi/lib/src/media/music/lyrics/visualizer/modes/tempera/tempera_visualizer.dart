@@ -347,8 +347,6 @@ class _TemperaVisualizerState extends State<TemperaVisualizer>
   Object? _paletteKey;
   TemperaPalette? _palette;
 
-  ImageStream? _coverStream;
-  ImageStreamListener? _coverListener;
   ImageInfo? _coverInfo;
   String? _coverPath;
   List<Color> _coverColors = const <Color>[];
@@ -525,10 +523,8 @@ class _TemperaVisualizerState extends State<TemperaVisualizer>
   }
 
   void _detachCover() {
-    final ImageStreamListener? l = _coverListener;
-    if (l != null) _coverStream?.removeListener(l);
-    _coverStream = null;
-    _coverListener = null;
+    // 只经槽位摘：清单收尾还会再摘，流已销毁时重复 removeListener 会抛。
+    releaseSlot(#cover);
   }
 
   void _loadCover() {
@@ -556,9 +552,8 @@ class _TemperaVisualizerState extends State<TemperaVisualizer>
         // 封面读不出来就只用主题色，不报错。
       },
     );
-    _coverStream = stream;
-    _coverListener = listener;
     stream.addListener(listener);
+    onTeardown(() => stream.removeListener(listener), slot: #cover);
   }
 
   Future<void> _extractColors(ui.Image image, int token) async {

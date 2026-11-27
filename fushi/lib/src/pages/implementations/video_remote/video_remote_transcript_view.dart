@@ -163,8 +163,7 @@ class _VideoRemoteTranscriptViewState extends State<VideoRemoteTranscriptView>
   void initState() {
     super.initState();
     _seenRecenterRequests = widget.controller.recenterRequests;
-    widget.controller.addListener(_onControllerChanged);
-    onTeardown(() => widget.controller.removeListener(_onControllerChanged));
+    listenTo(widget.controller, _onControllerChanged, slot: #controller);
     _scheduleRecenter(animate: false);
   }
 
@@ -172,8 +171,7 @@ class _VideoRemoteTranscriptViewState extends State<VideoRemoteTranscriptView>
   void didUpdateWidget(covariant VideoRemoteTranscriptView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.controller, widget.controller)) {
-      oldWidget.controller.removeListener(_onControllerChanged);
-      widget.controller.addListener(_onControllerChanged);
+      listenTo(widget.controller, _onControllerChanged, slot: #controller);
       _seenRecenterRequests = widget.controller.recenterRequests;
     }
     if (!identical(oldWidget.lines, widget.lines)) _rowKeys.clear();
@@ -202,7 +200,7 @@ class _VideoRemoteTranscriptViewState extends State<VideoRemoteTranscriptView>
   void _scheduleRecenter({required bool animate, int attempt = 0}) {
     if (_recenterScheduled) return;
     _recenterScheduled = true;
-    SchedulerBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       _recenterScheduled = false;
       _recenter(animate: animate, attempt: attempt);
     });

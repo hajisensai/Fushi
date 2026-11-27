@@ -570,7 +570,13 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     // 「截屏识字」全局快捷键（反馈 vTpcneuvAm）与应用外球的同名按钮共用这条桌面
     // 截屏 OCR：没有球可锚，截光标所在的显示器（原生 anchor 为空时的约定）。
     if (isDesktopSystemBallPlatform) {
-      GlobalLookupController.instance.screenOcrHandler = _screenOcrFromHotKey;
+      final GlobalLookupController lookup = GlobalLookupController.instance;
+      lookup.screenOcrHandler = _screenOcrFromHotKey;
+      onTeardown(() {
+        if (lookup.screenOcrHandler == _screenOcrFromHotKey) {
+          lookup.screenOcrHandler = null;
+        }
+      }, slot: #screenOcrHandler);
     }
     // 处理器（同步装上）先于首次查询：查询在路上时原生若推来新方向，两条消息
     // 按发出顺序到达，不会被后到的旧值盖掉，也不会因为还没处理器而丢。
@@ -585,10 +591,6 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     unawaited(_screenOcrLocal?.dispose());
     _screenOcrLens?.close();
     _prefs?.removeListener(_onPrefsChanged);
-    final GlobalLookupController lookup = GlobalLookupController.instance;
-    if (lookup.screenOcrHandler == _screenOcrFromHotKey) {
-      lookup.screenOcrHandler = null;
-    }
     // 还在路上的起球闭包作废。
     _systemGeneration++;
     super.dispose();

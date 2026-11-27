@@ -6,6 +6,7 @@ import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
@@ -45,8 +46,8 @@ class LeaderboardAccountPage extends ConsumerStatefulWidget {
       _LeaderboardAccountPageState();
 }
 
-class _LeaderboardAccountPageState
-    extends ConsumerState<LeaderboardAccountPage> {
+class _LeaderboardAccountPageState extends ConsumerState<LeaderboardAccountPage>
+    with StateResourceScope<LeaderboardAccountPage> {
   final TextEditingController _nickname = TextEditingController();
   bool _busy = false;
   String? _error;
@@ -65,13 +66,12 @@ class _LeaderboardAccountPageState
     super.initState();
     _service = ref.read(leaderboardServiceProvider);
     _syncNicknameFromSelf();
-    _service.addListener(_syncNicknameFromSelf);
+    listenTo(_service, _syncNicknameFromSelf);
     unawaited(_loadDevices());
   }
 
   @override
   void dispose() {
-    _service.removeListener(_syncNicknameFromSelf);
     _nickname.dispose();
     super.dispose();
   }

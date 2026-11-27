@@ -418,8 +418,7 @@ class _AndroidPictureInPicturePlaybackSyncState
   void initState() {
     super.initState();
     _mounted.add(this);
-    widget.playback.addListener(_push);
-    onTeardown(() => widget.playback.removeListener(_push));
+    listenTo(widget.playback, _push, slot: #playback);
     ownSubscription(AndroidPictureInPicture.actions.listen(_handleAction));
     // 挂载即推一次：本地换集是 pushReplacement 的新页，PiP 窗口上还是上一集留下的
     // 按钮图标与比例。
@@ -430,8 +429,7 @@ class _AndroidPictureInPicturePlaybackSyncState
   void didUpdateWidget(AndroidPictureInPicturePlaybackSync oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.playback, widget.playback)) {
-      oldWidget.playback.removeListener(_push);
-      widget.playback.addListener(_push);
+      listenTo(widget.playback, _push, slot: #playback);
     }
     _push();
   }

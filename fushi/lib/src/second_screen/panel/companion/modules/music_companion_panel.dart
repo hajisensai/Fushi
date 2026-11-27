@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/second_screen/companion/companion_snapshot.dart';
 import 'package:fushi/src/second_screen/companion/modules/music_companion_schema.dart';
@@ -286,7 +287,8 @@ class _LyricsList extends StatefulWidget {
   State<_LyricsList> createState() => _LyricsListState();
 }
 
-class _LyricsListState extends State<_LyricsList> {
+class _LyricsListState extends State<_LyricsList>
+    with StateResourceScope<_LyricsList> {
   final GlobalKey _currentKey = GlobalKey(debugLabel: 'music-companion-line');
 
   @override
@@ -303,7 +305,7 @@ class _LyricsListState extends State<_LyricsList> {
 
   void _revealCurrent({required bool animate}) {
     if (widget.current < 0) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       final BuildContext? line = _currentKey.currentContext;
       if (!mounted || line == null) return;
       unawaited(

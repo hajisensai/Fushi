@@ -36,6 +36,7 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_core/fushi_core.dart' show FushiDatabase, ProfileRow;
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 胶囊里配置名的最大宽度：再长就省略号截断，不把顶栏动作组挤进「⋯」。
 const double kHomeProfileChipMaxNameWidth = 132;
@@ -74,10 +75,10 @@ class HomeProfileChip extends StatefulWidget {
   State<HomeProfileChip> createState() => _HomeProfileChipState();
 }
 
-class _HomeProfileChipState extends State<HomeProfileChip> {
+class _HomeProfileChipState extends State<HomeProfileChip>
+    with StateResourceScope<HomeProfileChip> {
   List<ProfileRow> _profiles = const <ProfileRow>[];
   int _activeId = -1;
-  StreamSubscription<Set<TableUpdate>>? _changes;
 
   /// 读取代次：写入通知可能连发，只认最后一次发起的读取。
   int _generation = 0;
@@ -92,30 +93,26 @@ class _HomeProfileChipState extends State<HomeProfileChip> {
   void didUpdateWidget(HomeProfileChip oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.database, widget.database)) {
-      unawaited(_changes?.cancel());
       _listen();
     }
   }
 
   void _listen() {
     final FushiDatabase db = widget.database;
-    _changes = db
-        .tableUpdates(
-          TableUpdateQuery.onAllTables(
-            <ResultSetImplementation<dynamic, dynamic>>[
-              db.profiles,
-              db.preferences,
-            ],
-          ),
-        )
-        .listen((Set<TableUpdate> _) => unawaited(_load()));
+    ownSubscription(
+      db
+          .tableUpdates(
+            TableUpdateQuery.onAllTables(
+              <ResultSetImplementation<dynamic, dynamic>>[
+                db.profiles,
+                db.preferences,
+              ],
+            ),
+          )
+          .listen((Set<TableUpdate> _) => unawaited(_load())),
+      slot: #changes,
+    );
     unawaited(_load());
-  }
-
-  @override
-  void dispose() {
-    unawaited(_changes?.cancel());
-    super.dispose();
   }
 
   Future<void> _load() async {

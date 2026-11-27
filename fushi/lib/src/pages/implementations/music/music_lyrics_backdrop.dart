@@ -9,6 +9,7 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter/scheduler.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_cover.dart'
     show lyricVisualizerCoverProvider;
 import 'package:fushi/src/pages/implementations/music/music_cover.dart'
@@ -794,11 +795,11 @@ Future<ui.FragmentProgram?> _pixiProgram() => _pixiProgramLoad ??=
       },
     );
 
-class _MusicLyricsBackdropState extends State<MusicLyricsBackdrop> {
+class _MusicLyricsBackdropState extends State<MusicLyricsBackdrop>
+    with StateResourceScope<MusicLyricsBackdrop> {
   _BackdropSource? _source;
   int _loadToken = 0;
   bool _loadedOnce = false;
-  ImageStream? _pendingStream;
   ImageStreamListener? _pendingListener;
 
   @override
@@ -828,9 +829,8 @@ class _MusicLyricsBackdropState extends State<MusicLyricsBackdrop> {
   }
 
   void _cancelPending() {
-    final ImageStreamListener? listener = _pendingListener;
-    if (listener != null) _pendingStream?.removeListener(listener);
-    _pendingStream = null;
+    // 只经槽位摘：清单收尾还会再摘，流已销毁时重复 removeListener 会抛。
+    releaseSlot(#coverStream);
     _pendingListener = null;
   }
 
@@ -870,9 +870,8 @@ class _MusicLyricsBackdropState extends State<MusicLyricsBackdrop> {
     late final ImageStreamListener listener;
     listener = ImageStreamListener(
       (ImageInfo info, bool synchronousCall) {
-        stream.removeListener(listener);
+        releaseSlot(#coverStream);
         if (identical(_pendingListener, listener)) {
-          _pendingStream = null;
           _pendingListener = null;
         }
         final ui.Image image = info.image.clone();
@@ -880,9 +879,8 @@ class _MusicLyricsBackdropState extends State<MusicLyricsBackdrop> {
         unawaited(_finishLoad(token, image));
       },
       onError: (Object error, StackTrace? stackTrace) {
-        stream.removeListener(listener);
+        releaseSlot(#coverStream);
         if (!mounted || token != _loadToken) return;
-        _pendingStream = null;
         _pendingListener = null;
         // 封面解码失败：退回主题色 mesh（与封面缺失同一路径）。
         _replaceSource(
@@ -891,8 +889,9 @@ class _MusicLyricsBackdropState extends State<MusicLyricsBackdrop> {
         );
       },
     );
-    _pendingStream = stream;
     _pendingListener = listener;
+    // 先登记再挂：缓存命中时 addListener 里就同步回调，回调经槽位摘掉自己。
+    onTeardown(() => stream.removeListener(listener), slot: #coverStream);
     stream.addListener(listener);
   }
 
@@ -900,7 +899,7 @@ class _MusicLyricsBackdropState extends State<MusicLyricsBackdrop> {
     final (MusicBackdropPalette palette, ui.Image? texture) = await _analyse(
       image,
     );
-    if (!mounted || token != _loadToken) {
+    if (!mounted || resourcesReleased || token != _loadToken) {
       image.dispose();
       texture?.dispose();
       return;

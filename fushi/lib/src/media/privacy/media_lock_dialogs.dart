@@ -12,6 +12,7 @@ library;
 
 import 'dart:async';
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/privacy/media_lock_auth.dart';
 import 'package:fushi/src/media/privacy/media_visibility.dart';
@@ -289,7 +290,8 @@ class _MediaLockVerifyDialog extends StatefulWidget {
   State<_MediaLockVerifyDialog> createState() => _MediaLockVerifyDialogState();
 }
 
-class _MediaLockVerifyDialogState extends State<_MediaLockVerifyDialog> {
+class _MediaLockVerifyDialogState extends State<_MediaLockVerifyDialog>
+    with StateResourceScope<_MediaLockVerifyDialog> {
   final TextEditingController _passcode = TextEditingController();
   String? _error;
 
@@ -338,9 +340,12 @@ class _MediaLockVerifyDialogState extends State<_MediaLockVerifyDialog> {
     if (until == null) return;
     final Duration left = until.difference(DateTime.now());
     if (left.isNegative) return;
-    _cooldownTimer = Timer(left, () {
-      if (mounted) setState(() => _error = null);
-    });
+    _cooldownTimer = ownTimer(
+      Timer(left, () {
+        if (mounted) setState(() => _error = null);
+      }),
+      slot: #cooldown,
+    );
   }
 
   Future<void> _submit() async {

@@ -146,10 +146,8 @@ class _VideoLiveChatPanelState extends State<VideoLiveChatPanel>
   @override
   void initState() {
     super.initState();
-    widget.chat.addListener(_onChatChanged);
-    onTeardown(() => widget.chat.removeListener(_onChatChanged));
-    widget.chat.position.addListener(_onPosition);
-    onTeardown(() => widget.chat.position.removeListener(_onPosition));
+    listenTo(widget.chat, _onChatChanged, slot: #chat);
+    listenTo(widget.chat.position, _onPosition, slot: #position);
     widget.chat.attachViewer();
     widget.hitTester?.bindHitTest(_hitTest);
   }
@@ -158,11 +156,9 @@ class _VideoLiveChatPanelState extends State<VideoLiveChatPanel>
   void didUpdateWidget(VideoLiveChatPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.chat, widget.chat)) {
-      oldWidget.chat.removeListener(_onChatChanged);
-      oldWidget.chat.position.removeListener(_onPosition);
       oldWidget.chat.detachViewer();
-      widget.chat.addListener(_onChatChanged);
-      widget.chat.position.addListener(_onPosition);
+      listenTo(widget.chat, _onChatChanged, slot: #chat);
+      listenTo(widget.chat.position, _onPosition, slot: #position);
       widget.chat.attachViewer();
       _resetFollow();
     }

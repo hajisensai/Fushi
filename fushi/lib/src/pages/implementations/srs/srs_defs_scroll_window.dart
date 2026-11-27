@@ -86,8 +86,7 @@ class _SrsDefsScrollWindowState extends State<SrsDefsScrollWindow>
   @override
   void initState() {
     super.initState();
-    widget.controller.addListener(_reposition);
-    onTeardown(() => widget.controller.removeListener(_reposition));
+    listenTo(widget.controller, _reposition, slot: #controller);
     _schedule();
   }
 
@@ -95,8 +94,7 @@ class _SrsDefsScrollWindowState extends State<SrsDefsScrollWindow>
   void didUpdateWidget(SrsDefsScrollWindow oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.controller, widget.controller)) {
-      oldWidget.controller.removeListener(_reposition);
-      widget.controller.addListener(_reposition);
+      listenTo(widget.controller, _reposition, slot: #controller);
     }
     final bool wasWindowed = oldWidget.contentHeight > oldWidget.maxFrameHeight;
     if (wasWindowed && !_windowed) {
@@ -116,7 +114,7 @@ class _SrsDefsScrollWindowState extends State<SrsDefsScrollWindow>
 
   /// 布局完成后再量自己在外层滚动里的位置。
   void _schedule() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       if (mounted) _reposition();
     });
   }

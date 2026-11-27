@@ -2171,9 +2171,17 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
     final SourceReviewSession? session = SourceReviewScope.maybeOf(context);
     if (identical(session, _sourceReviewSession)) return;
-    _sourceReviewSession?.removeListener(_onSourceReviewChanged);
     _sourceReviewSession = session;
-    session?.addListener(_onSourceReviewChanged);
+    // 换了会话：同一槽位再登记先摘旧的；退场 / 成了孤儿时摘当下那个（BUG-5604）。
+    if (session != null) {
+      session.addListener(_onSourceReviewChanged);
+      onTeardown(
+        () => session.removeListener(_onSourceReviewChanged),
+        slot: #sourceReviewSession,
+      );
+    } else {
+      onTeardown(() {}, slot: #sourceReviewSession);
+    }
   }
 
   void _onSourceReviewChanged() {
@@ -2238,7 +2246,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     _controllerLookupRelease.release();
     _companion.dispose();
     _disposedDuringSourceReview = _sourceReviewActive;
-    _sourceReviewSession?.removeListener(_onSourceReviewChanged);
     if (_ownsWindowFullscreen) {
       _ownsWindowFullscreen = false;
       unawaited(_restoreOwnedFullscreenAfterDispose());

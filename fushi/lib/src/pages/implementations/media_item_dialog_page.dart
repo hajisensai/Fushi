@@ -1,3 +1,4 @@
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'dart:async';
 import 'dart:math' as math;
@@ -2164,7 +2165,8 @@ class _CoverAspectResolver extends StatefulWidget {
   State<_CoverAspectResolver> createState() => _CoverAspectResolverState();
 }
 
-class _CoverAspectResolverState extends State<_CoverAspectResolver> {
+class _CoverAspectResolverState extends State<_CoverAspectResolver>
+    with StateResourceScope<_CoverAspectResolver> {
   ImageStream? _stream;
   late final ImageStreamListener _listener = ImageStreamListener(
     _onImage,
@@ -2190,7 +2192,8 @@ class _CoverAspectResolverState extends State<_CoverAspectResolver> {
   void _resolve() {
     final ImageProvider? image = widget.image;
     if (image == null) {
-      _stream?.removeListener(_listener);
+      // 空撤销顶掉旧槽位（旧流的监听随之摘掉）。
+      onTeardown(() {}, slot: #stream);
       _stream = null;
       return;
     }
@@ -2198,8 +2201,9 @@ class _CoverAspectResolverState extends State<_CoverAspectResolver> {
       createLocalImageConfiguration(context),
     );
     if (stream.key == _stream?.key) return;
-    _stream?.removeListener(_listener);
-    _stream = stream..addListener(_listener);
+    _stream = stream;
+    stream.addListener(_listener);
+    onTeardown(() => stream.removeListener(_listener), slot: #stream);
   }
 
   void _onImage(ImageInfo info, bool synchronousCall) {
@@ -2214,12 +2218,6 @@ class _CoverAspectResolverState extends State<_CoverAspectResolver> {
     } else if (mounted) {
       setState(() => _aspect = aspect);
     }
-  }
-
-  @override
-  void dispose() {
-    _stream?.removeListener(_listener);
-    super.dispose();
   }
 
   @override

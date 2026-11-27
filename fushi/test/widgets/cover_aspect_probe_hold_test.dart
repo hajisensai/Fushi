@@ -7,6 +7,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/video/cover_ui/cover_aspect_probe.dart';
 import 'package:fushi/src/utils/cover_provider_epoch.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 反馈 hmsIkQ9zIv：详情页背景带轮播换图时，[CoverAspectProbe] 在
 /// `didUpdateWidget` 里把比例清空，背景带退回兜底高度、下方内容被抬上来，新图
@@ -77,7 +78,8 @@ class _Probe extends StatefulWidget {
   State<_Probe> createState() => _ProbeState();
 }
 
-class _ProbeState extends State<_Probe> with CoverAspectProbe<_Probe> {
+class _ProbeState extends State<_Probe>
+    with StateResourceScope<_Probe>, CoverAspectProbe<_Probe> {
   @override
   ImageProvider probedImageOf(_Probe widget) => widget.image;
 

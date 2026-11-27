@@ -107,8 +107,7 @@ class _SceneTickerState extends State<_SceneTicker>
   @override
   void initState() {
     super.initState();
-    widget.ticks.addListener(_onTick);
-    onTeardown(() => widget.ticks.removeListener(_onTick));
+    listenTo(widget.ticks, _onTick, slot: #ticks);
     _onTick();
   }
 
@@ -116,8 +115,7 @@ class _SceneTickerState extends State<_SceneTicker>
   void didUpdateWidget(covariant _SceneTicker oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.ticks != widget.ticks) {
-      oldWidget.ticks.removeListener(_onTick);
-      widget.ticks.addListener(_onTick);
+      listenTo(widget.ticks, _onTick, slot: #ticks);
     }
   }
 

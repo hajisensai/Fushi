@@ -572,10 +572,10 @@ class LyricsAspectThumb extends StatefulWidget {
   State<LyricsAspectThumb> createState() => _LyricsAspectThumbState();
 }
 
-class _LyricsAspectThumbState extends State<LyricsAspectThumb> {
+class _LyricsAspectThumbState extends State<LyricsAspectThumb>
+    with StateResourceScope<LyricsAspectThumb> {
   double _aspect = 0.72;
   ImageStream? _stream;
-  ImageStreamListener? _listener;
 
   @override
   void didChangeDependencies() {
@@ -615,15 +615,15 @@ class _LyricsAspectThumbState extends State<LyricsAspectThumb> {
       final double aspect = w / h;
       if ((aspect - _aspect).abs() > 0.001) setState(() => _aspect = aspect);
     }, onError: (Object error, StackTrace? stack) {});
-    _stream = next..addListener(listener);
-    _listener = listener;
+    next.addListener(listener);
+    onTeardown(() => next.removeListener(listener), slot: #stream);
+    _stream = next;
   }
 
   void _detach() {
-    final ImageStreamListener? listener = _listener;
-    if (listener != null) _stream?.removeListener(listener);
+    // 只经槽位摘：清单收尾还会再摘，流已销毁时重复 removeListener 会抛。
+    releaseSlot(#stream);
     _stream = null;
-    _listener = null;
   }
 
   @override

@@ -1,3 +1,4 @@
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
@@ -312,7 +313,9 @@ class ReaderFloatingBall extends StatefulWidget {
 }
 
 class _ReaderFloatingBallState extends State<ReaderFloatingBall>
-    with SingleTickerProviderStateMixin {
+    with
+        SingleTickerProviderStateMixin,
+        StateResourceScope<ReaderFloatingBall> {
   // 与原生系统球同一组时长（Android FloatingBallService / Windows / macOS
   // 的 EXPAND / COLLAPSE / SNAP）；曲线是 M3E spatial 弹簧。
   static const Duration _expandDuration = Duration(milliseconds: 280);
@@ -343,6 +346,9 @@ class _ReaderFloatingBallState extends State<ReaderFloatingBall>
     // 球的子树，挂在子树上的快捷键收不到（HBK027）。展开期间在这里先截住、收起
     // 并吞掉，免得正文再把同一下 Esc 当成「退出」。
     FocusManager.instance.addEarlyKeyEventHandler(_onEarlyKey);
+    onTeardown(
+      () => FocusManager.instance.removeEarlyKeyEventHandler(_onEarlyKey),
+    );
   }
 
   @override
@@ -406,7 +412,6 @@ class _ReaderFloatingBallState extends State<ReaderFloatingBall>
 
   @override
   void dispose() {
-    FocusManager.instance.removeEarlyKeyEventHandler(_onEarlyKey);
     _expand.dispose();
     for (final FocusNode node in _itemFocus) {
       node.dispose();

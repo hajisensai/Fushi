@@ -31,16 +31,14 @@ class _VideoOnlineServicesBannerState extends State<VideoOnlineServicesBanner>
   @override
   void initState() {
     super.initState();
-    widget.preferences.addListener(_preferencesChanged);
-    onTeardown(() => widget.preferences.removeListener(_preferencesChanged));
+    listenTo(widget.preferences, _preferencesChanged, slot: #preferences);
   }
 
   @override
   void didUpdateWidget(covariant VideoOnlineServicesBanner oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.preferences != widget.preferences) {
-      oldWidget.preferences.removeListener(_preferencesChanged);
-      widget.preferences.addListener(_preferencesChanged);
+      listenTo(widget.preferences, _preferencesChanged, slot: #preferences);
     }
   }
 

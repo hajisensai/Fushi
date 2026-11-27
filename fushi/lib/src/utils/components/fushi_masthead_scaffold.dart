@@ -699,16 +699,23 @@ class _FushiMastheadFrameState extends State<FushiMastheadFrame>
       _primary = primary;
       PageScrollRegistry.push(primary);
     }
-    widget.titleRevealOffset?.addListener(_syncReveal);
-    onTeardown(() => widget.titleRevealOffset?.removeListener(_syncReveal));
+    _listenReveal();
+  }
+
+  void _listenReveal() {
+    final ValueListenable<double>? offset = widget.titleRevealOffset;
+    if (offset != null) {
+      listenTo(offset, _syncReveal, slot: #reveal);
+    } else {
+      onTeardown(() {}, slot: #reveal);
+    }
   }
 
   @override
   void didUpdateWidget(FushiMastheadFrame oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.titleRevealOffset != widget.titleRevealOffset) {
-      oldWidget.titleRevealOffset?.removeListener(_syncReveal);
-      widget.titleRevealOffset?.addListener(_syncReveal);
+      _listenReveal();
       _syncReveal();
     }
   }

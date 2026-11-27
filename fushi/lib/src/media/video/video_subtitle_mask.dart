@@ -86,16 +86,14 @@ class _VideoFrameSizeListenerState extends State<_VideoFrameSizeListener>
   void initState() {
     super.initState();
     _frame = _read();
-    widget.controller.addListener(_onChanged);
-    onTeardown(() => widget.controller.removeListener(_onChanged));
+    listenTo(widget.controller, _onChanged, slot: #controller);
   }
 
   @override
   void didUpdateWidget(_VideoFrameSizeListener oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.controller != widget.controller) {
-      oldWidget.controller.removeListener(_onChanged);
-      widget.controller.addListener(_onChanged);
+      listenTo(widget.controller, _onChanged, slot: #controller);
       _frame = _read();
     }
   }
@@ -163,13 +161,17 @@ class _VideoSubtitleMaskLayerState extends State<VideoSubtitleMaskLayer>
   @override
   void initState() {
     super.initState();
-    widget.smartDetectorIdentity?.addListener(_onDetectorIdentityChanged);
-    onTeardown(
-      () => widget.smartDetectorIdentity?.removeListener(
-        _onDetectorIdentityChanged,
-      ),
-    );
+    _listenDetectorIdentity(widget.smartDetectorIdentity);
     _syncSampler();
+  }
+
+  /// 挂 / 换识别器身份监听；没有时用空撤销顶掉旧槽位。
+  void _listenDetectorIdentity(ValueListenable<Object?>? identity) {
+    if (identity != null) {
+      listenTo(identity, _onDetectorIdentityChanged, slot: #identity);
+    } else {
+      onTeardown(() {}, slot: #identity);
+    }
   }
 
   @override
@@ -179,8 +181,7 @@ class _VideoSubtitleMaskLayerState extends State<VideoSubtitleMaskLayer>
         oldWidget.smartDetectorIdentity;
     final ValueListenable<Object?>? identity = widget.smartDetectorIdentity;
     if (!identical(oldIdentity, identity)) {
-      oldIdentity?.removeListener(_onDetectorIdentityChanged);
-      identity?.addListener(_onDetectorIdentityChanged);
+      _listenDetectorIdentity(identity);
     }
     if (!identical(oldWidget.controller, widget.controller) ||
         oldIdentity?.value != identity?.value) {
@@ -399,16 +400,14 @@ class _VideoSubtitleMaskEditLayerState extends State<VideoSubtitleMaskEditLayer>
   @override
   void initState() {
     super.initState();
-    widget.draftRect.addListener(_onDraft);
-    onTeardown(() => widget.draftRect.removeListener(_onDraft));
+    listenTo(widget.draftRect, _onDraft, slot: #draftRect);
   }
 
   @override
   void didUpdateWidget(VideoSubtitleMaskEditLayer oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.draftRect != widget.draftRect) {
-      oldWidget.draftRect.removeListener(_onDraft);
-      widget.draftRect.addListener(_onDraft);
+      listenTo(widget.draftRect, _onDraft, slot: #draftRect);
     }
   }
 

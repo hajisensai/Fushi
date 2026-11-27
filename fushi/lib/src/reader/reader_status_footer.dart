@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:intl/intl.dart' show NumberFormat;
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_audio/fushi_audio.dart' show StudySessionTotals;
 
@@ -622,7 +623,8 @@ class ReaderStatusFooter extends StatefulWidget {
 /// 只在所在子树看得见（[TickerMode] 开）时跑：被歌词覆盖层或别的路由盖住时停
 /// （BUG-4126）。恢复时 TickerMode 翻转让 [didChangeDependencies] 重跑、随后照常
 /// build，build 直接读 `sessionTotals()`，当帧就是现值。
-mixin _TrackerTickRefresh<T extends StatefulWidget> on State<T> {
+mixin _TrackerTickRefresh<T extends StatefulWidget>
+    on State<T>, StateResourceScope<T> {
   Timer? _ticker;
   String? _lastSignature;
 
@@ -636,7 +638,10 @@ mixin _TrackerTickRefresh<T extends StatefulWidget> on State<T> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (TickerMode.valuesOf(context).enabled) {
-      _ticker ??= Timer.periodic(trackerTick, (_) => _onTrackerTick());
+      _ticker ??= ownTimer(
+        Timer.periodic(trackerTick, (_) => _onTrackerTick()),
+        slot: #trackerTicker,
+      );
     } else {
       _ticker?.cancel();
       _ticker = null;
@@ -662,7 +667,9 @@ mixin _TrackerTickRefresh<T extends StatefulWidget> on State<T> {
 }
 
 class _ReaderStatusFooterState extends State<ReaderStatusFooter>
-    with _TrackerTickRefresh<ReaderStatusFooter> {
+    with
+        StateResourceScope<ReaderStatusFooter>,
+        _TrackerTickRefresh<ReaderStatusFooter> {
   @override
   Duration get trackerTick => widget.tick;
 
@@ -1057,7 +1064,9 @@ class ReaderStatusInline extends StatefulWidget {
 }
 
 class _ReaderStatusInlineState extends State<ReaderStatusInline>
-    with _TrackerTickRefresh<ReaderStatusInline> {
+    with
+        StateResourceScope<ReaderStatusInline>,
+        _TrackerTickRefresh<ReaderStatusInline> {
   @override
   Duration get trackerTick => widget.tick;
 

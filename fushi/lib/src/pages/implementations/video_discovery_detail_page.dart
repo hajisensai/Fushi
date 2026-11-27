@@ -1,3 +1,4 @@
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'dart:async';
 
 import 'package:fushi/src/media/detail/media_detail_kit.dart';
@@ -245,7 +246,8 @@ class VideoDiscoveryDetailPage extends StatefulWidget {
       _VideoDiscoveryDetailPageState();
 }
 
-class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
+class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage>
+    with StateResourceScope<VideoDiscoveryDetailPage> {
   late Future<VideoDiscoveryDetailData> _detailsFuture;
   Stream<VideoDiscoveryAcquisitionState>? _statusStream;
   StreamSubscription<void>? _detailsUpdates;
@@ -299,12 +301,18 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
   /// 保留上一份数据，页面不会闪回空态。
   void _listenDetailsUpdates() {
     unawaited(_detailsUpdates?.cancel());
-    _detailsUpdates = widget.actions.detailsUpdates?.listen((_) {
-      if (!mounted) return;
-      setState(() {
-        _detailsFuture = _loadDetails();
-      });
-    });
+    final Stream<void>? updates = widget.actions.detailsUpdates;
+    _detailsUpdates = updates == null
+        ? null
+        : ownSubscription(
+            updates.listen((_) {
+              if (!mounted) return;
+              setState(() {
+                _detailsFuture = _loadDetails();
+              });
+            }),
+            slot: #detailsUpdates,
+          );
   }
 
   @override

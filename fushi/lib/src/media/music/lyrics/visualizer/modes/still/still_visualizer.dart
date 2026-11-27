@@ -134,16 +134,14 @@ class _StillLyricsState extends State<_StillLyrics>
   void initState() {
     super.initState();
     _index = _resolve();
-    widget.ticks.addListener(_onTick);
-    onTeardown(() => widget.ticks.removeListener(_onTick));
+    listenTo(widget.ticks, _onTick, slot: #ticks);
   }
 
   @override
   void didUpdateWidget(covariant _StillLyrics oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.ticks, widget.ticks)) {
-      oldWidget.ticks.removeListener(_onTick);
-      widget.ticks.addListener(_onTick);
+      listenTo(widget.ticks, _onTick, slot: #ticks);
     }
     _index = _resolve();
   }

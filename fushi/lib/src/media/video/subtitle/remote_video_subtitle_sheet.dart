@@ -8,6 +8,7 @@ library;
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_language.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart'
     show VideoSubtitleEpisodeResult, VideoSubtitleEpisodeStatus;
@@ -135,7 +136,8 @@ class RemoteVideoSubtitleSheet extends StatefulWidget {
       _RemoteVideoSubtitleSheetState();
 }
 
-class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
+class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet>
+    with StateResourceScope<RemoteVideoSubtitleSheet> {
   late bool _proofread = widget.prefs.proofread;
   late bool _frames = widget.prefs.frames;
   late VideoSubtitleSegmenterMode _segmenter = widget.prefs.segmenter;
@@ -180,15 +182,13 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
     unawaited(_probe());
   }
 
-  @override
-  void dispose() {
-    _job?.removeListener(_onJob);
-    super.dispose();
-  }
-
   void _attach(RemoteVideoSubtitleJob? job) {
-    _job?.removeListener(_onJob);
-    _job = job?..addListener(_onJob);
+    _job = job;
+    if (job != null) {
+      listenTo(job, _onJob, slot: #job);
+    } else {
+      onTeardown(() {}, slot: #job);
+    }
   }
 
   /// host 声明认的语言（capability 的 `languages`）；空 = 老 host，只出日语。

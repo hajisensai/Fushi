@@ -38,6 +38,7 @@ import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
@@ -385,6 +386,7 @@ Size srsCardVideoClipSize({
 }
 
 class _SrsCardVideoClipState extends ConsumerState<SrsCardVideoClip>
+    with StateResourceScope<SrsCardVideoClip>
     implements SrsCardVideoHandle, SrsCardSentenceCompanion {
   late final SrsCardVideoChannel _channel;
 
@@ -493,27 +495,39 @@ class _SrsCardVideoClipState extends ConsumerState<SrsCardVideoClip>
     _player = player;
     _subs
       ..add(
-        player.playingStream.listen((bool playing) {
-          if (mounted && playing != _playing) {
-            setState(() => _playing = playing);
-          }
-        }),
+        ownSubscription(
+          player.playingStream.listen((bool playing) {
+            if (mounted && playing != _playing) {
+              setState(() => _playing = playing);
+            }
+          }),
+          slot: #playing,
+        ),
       )
       ..add(
-        player.completedStream.listen((bool completed) {
-          if (completed && _runArmed) _finishRun(true);
-        }),
+        ownSubscription(
+          player.completedStream.listen((bool completed) {
+            if (completed && _runArmed) _finishRun(true);
+          }),
+          slot: #completed,
+        ),
       )
       ..add(
-        player.videoSizeStream.listen((Size size) {
-          if (mounted && size != _videoSize) {
-            setState(() => _videoSize = size);
-          }
-        }),
+        ownSubscription(
+          player.videoSizeStream.listen((Size size) {
+            if (mounted && size != _videoSize) {
+              setState(() => _videoSize = size);
+            }
+          }),
+          slot: #videoSize,
+        ),
       )
       ..add(
-        player.loadFailedStream.listen(
-          (String reason) => _onLoadFailed(name, reason),
+        ownSubscription(
+          player.loadFailedStream.listen(
+            (String reason) => _onLoadFailed(name, reason),
+          ),
+          slot: #loadFailed,
         ),
       );
     setState(() => _available = true);

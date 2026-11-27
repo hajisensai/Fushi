@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart' show FushiRubySpan;
 import 'package:fushi/src/models/app_model.dart';
@@ -157,7 +158,7 @@ class FloatingLyricLookupHost extends ConsumerStatefulWidget {
 
 class _FloatingLyricLookupHostState
     extends ConsumerState<FloatingLyricLookupHost>
-    with DictionaryPageMixin {
+    with DictionaryPageMixin, StateResourceScope<FloatingLyricLookupHost> {
   final DictionaryPopupController _popup = DictionaryPopupController(
     lowMemory: false,
     onLookupStackDepthChanged: recordLookupStackDepth,
@@ -219,14 +220,13 @@ class _FloatingLyricLookupHostState
   @override
   void initState() {
     super.initState();
-    _notifier.addListener(_onLookupRequested);
+    listenTo(_notifier, _onLookupRequested);
     // TODO-1204：接线查词计数（每次查词 +1 → lookup_mining_counters）。
     attachLookupCounter(_popup);
   }
 
   @override
   void dispose() {
-    _notifier.removeListener(_onLookupRequested);
     _popup.dispose();
     super.dispose();
   }

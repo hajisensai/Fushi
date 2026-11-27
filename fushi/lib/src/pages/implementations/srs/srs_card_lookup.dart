@@ -51,6 +51,7 @@ import 'package:fushi/src/srs/srs_review_gestures.dart';
 import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 卡面取词的交互设置（与阅读器同源）。
 typedef SrsCardLookupSettings = ({bool tap, bool hoverAuto});
@@ -326,7 +327,7 @@ class SrsCardLookupHost extends ConsumerStatefulWidget {
 }
 
 class _SrsCardLookupHostState extends ConsumerState<SrsCardLookupHost>
-    with DictionaryPageMixin {
+    with DictionaryPageMixin, StateResourceScope<SrsCardLookupHost> {
   late final AppModel _appModel = ref.read(appProvider);
   late final DictionaryPopupController _popup = DictionaryPopupController(
     lowMemory: false,
@@ -413,20 +414,30 @@ class _SrsCardLookupHostState extends ConsumerState<SrsCardLookupHost>
   @override
   void initState() {
     super.initState();
-    widget.controller._host = this;
+    _attachHost(widget.controller);
     attachLookupCounter(_popup);
     _popup.bodyStaticLayer.resolveBody = () =>
         widget.controller._originBodyWebViewId();
+    onTeardown(
+      () => _popup.bodyStaticLayer.resolveBody = null,
+      slot: #resolveBody,
+    );
+  }
+
+  /// 把本 State 装成 [controller] 的宿主；退场 / 换 controller 时只在它还指着本
+  /// State 时摘掉（槽位重登记会先撤上一条）。
+  void _attachHost(SrsCardLookupController controller) {
+    controller._host = this;
+    onTeardown(() {
+      if (identical(controller._host, this)) controller._host = null;
+    }, slot: #host);
   }
 
   @override
   void didUpdateWidget(SrsCardLookupHost oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.controller, widget.controller)) {
-      if (identical(oldWidget.controller._host, this)) {
-        oldWidget.controller._host = null;
-      }
-      widget.controller._host = this;
+      _attachHost(widget.controller);
     }
   }
 
@@ -444,7 +455,7 @@ class _SrsCardLookupHostState extends ConsumerState<SrsCardLookupHost>
     if (current != _routeCurrent) {
       _routeCurrent = current;
       if (!current && _stackOpen && !lookupPopupHiddenByDialog) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
+        schedulePostFrame((_) {
           if (mounted && !lookupPopupHiddenByDialog) _closeAll();
         });
       }
@@ -454,9 +465,6 @@ class _SrsCardLookupHostState extends ConsumerState<SrsCardLookupHost>
 
   @override
   void dispose() {
-    if (identical(widget.controller._host, this)) {
-      widget.controller._host = null;
-    }
     final OverlayEntry? entry = _overlayEntry;
     if (entry != null) {
       if (entry.mounted) entry.remove();
@@ -566,7 +574,7 @@ class _SrsCardLookupHostState extends ConsumerState<SrsCardLookupHost>
   void _scheduleOverlayRebuild() {
     if (_overlayRebuildScheduled) return;
     _overlayRebuildScheduled = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       _overlayRebuildScheduled = false;
       _syncOverlay();
     });

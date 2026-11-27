@@ -1,9 +1,9 @@
-import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:media_kit/media_kit.dart';
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/media/video/video_m3e_chrome.dart'
     show videoM3eFormatTime;
 
@@ -168,11 +168,10 @@ class VideoAppleTimeLabel extends StatefulWidget {
   State<VideoAppleTimeLabel> createState() => _VideoAppleTimeLabelState();
 }
 
-class _VideoAppleTimeLabelState extends State<VideoAppleTimeLabel> {
+class _VideoAppleTimeLabelState extends State<VideoAppleTimeLabel>
+    with StateResourceScope<VideoAppleTimeLabel> {
   late Duration _position = _floor(widget.player.state.position);
   late Duration _duration = widget.player.state.duration;
-  final List<StreamSubscription<Duration>> _subs =
-      <StreamSubscription<Duration>>[];
 
   static Duration _floor(Duration d) => Duration(seconds: d.inSeconds);
 
@@ -183,42 +182,29 @@ class _VideoAppleTimeLabelState extends State<VideoAppleTimeLabel> {
   }
 
   void _listen() {
-    _subs
-      ..add(
-        widget.player.stream.position.listen((Duration p) {
-          final Duration next = _floor(p);
-          if (next != _position && mounted) setState(() => _position = next);
-        }),
-      )
-      ..add(
-        widget.player.stream.duration.listen((Duration d) {
-          if (d != _duration && mounted) setState(() => _duration = d);
-        }),
-      );
-  }
-
-  void _cancel() {
-    for (final StreamSubscription<Duration> s in _subs) {
-      unawaited(s.cancel());
-    }
-    _subs.clear();
+    ownSubscription(
+      widget.player.stream.position.listen((Duration p) {
+        final Duration next = _floor(p);
+        if (next != _position && mounted) setState(() => _position = next);
+      }),
+      slot: #position,
+    );
+    ownSubscription(
+      widget.player.stream.duration.listen((Duration d) {
+        if (d != _duration && mounted) setState(() => _duration = d);
+      }),
+      slot: #duration,
+    );
   }
 
   @override
   void didUpdateWidget(VideoAppleTimeLabel oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.player, widget.player)) {
-      _cancel();
       _position = _floor(widget.player.state.position);
       _duration = widget.player.state.duration;
       _listen();
     }
-  }
-
-  @override
-  void dispose() {
-    _cancel();
-    super.dispose();
   }
 
   @override

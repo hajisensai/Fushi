@@ -7,6 +7,7 @@ import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/sync/interconnect_host_channel.dart';
 import 'package:fushi/src/sync/interconnect_subscription_client.dart';
@@ -29,7 +30,8 @@ class RemoteSubscriptionsSection extends ConsumerStatefulWidget {
 }
 
 class _RemoteSubscriptionsSectionState
-    extends ConsumerState<RemoteSubscriptionsSection> {
+    extends ConsumerState<RemoteSubscriptionsSection>
+    with StateResourceScope<RemoteSubscriptionsSection> {
   InterconnectSubscriptionClient? _client;
   List<HostSubscriptionTarget> _targets = const <HostSubscriptionTarget>[];
   final Map<String, List<HostSubscription>> _byHost =
@@ -67,9 +69,9 @@ class _RemoteSubscriptionsSectionState
     setState(() => _targets = targets);
     if (targets.isEmpty) return;
     await _refresh();
-    _poll ??= Timer.periodic(
-      const Duration(seconds: 15),
-      (_) => unawaited(_refresh()),
+    _poll ??= ownTimer(
+      Timer.periodic(const Duration(seconds: 15), (_) => unawaited(_refresh())),
+      slot: #poll,
     );
   }
 

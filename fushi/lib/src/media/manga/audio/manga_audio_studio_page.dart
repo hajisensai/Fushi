@@ -23,6 +23,7 @@ import 'package:fushi_engine/tts/cast/series_cast.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/ai/ai_manga_audio_assistant.dart'
     show findMangaNameReadings;
@@ -120,7 +121,8 @@ class MangaAudioStudioPage extends StatefulWidget {
   State<MangaAudioStudioPage> createState() => _MangaAudioStudioPageState();
 }
 
-class _MangaAudioStudioPageState extends State<MangaAudioStudioPage> {
+class _MangaAudioStudioPageState extends State<MangaAudioStudioPage>
+    with StateResourceScope<MangaAudioStudioPage> {
   late final TtsServices _tts = TtsServices.of(widget.appModel.prefsRepo);
   late final TtsRenderQueue _queue = ttsRenderQueueFor(widget.appModel);
 
@@ -162,12 +164,12 @@ class _MangaAudioStudioPageState extends State<MangaAudioStudioPage> {
         );
     _lastStatus = _queue.latestFor(widget.bookKey)?.status;
     _queue.addListener(_onQueue);
+    onTeardown(() => _queue.removeListener(_onQueue));
     unawaited(_reload());
   }
 
   @override
   void dispose() {
-    _queue.removeListener(_onQueue);
     unawaited(_player?.dispose());
     super.dispose();
   }

@@ -411,9 +411,12 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
               'controller_lease_lost',
             }.contains(failure.message))) {
       _retry?.cancel();
-      _retry = Timer(
-        Duration(seconds: 2 << (_retryAttempt++).clamp(0, 2)),
-        () => unawaited(_start()),
+      _retry = ownTimer(
+        Timer(
+          Duration(seconds: 2 << (_retryAttempt++).clamp(0, 2)),
+          () => unawaited(_start()),
+        ),
+        slot: #retry,
       );
     }
   }

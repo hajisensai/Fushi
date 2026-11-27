@@ -1,4 +1,5 @@
 // 歌词页外壳的背景（与有声书无关，从 `media/audiobook/lyrics_player/` 抽出）。
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'dart:ui' show ImageFilter;
@@ -50,8 +51,8 @@ class LyricsShellAppleBackground extends StatefulWidget {
 /// 模糊快照的缓存键：封面帧序号 × 画布逻辑尺寸 × DPR。
 typedef _BlurKey = ({int coverRevision, Size size, double devicePixelRatio});
 
-class _LyricsShellAppleBackgroundState
-    extends State<LyricsShellAppleBackground> {
+class _LyricsShellAppleBackgroundState extends State<LyricsShellAppleBackground>
+    with StateResourceScope<LyricsShellAppleBackground> {
   ImageStream? _stream;
   late final ImageStreamListener _listener = ImageStreamListener(
     _onCoverFrame,
@@ -81,7 +82,7 @@ class _LyricsShellAppleBackgroundState
 
   @override
   void dispose() {
-    _stream?.removeListener(_listener);
+    releaseSlot(#cover);
     _stream = null;
     _coverFrame?.dispose();
     _coverFrame = null;
@@ -92,7 +93,7 @@ class _LyricsShellAppleBackgroundState
   void _resolveCover() {
     final ImageProvider? cover = widget.cover;
     if (cover == null) {
-      _stream?.removeListener(_listener);
+      releaseSlot(#cover);
       _stream = null;
       _coverFrame?.dispose();
       _coverFrame = null;
@@ -106,9 +107,11 @@ class _LyricsShellAppleBackgroundState
       cover,
     ).resolve(createLocalImageConfiguration(context));
     if (_stream?.key == stream.key) return;
-    _stream?.removeListener(_listener);
+    releaseSlot(#cover);
     _stream = stream;
+    // 摘旧流只经上面的槽位（BUG-5604）。
     stream.addListener(_listener);
+    onTeardown(() => stream.removeListener(_listener), slot: #cover);
   }
 
   void _onCoverFrame(ImageInfo info, bool synchronousCall) {

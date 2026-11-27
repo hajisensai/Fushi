@@ -1,3 +1,4 @@
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -187,7 +188,8 @@ class MangaOcrSettingsSection extends ConsumerStatefulWidget {
 }
 
 class _MangaOcrSettingsSectionState
-    extends ConsumerState<MangaOcrSettingsSection> {
+    extends ConsumerState<MangaOcrSettingsSection>
+    with StateResourceScope<MangaOcrSettingsSection> {
   late final TextEditingController _pathCtrl;
   late MangaOcrEnginePreference _enginePreference;
   late int _parallelTasks;
@@ -279,7 +281,7 @@ class _MangaOcrSettingsSectionState
     _ignoreFurigana = widget.ignoreFuriganaGetter?.call() ?? false;
     _downloads = ref.read(mangaOcrModelDownloadsProvider);
     _wasDownloading = _downloading;
-    _downloads.addListener(_onDownloadsChanged);
+    listenTo(_downloads, _onDownloadsChanged);
     // BUG-1780：这个位现在就是「本机能不能跑本地 ONNX 推理」（ORT native 可用性），
     // 不再是一份独立的平台白名单。它为真的每一端都要加载模型状态——整卷 / 点击 /
     // 框选区域重识别走的都是同一个本地 ONNX 引擎，闸门本来就是 ORT 可用性。
@@ -323,8 +325,7 @@ class _MangaOcrSettingsSectionState
 
   @override
   void dispose() {
-    // 只摘监听、不取消下载：下载在后台继续（完成提示由登记表弹）。
-    _downloads.removeListener(_onDownloadsChanged);
+    // 只摘监听（listenTo 登记）、不取消下载：下载在后台继续（完成提示由登记表弹）。
     _pathCtrl.dispose();
     super.dispose();
   }

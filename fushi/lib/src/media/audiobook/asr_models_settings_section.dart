@@ -1,3 +1,4 @@
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'dart:async';
 
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
@@ -121,7 +122,8 @@ List<AsrModelPack> listedAsrModelPacks() {
   return out;
 }
 
-class _AsrModelsSettingsSectionState extends State<AsrModelsSettingsSection> {
+class _AsrModelsSettingsSectionState extends State<AsrModelsSettingsSection>
+    with StateResourceScope<AsrModelsSettingsSection> {
   late final AsrModelDownloads _downloads =
       widget.downloads ?? asrModelDownloads;
 
@@ -141,7 +143,7 @@ class _AsrModelsSettingsSectionState extends State<AsrModelsSettingsSection> {
   void initState() {
     super.initState();
     _activeIds = _currentActiveIds();
-    _downloads.addListener(_onDownloadsChanged);
+    listenTo(_downloads, _onDownloadsChanged);
     for (final _PackRow row in _rows) {
       unawaited(_refresh(row));
     }
@@ -166,8 +168,7 @@ class _AsrModelsSettingsSectionState extends State<AsrModelsSettingsSection> {
 
   @override
   void dispose() {
-    // 下载归全局登记表所有：离开页面照跑，不取消。
-    _downloads.removeListener(_onDownloadsChanged);
+    // 下载归全局登记表所有：离开页面照跑，不取消（只摘监听，由 listenTo 登记）。
     super.dispose();
   }
 

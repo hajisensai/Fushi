@@ -643,6 +643,11 @@ class _FushiToastViewState extends State<_FushiToastView>
     // 墨水屏 / 减弱动态效果：不做进退场（连续重绘 = 残影），直接落到终态。
     if (!fushiMotionEnabled(context)) _controller.value = 1;
     final _FushiToastHandle? handle = _FushiToastExitScope.maybeOf(context);
+    // 先登记撤销（只清仍是自己的那份），再赋值；换 handle / 退场时按槽位撤。
+    onTeardown(() {
+      if (handle?.dismiss == dismiss) handle?.dismiss = null;
+      if (handle?.reshow == _reshow) handle?.reshow = null;
+    }, slot: #toastHandle);
     handle?.dismiss = dismiss;
     handle?.reshow = _reshow;
   }

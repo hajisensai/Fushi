@@ -311,7 +311,7 @@ class _Artwork extends StatefulWidget {
   State<_Artwork> createState() => _ArtworkState();
 }
 
-class _ArtworkState extends State<_Artwork> {
+class _ArtworkState extends State<_Artwork> with StateResourceScope<_Artwork> {
   ImageStream? _stream;
   late final ImageStreamListener _listener = ImageStreamListener(
     _onImage,
@@ -339,7 +339,7 @@ class _ArtworkState extends State<_Artwork> {
   void _resolve() {
     final ImageProvider? cover = widget.cover;
     if (cover == null) {
-      _stream?.removeListener(_listener);
+      releaseSlot(#stream);
       _stream = null;
       return;
     }
@@ -347,8 +347,9 @@ class _ArtworkState extends State<_Artwork> {
       createLocalImageConfiguration(context),
     );
     if (stream.key == _stream?.key) return;
-    _stream?.removeListener(_listener);
+    releaseSlot(#stream);
     _stream = stream..addListener(_listener);
+    onTeardown(() => stream.removeListener(_listener), slot: #stream);
   }
 
   void _onImage(ImageInfo info, bool synchronousCall) {
@@ -360,7 +361,7 @@ class _ArtworkState extends State<_Artwork> {
 
   @override
   void dispose() {
-    _stream?.removeListener(_listener);
+    releaseSlot(#stream);
     super.dispose();
   }
 

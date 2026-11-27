@@ -322,12 +322,19 @@ class _MediaCollectionGridDetailPageState
     super.initState();
     _name = widget.collection.name;
     _scroll.addListener(_onScroll);
-    widget.memberInfoRefresh?.addListener(_onMemberInfoChanged);
-    onTeardown(
-      () => widget.memberInfoRefresh?.removeListener(_onMemberInfoChanged),
-    );
-    _artChanges = widget.artScrape?.changes;
-    _artChanges?.addListener(_onArtStoreChanged);
+    final Listenable? memberInfoRefresh = widget.memberInfoRefresh;
+    if (memberInfoRefresh != null) {
+      listenTo(memberInfoRefresh, _onMemberInfoChanged, slot: #memberInfo);
+    } else {
+      onTeardown(() {}, slot: #memberInfo);
+    }
+    final Listenable? artChanges = widget.artScrape?.changes;
+    _artChanges = artChanges;
+    if (artChanges != null) {
+      listenTo(artChanges, _onArtStoreChanged, slot: #artChanges);
+    } else {
+      onTeardown(() {}, slot: #artChanges);
+    }
     _reload();
   }
 
@@ -355,21 +362,27 @@ class _MediaCollectionGridDetailPageState
   void didUpdateWidget(covariant MediaCollectionGridDetailPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.memberInfoRefresh != widget.memberInfoRefresh) {
-      oldWidget.memberInfoRefresh?.removeListener(_onMemberInfoChanged);
-      widget.memberInfoRefresh?.addListener(_onMemberInfoChanged);
+      final Listenable? memberInfoRefresh = widget.memberInfoRefresh;
+      if (memberInfoRefresh != null) {
+        listenTo(memberInfoRefresh, _onMemberInfoChanged, slot: #memberInfo);
+      } else {
+        onTeardown(() {}, slot: #memberInfo);
+      }
     }
     final Listenable? changes = widget.artScrape?.changes;
     if (!identical(changes, _artChanges)) {
-      _artChanges?.removeListener(_onArtStoreChanged);
       _artChanges = changes;
-      _artChanges?.addListener(_onArtStoreChanged);
+      if (changes != null) {
+        listenTo(changes, _onArtStoreChanged, slot: #artChanges);
+      } else {
+        onTeardown(() {}, slot: #artChanges);
+      }
       unawaited(_refreshArtBanner());
     }
   }
 
   @override
   void dispose() {
-    _artChanges?.removeListener(_onArtStoreChanged);
     _scroll.removeListener(_onScroll);
     _scroll.dispose();
     _search.dispose();

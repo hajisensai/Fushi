@@ -64,8 +64,7 @@ class _WebBrowserHistoryPageState extends State<WebBrowserHistoryPage>
   @override
   void initState() {
     super.initState();
-    widget.store.addListener(_onStoreChanged);
-    onTeardown(() => widget.store.removeListener(_onStoreChanged));
+    listenTo(widget.store, _onStoreChanged, slot: #store);
     unawaited(_load(replay: true));
   }
 
@@ -73,8 +72,7 @@ class _WebBrowserHistoryPageState extends State<WebBrowserHistoryPage>
   void didUpdateWidget(WebBrowserHistoryPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.store, widget.store)) {
-      oldWidget.store.removeListener(_onStoreChanged);
-      widget.store.addListener(_onStoreChanged);
+      listenTo(widget.store, _onStoreChanged, slot: #store);
       unawaited(_load(replay: true));
     }
   }

@@ -152,7 +152,7 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay>
     );
     if (_accessibleNavigationWas != null &&
         accessibleNavigation != _accessibleNavigationWas) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _syncCursor());
+      schedulePostFrame((_) => _syncCursor());
     }
     _accessibleNavigationWas = accessibleNavigation;
     final LyricsThemeHostState? host = LyricsThemeHost.maybeOf(context);
@@ -181,7 +181,7 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay>
         oldWidget.data.controlsStyle != widget.data.controlsStyle) {
       // 播放态变化本身算一次活动：刚按下播放不该立刻藏光标。查词的临时暂停 / 恢复
       // 不改有效播放态，不算活动。
-      WidgetsBinding.instance.addPostFrameCallback((_) => _syncCursor());
+      schedulePostFrame((_) => _syncCursor());
     }
   }
 
@@ -267,7 +267,7 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay>
         lyricsPlayerIsWide(size);
     if (wide != _wide) {
       _wide = wide;
-      WidgetsBinding.instance.addPostFrameCallback((_) => _syncCursor());
+      schedulePostFrame((_) => _syncCursor());
     }
   }
 

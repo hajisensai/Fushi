@@ -354,12 +354,23 @@ class _SrsFieldEditorState extends ConsumerState<SrsFieldEditor>
     super.initState();
     _generation = _model.generation;
     _setup();
-    _model.addListener(_onModel);
-    onTeardown(() => _model.removeListener(_onModel));
+    listenTo(_model, _onModel, slot: #model);
     _richFocus.addListener(_onFocus);
-    for (final SrsFieldModel m in widget.speechSources) {
+    _listenSpeechSources();
+  }
+
+  /// 挂 / 换语音来源字段的监听：同槽位先撤上一批（撤销闭包捕获当时的列表）。
+  void _listenSpeechSources() {
+    final List<SrsFieldModel> sources = List<SrsFieldModel>.of(
+      widget.speechSources,
+    );
+    onTeardown(() {
+      for (final SrsFieldModel m in sources) {
+        m.removeListener(_onSpeechSource);
+      }
+    }, slot: #speechSources);
+    for (final SrsFieldModel m in sources) {
       m.addListener(_onSpeechSource);
-      onTeardown(() => m.removeListener(_onSpeechSource));
     }
   }
 
@@ -367,20 +378,13 @@ class _SrsFieldEditorState extends ConsumerState<SrsFieldEditor>
   void didUpdateWidget(SrsFieldEditor old) {
     super.didUpdateWidget(old);
     if (old.model != widget.model) {
-      old.model.removeListener(_onModel);
-      widget.model.addListener(_onModel);
+      listenTo(widget.model, _onModel, slot: #model);
       _generation = widget.model.generation;
       _source = false;
       _setup();
     }
     if (!listEquals(old.speechSources, widget.speechSources)) {
-      for (final SrsFieldModel m in old.speechSources) {
-        m.removeListener(_onSpeechSource);
-      }
-      for (final SrsFieldModel m in widget.speechSources) {
-        m.addListener(_onSpeechSource);
-        onTeardown(() => m.removeListener(_onSpeechSource));
-      }
+      _listenSpeechSources();
     }
   }
 
@@ -410,7 +414,9 @@ class _SrsFieldEditorState extends ConsumerState<SrsFieldEditor>
     if (old != null) {
       old.removeListener(_onRich);
       // 旧控制器还挂在本帧的 TextField 上：等它换下来再释放。
-      WidgetsBinding.instance.addPostFrameCallback((_) => old.dispose());
+      // 孤儿 / 提前 dispose 时帧后回调不会跑：撤销清单兜底释放，先到先得。
+      final ScopedRelease disposeOld = onTeardown(old.dispose);
+      schedulePostFrame((_) => disposeOld.release());
     }
   }
 

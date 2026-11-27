@@ -105,7 +105,7 @@ void main() {
       final int start = src.indexOf(anchor);
       expect(start, greaterThan(-1), reason: '锚点漂移，守卫失效');
       final String body = src.substring(start);
-      expect(body, contains('with WidgetsBindingObserver'));
+      expect(body, matches(RegExp(r'with\s+WidgetsBindingObserver')));
       expect(body, contains('Future<bool> didPushRouteInformation('));
       expect(body, contains('swallowEngineDeepLinkRoute(routeInformation)'));
       // 注册顺序是这层不变式的前提：observer 必须在 initState 里、build 之前挂上。

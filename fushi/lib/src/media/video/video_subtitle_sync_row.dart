@@ -118,12 +118,17 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow>
   @override
   void initState() {
     super.initState();
-    widget.host.subtitlePositionListenable?.addListener(_syncDelayFromHost);
-    onTeardown(
-      () => widget.host.subtitlePositionListenable?.removeListener(
-        _syncDelayFromHost,
-      ),
-    );
+    _bindHostPosition();
+  }
+
+  /// 宿主字幕位置通知：槽位化，换宿主时重挂；没有通知器时空撤销顶掉旧槽位。
+  void _bindHostPosition() {
+    final Listenable? listenable = widget.host.subtitlePositionListenable;
+    if (listenable == null) {
+      onTeardown(() {}, slot: #hostPosition);
+      return;
+    }
+    listenTo(listenable, _syncDelayFromHost, slot: #hostPosition);
   }
 
   @override
@@ -131,10 +136,7 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow>
     super.didUpdateWidget(oldWidget);
     final Listenable? previous = oldWidget.host.subtitlePositionListenable;
     final Listenable? current = widget.host.subtitlePositionListenable;
-    if (!identical(previous, current)) {
-      previous?.removeListener(_syncDelayFromHost);
-      current?.addListener(_syncDelayFromHost);
-    }
+    if (!identical(previous, current)) _bindHostPosition();
     _syncDelayFromHost(rebuild: false);
   }
 

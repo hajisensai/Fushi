@@ -121,14 +121,13 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage>
   @override
   void initState() {
     super.initState();
-    _rangeSelection.addListener(_onRangeChanged);
+    listenTo(_rangeSelection, _onRangeChanged);
     schedulePostFrame((_) => _syncAndLoad());
   }
 
   @override
   void dispose() {
     _midnightReload?.cancel();
-    _rangeSelection.removeListener(_onRangeChanged);
     if (widget.rangeSelection == null) _rangeSelection.dispose();
     super.dispose();
   }

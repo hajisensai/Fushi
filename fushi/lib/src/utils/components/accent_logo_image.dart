@@ -225,20 +225,17 @@ class _AccentLogoTintBuilderState extends State<AccentLogoTintBuilder>
     if (next == _pending) return;
     _pending = next;
     _timer?.cancel();
-    _timer = Timer(widget.settle, () {
-      final LogoAccentTint? pending = _pending;
-      if (!mounted || pending == null) return;
-      setState(() {
-        _settled = pending;
-        _pending = null;
-      });
-    });
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
+    _timer = ownTimer(
+      Timer(widget.settle, () {
+        final LogoAccentTint? pending = _pending;
+        if (!mounted || pending == null) return;
+        setState(() {
+          _settled = pending;
+          _pending = null;
+        });
+      }),
+      slot: #settle,
+    );
   }
 
   @override

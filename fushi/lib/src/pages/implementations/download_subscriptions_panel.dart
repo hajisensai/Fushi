@@ -47,10 +47,12 @@ class _DownloadSubscriptionsPanelState
   @override
   void initState() {
     super.initState();
-    _store = ref.read(appProvider).animeDownloadSubscriptionStore;
-    _store?.revision.addListener(_onStoreChanged);
-    // _reload 里 _store 会换成新实例（旧的已摘监听），撤销时读当前的。
-    onTeardown(() => _store?.revision.removeListener(_onStoreChanged));
+    final AnimeDownloadSubscriptionStore? store = ref
+        .read(appProvider)
+        .animeDownloadSubscriptionStore;
+    _store = store;
+    // _reload 里 _store 会换成新实例：同一槽位重挂，旧的自动摘掉。
+    if (store != null) listenTo(store.revision, _onStoreChanged, slot: #store);
     unawaited(_reload());
   }
 
@@ -64,9 +66,8 @@ class _DownloadSubscriptionsPanelState
       return;
     }
     if (!identical(_store, store)) {
-      _store?.revision.removeListener(_onStoreChanged);
       _store = store;
-      store.revision.addListener(_onStoreChanged);
+      listenTo(store.revision, _onStoreChanged, slot: #store);
     }
     final List<AnimeDownloadSubscription> subscriptions = await store.loadAll();
     if (!mounted) return;

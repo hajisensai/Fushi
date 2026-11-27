@@ -688,16 +688,14 @@ class _MusicNowPlayingMatchState extends State<MusicNowPlayingMatch>
   @override
   void initState() {
     super.initState();
-    widget.listenable.addListener(_changed);
-    onTeardown(() => widget.listenable.removeListener(_changed));
+    listenTo(widget.listenable, _changed, slot: #listenable);
   }
 
   @override
   void didUpdateWidget(MusicNowPlayingMatch oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.listenable != widget.listenable) {
-      oldWidget.listenable.removeListener(_changed);
-      widget.listenable.addListener(_changed);
+      listenTo(widget.listenable, _changed, slot: #listenable);
     }
     _playing = widget.isCurrent();
   }

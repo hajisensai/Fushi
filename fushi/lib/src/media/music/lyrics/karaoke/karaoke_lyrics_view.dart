@@ -19,6 +19,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:fushi_music/fushi_music.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_appearance.dart';
 import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_line_layout.dart';
 import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_progress.dart';
@@ -165,7 +166,7 @@ class _RowLayout {
 }
 
 class _KaraokeLyricsViewState extends State<KaraokeLyricsView>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, StateResourceScope<KaraokeLyricsView> {
   late final Ticker _ticker = createTicker((Duration _) => _refresh());
   late final AnimationController _scroll = AnimationController.unbounded(
     vsync: this,
@@ -196,15 +197,18 @@ class _KaraokeLyricsViewState extends State<KaraokeLyricsView>
   }
 
   void _bindCursor(KaraokeLyricsCursor? cursor) {
-    if (cursor == null) return;
+    if (cursor == null) {
+      // 空撤销顶掉旧槽位：旧游标随之摘掉。
+      onTeardown(() {}, slot: #cursor);
+      return;
+    }
+    // 先登记「若挂着就摘」，再挂；换游标时同槽位先撤旧的。
+    onTeardown(() {
+      cursor.removeListener(_onCursor);
+      if (cursor._resolve == _hitForCursor) cursor._resolve = null;
+    }, slot: #cursor);
     cursor._resolve = _hitForCursor;
     cursor.addListener(_onCursor);
-  }
-
-  void _unbindCursor(KaraokeLyricsCursor? cursor) {
-    if (cursor == null) return;
-    cursor.removeListener(_onCursor);
-    if (cursor._resolve == _hitForCursor) cursor._resolve = null;
   }
 
   void _onCursor() {
@@ -289,7 +293,6 @@ class _KaraokeLyricsViewState extends State<KaraokeLyricsView>
   void didUpdateWidget(covariant KaraokeLyricsView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.cursor, widget.cursor)) {
-      _unbindCursor(oldWidget.cursor);
       _bindCursor(widget.cursor);
     }
     if (!identical(oldWidget.timeline, widget.timeline)) {
@@ -333,7 +336,7 @@ class _KaraokeLyricsViewState extends State<KaraokeLyricsView>
   }
 
   void _scheduleAutoScroll() {
-    SchedulerBinding.instance.addPostFrameCallback((Duration _) {
+    schedulePostFrame((Duration _) {
       if (mounted) _autoScroll();
     });
   }
@@ -562,7 +565,6 @@ class _KaraokeLyricsViewState extends State<KaraokeLyricsView>
 
   @override
   void dispose() {
-    _unbindCursor(widget.cursor);
     _resumeTimer?.cancel();
     _ticker.dispose();
     _scroll.dispose();

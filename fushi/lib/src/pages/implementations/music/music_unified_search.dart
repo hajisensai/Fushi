@@ -37,6 +37,7 @@ import 'package:fushi_engine/media/music/server/music_server.dart'
         MusicServerTrack;
 import 'package:fushi_corpus/fushi_corpus.dart' show CorpusHit;
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/music/music_format_badge.dart';
@@ -940,8 +941,8 @@ class MusicSearchResultsView extends ConsumerStatefulWidget {
       _MusicSearchResultsViewState();
 }
 
-class _MusicSearchResultsViewState
-    extends ConsumerState<MusicSearchResultsView> {
+class _MusicSearchResultsViewState extends ConsumerState<MusicSearchResultsView>
+    with StateResourceScope<MusicSearchResultsView> {
   Map<String, _PluginFeed> _feeds = <String, _PluginFeed>{};
 
   /// 服务器 id → 结果。
@@ -1029,9 +1030,12 @@ class _MusicSearchResultsViewState
   void _schedule() {
     _armed = false;
     _debounce?.cancel();
-    _debounce = Timer(kMusicSearchDebounce, () {
-      if (mounted) setState(() => _armed = true);
-    });
+    _debounce = ownTimer(
+      Timer(kMusicSearchDebounce, () {
+        if (mounted) setState(() => _armed = true);
+      }),
+      slot: #debounce,
+    );
   }
 
   _PluginFeed _feedOf(String id) => _feeds.putIfAbsent(id, _PluginFeed.new);
@@ -1475,7 +1479,8 @@ class MusicSearchOverview extends ConsumerStatefulWidget {
       _MusicSearchOverviewState();
 }
 
-class _MusicSearchOverviewState extends ConsumerState<MusicSearchOverview> {
+class _MusicSearchOverviewState extends ConsumerState<MusicSearchOverview>
+    with StateResourceScope<MusicSearchOverview> {
   static const double _cardWidth = 144;
 
   /// `插件 id|类型` → 结果；缺键 = 还没取 / 在途。
@@ -1527,7 +1532,7 @@ class _MusicSearchOverviewState extends ConsumerState<MusicSearchOverview> {
           _lyricHits = const <CorpusHit>[];
         } else {
           _lyricHits = null;
-          scheduleMicrotask(() {
+          scheduleScopedMicrotask(() {
             if (mounted) unawaited(_fetchLyrics());
           });
         }
@@ -1544,12 +1549,15 @@ class _MusicSearchOverviewState extends ConsumerState<MusicSearchOverview> {
   void _schedule() {
     _armed = false;
     _debounce?.cancel();
-    _debounce = Timer(kMusicSearchDebounce, () {
-      if (!mounted) return;
-      setState(() => _armed = true);
-      _fetchMissing();
-      unawaited(_fetchLyrics());
-    });
+    _debounce = ownTimer(
+      Timer(kMusicSearchDebounce, () {
+        if (!mounted) return;
+        setState(() => _armed = true);
+        _fetchMissing();
+        unawaited(_fetchLyrics());
+      }),
+      slot: #debounce,
+    );
   }
 
   Future<void> _fetchLyrics() async {

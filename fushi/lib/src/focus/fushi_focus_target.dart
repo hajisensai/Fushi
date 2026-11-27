@@ -3,6 +3,7 @@ import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// TODO-1113 P3: whether mouse click-to-focus should be wired on a focus target.
 ///
@@ -350,7 +351,8 @@ class _FushiFocusTargetAnchor extends StatefulWidget {
       _FushiFocusTargetAnchorState();
 }
 
-class _FushiFocusTargetAnchorState extends State<_FushiFocusTargetAnchor> {
+class _FushiFocusTargetAnchorState extends State<_FushiFocusTargetAnchor>
+    with StateResourceScope<_FushiFocusTargetAnchor> {
   final GlobalKey _anchorKey = GlobalKey();
   bool _scheduled = false;
 
@@ -375,7 +377,7 @@ class _FushiFocusTargetAnchorState extends State<_FushiFocusTargetAnchor> {
   void _scheduleReady() {
     if (_scheduled) return;
     _scheduled = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       _scheduled = false;
       if (!mounted) return;
       final BuildContext? anchorContext = _anchorKey.currentContext;

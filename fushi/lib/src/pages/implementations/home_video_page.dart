@@ -1084,11 +1084,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       ),
     );
     _scrapeBatchWasBusy = widget.scrapeTaskController?.isBusy == true;
-    widget.scrapeTaskController?.addListener(_onScrapeTaskBusyChanged);
-    onTeardown(
-      () =>
-          widget.scrapeTaskController?.removeListener(_onScrapeTaskBusyChanged),
-    );
+    // 三个可选信号随 widget 换：同一槽位再挂先摘旧的（didUpdateWidget 同样写法）。
+    _listenScrapeTask();
     _backgroundTasksVisible =
         widget.scrapeTaskController != null &&
         videoBackgroundTasksSummaryOf(widget.scrapeTaskController!).visible;
@@ -1112,17 +1109,15 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         _onLegacySubscriptionStoreChanged,
       );
     }
-    widget.libraryRefreshSignal?.addListener(_onLibraryRefreshRequested);
-    onTeardown(
-      () => widget.libraryRefreshSignal?.removeListener(
-        _onLibraryRefreshRequested,
-      ),
+    listenTo(
+      widget.libraryRefreshSignal,
+      _onLibraryRefreshRequested,
+      slot: #libraryRefreshSignal,
     );
-    widget.pendingScrapeChangedSignal?.addListener(_onPendingScrapeChanged);
-    onTeardown(
-      () => widget.pendingScrapeChangedSignal?.removeListener(
-        _onPendingScrapeChanged,
-      ),
+    listenTo(
+      widget.pendingScrapeChangedSignal,
+      _onPendingScrapeChanged,
+      slot: #pendingScrapeChangedSignal,
     );
     // BUG-1182：「显示远端条目」开关落在 prefsRepo（独立 ChangeNotifier），不经
     // AppModel 通知，本页不会因它重建 → 门控翻转后既不重取也不重渲染。显式订阅。
@@ -1348,6 +1343,21 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     _refreshAfterPlayback();
   }
 
+  /// 刮削任务控制器不是 Flutter [Listenable]，手挂 + 同槽位登记撤销：换控制器时
+  /// 先摘旧的（BUG-5604）。
+  void _listenScrapeTask() {
+    final VideoSourceScrapeTaskController? task = widget.scrapeTaskController;
+    if (task == null) {
+      onTeardown(() {}, slot: #scrapeTaskController);
+      return;
+    }
+    task.addListener(_onScrapeTaskBusyChanged);
+    onTeardown(
+      () => task.removeListener(_onScrapeTaskBusyChanged),
+      slot: #scrapeTaskController,
+    );
+  }
+
   @override
   void didUpdateWidget(covariant HomeVideoPage oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -1355,8 +1365,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       oldWidget.scrapeTaskController,
       widget.scrapeTaskController,
     )) {
-      oldWidget.scrapeTaskController?.removeListener(_onScrapeTaskBusyChanged);
-      widget.scrapeTaskController?.addListener(_onScrapeTaskBusyChanged);
+      _listenScrapeTask();
       _scrapeBatchWasBusy = widget.scrapeTaskController?.isBusy == true;
       _backgroundTasksVisible =
           widget.scrapeTaskController != null &&
@@ -1364,18 +1373,22 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     }
     if (oldWidget.pendingScrapeChangedSignal !=
         widget.pendingScrapeChangedSignal) {
-      oldWidget.pendingScrapeChangedSignal?.removeListener(
+      listenTo(
+        widget.pendingScrapeChangedSignal,
         _onPendingScrapeChanged,
+        slot: #pendingScrapeChangedSignal,
       );
-      widget.pendingScrapeChangedSignal?.addListener(_onPendingScrapeChanged);
     }
     if (!identical(oldWidget.importDropPort, widget.importDropPort)) {
       oldWidget.importDropPort?.detach(_importSurfaceDrop);
       widget.importDropPort?.attach(_importSurfaceDrop);
     }
     if (oldWidget.libraryRefreshSignal == widget.libraryRefreshSignal) return;
-    oldWidget.libraryRefreshSignal?.removeListener(_onLibraryRefreshRequested);
-    widget.libraryRefreshSignal?.addListener(_onLibraryRefreshRequested);
+    listenTo(
+      widget.libraryRefreshSignal,
+      _onLibraryRefreshRequested,
+      slot: #libraryRefreshSignal,
+    );
   }
 
   @override
