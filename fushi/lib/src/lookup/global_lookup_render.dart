@@ -78,6 +78,7 @@ GlobalLookupFrameSettingsJs buildFrameSettingsJsParts({
   required DictionarySearchResult result,
   GlobalLookupEntriesStore? entriesStore,
   bool advancedMiningHandoff = false,
+  bool preMineSentenceEdit = false,
 }) {
   final PopupStaticSettingsJs staticSettings = buildPopupStaticSettingsJs(
     appModel: appModel,
@@ -120,11 +121,15 @@ GlobalLookupFrameSettingsJs buildFrameSettingsJsParts({
   // 也服务带制卡委托的表面（台词浮窗 / 截屏识字），两者的入口不同；写进静态段会让
   // 静态版本号在两类查词间来回翻、每次重发几十 MB 的字体静态段。它在一次查词内恒定，
   // 不破坏上面「同一帧同一结果跨渲染字节稳定」的约束。
+  //
+  // 反馈 uEnwXmBIR0 — `window.__fushiPreMineSentenceEdit`（「编辑例句后制卡」入口）同理
+  // 按表面走这里：同一个宿主上的游戏内查词卡（galCard）借不了主窗弹编辑框，不给入口。
   final String renderJs =
       '''
     $kPopupTopPullReleaseJs
     $kPopupTouchSideSwipeReleaseJs
     window.advancedMiningEnabled = $advancedMiningHandoff;
+    window.__fushiPreMineSentenceEdit = $preMineSentenceEdit;
     if (window.resetSentenceContextMirror) window.resetSentenceContextMirror();
     if (window.resetSelectedDictionaries) window.resetSelectedDictionaries();
     window.renderPopup && window.renderPopup();
@@ -505,6 +510,9 @@ StackRenderScript buildStackRenderScript({
   // 拍板台 rf--UcsGta-overlay — 卡上给不给「高级制卡」（转交主窗）入口，见
   // [buildFrameSettingsJsParts]。调用方按表面决定（带制卡委托的表面不给）。
   bool advancedMiningHandoff = false,
+  // 反馈 uEnwXmBIR0 — 卡上给不给「编辑例句后制卡」入口，见 [buildFrameSettingsJsParts]。
+  // 调用方按表面决定（宿主给不出编辑框的表面不给）。
+  bool preMineSentenceEdit = false,
   // BUG-1833 — static settings revisions already acknowledged by this physical
   // host. The stable root iframe survives lookup-to-lookup, so a custom font
   // (two CJK faces already run to tens of MB once base64-inlined) must not ride
@@ -560,6 +568,7 @@ StackRenderScript buildStackRenderScript({
       result: p.result,
       entriesStore: entriesStore,
       advancedMiningHandoff: advancedMiningHandoff,
+      preMineSentenceEdit: preMineSentenceEdit,
     );
     final Map<String, Object?> map = p.frame.toRenderMap();
     map['theme'] = shellTheme;

@@ -19,7 +19,9 @@
 library;
 
 import 'dart:async';
+import 'dart:isolate';
 
+import 'package:drift/isolate.dart' show DriftIsolate;
 import 'package:drift/drift.dart'
     show QueryRow, ResultSetImplementation, TableUpdate, TableUpdateQuery;
 import 'package:flutter/foundation.dart';
@@ -187,6 +189,40 @@ final class WorkGraphSnapshot {
     for (final WorkMediaGroup g in WorkMediaGroup.values)
       if (all.contains(g) && !own.contains(g)) g,
   ];
+}
+
+/// 测试开关：为真时 [loadWorkGraphSnapshotOffUi] 在调用方 isolate 里建图（组件测试
+/// 跑在 FakeAsync 里，跨 isolate 消息推不动）。生产恒为假。
+@visibleForTesting
+bool debugWorkGraphInline = false;
+
+/// 后台 isolate 的调试名（timeline / 栈里认得出）。
+const String kWorkGraphIsolateDebugName = 'fushi-work-graph';
+
+/// 在一次性后台 isolate 里跑 [loadWorkGraphSnapshot]（经
+/// [FushiDatabase.backgroundConnection] 接同一个库，同 `loadStatFacts`）。
+///
+/// 作品图要全部合集成员：媒体服务器镜像的播放列表也是系列合集，成员达数万行，
+/// 这是图本身的语义、收窄不了。读取、行解码与建图放到后台，结果经 `Isolate.exit`
+/// 交回（不逐对象拷贝）；从前整段在 UI isolate 上，首次打开媒体页时掉帧。
+Future<WorkGraphSnapshot> loadWorkGraphSnapshotOffUi(FushiDatabase db) async {
+  if (debugWorkGraphInline) return loadWorkGraphSnapshot(db);
+  final DriftIsolate connection = await db.backgroundConnection();
+  return Isolate.run<WorkGraphSnapshot>(
+    () => _loadWorkGraphSnapshotOnConnection(connection),
+    debugName: kWorkGraphIsolateDebugName,
+  );
+}
+
+Future<WorkGraphSnapshot> _loadWorkGraphSnapshotOnConnection(
+  DriftIsolate connection,
+) async {
+  final FushiDatabase db = FushiDatabase.shared(await connection.connect());
+  try {
+    return await loadWorkGraphSnapshot(db);
+  } finally {
+    await db.close();
+  }
 }
 
 /// 读库建一份 [WorkGraphSnapshot]：图本身经 [loadWorkGraph]（判据单一真源），
@@ -397,7 +433,7 @@ final class WorkGraphStore extends ChangeNotifier
     _dirty = false;
     WorkGraphSnapshot? next;
     try {
-      next = await loadWorkGraphSnapshot(_db);
+      next = await loadWorkGraphSnapshotOffUi(_db);
     } catch (error, stack) {
       // 读库失败（库已关、迁移中）保留上一份图，下一次表变更再试；不吞成静默空图。
       debugPrint('WorkGraphStore: rebuild failed: $error\n$stack');

@@ -52,7 +52,7 @@ Fushi 的 **RWKV 排程**原生推理库，两个网络：
 | `FrwkvModel* frwkv_model_load(const uint8_t* bytes, size_t len)` | 从内存里的权重文件建模型，按内容识别大 / 小模型（`ARWKVWEIGHTS1` f32 两者皆可，`ARWKVWEIGHTS8PC1` int8 逐行仅小模型）；失败 NULL |
 | `int32_t frwkv_model_kind(const FrwkvModel*)` | 1 = 大模型，2 = 小模型；空指针 `-1` |
 | `void frwkv_model_free(FrwkvModel*)` | 释放模型；已建的 runtime 各持一份引用，不受影响 |
-| `FrwkvRuntime* frwkv_runtime_new(const FrwkvModel*, int32_t precision, uint32_t threads)` | `precision`：0 = f32、8 = int8、4 = int4（**仅小模型**，见「状态精度」）、-1 = 推荐值（大模型 int8、小模型 int4）；`threads`：0 = 全部核心，n = 专用 n 线程池（墨水屏 / 省电传 1）。失败 NULL |
+| `FrwkvRuntime* frwkv_runtime_new(const FrwkvModel*, int32_t precision, uint32_t threads)` | `precision`：0 = f32、8 = int8、-1 = 推荐值（int8）；4（曾经的 int4）自 ABI 7 起拒收（见「状态精度」）；`threads`：0 = 全部核心，n = 专用 n 线程池（墨水屏 / 省电传 1）。失败 NULL |
 | `void frwkv_runtime_free(FrwkvRuntime*)` | |
 | `int32_t frwkv_runtime_replay(FrwkvRuntime*, const FrwkvReview* reviews, size_t count, float* out_predictions)` | 按时间顺序追加一批已答复习。`out_predictions` 可空；非空则写 `count` 个 f32：每条有评分行**作答前**的 R，无评分行写 NaN。任一行不合法 → `-2`，整批不应用 |
 | `int32_t frwkv_runtime_query(FrwkvRuntime*, const FrwkvReview* queries, size_t count, float* out)` | 批量查询当前 R，写 `count` 个 f32；不合法的行写 **NaN**（见下） |
@@ -246,14 +246,25 @@ elapsed / preset）→ `scheduler/rwkv/history.rs:67` `historical_review`（card
 |---|---|---|
 | 参数 | 2,762,884 | 331,511 |
 | 权重 | `RWKV_trained_on_5000_10000.bin`（11 MB，AGPL） | `weights.int8.bin`（436 KB，加载时反量化）或 `weights.f32.bin`；随上游 Anki fork 以 AGPL 发布 |
-| 状态精度 | f32 / **int8**（推荐） | f32 / int8 / **int4**（推荐） |
-| card + note 状态 / 卡（一卡一笔记） | int8 25,698 B | int4 2,944 B（int8 4,480 B） |
+| 状态精度 | f32 / **int8**（推荐） | f32 / **int8**（推荐） |
+| card + note 状态 / 卡（一卡一笔记） | int8 25,698 B | int8 4,480 B（Tiny sm101 3,072 B） |
 | 回放速度（下表） | ≈16k 条/s | ≈50k 条/s |
 
-card / note 状态按精度紧凑存储（每行 16 个值一个 f32 比例 + 8 / 4 位码字，shift 存 f16）；deck /
+card / note 状态按精度紧凑存储（每行 16 个值一个 f32 比例 + 8 位码字，shift 存 f16）；deck /
 preset / user 状态恒为 f32。
 
-**int4 数值稳定性（Fushi 的修复，2026-10-20）。** 上游的量化每行按 `max/limit` 定标再四舍五入：
+**int4 已删（BUG-5594，2026-11-27）。** 下面 10-20 的最小二乘修复之后，int4 在更长的单卡历史上照样发散：
+每卡 2 万次复习时，sm101（一天里连按 Again）的笔记状态到 9.4e3、4 万次左右状态坏掉、该卡预测卡死在
+0.8577；sm113 / 六层 Tiny sm130io（每天按 Again）的笔记 / 卡状态到 4e33 / 1e4，预测与 f32 差到 0.85
+（f32 的峰值都在 2～8）。上游 JSchoreels/anki 同期因同样的现象弃用 int4（2dc21da67fed）。int8 在同样的
+模式、每卡 10 万次复习上与 f32 同量级，预测最大差 ≤ 0.052，所以 card / note 状态一律 int8：int4 的码字、
+C ABI 的 4、`ModelKind::supports` 一并删除。int4 时代的快照头里精度字节是 4，读进来被拒，排程内核全量
+重放一次（文件名 `rwkv-<profile>-small-int4.snap` 冻结不改）。钉住它的测试：`tests/long_history.rs` 的
+`every_small_model_keeps_long_card_states_bounded`（每个小模型 × 5 种作答模式 × 单卡 2 万次；把精度换回
+int4 即红），诊断工具 `examples/long_card_drift.rs`。代价：card + 笔记状态每卡 2,944 → 4,480 B（Tiny
+2,048 → 3,072 B）。
+
+**int4 数值稳定性（Fushi 的修复，2026-10-20；int4 已于 11-27 删除，见上）。** 上游的量化每行按 `max/limit` 定标再四舍五入：
 落在半个台阶到一个台阶之间的分量会被抬到一个台阶（最多 ×2），每次作答都往状态里注入能量。
 card 状态第一层的递推不阻尼这种误差：在一份 121 万条复习的真实历史上，小模型 int4 有 101 张高频卡
 的状态每次复习 ×1.06（0.25 → 7,962，往 f32 溢出走）；上游大模型的 int4 笔记状态在 350 万条历史上

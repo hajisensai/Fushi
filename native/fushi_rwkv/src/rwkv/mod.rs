@@ -221,15 +221,10 @@ impl RwkvInference {
     }
 
     fn set_precision(model: &mut SrsModel, precision: StatePrecision) {
+        // Card and note states share the precision (upstream's int4 cards with
+        // int8 notes are gone, BUG-5594).
         model.modules[0].precision = precision;
-        // A note's state takes every answer to all its cards, and int4's
-        // rounding drift there grew without bound (a 3.5M-review history went
-        // past f32's range two minutes into its replay, then NaN). Card states
-        // stay int4; notes keep int8.
-        model.modules[2].precision = match precision {
-            StatePrecision::Int4 => StatePrecision::Int8,
-            other => other,
-        };
+        model.modules[2].precision = precision;
     }
 
     pub fn predict_retrievability_many_from_warm_up(
@@ -401,7 +396,8 @@ impl RwkvInference {
     // ---- Fushi additions below this line (not in upstream) ----------------
 
     /// Everything [Self::warm_up_reviews] has built up, as bytes:
-    /// `FRWKVSNAP2\0`, a precision byte (0 = f32, 8 = int8, 4 = int4), then
+    /// `FRWKVSNAP2\0`, a precision byte (0 = f32, 8 = int8; 4 was the
+    /// removed int4 and is refused), then
     /// upstream's `append_warm_up_snapshot_binary` layout (card, note, deck and
     /// preset maps as u32 count + per id ascending i64 id + u32 length + state;
     /// global as flag + length + state; then flag + length + the
@@ -576,7 +572,14 @@ impl RwkvInference {
                     .iter()
                     .filter_map(|layer| layer.time.as_ref())
                     .flat_map(|time| time.matrix.iter())
-                    .fold(0.0f32, |m, v| m.max(v.abs()))
+                    // Infinite when a value is not finite (`max` would drop a NaN).
+                    .fold(0.0f32, |m, v| {
+                        if v.is_finite() {
+                            m.max(v.abs())
+                        } else {
+                            f32::INFINITY
+                        }
+                    })
             })
             .fold(0.0, f32::max)
     }
@@ -699,7 +702,6 @@ fn precision_code(precision: StatePrecision) -> u8 {
     match precision {
         StatePrecision::F32 => 0,
         StatePrecision::Int8 => 8,
-        StatePrecision::Int4 => 4,
     }
 }
 

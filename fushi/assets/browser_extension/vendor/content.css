@@ -3068,14 +3068,15 @@
 }
 
 /* 收起的卡只剩标题行：底部内边距跟着收掉，标题行上下居中。
-   用户 10-09「折叠状态紧凑一点」：收起行从 44px 收到 40px（仍 ≥ 40dp 的点按区，
-   且随 A−/A+ 的 zoom 等比放大），展开态标题行仍是 44px，展开后的版式不变。 */
+   行高（用户 10-09 → 11-27 两次「折叠状态紧凑一点」）：桌面标题行（收起 / 展开同高）
+   28px；触屏（html.fushi-touch：Android / iOS）保留 36px 点按区。都随 A−/A+ 的 zoom
+   等比放大。只改高度，M3E 的卡面 / 圆角 / 配色不动（Apple 层另有自己的行高）。 */
 :where(#entries-container).fushi-m3e .glossary-group:not([open]) {
     padding-bottom: 0;
 }
 
-:where(#entries-container).fushi-m3e .glossary-group:not([open]) > .dict-label {
-    min-height: 40px;
+:where(#entries-container).fushi-m3e.fushi-touch .dict-label {
+    min-height: 36px;
 }
 
 /* 单列分段列表：两张收起卡之间仍是 2px（与查词历史分段列表同口径），这里不加大；
@@ -3087,7 +3088,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    min-height: 44px;
+    min-height: 28px;
     padding-bottom: 0;
     font-size: var(--md-sys-typescale-title-small-size);
     line-height: var(--md-sys-typescale-title-small-line-height);
@@ -3793,11 +3794,11 @@
  * Niratan 描边卡 + 左侧小三角，与 app 其它 Apple 页面不是一套语言。本层按 iOS 26 /
  * macOS 26 的 inset grouped 列表重排：
  *   · 单列（一本词典 / 列数 1 / 视口只装得下一列）= 一个分组：所有词典卡并成一块圆角
- *     分组（白 / 深灰 cell 压在弹窗的 secondarySystemGroupedBackground 上），卡间无缝，
+ *     分组（半透明淡亮 cell 压在弹窗玻璃上，2026-11-27 起不再是实白），卡间无缝，
  *     行间是从文字左缘起的发丝分隔线（inset separator）；
  *   · 多列（popup.js 按有效列数挂 html.fushi-dict-multicol，masonry 与 CSS grid 回落
  *     都算；masonry 间距由 masonryGap() 决定）= 各自独立的圆角 cell，不画分隔线；
- *   · 词典名行 = 列表行：44px 命中区、正文色 15px，折叠指示是行尾的 chevron（收起指右、
+ *   · 词典名行 = 列表行：桌面 24px / 13px、触屏 36px / 15px（--fa-row-*），折叠指示是行尾的 chevron（收起指右、
  *     展开指下，同 SwiftUI DisclosureGroup），按下整行铺 systemFill；
  *   · 标签 = 系统 fill 小圆角块 + secondaryLabel 字；频率 / 音调来源 = 强调色淡染；
  *   · 词头 = Large Title 字重。
@@ -3818,9 +3819,18 @@
     --fa-tertiary-fill: rgba(118, 118, 128, 0.12);
     --fa-quaternary-fill: rgba(116, 116, 128, 0.08);
     --fa-separator: rgba(60, 60, 67, 0.2);
-    --fa-cell: rgba(255, 255, 255, 0.82);
-    --fa-group-radius: 14px;
-    --fa-row-inset: 16px;
+    /* 词典卡 = 同一块玻璃上的一层淡亮填充（用户 2026-11-27：白卡也上材质，参照 Hoshi
+       Reader），不再是近乎不透明的白 cell；多列时另加一圈顶亮底暗的 1px 描边勾出卡缘。 */
+    --fa-cell: rgba(255, 255, 255, 0.5);
+    --fa-cell-rim: rgba(255, 255, 255, 0.75);
+    --fa-cell-line: rgba(60, 60, 67, 0.1);
+    --fa-group-radius: 10px;
+    --fa-row-inset: 12px;
+    /* 词典名行高（用户 2026-11-27「收起时更紧凑」）：桌面 24px / 13px 字，触屏
+       （html.fushi-touch）36px / 15px 字保点按区。 */
+    --fa-row-min: 24px;
+    --fa-row-font: 13px;
+    --fa-row-line: 18px;
     --fa-ease: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
@@ -3829,7 +3839,16 @@
     --fa-tertiary-fill: rgba(118, 118, 128, 0.24);
     --fa-quaternary-fill: rgba(116, 116, 128, 0.18);
     --fa-separator: rgba(84, 84, 88, 0.55);
-    --fa-cell: rgba(255, 255, 255, 0.075);
+    --fa-cell: rgba(255, 255, 255, 0.05);
+    --fa-cell-rim: rgba(255, 255, 255, 0.12);
+    --fa-cell-line: rgba(255, 255, 255, 0.08);
+}
+
+:where(#entries-container).fushi-glass-host.fushi-apple.fushi-touch {
+    --fa-row-min: 36px;
+    --fa-row-font: 15px;
+    --fa-row-line: 20px;
+    --fa-row-inset: 16px;
 }
 
 /* ── 词典卡：inset grouped cell ── */
@@ -3844,7 +3863,13 @@
 }
 
 :where(#entries-container).fushi-glass-host.fushi-apple .glossary-group[open] {
-    padding-bottom: 12px;
+    padding-bottom: 10px;
+}
+
+/* 展开卡：标题行下一道发丝线把卡头和释义分开（行变矮后靠这条线读出层级）。 */
+:where(#entries-container).fushi-glass-host.fushi-apple .glossary-group[open] > .dict-label {
+    margin-bottom: 6px;
+    box-shadow: inset 0 -0.5px 0 var(--fa-separator);
 }
 
 :where(#entries-container).fushi-glass-host.fushi-apple .glossary-group > :not(summary) {
@@ -3881,12 +3906,18 @@
 :where(#entries-container).fushi-glass-host.fushi-apple.fushi-dict-multicol .glossary-section > .category-body > .glossary-group {
     border-radius: var(--fa-group-radius);
     background-image: none;
+    box-shadow: inset 0 1px 0 var(--fa-cell-rim), inset 0 0 0 0.5px var(--fa-cell-line);
 }
 
-/* CSS grid 回落时的行距（与列距 6px 同值，卡片自身 margin-top 已在上面归零，不会叠成双倍）；
-   masonry 接管后 body 是绝对定位容器，行距由 popup.js masonryGap() 决定，row-gap 不参与。 */
+:where(#entries-container).fushi-glass-host.fushi-apple.fushi-dict-multicol[data-theme="dark"] .glossary-section > .category-body > .glossary-group {
+    box-shadow: inset 0 0 0 1px var(--fa-cell-rim);
+}
+
+/* CSS grid 回落时的行距（与 masonry 收起卡行距 masonryCollapsedRowGap() 4px 同值，卡片自身
+   margin-top 已在上面归零，不会叠成双倍）；masonry 接管后 body 是绝对定位容器，行距由
+   popup.js 决定，row-gap 不参与。 */
 :where(#entries-container).fushi-glass-host.fushi-apple.fushi-dict-multicol .glossary-section > .category-body {
-    row-gap: 6px;
+    row-gap: 4px;
 }
 
 /* 汉字区块单独成一个分组（不在词典列表里）。 */
@@ -3899,10 +3930,10 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    min-height: 44px;
+    min-height: var(--fa-row-min);
     padding: 0 var(--fa-row-inset);
-    font-size: 15px;
-    line-height: 20px;
+    font-size: var(--fa-row-font);
+    line-height: var(--fa-row-line);
     /* 列表行标题是常规字重（iOS 行标题 = Body Regular）：CJK 字体多数没有 Medium，500
        会落到 W6 粗体，一列词典名全是粗体反而抢释义的戏。当前词典另用强调色 + 600。 */
     font-weight: 400;

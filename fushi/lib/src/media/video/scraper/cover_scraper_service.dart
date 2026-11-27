@@ -139,7 +139,10 @@ class CoverScraperService {
             (await _coverMeta.getFresh(book.bookUid))?.origin ??
             CoverOrigin.autoFrame;
         final bool becameCollectionMember =
-            (await _repo.multiMemberCollectionIds())[book.bookUid] != null;
+            (await _repo.multiMemberCollectionIds(
+              forVideos: <String>[book.bookUid],
+            ))[book.bookUid] !=
+            null;
         if (origin != CoverOrigin.autoFrame || becameCollectionMember) {
           return ScrapeSkippedProtected(origin);
         }
@@ -160,7 +163,9 @@ class CoverScraperService {
   /// 多成员合集中的子篇均保持不动。
   Stream<BatchScrapeProgress> scrapeLibrary(List<VideoBookRow> books) async* {
     final Map<String, int> memberCollectionIds = await _repo
-        .multiMemberCollectionIds();
+        .multiMemberCollectionIds(
+          forVideos: books.map((VideoBookRow b) => b.bookUid),
+        );
     for (int index = 0; index < books.length; index++) {
       final VideoBookRow book = books[index];
       ScrapeOutcome outcome;

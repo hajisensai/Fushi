@@ -37,6 +37,8 @@ void main() {
           utf8.encode(
             jsonEncode(<String, Object?>{
               'donated': true,
+              'reviews': 1234,
+              'cards': 56,
               'updatedAt': 1764000000000,
             }),
           ),
@@ -69,8 +71,10 @@ void main() {
     expect(progress.first, (0, bytes.length));
     expect(progress.last, (bytes.length, bytes.length));
     expect(status.donated, isTrue);
+    expect(status.donation?.reviews, 1234);
+    expect(status.donation?.cards, 56);
     expect(
-      status.updatedAt,
+      status.donation?.updatedAt,
       DateTime.fromMillisecondsSinceEpoch(1764000000000),
     );
   });
@@ -99,15 +103,34 @@ void main() {
       donorKey: donorKey,
     );
     expect(a.donated, isTrue);
-    expect(a.reviews, 5000);
-    expect(a.cards, 300);
-    expect(a.updatedAt, DateTime.utc(2026, 11, 20, 10));
+    expect(a.donation?.reviews, 5000);
+    expect(a.donation?.cards, 300);
+    expect(a.donation?.updatedAt, DateTime.utc(2026, 11, 20, 10));
     final SrsDonationStatus b = await client.status(
       donorId: donorId,
       donorKey: donorKey,
     );
     expect(b.donated, isFalse);
-    expect(b.reviews, isNull);
+    expect(b.donation, isNull);
+  });
+
+  // BUG：PUT 曾只回 {donated, updatedAt}，页面拿 `reviews ?? 0` 显示「捐出 0 次」。捐过却缺计数 = 坏响应，
+  // 不许静默补 0。
+  test('donated=true 缺 reviews / cards / updatedAt 按坏响应报错', () async {
+    for (final Map<String, Object?> body in <Map<String, Object?>>[
+      <String, Object?>{'donated': true, 'updatedAt': 1764000000000},
+      <String, Object?>{'donated': true, 'reviews': 1, 'updatedAt': 1},
+      <String, Object?>{'donated': true, 'reviews': 1, 'cards': 1},
+    ]) {
+      final MockClient mock = MockClient(
+        (http.Request request) async => http.Response(jsonEncode(body), 200),
+      );
+      await expectLater(
+        clientWith(mock).status(donorId: donorId, donorKey: donorKey),
+        throwsA(isA<SrsDonationHttpException>()),
+        reason: '$body',
+      );
+    }
   });
 
   test('DELETE 撤回', () async {

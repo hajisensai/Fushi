@@ -254,7 +254,6 @@ pub fn precision_key(precision: StatePrecision) -> &'static str {
     match precision {
         StatePrecision::F32 => "f32",
         StatePrecision::Int8 => "int8",
-        StatePrecision::Int4 => "int4",
     }
 }
 

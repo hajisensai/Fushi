@@ -1173,10 +1173,12 @@ class MediaTrackingRepository {
     // 分栏与合集详情页同一入口（手动分栏 / 手动季集指定优先）。
     final Map<String, String> sectionKeys =
         await loadCollectionGroupKeysForVideos(_db, videos);
+    // 下面只认库内视频（videosByUid）：不含库内视频的合集（媒体服务器镜像的
+    // 播放列表可达数万成员）一条也贡献不了，不读进来。
     final List<MediaCollectionRow> collections = await _db
-        .getAllMediaCollections();
+        .getCollectionsOfLibraryVideos();
     final List<MediaCollectionItemRow> members = await _db
-        .getAllCollectionItems();
+        .getCollectionItemsOfLibraryVideos();
     final Map<int, List<MediaCollectionItemRow>> videoMembersByCollection =
         <int, List<MediaCollectionItemRow>>{};
     for (final MediaCollectionItemRow member in members) {
