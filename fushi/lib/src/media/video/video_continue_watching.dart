@@ -503,8 +503,10 @@ class VideoContinueShare {
   /// 上锁 / 同集归并，见 [visibleHomeRemoteVideos]）。null = 没有可用清单。
   List<RemoteVideoInfo>? remoteVideos;
 
-  /// 产出 [remoteVideos] 的来源（流播 / 封面要用同一个 client）。
-  RemoteVideoSource? remoteSource;
+  /// [remoteVideos] 每一条的归属来源（远端视频 id → 产出它的来源；流播 / 封面要用
+  /// 同一个 client）。远端来源可以多个并存（反馈 k5Ey2AglAf），所以按条记。
+  Map<String, RemoteVideoSource> remoteOwners =
+      const <String, RemoteVideoSource>{};
 
   /// 发布者身份：页面 dispose 时只清自己写的那份。
   Object? remoteOwner;
@@ -512,18 +514,18 @@ class VideoContinueShare {
   void publishRemote(
     Object owner,
     List<RemoteVideoInfo>? videos,
-    RemoteVideoSource? source,
+    Map<String, RemoteVideoSource> owners,
   ) {
     remoteOwner = owner;
     remoteVideos = videos;
-    remoteSource = source;
+    remoteOwners = owners;
   }
 
   void clearOwner(Object owner) {
     if (identical(remoteOwner, owner)) {
       remoteOwner = null;
       remoteVideos = null;
-      remoteSource = null;
+      remoteOwners = const <String, RemoteVideoSource>{};
     }
   }
 }

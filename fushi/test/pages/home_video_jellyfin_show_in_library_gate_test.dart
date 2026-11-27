@@ -16,6 +16,7 @@ import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteVideoInfo;
+import 'package:fushi/src/sync/cloud_remote_video_client.dart';
 import 'package:fushi/src/sync/jellyfin_video_client.dart';
 import 'package:fushi/src/sync/remote_video_list_store.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -92,6 +93,7 @@ void main() {
   Widget buildApp({
     required _CountingJellyfinClient client,
     required void Function() onLoaderCalled,
+    CloudRemoteVideoClient? cloud,
   }) => ProviderScope(
     overrides: <Override>[
       platformServicesProvider.overrideWithValue(platformServices),
@@ -104,10 +106,9 @@ void main() {
           body: HomeVideoPage(
             repo: VideoBookRepository(db),
             section: VideoLibrarySection.allVideos,
-            // 互联与云盘都不出 client：`??` 链只剩 Jellyfin 这一环，闸门的
-            // 效果不会被别的远端源遮住。
+            // 互联不出 client；云盘缺省也不出，闸门的效果不会被别的远端源遮住。
             remoteVideoClientLoader: () async => null,
-            cloudRemoteVideoClientLoader: () async => null,
+            cloudRemoteVideoClientLoader: () async => cloud,
             jellyfinVideoClientLoader: () async {
               onLoaderCalled();
               return client;
@@ -152,6 +153,35 @@ void main() {
     );
   });
 
+  testWidgets('反馈 k5Ey2AglAf：混排开时云盘视频不消失，与 Jellyfin 条目并存', (
+    WidgetTester tester,
+  ) async {
+    final _CountingJellyfinClient client = _CountingJellyfinClient();
+    final _FakeCloudClient cloud = _FakeCloudClient();
+
+    await tester.pumpWidget(
+      buildApp(client: client, onLoaderCalled: () {}, cloud: cloud),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('云盘条目'), findsWidgets, reason: '混排关：只有云盘');
+    expect(find.text('远端条目'), findsNothing);
+
+    // 打开「显示在视频库」：Jellyfin 条目**混入**，云盘条目留着（此前是三选一，
+    // Jellyfin 一出现云盘清单就不再读）。
+    await prefs.setJellyfinShowInLibrary(true);
+    await tester.pumpAndSettle();
+    expect(find.text('远端条目'), findsWidgets);
+    expect(find.text('云盘条目'), findsWidgets, reason: '云盘视频不能被 Jellyfin 顶掉');
+    expect(client.listCalls, greaterThanOrEqualTo(1));
+    expect(cloud.listCalls, greaterThanOrEqualTo(2), reason: '开关翻转后云盘照样重取');
+
+    // 再关掉：Jellyfin 条目走，云盘条目还在。
+    await prefs.setJellyfinShowInLibrary(false);
+    await tester.pumpAndSettle();
+    expect(find.text('远端条目'), findsNothing);
+    expect(find.text('云盘条目'), findsWidgets);
+  });
+
   testWidgets('混排开→关：远端卡片立即消失，再开回来重新出现', (WidgetTester tester) async {
     await prefs.setJellyfinShowInLibrary(true);
     final _CountingJellyfinClient client = _CountingJellyfinClient();
@@ -170,6 +200,26 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('远端条目'), findsWidgets);
   });
+}
+
+/// 云盘目录 client 的最小假实现：只出一份清单（库页取数只碰这几个成员）。
+class _FakeCloudClient implements CloudRemoteVideoClient {
+  int listCalls = 0;
+
+  @override
+  String get remoteLibrarySourceId => 'cloud:webdav';
+
+  @override
+  Future<List<RemoteVideoInfo>> listRemoteVideos() async {
+    listCalls++;
+    return const <RemoteVideoInfo>[
+      RemoteVideoInfo(id: 'cloud-uid-1', title: '云盘条目'),
+    ];
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName}');
 }
 
 /// 计数版 Jellyfin client：只实现库页取清单会碰到的成员，其余经 [noSuchMethod]

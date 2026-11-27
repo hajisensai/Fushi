@@ -327,7 +327,7 @@ class CollectionRemoteContext {
   const CollectionRemoteContext({
     required this.loadRemoteMembers,
     required this.openEpisode,
-    this.coverFetcher,
+    this.coverFetcherFor,
     this.downloadMembers,
     this.scrapeOnHost,
     this.scrapeForHost,
@@ -335,14 +335,15 @@ class CollectionRemoteContext {
     this.downloads,
     this.deleteLocalCopy,
     this.discActions,
-    this.playedMark,
+    this.playedMarkFor,
     this.onPlayedMarked,
   });
 
-  /// 当前远端来源的「已播放」协议（媒体服务器 Jellyfin / Emby）。null = 该来源
-  /// 不支持（互联 / 云盘的看完状态归对端），详情页不给纯远端集出标记菜单项。
-  /// 落地统一走 `setVideosWatched`（本地行 + 服务器回写同一入口）。
-  final RemoteVideoPlayedMark? playedMark;
+  /// 远端集 id → 它所在来源的「已播放」协议（媒体服务器 Jellyfin / Emby）。远端来源
+  /// 可以多个并存（反馈 k5Ey2AglAf），所以按集问；返回 null = 这一集的来源不支持
+  /// （互联 / 云盘的看完状态归对端），详情页不给这一集出标记菜单项。null 函数 = 都不
+  /// 支持。落地统一走 `setVideosWatched`（本地行 + 服务器回写同一入口）。
+  final RemoteVideoPlayedMark? Function(String remoteId)? playedMarkFor;
 
   /// 远端集被标记后通知调用方（作废该来源的清单缓存，之后重读拿到新的已播放）。
   final void Function()? onPlayedMarked;
@@ -363,8 +364,9 @@ class CollectionRemoteContext {
   )
   openEpisode;
 
-  /// 远端封面取数器（钉扎 HTTP 客户端）；null = 远端集只画占位图标。
-  final RemoteCoverFetcher? coverFetcher;
+  /// 远端集的封面取数器（钉扎 HTTP 客户端），按集取——每集配着产出它的那个来源
+  /// （多个远端来源并存，反馈 k5Ey2AglAf）；返回 null = 该集只画占位图标。
+  final RemoteCoverFetcher? Function(RemoteVideoInfo video)? coverFetcherFor;
 
   /// 把本合集**只在对端**的成员整批下载到本机（串行排队，见
   /// `InterconnectDownloadManager.startBatch`）。null = 该远端源不支持下载

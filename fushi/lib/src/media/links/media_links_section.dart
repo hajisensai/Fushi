@@ -51,7 +51,7 @@ Future<void> showMediaLinksDialog({
   required MediaLinkOpenCallback onOpen,
   Future<int> Function()? onInfer,
   ValueChanged<String>? Function(MediaLinkKind kind)? searchActionFor,
-  Future<RemoteVideoSource?> Function()? remoteVideoSource,
+  Future<List<RemoteVideoSource>> Function()? remoteVideoSources,
 }) => showAppDialog<void>(
   context: context,
   builder: (BuildContext dialogContext) => FushiDialogFrame(
@@ -64,7 +64,7 @@ Future<void> showMediaLinksDialog({
         self: self,
         onInfer: onInfer,
         searchActionFor: searchActionFor,
-        remoteVideoSource: remoteVideoSource,
+        remoteVideoSources: remoteVideoSources,
         onOpen: (MediaLinkEntry e) {
           // 从关系网页里打开时弹窗已不在栈顶：只移除弹窗这一条路由，不误关关系网页。
           final ModalRoute<Object?>? route = ModalRoute.of(dialogContext);
@@ -104,7 +104,7 @@ class MediaLinksSection extends StatefulWidget {
     required this.onOpen,
     this.onInfer,
     this.searchActionFor,
-    this.remoteVideoSource,
+    this.remoteVideoSources,
     super.key,
   });
 
@@ -121,11 +121,12 @@ class MediaLinksSection extends StatefulWidget {
   /// 「未入库」灰卡的去搜入口（按端点种类给出；返回 null = 该种类没有入口）。
   final ValueChanged<String>? Function(MediaLinkKind kind)? searchActionFor;
 
-  /// 当前的远端视频来源（`resolveVisibleRemoteVideoSource`）。视频合集卡没有本地
-  /// 封面、成员又只在远端（[MediaLinkEntry.hasRemoteMembers]）时，用它按成员 id
-  /// 问远端要剧海报，与视频库合集卡同一张图、同一份磁盘缓存。null = 不取远端海报
-  /// （占位图）。每个区块实例至多调用一次；没有远端成员的卡不会触发它。
-  final Future<RemoteVideoSource?> Function()? remoteVideoSource;
+  /// 当前的远端视频来源（`resolveVisibleRemoteVideoSources`，按优先级排好、可多个
+  /// 并存）。视频合集卡没有本地封面、成员又只在远端（[MediaLinkEntry.hasRemoteMembers]）
+  /// 时，用它们按成员 id 问远端要剧海报，与视频库合集卡同一张图、同一份磁盘缓存。
+  /// null = 不取远端海报（占位图）。每个区块实例至多调用一次；没有远端成员的卡不会
+  /// 触发它。
+  final Future<List<RemoteVideoSource>> Function()? remoteVideoSources;
 
   @override
   State<MediaLinksSection> createState() => _MediaLinksSectionState();
@@ -197,8 +198,8 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
   late WorkGraphStore _store;
   bool _inferring = false;
 
-  /// 远端来源，首次需要远端海报时解析一次（[MediaLinksSection.remoteVideoSource]）。
-  Future<RemoteVideoSource?>? _remoteSource;
+  /// 远端来源，首次需要远端海报时解析一次（[MediaLinksSection.remoteVideoSources]）。
+  Future<List<RemoteVideoSource>>? _remoteSources;
 
   /// 合集卡的远端海报（只放查到了的）；区块重载（表变更 / 作品图重建）时沿用，
   /// 不重复问远端。
@@ -241,7 +242,7 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
       _store.addListener(_reload);
       unawaited(_tableSub?.cancel());
       _subscribe();
-      _remoteSource = null;
+      _remoteSources = null;
       _remotePosters.clear();
       _remotePosterRequested.clear();
     }
@@ -289,15 +290,15 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
 
   /// 没有本地封面、但有远端成员的视频合集卡：按成员 id 问远端要海报。
   ///
-  /// 一次区块加载只发一次查询（所有待查卡的成员 id 合进一发
+  /// 一次区块加载对每个来源只发一次查询（所有待查卡的成员 id 合进一发
   /// [RemoteVideoLookup.remoteVideosByIds]），来源整段生命周期只解析一次；没有
   /// 待查卡时既不解析来源也不发网络。取图选择与视频库合集卡一致：成员序里第一个
   /// 带剧海报的取剧海报（缓存键 = 不含令牌的 URL 路径，与库页共用磁盘缓存），都没有
   /// 才取第一个成员自己的封面（缓存键 = 视频 id，同库页单集卡）。来源不具备按 id
   /// 查询或取封面的能力（互联 / 云盘）、或查询失败时，卡片保持占位图。
   Future<void> _loadRemotePosters(List<MediaLinkEntry> entries) async {
-    final Future<RemoteVideoSource?> Function()? loader =
-        widget.remoteVideoSource;
+    final Future<List<RemoteVideoSource>> Function()? loader =
+        widget.remoteVideoSources;
     if (loader == null) return;
     final List<MediaLinkEntry> wanted = <MediaLinkEntry>[];
     for (final MediaLinkEntry e in entries) {
@@ -306,33 +307,44 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
       wanted.add(e);
     }
     if (wanted.isEmpty) return;
-    final Map<String, RemoteVideoInfo> byId;
-    final RemoteCoverFetcher fetcher;
+    final List<String> ids = <String>[
+      for (final MediaLinkEntry e in wanted) ...e.remoteMemberKeys,
+    ];
+    // 多个来源并存（反馈 k5Ey2AglAf）：每个能按 id 查、能取封面的来源各问一次，
+    // 同一 id 按来源优先级只认第一个查到的；每条成员配着查到它的那个来源的取图器。
+    final Map<String, ({RemoteVideoInfo video, RemoteCoverFetcher fetcher})>
+    byId = <String, ({RemoteVideoInfo video, RemoteCoverFetcher fetcher})>{};
+    final List<RemoteVideoSource> sources;
     try {
-      final RemoteVideoSource? source = await (_remoteSource ??= loader());
-      if (source is! RemoteVideoLookup || source is! RemoteCoverFetcher) {
-        return;
-      }
-      fetcher = source as RemoteCoverFetcher;
-      final List<RemoteVideoInfo> found = await (source as RemoteVideoLookup)
-          .remoteVideosByIds(<String>[
-            for (final MediaLinkEntry e in wanted) ...e.remoteMemberKeys,
-          ]);
-      byId = <String, RemoteVideoInfo>{
-        for (final RemoteVideoInfo v in found) v.id: v,
-      };
+      sources = await (_remoteSources ??= loader());
     } on Object catch (e) {
-      // 远端不可达 / 鉴权失效：海报只是装饰，卡片保持占位图，不打扰用户。
-      debugPrint('[media_links] remote poster lookup failed: $e');
+      debugPrint('[media_links] remote source resolve failed: $e');
       return;
+    }
+    for (final RemoteVideoSource source in sources) {
+      if (source is! RemoteVideoLookup || source is! RemoteCoverFetcher) {
+        continue;
+      }
+      final RemoteCoverFetcher fetcher = source as RemoteCoverFetcher;
+      final List<RemoteVideoInfo> found;
+      try {
+        found = await (source as RemoteVideoLookup).remoteVideosByIds(ids);
+      } on Object catch (e) {
+        // 远端不可达 / 鉴权失效：海报只是装饰，卡片保持占位图，不打扰用户。
+        debugPrint('[media_links] remote poster lookup failed: $e');
+        continue;
+      }
+      for (final RemoteVideoInfo v in found) {
+        byId.putIfAbsent(v.id, () => (video: v, fetcher: fetcher));
+      }
     }
     bool changed = false;
     for (final MediaLinkEntry e in wanted) {
-      final List<RemoteVideoInfo> members = <RemoteVideoInfo>[
-        for (final String key in e.remoteMemberKeys)
-          if (byId[key] case final RemoteVideoInfo v) v,
-      ];
-      final ImageProvider? poster = _remotePosterFor(members, fetcher);
+      final ImageProvider? poster = _remotePosterFor(
+        <({RemoteVideoInfo video, RemoteCoverFetcher fetcher})>[
+          for (final String key in e.remoteMemberKeys) ?byId[key],
+        ],
+      );
       if (poster == null) continue;
       _remotePosters[e.endpoint] = poster;
       changed = true;
@@ -342,21 +354,22 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
 
   /// 成员（按成员序）里第一个剧海报，没有则第一个成员封面；都没有返回 null。
   static ImageProvider? _remotePosterFor(
-    List<RemoteVideoInfo> members,
-    RemoteCoverFetcher fetcher,
+    List<({RemoteVideoInfo video, RemoteCoverFetcher fetcher})> members,
   ) {
-    for (final RemoteVideoInfo v in members) {
-      final String? url = v.seriesCoverUrl;
+    for (final (:RemoteVideoInfo video, :RemoteCoverFetcher fetcher)
+        in members) {
+      final String? url = video.seriesCoverUrl;
       if (url == null || url.isEmpty) continue;
       return _resizedRemoteCover(
         RemoteCoverImage(url, fetcher, cacheKey: Uri.parse(url).path),
       );
     }
-    for (final RemoteVideoInfo v in members) {
-      final String? url = v.coverUrl;
+    for (final (:RemoteVideoInfo video, :RemoteCoverFetcher fetcher)
+        in members) {
+      final String? url = video.coverUrl;
       if (url == null || url.isEmpty) continue;
       return _resizedRemoteCover(
-        RemoteCoverImage(url, fetcher, cacheKey: v.id),
+        RemoteCoverImage(url, fetcher, cacheKey: video.id),
       );
     }
     return null;

@@ -35,14 +35,14 @@ import 'package:fushi/src/pages/implementations/browse_online_sources_view.dart'
 import 'package:fushi/src/pages/implementations/discovery_ai_acquire_action.dart';
 import 'package:fushi/src/media/media_source.dart';
 
-/// 「同一作品」区块的远端视频来源（[MediaLinksSection.remoteVideoSource]）：与视频库
-/// 页同一条判据（[resolveVisibleRemoteVideoSource]，「显示远端条目」关着时 null），
+/// 「同一作品」区块的远端视频来源（[MediaLinksSection.remoteVideoSources]）：与视频库
+/// 页同一条判据（[resolveVisibleRemoteVideoSources]，「显示远端条目」关着时为空），
 /// 远端合集卡据此取服务器海报。
-Future<RemoteVideoSource?> Function() mediaLinkRemoteVideoSource({
+Future<List<RemoteVideoSource>> Function() mediaLinkRemoteVideoSources({
   required WidgetRef ref,
 }) => () {
   final AppModel appModel = ref.read(appProvider);
-  return resolveVisibleRemoteVideoSource(
+  return resolveVisibleRemoteVideoSources(
     prefs: appModel.prefsRepo,
     database: appModel.database,
   );

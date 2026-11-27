@@ -398,7 +398,7 @@ Future<_CollectionMembersScan> _scanCollectionMembers(
 /// `_collectionPosterProvider`）一致：合集自有层（自有封面 → 原盘盘面图）→ 刮削
 /// 作品海报（cover / poster 的本地文件）→ 成员本地封面借用（从媒体服务器加入的
 /// 剧，各集共用落盘的作品海报）。都没有为 null——有远端成员时区块再按 id 问远端
-/// 要剧海报（[MediaLinksSection.remoteVideoSource]），否则占位图。
+/// 要剧海报（[MediaLinksSection.remoteVideoSources]），否则占位图。
 Future<String?> _videoCollectionPosterPath(
   FushiDatabase db,
   MediaCollectionRow collection,

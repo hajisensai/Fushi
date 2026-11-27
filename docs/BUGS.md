@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4863 条。点号进各自文件。
+> 共 4864 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5594](bugs/BUG-5594-jellyfin-show-in-library-hides-cloud-videos.md) | ✅ | ✅ | 开了 Jellyfin「显示在视频库」后云盘远端视频全部消失 |
 | [BUG-5588](bugs/BUG-5588-notarize-poll-network-blip-drops-submission.md) | ✅ | ✅ | notarize-poll-network-blip-drops-submission |
 | [BUG-5587](bugs/BUG-5587-landscape-phone-detail-hero.md) | ✅ | ✅ | 横屏手机：详情页背景带占七成高度，标题与主按钮被挤出首屏 |
 | [BUG-5586](bugs/BUG-5586-landscape-phone-chrome.md) | ✅ | ✅ | 横屏手机：外壳按宽取档给了桌面页头 / 展开侧栏，快捷键页工具区挤没列表 |

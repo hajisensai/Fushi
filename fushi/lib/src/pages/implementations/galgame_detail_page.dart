@@ -62,7 +62,7 @@ import 'package:fushi/src/media/links/media_link_entries.dart'
 import 'package:fushi/src/media/links/media_link_inference_host.dart'
     show mediaLinkInferCallback;
 import 'package:fushi/src/media/links/media_link_opener.dart'
-    show mediaLinkRemoteVideoSource, mediaLinkSearchAction, openMediaLinkEntry;
+    show mediaLinkRemoteVideoSources, mediaLinkSearchAction, openMediaLinkEntry;
 import 'package:fushi/src/media/links/media_links_section.dart'
     show MediaLinksSection;
 import 'package:fushi/src/media/people/person_entry_sections.dart'
@@ -1549,7 +1549,7 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
       ),
       // 跨模块「同一作品」（作品图谱 media_links）：改编动画 / 原作小说…
       MediaLinksSection(
-        remoteVideoSource: mediaLinkRemoteVideoSource(ref: ref),
+        remoteVideoSources: mediaLinkRemoteVideoSources(ref: ref),
         database: _appModel.database,
         self: (kind: MediaLinkKind.game, key: game.id),
         onOpen: (MediaLinkEntry e) =>
