@@ -42,6 +42,11 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-5589](bugs/BUG-5589-startup-collection-items-full-scan.md) | ✅ | ✅ | 启动后切模块掉帧：合集成员表被反复整表读进 UI isolate |
+> 共 4825 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5567](bugs/BUG-5567-overlay-pre-mine-sentence-edit.md) | ✅ | ✅ | overlay-pre-mine-sentence-edit |
 > 共 4863 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |

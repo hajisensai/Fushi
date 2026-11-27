@@ -24,6 +24,7 @@ import 'package:fushi/src/floating_ball/screen_ocr_card_image.dart';
 import 'package:fushi/src/lookup/global_lookup_log.dart';
 import 'package:fushi/src/lookup/overlay_stat_source.dart';
 import 'package:fushi/src/lookup/overlay_queued_mines.dart';
+import 'package:fushi/src/lookup/pre_mine_sentence_edit.dart';
 import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_capture.dart';
 import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_clip.dart';
 import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_preview.dart';
@@ -72,6 +73,9 @@ typedef OverlayMiningHandler =
 /// [sentenceAudio]（拍板 design-cross-app-audio-desktop）：应用外查词那一刻钉住的
 /// 「最近一段其他 app 声音」（跨应用语音缓存开着才有）。默认制卡 / 覆写路径（没有
 /// [miningHandler]）据此截出查词前最后一句语音当句子音频；带委托的表面自己决定。
+///
+/// [preMineSentenceEditor]（反馈 uEnwXmBIR0）：卡上点了「编辑例句后制卡」时宿主用来弹
+/// 编辑框的出口（桌面借主窗弹）。null = 宿主给不出编辑框，照常制卡。
 bool maybeHandleOverlayDeferredBridge({
   required AppModel? model,
   required Object? handler,
@@ -81,6 +85,7 @@ bool maybeHandleOverlayDeferredBridge({
   OverlayMiningHandler? miningHandler,
   MineOriginOnScreen? isOriginOnScreen,
   Future<CrossAppAudioSnapshot?>? sentenceAudio,
+  PreMineSentenceEditor? preMineSentenceEditor,
 }) {
   switch (handler) {
     // playWordAudio 桥已删：popup.js 三端统一自己用 HTML5 <audio> 播放解析好的
@@ -118,6 +123,7 @@ bool maybeHandleOverlayDeferredBridge({
           miningHandler,
           isOriginOnScreen,
           sentenceAudio,
+          preMineSentenceEditor,
         ),
       );
       return true;
@@ -225,6 +231,7 @@ bool maybeHandleOverlayDeferredBridge({
           miningHandler,
           isOriginOnScreen,
           sentenceAudio,
+          preMineSentenceEditor,
         ),
       );
       return true;
@@ -491,6 +498,7 @@ Future<void> _handleMineBridge(
   OverlayMiningHandler? miningHandler,
   MineOriginOnScreen? isOriginOnScreen,
   Future<CrossAppAudioSnapshot?>? sentenceAudio,
+  PreMineSentenceEditor? preMineSentenceEditor,
 ) async {
   final int? id = _bridgeIdOf(message);
   Map<String, Object?> reply = const <String, Object?>{
@@ -499,12 +507,23 @@ Future<void> _handleMineBridge(
   };
   try {
     final Map<Object?, Object?> raw = _firstMapArg(message);
-    final Map<String, String> fields = <String, String>{
+    final Map<String, String> requested = <String, String>{
       for (final MapEntry<Object?, Object?> e in raw.entries)
         e.key.toString(): e.value?.toString() ?? '',
     };
-    final String expression = fields['expression'] ?? '';
-    if (model != null && expression.isNotEmpty) {
+    final String expression = requested['expression'] ?? '';
+    // 反馈 uEnwXmBIR0：卡上点的是「编辑例句后制卡」就先让用户改例句（默认路径与各表面
+    // 委托共用这一处；委托自己的截图 / 句子音频照旧带上）。取消 = 不制这张卡。
+    final Map<String, String>? fields = model == null || expression.isEmpty
+        ? requested
+        : await applyPreMineSentenceEdit(
+            requested,
+            initialSentence: resolveMineSentence(requested, sentenceContext),
+            editor: preMineSentenceEditor,
+          );
+    if (fields == null) {
+      reply = const MinePopupResult.cancelled().toJson();
+    } else if (model != null && expression.isNotEmpty) {
       if (miningHandler == null) {
         reply = await _mineEntry(
           model,
@@ -1027,6 +1046,7 @@ Future<void> _handleUpdateBridge(
   OverlayMiningHandler? miningHandler,
   MineOriginOnScreen? isOriginOnScreen,
   Future<CrossAppAudioSnapshot?>? sentenceAudio,
+  PreMineSentenceEditor? preMineSentenceEditor,
 ) async {
   final int? id = _bridgeIdOf(message);
   Map<String, Object?> reply = const <String, Object?>{
@@ -1042,12 +1062,23 @@ Future<void> _handleUpdateBridge(
     final Map<Object?, Object?> raw = rawFields is Map
         ? rawFields
         : const <Object?, Object?>{};
-    final Map<String, String> fields = <String, String>{
+    final Map<String, String> requested = <String, String>{
       for (final MapEntry<Object?, Object?> e in raw.entries)
         e.key.toString(): e.value?.toString() ?? '',
     };
-    final String expression = fields['expression'] ?? '';
-    if (model != null && noteId != null && expression.isNotEmpty) {
+    final String expression = requested['expression'] ?? '';
+    // 反馈 uEnwXmBIR0：覆写已制卡片同样可以先改例句（同 [_handleMineBridge]）。
+    final Map<String, String>? fields =
+        model == null || noteId == null || expression.isEmpty
+        ? requested
+        : await applyPreMineSentenceEdit(
+            requested,
+            initialSentence: resolveMineSentence(requested, sentenceContext),
+            editor: preMineSentenceEditor,
+          );
+    if (fields == null) {
+      reply = const MinePopupResult.cancelled().toJson();
+    } else if (model != null && noteId != null && expression.isNotEmpty) {
       if (miningHandler == null) {
         reply = await _updateEntry(
           model,
