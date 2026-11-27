@@ -9,12 +9,11 @@ import 'package:fushi/src/startup/test_root_shared_preferences.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/storage/legacy_support_dir_migration.dart';
 import 'package:fushi/src/utils/misc/update_checker.dart';
+import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 import 'package:fushi/src/utils/window_caption_channel.dart';
 import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
 import 'package:integration_test/integration_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
-import 'test_helpers.dart';
 
 /// BUG-5591: the runner-owned fullscreen is ONE geometry step each way, never
 /// passes through another window size (the old exit restored the
@@ -67,8 +66,17 @@ void main() {
     await prefs.setBool('desktop_main_window_maximized', maximized);
     final FlutterExceptionHandler? testOnError = FlutterError.onError;
     app.main();
-    expect(await waitForHome(tester), isTrue);
-    await tester.pump(const Duration(seconds: 2));
+    // waitForHome() looks for the Material / Cupertino primary navigation;
+    // the glass desktop shell has neither, so wait for the runner-facing
+    // part this test needs: the desktop title bar frame (the opaque-content
+    // declarer) mounted and a few frames drawn.
+    bool shellUp = false;
+    for (int i = 0; i < 180 && !shellUp; i++) {
+      await tester.pump(const Duration(milliseconds: 500));
+      shellUp = find.byType(FushiDesktopTitleBar).evaluate().isNotEmpty;
+    }
+    expect(shellUp, isTrue, reason: 'the desktop shell never came up');
+    await tester.pump(const Duration(seconds: 3));
 
     final Display display =
         WidgetsBinding.instance.platformDispatcher.views.first.display;
