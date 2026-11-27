@@ -5,7 +5,7 @@
 // 该插件已整个移除。本守卫防止它（或同源的 RxLogs）被重新引入。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   test('flutter_logs 不再是依赖（它会定时整树删 Android 外部 files 根）', () {
