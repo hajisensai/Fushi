@@ -5,7 +5,7 @@
   - 同文件 `:2354`（`_attachAudiobook`）：`findByBookKey(bookKey) != null` 就 return，不看它引用的音频 / 字幕副本是否存在。
   - 漫画同根：`_importMangaLocal` / `_importRemote*`（`:2844`、`:2873`、`:2894`、`:2720`、`:2908`、`:2946`）`id.isIndexed(path)` 就跳过。
   - 指纹变了的书：`knownBookKey` 不命中 → 退到按标题判重复 → `record()` 把索引指纹换成新的，书的内容不刷新也不提示。
-- **[x] ① 已修复** — `（提交哈希见 PR）`：
+- **[x] ① 已修复** — `568ede334f`：
   - 书（EPUB / PDF）：认出已入库、且是本来源这个文件导入的行（`_BookSourceIdentity.owns`，与认领同一判据）时，先 `bookManagedContentIntact` 判开书必需产物（书目录非空 + EPUB 的 `META-INF/container.xml` / PDF 的 `document.pdf`），缺了就按原条目就地重建：EPUB 走 `EpubImporter.rebuildExtractedInPlace`（原子 `.bak` 替换），PDF 走新加的 `PdfImporter.rebuildBookDirInPlace`；只回写章节元数据（封面列为空时才补），bookKey / uid / 进度 / 统计 / 合集不动。书目录不在当前书库根下时不重建、记逐本失败提示。
   - 有声书：`_attachAudiobook` 见到已挂的有声书改走 `_repairAudiobookFiles`：丢的副本必须在本书持久目录里、且库里那组文件与原件按位同名（`audiobookPersistedNameMatches`，容忍 ` _<n>` 撞名后缀与转码扩展名），才补：只丢音频 → `replaceAudiobookAudio`（还在的副本零拷贝保留，补回原名，cue 与播放进度不动）；字幕副本也丢 → `alignAndPersistAudiobook` 用原件字幕重新对齐（同一份字幕得到同一组 cue，匹配率照旧写健康度）。对不上的不猜，记逐本失败提示。
   - 漫画：引擎 `MangaImporter` / `MangaArchiveImporter` 加 `rebuildInto: MangaRebuildTarget`，经 `_copyAndInsert` 的就地重建分支把暂存原子换到原书目录、只回写页数（封面指针失效才换）；扫描器本地 / 远端四条卷路径在索引命中时先 `repairFor` 判缺失再重建。PDF 漫画卷暂不支持就地重建（先落 PDF 书再转漫画，两步都按新行写），明确记失败提示。
