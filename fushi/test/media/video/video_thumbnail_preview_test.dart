@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_thumbnail_preview_controller.dart';
 import 'package:fushi/src/media/video/video_thumbnail_preview_overlay.dart';
+import 'package:fushi_engine/platform/media_disk_identity.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
     show FushiCircularProgressIndicator;
 
@@ -22,6 +23,34 @@ Future<ui.Image> _makeImage() async {
 }
 
 void main() {
+  group('OffscreenVideoFrameGrabber 网络卷', () {
+    tearDown(() => debugOverrideRemoteMediaVolume(null));
+
+    test('视频在网络卷上：不起 ffmpeg 取帧，判为不可用（只显时间戳）', () async {
+      debugOverrideRemoteMediaVolume((String _) => true);
+      final OffscreenVideoFrameGrabber grabber = OffscreenVideoFrameGrabber(
+        videoPath: r'Z:\媒体库\show\ep01.mkv',
+      );
+      addTearDown(grabber.dispose);
+      // 网络卷上真起 ffmpeg 会去读这条不存在的路径并计一次失败；这里必须直接回 null、
+      // 不计失败，并且此后 isUnavailable 恒真（调度器据此 timestampOnly）。
+      expect(await grabber.grab(0), isNull);
+      expect(grabber.isUnavailable, isTrue);
+      await grabber.warmUp();
+      expect(grabber.cachedFrame(0), isNull);
+    });
+
+    test('本机盘：判定为本地时不算不可用', () async {
+      debugOverrideRemoteMediaVolume((String _) => false);
+      final OffscreenVideoFrameGrabber grabber = OffscreenVideoFrameGrabber(
+        videoPath: r'D:\videos\ep01.mkv',
+      );
+      addTearDown(grabber.dispose);
+      await Future<void>.delayed(Duration.zero);
+      expect(grabber.isUnavailable, isFalse);
+    });
+  });
+
   group('thumbnailTargetMs (纯函数)', () {
     test('线性映射中段', () {
       expect(thumbnailTargetMs(0.5, 100000), 50000);
