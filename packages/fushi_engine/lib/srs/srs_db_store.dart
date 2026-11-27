@@ -2888,25 +2888,22 @@ class SrsDbStore implements SrsSync2Host {
     final List<SrsEntityView> out = <SrsEntityView>[];
     final Set<String> seen = <String>{};
     for (int at = 0; at < wanted.length; at += kSrsEntityViewsBatchMax) {
-      final Map<String, Object?> r = await _sync2(<String, Object?>{
+      // 视图在列式表 `t` 的字符串列里（原样字节，不套进回包 JSON 再转义一层，内核 views.rs 文件头「线上形状」）。
+      final SrsColumns? t = (await _columnsCommand(<String, Object?>{
         'op': 'entity_views',
         'kind': kind.wire,
         'ids': wanted.sublist(
           at,
           min(at + kSrsEntityViewsBatchMax, wanted.length),
         ),
-      });
-      for (final Object? v in r['views']! as List<Object?>) {
-        if (v case {
-          'id': final String id,
-          'tag': final String tag,
-          'v': final String json,
-        }) {
-          // 分块之间同一个类的另一份成员：只留第一次。
-          if (seen.add(id)) out.add(SrsEntityView(id, tag, json));
-        } else {
-          throw StateError('entity_views: malformed view $v');
-        }
+      })).tables['t'];
+      if (t == null) throw StateError('entity_views: reply has no view table');
+      final SrsStringColumn id = t.strings('id');
+      final SrsStringColumn tag = t.strings('tag');
+      final SrsStringColumn json = t.strings('v');
+      for (int i = 0; i < t.rows; i++) {
+        // 分块之间同一个类的另一份成员：只留第一次。
+        if (seen.add(id[i])) out.add(SrsEntityView(id[i], tag[i], json[i]));
       }
     }
     return out;

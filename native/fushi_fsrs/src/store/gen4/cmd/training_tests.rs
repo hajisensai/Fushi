@@ -18,7 +18,7 @@ use super::training::{
 use crate::gen4::op::tests::id;
 use crate::gen4::op::{Body4, Log4};
 use crate::projection::{Alg, Day};
-use crate::store::gen4::cache::LOG_REP_SQL;
+use crate::store::gen4::cache::{CARD_LOGS_SQL, LOG_REP_SQL};
 use crate::store::gen4::derive::{Ref, SEQ_BASE, SEQ_INSERT_SQL};
 use crate::store::gen4::truth::Truth;
 use crate::store::projections::{self, RwkvRange};
@@ -433,13 +433,55 @@ fn fingerprint_tail_and_scan_statements_use_the_arrival_order() {
             .any(|s| s.contains("cards USING PRIMARY KEY (col=? AND id=?)")),
         "{NOTE_SQL}: {steps:?}"
     );
-    // 判别名类代表的点查（每行尾巴每个成员一次）：走 `log_id (col, id, k)`，不按 `log_ix` 主键 (col=?) 扫整个集合。
+    // 判别名类代表（每行尾巴一次，一条语句取齐全类）：规范 ID 自己与每个成员都走 `log_id (col, id, k)`，成员走部分索引
+    // `alias_canon`，不按 `log_ix` 主键 (col=?) 扫整个集合。
     let steps = plan(LOG_REP_SQL);
     assert!(
         steps
             .iter()
-            .any(|s| s.contains("log_ix USING") && s.contains("INDEX log_id (col=? AND id=?)")),
+            .filter(|s| s.contains("INDEX log_id (col=? AND id=?)"))
+            .count()
+            == 2,
         "{LOG_REP_SQL}: {steps:?}"
+    );
+    assert!(
+        steps
+            .iter()
+            .any(|s| s.contains("INDEX alias_canon (col=? AND canon=?)")),
+        "{LOG_REP_SQL}: {steps:?}"
+    );
+    assert!(
+        !steps
+            .iter()
+            .any(|s| s.starts_with("SCAN") || s.contains("TEMP B-TREE")),
+        "{LOG_REP_SQL}: {steps:?}"
+    );
+    // 一张原值卡的日志行连同规范日志 ID 与「类里有没有别的成员」（BUG-5572）：日志走 `log_ix` 主键 (col, card)，别名走
+    // `alias_ix` 主键点查与部分索引 `alias_canon`，都不扫整个集合、不建临时表。
+    let steps = plan(CARD_LOGS_SQL);
+    assert!(
+        steps
+            .iter()
+            .any(|s| s == "SEARCH l USING PRIMARY KEY (col=? AND card=?)"),
+        "{CARD_LOGS_SQL}: {steps:?}"
+    );
+    assert!(
+        steps
+            .iter()
+            .any(|s| s.starts_with("SEARCH a USING PRIMARY KEY (col=? AND id=?)")),
+        "{CARD_LOGS_SQL}: {steps:?}"
+    );
+    assert!(
+        steps
+            .iter()
+            .any(|s| s.contains("INDEX alias_canon (col=? AND canon=?)")),
+        "{CARD_LOGS_SQL}: {steps:?}"
+    );
+    assert!(
+        !steps
+            .iter()
+            .any(|s| s.starts_with("SCAN") || s.contains("TEMP B-TREE")),
+        "{CARD_LOGS_SQL}: {steps:?}"
     );
     // 每条日志进索引时取落库序：`log_seq` 主键上的 MAX（不扫、不建临时表）。
     let steps = plan(SEQ_INSERT_SQL);

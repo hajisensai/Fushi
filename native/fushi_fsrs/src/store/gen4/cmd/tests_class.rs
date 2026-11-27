@@ -1508,7 +1508,7 @@ fn real_db_conflict_edits_bench() {
         }
         let kind = EntKind::ALL.into_iter().find(|x| *x as i64 == k).unwrap();
         covered.insert(format!("{}/{}", kind.wire(), c.text()));
-        let (lines, _) = ix.class_lines_by(kind, &c, &Pick::All, false).unwrap();
+        let (lines, _) = ix.class_lines_by(kind, &c, &Pick::All, false, "").unwrap();
         let mut by: BTreeMap<String, Vec<String>> = BTreeMap::new();
         for (f, j, _) in lines {
             if kind == EntKind::Note && f == "tags" {

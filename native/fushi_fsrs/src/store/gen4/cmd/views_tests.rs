@@ -10,7 +10,7 @@
 use rusqlite::{Connection, OpenFlags};
 use serde_json::{Value, json};
 
-use super::dispatch_tests::{T1, call, g4, g4req, migrated, open};
+use super::dispatch_tests::{T1, call, g4req, migrated, open};
 use super::identity::LOOKUP_MAX;
 use super::tests::{N1, N2, N4, card, decode};
 use super::tests_class;
@@ -21,27 +21,43 @@ use crate::store::gen4::kernel::G4Core;
 use crate::store::sync2::canonical;
 use crate::store::sync2::tests::{P, tempdir};
 
-/// `entity_views` 的回包：(规范 ID, tag, 视图)。
-fn views(h: *mut SrsCoreHandle, kind: &str, ids: &[&str]) -> Vec<(String, String, Value)> {
-    let v = g4(h, "entity_views", T1, json!({"kind": kind, "ids": ids}));
-    v["views"]
-        .as_array()
-        .unwrap_or_else(|| panic!("{v}"))
-        .iter()
-        .map(|x| {
-            let text = x["v"].as_str().unwrap();
-            let parsed: Value = serde_json::from_str(text).unwrap();
-            assert_eq!(text, canonical(&parsed), "v is the canonical JSON text");
-            let want = super::hex(&blake3::hash(text.as_bytes()).as_bytes()[..16]);
-            assert_eq!(x["tag"].as_str().unwrap(), want, "tag = blake3(v)[..16]");
-            assert_eq!(x["id"], parsed["id"]);
-            (
-                x["id"].as_str().unwrap().to_owned(),
-                x["tag"].as_str().unwrap().to_owned(),
-                parsed,
-            )
+/// `entity_views` 一条命令的回包（[req] 是整条请求）：JSON 是空对象，视图在唯一一个文件 `t` 的列式表里，交回
+/// (规范 ID, tag, 视图 JSON 文本)，按表里的顺序。
+pub(super) fn entity_view_rows(
+    h: *mut SrsCoreHandle,
+    req: &Value,
+) -> Vec<(String, String, String)> {
+    let (v, files) = call(h, req, None).unwrap_or_else(|(rc, e)| panic!("entity_views: {rc} {e}"));
+    assert_eq!(v, json!({}), "the views travel in the table, not the JSON");
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0].0, super::views::VIEWS_TABLE);
+    let (cols, rows) = decode(&files[0].1);
+    assert_eq!(cols, ["id", "tag", "v"]);
+    rows.into_iter()
+        .map(|mut r| {
+            let v = r.pop().unwrap();
+            let tag = r.pop().unwrap();
+            (r.pop().unwrap(), tag, v)
         })
         .collect()
+}
+
+/// `entity_views` 的回包：(规范 ID, tag, 视图)。
+fn views(h: *mut SrsCoreHandle, kind: &str, ids: &[&str]) -> Vec<(String, String, Value)> {
+    entity_view_rows(
+        h,
+        &g4req("entity_views", T1, json!({"kind": kind, "ids": ids})),
+    )
+    .into_iter()
+    .map(|(id, tag, text)| {
+        let parsed: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(text, canonical(&parsed), "v is the canonical JSON text");
+        let want = super::hex(&blake3::hash(text.as_bytes()).as_bytes()[..16]);
+        assert_eq!(tag, want, "tag = blake3(v)[..16]");
+        assert_eq!(json!(id), parsed["id"]);
+        (id, tag, parsed)
+    })
+    .collect()
 }
 
 /// `read` 的一张列式表（第一个文件）解码后的行。

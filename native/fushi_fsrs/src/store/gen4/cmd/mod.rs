@@ -34,7 +34,8 @@
 //!   修改记录按 rowid）换成只看内容的确定顺序，逐处写在函数注释里。
 //! - **行的 JSON 形与协议 3 相同**：修改记录 / 日志 / 身份记录的 JSON 用协议 3 同一份拼法（`derive.rs`
 //!   [super::derive::Index] 的 `edit_lines_as`、`store/sync2` 的 `log_json`、`project_entity` 的 `canonical(d)`），分区键
-//!   `p` 填这个集合绑定的 profile uid（协议 3 存的就是它）。
+//!   `p` 填这个集合绑定的 profile uid（协议 3 存的就是它）；修改行在拼的时候就填（`edit_lines_as` 的 `profile`），
+//!   不拼完再换。
 
 use rusqlite::types::Value as Sv;
 use serde_json::Value;
@@ -131,6 +132,8 @@ mod tests;
 pub(in crate::store::gen4) mod tests_class;
 #[cfg(test)]
 mod training_tests;
+#[cfg(test)]
+mod views_realdb_bench_tests;
 #[cfg(test)]
 mod views_tests;
 #[cfg(test)]
@@ -453,13 +456,13 @@ pub(super) fn edit_rows_with(
     profile: &str,
     tags: bool,
 ) -> Result<Vec<(String, String, Option<i64>)>, String> {
-    let (lines, _) = ix.class_lines_keyed(kind, c)?;
+    let (lines, _) = ix.class_lines_keyed(kind, c, profile)?;
     let mut rows: Vec<(String, String, Option<i64>)> = Vec::with_capacity(lines.len() + 1);
     for (f, json, st) in lines {
         if kind == EntKind::Note && f == "tags" {
             continue;
         }
-        rows.push((f, with_profile(&json, profile), st));
+        rows.push((f, json, st));
     }
     if kind == EntKind::Note && tags {
         if let Some(json) = tags_line(t, ix, c, profile)? {
