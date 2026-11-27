@@ -124,6 +124,13 @@ void main() {
     expect(lastGlobalCall?.method, 'restoreAfterCapture');
     args = lastGlobalCall!.arguments as Map<Object?, Object?>;
     expect(args['captureGeneration'], 41);
+    expect(args.containsKey('returnForeground'), isFalse);
+
+    // 反馈 6RETmKY1TH：放回卡片时顺带把前台交还给原程序。
+    await GlobalLookupChannel.restoreAfterCapture(42, returnForeground: 0x2468);
+    args = lastGlobalCall!.arguments as Map<Object?, Object?>;
+    expect(args['captureGeneration'], 42);
+    expect(args['returnForeground'], 0x2468);
   });
 
   test('第二实例走自己的 channel，与 global_lookup 互不串线', () async {

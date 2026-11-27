@@ -52,6 +52,7 @@
 | [BUG-5562](bugs/BUG-5562-dict-missing-files-no-host-restore.md) | ✅ | ✅ | 词典文件丢了之后从互联 host 拉不回来：同步与「下载到本机」只看元数据判「已装」，还会把空目录打成包推出去 |
 | [BUG-5560](bugs/BUG-5560-dev-console-image-viewer-no-close.md) | ✅ | ✅ | 反馈处理台看截图没有关闭键、列表只有「下一页」 |
 | [BUG-5561](bugs/BUG-5561-srs-review-dismiss-dict-shortcut.md) | ✅ | ✅ | 复习时「关闭词典」快捷键无效：复习页查词弹窗只认写死的 Esc，「返回上一级」开着弹窗直接退出复习 |
+| [BUG-5554](bugs/BUG-5554-ocr-frame-pick-main-window-stays-front.md) | ✅ | ✅ | ocr-frame-pick-main-window-stays-front |
 | [BUG-5548](bugs/BUG-5548-apple-sidebar-scope-rebuilds-hidden-library-pages.md) | ✅ | ✅ | Apple 宽窗侧栏外壳切 tab 后紧跟一帧：所有访问过的保活库页（含藏起的）整页重建 |
 | [BUG-5547](bugs/BUG-5547-srs-rules7-full-rebuild-killed-loop.md) | ✅ | ✅ | 升级到缓存口径 7 后复习一直在加载：开库整层重建几分钟、切后台被杀就回滚重来 |
 | [BUG-5546](bugs/BUG-5546-curator-auto-retries-ai-failures.md) | ✅ | ✅ | AI 库管家默认开、书架每次重载就跑一趟，额度用完还逐个单元问 AI、下一趟再问一遍 |

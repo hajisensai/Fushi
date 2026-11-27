@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert' show base64Decode;
 import 'dart:io';
 
 import 'package:drift/drift.dart' show DatabaseConnection;
@@ -13,7 +14,10 @@ import 'package:fushi/src/floating_ball/app_floating_ball_host.dart';
 import 'package:fushi/src/floating_ball/floating_ball_channel.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
+import 'package:fushi/src/lookup/global_lookup_channel.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
+import 'package:fushi/src/lookup/main_window_excursion.dart'
+    show LookupCardSuspension;
 import 'package:fushi/src/lookup/overlay_bridge_handlers.dart'
     show OverlayMiningHandler;
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
@@ -36,6 +40,8 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
 import 'package:fushi/src/reader/reader_floating_ball.dart';
+import 'package:fushi/src/sync/desktop_lookup_service.dart'
+    show MainWindowPlacement, MainWindowPresentation;
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -2319,6 +2325,108 @@ void main() {
           expect(called('stopScreenOcr'), isFalse);
         });
 
+        group('反馈 6RETmKY1TH：框选截图结束后不把主窗留在前台', () {
+          /// 1×1 透明 PNG：框选页要真解码卡图，[png] 那三个字节解不出来。
+          final Uint8List tinyPng = base64Decode(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhf'
+            'DwAChwGA60e6kgAAAABJRU5ErkJggg==',
+          );
+
+          /// 开「制卡时框选截图」→ 截屏识字 → 点字 → 在卡上点「+」：委托推出框选页。
+          /// 返回委托的回包 Future（框选页关掉才完成；包一层 record，免得 async 把它压平）。
+          Future<({Future<Map<String, Object?>> reply})> mineWithFramePicker(
+            WidgetTester tester,
+          ) async {
+            await prefs.setScreenOcrCardFrameOnMine(true);
+            mockCapture(tester, <String, Object?>{
+              'png': tinyPng,
+              'screen': <double>[0, 0, 1920, 1080],
+            });
+            target.onRecognize = (Uint8List bytes) async =>
+                const SystemOcrPageResult(
+                  lines: <SystemOcrTextLine>[line],
+                  imageWidth: 1920,
+                  imageHeight: 1080,
+                );
+            await pumpHost(tester);
+            await tapAction(tester, 'screen_ocr');
+            expect(
+              target.presentationCaptures,
+              1,
+              reason: '冻结层抢前台之前就要记下主窗位置与用户前台',
+            );
+            await fromNative(tester, 'screenOcrTap', <String, Object?>{
+              'x': 350.0,
+              'y': 220.0,
+            });
+            final OverlayMiningHandler handler =
+                target.lookups.single.miningHandler!;
+            target.log.clear();
+            final Future<Map<String, Object?>> reply = handler(
+              fields: <String, String>{'expression': '猫'},
+            );
+            await tester.pump();
+            await tester.pump(const Duration(milliseconds: 500));
+            return (reply: reply);
+          }
+
+          testWidgets('框选页放弃：主窗放回最小化、前台还给原程序、查词卡放回原位', (
+            WidgetTester tester,
+          ) async {
+            target.presentation = const MainWindowPresentation(
+              placement: MainWindowPlacement.minimized,
+              foregroundApp: 0x2468,
+            );
+            final Future<Map<String, Object?>> reply =
+                (await mineWithFramePicker(tester)).reply;
+            expect(called('stopScreenOcr'), isTrue);
+            // 查词卡是收起（留着 WebView 与 route）而不是关掉；主窗这时才拉到前台。
+            expect(target.log, <String>['suspend', 'front']);
+            appModel.navigatorKey.currentState!.pop(false);
+            await tester.pump();
+            await tester.pump(const Duration(milliseconds: 500));
+            final Map<String, Object?> result = await reply;
+            expect(result['cancelled'], isTrue);
+            expect(target.log, <String>[
+              'suspend',
+              'front',
+              'settle:minimized',
+              'restore:${target.suspendedGeneration}:${0x2468}',
+            ]);
+          });
+
+          testWidgets('主窗原来收在托盘：框完再藏回托盘', (WidgetTester tester) async {
+            target.presentation = const MainWindowPresentation(
+              placement: MainWindowPlacement.hidden,
+              foregroundApp: 77,
+            );
+            final Future<Map<String, Object?>> reply =
+                (await mineWithFramePicker(tester)).reply;
+            appModel.navigatorKey.currentState!.pop(false);
+            await tester.pump();
+            await tester.pump(const Duration(milliseconds: 500));
+            await reply;
+            expect(target.log.sublist(2), <String>[
+              'settle:hidden',
+              'restore:${target.suspendedGeneration}:77',
+            ]);
+          });
+
+          testWidgets('查词卡收不起来：退回关卡，主窗留在前台说结果（不放回）', (
+            WidgetTester tester,
+          ) async {
+            target.suspendSucceeds = false;
+            final Future<Map<String, Object?>> reply =
+                (await mineWithFramePicker(tester)).reply;
+            expect(target.log, <String>['suspend', 'dismiss', 'front']);
+            appModel.navigatorKey.currentState!.pop(false);
+            await tester.pump();
+            await tester.pump(const Duration(milliseconds: 500));
+            await reply;
+            expect(target.log, <String>['suspend', 'dismiss', 'front']);
+          });
+        });
+
         testWidgets('没装对应语言的识别器（默认日语）：冻结层提示去装语言，点任意处退出', (
           WidgetTester tester,
         ) async {
@@ -2646,4 +2754,49 @@ class _RecordingActionTarget extends DesktopSystemBallActionTarget {
 
   @override
   Future<void> bringMainWindowToFront() async => log.add('front');
+
+  /// [captureMainWindowPresentation] 回的呈现状态（反馈 6RETmKY1TH）。
+  MainWindowPresentation? presentation = const MainWindowPresentation(
+    placement: MainWindowPlacement.onScreen,
+  );
+
+  /// [captureMainWindowPresentation] 被调了几次（不进 [log]：既有截屏用例按 log 断言）。
+  int presentationCaptures = 0;
+
+  @override
+  Future<MainWindowPresentation?> captureMainWindowPresentation() async {
+    presentationCaptures++;
+    return presentation;
+  }
+
+  @override
+  Future<void> settleMainWindowPresentation(
+    MainWindowPresentation presentation,
+  ) async => log.add('settle:${presentation.placement.name}');
+
+  /// 查词卡收不收得起来。
+  bool suspendSucceeds = true;
+
+  /// [suspendLookup] 发出去的 generation。
+  final int suspendedGeneration = 4242;
+
+  @override
+  Future<LookupCardSuspension?> suspendLookup() async {
+    log.add('suspend');
+    return suspendSucceeds
+        ? LookupCardSuspension(
+            route: GlobalLookupChannel.currentRoute,
+            generation: suspendedGeneration,
+          )
+        : null;
+  }
+
+  @override
+  Future<bool> restoreLookup(
+    LookupCardSuspension suspension, {
+    int? returnForeground,
+  }) async {
+    log.add('restore:${suspension.generation}:$returnForeground');
+    return true;
+  }
 }

@@ -14,7 +14,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Directory;
 
-import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter/foundation.dart' show immutable, visibleForTesting;
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/anki/mine_failure_notice.dart';
@@ -648,6 +648,20 @@ Map<String, Object?> overlayMineReply(
   };
 }
 
+/// 截屏识字「制卡时框选截图」框好的结果（[screenOcrOverlayMiningHandler] 的
+/// `pickFrame` 返回值）。
+@immutable
+class ScreenOcrFramePick {
+  const ScreenOcrFramePick(this.overrides, {required this.reportOutcomeOnHost});
+
+  /// 用户框出的卡图范围 / 打码 / 不带图。
+  final MiningRequestOverrides overrides;
+
+  /// 发起制卡的查词卡没能放回屏上：制卡结果只能由宿主在主窗说（主窗这时留在
+  /// 前台）。卡放回来了就为 false，结果照常回给卡片就地说。
+  final bool reportOutcomeOnHost;
+}
+
 /// 桌面截屏识字（冻结层点字）的制卡委托（反馈 Gz7z6Y6Mbr）：与默认的 [_mineEntry] /
 /// [_updateEntry] 同一条写入路径，只多带一张卡图——识别用的整屏截图里所点文字所在的
 /// 文本块（[ScreenOcrCardImage]），按制卡图片质量档裁好走 `coverPath`。偏好「截屏识字
@@ -655,20 +669,21 @@ Map<String, Object?> overlayMineReply(
 /// 这里不再记一遍。
 ///
 /// 拍板 EuOLprw_dV（选 b）：开了「制卡时框选截图」时，新制卡先经 [pickFrame] 让用户
-/// 框截图范围（宿主负责收起冻结层与浮窗、把主窗拉到前台再推框选页）；返回 null =
-/// 用户放弃，这张卡不制。框过的卡结果在主窗 toast（浮窗已经收起）。覆盖已制卡片
+/// 框截图范围（宿主负责收起冻结层与查词卡、把主窗拉到前台再推框选页，框完把主窗
+/// 放回原处、前台还给原程序、查词卡放回原位，反馈 6RETmKY1TH）；返回 null = 用户
+/// 放弃，这张卡不制。结果照常回给放回来的查词卡就地说；卡放不回来时
+/// （[ScreenOcrFramePick.reportOutcomeOnHost]）才由宿主在主窗 toast。覆盖已制卡片
 /// （[updateNoteId]）不弹框选，照旧自动裁。
 OverlayMiningHandler screenOcrOverlayMiningHandler({
   required AppModel model,
   required ScreenOcrCardImage cardImage,
   required String sentenceContext,
   Future<CrossAppAudioSnapshot?>? sentenceAudio,
-  Future<MiningRequestOverrides?> Function(ScreenOcrCardImage source)?
-  pickFrame,
+  Future<ScreenOcrFramePick?> Function(ScreenOcrCardImage source)? pickFrame,
 }) {
   return ({required Map<String, String> fields, int? updateNoteId}) async {
     final bool cardImageEnabled = model.prefsRepo.screenOcrCardImage;
-    MiningRequestOverrides? frame;
+    ScreenOcrFramePick? frame;
     if (updateNoteId == null &&
         pickFrame != null &&
         screenOcrCardFrameNeeded(
@@ -679,7 +694,9 @@ OverlayMiningHandler screenOcrOverlayMiningHandler({
       frame = await pickFrame(cardImage);
       if (frame == null) return const MinePopupResult.cancelled().toJson();
     }
-    final ScreenOcrCardImagePlan plan = resolveScreenOcrCardImagePlan(frame);
+    final ScreenOcrCardImagePlan plan = resolveScreenOcrCardImagePlan(
+      frame?.overrides,
+    );
     final ({String path, Directory dir})? cover =
         !cardImageEnabled || plan.kind == ScreenOcrCardImageKind.omit
         ? null
@@ -698,7 +715,7 @@ OverlayMiningHandler screenOcrOverlayMiningHandler({
               coverPath: cover?.path,
               recordStats: false,
               sentenceAudio: sentenceAudio,
-              toastOutcome: frame != null,
+              toastOutcome: frame?.reportOutcomeOnHost ?? false,
             )
           : await _updateEntry(
               model,
