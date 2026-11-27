@@ -52,14 +52,20 @@ void main() {
 
   test('main.dart 的三个深链入口都认 fushi://pair，且统一走确认后配对', () {
     final String main = File('lib/main.dart').readAsStringSync();
-    // 冷启动 argv（Windows 协议注册）、移动端 intent / iOS URL、Windows 单实例转发。
+    final String links = File(
+      'lib/src/platform/incoming_fushi_link.dart',
+    ).readAsStringSync();
+    // 冷启动 argv（Windows 协议注册）、Windows 单实例转发、队列消费各解析一次；
+    // 移动端 intent / iOS URL / macOS 事件流走共用分类器 [FushiIncomingLink]。
     expect(
       RegExp(r'FushiPairLink\.tryParse\(').allMatches(main).length,
-      greaterThanOrEqualTo(4),
-      reason: '三个入口 + 队列消费各一次',
+      greaterThanOrEqualTo(3),
+      reason: 'argv、单实例转发、队列消费各一次',
     );
+    expect(links.contains('FushiPairLink.tryParse(data)'), isTrue);
     expect(main.contains('_pendingPairLinks.add(arg)'), isTrue);
-    expect(main.contains('_queuePairLink(data)'), isTrue);
+    expect(main.contains('case PairIncomingLink(:final String url):'), isTrue);
+    expect(main.contains('_queuePairLink(url)'), isTrue);
     expect(main.contains('_queuePairLink(videoPath)'), isTrue);
     expect(
       main.contains('runInterconnectLinkPairingFlow('),
