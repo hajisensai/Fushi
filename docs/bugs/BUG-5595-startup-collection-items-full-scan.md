@@ -26,6 +26,24 @@
 - **[x] ② 已加自动化测试** — `fushi/test/database/library_video_collection_scope_test.dart`（收窄查询的口径 + 私密快照合集级判定
   与整表时一致）；`video_library_scrape_sweep_test.dart` 读库次数计数改认主 FROM；`local_media_cover_perf_guard_test.dart`
   书架改认 `getCollectionItemsOfKinds(shelfKinds)`。
-- **备注**：视频库页 `_loadLibraryMapsInner` 与作品关系图 `loadWorkGraphSnapshot` 首次挂载仍整表读一次——视频页要渲染
-  播放列表卡片、确实要这些成员，没收；要再降得在 SQL 侧按卡片聚合，另开。Android / Apple 端未单独测速，根因在共享 Dart
-  路径上，修法与平台无关。
+- **[x] 第二轮（首次打开各模块）** — 临时拦截器按切 tab 时间戳归因，r0（首次进模块）剩下的大头是视频折叠归属：
+  远端主机的视频也要归属，主归属查询收不窄（84,901 行，单条 427 ms），从前连同整表成员在 UI isolate 上解码。
+  - 视频库页 / 首页继续观看 / 伴屏改走 `loadVideoLibraryMembership`（`video_continue_watching.dart`）：每条目一行
+    主合集 + 组内序（`getPrimaryCollectionMembershipOfKind`）+ 本机视频自己的成员行（`getLibraryVideoMemberRows`），
+    在一次性后台 isolate 里读库、套目录合集策略，结果经 `Isolate.exit` 交回；
+  - 作品图 `loadWorkGraphSnapshot` 需要全部成员（收不窄），整体搬到后台 isolate（`loadWorkGraphSnapshotOffUi`）；
+  - 侧栏书架速览只取 epub / srt 归属；播放页系列归属只读该视频的成员行（`memberRowsOfVideo`）；改名覆盖
+    （`readOverrideTitlesByBookKey`）按前缀查偏好（`getPrefRowsByPrefix`），不整表读 1879 行。
+  - 测试：`fushi/test/media/video/video_library_membership_test.dart`（新旧管线逐条对拍：目录 / 作品模式、
+    远端视频、多合集、书视频混编，并走一遍真后台 isolate）；`work_graph_store_test.dart` 加后台建图与原地一致。
+  - 效果（Windows，同库，冷启动立刻切模块，UI 线程堵塞合计）：r0 2071 ms → 1159 ms（首页 674 → 0、视频 231 → 74），
+    r1 32 → 0。
+- **平台验证**：
+  - Android（小米平板 5 / nabu，同一份真实库拷进测试包内部存储，profile 包，冷启动立刻切模块，UI 线程堵塞合计）：
+    第 0 / 1 / 2 轮 9.9 s / 6.5 s / 5.4 s → 4.3 s / 1.3 s / 1.6 s；第 3、4 轮两边都约 0.5～1.1 s（这台设备的底噪）。
+    基线是当时的 `develop`（e18ab28），比修复分支的基点新几个提交。
+  - macOS：未测成——Mac 访问 GitHub / pub.dev 不通，CocoaPods 拉依赖失败；根因在共享 Dart 路径上，与平台无关。
+- **备注**：仍剩的首次开销——书架首次 575 ms、游戏 229 ms、复习 183 ms。书架的构成是连续多帧 `LAYOUT` 25～40 ms
+  （首次排版书名等文本，第二轮归零）加并发 GC 标记，不是读库。`media_collections`（3185 行）每个模块首次挂载
+  各读 1～3 次，单模块约 20～30 ms；进程级合集缓存要处理事务内读、跨 isolate 写入的失效，易读到旧数据，
+  收益与风险不成比例，不做。
