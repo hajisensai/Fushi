@@ -830,14 +830,6 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
-  flutter_logs:
-    dependency: transitive
-    description:
-      name: flutter_logs
-      sha256: "4685b26819330813f773330c97749e97a5b0fc588ba230370528c2db18b9692e"
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.2.8"
   flutter_markdown:
     dependency: transitive
     description:

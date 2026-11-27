@@ -25,7 +25,6 @@ import 'package:fushi_compute/fushi_compute.dart' show fushiComputePortWakeup;
 import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:flutter_logs/flutter_logs.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:receive_intent/receive_intent.dart' as intents;
 import 'package:stack_trace/stack_trace.dart';
@@ -788,21 +787,10 @@ void main([List<String> args = const <String>[]]) {
         // onTrimMemory、Windows 崩溃摘要、macOS .ips、iOS MetricKit 的摘要折进错误
         // 日志，随反馈日志上传（Dart 接不到的原生崩溃 / 被系统杀）。
         PreviousExitLog.foldIntoErrorLog(),
-        // 本地文件日志（仅移动端）：原生侧建目录 + 清过期文件，与上面几项互不相干。
-        if (Platform.isAndroid || Platform.isIOS)
-          FlutterLogs.initLogs(
-            logLevelsEnabled: [
-              LogLevel.INFO,
-              LogLevel.WARNING,
-              LogLevel.ERROR,
-              LogLevel.SEVERE,
-            ],
-            timeStampFormat: TimeStampFormat.DATE_FORMAT_1,
-            directoryStructure: DirectoryStructure.FOR_DATE,
-            logTypesEnabled: ['device', 'network', 'errors'],
-            logFileExtension: LogFileExtension.LOG,
-            logsRetentionPeriodInDays: 7,
-          ),
+        // BUG-5576：这里曾经调 flutter_logs 插件的 initLogs。它在 Android 上把
+        // 「导出目录」解析成 getExternalFilesDir 根本身，每 3 天冷启动对它
+        // deleteRecursively，连外部书库 files/data 一起删光。已整个移除该插件，
+        // 错误日志统一走 ErrorLogService；守卫 test/build/no_flutter_logs_guard_test.dart。
       ]);
       StudyClock.trace = (String line) =>
           StudyDiagLog.instance.add('clock', line);
@@ -1124,19 +1112,9 @@ void main([List<String> args = const <String>[]]) {
       };
     },
     (exception, stack) {
-      /// Print error details to the console.
-      final details = FlutterErrorDetails(exception: exception, stack: stack);
-
       /// Log the error. UncaughtZone 是致命级（zone 顶层未捕获），同步 flush 落盘
       /// （TODO-607 P0-1）——这条之后进程往往就终止了，异步 append 来不及写盘。
       ErrorLogService.instance.logFatal('UncaughtZone', exception, stack);
-      if (Platform.isAndroid || Platform.isIOS) {
-        FlutterLogs.logError(
-          'fushi_reader',
-          details.exceptionAsString(),
-          stack.toString(),
-        );
-      }
     },
   );
 }
