@@ -1,6 +1,6 @@
 // 开发者反馈处理台（网页，fushi.moe 上的 /dev）。
 //
-//   GET  /dev                     未登录 → 邮箱登录；已登录 → 反馈列表（?status=active|<状态>|all&cursor）
+//   GET  /dev                     未登录 → 邮箱登录；已登录 → 反馈列表（?status=active|<状态>|all&n=<累计条数>&q=）
 //   POST /dev/code   {email}      发登录验证码（与 App 新设备登录同一套 purpose=login 验证码）
 //   POST /dev/login  {email,code} 验码 → 账户 role 必须是 dev 或 triage → 写会话 Cookie
 //                                 triage（反馈协查）只能用 TRIAGE_ROUTES：反馈列表 / 详情 / 附件 / JSON 与保存批改；
@@ -39,6 +39,7 @@
 import { HttpError, hex, json, sha256 } from './util.js';
 import { consumeCode, requestCode, resolveEmailAccount } from './email.js';
 import { esc } from './pages.js';
+import { LIGHTBOX_STYLE, lightboxImage } from './lightbox.js';
 import { FILE_EXTENSIONS } from './feedback_files.js';
 import {
   STATUSES,
@@ -166,7 +167,7 @@ function layout(title, body, { signedIn = false, triage = false } = {}) {
 <meta name="color-scheme" content="light dark">
 <meta name="robots" content="noindex">
 <title>${esc(title)} · Fushi 反馈处理台</title>
-<style>${STYLE}${DECISIONS_STYLE}</style>
+<style>${STYLE}${DECISIONS_STYLE}${LIGHTBOX_STYLE}</style>
 </head>
 <body>
 <header><a class="brand" href="/dev">Fushi 反馈处理台</a>${logout}</header>
@@ -198,6 +199,9 @@ h2{font-size:15px;margin:20px 0 8px}
 .row{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline;padding:10px 0;border-bottom:1px solid var(--line);text-decoration:none}
 .row .sum{flex-basis:100%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
 .row:last-child{border-bottom:0}
+.row{scroll-margin-top:12px}
+.listfoot{color:var(--muted);font-size:14px}
+.totop{position:fixed;right:20px;bottom:20px;width:44px;height:44px;display:flex;align-items:center;justify-content:center;border-radius:999px;background:var(--accent);color:#fff;text-decoration:none;font-size:20px;box-shadow:0 2px 8px rgba(0,0,0,.25)}
 .row .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .badge{font-size:12px;padding:1px 8px;border-radius:999px;border:1px solid var(--line);white-space:nowrap}
 .badge.s-open,.badge.new{border-color:var(--accent);color:var(--accent)}
@@ -400,15 +404,34 @@ export function devReporterBadge(reporter, viewer) {
   return `<span class="badge insider">${esc(label)}</span>`;
 }
 
+/** 列表每次「加载更多」多拿的条数，也是首屏条数。 */
+export const LIST_PAGE_SIZE = 50;
+/** 一页最多累计显示的条数：超过就不再给「加载更多」，改用筛选 / 搜索缩小范围（限住单次渲染的 D1 读量）。 */
+export const LIST_MAX_SHOWN = 1000;
+
+/**
+ * 反馈列表：累计加载。`?n=<条数>` 是要显示的总条数（缺省 {@link LIST_PAGE_SIZE}），「加载更多」把 n 加一页、
+ * 锚点跳到新加载的第一条；已加载的条目一直留在页上，所以没有「上一页 / 页码」的问题。底部写「已加载 N 条」
+ * 并给「回到顶部」（反馈 vh4K5khfVr）。此前是游标分页「下一页」，整页替换成下一批，翻回去只能靠浏览器返回。
+ * 页面无脚本：n 由服务端按游标逐批（每批 ≤100，devList 的上限）取齐。
+ */
 async function listPage(env, url, dev) {
   const status = url.searchParams.get('status') || 'active';
   const q = (url.searchParams.get('q') || '').trim();
-  const res = await devList(env, {
-    status: status === 'all' ? null : status,
-    cursor: url.searchParams.get('cursor'),
-    limit: 50,
-    q,
-  });
+  const want = Math.min(LIST_MAX_SHOWN, Math.max(LIST_PAGE_SIZE,
+    Number.parseInt(url.searchParams.get('n') || '', 10) || LIST_PAGE_SIZE));
+  const items = [];
+  let next = null;
+  do {
+    const res = await devList(env, {
+      status: status === 'all' ? null : status,
+      cursor: next,
+      limit: Math.min(100, want - items.length),
+      q,
+    });
+    items.push(...res.items);
+    next = res.next;
+  } while (next && items.length < want);
   const qs = q ? `&amp;q=${encodeURIComponent(q)}` : '';
   const tabs = TABS.map(([k, label]) => `<a href="/dev?status=${k}${qs}"${k === status ? ' class="on"' : ''}>${esc(label)}</a>`).join('');
   const searchForm = `<form method="get" action="/dev" class="search">
@@ -416,7 +439,7 @@ async function listPage(env, url, dev) {
 <input type="search" name="q" value="${esc(q)}" maxlength="100" placeholder="编号 / 标题 / 正文">
 <button>搜索</button>${q ? ` <a href="/dev?status=${esc(status)}">清除</a>` : ''}
 </form>`;
-  const rows = res.items.map((f) => `<a class="row${f.devReporter ? ' insider' : ''}" href="/dev/f/${esc(f.id)}">
+  const rows = items.map((f, i) => `<a class="row${f.devReporter ? ' insider' : ''}" id="r${i}" href="/dev/f/${esc(f.id)}">
 ${devReporterBadge(f.devReporter, dev)}
 <span class="badge s-${esc(f.status)}">${esc(STATUS_LABEL[f.status] || f.status)}</span>
 <span class="badge">${esc(CATEGORY_LABEL[f.category] || f.category)}</span>
@@ -430,15 +453,23 @@ ${flagBadges(f.flags)}
 <span class="muted">${esc(fmtTime(f.updatedAt))}</span>
 ${f.aiSummary ? `<span class="sum muted">AI：${esc(f.aiSummary)}</span>` : ''}
 </a>`).join('');
-  const more = res.next
-    ? `<p><a href="/dev?status=${esc(status)}${qs}&amp;cursor=${encodeURIComponent(res.next)}">下一页</a></p>`
+  let more = '';
+  if (next && items.length < LIST_MAX_SHOWN) {
+    more = ` · <a href="/dev?status=${esc(status)}${qs}&amp;n=${items.length + LIST_PAGE_SIZE}#r${items.length}">加载更多</a>`;
+  } else if (next) {
+    more = ` · <span class="muted">最多显示 ${LIST_MAX_SHOWN} 条，更早的请用筛选或搜索</span>`;
+  }
+  const foot = items.length
+    ? `<p class="listfoot">已加载 ${items.length} 条${more} · <a href="#top">回到顶部</a></p>`
     : '';
-  return html(layout('反馈', `<h1>反馈</h1>
+  // 浮动的回到顶部：列表超过一屏才有意义。
+  const toTop = items.length > 20 ? '<a class="totop" href="#top" title="回到顶部" aria-label="回到顶部">↑</a>' : '';
+  return html(layout('反馈', `<h1 id="top">反馈</h1>
 <p class="muted">${esc(dev.nickname)}，你好。</p>
 <nav class="tabs">${tabs}</nav>
 ${searchForm}
 <div class="card">${rows || `<p class="muted">${q ? '没有匹配的反馈。' : '没有反馈。'}</p>`}</div>
-${more}`, { signedIn: true, triage: dev.role !== 'dev' }));
+${foot}${toTop}`, { signedIn: true, triage: dev.role !== 'dev' }));
 }
 
 const CHANNEL_LABEL = { debug: '调试版', beta: '测试版', stable: '正式版' };
@@ -824,7 +855,7 @@ async function detailPage(env, id, dev) {
     ['带账户签名', o.signed ? '是' : '否'],
   ].map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('');
   const shots = f.attachments.filter((a) => a.kind === 'screenshot')
-    .map((a) => `<a href="/dev/f/${esc(f.id)}/a/${esc(a.slot)}"><img src="/dev/f/${esc(f.id)}/a/${esc(a.slot)}" alt="截图 ${esc(a.slot)}"></a>`)
+    .map((a) => lightboxImage({ id: `shot-${a.slot}`, src: `/dev/f/${f.id}/a/${a.slot}`, alt: `截图 ${a.slot}` }))
     .join('');
   const video = f.attachments.find((a) => a.kind === 'video');
   const videoBlock = video

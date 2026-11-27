@@ -34,6 +34,18 @@ Route<void> illustrationZoomRoute(BuildContext context, WidgetBuilder builder) {
   );
 }
 
+/// 任意图片控件的全屏缩放查看：反馈截图（反馈人详情 / 开发者处理台）、复习卡面图
+/// 等不是磁盘文件的图都走这里，与 [IllustrationZoomViewer] 同一条路由与同一个
+/// [ImageZoomFrame]（缩放拖动、点图 / 点遮罩 / 右上角 × / Esc / 返回键关闭）。
+/// 推在根 Navigator 上：铺满整个窗口，不被分栏 / 壳层裁小。
+Future<void> showImageZoomViewer(BuildContext context, Widget picture) =>
+    Navigator.of(context, rootNavigator: true).push<void>(
+      illustrationZoomRoute(
+        context,
+        (BuildContext _) => ImageZoomFrame(child: picture),
+      ),
+    );
+
 /// 一张图的缩放查看：点图关闭路由；[onLongPress]（移动端弹图片动作面板，见
 /// image_actions_sheet.dart）由宿主决定挂不挂。
 class IllustrationZoomViewer extends StatelessWidget {
@@ -52,26 +64,41 @@ class IllustrationZoomViewer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return ImageZoomFrame(
+      onLongPress: onLongPress,
+      child: Image.file(
+        file,
+        fit: BoxFit.contain,
+        // BUG-2496：坏图解码失败退回占位图标，不当致命 FlutterError。
+        errorBuilder: (_, Object error, __) {
+          ErrorLogService.instance.logDiagnostic(
+            '$diagnosticTag.coverDecode',
+            '${file.path}: $error',
+          );
+          return const FushiIcon(FushiIcons.brokenImage, size: 64);
+        },
+      ),
+    );
+  }
+}
+
+/// 缩放看图的画面本体（放在 [illustrationZoomRoute] 里）：[child] 居中可双指 /
+/// 滚轮缩放拖动，点图关闭；右上角一枚关闭圆钮。
+class ImageZoomFrame extends StatelessWidget {
+  const ImageZoomFrame({super.key, required this.child, this.onLongPress});
+
+  final Widget child;
+  final VoidCallback? onLongPress;
+
+  @override
+  Widget build(BuildContext context) {
     final Widget viewer = GestureDetector(
       onTap: () => Navigator.pop(context),
       onLongPress: onLongPress,
       child: InteractiveViewer(
         minScale: 0.5,
         maxScale: 10,
-        child: Center(
-          child: Image.file(
-            file,
-            fit: BoxFit.contain,
-            // BUG-2496：坏图解码失败退回占位图标，不当致命 FlutterError。
-            errorBuilder: (_, Object error, __) {
-              ErrorLogService.instance.logDiagnostic(
-                '$diagnosticTag.coverDecode',
-                '${file.path}: $error',
-              );
-              return const FushiIcon(FushiIcons.brokenImage, size: 64);
-            },
-          ),
-        ),
+        child: Center(child: child),
       ),
     );
     // M3E 图片查看器：图从 0.92 弹到原尺寸（expressive spatial），右上角一枚

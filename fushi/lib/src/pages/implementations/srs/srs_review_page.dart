@@ -121,6 +121,8 @@ import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/srs/srs_navigation.dart';
 import 'package:fushi/src/srs/srs_review_freshness.dart';
 import 'package:fushi/src/srs/srs_action_error_text.dart';
+import 'package:fushi/src/reader/illustration_zoom_viewer.dart'
+    show showImageZoomViewer;
 
 /// 评分按钮上的间隔文案：按界面语言给单位（文案照 Anki 答题按钮：英文 m / h / d /
 /// mo / y，中文 分钟 / 小时 / 天 / 个月 / 年），不再让「1m」与「11.1mo」混着读。
@@ -1935,7 +1937,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       );
       if (picture == null || !mounted) return;
       _lookup.closeAll();
-      await showSrsCardImageViewer(context, picture);
+      await showImageZoomViewer(context, picture);
       if (mounted) _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
     });
   }

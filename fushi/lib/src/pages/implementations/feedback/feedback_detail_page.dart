@@ -35,11 +35,12 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
 import 'package:fushi/src/utils/misc/gallery_image_picker.dart';
-import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_engine/feedback/feedback_models.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/reader/illustration_zoom_viewer.dart'
+    show showImageZoomViewer;
 
 class FeedbackDetailPage extends ConsumerStatefulWidget {
   const FeedbackDetailPage({
@@ -476,21 +477,17 @@ class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
     _viewImage(slot);
   }
 
+  /// 全屏看截图：共用的缩放查看（右上角 ×、点图 / 遮罩 / Esc / 返回关闭）。
   void _viewImage(String slot) => unawaited(
-    showAppDialog<void>(
-      context: context,
-      builder: (BuildContext ctx) => FushiDialog(
-        child: InteractiveViewer(
-          child: FutureBuilder<Uint8List>(
-            future: _image(slot),
-            builder: (BuildContext _, AsyncSnapshot<Uint8List> snap) =>
-                snap.hasData
-                ? Image.memory(snap.data!, cacheWidth: 2400)
-                : snap.hasError
-                ? const Center(child: FushiIcon(FushiIcons.brokenImage))
-                : const FushiLoadingView(),
-          ),
-        ),
+    showImageZoomViewer(
+      context,
+      FutureBuilder<Uint8List>(
+        future: _image(slot),
+        builder: (BuildContext _, AsyncSnapshot<Uint8List> snap) => snap.hasData
+            ? Image.memory(snap.data!, cacheWidth: 2400)
+            : snap.hasError
+            ? const FushiIcon(FushiIcons.brokenImage, size: 64)
+            : const FushiLoadingView(),
       ),
     ),
   );

@@ -679,3 +679,55 @@ describe('开发者私有批注（AI 总结 / 开发者批改）', () => {
     expect((await withTicket(env, 'GET', `/v1/feedback/${id}`, ticket)).data.messages[0].body).toBe(reply);
   });
 });
+
+describe('网页处理台：看图与列表（反馈 vh4K5khfVr）', () => {
+  it('截图点开是带关闭键的全屏看图，不再整页跳到裸图片', async () => {
+    const env = makeEnv();
+    const dev = await makeDev(env);
+    const { id, ticket } = (await submit(env)).data;
+    await withTicket(env, 'PUT', `/v1/feedback/${id}/attachments/s0`, ticket, { body: PNG });
+    const cookie = (await webLogin(env, dev)).res.headers.get('Set-Cookie').split(';')[0];
+    const detail = (await page(env, 'GET', `/dev/f/${id}`, { cookie })).data;
+    // 缩略图指向页内遮罩，而不是在同一标签页打开附件 URL。
+    expect(detail).toContain(`<a class="lb-thumb" id="shot-s0-t" href="#shot-s0"><img src="/dev/f/${id}/a/s0"`);
+    expect(detail).not.toContain(`<a href="/dev/f/${id}/a/s0"><img`);
+    const overlay = detail.slice(detail.indexOf('<div class="lb" id="shot-s0"'), detail.indexOf('</div>', detail.indexOf('<div class="lb" id="shot-s0"')));
+    expect(overlay).toContain('<a class="lb-x" href="#shot-s0-t" aria-label="关闭" title="关闭">×</a>');
+    expect(overlay).toContain('<a class="lb-bg" href="#shot-s0-t"');
+    expect(overlay).toContain(`<a class="lb-orig" href="/dev/f/${id}/a/s0" target="_blank"`);
+    expect(detail).toContain('.lb:target{display:flex;position:fixed');
+  });
+
+  it('列表累计加载：已加载 N 条 + 加载更多 + 回到顶部，已加载的条目不被换掉', async () => {
+    const env = makeEnv();
+    const dev = await makeDev(env);
+    const ids = [];
+    for (let i = 0; i < 60; i += 1) {
+      ids.push((await submit(env, { title: `反馈 ${i}` }, { now: NOW + i * 1000 })).data.id);
+    }
+    const cookie = (await webLogin(env, dev)).res.headers.get('Set-Cookie').split(';')[0];
+    const rowsOf = (html) => [...html.matchAll(/<a class="row[^"]*" id="r(\d+)" href="\/dev\/f\/([^"]+)"/g)].map((m) => m[2]);
+
+    const first = (await page(env, 'GET', '/dev?status=all', { cookie })).data;
+    expect(rowsOf(first)).toHaveLength(50);
+    expect(first).toContain('已加载 50 条');
+    expect(first).toContain('<a href="/dev?status=all&amp;n=100#r50">加载更多</a>');
+    expect(first).toContain('<a href="#top">回到顶部</a>');
+    expect(first).toContain('<a class="totop" href="#top"');
+    expect(first).toContain('<h1 id="top">');
+    expect(first).not.toContain('下一页');
+
+    const more = (await page(env, 'GET', '/dev?status=all&n=100', { cookie })).data;
+    const shown = rowsOf(more);
+    expect(shown).toHaveLength(60);
+    // 前 50 条原样留在页上，后 10 条接在后面（按更新时间倒序）。
+    expect(shown.slice(0, 50)).toEqual(rowsOf(first));
+    expect(new Set(shown)).toEqual(new Set(ids));
+    expect(more).toContain('已加载 60 条');
+    expect(more).not.toContain('加载更多');
+
+    // n 越界 / 非法：夹到 [一页, 上限]。
+    expect(rowsOf((await page(env, 'GET', '/dev?status=all&n=abc', { cookie })).data)).toHaveLength(50);
+    expect(rowsOf((await page(env, 'GET', '/dev?status=all&n=3', { cookie })).data)).toHaveLength(50);
+  });
+});
