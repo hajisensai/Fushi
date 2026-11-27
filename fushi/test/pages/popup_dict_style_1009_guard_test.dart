@@ -194,11 +194,22 @@ void main() {
   });
 
   test('collapsed dictionary rows are compact; press layer follows the card '
-      'shape (user 10-09)', () {
+      'shape (user 10-09 / 11-27)', () {
+    // 11-27：桌面标题行 28px（收起 / 展开同高），触屏（html.fushi-touch）保留 36px。
     expect(
-      ruleBody('html.fushi-m3e .glossary-group:not([open]) > .dict-label'),
-      contains('min-height: 40px'),
-      reason: '收起行收紧但点按区仍 ≥ 40',
+      ruleBody('html.fushi-m3e .dict-label'),
+      contains('min-height: 28px'),
+      reason: '桌面紧凑行',
+    );
+    expect(
+      ruleBody('html.fushi-m3e.fushi-touch .dict-label'),
+      contains('min-height: 36px'),
+      reason: '触屏保点按区',
+    );
+    expect(
+      css.contains('html.fushi-m3e .glossary-group:not([open]) > .dict-label'),
+      isFalse,
+      reason: '收起行不再单独加高，与展开行同高',
     );
     expect(js.contains('function masonryCollapsedRowGap()'), isTrue);
     expect(

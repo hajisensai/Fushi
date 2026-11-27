@@ -9,6 +9,7 @@ import 'package:drift/native.dart';
 import 'package:flutter/foundation.dart' show TargetPlatform;
 import 'package:flutter_riverpod/flutter_riverpod.dart' show Override;
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/srs/donation/srs_donation_client.dart';
 import 'package:fushi/src/srs/donation/srs_donation_eligibility.dart';
 import 'package:fushi/src/srs/donation/srs_donation_providers.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -66,11 +67,18 @@ class SrsTestAppModel extends AppModel {
 /// 挂复习首页（牌组列表）的 ProviderScope 都要带上：首页横幅判据
 /// [srsDonationPromptProvider] 读当前 profile 的捐赠偏好（[srsDonationPrefsProvider] → 偏好层 +
 /// Profile 视图 → 数据库），而 [SrsTestAppModel] 刻意不接偏好层与数据库，不带就在首帧抛
-/// `LateInitializationError: _database`。偏好给「从没设过」的初值，横幅出不出仍按真实统计
-/// （复习数 / 天数）判；专测横幅的用例见 test/srs/donation/。
+/// `LateInitializationError: _database`。偏好给「从没设过」的初值，服务端状态给「没捐过」
+/// （[srsDonationStatusProvider] 不走网络），横幅出不出仍按真实统计（复习数 / 天数）判；
+/// 专测横幅的用例见 test/srs/donation/。
 final List<Override> srsTestDonationOverrides = <Override>[
   srsDonationPrefsProvider.overrideWithValue(const SrsDonationPrefsState()),
+  srsDonationStatusProvider.overrideWith(_SrsTestNoDonation.new),
 ];
+
+class _SrsTestNoDonation extends SrsDonationStatusNotifier {
+  @override
+  Future<SrsDonationStatus?> build() async => const SrsDonationStatus.none();
+}
 
 const String kSrsTestProfile = '01928c3e-0000-7000-8000-0000000000cd';
 

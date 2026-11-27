@@ -1814,8 +1814,14 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     );
     final List<MediaCollectionRow> collections = await appModel.database
         .getAllMediaCollections();
+    // 书架只按书 / 字幕书键问归属：只取这两种成员，不读视频等别的成员（媒体服务器
+    // 镜像的播放列表成员可达数万行，从前首次进书架整表读两遍）。
+    const Set<MediaKind> shelfKinds = <MediaKind>{
+      MediaKind.epub,
+      MediaKind.srt,
+    };
     final Map<String, int> primaryMap = await appModel.database
-        .getPrimaryCollectionIdByEntry();
+        .getPrimaryCollectionIdByEntry(kinds: shelfKinds);
     // 层次 C：条目在其主折叠合集里的 sortIndex（只记归属合集的行，与 primaryMap
     // 同口径；详情页拖完 onChanged 重载本映射，库页行立即同序）。
     // BUG-959: 一次 getAllCollectionItems 查全部成员内存分组，替代逐合集
@@ -1825,7 +1831,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     // 有书 / 字幕书成员的合集：只给它们探系列色块的背景图 / 艺术字文件。
     final Set<int> shelfCollectionIds = <int>{};
     for (final MediaCollectionItemRow m
-        in await appModel.database.getAllCollectionItems()) {
+        in await appModel.database.getCollectionItemsOfKinds(shelfKinds)) {
       final String key = '${m.mediaType}|${m.entryKey}';
       if (primaryMap[key] == m.collectionId) memberSortIndex[key] = m.sortIndex;
       if (m.mediaType == MediaKind.epub.dbValue ||

@@ -474,59 +474,98 @@ void main() {
       }
     }
 
+    // 原生背衬路径下面板的 Flutter 像素（平台视图本身不进 toImage）：host 给
+    // 240×180，内缩 40 后面板是 160×100，位于 (40,40)-(200,140)。
+    Future<int Function(int x, int y)> panelAlpha(
+      WidgetTester tester, {
+      required bool glass,
+      required bool highContrast,
+    }) async {
+      // 原生背衬的平台视图创建要能成功：失败的异常会在 runAsync 里异步抛出。
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform_views,
+        (MethodCall call) async => null,
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform_views,
+          null,
+        ),
+      );
+      final GlobalKey boundaryKey = GlobalKey();
+      await tester.pumpWidget(
+        host(
+          highContrast: highContrast,
+          theme(
+            glass: glass,
+            brightness: Brightness.dark,
+            platform: TargetPlatform.iOS,
+          ),
+          RepaintBoundary(
+            key: boundaryKey,
+            child: const Padding(
+              padding: EdgeInsets.all(40),
+              child: FushiPopupSurface(
+                borderOnForeground: false,
+                showBorder: false,
+                child: SizedBox.expand(),
+              ),
+            ),
+          ),
+        ),
+      );
+      final RenderRepaintBoundary boundary = tester
+          .renderObject<RenderRepaintBoundary>(find.byKey(boundaryKey));
+      final (ByteData, int)? captured = await tester.runAsync(() async {
+        final ui.Image image = await boundary.toImage();
+        final ByteData? data = await image.toByteData(
+          format: ui.ImageByteFormat.rawRgba,
+        );
+        final int w = image.width;
+        image.dispose();
+        return (data!, w);
+      });
+      final (ByteData data, int w) = captured!;
+      return (int x, int y) => data.getUint8((y * w + x) * 4 + 3);
+    }
+
     // 投影挪到原生背衬之上后，形状内侧一个像素都不能碰（否则压暗面板），形状外侧照画。
+    // Apple 面板另有画在形状内的光感层（_ApplePanelSheenPainter），高对比度下不画；
+    // 投影在高对比度下照画，所以在高对比度下单独量投影。
     for (final bool glass in <bool>[true, false]) {
       testWidgets('外侧投影只画在面板形状外（${glass ? 'Apple' : 'MD3'}）', (
         WidgetTester tester,
       ) async {
-        // 原生背衬的平台视图创建要能成功：失败的异常会在 runAsync 里异步抛出。
-        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-          SystemChannels.platform_views,
-          (MethodCall call) async => null,
+        final int Function(int x, int y) alphaAt = await panelAlpha(
+          tester,
+          glass: glass,
+          highContrast: true,
         );
-        addTearDown(
-          () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-            SystemChannels.platform_views,
-            null,
-          ),
-        );
-        final GlobalKey boundaryKey = GlobalKey();
-        await tester.pumpWidget(
-          host(
-            theme(
-              glass: glass,
-              brightness: Brightness.dark,
-              platform: TargetPlatform.iOS,
-            ),
-            RepaintBoundary(
-              key: boundaryKey,
-              child: const Padding(
-                padding: EdgeInsets.all(40),
-                child: FushiPopupSurface(
-                  borderOnForeground: false,
-                  showBorder: false,
-                  child: SizedBox.expand(),
-                ),
-              ),
-            ),
-          ),
-        );
-        final RenderRepaintBoundary boundary = tester
-            .renderObject<RenderRepaintBoundary>(find.byKey(boundaryKey));
-        final (ByteData, int)? captured = await tester.runAsync(() async {
-          final ui.Image image = await boundary.toImage();
-          final ByteData? data = await image.toByteData(
-            format: ui.ImageByteFormat.rawRgba,
-          );
-          final int w = image.width;
-          image.dispose();
-          return (data!, w);
-        });
-        final (ByteData data, int w) = captured!;
-        int alphaAt(int x, int y) => data.getUint8((y * w + x) * 4 + 3);
-        // host 给 240×180，内缩 40 后面板是 160×100，位于 (40,40)-(200,140)。
         expect(alphaAt(120, 90), 0, reason: '面板正中不该有投影');
         expect(alphaAt(120, 138), 0, reason: '面板底边内侧不该有投影');
+        expect(alphaAt(120, 146), greaterThan(0), reason: '面板下方要有外侧投影');
+      });
+    }
+
+    // 光感层（用户 2026-11-27）：Apple 画在面板形状内；MD3 没有这套光照语言，一个
+    // 像素都不画；高对比度下 Apple 也不画（上一组用例已量过形状内为 0）。
+    for (final bool glass in <bool>[true, false]) {
+      testWidgets('面板光感只在 Apple 画（${glass ? 'Apple' : 'MD3'}）', (
+        WidgetTester tester,
+      ) async {
+        final int Function(int x, int y) alphaAt = await panelAlpha(
+          tester,
+          glass: glass,
+          highContrast: false,
+        );
+        if (glass) {
+          expect(alphaAt(50, 90), greaterThan(0), reason: 'Apple 面板左侧压暗');
+          expect(alphaAt(195, 60), greaterThan(0), reason: 'Apple 面板右上柔光');
+        } else {
+          expect(alphaAt(50, 90), 0, reason: 'MD3 不画光感');
+          expect(alphaAt(120, 90), 0, reason: 'MD3 面板正中不该有任何 Flutter 绘制');
+          expect(alphaAt(195, 60), 0, reason: 'MD3 不画光感');
+        }
         expect(alphaAt(120, 146), greaterThan(0), reason: '面板下方要有外侧投影');
       });
     }

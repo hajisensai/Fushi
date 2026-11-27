@@ -82,12 +82,9 @@ Future<int?> resolveVideoPlaylistCollectionId({
 }) async {
   final VideoBookRow? book = await repo.getByBookUid(bookUid);
   if (book == null) return null;
-  final String videoType = MediaKind.video.dbValue;
-  final List<MediaCollectionItemRow> items = <MediaCollectionItemRow>[
-    for (final MediaCollectionItemRow item
-        in await repo.getAllCollectionItems())
-      if (item.mediaType == videoType && item.entryKey == bookUid) item,
-  ];
+  final List<MediaCollectionItemRow> items = await repo.memberRowsOfVideo(
+    bookUid,
+  );
   if (items.isEmpty) return null;
   final String key = MediaKind.video.compositeKey(bookUid);
   int rawPrimary = items.first.collectionId;

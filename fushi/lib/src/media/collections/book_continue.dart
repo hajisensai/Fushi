@@ -28,8 +28,7 @@ library;
 import 'package:fushi/src/media/collections/collection_continue.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/sources/book_media_identifier.dart';
-import 'package:fushi_core/fushi_core.dart'
-    show FushiDatabase, MediaCollectionItemRow, MediaKind;
+import 'package:fushi_core/fushi_core.dart' show MediaKind;
 import 'package:fushi_engine/media/collections/book_series_key.dart'
     show collectionMemberVolumeNumber;
 import 'package:fushi_engine/media/collections/shelf_sort.dart'
@@ -268,22 +267,6 @@ List<BookContinueCandidate<MediaItem>> selectMediaItemContinueCandidates({
     sortIndexOf: (MediaItem item) => memberSortIndex[entryKeyOf(item)],
     idOf: (MediaItem item) => item.mediaIdentifier,
   );
-}
-
-/// 归属键 → 条目在其主折叠合集里的 sortIndex（只记主折叠合集那一行，与书架
-/// `_loadShelfMaps`、首页快照同口径）。给没有现成映射的消费点（侧栏速览）用。
-Future<Map<String, int>> loadPrimaryMemberSortIndex(
-  FushiDatabase db,
-  Map<String, int> primaryCollectionIdByEntry,
-) async {
-  final Map<String, int> out = <String, int>{};
-  for (final MediaCollectionItemRow m in await db.getAllCollectionItems()) {
-    final String key = '${m.mediaType}|${m.entryKey}';
-    if (primaryCollectionIdByEntry[key] == m.collectionId) {
-      out[key] = m.sortIndex;
-    }
-  }
-  return out;
 }
 
 /// 书的最近阅读时刻表（键 = 书稳定身份，见 `bookLastReadAtProvider`）：

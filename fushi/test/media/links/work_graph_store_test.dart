@@ -40,6 +40,22 @@ void main() {
         .whenComplete(() => store.removeListener(listener));
   }
 
+  test('后台 isolate 建的图与在调用方建的一致（BUG-5595：建图不占 UI isolate）', () async {
+    final WorkLinksSeed seed = await WorkLinksSeed.create(db);
+    final WorkGraphSnapshot here = await loadWorkGraphSnapshot(db);
+    final bool inline = debugWorkGraphInline;
+    debugWorkGraphInline = false;
+    addTearDown(() => debugWorkGraphInline = inline);
+    final WorkGraphSnapshot off = await loadWorkGraphSnapshotOffUi(db);
+    List<List<MediaLinkEndpoint>> works(WorkGraphSnapshot s) =>
+        <List<MediaLinkEndpoint>>[
+          for (final Work w in s.graph.works) w.members.toList(),
+        ];
+    expect(works(off), works(here));
+    expect(off.graph.workOf(seed.anime)!.members, contains(WorkLinksSeed.vol2));
+    expect(off.seriesOf(seed.anime)?.id, here.seriesOf(seed.anime)?.id);
+  });
+
   test('同一个库只有一个持有者；首个监听者挂上才建图，表变更去抖后重建', () async {
     final WorkLinksSeed seed = await WorkLinksSeed.create(db);
     final WorkGraphStore store = WorkGraphStore.of(db);

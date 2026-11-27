@@ -1921,10 +1921,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     final Future<List<VideoBookRow>> folderBooksF = db.allVideoBooks();
     final Future<List<MediaSourceRow>> folderSourcesF = db
         .getMediaSourcesByKind('video');
-    final Future<Map<String, int>> primaryMapF = db
-        .getPrimaryCollectionIdByEntry();
-    final Future<List<MediaCollectionItemRow>> collectionItemsF = db
-        .getAllCollectionItems();
+    // 折叠归属 + 组内序：后台 isolate 里读库套策略，不把成员行搬进 UI isolate
+    // （见 [loadVideoLibraryMembership]）。
+    final Future<VideoLibraryMembership> membershipF = folderBooksF.then(
+      (List<VideoBookRow> books) =>
+          loadVideoLibraryMembership(db, books: books),
+    );
     final Future<List<VideoWatchStatisticRow>> watchRowsF = db
         .getAllVideoWatchStatistics();
     final Future<Map<String, int>> segmentEndAtByUidF = db
@@ -1936,31 +1938,18 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       collectionsF,
       folderBooksF,
       folderSourcesF,
-      primaryMapF,
-      collectionItemsF,
+      membershipF,
       watchRowsF,
       segmentEndAtByUidF,
       scrapeMapsF,
     ]);
     final List<MediaCollectionRow> collections = await collectionsF;
     final List<MediaSourceRow> videoSources = await folderSourcesF;
-    final Map<String, int> primaryMap = applyVideoFolderCollectionPolicy(
-      primary: await primaryMapF,
-      collections: collections,
-      items: await collectionItemsF,
-      books: await folderBooksF,
-      sources: videoSources,
-    );
     // 层次 C：条目在其主折叠合集里的 sortIndex（只记归属合集的行——一条目属多
-    // 合集时行内序跟随折叠归属，与 primaryMap 同口径）。一次 [getAllCollectionItems]
-    // 查全部成员内存分组，替代逐合集 [getCollectionItems] 的 N+1（合集越多越慢，
-    // 首屏合集行渲染被它 gate）。判据 `primaryMap[key] == m.collectionId` 与旧
-    // 逐合集 `== c.id` 等价（旧循环里 members 的 collectionId 恒为 c.id）。
-    final List<MediaCollectionItemRow> collectionItems = await collectionItemsF;
-    final Map<String, int> memberSortIndex = buildVideoMemberSortIndex(
-      primaryCollectionByEntry: primaryMap,
-      items: collectionItems,
-    );
+    // 合集时行内序跟随折叠归属，与 primaryMap 同口径），不逐合集 N+1。
+    final VideoLibraryMembership membership = await membershipF;
+    final Map<String, int> primaryMap = membership.primary;
+    final Map<String, int> memberSortIndex = membership.memberSortIndex;
     // UI v2 Phase B / v39：watch-stats 全量行 → 最近观看时间（内存聚合）。
     // v39 新行按 bookUid 键控；迁移遗留 NULL-uid 行按 title 建回退映射。
     // v92 起 `video_watch_statistics` 冻结为 legacy 只读（历史数据还在），新的

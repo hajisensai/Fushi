@@ -177,10 +177,10 @@ fn tiny_model_has_its_own_architecture_and_smaller_card_state() {
     let tiny = small_model(SmallModelId::Sm101, SmallFile::Int8Weights);
     assert_ne!(small.layer_steps(), tiny.layer_steps());
     assert_ne!(small.fingerprint(), tiny.fingerprint());
-    // 同一段复习回放进两个模型，比每张卡 / 每个笔记的状态字节数（Fushi 用的 card / note 都是 int4）。
+    // 同一段复习回放进两个模型，比每张卡 / 每个笔记的状态字节数（Fushi 用的 card / note 都是 int8）。
     let per_entity = |model: &SmallModel, id: SmallModelId| {
         let v = vectors(id).remove(0);
-        let mut runtime = SmallInference::new(model, StatePrecision::Int4);
+        let mut runtime = SmallInference::new(model, StatePrecision::Int8);
         runtime.run_prepared_rows(&v.features, &v.keys, &v.commit, 1 << 20);
         let stats = runtime.stats();
         (
@@ -195,14 +195,14 @@ fn tiny_model_has_its_own_architecture_and_smaller_card_state() {
         per_entity(&small, SmallModelId::Sm98),
         per_entity(&tiny, SmallModelId::Sm101),
     );
-    eprintln!("int4 state per card / note: sm98 {s:?} B, sm101 {t:?} B");
+    eprintln!("int8 state per card / note: sm98 {s:?} B, sm101 {t:?} B");
     assert!(t.0 < s.0 && t.1 <= s.1, "sm98 {s:?}, sm101 {t:?}");
     // 换模型（设置里切 Small / Tiny）时旧快照按权重指纹被拒，排程内核据此全量重放；同模型照常恢复。
     for (model, own, other) in [
         (&small, &small_snapshot, &tiny_snapshot),
         (&tiny, &tiny_snapshot, &small_snapshot),
     ] {
-        let mut runtime = SmallInference::new(model, StatePrecision::Int4);
+        let mut runtime = SmallInference::new(model, StatePrecision::Int8);
         assert!(runtime.restore_snapshot(other).is_err());
         runtime.restore_snapshot(own).unwrap();
         assert_eq!(&runtime.snapshot(), own);
@@ -250,7 +250,7 @@ fn missing_id_flags_change_no_output_for(id: SmallModelId) {
                 flagged[row * CARD_FEATURES + f] = 1.0;
             }
         }
-        for precision in [StatePrecision::F32, StatePrecision::Int4] {
+        for precision in [StatePrecision::F32, StatePrecision::Int8] {
             let run = |features: &[f32]| {
                 let mut runtime = SmallInference::new(&model, precision);
                 runtime.run_prepared_rows(features, &v.keys, &v.commit, 1 << 20)
@@ -285,11 +285,7 @@ fn chunking_does_not_change_results() {
 fn chunking_does_not_change_results_for(id: SmallModelId) {
     let v = vectors(id).remove(0);
     let model = small_model(id, SmallFile::Int8Weights);
-    for precision in [
-        StatePrecision::F32,
-        StatePrecision::Int8,
-        StatePrecision::Int4,
-    ] {
+    for precision in [StatePrecision::F32, StatePrecision::Int8] {
         let run = |chunk: usize| {
             let mut runtime = SmallInference::new(&model, precision);
             runtime.run_prepared_rows(&v.features, &v.keys, &v.commit, chunk)
@@ -414,7 +410,7 @@ fn instant_only_small_model_refuses_rwkv_curve() {
 fn instant_only_small_model_refuses_rwkv_curve_for(id: SmallModelId) {
     let model = Model::from_bytes(small_file_of(id, SmallFile::Int8Weights)).unwrap();
     assert!(!model.kind().has_trained_curve_head());
-    let mut runtime = RwkvRuntime::new(&model, StatePrecision::Int4, 1).unwrap();
+    let mut runtime = RwkvRuntime::new(&model, StatePrecision::Int8, 1).unwrap();
     let answer = ReviewInput {
         card_id: 1,
         note_id: Some(2),

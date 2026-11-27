@@ -26,6 +26,8 @@ import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/media/video/media_server/media_server_config.dart';
 import 'package:fushi/src/media/video/video_folder_collection_policy.dart';
+import 'package:fushi/src/media/video/video_continue_watching.dart'
+    show VideoLibraryMembership, loadVideoLibraryMembership;
 import 'package:fushi/src/media/video/video_watched_marks.dart'
     show setVideosWatched;
 import 'package:fushi/src/models/app_model.dart';
@@ -316,25 +318,14 @@ class AppCompanionLibraryData implements CompanionLibraryData {
   }
 
   /// `media_type|entry_key` → primary collection + its sort index (the raw
-  /// primary membership the books shelf folds by).
-  Future<_Membership> _bookMembership() async {
-    final Map<String, int> primary = await _db.getPrimaryCollectionIdByEntry();
-    return _membershipOf(primary, await _db.getAllCollectionItems());
-  }
-
-  static _Membership _membershipOf(
-    Map<String, int> primary,
-    List<MediaCollectionItemRow> items,
-  ) {
-    final _Membership out = <String, ({int collectionId, int sortIndex})>{};
-    for (final MediaCollectionItemRow m in items) {
-      final String key = '${m.mediaType}|${m.entryKey}';
-      if (primary[key] == m.collectionId) {
-        out[key] = (collectionId: m.collectionId, sortIndex: m.sortIndex);
-      }
-    }
-    return out;
-  }
+  /// primary membership the books shelf folds by). Books and subtitle books
+  /// only: the other kinds' members (tens of thousands of mirrored media
+  /// server episodes) are never asked about here.
+  Future<_Membership> _bookMembership() async =>
+      <String, ({int collectionId, int sortIndex})>{
+        ...await _db.getPrimaryCollectionMembershipOfKind(MediaKind.epub),
+        ...await _db.getPrimaryCollectionMembershipOfKind(MediaKind.srt),
+      };
 
   // ---- videos --------------------------------------------------------------
 
@@ -347,14 +338,9 @@ class AppCompanionLibraryData implements CompanionLibraryData {
     ];
     final List<MediaCollectionRow> collections = await _db
         .getAllMediaCollections();
-    final List<MediaCollectionItemRow> items = await _db
-        .getAllCollectionItems();
-    final Map<String, int> primary = applyVideoFolderCollectionPolicy(
-      primary: await _db.getPrimaryCollectionIdByEntry(),
-      collections: collections,
-      items: items,
+    final VideoLibraryMembership resolved = await loadVideoLibraryMembership(
+      _db,
       books: books,
-      sources: await _db.getMediaSourcesByKind('video'),
     );
     final Map<String, int> watchedAt = await _db.getLatestStudyEndAtByMedia(
       kActivityMediaVideo,
@@ -365,7 +351,11 @@ class AppCompanionLibraryData implements CompanionLibraryData {
     return _VideoLibrary(
       books: books,
       collections: collections,
-      membership: _membershipOf(primary, items),
+      membership: <String, ({int collectionId, int sortIndex})>{
+        for (final MapEntry<String, int> e in resolved.primary.entries)
+          if (resolved.memberSortIndex[e.key] case final int sortIndex)
+            e.key: (collectionId: e.value, sortIndex: sortIndex),
+      },
       watchedAt: watchedAt,
       specs: specs,
     );
