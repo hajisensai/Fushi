@@ -13192,6 +13192,7 @@
   "sync_task_channel_cloud": "Cloud backup",
   "sync_task_channel_interconnect": "Interconnect",
   "sync_task_errors_count": "${count} failed",
+  "sync_task_errors_same_reason": "${reason} (${count} items)",
   "sync_task_finished_titled": "Book sync: $title",
   "sync_task_finished_with_errors": "Finished, ${count} failed",
   "sync_task_kind_asset_transfer": "Asset transfer",

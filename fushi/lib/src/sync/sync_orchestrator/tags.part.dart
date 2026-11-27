@@ -31,7 +31,7 @@ extension _SyncOrchestratorTags on SyncOrchestrator {
         await backend.putRemoteTagManifest(local);
       }
     } catch (e) {
-      report.noteError('tags live sync', e);
+      _noteDimensionError(report, 'tags live sync', e);
     }
   }
 }

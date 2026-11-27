@@ -59,7 +59,7 @@ extension _SyncOrchestratorDictionaries on SyncOrchestrator {
         now: DateTime.now().millisecondsSinceEpoch,
       );
     } catch (e) {
-      report.noteError('refresh server dictionary catalog', e);
+      _noteDimensionError(report, 'refresh server dictionary catalog', e);
     }
 
     // 拉：本机没有（含文件丢了、只剩元数据的，[_LocalDictionaries.has]）而对端有的；
@@ -99,7 +99,7 @@ extension _SyncOrchestratorDictionaries on SyncOrchestrator {
         );
         report.dictionariesImported++;
       } catch (e) {
-        report.noteError('pull dictionary "$name"', e);
+        _noteDimensionError(report, 'pull dictionary "$name"', e);
       }
       index++;
     }
@@ -116,7 +116,7 @@ extension _SyncOrchestratorDictionaries on SyncOrchestrator {
         );
         report.dictionariesExported++;
       } catch (e) {
-        report.noteError('push dictionary "$name"', e);
+        _noteDimensionError(report, 'push dictionary "$name"', e);
       }
       index++;
     }
@@ -297,7 +297,7 @@ extension _SyncOrchestratorDictionaries on SyncOrchestrator {
         );
         report.dictionariesExported++;
       } catch (e) {
-        report.noteError('export dictionary "${d.name}"', e);
+        _noteDimensionError(report, 'export dictionary "${d.name}"', e);
       } finally {
         _safeDelete(tmp);
       }
@@ -340,7 +340,7 @@ extension _SyncOrchestratorDictionaries on SyncOrchestrator {
         );
         report.dictionariesImported++;
       } catch (err) {
-        report.noteError('import dictionary "${e.name}"', err);
+        _noteDimensionError(report, 'import dictionary "${e.name}"', err);
       } finally {
         _safeDelete(tmp);
       }

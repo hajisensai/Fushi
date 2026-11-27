@@ -13192,6 +13192,7 @@
   "sync_task_channel_cloud": "云备份",
   "sync_task_channel_interconnect": "互联",
   "sync_task_errors_count": "${count} 项失败",
+  "sync_task_errors_same_reason": "${reason}（${count} 项）",
   "sync_task_finished_titled": "单本同步：$title",
   "sync_task_finished_with_errors": "已结束，${count} 项失败",
   "sync_task_kind_asset_transfer": "资产传输",

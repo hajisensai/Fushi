@@ -35,7 +35,7 @@ extension _SyncOrchestratorVideoMetadata on SyncOrchestrator {
             entries,
             onError: (Object e, StackTrace stack) {
               debugPrint('[sync] video metadata apply failed: $e');
-              report.noteError('video metadata apply', e);
+              _noteDimensionError(report, 'video metadata apply', e);
             },
           );
       report.videoMetadataUpdated += result.applied;
@@ -50,7 +50,7 @@ extension _SyncOrchestratorVideoMetadata on SyncOrchestrator {
         await repo.setVideoMetadataSyncSinceMs(_scope, newest);
       }
     } catch (e) {
-      report.noteError('video metadata live sync', e);
+      _noteDimensionError(report, 'video metadata live sync', e);
     }
   }
 }

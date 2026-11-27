@@ -71,7 +71,7 @@ extension _SyncOrchestratorCollections on SyncOrchestrator {
         () => convergeCollectionsAfterSync(_db, baselineMs: nextBaseline),
       );
     } catch (e) {
-      report.noteError('collections live sync', e);
+      _noteDimensionError(report, 'collections live sync', e);
     }
   }
 }

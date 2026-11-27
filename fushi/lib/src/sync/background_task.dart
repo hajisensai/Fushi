@@ -23,8 +23,9 @@ class BackgroundTask {
     this.detail,
     this.stageSince,
     this.errors = const <String>[],
+    int? failureCount,
     this.finished = false,
-  });
+  }) : _failureCount = failureCount;
 
   /// 稳定标识（明细行的 key）。
   final String id;
@@ -40,8 +41,14 @@ class BackgroundTask {
   /// 「在慢慢传」和「卡住了」。null = 不显示。
   final int? stageSince;
 
-  /// 本轮记下的失败（每项一行，明细里可展开）。
+  /// 本轮记下的失败（每行一条，明细里可展开）。同因的多项可能合成一行，所以行数
+  /// 不一定等于失败数，失败数见 [failureCount]。
   final List<String> errors;
+
+  final int? _failureCount;
+
+  /// 失败了几项（「N 项失败」的 N）。没另给时等于 [errors] 的行数。
+  int get failureCount => _failureCount ?? errors.length;
 
   /// 这一轮已经结束、只是因为有失败才留在明细里。入口的进度环不画它。
   final bool finished;
@@ -64,6 +71,7 @@ class BackgroundTask {
       other.detail == detail &&
       other.stageSince == stageSince &&
       listEquals(other.errors, errors) &&
+      other.failureCount == failureCount &&
       other.finished == finished;
 
   @override
@@ -76,6 +84,7 @@ class BackgroundTask {
     detail,
     stageSince,
     Object.hashAll(errors),
+    failureCount,
     finished,
   );
 }
