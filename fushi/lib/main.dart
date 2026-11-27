@@ -22,7 +22,8 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit/native_wakeup.dart';
 import 'package:fushi_compute/fushi_compute.dart' show fushiComputePortWakeup;
-import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
+import 'package:flutter/foundation.dart'
+    show FlutterExceptionHandler, kDebugMode, visibleForTesting;
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -1116,9 +1117,16 @@ void main([List<String> args = const <String>[]]) {
       // 版本与 app 强绑定：要新组件就更新 Fushi。不要恢复后台静默下载或旧包联网兜底。
 
       /// Capture Flutter framework errors with full details.
+      ///
+      /// BUG-5601：不覆盖宿主已装的处理器——集成测试里 flutter_test 的 binding
+      /// 靠它判红；直接替换会让测试期框架错误只进错误日志、测试失败时死循环吃满
+      /// 内存。正式运行时宿主就是默认的 presentError，行为不变。
+      final FlutterExceptionHandler presentToHost = flutterErrorPresenterFor(
+        FlutterError.onError,
+      );
       FlutterError.onError = (details) {
         final msg = details.exceptionAsString();
-        FlutterError.presentError(details);
+        presentToHost(details);
         // BUG-2496：框架自己标 `silent: true` 的错误（图片解码失败等
         // `MultiFrameImageStreamCompleter` 上报的非致命错误）不是崩溃前兆，
         // 只留诊断痕迹（不计入错误计数、不同步 flush），别把一张坏封面记成致命错误。

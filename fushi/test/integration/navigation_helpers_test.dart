@@ -2,7 +2,11 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/models/theme_notifier.dart';
+import 'package:fushi/src/pages/implementations/home_page.dart'
+    show HomeTab, homeNavItemFor;
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 
 import '../../integration_test/helpers/focus_driver.dart';
 import '../../integration_test/test_helpers.dart';
@@ -57,6 +61,78 @@ void main() {
       },
       variant: TargetPlatformVariant.only(platform),
     );
+  }
+
+  // A cold start in the Apple design on a wide window draws
+  // AppleSidebarTabsShell instead of the keyed Material rail. The helpers used
+  // to look only for fushiMaterialNavKey, so waitForHome() timed out on any
+  // relaunch whose root had the Apple design saved.
+  for (final bool tabBar in <bool>[false, true]) {
+    final String mode = tabBar ? 'top tab bar' : 'sidebar';
+    testWidgets('Apple shell ($mode): home is ready and tabs are reachable', (
+      WidgetTester tester,
+    ) async {
+      tester.view.physicalSize = const Size(1280, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final List<HomeTab> tabs = <HomeTab>[
+        HomeTab.books,
+        HomeTab.dictionaries,
+        HomeTab.settings,
+      ];
+      int selected = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildFushiThemeData(
+            scheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+            textTheme: Typography.material2021().black,
+            glassDesign: true,
+          ).copyWith(platform: TargetPlatform.windows),
+          home: FushiGlassScope(
+            child: FushiFocusRoot(
+              child: StatefulBuilder(
+                builder: (BuildContext context, StateSetter setState) =>
+                    AppleSidebarTabsShell(
+                      items: tabs.map(homeNavItemFor).toList(),
+                      currentIndex: selected,
+                      onTap: (int i) => setState(() => selected = i),
+                      leading: const Icon(Icons.library_books),
+                      sections: const <AppleSidebarSection>[
+                        AppleSidebarSection(indices: <int>[0, 1]),
+                      ],
+                      footer: const <int>[2],
+                      tabBar: tabBar,
+                      onToggle: () {},
+                      child: const SizedBox.expand(),
+                    ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(fushiMaterialNavKey), findsNothing);
+      expect(isHomeReady(), isTrue);
+      // Destinations only: no brand, collapse button or library sub-rows.
+      expect(findPrimaryNavigationTargets(), hasLength(tabs.length));
+
+      final FocusDriver driver = FocusDriver(tester);
+      final Finder dictionaries = findNavTargetForTab(HomeTab.dictionaries);
+      expect(dictionaries, findsWidgets);
+      expect(await driver.focusWidget(dictionaries), isTrue);
+      await driver.activate();
+      await tester.pumpAndSettle();
+      expect(selected, tabs.indexOf(HomeTab.dictionaries));
+
+      expect(
+        await driver.focusWidget(findPrimaryNavigationTargets()[0]),
+        isTrue,
+      );
+      await driver.activate();
+      await tester.pumpAndSettle();
+      expect(selected, 0);
+    });
   }
 
   testWidgets('findPrimaryNavigationTargets scopes icons to NavigationRail', (

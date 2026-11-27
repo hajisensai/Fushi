@@ -270,6 +270,81 @@ public static class FushiWinShot {
 }
 try { Add-Type -AssemblyName System.Drawing -ErrorAction Stop } catch { }
 
+# The test child's stdout / stderr go straight to files while it runs, never
+# into PowerShell memory. Before this, both pipes were read to the end into
+# strings and only written after exit: a child that kept printing (a failed test that never
+# exits and logs every frame) grew the runner to its memory cap and killed it
+# with OutOfMemoryException, leaving no output on disk to diagnose. Past
+# $CapBytes the rest is still read (so the child never blocks on a full pipe)
+# but discarded, with a marker line. Files are flushed per chunk, so a run that
+# is killed still leaves what it printed.
+function Start-PipeCapture {
+  param(
+    [Parameter(Mandatory = $true)][System.IO.Stream]$Source,
+    [Parameter(Mandatory = $true)][string]$Path,
+    [long]$CapBytes = 256MB
+  )
+  if ($null -eq ('FushiPipeCapture' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.IO;
+using System.Text;
+using System.Threading.Tasks;
+public static class FushiPipeCapture {
+  public static Task Start(Stream source, string path, long capBytes) {
+    return Task.Run(() => {
+      byte[] buffer = new byte[81920];
+      long written = 0;
+      bool capped = false;
+      using (FileStream file = new FileStream(
+          path, FileMode.Create, FileAccess.Write, FileShare.ReadWrite)) {
+        int n;
+        while ((n = source.Read(buffer, 0, buffer.Length)) > 0) {
+          if (capped) continue;
+          int take = (int)Math.Min((long)n, capBytes - written);
+          file.Write(buffer, 0, take);
+          written += take;
+          if (take < n) {
+            capped = true;
+            byte[] marker = Encoding.UTF8.GetBytes(
+                "\n[itest] output capped at " + capBytes +
+                " bytes; the rest was read and discarded\n");
+            file.Write(marker, 0, marker.Length);
+          }
+          file.Flush();
+        }
+      }
+    });
+  }
+}
+'@
+  }
+  return [FushiPipeCapture]::Start($Source, $Path, $CapBytes)
+}
+
+# Appends a captured stream to command.log under "[<Header>]" by streaming the
+# file (constant memory), then deletes the capture. Empty captures are skipped.
+function Add-CapturedOutput {
+  param(
+    [Parameter(Mandatory = $true)][string]$LogPath,
+    [Parameter(Mandatory = $true)][string]$Header,
+    [Parameter(Mandatory = $true)][string]$CapturePath
+  )
+  if (-not (Test-Path -LiteralPath $CapturePath)) { return }
+  if ((Get-Item -LiteralPath $CapturePath).Length -gt 0) {
+    $log = [System.IO.File]::Open($LogPath, 'Append', 'Write', 'ReadWrite')
+    try {
+      $head = [System.Text.Encoding]::UTF8.GetBytes("`n[$Header]`n")
+      $log.Write($head, 0, $head.Length)
+      $in = [System.IO.File]::OpenRead($CapturePath)
+      try { $in.CopyTo($log) } finally { $in.Dispose() }
+    } finally {
+      $log.Dispose()
+    }
+  }
+  Remove-Item -LiteralPath $CapturePath -Force
+}
+
 function Get-RunnerWindowHandle {
   param([array]$Snapshot)
   if ($null -eq $Snapshot) { return [IntPtr]::Zero }
@@ -547,8 +622,12 @@ if ($DryRun) {
     $process.StartInfo = $psi
     [void]$process.Start()
     $LauncherProcessId = [int]$process.Id
-    $stdoutTask = $process.StandardOutput.ReadToEndAsync()
-    $stderrTask = $process.StandardError.ReadToEndAsync()
+    $stdoutPath = Join-Path $EvidenceDir "stdout.log"
+    $stderrPath = Join-Path $EvidenceDir "stderr.log"
+    $stdoutTask = Start-PipeCapture -Source $process.StandardOutput.BaseStream `
+      -Path $stdoutPath
+    $stderrTask = Start-PipeCapture -Source $process.StandardError.BaseStream `
+      -Path $stderrPath
 
     $shotIteration = 0
     $shotCount = 0
@@ -593,12 +672,12 @@ if ($DryRun) {
     $process.WaitForExit()
     $exitCode = [int]$process.ExitCode
 
-    $stdout = $stdoutTask.GetAwaiter().GetResult()
-    $stderr = $stderrTask.GetAwaiter().GetResult()
-    Add-Content -LiteralPath $commandLog -Value "`n[stdout]`n$stdout"
-    if (-not [string]::IsNullOrWhiteSpace($stderr)) {
-      Add-Content -LiteralPath $commandLog -Value "`n[stderr]`n$stderr"
-    }
+    $stdoutTask.GetAwaiter().GetResult()
+    $stderrTask.GetAwaiter().GetResult()
+    Add-CapturedOutput -LogPath $commandLog -Header 'stdout' `
+      -CapturePath $stdoutPath
+    Add-CapturedOutput -LogPath $commandLog -Header 'stderr' `
+      -CapturePath $stderrPath
   } catch {
     $exitCode = 1
     Add-Content -LiteralPath $commandLog -Value "`n[script-error]`n$($_ | Out-String)"
