@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-27T05:22:32Z",
+ "generatedAt": "2026-11-27T05:38:43Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "e9563b679e759638e7e2e7b40dd4c9de6a738b6c",
@@ -12,7 +12,7 @@
    "version": "3.4.0",
    "sha": "8e2fbbf66d81a9e06fcd1cf303458256a3b70d5e",
    "unknown": false,
-   "publishedAt": "2026-11-27T05:22:15Z",
+   "publishedAt": "2026-11-27T05:38:32Z",
    "testflight": true,
    "baseSeq": 32862,
    "prs": [],
@@ -33,8 +33,7 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45937303973"
+     "state": "ok"
     },
     "windows": {
      "state": "ok"
@@ -219,156 +218,6 @@
     },
     "ios": {
      "state": "ok"
-    }
-   }
-  },
-  {
-   "seq": 32769,
-   "version": "3.4.0",
-   "sha": "2704c408960f91bd1baf43eb986d24b1566b0064",
-   "unknown": false,
-   "publishedAt": "2026-11-26T12:24:46Z",
-   "testflight": false,
-   "baseSeq": 32705,
-   "prs": [],
-   "direct": [
-    {
-     "sha": "2704c408960f91bd1baf43eb986d24b1566b0064",
-     "subject": "docs(srs): rwkv_last 文档注释归位、守卫测试名改成实际的 assert_rwkv_last_matches_replay；登记首次升级整层重建耗时待办 (BUG-5491)"
-    },
-    {
-     "sha": "ce2f4f57e721c3abb14dfc8486708a66042b78ab",
-     "subject": "fix(onnx): 张量走地址的判据改认真实宿主 OS；OrtValue.dispose 等在途读取拷完再释放、之后读取报错 (BUG-5508)"
-    },
-    {
-     "sha": "76f965db967bad6d50072bd8db6c5aead04896a4",
-     "subject": "fix(windows): ISCC 签名命令用 $q 引号（pwsh 7 转义内嵌引号致坏路径）+ 守卫；完整性日志被清空后游标归零 (BUG-5515/BUG-5484)"
-    },
-    {
-     "sha": "93412062436106b00a1709a0c8b100f05fac3298",
-     "subject": "Merge PR #4496"
-    },
-    {
-     "sha": "69e8bcb8f0d9488c6fbe8e67e6adab6ce8cb187b",
-     "subject": "Merge PR #4494"
-    },
-    {
-     "sha": "2f6170568475c903cc951d0bc880dc24c5863d1c",
-     "subject": "Merge PR #4482"
-    },
-    {
-     "sha": "d2e41cfcb1f6589be60c97225e0272451ecd82e0",
-     "subject": "Merge PR #4495"
-    },
-    {
-     "sha": "831c01f1c1309440ad883d13a0ac99188cc94ef2",
-     "subject": "Merge PR #4497"
-    },
-    {
-     "sha": "a85baae75d8e7c6a08b3557f9f52e54ca20cef6a",
-     "subject": "chore(bugs): settle BUG number collisions on cb5365ea4"
-    },
-    {
-     "sha": "cb5365ea4a8a1db4ffbc65191a798ce835a06cac",
-     "subject": "Merge PR #4492"
-    },
-    {
-     "sha": "8cbee54cc76ac6b6c2e6f6933a7067fbab11e9be",
-     "subject": "Merge PR #4484"
-    },
-    {
-     "sha": "6df6a84c9fbf654d8295648147b51c68dfd0fe27",
-     "subject": "Merge PR #4483"
-    },
-    {
-     "sha": "82bf42bce7e99ff4f735cfa0ad15e8e8ff653345",
-     "subject": "Merge PR #4493"
-    },
-    {
-     "sha": "314fd53647714b3d3bb3e77e8ce62667dfc7edc0",
-     "subject": "Merge PR #4491"
-    },
-    {
-     "sha": "189e85d3e56cd9439e813acb50eb4de6b4156e8d",
-     "subject": "Merge PR #4490"
-    },
-    {
-     "sha": "8e94f1b4d0d3783fb7b5301d7f038aa7b6ba5d53",
-     "subject": "Merge PR #4489"
-    },
-    {
-     "sha": "49745fab91312a6d24910e52a0d5811ea81d8531",
-     "subject": "Merge PR #4488"
-    },
-    {
-     "sha": "f581be9b5d60c225378375f77a2623e1e8fd6dc0",
-     "subject": "Merge PR #4487"
-    },
-    {
-     "sha": "c68e0b4f991da72e098999f1fdcc6d5fe958e8e0",
-     "subject": "Merge PR #4486"
-    },
-    {
-     "sha": "792668558a813d93f6111b97cb08f6c6fcd7918f",
-     "subject": "fix(collections): 合 #4456 与 develop 批量收养的语义冲突——收养请求带上整理移出键，单条 / 批量 / 用户意图走同一份规则"
-    },
-    {
-     "sha": "855aa2dad2399f518acabf0f93fb043ea81ec49e",
-     "subject": "Merge remote-tracking branch 'origin/merge-fix/4456' into claude/merge-review-bug-feedback-264c52"
-    },
-    {
-     "sha": "1a201d43befbffda983cb62b0168a53301a4652c",
-     "subject": "Merge remote-tracking branch 'origin/merge-fix/4481' into claude/merge-review-bug-feedback-264c52"
-    },
-    {
-     "sha": "7309669dcc12165b26fb79db9a5cfc2bfef4e90b",
-     "subject": "Merge remote-tracking branch 'origin/claude/merge-leftovers-tray' into claude/merge-review-bug-feedback-264c52"
-    },
-    {
-     "sha": "b60583c9f14a3f7f6f099a52b6ed123d6724be66",
-     "subject": "fix(storage): 书库哨兵记录 token 非字符串时重新布防，不再永久停在 error（#4480 审查跟进）"
-    },
-    {
-     "sha": "54ff07f18e963e94d197814613019520692e9b0b",
-     "subject": "fix(srs): 字段 AI 样本里块级开始标签也算换行，div/li 不再粘连（#4477 审查跟进）"
-    },
-    {
-     "sha": "154d55f47741ae8109f976e15fcd1e8e2154a29e",
-     "subject": "Merge remote-tracking branch 'pr/4477' into claude/merge-review-bug-feedback-264c52"
-    },
-    {
-     "sha": "d4a0d98f58a0b174666e29b76b1cb1b1dd5bca37",
-     "subject": "Merge remote-tracking branch 'pr/4476' into claude/merge-review-bug-feedback-264c52"
-    },
-    {
-     "sha": "521c2c2f46d0cd3309c07cb965ec37e8d5ae47b2",
-     "subject": "Merge remote-tracking branch 'pr/4480' into claude/merge-review-bug-feedback-264c52"
-    },
-    {
-     "sha": "083b530f02a218faa907cbee243b672d8592ae21",
-     "subject": "Merge remote-tracking branch 'pr/4469' into claude/merge-review-bug-feedback-264c52"
-    },
-    {
-     "sha": "a8f7580537950bd31a1b3988fff47eb3b6791aef",
-     "subject": "Merge remote-tracking branch 'pr/4471' into claude/merge-review-bug-feedback-264c52"
-    }
-   ],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45810084399"
-    },
-    "macos": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45810084399"
-    },
-    "ios": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45810084399"
     }
    }
   }
