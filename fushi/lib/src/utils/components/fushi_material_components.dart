@@ -7711,14 +7711,19 @@ class FushiPopupSurface extends StatelessWidget {
   }
 
   /// Apple 查词面板的材质底色：调用方传主题页面底（`colorScheme.surface` =
-  /// systemGroupedBackground，深色是纯黑）或不传时，取浮层惯用的
-  /// secondarySystemGroupedBackground（浅白 / 深 #1C1C1E，iOS 26 popover 的
-  /// 材质色）；用户手动指定的词典底色（overrideDictionaryColor）原样尊重。
+  /// systemGroupedBackground，深色是纯黑）或不传时，深色取浮层惯用的
+  /// secondarySystemGroupedBackground（#1C1C1E，iOS 26 popover 的材质色），浅色取
+  /// systemGroupedBackground（#F2F2F7）——词典卡是压在面板上的半透明白填充
+  /// （popup.css `--fa-cell`，用户 2026-11-27「白卡也上材质」），面板若也是白，卡就
+  /// 读不出来。用户手动指定的词典底色（overrideDictionaryColor）原样尊重。
   Color _applePanelColor(BuildContext context) {
     final Color? requested = color;
     if (requested == null ||
         requested == Theme.of(context).colorScheme.surface) {
-      return appleColorsOf(context).secondaryGroupedBackground;
+      final FushiAppleColors apple = appleColorsOf(context);
+      return Theme.of(context).colorScheme.brightness == Brightness.dark
+          ? apple.secondaryGroupedBackground
+          : apple.groupedBackground;
     }
     return requested;
   }
@@ -7767,11 +7772,35 @@ class _ApplePopupGlassBackdrop extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Apple 面板的光感（用户 2026-11-27「浅色和深色都要带着这点光感」，参照 Hoshi
+    // Reader）：左侧压暗 → 右上柔光，加一圈左上亮、右下微亮的镜面描边。画在材质之上、
+    // WebView 之下（同 [_PopupOuterShadowPainter] 的位置规则：原生背衬仍是第一个绘制的
+    // 东西）。MD3 没有这套光照语言；墨水屏 / 高对比度不画。槽位恒在（空盒占位），
+    // 切换时 WebView 不会被拆出重挂。
+    final bool sheen =
+        enabled &&
+        !md3 &&
+        !isEinkTheme(context) &&
+        !(MediaQuery.maybeHighContrastOf(context) ?? false);
     return Stack(
       fit: StackFit.passthrough,
       children: <Widget>[
         Positioned.fill(
           child: enabled ? _buildGlass(context) : const SizedBox.shrink(),
+        ),
+        Positioned.fill(
+          child: sheen
+              ? IgnorePointer(
+                  child: CustomPaint(
+                    painter: _ApplePanelSheenPainter(
+                      borderRadius: borderRadius,
+                      dark:
+                          Theme.of(context).colorScheme.brightness ==
+                          Brightness.dark,
+                    ),
+                  ),
+                )
+              : const SizedBox.shrink(),
         ),
         child,
       ],
@@ -7970,6 +7999,92 @@ class _PopupOuterShadowPainter extends CustomPainter {
       oldDelegate.borderRadius != borderRadius ||
       oldDelegate.continuousCorners != continuousCorners ||
       oldDelegate.color != color;
+}
+
+/// Apple 查词面板的光感层（见 [_ApplePopupGlassBackdrop.build]）：
+/// - 斜向明暗：左侧压暗、右侧提亮，像光从右上斜照在玻璃上；
+/// - 右上一团柔光；
+/// - 镜面描边：外缘 1px 的发丝描边（Material side，separator 色）以内再画 1.5px 亮环，
+///   左上最亮、中段淡出、右下微亮回来——边缘因此清楚，不再糊进背后画面。
+/// 浅色与深色同一套方向，只换强度。全部裁在面板形状内（连续曲率圆角）。
+class _ApplePanelSheenPainter extends CustomPainter {
+  const _ApplePanelSheenPainter({
+    required this.borderRadius,
+    required this.dark,
+  });
+
+  final BorderRadius borderRadius;
+  final bool dark;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) return;
+    final Rect rect = Offset.zero & size;
+    final Path panel = Path()
+      ..addRSuperellipse(borderRadius.toRSuperellipse(rect));
+    canvas.save();
+    canvas.clipPath(panel);
+    final Color shade = dark
+        ? Colors.black.withValues(alpha: 0.22)
+        : const Color(0xFF50556E).withValues(alpha: 0.06);
+    final Color light = Colors.white.withValues(alpha: dark ? 0.1 : 0.3);
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..shader = LinearGradient(
+          begin: const Alignment(-1, -0.35),
+          end: const Alignment(1, 0.35),
+          colors: <Color>[shade, shade.withValues(alpha: 0), light],
+          stops: const <double>[0, 0.55, 1],
+        ).createShader(rect),
+    );
+    final double glowRadius = size.shortestSide * 0.9;
+    final Offset glowCenter = Offset(size.width, size.height * 0.2);
+    canvas.drawCircle(
+      glowCenter,
+      glowRadius,
+      Paint()
+        ..shader = RadialGradient(
+          colors: <Color>[
+            Colors.white.withValues(alpha: dark ? 0.06 : 0.35),
+            Colors.white.withValues(alpha: 0),
+          ],
+        ).createShader(Rect.fromCircle(center: glowCenter, radius: glowRadius)),
+    );
+    canvas.restore();
+    // 镜面亮环：落在 1px 发丝描边以内（描边占 [0, 1]，WebView 也从 1px 内缩处开始）。
+    const double inset = 1.75;
+    final Rect ringRect = rect.deflate(inset);
+    BorderRadius inner(BorderRadius r) => BorderRadius.only(
+      topLeft: Radius.circular(math.max(0, r.topLeft.x - inset)),
+      topRight: Radius.circular(math.max(0, r.topRight.x - inset)),
+      bottomLeft: Radius.circular(math.max(0, r.bottomLeft.x - inset)),
+      bottomRight: Radius.circular(math.max(0, r.bottomRight.x - inset)),
+    );
+    final Color spec = Colors.white.withValues(alpha: dark ? 0.4 : 0.9);
+    final Color specLow = Colors.white.withValues(alpha: dark ? 0.15 : 0.5);
+    canvas.drawPath(
+      Path()..addRSuperellipse(inner(borderRadius).toRSuperellipse(ringRect)),
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5
+        ..shader = LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: <Color>[
+            spec,
+            spec.withValues(alpha: 0),
+            specLow.withValues(alpha: 0),
+            specLow,
+          ],
+          stops: const <double>[0, 0.28, 0.72, 1],
+        ).createShader(rect),
+    );
+  }
+
+  @override
+  bool shouldRepaint(_ApplePanelSheenPainter oldDelegate) =>
+      oldDelegate.borderRadius != borderRadius || oldDelegate.dark != dark;
 }
 
 class FushiCompactSearchRow extends StatelessWidget {

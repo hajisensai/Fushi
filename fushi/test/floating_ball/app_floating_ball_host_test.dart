@@ -17,7 +17,7 @@ import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
 import 'package:fushi/src/lookup/global_lookup_channel.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/lookup/main_window_excursion.dart'
-    show LookupCardSuspension;
+    show LookupCardSuspension, OverlayExcursionContext;
 import 'package:fushi/src/lookup/overlay_bridge_handlers.dart'
     show OverlayMiningHandler;
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
@@ -2395,6 +2395,39 @@ void main() {
             ]);
           });
 
+          testWidgets('反馈 uEnwXmBIR0：点字查词带上借主窗的上下文——冻结层之前记的主窗状态、先收冻结层', (
+            WidgetTester tester,
+          ) async {
+            const MainWindowPresentation before = MainWindowPresentation(
+              placement: MainWindowPlacement.minimized,
+              foregroundApp: 99,
+            );
+            target.presentation = before;
+            await prefs.setScreenOcrCardFrameOnMine(false);
+            mockCapture(tester, <String, Object?>{
+              'png': tinyPng,
+              'screen': <double>[0, 0, 1920, 1080],
+            });
+            target.onRecognize = (Uint8List bytes) async =>
+                const SystemOcrPageResult(
+                  lines: <SystemOcrTextLine>[line],
+                  imageWidth: 1920,
+                  imageHeight: 1080,
+                );
+            await pumpHost(tester);
+            await tapAction(tester, 'screen_ocr');
+            await fromNative(tester, 'screenOcrTap', <String, Object?>{
+              'x': 350.0,
+              'y': 220.0,
+            });
+            final OverlayExcursionContext excursion =
+                target.lookups.single.excursion!;
+            expect(excursion.presentation, same(before));
+            expect(called('stopScreenOcr'), isFalse);
+            await tester.runAsync(() async => excursion.prepare!());
+            expect(called('stopScreenOcr'), isTrue, reason: '冻结层盖满屏幕，会挡住主窗');
+          });
+
           testWidgets('主窗原来收在托盘：框完再藏回托盘', (WidgetTester tester) async {
             target.presentation = const MainWindowPresentation(
               placement: MainWindowPlacement.hidden,
@@ -2640,8 +2673,10 @@ class _LookupTextCall {
     this.sentence = '',
     this.miningHandler,
     this.sentenceAudio,
+    this.excursion,
   });
 
+  final OverlayExcursionContext? excursion;
   final String text;
   final String sentence;
   final OverlayMiningHandler? miningHandler;
@@ -2670,6 +2705,7 @@ class _RecordingActionTarget extends DesktopSystemBallActionTarget {
     GlobalLookupPhysicalPlacement? physicalPlacement,
     OverlayMiningHandler? miningHandler,
     Future<CrossAppAudioSnapshot?>? sentenceAudio,
+    OverlayExcursionContext? excursion,
   }) async {
     log.add('lookupText');
     lookups.add(
@@ -2680,6 +2716,7 @@ class _RecordingActionTarget extends DesktopSystemBallActionTarget {
         sentence: sentence,
         miningHandler: miningHandler,
         sentenceAudio: sentenceAudio,
+        excursion: excursion,
       ),
     );
     return true;

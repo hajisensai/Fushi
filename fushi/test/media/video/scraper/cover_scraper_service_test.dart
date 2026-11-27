@@ -50,7 +50,9 @@ class _StaleFirstMembershipRepository extends VideoBookRepository {
   int _reads = 0;
 
   @override
-  Future<Map<String, int>> multiMemberCollectionIds() async {
+  Future<Map<String, int>> multiMemberCollectionIds({
+    Iterable<String>? forVideos,
+  }) async {
     _reads++;
     return _reads == 1 ? <String, int>{} : <String, int>{bookUid: 7};
   }

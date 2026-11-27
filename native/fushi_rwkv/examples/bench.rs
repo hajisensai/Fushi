@@ -182,7 +182,6 @@ fn main() {
         .map(|p| match p {
             "f32" => StatePrecision::F32,
             "int8" => StatePrecision::Int8,
-            "int4" => StatePrecision::Int4,
             other => panic!("unknown precision {other}"),
         })
         .collect();

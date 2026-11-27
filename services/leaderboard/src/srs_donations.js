@@ -8,7 +8,7 @@
 //   PUT    /v1/srs-donations/:donorId   [Bearer donorKey] body = .apkg 原始字节（application/octet-stream，流式写 R2）
 //          头 Content-Length（必须，≤ 64 MiB）、x-donation-reviews / x-donation-cards（非负整数）、
 //          x-donation-app-version（可选，≤ 64 个 [A-Za-z0-9.+_-]）。魔数必须是 zip（PK\x03\x04）。
-//          → 200 {donated: true, updatedAt}。同一 donorId 重传覆盖 R2 `srs-donations/<donorId>.apkg`。
+//          → 200 {donated: true, reviews, cards, updatedAt}（与 GET 同一形状，donationStatus）。同一 donorId 重传覆盖 R2 `srs-donations/<donorId>.apkg`。
 //          限流：每 donorId 每小时 2 次（429 rate_limited）；每 IP 每 UTC 日 128 MiB（429 upload_quota_daily，
 //          按声明长度计，传失败不退）；全局扣 media 日预算 1 次 + write_rows；字节占 budget.js 的捐赠专用池
 //          （'donation'，media_usage.donation_bytes，DONATION_QUOTA_BYTES 默认 2 GiB，满了 507 donation_quota；
@@ -223,7 +223,7 @@ async function putDonation(env, request, donorId, now, ip) {
     if (oldBytes > length) await releaseMediaBytes(env, oldBytes - length, POOL);
     await env.DB.prepare('DELETE FROM srs_donation_withdrawals WHERE donor_id = ?1 AND reported_batch IS NULL')
       .bind(donorId).run();
-    return json({ donated: true, updatedAt: now }, 200, NO_STORE);
+    return json(donationStatus({ reviews, cards, updated_at: now }), 200, NO_STORE);
   } catch (e) {
     await reader.cancel().catch(() => {});
     if (reserved) await releaseMediaBytes(env, extra, POOL);
@@ -237,11 +237,19 @@ async function publicStats(env) {
   return { donors: r.donors, reviews: r.reviews };
 }
 
+/**
+ * 捐赠状态响应体：PUT 成功与 GET 共用这一个形状（客户端拿任一个都能直接当「当前状态」显示）。
+ * @param {{reviews: number, cards: number, updated_at: number} | null} row
+ */
+function donationStatus(row) {
+  if (!row) return { donated: false };
+  return { donated: true, reviews: row.reviews, cards: row.cards, updatedAt: row.updated_at };
+}
+
 async function getDonation(env, request, donorId) {
   const keyHash = await donorKeyHash(bearerKey(request));
   const row = await authorizedRow(env, donorId, keyHash);
-  if (!row) return json({ donated: false }, 200, NO_STORE);
-  return json({ donated: true, reviews: row.reviews, cards: row.cards, updatedAt: row.updated_at }, 200, NO_STORE);
+  return json(donationStatus(row), 200, NO_STORE);
 }
 
 async function deleteDonation(env, request, donorId, now) {

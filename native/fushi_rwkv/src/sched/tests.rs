@@ -1113,4 +1113,54 @@ fn production_mode_owns_the_runtime_and_matches_direct_runtime_calls() {
     rig.instant(2, 100_002_000);
     let trace = rig.take_trace();
     assert_eq!(bits(&scores_of(&trace, 2)), bits(&restored));
+
+    // BUG-5594：int4 时代留下的主快照（同名文件，精度字节 4）被拒，按日志全量重建一次并存新快照，
+    // 分数与直接调用（int8）逐位相同。
+    rig.keep_dir = true;
+    rig.command(|w| {
+        w.u8(8);
+    });
+    rig.take_trace();
+    let snap = rig.dir.join("rwkv-p1-small-int4.snap");
+    let mut bytes = std::fs::read(&snap).unwrap();
+    let at = crate::rwkv::small::SNAPSHOT_MAGIC.len();
+    assert_eq!(
+        bytes[at], 8,
+        "the snapshot header carries the int8 precision byte"
+    );
+    bytes[at] = 4;
+    std::fs::write(&snap, &bytes).unwrap();
+    let world = std::mem::replace(&mut rig.world, World::new());
+    drop(rig);
+
+    let mut rig = Rig::open(
+        "production",
+        2,
+        Some(weights.to_string_lossy().into_owned()),
+        false,
+    );
+    rig.world = world;
+    rig.start(false);
+    let trace = rig.take_trace();
+    for op in [
+        "op restore_from_file rows=0",
+        "op reset rows=0",
+        "op snapshot_to_file rows=0",
+        "done 1 ok",
+    ] {
+        assert!(
+            trace.contains(&op.to_owned()),
+            "{op} missing from {trace:?}"
+        );
+    }
+    assert!(
+        std::fs::read(&snap).unwrap()[at] == 8,
+        "the rebuilt snapshot is int8"
+    );
+    rig.instant(2, 100_003_000);
+    let trace = rig.take_trace();
+    assert_eq!(
+        bits(&scores_of(&trace, 2)),
+        bits(&direct.query(&queries(&rig.world, 100_003_000)).unwrap())
+    );
 }

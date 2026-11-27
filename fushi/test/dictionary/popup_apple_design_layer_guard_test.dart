@@ -63,6 +63,38 @@ void main() {
     );
   });
 
+  test('cards are a translucent fill on the glass and rows are compact '
+      '(user 11-27)', () {
+    final String tokens = ruleBody('html.fushi-glass-host.fushi-apple');
+    expect(tokens, contains('--fa-cell: rgba(255, 255, 255, 0.5)'));
+    expect(tokens, contains('--fa-row-min: 24px'));
+    expect(
+      ruleBody('html.fushi-glass-host.fushi-apple.fushi-touch'),
+      contains('--fa-row-min: 36px'),
+      reason: '触屏保点按区',
+    );
+    final String label = ruleBody(
+      'html.fushi-glass-host.fushi-apple .dict-label',
+    );
+    expect(label, contains('min-height: var(--fa-row-min)'));
+    expect(label, contains('font-size: var(--fa-row-font)'));
+    expect(
+      ruleBody(
+        'html.fushi-glass-host.fushi-apple.fushi-dict-multicol .glossary-section > .category-body > .glossary-group',
+      ),
+      contains('inset 0 1px 0 var(--fa-cell-rim)'),
+      reason: '多列半透卡靠顶亮描边勾出卡缘',
+    );
+    final String injection = File(
+      'lib/src/pages/implementations/popup_settings_injection.dart',
+    ).readAsStringSync();
+    expect(
+      injection,
+      contains("classList.toggle('fushi-touch', \$touch)"),
+      reason: '触屏判据由宿主注入（CSS 不能写 @media）',
+    );
+  });
+
   test('disclosure chevron sits at the row end and only rotates', () {
     final String collapsed = ruleBody(
       'html.fushi-glass-host.fushi-apple .glossary-group > summary::before',

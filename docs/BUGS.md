@@ -15,6 +15,9 @@
 > 手动改号用 `dart run tool/bug.dart renumber <old> <new>`
 > （文件名 + 正文 H2 + 代码/测试引用一把改 + 自校验；别手改——只改文件名不改正文 H2 会让 `bugs_per_file_guard_test` 变红）。
 > 改完某条 bug 文件后：`dart run tool/bug.dart reindex` 重建下面的索引表。
+> **自动进反馈**：develop 收到 push 时 `bug-feedback-sync.yml`（`tool/bug_feedback_sync.mjs`）把「① 未修复」的条目按 BUG 号
+> 幂等同步成应用内反馈里的一条（开发者处理台可见）；勾上 `[x] ①` 自动标已修复，文件删掉 / 改号 / 标 ❌ 未复现自动结案。
+> 不用再为仓库 BUG 手动 `fushi_cli feedback submit`（细节见 `docs/agent/build.md`「仓库 BUG 同步进反馈」）。
 >
 > 每条 bug 文件里：
 > - **是真 bug** → 记报告日期、根因 `file:line`，然后：
@@ -33,10 +36,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4863 条。点号进各自文件。
+> 共 4868 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5595](bugs/BUG-5595-startup-collection-items-full-scan.md) | ✅ | ✅ | 启动后切模块掉帧：合集成员表被反复整表读进 UI isolate |
+| [BUG-5594](bugs/BUG-5594-rwkv-int4-long-card-divergence.md) | ✅ | ✅ | RWKV 小模型 int4 卡片 / 笔记状态在超长复习历史上指数发散，之后该卡预测卡死 |
+| [BUG-5590](bugs/BUG-5590-srs-donation-status-device-local-mirror.md) | ✅ | ✅ | srs-donation-status-device-local-mirror |
+| [BUG-5589](bugs/BUG-5589-music-mv-auto-match-stalls.md) | ✅ | ✅ | 本地 MV 自动匹配停在几首整片音轨上，CD 曲目一首没对过 |
 | [BUG-5588](bugs/BUG-5588-notarize-poll-network-blip-drops-submission.md) | ✅ | ✅ | notarize-poll-network-blip-drops-submission |
 | [BUG-5587](bugs/BUG-5587-landscape-phone-detail-hero.md) | ✅ | ✅ | 横屏手机：详情页背景带占七成高度，标题与主按钮被挤出首屏 |
 | [BUG-5586](bugs/BUG-5586-landscape-phone-chrome.md) | ✅ | ✅ | 横屏手机：外壳按宽取档给了桌面页头 / 展开侧栏，快捷键页工具区挤没列表 |
@@ -54,6 +61,7 @@
 | [BUG-5570](bugs/BUG-5570-library-partial-content-loss-undetected.md) | ✅ | ✅ | 书库内容部分丢失（哨兵还在）启动期毫无告警 |
 | [BUG-5569](bugs/BUG-5569-scan-skips-missing-managed-content.md) | ✅ | ✅ | 来源扫描遇到已入库的书不检查受管内容，丢失的解包书目录与有声书音频字幕永远不会从原件重建 |
 | [BUG-5568](bugs/BUG-5568-windows-hang-dump-dart-frames-unsymbolizable.md) | ✅ | ✅ | windows-hang-dump-dart-frames-unsymbolizable |
+| [BUG-5567](bugs/BUG-5567-overlay-pre-mine-sentence-edit.md) | ✅ | ✅ | overlay-pre-mine-sentence-edit |
 | [BUG-5566](bugs/BUG-5566-srs-donation-page-slow-load.md) | 🚧 | ✅ | srs-donation-page-slow-load |
 | [BUG-5565](bugs/BUG-5565-bluray-menu-click-after-title-return.md) | 🚧 | 🚧 | 远端蓝光原盘：播完 NCOP 回到「映像特典」子菜单后点 NCED 没反应（Android） |
 | [BUG-5564](bugs/BUG-5564-video-extras-ova-sibling-ambiguous.md) | ✅ | ✅ | 发布目录里正片旁并排 OVA 时，SPs 特典（NCOP / NCED / Menu）一个都不挂到正片作品下 |
