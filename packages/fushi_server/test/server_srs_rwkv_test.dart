@@ -4,7 +4,7 @@
 // - 服务端 RWKV 没就绪（下不到权重）时 RWKV 牌组的复习卡一张不出、标 rwkvPending，**不**退回按 FSRS-7 存下的
 //   到期日出卡；远程复习的信封带准备状态与错误，客户端经 `rwkvStart` 让主机重试；
 // - 关库顺序：先关 RWKV（存快照、关后台 runtime）再退役库；
-// - 模型档位与 app 同一个设置文件（`<support>/srs_rwkv/model_size`）：选了 Tiny，服务端加载 sm101、快照进 Tiny 的目录；
+// - 模型档位与 app 同一个设置文件（`<support>/srs_rwkv/model_size`）：选了 Tiny（也是默认），服务端加载 sm130io、快照进 Tiny 的目录；
 //   WebUI / admin API 换档位当场生效，手改文件在下一次对齐配置时生效；
 // - 同一份快照的新服务等上一个服务关完（存好快照）才起内核（快速来回切档位不让两个内核同时碰一个快照）。
 import 'dart:async';
@@ -200,7 +200,7 @@ void main() {
     );
   });
 
-  test('服务端与 app 读同一个模型档位设置：Tiny 时加载 sm101 权重、快照进 state-tiny', () async {
+  test('服务端与 app 读同一个模型档位设置：Tiny 时加载 sm130io 权重、快照进 state-tiny', () async {
     final List<int> clock = <int>[
       DateTime.now().millisecondsSinceEpoch - 2 * _dayMs,
     ];
@@ -239,7 +239,9 @@ void main() {
       isTrue,
     );
     expect(
-      File(p.join(srsRwkvStateDir(support).path, snap)).existsSync(),
+      File(
+        p.join(srsRwkvStateDir(support, SrsRwkvModelSize.small).path, snap),
+      ).existsSync(),
       isFalse,
     );
   });
@@ -249,7 +251,8 @@ void main() {
     final List<int> clock = <int>[
       DateTime.now().millisecondsSinceEpoch - 2 * _dayMs,
     ];
-    markRwkvWeightsReady(support);
+    await writeSrsRwkvModelSize(support, SrsRwkvModelSize.small);
+    markRwkvWeightsReady(support, size: SrsRwkvModelSize.small);
     markRwkvWeightsReady(support, size: SrsRwkvModelSize.tiny);
     final List<String> opened = <String>[];
     final List<FakeRwkvBackend> backends = <FakeRwkvBackend>[];
@@ -289,7 +292,9 @@ void main() {
     expect(opened, <String>[kSrsRwkvSmallWeightsName, kSrsRwkvTinyWeightsName]);
     const String snap = 'rwkv-$kJa-small-int4.snap';
     expect(
-      File(p.join(srsRwkvStateDir(support).path, snap)).existsSync(),
+      File(
+        p.join(srsRwkvStateDir(support, SrsRwkvModelSize.small).path, snap),
+      ).existsSync(),
       isTrue,
       reason: '旧档位关掉时存了快照',
     );

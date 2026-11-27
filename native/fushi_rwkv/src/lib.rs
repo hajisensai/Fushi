@@ -2,7 +2,7 @@
 // License: GNU AGPL, version 3 or later; http://www.gnu.org/licenses/agpl.html
 //
 //! Fushi RWKV 排程原生推理库：上游 RWKV 调度（kuma3-anki-core 的
-//! `rslib/src/rwkv`，AGPL-3.0-or-later）推理核心的薄封装 + 小模型（Instant-Only sm98）+ C ABI。
+//! `rslib/src/rwkv`，AGPL-3.0-or-later）推理核心的薄封装 + 小模型（Instant-Only 的 Small sm113 / 六层 Tiny sm130io）+ C ABI。
 //!
 //! 设计：
 //! - 整段复习历史按时间顺序回放（[RwkvRuntime::replay]）进模型，维护 card / note / deck /
@@ -107,41 +107,43 @@ pub const UPSTREAM_REPO: &str = "https://github.com/Pedrubik2000/kuma3-anki-core
 pub const UPSTREAM_SHA: &str = "c639bcec696f2317f9bb9a736d433b9d6c0d9c56";
 /// 通用预训练权重（`RWKV_trained_on_5000_10000.bin`，11,082,637 字节）的 SHA-256。
 pub const MODEL_SHA256: &str = "749ad1ad18d5b6ef8c4185802fa0c1e4a14e67cd7874f3efeaae355fffb1b9ec";
-/// 小模型（2026-11-15 起是 Instant-Only 的 sm98，之前是两头的 sm72e25）的来源：JSchoreels/anki 在此
-/// 提交的 `qt/aqt/rwkv_inference/sm98/` 与 `rslib/src/rwkv/testdata/sm98-vectors.json.gz`（该提交的
-/// manifest.json 记的哈希与下面一致；上游 release `rwkv-family-2026-11-13` 说明与它逐字节相同）。
+/// 小模型的来源：JSchoreels/anki 在此提交的 `qt/aqt/rwkv_inference/{sm113,sm130io}/` 与
+/// `rslib/src/rwkv/testdata/{sm113,sm130io}-vectors.json.gz`（上游 release `rwkv-family-2026-11-28` 的
+/// Small / Tiny Instant-Only 包与它逐字节相同，2026-11-27 核对）。2026-11-27 起：Small = sm113（之前依次是
+/// SM40、SM56、sm72e25、sm98），Tiny = 六层 sm130io（之前是 "w64-c1" 的 sm101）。
 /// 运行时权重首选 Fushi 自己的镜像 release（`hajisensai/Fushi` tag `rwkv-models`，内容寻址、永不
 /// 覆盖），这个提交的 raw URL 作备用；`fetch_model.*` 同此。
-pub const SMALL_MODEL_SOURCE_SHA: &str = "001440b03395f24ffc1714b18ad3d9d4d89d2067";
+pub const SMALL_MODEL_SOURCE_SHA: &str = "6cb164606984c14432ef5e9befdedd6cc070f539";
+/// Small Instant-Only sm113（"w64"，331,511 参数；即时头 LogLoss 0.275933，sm98 是 0.276191）
 /// `weights.int8.bin`（运行时用，436,391 字节）的 SHA-256。
 pub const SMALL_MODEL_INT8_SHA256: &str =
-    "b2f335bd712b9d602150201de41ab5a0f0a4c291644705e2aa1ed2a1bf1592c3";
-/// `weights.f32.bin`（1,351,553 字节，测试对拍用）的 SHA-256。
+    "87bce8dbb48a11dd599646547d241b39b6c881a8f7702aacd6284f6a9d1ecc54";
+/// sm113 `weights.f32.bin`（1,351,553 字节，测试对拍用）的 SHA-256。
 pub const SMALL_MODEL_F32_SHA256: &str =
-    "a006dcc039d19142dc95d257d9c238fb93c7efa12b78e18ec6ae881ac9009a24";
-/// `architecture.json`（"w64"，与 SM56 / SM72 / SM92 的导出逐字节相同）的 SHA-256。
+    "cc87f080eb5f25405aa2afc85fe532b9f59888aa6bbf1464e1a445cb92c42388";
+/// sm113 `architecture.json`（"w64"，与 SM56 / SM72 / SM92 / SM98 的导出逐字节相同）的 SHA-256。
 pub const SMALL_MODEL_ARCHITECTURE_SHA256: &str =
     "9bd41f1189dc0113277d371223ce805612aaec07101804160fe86312eed15de3";
-/// 黄金向量 `sm98-vectors.json.gz`（两位用户各 500 行，NumPy 参考实现、无泄漏输入、show-time 查询行）
-/// 的 SHA-256。
+/// sm113 黄金向量 `sm113-vectors.json.gz`（合成用户 900001 / 900002 各 500 行，NumPy 参考实现、无泄漏输入、
+/// show-time 查询行）的 SHA-256。
 pub const SMALL_MODEL_VECTORS_SHA256: &str =
-    "c7d8df407966fccd8f98227241816e114ce9ed1dfea799587e481c1d5926a453";
-/// 省内存的 Tiny Instant-Only 小模型 sm101（"w64-c1"：card / note 流各 1 层、deck 流 4 层，每卡状态比 sm98
-/// 小；即时头 LogLoss 0.27672，sm98 是 0.276191）。来源同 [SMALL_MODEL_SOURCE_SHA] 提交的
-/// `qt/aqt/rwkv_inference/sm101/` 与 `rslib/src/rwkv/testdata/sm101-vectors.json.gz`。架构由权重张量目录推出，
-/// 同一套小模型代码加载；快照按权重指纹区分，换模型即全量重放。
-/// `weights.int8.bin`（运行时用，409,483 字节）的 SHA-256。
+    "d54978f43e1f89c75ef0f72dd438789d378ffddd96667eef0908c86a7813830e";
+/// 六层 Tiny Instant-Only sm130io（"w64-c1-d2p1u1"：card / deck / note / preset / user 流 1 / 2 / 1 / 1 / 1 层，
+/// 185,057 参数；即时头 LogLoss 0.27749，比 sm113 差 0.56%），**默认档位**。来源同 [SMALL_MODEL_SOURCE_SHA]
+/// 提交。同一套小模型代码加载（层结构按权重张量目录认出，见 `src/rwkv/small/model.rs` 的 `LAYER_PLANS`）；
+/// 快照按权重指纹区分，换模型即全量重放。
+/// `weights.int8.bin`（运行时用，238,585 字节）的 SHA-256。
 pub const TINY_MODEL_INT8_SHA256: &str =
-    "77703dd2f2a21a1bcadaedfed1cec93ee0fd6fd6d3c840be221e72b5e1c05066";
-/// sm101 `weights.f32.bin`（1,270,749 字节，测试对拍用）的 SHA-256。
+    "24b39f61129bd9eb45156f45a32e749e1a0cf8d75e9271c2ed7038f9d6265771";
+/// sm130io `weights.f32.bin`（752,409 字节，测试对拍用）的 SHA-256。
 pub const TINY_MODEL_F32_SHA256: &str =
-    "2faacb5b913bcfbdc0e363532d533e3bcff6872c8358f1ef753ca87f9d2a60fd";
-/// sm101 `architecture.json`（"w64-c1"）的 SHA-256。
+    "89703de0a195426905e59a0abd428a52a09b0eab1ba653b5a902e5f849018f82";
+/// sm130io `architecture.json`（"w64-c1-d2p1u1"）的 SHA-256。
 pub const TINY_MODEL_ARCHITECTURE_SHA256: &str =
-    "49650457329d43ff7f3f04f68926e371d49060699142cfec9497cb759ac7a75f";
-/// sm101 黄金向量 `sm101-vectors.json.gz` 的 SHA-256。
+    "e5acb452e53788141c44d3ad9d98bcec124b9cfbecaa29718085717ee4022618";
+/// sm130io 黄金向量 `sm130io-vectors.json.gz` 的 SHA-256。
 pub const TINY_MODEL_VECTORS_SHA256: &str =
-    "18de8ae77a1a40986dc432531116dfb009beae2385001ef425389a3ad7919a9e";
+    "19711eb2c0c4a4de84f36d66c3a829e748548be4e7b35dc8604e3ea795b7af3b";
 
 // ---------------------------------------------------------------------------
 // Rust API
@@ -152,14 +154,15 @@ pub const TINY_MODEL_VECTORS_SHA256: &str =
 pub enum ModelKind {
     /// 2,762,884 参数的上游模型（质量优先）。
     Large,
-    /// 小模型（d_model 64 的 "w64" 家族；Fushi 用的是 Instant-Only 版 sm98，331,511 参数）。
+    /// 小模型（d_model 64 的 "w64" 家族；Fushi 用 Instant-Only 版：Small sm113，331,511 参数；六层 Tiny
+    /// sm130io，185,057 参数）。
     Small,
 }
 
 impl ModelKind {
     /// 这个模型的曲线头（作答后的遗忘曲线 R(t)，RWKV-Curve 排程读它）是否训练过。
     ///
-    /// 大模型是两头模型，曲线头可用。小模型：Fushi 只用 Instant-Only 版（sm98 / sm101，训练时
+    /// 大模型是两头模型，曲线头可用。小模型：Fushi 只用 Instant-Only 版（sm113 / sm130io，训练时
     /// `curve_loss_weight 0.0`，manifest `use.heads = ["instant", "rating"]`），曲线头**从未训练**，
     /// 输出的是无意义的数——[RwkvRuntime::next_intervals] / [RwkvRuntime::answer_curves] 对它返回
     /// [RwkvError::Unsupported]，不给垃圾间隔。即时头（R 查询、回放预测）不受影响。

@@ -567,6 +567,7 @@ class SrsRwkvService implements SrsRwkvScheduling, SrsRwkvStatusSource {
           ..str(models.weightsFile.path);
       case RwkvSchedWire.fxDeleteRetired:
         await models.deleteRetired();
+        await models.deleteOrphanedStates(snapshotDir);
       case RwkvSchedWire.fxRebuildHook:
         await debugAfterRebuildFingerprint?.call();
       case RwkvSchedWire.fxOpenBackend:

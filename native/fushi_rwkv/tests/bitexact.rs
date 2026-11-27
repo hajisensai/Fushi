@@ -27,7 +27,7 @@ use common::{Fixture, SmallFile, SmallModelId, Step, inputs, model_bytes, small_
 use fushi_rwkv::{Model, PORTABLE_KERNELS_ENV, ReviewInput, RwkvRuntime, StatePrecision};
 use sha2::{Digest, Sha256};
 
-/// x86_64 Windows（AVX2+FMA，Ryzen 7 9800X3D）2026-11-26 生成。
+/// x86_64 Windows（AVX2+FMA，Ryzen 7 9800X3D）生成：大模型 2026-11-26，小模型 2026-11-27（换 sm113 / sm130io）。
 const GOLDEN: [(&str, &str); 8] = [
     (
         "large f32",
@@ -38,28 +38,28 @@ const GOLDEN: [(&str, &str); 8] = [
         "93adcbf62392f9bc461d07bc74e9cd449ed8770e4fafb70a2b910179e80ac53f",
     ),
     (
-        "sm101 f32",
-        "c93e77abf42629bceeb6bbf79878a062f876bbd2ca1fc3c32cbcb5f694f719dd",
+        "sm113 f32",
+        "b976e3848c243c1b3986d6e88d2528de7917c083c178631d07c59c0fe9913a76",
     ),
     (
-        "sm101 int4",
-        "c8f3bf2df634ac909eac4b6422a7bb65428c596aa8921b59fd42fbd502bd68b6",
+        "sm113 int4",
+        "4462ed9bf0005fee999567fdf6bcddb4869e0e0a110a2f988d5b5446ae26fe97",
     ),
     (
-        "sm101 int8",
-        "c2e4a64fc82c3fbcd837487630e2d5ee6a4fe53a3f8c5624dafd5bfb8eebf33a",
+        "sm113 int8",
+        "ca70bc77ce0efb1f36a7d01967a5722d78c9d8ce48f914ed5e2a4bd5e87f6d0c",
     ),
     (
-        "sm98 f32",
-        "a1a4bcadebd277ebfc05911be330764f60e3a7c07ca15075517878ade6992c3a",
+        "sm130io f32",
+        "45e1c9b20e34da9a9a71f25203e952fd3e2acfb080b3a549876e4950fff734a6",
     ),
     (
-        "sm98 int4",
-        "7eaf802a1a42ff6b9744f8ec5982c77fe5473d902b45e3debf9415629a5ecf9f",
+        "sm130io int4",
+        "dc6ff5c1fbbb00cf0c64b5e147c7ef70fdc448a5829922d421fa87c6d5e81fba",
     ),
     (
-        "sm98 int8",
-        "7f11e823de169a7865d02a99cc834c3965d40fadebfd251122f1a969a3765c06",
+        "sm130io int8",
+        "2bcdab19d6c0a9eacb9bec6d28debbd77239a0898974b46ded7f9cd070252713",
     ),
 ];
 

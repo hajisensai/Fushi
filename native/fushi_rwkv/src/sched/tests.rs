@@ -956,7 +956,7 @@ fn small_weights() -> PathBuf {
         Some(dir) => PathBuf::from(dir),
         None => PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("model"),
     };
-    let path = dir.join("sm98_weights.int8.bin");
+    let path = dir.join("sm113_weights.int8.bin");
     assert!(
         path.exists(),
         "small RWKV weights not found at {}: run native/fushi_rwkv/fetch_model.sh (or \

@@ -140,7 +140,7 @@ Design (pending decisions): `docs/specs/2026-11-23-interconnect-music-library-de
     Conflict Center. Trusting a device in the app still does not reach the server's srs.db
     (trust is local per replica, by design).
   - RWKV scheduling runs on the server since 2026-11-11 (spec addendum), through the same
-    `srsAttachRwkv` as the app. The model size (Small sm98 / Tiny sm101) is chosen in the WebUI
+    `srsAttachRwkv` as the app. The model size (six-layer Tiny sm130io, the default / Small sm113) is chosen in the WebUI
     ("RWKV model"), `PUT /api/admin/srs {rwkvModel}` or the undoable `server.srs.rwkv-model.set`
     op; it writes the device file `<support>/srs_rwkv/model_size` and swaps the open profiles'
     RWKV services on the spot (every config reconcile re-reads the file, so hand edits apply

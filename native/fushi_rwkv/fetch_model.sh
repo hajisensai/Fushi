@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # 下载 RWKV-Instant 权重到 native/fushi_rwkv/model/ 并校验 SHA-256。
 #   大模型 RWKV_trained_on_5000_10000.bin（~11 MB，AGPL，见 UPSTREAM.md）
-#   小模型 sm98（Instant-Only，show-time 间隔训练）：int8 / f32 权重、architecture.json、黄金测试向量
+#   小模型 sm113（Small Instant-Only，show-time 间隔训练）：int8 / f32 权重、architecture.json、黄金测试向量
 #   （共 ~2.1 MB，AGPL；见 README.md「小模型」）。int8 权重首选 Fushi 自己的镜像 release
 #   （hajisensai/Fushi tag rwkv-models，内容寻址、永不覆盖），上游 JSchoreels/anki 钉死提交的 raw URL 备用；
 #   其余三个文件只在上游提交里。
-#   省内存的 Tiny 小模型 sm101（Instant-Only，同上四个文件，~2 MB）：设置里可选，测试两套都对拍。
+#   六层 Tiny 小模型 sm130io（Instant-Only，同上四个文件，~1.3 MB）：默认档位，测试两套都对拍。
 # 都不入库。
 #
 # 用法: fetch_model.sh [目标目录]
@@ -58,16 +58,16 @@ fetch_pinned "$BIG" 749ad1ad18d5b6ef8c4185802fa0c1e4a14e67cd7874f3efeaae355fffb1
   "https://raw.githubusercontent.com/Pedrubik2000/kuma3-anki-core/c639bcec696f2317f9bb9a736d433b9d6c0d9c56/qt/aqt/rwkv_inference/$BIG" \
   "https://raw.githubusercontent.com/JSchoreels/anki/0dd75c5f8fa4ea3543f5a3559870e8aea047bf80/qt/aqt/rwkv_inference/$BIG"
 
-# 小模型 sm98：钉 JSchoreels/anki 的提交（同 src/lib.rs 的 SMALL_MODEL_SOURCE_SHA）；
+# 小模型 sm113：钉 JSchoreels/anki 的提交（同 src/lib.rs 的 SMALL_MODEL_SOURCE_SHA）；
 # SHA-256 同 src/lib.rs 的 SMALL_MODEL_*_SHA256（与该提交的 manifest.json 一致）。
 MIRROR="https://github.com/hajisensai/Fushi/releases/download/rwkv-models"
-SMALL="https://raw.githubusercontent.com/JSchoreels/anki/001440b03395f24ffc1714b18ad3d9d4d89d2067"
-fetch_pinned sm98_weights.int8.bin b2f335bd712b9d602150201de41ab5a0f0a4c291644705e2aa1ed2a1bf1592c3   "$MIRROR/b2f335bd712b9d60-sm98-weights.int8.bin"   "$SMALL/qt/aqt/rwkv_inference/sm98/weights.int8.bin"
-fetch_pinned sm98_weights.f32.bin a006dcc039d19142dc95d257d9c238fb93c7efa12b78e18ec6ae881ac9009a24   "$SMALL/qt/aqt/rwkv_inference/sm98/weights.f32.bin"
-fetch_pinned sm98_architecture.json 9bd41f1189dc0113277d371223ce805612aaec07101804160fe86312eed15de3   "$SMALL/qt/aqt/rwkv_inference/sm98/architecture.json"
-fetch_pinned sm98-vectors.json.gz c7d8df407966fccd8f98227241816e114ce9ed1dfea799587e481c1d5926a453   "$SMALL/rslib/src/rwkv/testdata/sm98-vectors.json.gz"
-# Tiny 小模型 sm101：同一提交；SHA-256 同 src/lib.rs 的 TINY_MODEL_*_SHA256。
-fetch_pinned sm101_weights.int8.bin 77703dd2f2a21a1bcadaedfed1cec93ee0fd6fd6d3c840be221e72b5e1c05066   "$MIRROR/77703dd2f2a21a1b-sm101-weights.int8.bin"   "$SMALL/qt/aqt/rwkv_inference/sm101/weights.int8.bin"
-fetch_pinned sm101_weights.f32.bin 2faacb5b913bcfbdc0e363532d533e3bcff6872c8358f1ef753ca87f9d2a60fd   "$SMALL/qt/aqt/rwkv_inference/sm101/weights.f32.bin"
-fetch_pinned sm101_architecture.json 49650457329d43ff7f3f04f68926e371d49060699142cfec9497cb759ac7a75f   "$SMALL/qt/aqt/rwkv_inference/sm101/architecture.json"
-fetch_pinned sm101-vectors.json.gz 18de8ae77a1a40986dc432531116dfb009beae2385001ef425389a3ad7919a9e   "$SMALL/rslib/src/rwkv/testdata/sm101-vectors.json.gz"
+SMALL="https://raw.githubusercontent.com/JSchoreels/anki/6cb164606984c14432ef5e9befdedd6cc070f539"
+fetch_pinned sm113_weights.int8.bin 87bce8dbb48a11dd599646547d241b39b6c881a8f7702aacd6284f6a9d1ecc54   "$MIRROR/87bce8dbb48a11dd-sm113-weights.int8.bin"   "$SMALL/qt/aqt/rwkv_inference/sm113/weights.int8.bin"
+fetch_pinned sm113_weights.f32.bin cc87f080eb5f25405aa2afc85fe532b9f59888aa6bbf1464e1a445cb92c42388   "$SMALL/qt/aqt/rwkv_inference/sm113/weights.f32.bin"
+fetch_pinned sm113_architecture.json 9bd41f1189dc0113277d371223ce805612aaec07101804160fe86312eed15de3   "$SMALL/qt/aqt/rwkv_inference/sm113/architecture.json"
+fetch_pinned sm113-vectors.json.gz d54978f43e1f89c75ef0f72dd438789d378ffddd96667eef0908c86a7813830e   "$SMALL/rslib/src/rwkv/testdata/sm113-vectors.json.gz"
+# 六层 Tiny 小模型 sm130io：同一提交；SHA-256 同 src/lib.rs 的 TINY_MODEL_*_SHA256。
+fetch_pinned sm130io_weights.int8.bin 24b39f61129bd9eb45156f45a32e749e1a0cf8d75e9271c2ed7038f9d6265771   "$MIRROR/24b39f61129bd9eb-sm130io-weights.int8.bin"   "$SMALL/qt/aqt/rwkv_inference/sm130io/weights.int8.bin"
+fetch_pinned sm130io_weights.f32.bin 89703de0a195426905e59a0abd428a52a09b0eab1ba653b5a902e5f849018f82   "$SMALL/qt/aqt/rwkv_inference/sm130io/weights.f32.bin"
+fetch_pinned sm130io_architecture.json e5acb452e53788141c44d3ad9d98bcec124b9cfbecaa29718085717ee4022618   "$SMALL/qt/aqt/rwkv_inference/sm130io/architecture.json"
+fetch_pinned sm130io-vectors.json.gz 19711eb2c0c4a4de84f36d66c3a829e748548be4e7b35dc8604e3ea795b7af3b   "$SMALL/rslib/src/rwkv/testdata/sm130io-vectors.json.gz"

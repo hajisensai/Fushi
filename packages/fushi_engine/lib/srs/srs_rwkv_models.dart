@@ -1,12 +1,12 @@
 /// RWKV 权重的按需下载与校验。
 ///
 /// 只用小模型（int4 状态每卡约 2.9 KB）：SM40 在真实复习记录上已比上游大模型（2,762,884 参数，int8 状态
-/// 每卡约 25.7 KB）还略准，大模型已移除（2026-10-21）；之后依次换成 SM56、无泄漏的 sm72e25，2026-11-15 换成
-/// **Instant-Only 的 sm98**（同架构，按出示时刻的间隔训练、只训即时头：Fushi 只用 RWKV-Instant，同尺寸下
-/// 即时头更准；它的曲线头没训练过，原生库对它拒绝 RWKV-Curve。见 native/fushi_rwkv/README.md「sm98」）。
+/// 每卡约 25.7 KB）还略准，大模型已移除（2026-10-21）；之后依次换成 SM56、无泄漏的 sm72e25、Instant-Only 的
+/// sm98（2026-11-15）。2026-11-27 起两档都是上游 release `rwkv-family-2026-11-28` 的 **Instant-Only** 模型
+/// （按出示时刻的间隔训练、只训即时头：Fushi 只用 RWKV-Instant，同尺寸下即时头更准；曲线头没训练过，原生库
+/// 对它们拒绝 RWKV-Curve）：默认的 **六层 Tiny sm130io**（[SrsRwkvModelSize.tiny]）与 **Small sm113**
+/// （[SrsRwkvModelSize.small]）。见 native/fushi_rwkv/README.md「sm113 / sm130io」。
 /// 换权重后旧快照按权重指纹被拒、自动全量重放一次。
-///
-/// 设置里可改用省内存的 **Tiny Instant-Only sm101**（[SrsRwkvModelSize.tiny]）。
 ///
 /// 权重不随包，用户启用时下载：首选 Fushi 自己的镜像 release（`hajisensai/Fushi` tag `rwkv-models`，文件名带
 /// 内容哈希前缀、永不覆盖），失败再用上游 JSchoreels/anki 钉死提交的 raw URL；校验只认字节数 + SHA-256，与
@@ -48,55 +48,60 @@ class SrsRwkvModelFile implements DownloadableModelFile {
 const String kSrsRwkvMirrorBase =
     'https://github.com/hajisensai/Fushi/releases/download/rwkv-models';
 
-/// 上游权重所在的 JSchoreels/anki 提交（`qt/aqt/rwkv_inference/<模型>/`；release `rwkv-family-2026-11-13`
-/// 说明与它逐字节相同）。只钉提交，不钉 release zip（上游会原地替换 zip）。
+/// 上游权重所在的 JSchoreels/anki 提交（`qt/aqt/rwkv_inference/<模型>/`；release `rwkv-family-2026-11-28`
+/// 的包与它逐字节相同）。只钉提交，不钉 release zip（上游会原地替换 zip）。
 const String kSrsRwkvUpstreamBase =
-    'https://raw.githubusercontent.com/JSchoreels/anki/001440b03395f24ffc1714b18ad3d9d4d89d2067/qt/aqt/rwkv_inference';
+    'https://raw.githubusercontent.com/JSchoreels/anki/6cb164606984c14432ef5e9befdedd6cc070f539/qt/aqt/rwkv_inference';
 
-/// 小模型 sm98（Instant-Only）的 int8 权重，与 fushi_rwkv `SMALL_MODEL_INT8_SHA256` 一致。
+/// Small Instant-Only 小模型 sm113 的 int8 权重，与 fushi_rwkv `SMALL_MODEL_INT8_SHA256` 一致。即时头 LogLoss
+/// 0.275933（上游 732 用户集，int8 权重 + int8 状态）；Fushi 的 int4 状态每卡 + 笔记约 2.9 KB。
 const SrsRwkvModelFile kSrsRwkvSmallWeights = SrsRwkvModelFile(
   fileName: kSrsRwkvSmallWeightsName,
   urls: <String>[
-    '$kSrsRwkvMirrorBase/b2f335bd712b9d60-sm98-weights.int8.bin',
-    '$kSrsRwkvUpstreamBase/sm98/weights.int8.bin',
+    '$kSrsRwkvMirrorBase/87bce8dbb48a11dd-sm113-weights.int8.bin',
+    '$kSrsRwkvUpstreamBase/sm113/weights.int8.bin',
   ],
   expectedBytes: kSrsRwkvSmallWeightsBytes,
   sha256: kSrsRwkvSmallWeightsSha256,
 );
 
-const String kSrsRwkvSmallWeightsName = 'sm98_weights.int8.bin';
+const String kSrsRwkvSmallWeightsName = 'sm113_weights.int8.bin';
 const int kSrsRwkvSmallWeightsBytes = 436391;
 const String kSrsRwkvSmallWeightsSha256 =
-    'b2f335bd712b9d602150201de41ab5a0f0a4c291644705e2aa1ed2a1bf1592c3';
+    '87bce8dbb48a11dd599646547d241b39b6c881a8f7702aacd6284f6a9d1ecc54';
 
-/// 省内存的 Tiny Instant-Only 小模型 sm101 的 int8 权重，与 fushi_rwkv `TINY_MODEL_INT8_SHA256` 一致。
-/// card / note 流各 1 层：Fushi 的 int4 状态每卡 + 笔记约 2.0 KB（sm98 约 2.9 KB，约 −30%），即时头
-/// LogLoss 0.27672（sm98 0.276191）。设置里选（[SrsRwkvModelSize.tiny]）。
+/// 六层 Tiny Instant-Only 小模型 sm130io 的 int8 权重，与 fushi_rwkv `TINY_MODEL_INT8_SHA256` 一致。
+/// 架构 "w64-c1-d2p1u1"（card / deck / note / preset / user 流 1 / 2 / 1 / 1 / 1 层，185,057 参数）：Fushi 的
+/// int4 状态每卡 + 笔记约 2.0 KB（sm113 约 2.9 KB，约 −30%），即时头 LogLoss 0.27749（比 sm113 差 0.56%）。
+/// 默认档位（[SrsRwkvModelSize.tiny]）。
 const SrsRwkvModelFile kSrsRwkvTinyWeights = SrsRwkvModelFile(
   fileName: kSrsRwkvTinyWeightsName,
   urls: <String>[
-    '$kSrsRwkvMirrorBase/77703dd2f2a21a1b-sm101-weights.int8.bin',
-    '$kSrsRwkvUpstreamBase/sm101/weights.int8.bin',
+    '$kSrsRwkvMirrorBase/24b39f61129bd9eb-sm130io-weights.int8.bin',
+    '$kSrsRwkvUpstreamBase/sm130io/weights.int8.bin',
   ],
   expectedBytes: kSrsRwkvTinyWeightsBytes,
   sha256: kSrsRwkvTinyWeightsSha256,
 );
 
-const String kSrsRwkvTinyWeightsName = 'sm101_weights.int8.bin';
-const int kSrsRwkvTinyWeightsBytes = 409483;
+const String kSrsRwkvTinyWeightsName = 'sm130io_weights.int8.bin';
+const int kSrsRwkvTinyWeightsBytes = 238585;
 const String kSrsRwkvTinyWeightsSha256 =
-    '77703dd2f2a21a1bcadaedfed1cec93ee0fd6fd6d3c840be221e72b5e1c05066';
+    '24b39f61129bd9eb45156f45a32e749e1a0cf8d75e9271c2ed7038f9d6265771';
 
 /// 用哪个 RWKV 小模型（整台设备一个设置，app 与无头服务端都从 `<support>/srs_rwkv/model_size` 读，见
 /// srs_rwkv_attach.dart）。换了 = 换权重：按需下载新权重，旧快照按权重指纹被拒、全量重放一次。
 enum SrsRwkvModelSize {
-  /// Small Instant-Only（sm98），默认。
-  small('small', kSrsRwkvSmallWeights),
+  /// Small Instant-Only（sm113）：即时头最准，每卡状态大一些。
+  small('small', kSrsRwkvSmallWeights, 'state'),
 
-  /// Tiny Instant-Only（sm101）：每卡状态约小 30%，即时头略差。
-  tiny('tiny', kSrsRwkvTinyWeights);
+  /// 六层 Tiny Instant-Only（sm130io），默认：每卡状态约小 30%，即时头 LogLoss 只差 0.56%。
+  tiny('tiny', kSrsRwkvTinyWeights, 'state-tiny');
 
-  const SrsRwkvModelSize(this.persistedName, this.weights);
+  const SrsRwkvModelSize(this.persistedName, this.weights, this.stateDirName);
+
+  /// 没有设置文件（或内容认不出）时用的档位（2026-11-27 起是 Tiny，之前是 Small）。
+  static const SrsRwkvModelSize fallback = tiny;
 
   /// 写进设置文件的值（持久化名，不随枚举名改）。
   final String persistedName;
@@ -104,25 +109,30 @@ enum SrsRwkvModelSize {
   /// 这一档用的权重。
   final SrsRwkvModelFile weights;
 
-  /// 设置文件内容 → 档位；缺失 / 认不出的值一律当默认的 [small]。
+  /// 这一档的状态快照目录名（`<support>/srs_rwkv/<名>`，持久化名，不随档位默认值改）。
+  final String stateDirName;
+
+  /// 设置文件内容 → 档位；缺失 / 认不出的值一律当 [fallback]。
   static SrsRwkvModelSize fromPersisted(String? value) {
     final String? trimmed = value?.trim();
     for (final SrsRwkvModelSize size in values) {
       if (size.persistedName == trimmed) return size;
     }
-    return small;
+    return fallback;
   }
 }
 
 /// 以前下载过、现在不再用的文件名（[SrsRwkvModels.deleteRetired] 清理用）：已移除的大模型
-/// （约 11 MB），被取代的 SM40 / SM56 / sm72e25 小模型权重，以及 SM56 发布包（解压后本应已删，下载中断时
-/// 可能残留）。
+/// （约 11 MB），被取代的 SM40 / SM56 / sm72e25 / sm98 / sm101 小模型权重，以及 SM56 发布包（解压后本应已删，
+/// 下载中断时可能残留）。
 const List<String> kSrsRwkvRetiredWeightsNames = <String>[
   'RWKV_trained_on_5000_10000.bin',
   'sm40_weights.int8.bin',
   'sm56_weights.int8.bin',
   'sm56-package.zip',
   'sm72e25_weights.int8.bin',
+  'sm98_weights.int8.bin',
+  'sm101_weights.int8.bin',
 ];
 
 /// 下载或校验失败。
@@ -134,12 +144,12 @@ class SrsRwkvModelException implements Exception {
   String toString() => 'SrsRwkvModelException: $message';
 }
 
-/// [dir] 下的 RWKV 权重：是否就绪、下载、校验。[size] 选档（默认 [SrsRwkvModelSize.small]），[model] 缺省是
+/// [dir] 下的 RWKV 权重：是否就绪、下载、校验。[size] 选档（默认 [SrsRwkvModelSize.fallback]），[model] 缺省是
 /// 这一档的权重（测试可以直接给一份）。
 class SrsRwkvModels {
   SrsRwkvModels({
     required this.dir,
-    this.size = SrsRwkvModelSize.small,
+    this.size = SrsRwkvModelSize.fallback,
     SrsRwkvModelFile? model,
     HttpClient Function()? createClient,
   }) : model = model ?? size.weights,
@@ -300,6 +310,27 @@ class SrsRwkvModels {
       for (final File f in <File>[weights, _marker(weights)]) {
         if (await f.exists()) await f.delete();
       }
+    }
+  }
+
+  /// 删掉别的档位里已经没用的状态快照目录。[activeStateDir] 是本档的快照目录（`<support>/srs_rwkv/<本档目录名>`，
+  /// 不是这个形状——测试自定的目录——就什么也不做）。
+  ///
+  /// 一个档位的快照只在它这一档的权重还在 [dir] 里时有用：换回那一档时直接恢复。权重不在，说明那一档从没用过、
+  /// 或它的快照来自已退役的权重（换模型后权重文件名跟着换，旧权重由 [deleteRetired] 删掉）——恢复时按权重指纹
+  /// 必被拒、全量重放，留着只占空间（大库每份快照几十 MB，每个 profile 还有至多两份检查点）。例如 2026-11-27
+  /// 默认档位改成 Tiny：没有设置文件的老用户从 Small 换到 Tiny，`state/` 里 sm98 的快照就再也用不上。
+  /// 另一档的服务正在关、还要往它的目录存快照时，它的权重一定在（服务起来之前先下完权重），不会被删。
+  Future<void> deleteOrphanedStates(Directory activeStateDir) async {
+    if (p.basename(activeStateDir.path) != size.stateDirName) return;
+    final Directory root = activeStateDir.parent;
+    for (final SrsRwkvModelSize other in SrsRwkvModelSize.values) {
+      if (other == size) continue;
+      if (File(p.join(dir.path, other.weights.fileName)).existsSync()) {
+        continue;
+      }
+      final Directory orphan = Directory(p.join(root.path, other.stateDirName));
+      if (await orphan.exists()) await orphan.delete(recursive: true);
     }
   }
 }
