@@ -2654,6 +2654,7 @@ class JellyfinVideoClient
         RemoteVideoClient,
         RemoteCoverFetcher,
         RemoteVideoLookup,
+        DerivedSeriesGroupingSource,
         RemoteVideoDetailFetch,
         RemoteVideoPlaybackStop,
         RemoteVideoPlaybackDetach,

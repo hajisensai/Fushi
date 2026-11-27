@@ -52,6 +52,14 @@ abstract class RemoteVideoSource implements RemoteLibrarySource {
   });
 }
 
+/// 标记能力：清单里的合集归属（[RemoteVideoInfo.collection]）是客户端按剧名**现算**的
+/// 派生分组（媒体服务器 `mediaServerCollectionOf`），不是 host 上真实存在的合集。
+///
+/// 视频库页对这类来源不收养进库，只在内存里叠加临时分组（`RemoteSeriesCatalog` →
+/// `buildRemoteSeriesOverlay`，BUG-5601）；用户对某部剧做持久化动作时才物化。互联 /
+/// 云盘的归属来自 host 的合集表，不实现本接口，照旧收养。
+abstract interface class DerivedSeriesGroupingSource {}
+
 /// 「按 id 直接查远端视频」的可选能力：不枚举整库，只问这几条。
 ///
 /// 合集成员行的 `entryKey` 就是远端视频 id（`CollectionEpisodeSlot.entryKey`），

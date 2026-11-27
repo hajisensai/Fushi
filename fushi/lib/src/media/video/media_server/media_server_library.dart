@@ -31,6 +31,7 @@ import 'package:fushi_engine/media/video/video_cover_extractor.dart'
     show videoCoverFileName;
 import 'package:fushi_engine/media/video/video_storage.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/media/collections/remote_series_overlay.dart';
 import 'package:fushi_engine/sync/remote_collection_adoption_service.dart';
 import 'package:path/path.dart' as p;
 
@@ -251,7 +252,14 @@ class MediaServerVideoLibrary {
     }
     // 已在库的集也重新收养一次：合集被用户删掉后重新加入能回到合集里；整部作品
     // 一起收养，整理记录只读一次（BUG-5518）。
-    await adoption.adoptVideos(infos, userIntent: userIntent);
+    if (userIntent) {
+      // 用户亲手「加入媒体库」：按剧物化并钉住成员（BUG-5601）——媒体服务器的剧名
+      // 分组平时只是视频库里的临时叠加，这一下才成为用户的合集；钉住的成员随同步
+      // 各端可见，存量清理据此保留它。
+      await _materializeSeriesOf(infos);
+    } else {
+      await adoption.adoptVideos(infos, userIntent: false);
+    }
     if (added.isNotEmpty) {
       await repository.recordVideoImportActivity(
         bookUid: added.first,
@@ -301,6 +309,33 @@ class MediaServerVideoLibrary {
 
   /// 移出媒体库：删本作品的 `media-server://` 行。已下载到本机的集是普通本地视频，
   /// 不跟着移出。
+  Future<void> _materializeSeriesOf(List<RemoteVideoInfo> infos) async {
+    final Map<String, List<RemoteSeriesEntry>> bySeries =
+        <String, List<RemoteSeriesEntry>>{};
+    for (final RemoteVideoInfo info in infos) {
+      final RemoteCollectionMembership? m = info.collection;
+      if (m == null) continue;
+      (bySeries[remoteSeriesNaturalKey(m.collectionName, m.collectionType)] ??=
+              <RemoteSeriesEntry>[])
+          .add(
+            RemoteSeriesEntry(
+              entryKey: info.id,
+              name: m.collectionName,
+              collectionType: m.collectionType,
+              sortIndex: m.sortIndex,
+            ),
+          );
+    }
+    for (final List<RemoteSeriesEntry> members in bySeries.values) {
+      await materializeRemoteSeries(
+        database,
+        name: members.first.name,
+        collectionType: members.first.collectionType,
+        members: members,
+      );
+    }
+  }
+
   Future<int> removeFromLibrary(
     MediaServerBrowser browser,
     MediaServerItem work,
