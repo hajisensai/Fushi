@@ -278,15 +278,39 @@ AdaptiveNavPeek homeNavPeekFor(
 }
 
 /// 速览卡封面的 NSFW 判定（拍板台 w04vrhUAaX）：「模糊 NSFW 封面」关着恒 false，
-/// 否则按加载这一刻的快照判（速览每次展开都重新加载）。
-Future<bool Function(MediaNsfwTarget target)> _loadNsfwJudge(
-  AppModel appModel,
-) async {
-  if (!appModel.prefsRepo.blurNsfwCovers) return (MediaNsfwTarget _) => false;
-  final MediaNsfwSnapshot snapshot = await MediaNsfwSnapshot.load(
-    appModel.database,
-  );
-  return (MediaNsfwTarget target) => target.resolve(snapshot);
+/// 否则按加载这一刻的快照判（速览每次展开都重新加载）。各模块速览都经这一个入口
+/// 判，带封面的 [AdaptiveNavPeekEntry] 又强制要 `blurCover`，漏判写不出来。
+@immutable
+class NavPeekNsfwJudge {
+  /// [snapshot] 为 null = 开关关着，什么都不模糊。
+  const NavPeekNsfwJudge(this._snapshot);
+
+  static const NavPeekNsfwJudge off = NavPeekNsfwJudge(null);
+
+  static Future<NavPeekNsfwJudge> load(AppModel appModel) async =>
+      appModel.prefsRepo.blurNsfwCovers
+      ? NavPeekNsfwJudge(await MediaNsfwSnapshot.load(appModel.database))
+      : off;
+
+  final MediaNsfwSnapshot? _snapshot;
+
+  /// 书 / 视频 / 合集 / 游戏这类可标 NSFW 的宿主。
+  bool call(MediaNsfwTarget target) {
+    final MediaNsfwSnapshot? snapshot = _snapshot;
+    return snapshot != null && target.resolve(snapshot);
+  }
+
+  /// 音乐封面：与系统媒体卡、曲库封面同一口径（[MediaNsfwSnapshot.isMusicItemNsfw]，
+  /// 专辑标记或封面图源）。
+  bool music({String? albumUid, String? coverPath, String? embeddedFromPath}) {
+    final MediaNsfwSnapshot? snapshot = _snapshot;
+    return snapshot != null &&
+        snapshot.isMusicItemNsfw(
+          albumUid: albumUid,
+          coverPath: coverPath,
+          embeddedFromPath: embeddedFromPath,
+        );
+  }
 }
 
 /// 漫画速览行的有声状态：做不了有声（在线章节 / 读不出）的不在表里。
@@ -429,7 +453,7 @@ Future<NavPeekFeed> _loadBooks({
     appModel.database,
     collections.primaryByEntry,
   );
-  final bool Function(MediaNsfwTarget) nsfw = await _loadNsfwJudge(appModel);
+  final NavPeekNsfwJudge nsfw = await NavPeekNsfwJudge.load(appModel);
   String compositeKeyOf(MediaItem item) => bookCollectionEntryKey(
     item,
     epubUidByKey: uidByKey,
@@ -602,7 +626,7 @@ Future<NavPeekFeed> _loadVideos({
   required BuildContext Function() contextOf,
   required VoidCallback openVideoTab,
 }) async {
-  final bool Function(MediaNsfwTarget) nsfw = await _loadNsfwJudge(appModel);
+  final NavPeekNsfwJudge nsfw = await NavPeekNsfwJudge.load(appModel);
   final MediaVisibility lockVisibility = await MediaVisibility.load(
     appModel.database,
   );
@@ -776,6 +800,8 @@ Future<NavPeekFeed> _loadVideos({
         return AdaptiveNavPeekEntry(
           title: video.title,
           cover: remoteCover(video),
+          // 互联对端的视频不是本机可标 NSFW 的宿主。
+          blurCover: false,
           subtitle: t.video_watched_up_to(
             time: formatVideoPosition(video.positionMs),
           ),
@@ -828,7 +854,7 @@ Future<NavPeekFeed> _loadGames({
   final List<GalgameEntry> games = appModel.galgameRepo.games.isNotEmpty
       ? appModel.galgameRepo.games
       : await appModel.galgameRepo.load();
-  final bool Function(MediaNsfwTarget) nsfw = await _loadNsfwJudge(appModel);
+  final NavPeekNsfwJudge nsfw = await NavPeekNsfwJudge.load(appModel);
   final MediaVisibility lockVisibility = await MediaVisibility.load(
     appModel.database,
   );
@@ -925,7 +951,7 @@ Future<AdaptiveNavPeekData> _loadSrsDecks({
     final bool hasWork =
         deck.newCount + deck.learnCount + deck.reviewCount > 0 ||
         deck.rwkvPending;
-    return AdaptiveNavPeekEntry(
+    return AdaptiveNavPeekEntry.noCover(
       title: deck.fullName,
       subtitle:
           srsNavPeekCountsLabel(
@@ -1085,6 +1111,8 @@ AdaptiveNavPeekEntry Function(DownloadTaskEntry task) navPeekDownloadEntry(
   return AdaptiveNavPeekEntry(
     title: task.title,
     cover: cover == null || cover.isEmpty ? null : AppHttpImage(cover),
+    // 下载任务不是可标 NSFW 的宿主（落库后才有作品身份）。
+    blurCover: false,
     progress: progress,
     subtitle: subtitle == null || subtitle.isEmpty ? null : subtitle,
     status: task.status == DownloadTaskStatus.active
@@ -1293,7 +1321,7 @@ Future<AdaptiveNavPeekData> _loadHome({
           (StatFacts facts) => homeContinueVideoWatchAtByUid(facts.dailyVideos),
         )
       : Future<Map<String, int>>.value(const <String, int>{});
-  final bool Function(MediaNsfwTarget) nsfw = await _loadNsfwJudge(appModel);
+  final NavPeekNsfwJudge nsfw = await NavPeekNsfwJudge.load(appModel);
 
   final List<MediaItem> books = <MediaItem>[
     for (final MediaItem item in await booksF)
@@ -1512,6 +1540,8 @@ Future<AdaptiveNavPeekData> _loadHome({
                   width: kLocalCoverDecodePixelWidth,
                   allowUpscaling: false,
                 ),
+          // 远端条目不是本机可标 NSFW 的宿主。
+          blurCover: false,
           progress: candidate.isVideo ? null : candidate.percent / 100,
           // 与首页远端卡同一落地：切到对应库页，远端占位卡在那里承接播放 / 下载。
           onOpen: () =>
@@ -1538,6 +1568,8 @@ Future<AdaptiveNavPeekData> _loadHome({
                   cacheKey: candidate.coverCacheKey,
                 )
               : AppCachedHttpImage(url, cacheKey: candidate.coverCacheKey),
+          // 媒体服务器条目不是本机可标 NSFW 的宿主。
+          blurCover: false,
           progress: candidate.progress,
           // 与首页服务器卡同一落地：媒体服务器起播，ABS 打开条目详情页。
           onOpen: () {
@@ -1574,6 +1606,7 @@ Future<AdaptiveNavPeekData> _loadMusic({
   required VoidCallback openMusic,
 }) async {
   final FushiDatabase db = appModel.database;
+  final NavPeekNsfwJudge nsfw = await NavPeekNsfwJudge.load(appModel);
   final MusicPlayerEngine engine = appModel.musicSession.engine;
   final MediaVisibility lockVisibility = await MediaVisibility.load(db);
   final List<MusicTrackRow> played = <MusicTrackRow>[
@@ -1613,9 +1646,16 @@ Future<AdaptiveNavPeekData> _loadMusic({
 
   Future<AdaptiveNavPeekEntry> entryOf(MusicTrackRow track) async {
     final MusicAlbumRow? album = await albumOf(track.albumUid);
+    final _NavPeekMusicCover cover = await _musicCover(
+      db,
+      nsfw,
+      track: track,
+      album: album,
+    );
     return AdaptiveNavPeekEntry(
       title: album?.title ?? track.title,
-      cover: await _musicCover(db, track: track, album: album),
+      cover: cover.image,
+      blurCover: cover.blur,
       subtitle: album == null ? track.artistCredit : track.title,
       onOpen: () => unawaited(playFrom(track, album)),
     );
@@ -1634,18 +1674,30 @@ Future<AdaptiveNavPeekData> _loadMusic({
     // 「继续」照播放条画：标题 / 副行 / 封面都取播放项本身。服务器、插件、
     // Apple Music 的曲目 uid 是合成的、不在曲库表里，不能先去表里查。
     ImageProvider? cover = musicCoverImageProvider(current.coverPath);
+    bool blurCover = nsfw.music(
+      albumUid: current.albumUid,
+      coverPath: current.coverPath,
+    );
     if (cover == null) {
       // 曲库曲目只有内嵌封面时播放项不带封面路径：按曲库那一行补上。
       final MusicTrackRow? track = await db.getMusicTrack(current.trackUid);
       if (track != null) {
-        cover = await _musicCover(
+        final _NavPeekMusicCover picked = await _musicCover(
           db,
+          nsfw,
           track: track,
           album: await albumOf(track.albumUid),
         );
+        cover = picked.image;
+        blurCover = blurCover || picked.blur;
       }
     }
-    resume = navPeekNowPlayingEntry(current, cover: cover, onOpen: openMusic);
+    resume = navPeekNowPlayingEntry(
+      current,
+      cover: cover,
+      blurCover: blurCover,
+      onOpen: openMusic,
+    );
     final String playingKey = current.albumUid ?? current.trackUid;
     units.removeWhere((MusicTrackRow t) => unitKey(t) == playingKey);
   } else if (units.isNotEmpty) {
@@ -1666,21 +1718,28 @@ Future<AdaptiveNavPeekData> _loadMusic({
 AdaptiveNavPeekEntry navPeekNowPlayingEntry(
   MusicPlayItem item, {
   required ImageProvider? cover,
+  required bool blurCover,
   required VoidCallback onOpen,
 }) {
   final String byline = musicNowPlayingByline(item);
   return AdaptiveNavPeekEntry(
     title: item.title,
     cover: cover,
+    blurCover: blurCover,
     subtitle: byline.isEmpty ? null : byline,
     onOpen: onOpen,
   );
 }
 
+/// 音乐速览条目的封面与它的 NSFW 模糊判定（同一份图源一起算出来）。
+typedef _NavPeekMusicCover = ({ImageProvider? image, bool blur});
+
 /// 曲目 / 专辑封面，顺序与 `MusicCover` 一致：专辑目录封面（本地文件或服务器
-/// 地址）→ 内嵌封面（专辑指定的那首，否则这首自己）→ null。
-Future<ImageProvider?> _musicCover(
-  FushiDatabase db, {
+/// 地址）→ 内嵌封面（专辑指定的那首，否则这首自己）→ null。模糊判定按专辑与
+/// 选中的图源（与曲库封面 `MusicNsfwCover` 同口径）。
+Future<_NavPeekMusicCover> _musicCover(
+  FushiDatabase db,
+  NavPeekNsfwJudge nsfw, {
   required MusicTrackRow track,
   required MusicAlbumRow? album,
 }) async {
@@ -1689,6 +1748,17 @@ Future<ImageProvider?> _musicCover(
     track: track,
     album: album,
   );
+  return (
+    image: await _musicCoverImage(pick),
+    blur: nsfw.music(
+      albumUid: track.albumUid,
+      coverPath: pick.coverPath,
+      embeddedFromPath: pick.embeddedFromPath,
+    ),
+  );
+}
+
+Future<ImageProvider?> _musicCoverImage(MusicCoverSource pick) async {
   final String? file = pick.coverPath;
   if (file != null) {
     if (file.startsWith('http://') || file.startsWith('https://')) {
@@ -1724,7 +1794,7 @@ Future<AdaptiveNavPeekData> _loadDictionary({
       recentLabel: t.lookup_history_title,
       recent: <AdaptiveNavPeekEntry>[
         for (final DictionarySearchResult r in latest.take(_kPeekListCount))
-          AdaptiveNavPeekEntry(
+          AdaptiveNavPeekEntry.noCover(
             title: r.searchTerm,
             icon: FushiIcons.history,
             subtitle: switch (r.entries.firstOrNull?.reading) {
@@ -1750,7 +1820,7 @@ Future<AdaptiveNavPeekData> _loadDictionary({
           in appModel.dictRepo.termDictionaries
               .where((Dictionary d) => !d.isHidden(JapaneseLanguage.instance))
               .take(_kPeekListCount))
-        AdaptiveNavPeekEntry(
+        AdaptiveNavPeekEntry.noCover(
           title: names[d.name] ?? d.name,
           onOpen: openDictionary,
         ),
@@ -1788,7 +1858,7 @@ Future<AdaptiveNavPeekData> _loadWeb({
     recentLabel: t.web_browser_history_title,
     resume: active == null
         ? null
-        : AdaptiveNavPeekEntry(
+        : AdaptiveNavPeekEntry.noCover(
             title: titleOf(active.title, active.url),
             icon: FushiIcons.tab,
             subtitle: active.url.host,
@@ -1804,7 +1874,7 @@ Future<AdaptiveNavPeekData> _loadWeb({
           ),
     recent: <AdaptiveNavPeekEntry>[
       for (final WebBrowserHistoryEntry h in history.take(_kPeekListCount))
-        AdaptiveNavPeekEntry(
+        AdaptiveNavPeekEntry.noCover(
           title: titleOf(h.title, h.url),
           icon: FushiIcons.history,
           subtitle: h.url.host,
@@ -1856,7 +1926,7 @@ Future<AdaptiveNavPeekData> _loadSettings({
     recentLabel: recent.isEmpty ? t.nav_peek_categories : null,
     recent: <AdaptiveNavPeekEntry>[
       for (final SettingsDestination d in shown)
-        AdaptiveNavPeekEntry(
+        AdaptiveNavPeekEntry.noCover(
           title: d.title,
           icon: d.icon,
           onOpen: () {
