@@ -3615,7 +3615,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     final RemoteDiscHostTitle? discTitle = _remoteDiscHostTitle();
     if (discTitle != null) {
       final RemoteVideoSubtitleService remoteService =
-          appRemoteVideoSubtitleService(appModel);
+          appRemoteVideoSubtitleService(appModel.database);
       final RemoteVideoSubtitleTarget remoteTarget = _remoteDiscSubtitleTarget(
         discTitle,
         audioTrack: controller.currentAudioStreamIndex,
@@ -3644,7 +3644,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
         audioLanguages: _audioTrackLanguagesOf(controller),
       );
       final RemoteVideoSubtitleService remoteService =
-          appRemoteVideoSubtitleService(appModel);
+          appRemoteVideoSubtitleService(appModel.database);
       return (BuildContext context) => RemoteVideoSubtitleSheet(
         embedded: true,
         service: remoteService,
@@ -4035,7 +4035,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     final (InterconnectSyncBackend _, String videoId, int episode) = host;
     await showRemoteVideoSubtitleSheet(
       context: context,
-      service: appRemoteVideoSubtitleService(appModel),
+      service: appRemoteVideoSubtitleService(appModel.database),
       target: _remoteHostSubtitleTarget(
         videoId,
         episode,
@@ -4107,7 +4107,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
   }) async {
     await showRemoteVideoSubtitleSheet(
       context: context,
-      service: appRemoteVideoSubtitleService(appModel),
+      service: appRemoteVideoSubtitleService(appModel.database),
       target: _remoteDiscSubtitleTarget(
         title,
         audioTrack: controller.currentAudioStreamIndex,

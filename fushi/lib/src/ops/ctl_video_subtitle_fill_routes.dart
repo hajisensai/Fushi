@@ -6,6 +6,7 @@ import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.d
     show normalizeSubtitleLanguageCode;
 
 import 'package:fushi/src/media/video/subtitle/library_subtitle_fill_controller.dart';
+import 'package:fushi/src/media/video/subtitle/library_subtitle_fill_entry.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/ops/op_context.dart';

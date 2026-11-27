@@ -2,22 +2,23 @@
 /// `video job`（[VideoRemoteJob] 镜像）两边看；每次跑完把报告落盘
 /// （`<support>/subtitle_fill/<id>.json`），撤销按报告来——app 重启后照样能撤。
 /// 与设计系统无关（无 UI）。
+///
+/// 不碰 AppModel：数据库与「建一次运行的编排器」由装配方注入（生产装配在
+/// `library_subtitle_fill_entry.dart`）。直接持 AppModel 会让面板 / 控制器 / 端口实现一起
+/// 进 `fushi/lib` 的大 import 环（2026-11-27 实测 626 > 620）。
 library;
 
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_pipeline_cancel.dart';
 import 'package:fushi_engine/media/video/subtitle/library_subtitle_fill.dart';
 import 'package:material_ui/material_ui.dart' show ChangeNotifier;
 import 'package:path/path.dart' as p;
 
-import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service_entry.dart'
-    show appVideoSubtitleService;
-import 'package:fushi/src/media/video/subtitle/library_subtitle_fill_host.dart';
 import 'package:fushi/src/media/video/video_playback_remote.dart';
-import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 
 /// 一次整库补字幕任务的状态。
@@ -88,9 +89,16 @@ class LibrarySubtitleFillBusy implements Exception {
 
 /// 整库补字幕的唯一入口（面板与控制通道共用）。
 class LibrarySubtitleFillController extends ChangeNotifier {
-  LibrarySubtitleFillController(this.appModel);
+  LibrarySubtitleFillController({
+    required this.database,
+    required this.createFill,
+  });
 
-  final AppModel appModel;
+  /// 当前库（每次取：库可能随 profile 切换换掉）。
+  final FushiDatabase Function() database;
+
+  /// 建一次运行的编排器（端口、在线下载、系列语言都在装配方取）。
+  final LibrarySubtitleFill Function() createFill;
   LibrarySubtitleFillJob? _active;
   LibrarySubtitleFillJob? _last;
 
@@ -109,7 +117,7 @@ class LibrarySubtitleFillController extends ChangeNotifier {
       throw LibrarySubtitleFillBusy(running);
     }
     final List<SubtitleFillItem> items = await librarySubtitleFillItems(
-      appModel.database,
+      database(),
       bookUids: bookUids,
     );
     // 精确到毫秒：「预览」紧接「开始」常在同一秒内，秒级 id 会让后一次的报告盖掉
@@ -134,16 +142,7 @@ class LibrarySubtitleFillController extends ChangeNotifier {
     LibrarySubtitleFillJob job,
     List<SubtitleFillItem> items,
   ) async {
-    final LibrarySubtitleFill fill = LibrarySubtitleFill(
-      database: appModel.database,
-      host: AppLibrarySubtitleFillHost(
-        appModel: appModel,
-        subtitles: appVideoSubtitleService(appModel),
-        context: () => appModel.navigatorKey.currentContext,
-      ),
-      backfill: appModel.videoSubtitleBackfillService,
-      seriesLanguage: appModel.seriesSubtitleLanguage,
-    );
+    final LibrarySubtitleFill fill = createFill();
     try {
       await fill.run(
         items,
@@ -222,7 +221,7 @@ class LibrarySubtitleFillController extends ChangeNotifier {
           in report['outcomes'] as List<Object?>? ?? const <Object?>[])
         if (raw is Map<String, Object?>) subtitleFillOutcomeFromJson(raw),
     ];
-    return undoLibrarySubtitleFill(appModel.database, outcomes);
+    return undoLibrarySubtitleFill(database(), outcomes);
   }
 }
 
@@ -250,11 +249,3 @@ SubtitleFillOutcome subtitleFillOutcomeFromJson(Map<String, Object?> json) =>
           if (f is String) f,
       ],
     );
-
-/// 面板与控制通道共用的单例（挂在 [AppModel] 生命周期上）。
-final Expando<LibrarySubtitleFillController> _controllers =
-    Expando<LibrarySubtitleFillController>('librarySubtitleFill');
-
-LibrarySubtitleFillController librarySubtitleFillController(
-  AppModel appModel,
-) => _controllers[appModel] ??= LibrarySubtitleFillController(appModel);

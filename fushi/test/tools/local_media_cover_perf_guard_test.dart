@@ -113,30 +113,27 @@ void main() {
       );
     });
 
-    test(
-      '_loadLibraryMaps 预取链一次取齐归属，不再逐合集 getCollectionItems',
-      () {
-        final String body = chainBody(videoPageSrc, <String>[
-          'Future<void> _loadLibraryMaps() async {',
-          'Future<void> _loadLibraryMapsInner(int requestGeneration) async {',
-        ]);
-        expect(
-          body.contains('loadVideoLibraryMembership('),
-          isTrue,
-          reason: '视频页合集分组必须一次取齐归属，否则合集行渲染被 N+1 gate（BUG-959）。',
-        );
-        expect(
-          body.contains('getAllCollectionItems()'),
-          isFalse,
-          reason: '不把整张成员表搬进 UI isolate（BUG-5595：媒体服务器镜像让它达数万行）。',
-        );
-        expect(
-          body.contains('getCollectionItems('),
-          isFalse,
-          reason: '不得再逐合集查询（N+1）。',
-        );
-      },
-    );
+    test('_loadLibraryMaps 预取链一次取齐归属，不再逐合集 getCollectionItems', () {
+      final String body = chainBody(videoPageSrc, <String>[
+        'Future<void> _loadLibraryMaps() async {',
+        'Future<void> _loadLibraryMapsInner(int requestGeneration) async {',
+      ]);
+      expect(
+        body.contains('loadVideoLibraryMembership('),
+        isTrue,
+        reason: '视频页合集分组必须一次取齐归属，否则合集行渲染被 N+1 gate（BUG-959）。',
+      );
+      expect(
+        body.contains('getAllCollectionItems()'),
+        isFalse,
+        reason: '不把整张成员表搬进 UI isolate（BUG-5595：媒体服务器镜像让它达数万行）。',
+      );
+      expect(
+        body.contains('getCollectionItems('),
+        isFalse,
+        reason: '不得再逐合集查询（N+1）。',
+      );
+    });
 
     test('_loadShelfMaps 一次查书架种类的成员，不再逐合集 getCollectionItems', () {
       final String body = chainBody(historyPageSrc, <String>[

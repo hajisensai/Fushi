@@ -3,6 +3,9 @@
 ///
 /// 三条都不发 AI 请求：生成关校对；OCR 去掉 AI 重读（[MangaOcrWizardEngines.withoutAiRefinement]），
 /// 也不弹任何确认框（Lens 上传一律拒）——整库任务无人值守，用户拍板「不用 API key」。
+///
+/// 不碰 AppModel：偏好、字幕服务、OCR 引擎装配都由装配方注入（生产装配在
+/// `library_subtitle_fill_entry.dart`，那里解析 OCR 引擎与识别偏好）。
 library;
 
 import 'dart:async';
@@ -18,34 +21,36 @@ import 'package:fushi_engine/media/video/video_subtitle_source.dart'
     show SubtitleSource, loadCuesForSource;
 import 'package:fushi_engine/ocr/manga_ai_ocr_refiner.dart'
     show MangaAiOcrContext, MangaAiOcrSource;
-import 'package:material_ui/material_ui.dart' show BuildContext;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/asr_host/asr_host.dart' show isAsrSupported;
-import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
-import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
-import 'package:fushi/src/media/manga/reader/manga_reader_stream_ocr.dart';
 import 'package:fushi/src/media/video/graphic_subtitle_ocr.dart';
 import 'package:fushi/src/media/video/graphic_subtitle_track_ocr.dart';
 import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart';
 import 'package:fushi/src/media/video/subtitle_retiming_service.dart';
-import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/storage/app_paths.dart';
+
+/// 为一条内封图形轨准备离线 OCR（[GraphicSubtitleOcrSession] 的 `prepare`）：引擎按用户的
+/// 识别偏好解析、去掉 AI 重读、Lens 上传一律拒。返回 null = OCR 引擎还没就绪（app 没起完、
+/// 没有可用的 Provider 容器），这档报不可用，编排层往下走。
+typedef LibrarySubtitleFillOcrPrepare =
+    GraphicSubtitleOcrPrepare? Function(MangaAiOcrContext aiContext);
 
 /// [LibrarySubtitleFillHost] 的生产实现。
 class AppLibrarySubtitleFillHost implements LibrarySubtitleFillHost {
   AppLibrarySubtitleFillHost({
-    required this.appModel,
+    required this.prefs,
     required this.subtitles,
-    required this.context,
+    required this.prepareGraphicOcr,
   });
 
-  final AppModel appModel;
+  /// 生成档的分句器 / MOSS 后端偏好。
+  final PreferencesRepository prefs;
   final AppVideoSubtitleService subtitles;
 
-  /// OCR 引擎装配要 Provider 容器（[MangaOcrWizardEngines.resolve]）；没有可用的
-  /// context（app 还没起完）时 OCR 这档报不可用，编排层往下走。
-  final BuildContext? Function() context;
+  /// 内封图形轨 OCR 的引擎准备（见 [LibrarySubtitleFillOcrPrepare]）。
+  final LibrarySubtitleFillOcrPrepare prepareGraphicOcr;
 
   // ── 生成 ───────────────────────────────────────────────────────────────
 
@@ -84,8 +89,8 @@ class AppLibrarySubtitleFillHost implements LibrarySubtitleFillHost {
         target,
         AppVideoSubtitleOptions(
           language: asrLanguage,
-          segmenter: appModel.prefsRepo.videoSubtitleSegmenter,
-          mossBackend: appModel.prefsRepo.videoSubtitleMossBackend,
+          segmenter: prefs.videoSubtitleSegmenter,
+          mossBackend: prefs.videoSubtitleMossBackend,
         ),
       );
     } on AppVideoSubtitleStartRefused catch (refused) {
@@ -128,30 +133,18 @@ class AppLibrarySubtitleFillHost implements LibrarySubtitleFillHost {
     String language,
     SubtitleCancelToken cancel,
   ) async {
-    final BuildContext? ctx = context();
-    if (ctx == null || !ctx.mounted) {
+    final GraphicSubtitleOcrPrepare? prepare = prepareGraphicOcr(
+      MangaAiOcrContext(
+        source: MangaAiOcrSource.subtitle,
+        title: item.title,
+        language: language,
+      ),
+    );
+    if (prepare == null) {
       throw const SubtitleFillStepFailure('OCR engines are not ready');
     }
-    final MangaOcrWizardEngines engines = MangaOcrWizardEngines.resolve(
-      context: ctx,
-      db: appModel.database,
-    ).withoutAiRefinement();
     final GraphicSubtitleOcrSession session = GraphicSubtitleOcrSession(
-      prepare: (String dir) => prepareMangaStreamOcr(
-        imageDirPath: dir,
-        engines: engines,
-        preference: MangaOcrEnginePreferenceKey.fromKey(
-          appModel.mangaOcrEnginePreference,
-        ),
-        lensLanguage: appModel.mangaOcrLensLanguage,
-        // 无人值守：不上传任何画面。
-        confirmLensUpload: () async => false,
-        aiContext: MangaAiOcrContext(
-          source: MangaAiOcrSource.subtitle,
-          title: item.title,
-          language: language,
-        ),
-      ),
+      prepare: prepare,
     );
     final Directory work = await Directory.systemTemp.createTemp(
       'fushi_fill_graphic_sub_',

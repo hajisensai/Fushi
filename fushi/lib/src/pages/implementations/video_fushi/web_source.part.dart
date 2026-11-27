@@ -189,7 +189,7 @@ class VideoWebSubtitleTrackRows extends StatelessWidget {
         ],
         FushiListTileControl(
           key: const ValueKey<String>('video-web-subtitle-import'),
-          leading: const FushiIcon(Icons.file_open_outlined),
+          leading: const FushiIcon(FushiIcons.importFile),
           title: Text(t.video_subtitle_import_file),
           enabled: importEnabled,
           onTap: importEnabled ? () => onImport(false) : null,
@@ -232,7 +232,7 @@ class VideoWebSubtitleTrackRows extends StatelessWidget {
         const FushiDividerControl(height: 1),
         FushiExpansionTile(
           key: const ValueKey<String>('video-web-secondary-subtitles'),
-          leading: const FushiIcon(Icons.subtitles_outlined),
+          leading: const FushiIcon(FushiIcons.subtitles),
           title: Text(t.video_secondary_subtitle_sources),
           childrenPadding: EdgeInsets.zero,
           shape: const Border(),
@@ -240,7 +240,7 @@ class VideoWebSubtitleTrackRows extends StatelessWidget {
           children: <Widget>[
             FushiListTileControl(
               key: const ValueKey<String>('video-web-secondary-subtitle-off'),
-              leading: const FushiIcon(Icons.subtitles_off),
+              leading: const FushiIcon(FushiIcons.captionsOff),
               title: Text(t.video_subtitle_off),
               selected: secondaryKey == null,
               selectedColor: selectedFg,
@@ -251,7 +251,7 @@ class VideoWebSubtitleTrackRows extends StatelessWidget {
               key: const ValueKey<String>(
                 'video-web-secondary-subtitle-import',
               ),
-              leading: const FushiIcon(Icons.file_open_outlined),
+              leading: const FushiIcon(FushiIcons.importFile),
               title: Text(t.video_subtitle_import_file),
               enabled: importEnabled,
               onTap: importEnabled ? () => onImport(true) : null,
@@ -261,7 +261,7 @@ class VideoWebSubtitleTrackRows extends StatelessWidget {
                 key: ValueKey<String>(
                   'video-web-secondary-subtitle-${track.key}',
                 ),
-                leading: const FushiIcon(Icons.subtitles),
+                leading: const FushiIcon(FushiIcons.subtitles),
                 title: Text(track.label),
                 selected: track.key == secondaryKey,
                 selectedColor: selectedFg,
@@ -272,7 +272,7 @@ class VideoWebSubtitleTrackRows extends StatelessWidget {
                 key: ValueKey<String>(
                   'video-web-secondary-site-subtitle-${track.id}',
                 ),
-                leading: const FushiIcon(Icons.closed_caption_outlined),
+                leading: const FushiIcon(FushiIcons.subtitles),
                 title: Text(track.label),
                 subtitle: Text(track.status),
                 selected: track.selected,

@@ -164,9 +164,23 @@ import 'package:test/test.dart';
 /// 剩下新进环的只有本就读 AppModel 的 SRS 字段 AI 入口 `srs_field_ai_action` 与新装配入口，
 /// 最大环降到 620，上限随之下调。
 ///
+/// 2026-11-27 develop 实测 626（+6）：新进环的是复习捐赠三件（`srs_donation_banner` / `_page` /
+/// `_providers`，复习首页 import，本身读 AppModel 与复习库 provider——`srs_providers` 直读
+/// AppModel，整个复习模块都在环里，捐赠没有更窄的落脚处）与整库补字幕三件（控制器 / 端口实现 /
+/// 面板）。不调上限，拆五条底层边：整库补字幕的控制器只为取库与建编排器、端口实现只为取偏好与
+/// 解析 OCR 引擎、面板只为取控制器单例 import AppModel——控制器改收注入的库与 `createFill`，端口
+/// 实现改收 `PreferencesRepository` 与 OCR 准备回调，面板改由调用方传控制器，AppModel 装配与
+/// OCR 引擎解析挪到 `library_subtitle_fill_entry.dart`，三件出环；视频规格服务
+/// `video_specs_service` 只为一个 provider import AppModel，把规格角标 / 规格面板一起拖进环——
+/// provider 挪到 `video_specs_providers.dart`（只有视频库页 import）；放送日历取数
+/// `airing_calendar_loader` 只读库 / 订阅 / 偏好缓存 / 下载出口，改收窄接口 `AiringCalendarHost`
+/// （AppModel 实现），发现详情页与作品 logo 随它出环；远端字幕服务的装配函数
+/// `appRemoteVideoSubtitleService` 只用库，改收 `FushiDatabase`，服务与远端字幕面板出环。最大环
+/// 降到 617，上限随之下调。
+///
 /// 红了：新加的 import 把底层模块接到了 UI / AppModel 上。把用到的东西挪到
 /// 更底层的文件，或改用参数 / 回调注入，不要调大上限、不要把文件从目录里豁免。
-const int kMaxCycleFiles = 620;
+const int kMaxCycleFiles = 617;
 
 const String kAppModel = 'lib/src/models/app_model.dart';
 
@@ -213,6 +227,17 @@ const List<String> kLeafEntries = <String>[
   'lib/src/media/video/subtitle/app_video_subtitle_service.dart',
   'lib/src/media/video/subtitle/burned_in_subtitle_ocr.dart',
   'lib/src/media/video/web_video_subtitle_generation.dart',
+  // 2026-11-27 拆出大环的件（见 [kMaxCycleFiles] 文档）：整库补字幕的控制器 / 端口实现 / 面板只收
+  // 注入的依赖（AppModel 装配在 library_subtitle_fill_entry.dart）；规格服务与角标不经 provider
+  // 接线读 AppModel；放送日历取数只经 AiringCalendarHost；远端字幕服务只收库。
+  'lib/src/media/video/subtitle/library_subtitle_fill_controller.dart',
+  'lib/src/media/video/subtitle/library_subtitle_fill_host.dart',
+  'lib/src/media/video/subtitle/library_subtitle_fill_sheet.dart',
+  'lib/src/media/video/video_specs_service.dart',
+  'lib/src/media/video/cover_ui/video_specs_panel.dart',
+  'lib/src/media/video/airing_calendar_loader.dart',
+  'lib/src/media/video/subtitle/remote_video_subtitle_service.dart',
+  'lib/src/media/video/subtitle/remote_video_subtitle_sheet.dart',
 ];
 
 const List<String> kBarrels = <String>[

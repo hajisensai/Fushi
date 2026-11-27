@@ -43,6 +43,8 @@ import 'package:fushi_engine/media/video/media_server/media_server_client_identi
 import 'package:fushi_engine/media/video/disc/legacy_disc_stream_rows.dart';
 import 'package:fushi_engine/media/video/video_member_file.dart';
 import 'package:fushi/src/media/video/video_resume.dart';
+import 'package:fushi/src/media/video/airing_calendar_loader.dart'
+    show AiringCalendarHost;
 import 'package:fushi_engine/media/video/video_local_files.dart'
     show videoBookDiscTitlePath, videoBookEpisodePath;
 import 'package:fushi_engine/media/video/video_storage.dart' show VideoStorage;
@@ -1084,7 +1086,8 @@ class AppModel
         ExternalStorageAccess,
         LookupMatchSearchHost,
         StudyGoalHost,
-        TrackingSeriesCardHost {
+        TrackingSeriesCardHost,
+        AiringCalendarHost {
   /// Platform-specific service implementations, injected at construction.
   final PlatformServices platformServices;
 
@@ -8306,6 +8309,7 @@ class AppModel
   ///
   /// 仍返回 `Future` 是为了不动十几个 `await` 调用点和测试替身的签名；构造本身
   /// 是同步的。
+  @override
   Future<http.Client> createDownloadHttpClient() async =>
       createAppHttpIoClient(connectionTimeout: kDownloadConnectionTimeout);
 
@@ -8334,6 +8338,7 @@ class AppModel
   AnimeDownloadService? get animeDownloadService => _animeDownloadService;
 
   AnimeDownloadSubscriptionStore? _animeDownloadSubscriptionStore;
+  @override
   AnimeDownloadSubscriptionStore? get animeDownloadSubscriptionStore =>
       _animeDownloadSubscriptionStore;
 
