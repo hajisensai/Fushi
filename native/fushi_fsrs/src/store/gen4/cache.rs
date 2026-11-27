@@ -1031,6 +1031,7 @@ impl<'t, 'c> Index<'t, 'c> {
         }
         let mut order: Vec<(i64, i64)> = reps.into_values().collect();
         order.sort_unstable();
+        let _p_la = crate::store::prof::span("cl.log_at"); // PROBE
         order.into_iter().map(|(_, k)| self.log_at(k)).collect()
     }
 
@@ -1092,7 +1093,9 @@ impl<'t, 'c> Index<'t, 'c> {
             format!("{wall}:{logical}:{}", device.text())
         });
         // 日志 ID、卡、笔记、`revokes` 归一（文件头「别名」第 3 条）：重放与统计读的是规范 ID。
+        let p_cj = crate::store::prof::span("log_at.canonical_json"); // PROBE
         let canonical_row = self.canonical_json(&row)?;
+        drop(p_cj); // PROBE
         let original_id = &row["id"];
         let order_id = original_id
             .as_str()
@@ -1829,10 +1832,13 @@ impl<'t, 'c> Index<'t, 'c> {
         let mut lines: BTreeMap<String, Vec<(String, Option<i64>)>> = BTreeMap::new();
         let mut logs: HashMap<String, Vec<LogIn>> = HashMap::new();
         for c in batch {
+            let p_ll = crate::store::prof::span("lin.live_lines"); // PROBE
             let (ls, _) = self.live_lines(EntKind::Card, c)?;
+            drop(p_ll); // PROBE
             if !ls.is_empty() {
                 lines.insert(c.text(), ls);
             }
+            let _p_cl = crate::store::prof::span("lin.card_logs"); // PROBE
             logs.insert(c.text(), self.card_logs(c)?);
         }
         // 生效的前身（`historyFrom/<前身>` 为 true），与它反过来的后继。
@@ -1872,6 +1878,7 @@ impl<'t, 'c> Index<'t, 'c> {
             if rows.is_empty() {
                 continue;
             }
+            let _p_rp = crate::store::prof::span("lin.replay"); // PROBE
             for (k, new) in replay(&rows)?.rows.into_iter().enumerate() {
                 if let Some(json) = new {
                     replayed.insert(at[k].clone(), json);

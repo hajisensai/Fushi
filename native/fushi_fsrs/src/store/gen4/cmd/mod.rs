@@ -38,7 +38,7 @@
 //!   不拼完再换。
 
 use rusqlite::types::Value as Sv;
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 use super::derive::{Index, Ref, body_of};
 use super::schema::sql;
@@ -465,21 +465,53 @@ pub(super) fn edit_rows_with(
         rows.push((f, json, st));
     }
     if kind == EntKind::Note && tags {
-        if let Some(json) = tags_line(t, ix, c, profile)? {
-            rows.push(("tags".to_owned(), json, None));
+        if let Some(row) = tags_row(t, ix, c, profile)? {
+            rows.push(("tags".to_owned(), canonical(&row), None));
         }
     }
     rows.sort();
     Ok(rows)
 }
 
-/// 笔记类 [c] 的合成 `tags` 行（[edit_rows]）；没碰过标签 = None。
-fn tags_line(
+/// 一条修改行连同写成文本前的行对象：(修改键, 行 JSON, 服务器时刻, 行对象)。
+pub(super) type EditRowObject = (String, String, Option<i64>, Map<String, Value>);
+
+/// 笔记类 [c] 的 [edit_rows]（行、顺序逐条相同，含合成 `tags` 行），每行另带写成文本前的行对象：`read note_views`
+/// 在内核里直接拿它物化（`registers::note_entity_of_objects`），行 JSON 不再解析第二遍（BUG-5572）。
+pub(super) fn note_edit_rows_objects(
     t: &Truth<'_>,
     ix: &mut Index<'_, '_>,
     c: &Ref,
     profile: &str,
-) -> Result<Option<String>, String> {
+) -> Result<Vec<EditRowObject>, String> {
+    let lines = ix.class_lines_objects(EntKind::Note, c, profile)?;
+    let mut rows: Vec<EditRowObject> = Vec::with_capacity(lines.len() + 1);
+    for ((f, json, st), obj) in lines {
+        if f != "tags" {
+            rows.push((f, json, st, obj));
+        }
+    }
+    let p_tags = crate::store::prof::span("nv.tags"); // PROBE
+    let tags = tags_row(t, ix, c, profile)?;
+    drop(p_tags); // PROBE
+    if let Some(row) = tags {
+        let json = canonical(&row);
+        let Value::Object(obj) = row else {
+            unreachable!("tags row is an object")
+        };
+        rows.push(("tags".to_owned(), json, None, obj));
+    }
+    rows.sort_by(|a, b| (&a.0, &a.1, &a.2).cmp(&(&b.0, &b.1, &b.2)));
+    Ok(rows)
+}
+
+/// 笔记类 [c] 的合成 `tags` 行的对象（[edit_rows]）；没碰过标签 = None。
+fn tags_row(
+    t: &Truth<'_>,
+    ix: &mut Index<'_, '_>,
+    c: &Ref,
+    profile: &str,
+) -> Result<Option<Value>, String> {
     let tags_key = {
         let mut w = Writer::new();
         write_edit_key(&mut w, "tags");
@@ -524,7 +556,7 @@ fn tags_line(
         "w": writer, "s": 1, "ctx": {"vv": {}}, "v": ix.class_tags(c)?,
         "hlc": format!("{wall}:{logical}:{}", crate::sync2::id::Id(device).text()), "ts": "wall",
     });
-    Ok(Some(canonical(&row)))
+    Ok(Some(row))
 }
 
 /// 一张列式表的构造器：列名与类型（`bulk::KIND_*`）先定，逐行往里推。

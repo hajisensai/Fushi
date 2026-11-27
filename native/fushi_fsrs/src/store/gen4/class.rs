@@ -551,11 +551,24 @@ impl<'t, 'c> Index<'t, 'c> {
         &mut self,
         f: impl FnOnce(&mut Self) -> Result<T, String>,
     ) -> Result<T, String> {
+        let done = self.read_pass_begin().and_then(|()| f(self));
+        self.read_pass_end();
+        done
+    }
+
+    /// 一趟只读的按类读开始：写入者表、内置规则表各读一次，别名表的查询记进 [Index::pass_memo]（读快照里都不变）。
+    /// 只用在读命令的快照里（写命令与缓存层会改别名表），结束时 [Index::read_pass_end] 清掉。
+    pub(super) fn read_pass_begin(&mut self) -> Result<(), String> {
         self.pass_writers = Some(Rc::new(self.writer_aliases()?));
-        let done = self.pass_rules_begin().and_then(|()| f(self));
+        self.pass_memo = Some(RefCell::default());
+        self.pass_rules_begin()
+    }
+
+    /// [Index::read_pass_begin] 记下的都清掉。
+    pub(super) fn read_pass_end(&mut self) {
         self.pass_writers = None;
         self.pass_rules = None;
-        done
+        self.pass_memo = None;
     }
 
     /// 旧并入改名、已归回的写入者（`alias_writer_ix`）：原名 → 规范名，与各原名证据撑得住的范围（`derive_cfg` 的
@@ -747,6 +760,36 @@ impl<'t, 'c> Index<'t, 'c> {
         shortcut: bool,
         profile: &str,
     ) -> Result<(Vec<ClassLine>, i64), String> {
+        let (lines, top) = self.class_lines_full(kind, canon, pick, shortcut, profile, false)?;
+        Ok((lines.into_iter().map(|(l, _)| l).collect(), top))
+    }
+
+    /// [Index::class_lines_keyed]，每行另带写成文本前的行对象（`derive.rs` [super::derive::Line] 的 `obj`）：读命令
+    /// `read note_views` 拿它直接物化，不再解析一遍行 JSON（BUG-5572）。
+    pub(super) fn class_lines_objects(
+        &mut self,
+        kind: EntKind,
+        canon: &Ref,
+        profile: &str,
+    ) -> Result<Vec<(ClassLine, Map<String, Value>)>, String> {
+        let (lines, _) = self.class_lines_full(kind, canon, &Pick::All, true, profile, true)?;
+        lines
+            .into_iter()
+            .map(|(l, obj)| Ok((l, obj.ok_or("gen4 index: kept line has no object")?)))
+            .collect()
+    }
+
+    /// [Index::class_lines_by] 的实现；[keep] = true 时每行带着它的行对象。
+    #[allow(clippy::type_complexity)]
+    fn class_lines_full(
+        &mut self,
+        kind: EntKind,
+        canon: &Ref,
+        pick: &Pick<'_>,
+        shortcut: bool,
+        profile: &str,
+        keep: bool,
+    ) -> Result<(Vec<(ClassLine, Option<Map<String, Value>>)>, i64), String> {
         self.aliases_settled()?;
         let entity = self.canonical(canon)?.text();
         let members = self.members(canon)?;
@@ -756,6 +799,7 @@ impl<'t, 'c> Index<'t, 'c> {
         };
         // 规范键 → (写入 (k, state), 来自哪几个 (成员, 原值键))。
         type Group = (Vec<(i64, i64)>, BTreeSet<(Ref, Vec<u8>)>);
+        let p_groups = crate::store::prof::span("class.groups"); // PROBE
         let mut groups: BTreeMap<String, Group> = BTreeMap::new();
         for m in &members {
             for (key, k, state) in self.member_registers(kind, m)? {
@@ -777,6 +821,8 @@ impl<'t, 'c> Index<'t, 'c> {
                 g.1.insert((m.clone(), key));
             }
         }
+        drop(p_groups); // PROBE
+        let _p_judge = crate::store::prof::span("class.judge"); // PROBE
         let conflicts_only = matches!(pick, Pick::Conflicts { .. });
         // 归回涉及的名字（改名后的名字与它的规范名）：寄存器里没有这些名字写的写入时，换名不改变谁见过谁（支配只问
         // 「上下文里这条写入的写入者那一格 ≥ 它的 seq」，那一格的写入者不在换名表里就不变），按类判与按原值判相同。
@@ -831,9 +877,15 @@ impl<'t, 'c> Index<'t, 'c> {
             keys: Some(&keys),
         };
         let (mut out, mut top) = (Vec::new(), 0i64);
-        for l in self.edit_lines_as(&ks, &|i| emit[i], Some(&c), profile)? {
+        let p_lines = crate::store::prof::span("class.lines"); // PROBE
+        let lines = self.edit_lines_with(&ks, &|i| emit[i], Some(&c), profile, keep)?;
+        drop(p_lines); // PROBE
+        for l in lines {
             top = top.max(l.physical);
-            out.push((c.key_of(ks[l.rep]).to_owned(), l.json, l.server_time));
+            out.push((
+                (c.key_of(ks[l.rep]).to_owned(), l.json, l.server_time),
+                l.obj,
+            ));
         }
         Ok((out, top))
     }

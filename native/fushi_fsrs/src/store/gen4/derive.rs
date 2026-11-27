@@ -313,6 +313,9 @@ pub(super) struct Line {
     pub(super) rep: usize,
     /// 这一行判定用的 HLC 物理时刻（带旧戳的取旧戳的）。
     pub(super) physical: i64,
+    /// [json] 写成文本之前的那个对象：只有要求留着时有（[Index::edit_lines_with] 的 `keep`），读命令拿它直接交给寄存器
+    /// 内核物化，不再把 [json] 解析一遍（`registers::note_entity_of_objects`，BUG-5572）。
+    pub(super) obj: Option<Map<String, Value>>,
 }
 
 /// [Index::settle] / [Index::rebuild_all] 做了多少。
@@ -427,6 +430,9 @@ pub struct Index<'t, 'c> {
     pub(super) pass_writers: Option<std::rc::Rc<super::class::WriterAliases>>,
     /// 一次缓存层的物化期间缓存的内置实体规则表（`class.rs` [Index::rule_canon]；读的时候盐集合不变）。
     pub(super) pass_rules: Option<Rc<RuleCanon>>,
+    /// 一趟只读的按类读（[Index::in_read_pass]、读命令的 `read_pass`）里别名表的查询结果（`alias.rs` [PassMemo]）：
+    /// 读快照里别名表不变，同一个 ID 只查一次。只读的一趟之外是 None（写、收尾、缓存层里别名表会变）。
+    pub(super) pass_memo: Option<RefCell<super::alias::PassMemo>>,
     /// 物化之外按盐集合记住的同一张表（盐集合变了就重算）。
     pub(super) rule_memo: RefCell<Option<(Vec<String>, Rc<RuleCanon>)>>,
     /// 缓存层按类拼行时没走捷径、按类重判了的寄存器数（`class.rs` [Index::class_lines]；只增不减，测试与量测读）。
@@ -471,6 +477,7 @@ impl<'t, 'c> Index<'t, 'c> {
             writers_moved: false,
             pass_writers: None,
             pass_rules: None,
+            pass_memo: None,
             rule_memo: RefCell::new(None),
             class_judged: 0,
             cache_touched: BTreeSet::new(),
@@ -1157,6 +1164,18 @@ impl<'t, 'c> Index<'t, 'c> {
         class: Option<&super::class::Canon>,
         profile: &str,
     ) -> Result<Vec<Line>, String> {
+        self.edit_lines_with(ks, emit, class, profile, false)
+    }
+
+    /// [Index::edit_lines_as]；[keep] = true 时每行另留着写成文本前的对象（[Line::obj]）。
+    pub(super) fn edit_lines_with(
+        &mut self,
+        ks: &[i64],
+        emit: &dyn Fn(usize) -> bool,
+        class: Option<&super::class::Canon>,
+        profile: &str,
+        keep: bool,
+    ) -> Result<Vec<Line>, String> {
         struct Write {
             k: i64,
             id: OpId,
@@ -1169,6 +1188,7 @@ impl<'t, 'c> Index<'t, 'c> {
         }
         let mut writes = Vec::with_capacity(ks.len());
         for (i, &k) in ks.iter().enumerate() {
+            let _pp = crate::store::prof::span("lines.write"); // PROBE
             let (e, full) = self.edit_write(k, emit(i))?;
             writes.push(Write {
                 k,
@@ -1246,7 +1266,10 @@ impl<'t, 'c> Index<'t, 'c> {
                 .value
                 .as_deref()
                 .ok_or_else(|| format!("gen4 index: emitted write {} has no value", w.k))?;
+            let p_parse = crate::store::prof::span("lines.value_parse"); // PROBE
             let value = serde_json::from_str::<Value>(text).unwrap_or(Value::Null);
+            drop(p_parse); // PROBE
+            let p_canon = crate::store::prof::span("lines.canon_value"); // PROBE
             let (entity, key, value) = match class {
                 None => (w.ed.entity.text(), w.ed.key.clone(), value),
                 Some(c) => {
@@ -1258,6 +1281,8 @@ impl<'t, 'c> Index<'t, 'c> {
                     )
                 }
             };
+            drop(p_canon); // PROBE
+            let _p_ser = crate::store::prof::span("lines.serialize"); // PROBE
             let mut m = Map::new();
             m.insert("p".into(), json!(profile));
             m.insert("k".into(), json!(w.ed.kind.wire()));
@@ -1272,10 +1297,11 @@ impl<'t, 'c> Index<'t, 'c> {
                 m.insert("m".into(), json!(true));
             }
             lines.push(Line {
-                json: Value::Object(m).to_string(),
+                json: serde_json::to_string(&m).map_err(|e| e.to_string())?,
                 server_time: st,
                 rep,
                 physical,
+                obj: keep.then_some(m),
             });
         }
         Ok(lines)
