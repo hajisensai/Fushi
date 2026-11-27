@@ -94,11 +94,7 @@ fn queries(day: i64, cards: impl Iterator<Item = i64>) -> Vec<ReviewInput> {
         .collect()
 }
 
-const PRECISIONS: [StatePrecision; 3] = [
-    StatePrecision::F32,
-    StatePrecision::Int8,
-    StatePrecision::Int4,
-];
+const PRECISIONS: [StatePrecision; 2] = [StatePrecision::F32, StatePrecision::Int8];
 
 fn bits(values: &[f32]) -> Vec<u32> {
     values.iter().map(|v| v.to_bits()).collect()
@@ -185,7 +181,7 @@ fn unappend_after_a_query_drew_new_codes_keeps_them_but_restores_the_states() {
 fn replay_restore_reset_clear_the_journal() {
     let model = small_model();
     let (reviews, appended) = history();
-    let mut runtime = RwkvRuntime::new(&model, StatePrecision::Int4, 1).unwrap();
+    let mut runtime = RwkvRuntime::new(&model, StatePrecision::Int8, 1).unwrap();
     runtime.replay(&reviews, false).unwrap();
     let snapshot = runtime.snapshot().unwrap();
     runtime.append(&appended[..1], &[1], &[0]).unwrap();
@@ -203,7 +199,7 @@ fn replay_restore_reset_clear_the_journal() {
 fn append_rejects_unrated_rows_and_the_large_model() {
     let model = small_model();
     let (reviews, appended) = history();
-    let mut runtime = RwkvRuntime::new(&model, StatePrecision::Int4, 1).unwrap();
+    let mut runtime = RwkvRuntime::new(&model, StatePrecision::Int8, 1).unwrap();
     runtime.replay(&reviews, false).unwrap();
     let before = runtime.snapshot().unwrap();
     let mut unrated = appended[0].clone();
@@ -322,7 +318,7 @@ fn a_huge_append_batch_never_holds_more_than_the_journal_cap() {
     let model = small_model();
     let (reviews, _) = history();
     let n = reviews.len();
-    let mut journaled = RwkvRuntime::new(&model, StatePrecision::Int4, 1).unwrap();
+    let mut journaled = RwkvRuntime::new(&model, StatePrecision::Int8, 1).unwrap();
     journaled
         .append(&reviews, &(0..n as u64).collect::<Vec<_>>(), &ats(10, n))
         .unwrap();
@@ -339,7 +335,7 @@ fn a_huge_append_batch_never_holds_more_than_the_journal_cap() {
         JOURNAL_MAX_BYTES
     );
     // 途中修剪不改状态：与一次 replay 逐字节相同；丢掉的最早条目之前退不到。
-    let mut replayed = RwkvRuntime::new(&model, StatePrecision::Int4, 1).unwrap();
+    let mut replayed = RwkvRuntime::new(&model, StatePrecision::Int8, 1).unwrap();
     replayed.replay(&reviews, false).unwrap();
     assert_eq!(journaled.snapshot().unwrap(), replayed.snapshot().unwrap());
     assert_eq!(journaled.rewind_from(10, i64::MIN).unwrap(), None);
@@ -349,7 +345,7 @@ fn a_huge_append_batch_never_holds_more_than_the_journal_cap() {
 fn a_journal_started_from_reset_rewinds_all_the_way_to_empty() {
     let model = small_model();
     let (reviews, _) = history();
-    let mut runtime = RwkvRuntime::new(&model, StatePrecision::Int4, 1).unwrap();
+    let mut runtime = RwkvRuntime::new(&model, StatePrecision::Int8, 1).unwrap();
     let empty = runtime.snapshot().unwrap();
     let n = 200;
     runtime
@@ -461,7 +457,7 @@ fn c_abi_round_trip() {
     assert_eq!(frwkv_abi_version(), ABI_VERSION);
     unsafe {
         let model = frwkv_model_load(bytes.as_ptr(), bytes.len());
-        let runtime = frwkv_runtime_new(model, FRWKV_PRECISION_INT4, 1);
+        let runtime = frwkv_runtime_new(model, FRWKV_PRECISION_INT8, 1);
         let history = rows(&reviews);
         assert_eq!(
             frwkv_runtime_replay(

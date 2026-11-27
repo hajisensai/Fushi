@@ -66,7 +66,9 @@ describe('上传', () => {
     const bytes = apkg(100);
     const r = await put(env, d, bytes);
     expect(r.status).toBe(200);
-    expect(r.data).toEqual({ donated: true, updatedAt: NOW });
+    expect(r.data).toEqual({ donated: true, reviews: 1234, cards: 200, updatedAt: NOW });
+    // PUT 与 GET 同一形状：客户端上传完直接拿它当当前状态（BUG：PUT 曾不带计数，页面显示「捐出 0 次」）。
+    expect((await withKey(env, 'GET', d)).data).toEqual(r.data);
     expect(env.MEDIA.lastPutWasStream).toBe(true);
     expect(env.MEDIA.store.get(donationKey(d.id)).bytes).toEqual(bytes);
     const rec = row(env, d.id);
@@ -123,7 +125,7 @@ describe('上传', () => {
     const d = donor(5);
     expect((await put(env, d, apkg(80, 1))).status).toBe(200);
     const r = await put(env, d, apkg(30, 2), { now: NOW + 10, reviews: '2000', cards: '300' });
-    expect(r.data).toEqual({ donated: true, updatedAt: NOW + 10 });
+    expect(r.data).toEqual({ donated: true, reviews: 2000, cards: 300, updatedAt: NOW + 10 });
     expect(env.MEDIA.store.get(donationKey(d.id)).bytes).toEqual(apkg(30, 2));
     expect(row(env, d.id)).toMatchObject({ bytes: 30, reviews: 2000, cards: 300, created_at: NOW, updated_at: NOW + 10 });
     expect(donationBytes(env)).toBe(30);

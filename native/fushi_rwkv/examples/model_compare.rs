@@ -3,7 +3,7 @@
 //
 //! 多个权重在同一份复习历史上的成对对比（部署路径：本库特征构造 + 批量回放）。
 //!
-//! cargo run --release --example model_compare -- <rows.bin | dir> <f32|int8|int4> <name=weights.bin> ...
+//! cargo run --release --example model_compare -- <rows.bin | dir> <f32|int8> <name=weights.bin> ...
 //!   rows.bin：80 字节一行的 FrwkvReview。不计分的首条复习：有 rows.bin.first（每行 1 字节，
 //!   1 = 该卡首条）就按它，否则按 `elapsed_days == -1`。
 //!   dir：目录里每个 *.bin 是一个用户；按用户聚类 bootstrap。单文件按卡聚类。
@@ -66,7 +66,6 @@ fn parse_precision(arg: &str) -> StatePrecision {
     match arg {
         "f32" => StatePrecision::F32,
         "int8" => StatePrecision::Int8,
-        "int4" => StatePrecision::Int4,
         other => panic!("unknown precision {other}"),
     }
 }

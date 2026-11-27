@@ -1,6 +1,6 @@
 // Copyright: Ankitects Pty Ltd and contributors
 // License: GNU AGPL, version 3 or later; http://www.gnu.org/licenses/agpl.html
-// Adapted for Fushi from https://github.com/Pedrubik2000/kuma3-anki-core@c639bcec696f2317f9bb9a736d433b9d6c0d9c56 rslib/src/rwkv/precision.rs (unchanged apart from the removed test module).
+// Adapted for Fushi from https://github.com/Pedrubik2000/kuma3-anki-core@c639bcec696f2317f9bb9a736d433b9d6c0d9c56 rslib/src/rwkv/precision.rs (Fushi: test module removed, least-squares row scale, int4 removed — BUG-5594).
 
 //! Compact card/note state. Computation and the shared scopes remain f32.
 
@@ -24,7 +24,9 @@ pub enum StatePrecision {
     #[default]
     F32,
     Int8,
-    Int4,
+    // Fushi: upstream's `Int4` is gone. Its 4-bit rows let card and note
+    // states of long histories grow without bound on every small model and
+    // the big one (BUG-5594, tests/long_history.rs); int8 rows do not.
 }
 
 impl StatePrecision {
@@ -32,7 +34,6 @@ impl StatePrecision {
         match value {
             "f32" => Ok(Self::F32),
             "int8" => Ok(Self::Int8),
-            "int4" => Ok(Self::Int4),
             _ => Err(invalid_state()),
         }
     }
@@ -40,7 +41,6 @@ impl StatePrecision {
     fn limit(self) -> f32 {
         match self {
             Self::Int8 => 127.0,
-            Self::Int4 => 7.0,
             Self::F32 => unreachable!(),
         }
     }
@@ -48,7 +48,6 @@ impl StatePrecision {
     fn row_bytes(self) -> usize {
         4 + match self {
             Self::Int8 => HEAD_SIZE,
-            Self::Int4 => HEAD_SIZE / 2,
             Self::F32 => unreachable!(),
         }
     }
@@ -97,11 +96,7 @@ impl ModuleState {
         }
         let mut bytes = Vec::new();
         bytes.extend_from_slice(MAGIC);
-        bytes.push(if precision == StatePrecision::Int8 {
-            8
-        } else {
-            4
-        });
+        bytes.push(8);
         super::write_u32(&mut bytes, self.layers.len() as u32);
         for layer in self.layers {
             if let Some(time) = layer.time {
@@ -158,8 +153,8 @@ pub(super) fn decode(bytes: &[u8]) -> io::Result<ModuleState> {
     let mut cursor = Cursor::new(bytes);
     cursor.expect_magic(MAGIC)?;
     let precision = match cursor.u8()? {
+        // 4 was upstream's int4 layout (BUG-5594): rejected, the state is rebuilt.
         8 => StatePrecision::Int8,
-        4 => StatePrecision::Int4,
         _ => return Err(invalid_state()),
     };
     let count = cursor.u32()? as usize;
@@ -179,12 +174,7 @@ pub(super) fn decode(bytes: &[u8]) -> io::Result<ModuleState> {
             if !scale.is_finite() || scale <= 0.0 {
                 return Err(invalid_state());
             }
-            let invalid_code = if precision == StatePrecision::Int8 {
-                row[4..].contains(&128)
-            } else {
-                row[4..].iter().any(|byte| byte & 15 == 8 || byte >> 4 == 8)
-            };
-            if invalid_code {
+            if row[4..].contains(&128) {
                 return Err(invalid_state());
             }
         }
@@ -247,9 +237,9 @@ fn encode_matrix(precision: StatePrecision, values: &[f32], out: &mut Vec<u8>) {
         // stored row is the orthogonal projection of the row onto its codes and
         // never longer than it. Upstream stored `step`: rounding then lifts
         // components between half a step and a step to a full step at every
-        // answer, which pumps energy into card and note states; under int4 it
-        // grew them without bound (upstream's own 3.5M-review note overflow;
-        // Fushi measured the same on cards, see small/model.rs `write_rows`).
+        // answer, which pumps energy into card and note states (under the
+        // removed int4 it grew them without bound: upstream's own 3.5M-review
+        // note overflow; Fushi measured the same on cards).
         let (dot, norm) = codes
             .iter()
             .zip(row)
@@ -262,14 +252,7 @@ fn encode_matrix(precision: StatePrecision, values: &[f32], out: &mut Vec<u8>) {
             (dot / norm).max(f32::from_bits(1))
         };
         out.extend_from_slice(&scale.to_le_bytes());
-        if precision == StatePrecision::Int8 {
-            out.extend_from_slice(&codes.map(|code| code as u8));
-        } else {
-            let packed: [u8; HEAD_SIZE / 2] = std::array::from_fn(|index| {
-                (codes[2 * index] as u8 & 15) | ((codes[2 * index + 1] as u8 & 15) << 4)
-            });
-            out.extend_from_slice(&packed);
-        }
+        out.extend_from_slice(&codes.map(|code| code as u8));
     }
 }
 
@@ -279,14 +262,8 @@ fn decode_matrix(precision: StatePrecision, bytes: &[u8], out: &mut [f32]) {
         .zip(bytes.chunks_exact(precision.row_bytes()))
     {
         let scale = f32::from_le_bytes(encoded[..4].try_into().unwrap());
-        for (column, value) in row.iter_mut().enumerate() {
-            let code = if precision == StatePrecision::Int8 {
-                encoded[4 + column] as i8
-            } else {
-                let nibble = (encoded[4 + column / 2] >> (4 * (column % 2))) & 15;
-                ((nibble as i8) << 4) >> 4
-            };
-            *value = code as f32 * scale;
+        for (value, &code) in row.iter_mut().zip(&encoded[4..]) {
+            *value = code as i8 as f32 * scale;
         }
     }
 }

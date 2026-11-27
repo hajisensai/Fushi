@@ -113,9 +113,23 @@ class MusicVideoAutoMatcher extends ChangeNotifier {
     }
   }
 
+  /// 一轮绑定在**开轮时的那一个库**上（与响度扫描同一做法，BUG-5387）：换库 / 关库时
+  /// 被取消，对到一半的那对不再等，旧库读出的曲目不会写进换上来的新库。
   Future<void> _runOnce() async {
     final FushiDatabase? db = _database();
     if (db == null) return;
+    try {
+      await db.runBackgroundWork<void>(
+        'music.videoAutoMatch',
+        (DatabaseWorkToken work) => _runOnceOn(db, work),
+      );
+    } on DatabaseWorkCancelledException {
+      // 库要关了：没对的配对仍缺 match_check，下次开库启动那一轮再对。
+      _again = false;
+    }
+  }
+
+  Future<void> _runOnceOn(FushiDatabase db, DatabaseWorkToken work) async {
     final Map<String, List<MusicTrackRow>> byDir =
         <String, List<MusicTrackRow>>{};
     for (final MusicTrackRow t in await db.listMusicTracks()) {
@@ -150,13 +164,52 @@ class MusicVideoAutoMatcher extends ChangeNotifier {
           track: track,
           checks: checks,
         )) {
-          if ((await service.alignLocal(track, video)).bound) {
+          if (!_enabled()) return;
+          work.throwIfCancelled();
+          if (await _alignPair(service, track, video, work)) {
             _boundThisRun++;
             notifyListeners();
             break;
           }
         }
       }
+    }
+  }
+
+  /// 对一对（歌, 视频）。一对出错只影响这一对：记日志、不记「已对过」（下一轮再试），
+  /// 本轮接着对后面的——不能让一个读不了的文件把整轮、以及之后每一轮都挡在同一处。
+  /// 起止各记一条诊断（带耗时），卡住时能从诊断环看出卡在哪一对。
+  Future<bool> _alignPair(
+    MusicVideoService service,
+    MusicTrackRow track,
+    MusicVideoFileStamp video,
+    DatabaseWorkToken work,
+  ) async {
+    final Stopwatch watch = Stopwatch()..start();
+    ErrorLogService.instance.logDiagnostic(
+      'MusicVideoAutoMatcher',
+      'align start: ${track.path} <-> ${video.path}',
+    );
+    try {
+      final bool bound = (await work.guard(
+        service.alignLocal(track, video),
+      )).bound;
+      ErrorLogService.instance.logDiagnostic(
+        'MusicVideoAutoMatcher',
+        'align done in ${watch.elapsedMilliseconds} ms (bound=$bound): '
+            '${track.path} <-> ${video.path}',
+      );
+      return bound;
+    } on DatabaseWorkCancelledException {
+      rethrow;
+    } on Object catch (e, st) {
+      ErrorLogService.instance.log(
+        'MusicVideoAutoMatcher.align',
+        'Failed after ${watch.elapsedMilliseconds} ms: '
+            '${track.path} <-> ${video.path}: $e',
+        st,
+      );
+      return false;
     }
   }
 }

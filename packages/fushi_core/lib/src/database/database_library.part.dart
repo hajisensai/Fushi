@@ -1294,13 +1294,133 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
           ]))
           .get();
 
+  /// 只取 [kinds] 这几种条目的合集成员行，排序同 [getAllCollectionItems]。书架 /
+  /// 游戏页按自己的条目种类分组用，不读别的种类（媒体服务器镜像的播放列表成员
+  /// 可达数万行）。
+  Future<List<MediaCollectionItemRow>> getCollectionItemsOfKinds(
+    Set<MediaKind> kinds,
+  ) =>
+      (select(mediaCollectionItems)
+            ..where(
+              (t) => t.mediaType.isIn(<String>[
+                for (final MediaKind k in kinds) k.dbValue,
+              ]),
+            )
+            ..orderBy([
+              (t) => OrderingTerm(expression: t.collectionId),
+              (t) => OrderingTerm(expression: t.sortIndex),
+              (t) => OrderingTerm(expression: t.entryKey),
+              (t) => OrderingTerm(expression: t.mediaType),
+            ]))
+          .get();
+
+  /// 「至少含一部库内视频（`video_books` 行）」的合集 id，作子查询用（不出库）。
+  JoinedSelectStatement<HasResultSet, dynamic> _libraryVideoCollectionIds() =>
+      selectOnly(mediaCollectionItems, distinct: true)
+        ..addColumns(<Expression<Object>>[mediaCollectionItems.collectionId])
+        ..where(
+          mediaCollectionItems.mediaType.equals(MediaKind.video.dbValue) &
+              mediaCollectionItems.entryKey.isInQuery(
+                selectOnly(videoBooks)
+                  ..addColumns(<Expression<Object>>[videoBooks.bookUid]),
+              ),
+        );
+
+  /// 含库内视频的合集的**全部**成员行（含这些合集里的书 / 别的条目，「成员数按
+  /// 合集全部成员计」的判据照常成立），排序同 [getAllCollectionItems]。
+  ///
+  /// 只按库内视频回答问题的调用方（追踪的未关联清单、来源刮削计划）用它代替
+  /// 全表：成员不是库内视频的合集对它们没有贡献。媒体服务器同步来的播放列表
+  /// 成员可达数万行，从前每次都整表复制进调用方 isolate，启动期间被反复触发，
+  /// 整段时间掉帧。
+  Future<List<MediaCollectionItemRow>> getCollectionItemsOfLibraryVideos() =>
+      (select(mediaCollectionItems)
+            ..where(
+              (t) => t.collectionId.isInQuery(_libraryVideoCollectionIds()),
+            )
+            ..orderBy([
+              (t) => OrderingTerm(expression: t.collectionId),
+              (t) => OrderingTerm(expression: t.sortIndex),
+              (t) => OrderingTerm(expression: t.entryKey),
+              (t) => OrderingTerm(expression: t.mediaType),
+            ]))
+          .get();
+
+  /// 含 [videoUids] 中任一视频的合集的**全部**成员行（无序）。逐本处理的调用方
+  /// （自动封面刮削一次一本）只为手上这几部问「是不是多成员合集的子篇」，不必
+  /// 读含库内视频的全部合集。按块查，免得撞 SQLite 变量上限。
+  Future<List<MediaCollectionItemRow>> getCollectionItemsOfVideos(
+    Iterable<String> videoUids,
+  ) async {
+    final List<String> uids = videoUids.toSet().toList();
+    final Set<int> ids = <int>{};
+    for (int i = 0; i < uids.length; i += 500) {
+      final List<String> chunk = uids.sublist(
+        i,
+        i + 500 < uids.length ? i + 500 : uids.length,
+      );
+      ids.addAll(
+        await (selectOnly(mediaCollectionItems, distinct: true)
+              ..addColumns(<Expression<Object>>[
+                mediaCollectionItems.collectionId,
+              ])
+              ..where(
+                mediaCollectionItems.mediaType.equals(MediaKind.video.dbValue) &
+                    mediaCollectionItems.entryKey.isIn(chunk),
+              ))
+            .map((TypedResult r) => r.read(mediaCollectionItems.collectionId)!)
+            .get(),
+      );
+    }
+    final List<int> idList = ids.toList();
+    final List<MediaCollectionItemRow> rows = <MediaCollectionItemRow>[];
+    for (int i = 0; i < idList.length; i += 500) {
+      final List<int> chunk = idList.sublist(
+        i,
+        i + 500 < idList.length ? i + 500 : idList.length,
+      );
+      rows.addAll(
+        await (select(
+          mediaCollectionItems,
+        )..where((t) => t.collectionId.isIn(chunk))).get(),
+      );
+    }
+    return rows;
+  }
+
+  /// [getCollectionItemsOfLibraryVideos] 那些合集的行，排序同
+  /// [getAllMediaCollections]。
+  Future<List<MediaCollectionRow>> getCollectionsOfLibraryVideos() =>
+      (select(mediaCollections)
+            ..where((t) => t.id.isInQuery(_libraryVideoCollectionIds()))
+            ..orderBy([
+              (t) => OrderingTerm(expression: t.sortOrder),
+              (t) => OrderingTerm(expression: t.id),
+            ]))
+          .get();
+
   /// `'<mediaType>|<entryKey>'` → 该条目所属的**最小** collectionId（折叠归属：库网格
   /// 里一条目折进 id 最小的合集卡；其余合集卡照常显示、详情页照常含该条目）。单查询
   /// GROUP BY MIN 避免 N+1。
-  Future<Map<String, int>> getPrimaryCollectionIdByEntry() async {
+  ///
+  /// [kinds] 给了就只算这几种条目（各种类互不影响：键里带 mediaType，MIN 按
+  /// (mediaType, entryKey) 分组）。书架 / 游戏页只问自己那几种，不必把媒体服务器
+  /// 镜像的数万条视频成员也搬进 Dart。
+  Future<Map<String, int>> getPrimaryCollectionIdByEntry({
+    Set<MediaKind>? kinds,
+  }) async {
+    final List<String> types = <String>[
+      for (final MediaKind k in kinds ?? const <MediaKind>{}) k.dbValue,
+    ];
     final List<QueryRow> rows = await customSelect(
       'SELECT media_type, entry_key, MIN(collection_id) AS cid '
-      'FROM media_collection_items GROUP BY media_type, entry_key',
+      'FROM media_collection_items '
+      '${kinds == null ? '' : 'WHERE media_type IN (${List<String>.filled(types.length, '?').join(', ')}) '}'
+      'GROUP BY media_type, entry_key',
+      variables: <Variable<Object>>[
+        for (final String t in types) Variable<String>(t),
+      ],
+      readsFrom: {mediaCollectionItems},
     ).get();
     return <String, int>{
       for (final QueryRow r in rows)
@@ -1308,6 +1428,60 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
             .read<int>('cid'),
     };
   }
+
+  /// [kind] 条目的折叠主归属（与 [getPrimaryCollectionIdByEntry] 同口径的
+  /// MIN(collection_id)）及其在主合集里的组内 sortIndex，一条查询、每条目一行。
+  ///
+  /// 视频库要给远端主机的视频（不在本机 `video_books`）也按合集归组，不能只按本机
+  /// 条目收窄；但它只要「主合集 + 组内序」，不必把整张成员表（再加一遍整表
+  /// GROUP BY）搬进 Dart。键形同 [getPrimaryCollectionIdByEntry]。
+  Future<Map<String, ({int collectionId, int sortIndex})>>
+  getPrimaryCollectionMembershipOfKind(MediaKind kind) async {
+    final List<QueryRow> rows = await customSelect(
+      'SELECT i.entry_key, i.collection_id, i.sort_index '
+      'FROM ('
+      '  SELECT entry_key, MIN(collection_id) AS cid '
+      '  FROM media_collection_items WHERE media_type = ? '
+      '  GROUP BY entry_key'
+      ') p '
+      'JOIN media_collection_items i '
+      '  ON i.collection_id = p.cid '
+      ' AND i.media_type = ? '
+      ' AND i.entry_key = p.entry_key',
+      variables: <Variable<Object>>[
+        Variable<String>(kind.dbValue),
+        Variable<String>(kind.dbValue),
+      ],
+      readsFrom: {mediaCollectionItems},
+    ).get();
+    return <String, ({int collectionId, int sortIndex})>{
+      for (final QueryRow r in rows)
+        kind.compositeKey(r.read<String>('entry_key')): (
+          collectionId: r.read<int>('collection_id'),
+          sortIndex: r.read<int>('sort_index'),
+        ),
+    };
+  }
+
+  /// 本机视频（`video_books` 行）自己的合集成员行（每部视频在各合集里的那一行，
+  /// 不含合集里别的成员）。视频库的目录合集策略只改本机视频的归属，喂它这些行
+  /// 与喂整张成员表结果相同。
+  Future<List<MediaCollectionItemRow>> getLibraryVideoMemberRows() =>
+      (select(mediaCollectionItems)
+            ..where(
+              (t) =>
+                  t.mediaType.equals(MediaKind.video.dbValue) &
+                  t.entryKey.isInQuery(
+                    selectOnly(videoBooks)
+                      ..addColumns(<Expression<Object>>[videoBooks.bookUid]),
+                  ),
+            )
+            ..orderBy([
+              (t) => OrderingTerm(expression: t.collectionId),
+              (t) => OrderingTerm(expression: t.sortIndex),
+              (t) => OrderingTerm(expression: t.entryKey),
+            ]))
+          .get();
 
   /// 首页 dashboard 专用：**只为本机库里还存在的条目**（视频 / EPUB / SRT 书 /
   /// 游戏）一次查出折叠归属主合集（与 [getPrimaryCollectionIdByEntry] 同口径的

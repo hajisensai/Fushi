@@ -988,6 +988,8 @@ const ICON_PATHS = {
     close: 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
     // tune（Niratan「调整上下文」按钮：打开制卡前句子上下文调整模态）
     tune: 'M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z',
+    // Material Symbols「edit_note」：制卡前编辑例句（反馈 uEnwXmBIR0）。
+    editNote: 'M3 10h11v2H3v-2zm0-2h11V6H3v2zm0 8h7v-2H3v2zm15.01-3.13.71-.71c.39-.39 1.02-.39 1.41 0l.71.71c.39.39.39 1.02 0 1.41l-.71.71-2.12-2.12zm-.71.71-5.3 5.3V21h2.12l5.3-5.3-2.12-2.12z',
     // open_in_new（TODO-1360：已制卡的词旁「在 Anki 中打开卡片」按钮，直接跳去
     // Anki 定位该词的已存在卡；仅 data-mined 时显示）
     openInAnki: 'M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z',
@@ -1020,6 +1022,8 @@ const APPLE_ICON_PATHS = {
     close: { viewBox: '-114 -22 568 568', d: 'M6 399 143 262 6 125Q-7 112 6.0 98.0Q19 84 33 98L170 235L307 98Q320 84 334 98Q348 111 334 125L197 262L334 399Q347 412 334 426Q320 440 307 426L170 289L33 426Q20 438 6 426Q-8 413 6 399Z' },
     // slider.horizontal.3
     tune: { viewBox: '-68 -22 568 568', d: 'M293 183Q256 183 244 149H17Q0 149 0 131Q0 114 17 114H244Q256 80 293 80Q329 80 341 114H415Q422 114 427.0 119.0Q432 124 432.0 131.0Q432 138 427.0 143.5Q422 149 415 149H341Q329 183 293 183ZM275.0 149.0Q282 156 293.0 156.0Q304 156 311.0 149.0Q318 142 318.0 131.0Q318 120 311.0 113.0Q304 106 293.0 106.0Q282 106 275.0 113.0Q268 120 268.0 131.0Q268 142 275.0 149.0ZM16 245H93Q105 211 141 211Q178 211 190 245H414Q432 245 432.0 262.0Q432 279 414 279H190Q178 314 141 314Q125 314 111.5 304.0Q98 294 93 279H16Q0 279 0.0 262.0Q0 245 16 245ZM123.0 279.5Q130 287 141.0 287.0Q152 287 159.0 279.5Q166 272 166.0 262.0Q166 252 159.0 244.5Q152 237 141.0 237.0Q130 237 123.0 244.5Q116 252 116.0 262.0Q116 272 123.0 279.5ZM293 444Q256 444 244 410H17Q0 410 0.0 393.0Q0 376 17 376H244Q256 342 293 342Q329 342 341 376H415Q422 376 427.0 381.0Q432 386 432.0 393.0Q432 400 427.0 405.0Q422 410 415 410H341Q329 444 293 444ZM275.0 411.0Q282 418 293.0 418.0Q304 418 311.0 411.0Q318 404 318.0 393.0Q318 382 311.0 375.0Q304 368 293.0 368.0Q282 368 275.0 375.0Q268 382 268.0 393.0Q268 404 275.0 411.0Z' },
+    // square.and.pencil
+    editNote: { viewBox: '-72 -21.4 568 568', d: 'M403 97 374 68 389 52Q402 39 414 51L418 56Q430 68 418 81ZM156 320Q153 321 150.5 318.5Q148 316 150 313L169 273L358 84L387 113L198 302ZM67 480Q0 480 0 413V166Q0 100 67 100H288L253 134H68Q34 134 34 168V411Q34 445 68 445H318Q330 445 337.5 436.0Q345 427 345 411V209L380 175V413Q380 480 319 480Z' },
     // arrow.up.right.square
     openInAnki: { viewBox: '-86.5 -22 568 568', d: 'M67 459Q0 459 0 393V131Q0 65 67 65H327Q395 65 395 131V393Q395 459 327 459ZM68 425H327Q360 425 360 391V133Q360 99 327 99H68Q35 99 35 133V391Q35 425 68 425ZM265 315Q249 315 249 298V261L252 228L221 261L143 339Q138 344 130 344Q114 344 114 329Q114 323 120 317L199 238L232 207L200 210H161Q144 210 144 195Q144 179 161 179H262Q280 179 280 197V298Q280 315 265 315Z' },
     // search
@@ -3589,6 +3593,27 @@ function buildCrossAppAudioButton() {
         button.style.display = '';
         button.classList.add('crossapp-audio-revealed');
     });
+    return button;
+}
+
+// 反馈 uEnwXmBIR0：应用外查词卡「编辑例句后制卡」。点了带 {editSentence: true} 回点同一颗
+// 「+」（fushiPopupMineEntryByIndex，制卡桥仍只此一处调用）：宿主先弹编辑框让用户改例句，
+// 改完照常走这张卡的制卡路径，截图 / 句子音频由宿主照旧带上；在编辑框里取消 = 不制这张卡。
+// 编辑框在宿主那边（Flutter 对话框）：桌面覆盖窗收不到键盘，画不了输入框。
+function buildSentenceEditButton() {
+    const button = el('button', {
+        className: 'inline-action-button ctx-adjust-button sentence-edit-button',
+        // BUG-3210：回点「+」那条路没有 pointerdown，选区只能在这里快照。
+        onpointerdown: () => { snapshotSelection(); },
+        ontouchstart: () => { snapshotSelection(); },
+        onclick: () => {
+            window.fushiPopupMineEntryByIndex(
+                __fushiEntryIndexOf(button), { editSentence: true });
+        },
+    });
+    setButtonIcon(button, 'editNote');
+    if (__fushiPopupReducedMotion()) button.classList.add('no-motion');
+    setInlineButtonTip(button, window.i18nSentenceEdit || '');
     return button;
 }
 
@@ -7368,6 +7393,11 @@ function createEntryHeader(entry, idx) {
     // 确认这次查词录到了声音才露出。确认制卡回点的是同一颗「+」，所以「+」不渲染时它也不渲染。
     if (miningEnabled && window.__fushiCrossAppAudioHost === true) {
         buttonsContainer.appendChild(buildCrossAppAudioButton());
+    }
+    // 反馈 uEnwXmBIR0：应用外查词卡（宿主注入 __fushiPreMineSentenceEdit）给「编辑例句后
+    // 制卡」。回点的是同一颗「+」，所以「+」不渲染时它也不渲染。
+    if (miningEnabled && window.__fushiPreMineSentenceEdit === true) {
+        buttonsContainer.appendChild(buildSentenceEditButton());
     }
 
     const advancedMining = window.advancedMiningEnabled === true;

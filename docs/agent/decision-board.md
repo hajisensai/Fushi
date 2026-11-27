@@ -9,6 +9,15 @@
 - 命令在 `services/leaderboard/` 下执行，`node scripts/decisions.mjs` 不带参数打印用法。新 worktree 没有 `node_modules`（`setup_worktree.ps1` 不装 npm 依赖），首次使用前先在 `services/leaderboard/` 下跑一次 `npm ci` 装上 wrangler；缺了脚本会直接报「缺 wrangler：先 npm ci」。
 - 代码：`services/leaderboard/src/decisions.js`（SQL、校验、页面）、`src/decisions_client.js`（网页的无刷新提交 / 撤销 / 快捷键 / 自动同步），`src/decisions_api.js`（个人密钥与 `/v1/decisions/**` JSON API），迁移 `0020_decisions.sql` / `0024_decision_api_keys.sql` / `0025_decision_file_shares.sql`（附件公开分享），测试 `test/decisions.test.js` / `test/decisions_api.test.js`。
 
+## 反馈里要问维护者的，一律上拍板台
+
+（用户 2026-11-27 拍板）分诊应用内反馈时，凡是要**维护者本人**回答或动手的追问，写成拍板台事项，**不用 `feedback.mjs reply` 回在反馈里**（维护者不在 App 里翻自己的反馈时间线，回在那里就没人看）。包括：
+
+- 反馈人是开发者账户（处理台标「开发者自己提的」）时，补复现路径 / 截图 / 文件等一切追问；
+- 要维护者代为转达给第三方用户的问题（维护者转来的「用户反馈的」），或要维护者去外部操作的事（提误报、找人要样本）。
+
+写法：`id` 用反馈 id，`kind: "feedback"`，标题以「追问：」或「要你转达 / 要你操作：」开头，`ask` 写清已查到什么、还缺哪几点；答案是几选一时给 `choices`，要文件的写「拖进本卡附件」。同时在 AI 总结里写「处置：已上拍板台追问」，以后巡检不重复问。维护者的留言 / 附件就是答复：拿到后按普通反馈继续修，修完照常走 `Feedback: <id>`，再 `close` 本条。问普通用户（非开发者）的追问仍用 `reply`。
+
 ## 维护者的七个决定
 
 | 决定 | Claude 要做的 |

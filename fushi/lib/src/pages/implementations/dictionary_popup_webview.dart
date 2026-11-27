@@ -452,6 +452,7 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
     this.onClearSentenceDraft,
     this.onOpenAdvancedMining,
     this.crossAppAudio,
+    this.preMineSentenceEdit = false,
     this.onScrolledToBottom,
     this.onScrolledUnderChanged,
     this.forwardScrollToHost = false,
@@ -626,6 +627,12 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   /// 「+」旁渲染「调整句子音频」，面板经 `crossAppAudioPreview` 取波形与试听音频。
   /// app 内表面为 null（不渲染、不发探测）。
   final Future<CrossAppAudioSnapshot?>? crossAppAudio;
+
+  /// 反馈 uEnwXmBIR0：应用外查词表面（Android `:popup` 查词窗）在「+」旁给「编辑例句后
+  /// 制卡」（注入 `window.__fushiPreMineSentenceEdit = true`）。点了回点同一颗「+」、
+  /// payload 带「先编辑例句」标记，宿主的 [onMineEntry] 据此先弹编辑框
+  /// （`applyPreMineSentenceEdit`）。app 内表面为 false（不渲染）。
+  final bool preMineSentenceEdit;
   final VoidCallback? onScrolledToBottom;
 
   /// 正文是否已离开顶部（scrollTop > 0）。宿主据此给顶栏铺 M3「scrolled-under」底色，
@@ -1205,7 +1212,12 @@ class DictionaryPopupWebViewState
   /// BUG-717 ③：最近一次已注入的 in-app 固定块（句子上下文 i18n 文案 + `advancedMiningEnabled`）的键。该块只随静态段
   /// 版本（含语言切换——locale 在 builder 的 memo 键里）与「高级制卡」回调的有无变化，
   /// 此前每次查词都重发约 1-2KB。页面重载时同样置 null。
-  ({int revision, bool advancedMining, bool crossAppAudio})?
+  ({
+    int revision,
+    bool advancedMining,
+    bool crossAppAudio,
+    bool preMineSentenceEdit,
+  })?
   _lastSentInAppExtrasKey;
 
   Future<T> _guardJsBridge<T>(
@@ -2400,12 +2412,18 @@ JSON.stringify((function(){
     // window.advancedMiningEnabled 会跨渲染残留，必须随之重发）。原来每次查词都重发这 1-2KB。
     final bool advancedMiningEnabled = widget.onOpenAdvancedMining != null;
     final bool crossAppAudioHost = widget.crossAppAudio != null;
-    final ({int revision, bool advancedMining, bool crossAppAudio}) extrasKey =
-        (
-          revision: staticSettings.revision,
-          advancedMining: advancedMiningEnabled,
-          crossAppAudio: crossAppAudioHost,
-        );
+    final ({
+      int revision,
+      bool advancedMining,
+      bool crossAppAudio,
+      bool preMineSentenceEdit,
+    })
+    extrasKey = (
+      revision: staticSettings.revision,
+      advancedMining: advancedMiningEnabled,
+      crossAppAudio: crossAppAudioHost,
+      preMineSentenceEdit: widget.preMineSentenceEdit,
+    );
     final bool extrasChanged = extrasKey != _lastSentInAppExtrasKey;
     if (extrasChanged) {
       _lastSentInAppExtrasKey = extrasKey;
@@ -2414,6 +2432,7 @@ JSON.stringify((function(){
         ? _inAppStaticExtrasJs(
             advancedMiningEnabled: advancedMiningEnabled,
             crossAppAudioHost: crossAppAudioHost,
+            preMineSentenceEdit: widget.preMineSentenceEdit,
           )
         : '';
     final bool idle = identical(
@@ -2514,6 +2533,7 @@ JSON.stringify((function(){
   String _inAppStaticExtrasJs({
     required bool advancedMiningEnabled,
     required bool crossAppAudioHost,
+    required bool preMineSentenceEdit,
   }) {
     // `window.__fushiResetPopupScroll`（全量推送前的滚动归零）定义在 popup.js，与 app 外
     // 查词窗 / galgame 内嵌查词的常驻根 iframe 共用一份，不在这里另写。
@@ -2537,6 +2557,8 @@ JSON.stringify((function(){
       };
       // 跨应用语音缓存「调整句子音频」入口门控（见 [DictionaryPopupWebView.crossAppAudio]）。
       window.__fushiCrossAppAudioHost = $crossAppAudioHost;
+      // 反馈 uEnwXmBIR0：「编辑例句后制卡」入口门控（见 [DictionaryPopupWebView.preMineSentenceEdit]）。
+      window.__fushiPreMineSentenceEdit = $preMineSentenceEdit;
 ''';
   }
 

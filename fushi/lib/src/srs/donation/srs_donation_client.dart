@@ -18,6 +18,7 @@ import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:http/http.dart' as http;
 
 import 'package:fushi/src/leaderboard/leaderboard_endpoint.dart';
+import 'package:fushi/src/srs/donation/srs_donation_eligibility.dart';
 
 /// 查询 / 撤回的超时。
 const Duration kSrsDonationRequestTimeout = Duration(seconds: 30);
@@ -25,28 +26,33 @@ const Duration kSrsDonationRequestTimeout = Duration(seconds: 30);
 /// 上传的超时（整包上传 + 服务端写 R2；包上限 64 MiB）。
 const Duration kSrsDonationUploadTimeout = Duration(minutes: 10);
 
-/// 服务端状态。
+/// 服务端状态（GET 与 PUT 成功响应同一形状：`{donated: false}` 或
+/// `{donated: true, reviews, cards, updatedAt}`）。捐过时三项都必须有，缺了按坏响应处理，
+/// 不拿 0 / 现在时刻顶上（那样会显示「捐出 0 次」）。
 class SrsDonationStatus {
-  const SrsDonationStatus({
-    required this.donated,
-    this.reviews,
-    this.cards,
-    this.updatedAt,
-  });
+  const SrsDonationStatus.none() : donation = null;
+  const SrsDonationStatus.donated(SrsDonationRecord this.donation);
 
-  final bool donated;
-  final int? reviews;
-  final int? cards;
-  final DateTime? updatedAt;
+  /// null = 没捐过 / 已撤回。
+  final SrsDonationRecord? donation;
 
-  /// 解析服务端 JSON（`{donated, reviews?, cards?, updatedAt?}`）。
-  factory SrsDonationStatus.fromJson(Map<String, Object?> json) =>
-      SrsDonationStatus(
-        donated: json['donated'] == true,
-        reviews: _int(json['reviews']),
-        cards: _int(json['cards']),
-        updatedAt: _time(json['updatedAt']),
-      );
+  bool get donated => donation != null;
+
+  /// 解析服务端 JSON；`donated == true` 却缺字段时抛 [FormatException]。
+  factory SrsDonationStatus.fromJson(Map<String, Object?> json) {
+    if (json['donated'] != true) return const SrsDonationStatus.none();
+    final int? reviews = _int(json['reviews']);
+    final int? cards = _int(json['cards']);
+    final DateTime? updatedAt = _time(json['updatedAt']);
+    if (reviews == null || cards == null || updatedAt == null) {
+      throw const FormatException('incomplete donation status');
+    }
+    return SrsDonationStatus.donated((
+      reviews: reviews,
+      cards: cards,
+      updatedAt: updatedAt,
+    ));
+  }
 
   static int? _int(Object? v) => v is num ? v.toInt() : null;
 
