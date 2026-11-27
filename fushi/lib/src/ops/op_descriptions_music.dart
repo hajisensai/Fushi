@@ -424,7 +424,9 @@ List<OpDescription> _describePlayerOps(
         ),
         OpParam.integer(
           'index',
-          description: 'Start position in the album / tracks (0-based).',
+          description:
+              'Start position in the album / tracks (0-based). Omit to start '
+              'from the first track, or from a random one when shuffling.',
         ),
         OpParam.boolean('shuffle', description: 'Shuffle the new queue.'),
       ],

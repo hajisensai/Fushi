@@ -13,8 +13,6 @@
 /// 选的入口方案 A），不在视频页签里另放一个只读入口。
 library;
 
-import 'dart:math';
-
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/media_extensions.dart'
     show isAudioOnlyMediaPath, isVideoMediaPath;
@@ -233,11 +231,7 @@ Future<void> musicListenToVideos(
   ];
   switch (target) {
     case MusicListenTarget.shuffle:
-      await engine.playQueue(
-        items,
-        startIndex: Random().nextInt(items.length),
-        shuffle: true,
-      );
+      await engine.playQueue(items, shuffle: true);
     case MusicListenTarget.playNext:
       await engine.playNext(items);
       FushiToast.show(

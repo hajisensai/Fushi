@@ -103,7 +103,7 @@ void playMusicServerTracks(
   BuildContext context,
   MusicServerBrowser browser,
   List<MusicServerTrack> tracks, {
-  int start = 0,
+  int? start,
   bool shuffle = false,
 }) {
   if (tracks.isEmpty) return;

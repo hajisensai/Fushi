@@ -1399,7 +1399,7 @@ class _MusicServerAlbumPageState extends ConsumerState<MusicServerAlbumPage> {
 
   void _play(
     List<MusicServerTrack> tracks, {
-    int start = 0,
+    int? start,
     bool shuffle = false,
   }) {
     final MusicPlayerEngine engine = ref.read(appProvider).musicSession.engine;
@@ -2550,7 +2550,7 @@ class _MusicServerPlaylistPageState
 
   void _play(
     List<MusicServerTrack> tracks, {
-    int start = 0,
+    int? start,
     bool shuffle = false,
   }) {
     final MusicPlayerEngine engine = ref.read(appProvider).musicSession.engine;

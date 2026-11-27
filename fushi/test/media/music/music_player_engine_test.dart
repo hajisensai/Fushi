@@ -285,6 +285,37 @@ void main() {
     );
   });
 
+  test('BUG-5591 随机播放全部（不指定起点）：整队打乱，第一首也随机', () async {
+    final List<String> uids = <String>['a', 'b', 'c', 'd', 'e', 'f'];
+    final List<MusicPlayItem> items = <MusicPlayItem>[
+      for (final String u in uids) _item(u),
+    ];
+    final Set<String> firsts = <String>{};
+    for (int seed = 0; seed < 12; seed++) {
+      final _FakeBackend b = _FakeBackend();
+      final MusicPlayerEngine e = MusicPlayerEngine(
+        backendFactory: () => b,
+        random: Random(seed),
+      );
+      await e.playQueue(items, context: MusicQueueContext.album, shuffle: true);
+      final List<String> expected = List<String>.of(uids)
+        ..shuffle(Random(seed));
+      expect(e.queue.map((MusicPlayItem i) => i.trackUid), expected);
+      expect(e.current?.trackUid, expected.first);
+      expect(e.shuffled, isTrue);
+      firsts.add(e.current!.trackUid);
+      e.dispose();
+    }
+    // 旧实现固定 items[0] 打头：12 个种子第一首全是 'a'。
+    expect(firsts.length, greaterThan(1));
+  });
+
+  test('不指定起点的顺序播放从第一首开始', () async {
+    await engine.playQueue(<MusicPlayItem>[_item('a'), _item('b')]);
+    expect(engine.current?.trackUid, 'a');
+    expect(engine.shuffled, isFalse);
+  });
+
   test('随机播放：选中的那首排第一；中途开关随机不打断当前曲目', () async {
     final List<MusicPlayItem> items = <MusicPlayItem>[
       for (final String u in <String>['a', 'b', 'c', 'd', 'e']) _item(u),

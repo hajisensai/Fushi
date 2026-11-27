@@ -183,7 +183,7 @@ void _playTracks(
   WidgetRef ref,
   String pluginId,
   List<MusicPluginTrack> tracks, {
-  int start = 0,
+  int? start,
   bool shuffle = false,
   MusicQueueContext context = MusicQueueContext.mixed,
   String? albumTitle,
@@ -191,7 +191,8 @@ void _playTracks(
   MusicPlaySource? source,
 }) {
   final List<MusicPlayItem> items = <MusicPlayItem>[];
-  int startIndex = 0;
+  // 没指定起点（「播放全部 / 随机播放」）保持 null，交给引擎决定第一首。
+  int? startIndex = start == null ? null : 0;
   for (int i = 0; i < tracks.length; i++) {
     if (!tracks[i].playable) continue;
     if (i == start) startIndex = items.length;

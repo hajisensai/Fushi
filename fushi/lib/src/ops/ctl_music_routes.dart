@@ -73,7 +73,7 @@ abstract interface class MusicCtlPlayer {
   Duration? get duration;
   Future<void> playQueue(
     List<MusicPlayItem> items, {
-    int startIndex,
+    int? startIndex,
     MusicQueueContext context,
     bool shuffle,
   });
@@ -103,7 +103,7 @@ class EngineMusicCtlPlayer implements MusicCtlPlayer {
   @override
   Future<void> playQueue(
     List<MusicPlayItem> items, {
-    int startIndex = 0,
+    int? startIndex,
     MusicQueueContext context = MusicQueueContext.mixed,
     bool shuffle = false,
   }) => engine.playQueue(
@@ -636,8 +636,9 @@ List<CtlRoute> buildMusicCtlRoutesFor({
         queueContext = MusicQueueContext.mixed;
       }
       if (items.isEmpty) throw const CtlFailure.conflict('专辑里没有曲目');
-      final int index = call.optInt('index') ?? 0;
-      if (index < 0 || index >= items.length) {
+      // 没给 index = 不指定起点：顺序从第一首，随机则整队随机。
+      final int? index = call.optInt('index');
+      if (index != null && (index < 0 || index >= items.length)) {
         throw CtlFailure.badRequest('index 越界：$index（共 ${items.length} 首）');
       }
       await p.playQueue(
