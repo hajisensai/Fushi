@@ -589,10 +589,20 @@ $('#btn-scan').onclick = guard(async()=>{ await post('scan'); toast(T('已开始
 // ── 配对 ──
 function setPairBadge(pending){ $('#pair-badge').hidden = !pending; }
 // BUG-4391：管理员签发一次性配对链接（票据配对不走 PIN 预算）。再签一张即作废上一张。
+let pairLinkTimer = null;
+function clearPairLink(){
+  clearTimeout(pairLinkTimer);
+  const out = $('#pair-link-out');
+  out.innerHTML = '';
+  out.hidden = true;
+}
 $('#btn-pair-link').onclick = guard(async()=>{
+  clearPairLink();
   const r = await post('pairing/link');
   const out = $('#pair-link-out');
-  out.innerHTML = `<div class="action-row"><input id="pair-link-uri" class="mono" readonly value="${esc(r.uri)}"><button class="text-button" id="btn-pair-link-copy">${esc(T('复制'))}</button></div><p class="kit-supporting">${esc(T('{0} 分钟内有效，只能用一次。在 Fushi 的互联设置里点「粘贴配对链接」使用。', Math.max(1, Math.round(r.expiresInSeconds/60))))}</p>`;
+  // 二维码是服务端按同一条链接渲染的 SVG（白底深色，不随主题）；到期就清掉，不留作废的码。
+  out.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;gap:8px;margin:8px 0"><div style="width:min(100%,max(240px,40vmin));background:#fff;border-radius:8px;overflow:hidden;line-height:0">${r.qrSvg}</div><p class="kit-supporting" style="margin:0;text-align:center">${esc(T('用手机上的 Fushi 扫码：互联 › 配对 › 扫码'))}</p></div>${r.needsPublicAddress ? `<p class="kit-supporting" role="alert" style="color:var(--md-sys-color-error,#b3261e)">${esc(T('链接里只有容器内部 / 本机地址，手机连不上。请先在「设置 › 远程访问」的公网地址里填写手机能访问到的地址。'))}</p>` : ''}<div class="action-row"><input id="pair-link-uri" class="mono" readonly value="${esc(r.uri)}"><button class="text-button" id="btn-pair-link-copy">${esc(T('复制'))}</button></div><p class="kit-supporting">${esc(T('{0} 分钟内有效，只能用一次。在 Fushi 的互联设置里点「粘贴配对链接」使用。', Math.max(1, Math.round(r.expiresInSeconds/60))))}</p>`;
+  pairLinkTimer = setTimeout(clearPairLink, Math.max(1, r.expiresInSeconds) * 1000);
   out.hidden = false;
   $('#btn-pair-link-copy').onclick = guard(async()=>{
     const input = $('#pair-link-uri');
@@ -1189,6 +1199,7 @@ async function loadSettings(){
     if(k==='ai.preset'&&s.ai) extra = s.ai.status==='ready' ? tag('ok', T('可用')) : tag('warn', T('未配全：{0}', s.ai.problem||''));
     let ctl;
     let wrapped = false;
+    const locked = !!s.inContainer && (k==='port'||k==='adminPort');
     if(type.startsWith('dyn:')) ctl = `<select id="${id}">${['',...(s[type.slice(4)]||[])].map(o=>`<option value="${esc(o)}" ${o===(v??'')?'selected':''}>${esc(k==='ai.preset'?aiPresetLabel(s,o):o)}</option>`).join('')}</select>`;
     else if(type.startsWith('choice:')){ ctl = choiceCtl(id, CHOICES[type.slice(7)](s), v); wrapped = true; }
     else if(type==='bytes'){ ctl = bytesCtl(id, v); wrapped = true; }
@@ -1198,8 +1209,9 @@ async function loadSettings(){
     else if(type.startsWith('select:')) ctl = `<select id="${id}">${type.slice(7).split(',').map(o=>`<option value="${esc(o)}" ${o===v?'selected':''}>${esc(k==='language'?LANGUAGE_NAMES[o]:o)}</option>`).join('')}</select>`;
     else if(type==='password'){ extra += setNote(s.qbittorrent.passwordSet); ctl = `<input type="password" id="${id}" value="" autocomplete="off">`; }
     else if(type.startsWith('secret:')){ const sk=type.slice(7); const isSet = sk.includes('.') ? (s[sk.split('.')[0]]||{})[sk.split('.')[1]] : s[sk]; extra += setNote(isSet); ctl = `<input type="password" id="${id}" value="" autocomplete="off">`; }
-    else ctl = `<input type="${type}" id="${id}" value="${esc(v??'')}">`;
-    const [title, sub] = splitLabel(label);
+    else ctl = `<input type="${type}" id="${id}" value="${esc(v??'')}"${locked?' readonly':''}>`;
+    let [title, sub] = splitLabel(label);
+    if(locked) sub = T('这是容器内的端口。要改设备连接用的端口，请改 compose 里端口映射的宿主机一侧（FUSHI_SYNC_PORT / FUSHI_WEBUI_PORT），并在「设置 › 远程访问」填写公网地址。');
     return `<div class="setting-row"><label class="setting-copy" for="${id}"><strong>${esc(title)}${RESTART.has(k)?tag('warn', T('需重启')):''}${extra}</strong>${sub?`<small>${esc(sub)}</small>`:''}</label><div class="setting-trail${type==='bool'?'':' is-field'}">${ctl}</div></div>`;
   };
   $('#settings-form').innerHTML = SETTING_GROUPS.map(([g,name])=>`<h3 class="kit-section-title">${esc(name)}</h3><div class="setting-list is-surface">${FIELDS.filter(f=>f[3]===g).map(field).join('')}</div>`).join('');

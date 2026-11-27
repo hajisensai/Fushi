@@ -120,10 +120,17 @@ sealed class PairLinkOutcome {
 
 /// 一次性配对链接（`fushi://pair?...&k=<票据>`）及票据失效时刻。
 final class PairLinkIssued extends PairLinkOutcome {
-  const PairLinkIssued({required this.uri, required this.expiresAt});
+  const PairLinkIssued({
+    required this.uri,
+    required this.expiresAt,
+    this.addressUrls = const <String>[],
+  });
 
   final String uri;
   final DateTime expiresAt;
+
+  /// 链接里公布的地址 URL（admin API 据此判断「手机其实连不上」并提示）。
+  final List<String> addressUrls;
 }
 
 /// 签不出链接。[reason] 是 admin API 的 wire 值：`not_running`（互联服务没在跑）/
@@ -348,7 +355,13 @@ class HeadlessHost {
       server.revokePairTicket();
       return const PairLinkUnavailable(PairLinkUnavailable.noReachableAddress);
     }
-    return PairLinkIssued(uri: link.toUri(), expiresAt: ticket.expiresAt);
+    return PairLinkIssued(
+      uri: link.toUri(),
+      expiresAt: ticket.expiresAt,
+      addressUrls: <String>[
+        for (final InterconnectHostAddress a in link.addresses) a.url,
+      ],
+    );
   }
 
   /// 配对 PIN 出现/消失时的观察者（WebUI SSE、CLI 打印）。
