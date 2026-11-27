@@ -16,7 +16,9 @@ macOS), the dist_test workers and a dev box before Flutter is installed.
       cost one sha256 pass; anything missing or different is taken from the
       local cache or downloaded (HTTPS_PROXY / HTTP_PROXY are honoured),
       verified, and written atomically. Any size / sha256 mismatch fails the
-      run. Default: all groups.
+      run. Default: the groups in $FUSHI_VENDORED_GROUPS (space-separated),
+      else all groups. A build that only needs some groups (the Linux bundle
+      container needs `mihon`) sets it so bootstrap does not pull the rest.
 
   python3 tool/vendored_binaries.py check [--group G ...]
       Like fetch, but never writes: exit 1 when a file is missing / different.
@@ -28,6 +30,12 @@ macOS), the dist_test workers and a dev box before Flutter is installed.
   python3 tool/vendored_binaries.py publish
       Upload every manifest file that the release does not have yet (gh CLI),
       then download each new asset back and compare its sha256.
+
+  python3 tool/vendored_binaries.py digest [--group G ...]
+      Print one sha256 over "path sha256" of the selected entries: the
+      content address under which .github/actions/fetch-vendored-binaries
+      keeps those bytes in the native artifact store (second source next to
+      the release, see that action).
 
   python3 tool/vendored_binaries.py identity PREFIX ...
       Print "path sha256" for the entries under PREFIX (used by
@@ -182,7 +190,16 @@ def cache_dir() -> Path:
     return Path.home() / ".cache" / "fushi" / "vendored-binaries"
 
 
+def requested_groups(groups: Optional[list[str]]) -> Optional[list[str]]:
+    """--group wins; otherwise $FUSHI_VENDORED_GROUPS; otherwise None (= all)."""
+    if groups:
+        return groups
+    configured = os.environ.get("FUSHI_VENDORED_GROUPS", "").split()
+    return configured or None
+
+
 def select(manifest: dict, groups: Optional[list[str]]) -> list[dict]:
+    groups = requested_groups(groups)
     known = sorted({entry["group"] for entry in manifest["files"]})
     if not groups or groups == ["all"]:
         return list(manifest["files"])
@@ -536,12 +553,22 @@ def command_identity(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_digest(args: argparse.Namespace) -> int:
+    entries = sorted(select(load_manifest(), args.group), key=lambda entry: entry["path"])
+    listing = "".join(f"{entry['path']} {entry['sha256']}\n" for entry in entries)
+    # Bytes, not print(): no CRLF on Windows (the digest is spliced into artifact names).
+    sys.stdout.flush()
+    sys.stdout.buffer.write((hashlib.sha256(listing.encode("utf-8")).hexdigest() + "\n").encode("ascii"))
+    sys.stdout.buffer.flush()
+    return 0
+
+
 def parse(argv: Iterable[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command")
-    for name in ("fetch", "check"):
+    for name in ("fetch", "check", "digest"):
         command = sub.add_parser(name)
-        command.add_argument("--group", action="append", help="limit to a group (repeatable; default all)")
+        command.add_argument("--group", action="append", help="limit to a group (repeatable; default $FUSHI_VENDORED_GROUPS, else all)")
         if name == "fetch":
             command.add_argument("--cache-dir", help="override $FUSHI_VENDORED_CACHE")
     register = sub.add_parser("register")
@@ -565,6 +592,7 @@ def main(argv: Iterable[str]) -> int:
         "register": command_register,
         "publish": command_publish,
         "identity": command_identity,
+        "digest": command_digest,
     }
     try:
         return handlers[args.command](args)

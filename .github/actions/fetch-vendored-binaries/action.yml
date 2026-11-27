@@ -11,26 +11,66 @@
 #
 # Run it right after actions/checkout in every job that builds or tests
 # something reading those files. Groups (see the manifest): windows, galgame,
-# mihon, android, ios, macos, or `all` (unit tests read every one of them).
+# mihon, mihon-build, android, ios, macos, or `all` (unit tests read every one of them).
 #
-# Deliberately no actions/cache: the assets download from GitHub's own CDN in
-# seconds, while a per-group cache of ~0.5 GB per manifest revision would eat
-# the repo's 10 GB Actions cache quota (fushi/test/build/workflow_cache_quota_guard_test.dart).
+# Deliberately no actions/cache: the repo's 10 GB Actions cache quota turns over in
+# about an hour (fushi/test/build/workflow_cache_quota_guard_test.dart), so an entry is
+# usually gone before the next run reads it.
+#
+# `durable: 'true'` (release builds): the release asset is a single source, and on
+# 2026-11-27 its CDN answered HTTP 500 for long enough to outlast every retry and fail
+# a release build. With durable on, the bytes are also kept in the native artifact
+# store (workflow artifacts, a separate GitHub backend with its own retention) under
+# the content address `vendored-<groups>-<digest of the selected entries>`: a restore
+# hit fills the download cache and the fetch below downloads nothing; a miss on a
+# trusted ref (develop / main) saves what it downloaded for every later run. The fetch
+# still verifies each file against the manifest, so a restored entry can never feed
+# bytes the manifest does not pin.
 # Guard: fushi/test/build/vendored_binaries_manifest_guard_test.dart.
 name: Fetch vendored binaries
 description: Download the gitignored prebuilt third-party binaries listed in tool/vendored_binaries.json and verify their sha256.
 inputs:
   groups:
-    description: Space-separated manifest groups (windows galgame mihon android ios macos) or `all`.
+    description: Space-separated manifest groups (windows galgame mihon mihon-build android ios macos) or `all`.
     required: true
+  durable:
+    description: "'true' = also keep / take the bytes from the native artifact store (needs `actions: read`)."
+    required: false
+    default: 'false'
 runs:
   using: composite
   steps:
+    - name: Resolve vendored store name (${{ inputs.groups }})
+      id: store
+      if: inputs.durable == 'true'
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      env:
+        VENDORED_GROUPS: ${{ inputs.groups }}
+      run: |
+        set -euo pipefail
+        py=python3
+        if ! python3 -c '' >/dev/null 2>&1; then py=python; fi
+        args=()
+        for group in $VENDORED_GROUPS; do args+=(--group "$group"); done
+        digest="$("$py" tool/vendored_binaries.py digest "${args[@]}")"
+        label="$(printf '%s' "$VENDORED_GROUPS" | tr -cs 'A-Za-z0-9' '-' | sed 's/^-//; s/-$//')"
+        echo "name=vendored-$label-$digest" >> "$GITHUB_OUTPUT"
+        echo "cache=$RUNNER_TEMP/fushi-vendored-cache" >> "$GITHUB_OUTPUT"
+    - name: Restore vendored binaries from native artifact store
+      id: restore
+      if: inputs.durable == 'true'
+      uses: ./.github/actions/native-artifact-store
+      with:
+        mode: restore
+        name: ${{ steps.store.outputs.name }}
+        path: ${{ steps.store.outputs.cache }}
     - name: Fetch vendored binaries (${{ inputs.groups }})
       shell: bash
       working-directory: ${{ github.workspace }}
       env:
         VENDORED_GROUPS: ${{ inputs.groups }}
+        STORE_CACHE: ${{ steps.store.outputs.cache }}
       run: |
         set -euo pipefail
         # Windows runners may lack a python3 alias; every runner image has Python 3.
@@ -42,4 +82,19 @@ runs:
           echo "::error title=fetch-vendored-binaries::input 'groups' is empty"
           exit 1
         fi
+        if [ -n "$STORE_CACHE" ]; then
+          mkdir -p "$STORE_CACHE"
+          args+=(--cache-dir "$STORE_CACHE")
+        fi
         "$py" tool/vendored_binaries.py fetch "${args[@]}"
+        if [ -n "$STORE_CACHE" ]; then
+          # Only the content-addressed entries go to the store, never lock files.
+          find "$STORE_CACHE" -maxdepth 1 -type f \( -name '*.lock' -o -name '*.part*' \) -delete
+        fi
+    - name: Save vendored binaries to native artifact store
+      if: inputs.durable == 'true' && steps.restore.outputs.hit != 'true' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main')
+      uses: ./.github/actions/native-artifact-store
+      with:
+        mode: save
+        name: ${{ steps.store.outputs.name }}
+        path: ${{ steps.store.outputs.cache }}

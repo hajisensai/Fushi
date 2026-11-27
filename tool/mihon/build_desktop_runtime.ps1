@@ -1,8 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [string] $OutputDirectory,
-    [string] $DownloadCache = ""
+    [string] $OutputDirectory
 )
 
 $ErrorActionPreference = "Stop"
@@ -19,21 +18,19 @@ $serverRevision = $serverCommit.Substring(0, 7)
 $temurinVersion = "jdk-21.0.11+10"
 $temurinArchive = "OpenJDK21U-jdk_x64_windows_hotspot_21.0.11_10.zip"
 $temurinSha256 = "d3625e7cadf23787ea540229544b6e2ab494b3b54da1801879e583e1dfee0a64"
-$temurinUrl = "https://github.com/adoptium/temurin21-binaries/releases/download/$($temurinVersion.Replace('+', '%2B'))/$temurinArchive"
+$gradleVersion = "9.2.1"
 
 $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\.."))
 $overlayRoot = Join-Path $repositoryRoot "third_party\m_extension_server"
 $vendoredSourceRoot = Join-Path $overlayRoot "upstream_src"
+# 离线构建包（third_party/mihon_build/README.md）：JDK 归档、Gradle 发行包、Gradle 依赖缓存都是
+# tool/vendored_binaries.json 钉住的 vendored 件，构建期不连 adoptium / services.gradle.org /
+# Maven Central（2026-11-27 发版时 Maven Central 回 429 把 Linux 构建弄红，三端同一做法）。
+$offlineKit = Join-Path $repositoryRoot "third_party\mihon_build"
 $resolvedOutput = [IO.Path]::GetFullPath($OutputDirectory)
 if ([IO.Path]::GetPathRoot($resolvedOutput) -eq $resolvedOutput) {
     throw "Refusing to write a desktop runtime to a filesystem root."
 }
-
-if ([string]::IsNullOrWhiteSpace($DownloadCache)) {
-    $DownloadCache = Join-Path ([IO.Path]::GetTempPath()) "fushi-mihon-downloads"
-}
-$resolvedCache = [IO.Path]::GetFullPath($DownloadCache)
-[IO.Directory]::CreateDirectory($resolvedCache) | Out-Null
 
 $workingRoot = Join-Path ([IO.Path]::GetTempPath()) ("fushi-mihon-build-" + [Guid]::NewGuid().ToString("N"))
 [IO.Directory]::CreateDirectory($workingRoot) | Out-Null
@@ -106,10 +103,14 @@ try {
     }
     Copy-Tree (Join-Path $jogampRepo "org") (Join-Path $sourceRoot "fushi-offline-maven\jogamp\org")
 
-    $archivePath = Join-Path $resolvedCache $temurinArchive
-    if (-not (Test-Path -LiteralPath $archivePath)) {
-        Invoke-WebRequest -Uri $temurinUrl -OutFile $archivePath
-    }
+    # 构建用到的离线件一次取齐（已在盘上且哈希对得上就只算一遍 sha256；CI 由
+    # .github/actions/fetch-vendored-binaries 预先放好，这里只是校验）。
+    $python = if (Get-Command python3 -ErrorAction SilentlyContinue) { "python3" } else { "python" }
+    Invoke-Checked -Executable $python -Arguments @(
+        (Join-Path $repositoryRoot "tool\vendored_binaries.py"),
+        "fetch", "--group", "mihon-build", "--group", "mihon-jdk-windows-x64"
+    )
+    $archivePath = Join-Path $offlineKit "jdk\$temurinArchive"
     $actualSha256 = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($actualSha256 -ne $temurinSha256) {
         throw "Temurin archive checksum mismatch: expected $temurinSha256, got $actualSha256"
@@ -126,27 +127,46 @@ try {
     # can compile the classes but then fail every test class at execution time
     # when the host is Java 17. Use the same verified JDK that will be linked
     # into the app, so compilation, tests, jdeps and jlink share one toolchain.
-    $previousJavaHome = $env:JAVA_HOME
-    $previousProductRevision = $env:ProductRevision
+    #
+    # Gradle 发行包直接解开用（不走 gradlew.bat：wrapper 会去 services.gradle.org 下发行包）。
+    # 依赖只从 vendored 的只读依赖缓存取（Gradle 官方的 GRADLE_RO_DEP_CACHE：目录下是一份
+    # caches/modules-2 拷贝），GRADLE_USER_HOME 每次全新、--offline 禁止任何远端解析：缓存缺件
+    # 就当场红并点名缺的坐标，而不是悄悄联网。依赖变了按 third_party/mihon_build/README.md 重新打包。
+    # FUSHI_MIHON_GRADLE_ONLINE_HOME 只给重新打包用：指向一个空目录时联网解析并把缓存留在那里。
+    $gradleRoot = Join-Path $workingRoot "gradle-dist"
+    Expand-Archive -LiteralPath (Join-Path $offlineKit "gradle-$gradleVersion-bin.zip") -DestinationPath $gradleRoot
+    $gradleLauncher = Join-Path $gradleRoot "gradle-$gradleVersion\bin\gradle.bat"
+    $gradleArguments = @("-p", $sourceRoot, ":server:test", ":server:shadowJar", "--no-daemon")
+    $onlineHome = $env:FUSHI_MIHON_GRADLE_ONLINE_HOME
+    $savedEnvironment = @{}
+    foreach ($name in @("JAVA_HOME", "ProductRevision", "GRADLE_USER_HOME", "GRADLE_RO_DEP_CACHE")) {
+        $savedEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, "Process")
+    }
     try {
         $env:JAVA_HOME = $jdkRoot.FullName
         $env:ProductRevision = $serverRevision
-        Invoke-Checked -Executable (Join-Path $sourceRoot "gradlew.bat") -Arguments @(
-            "-p", $sourceRoot,
-            ":server:test",
-            ":server:shadowJar",
-            "--no-daemon"
-        )
-    } finally {
-        if ($null -eq $previousJavaHome) {
-            Remove-Item Env:JAVA_HOME -ErrorAction SilentlyContinue
+        if (-not [string]::IsNullOrWhiteSpace($onlineHome)) {
+            [IO.Directory]::CreateDirectory($onlineHome) | Out-Null
+            $env:GRADLE_USER_HOME = $onlineHome
+            Remove-Item Env:GRADLE_RO_DEP_CACHE -ErrorAction SilentlyContinue
         } else {
-            $env:JAVA_HOME = $previousJavaHome
+            $roDepCache = Join-Path $workingRoot "gradle-ro-dep-cache"
+            [IO.Directory]::CreateDirectory($roDepCache) | Out-Null
+            # Windows 10+ 自带 bsdtar（System32\tar.exe），认 .tar.gz。写全路径：从 Git Bash /
+            # CI 的 bash 步骤起的进程 PATH 里排在前面的是 Git 的 GNU tar，它把 `D:\...` 的盘符
+            # 当远程主机名（"Cannot connect to D: resolve failed"）。
+            $systemTar = Join-Path $env:SystemRoot "System32\tar.exe"
+            Invoke-Checked -Executable $systemTar -Arguments @(
+                "-xzf", (Join-Path $offlineKit "gradle-ro-dep-cache.tar.gz"), "-C", $roDepCache
+            )
+            $env:GRADLE_USER_HOME = Join-Path $workingRoot "gradle-home"
+            $env:GRADLE_RO_DEP_CACHE = $roDepCache
+            $gradleArguments += "--offline"
         }
-        if ($null -eq $previousProductRevision) {
-            Remove-Item Env:ProductRevision -ErrorAction SilentlyContinue
-        } else {
-            $env:ProductRevision = $previousProductRevision
+        Invoke-Checked -Executable $gradleLauncher -Arguments $gradleArguments
+    } finally {
+        foreach ($name in $savedEnvironment.Keys) {
+            [Environment]::SetEnvironmentVariable($name, $savedEnvironment[$name], "Process")
         }
     }
 
