@@ -6,6 +6,8 @@ import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart'
     show HomeTab, homeNavItemFor;
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart'
+    show FushiIcon;
 import 'package:integration_test/integration_test.dart';
 
 bool get screenshotsAreRequired =>
@@ -115,14 +117,18 @@ List<Finder> findPrimaryNavigationTargets() {
 /// 插入，见 home_page.dart 的 `homeActiveTabs`），按位置索引取 `navTargets[i]`
 /// 会随开关漂移（曾把 books 当成 dictionaries 驱动）；按 tab 身份取图标才稳定。
 /// 图标真值直接来自生产端 `homeNavItemFor`，不在测试里复制常量。
+///
+/// Apple 设计系统下目的地画的是 [FushiIcon]：它的 `icon` 字段保留原 IconData，
+/// 渲染出的内层 [Icon] 字形已换成 SF 替身（`fushiAppleIcon`），所以两种都认。
 Finder findNavTargetForTab(HomeTab tab) {
   final AdaptiveNavItem item = homeNavItemFor(tab);
   final Finder? root = _primaryNavigationRoot();
+  bool isTabIcon(IconData? data) =>
+      data != null && (data == item.icon || data == item.selectedIcon);
   final Finder icon = find.byWidgetPredicate(
     (Widget w) =>
-        w is Icon &&
-        w.icon != null &&
-        (w.icon == item.icon || w.icon == item.selectedIcon),
+        (w is Icon && isTabIcon(w.icon)) ||
+        (w is FushiIcon && isTabIcon(w.icon)),
   );
   if (root == null) {
     // 导航根还没挂载：返回一个此刻必空的 finder（调用方按「不可达」处理）。
@@ -136,6 +142,14 @@ Finder? _primaryNavigationRoot() {
   // tagged with [fushiMaterialNavKey] instead of the stock NavigationBar/Rail.
   final Finder materialNav = find.byKey(fushiMaterialNavKey);
   if (materialNav.evaluate().isNotEmpty) return materialNav;
+
+  // Apple design on a wide window: HomePage swaps the rail for the
+  // sidebar ↔ top tab bar shell (home_page.dart → AppleSidebarTabsShell), which
+  // has no fushiMaterialNavKey. Without this branch every itest that starts in
+  // the Apple design (e.g. a relaunch on a root where an earlier run switched
+  // the design) never sees Home and waitForHome() times out.
+  final Finder appleShell = find.byType(AppleSidebarTabsShell);
+  if (appleShell.evaluate().isNotEmpty) return appleShell;
 
   final Finder rail = find.byType(NavigationRail);
   if (rail.evaluate().isNotEmpty) return rail;
@@ -155,9 +169,11 @@ Finder? _primaryNavigationRoot() {
 }
 
 List<Finder> _navigationIconsInside(Finder navigationRoot) {
-  if (find.byKey(fushiMaterialNavKey).evaluate().isNotEmpty) {
-    // The custom rail also contains a menu button and branding. Only numbered
-    // destination focus targets represent tabs; arbitrary icons do not.
+  if (find.byKey(fushiMaterialNavKey).evaluate().isNotEmpty ||
+      find.byType(AppleSidebarTabsShell).evaluate().isNotEmpty) {
+    // The custom rail / Apple shell also contain a menu or collapse button,
+    // branding and (Apple) library sub-rows (`nav-rail-library-<id>`). Only
+    // numbered destination focus targets represent tabs; arbitrary icons do not.
     final RegExp destinationId = RegExp(r'^nav-(bar|rail)-\d+$');
     final Finder destinations = find.descendant(
       of: navigationRoot,

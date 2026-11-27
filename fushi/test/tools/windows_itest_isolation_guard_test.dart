@@ -77,6 +77,61 @@ if (($records.pid -join ',') -ne '12,16') { throw 'Recorded an unowned process' 
 Write-Output 'PASS ownership fixture: only new exact Debug launcher descendants'
 ''';
 
+// BUG-5601: the child's output is streamed to files with a cap, never buffered
+// in the runner. A real cmd child floods ~1.5 MB against a 64 KB cap: it must
+// exit (not block on a full pipe), the capture must stop at the cap with the
+// marker, and command.log must still get the [stdout] section.
+const String _pipeCaptureFixture = r'''
+$ErrorActionPreference = 'Stop'
+$tokens = $null
+$parseErrors = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile(
+  (Join-Path (Get-Location) 'tool/run_windows_itest.ps1'),
+  [ref]$tokens, [ref]$parseErrors)
+if ($parseErrors.Count -gt 0) { throw ($parseErrors | Out-String) }
+foreach ($functionName in @('Start-PipeCapture', 'Add-CapturedOutput')) {
+  $definition = $ast.Find({ param($node)
+    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+    $node.Name -eq $functionName
+  }, $true)
+  if ($null -eq $definition) { throw "Missing function $functionName" }
+  Invoke-Expression $definition.Extent.Text
+}
+$dir = Join-Path ([System.IO.Path]::GetTempPath()) ("fushi-pipe-" + [guid]::NewGuid())
+New-Item -ItemType Directory -Path $dir | Out-Null
+try {
+  $log = Join-Path $dir 'command.log'
+  'header' | Out-File -LiteralPath $log -Encoding UTF8
+  $psi = New-Object System.Diagnostics.ProcessStartInfo
+  $psi.FileName = 'cmd.exe'
+  $psi.Arguments = '/d /c "for /L %i in (1,1,60000) do @echo flood line %i"'
+  $psi.UseShellExecute = $false
+  $psi.RedirectStandardOutput = $true
+  $psi.RedirectStandardError = $true
+  $psi.CreateNoWindow = $true
+  $p = [System.Diagnostics.Process]::Start($psi)
+  $out = Join-Path $dir 'stdout.log'
+  $err = Join-Path $dir 'stderr.log'
+  $cap = 64KB
+  $t1 = Start-PipeCapture -Source $p.StandardOutput.BaseStream -Path $out -CapBytes $cap
+  $t2 = Start-PipeCapture -Source $p.StandardError.BaseStream -Path $err -CapBytes $cap
+  if (-not $p.WaitForExit(120000)) { throw 'child blocked: capture stopped draining' }
+  $t1.GetAwaiter().GetResult(); $t2.GetAwaiter().GetResult()
+  $size = (Get-Item -LiteralPath $out).Length
+  if ($size -lt $cap -or $size -gt ($cap + 200)) { throw "capture size $size not capped at $cap" }
+  if (-not ((Get-Content -LiteralPath $out -Raw) -match 'output capped at')) { throw 'missing cap marker' }
+  Add-CapturedOutput -LogPath $log -Header 'stdout' -CapturePath $out
+  Add-CapturedOutput -LogPath $log -Header 'stderr' -CapturePath $err
+  $text = Get-Content -LiteralPath $log -Raw
+  if (-not ($text -match '\[stdout\]\s+flood line 1\b')) { throw 'command.log lacks [stdout] section' }
+  if ($text -match '\[stderr\]') { throw 'empty stderr must not add a section' }
+  if ((Test-Path -LiteralPath $out) -or (Test-Path -LiteralPath $err)) { throw 'captures not removed' }
+  Write-Output "PASS pipe capture: capped=$size"
+} finally {
+  Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction SilentlyContinue
+}
+''';
+
 void main() {
   group('Windows integration test isolation contract', () {
     final String script = File('tool/run_windows_itest.ps1').readAsStringSync();
@@ -133,6 +188,18 @@ void main() {
       },
       skip: !Platform.isWindows,
     );
+
+    test('child output streams to capped files instead of runner memory', () {
+      expect(script, isNot(contains('ReadToEndAsync')));
+      final ProcessResult result = Process.runSync('powershell.exe', <String>[
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        _pipeCaptureFixture,
+      ]);
+      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+      expect(result.stdout, contains('PASS pipe capture'));
+    }, skip: !Platform.isWindows);
 
     test('records required process and runner evidence files', () {
       for (final String marker in <String>[
