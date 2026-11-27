@@ -12,6 +12,8 @@ import 'package:fushi_engine/anki_sync/anki_sync_session.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 
 import 'package:fushi/src/anki/anki_view_model.dart';
+import 'package:fushi/src/dictionary/dictionary_file_health.dart'
+    show DictionaryFileHealthMonitor;
 import 'package:fushi/src/anki/pending_mining/pending_mine_store.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mining_anki_repository.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -202,6 +204,7 @@ List<CtlRoute> buildDictionaryCtlRoutes(OpContext context) {
               installed: isRecommendedDictionaryInstalled(
                 model.dictionaries,
                 view.catalog[i],
+                fileHealth: DictionaryFileHealthMonitor.instance.value,
               ),
               isDefault: view.defaults.contains(i),
             ),
@@ -730,7 +733,11 @@ class _CtlDictionaryUpdateJobs {
                   results.add(_installResult(rec, 'cancelled'));
                   continue;
                 }
-                if (isRecommendedDictionaryInstalled(model.dictionaries, rec)) {
+                if (isRecommendedDictionaryInstalled(
+                  model.dictionaries,
+                  rec,
+                  fileHealth: DictionaryFileHealthMonitor.instance.value,
+                )) {
                   results.add(_installResult(rec, 'alreadyInstalled'));
                   continue;
                 }

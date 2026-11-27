@@ -15,10 +15,9 @@ Hibiki 的 Flutter 多平台主应用：日语 EPUB 阅读器，集成划词查�
   2. 系统 UI 配置（edge-to-edge、方向锁定、splash 颜色获取）
   3. 创建 `ProviderContainer`，立即 `runApp(FushiReaderApp())`
   4. 初始化错误日志服务（`ErrorLogService` / `DebugLogService`）
-  5. 初始化文件日志（`FlutterLogs`，仅移动端）
-  6. `FushiDicts.preloadTransforms()` 预加载词典变换表
-  7. `appModel.initialise()` 完成后 `isInitialised=true`，从 `LoadingPage` 跳转到 `HomePage`
-  8. 后台预热 WebView 引擎（仅移动端非低内存模式）
+  5. `FushiDicts.preloadTransforms()` 预加载词典变换表
+  6. `appModel.initialise()` 完成后 `isInitialised=true`，从 `LoadingPage` 跳转到 `HomePage`
+  7. 后台预热 WebView 引擎（仅移动端非低内存模式）
 - **弹窗词典入口**：`lib/popup_main.dart` -- `@pragma('vm:entry-point') popupMain()`
 - **悬浮词典入口**：`lib/floating_dict_main.dart`
 

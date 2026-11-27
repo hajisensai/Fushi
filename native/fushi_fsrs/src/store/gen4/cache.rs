@@ -404,8 +404,21 @@ pub const RWKV_FILL_FROM: Option<i64> = Some(6);
 pub const RWKV_FILL_KEY: &str = "rwkvLastFill";
 
 /// [Index::log_class_rep] 每个成员一次的点查（走 `log_id (col, id, k)`；查询计划测试用同一份）。
-pub(crate) const LOG_REP_SQL: &str =
-    "SELECT k, at, card FROM log_ix WHERE col = ?1 AND id = ?2 AND win = 1";
+/// 一张原值卡（`?2`）的 `win = 1` 日志行，按 (发生时刻, 操作主键)：(操作主键, 发生时刻, 规范日志 ID, 这个规范日志 ID 的别名类
+/// 里有没有别的成员)。规范 ID 与成员的口径同 [Index::canonical] / [Index::members]（`alias_ix`；不是 UUID 的引用不在表里，
+/// 就是它自己）。[Index::card_logs] 用；查询计划测试在 `cmd/training_tests.rs` 的 `fingerprint_tail_and_scan_statements_use_the_arrival_order`。
+pub(crate) const CARD_LOGS_SQL: &str = "SELECT l.k, l.at, COALESCE(a.canon, l.id), \
+     EXISTS(SELECT 1 FROM alias_ix x WHERE x.col = l.col AND x.canon = COALESCE(a.canon, l.id) \
+     AND x.canon != x.id) \
+     FROM log_ix l LEFT JOIN alias_ix a ON a.col = l.col AND a.id = l.id \
+     WHERE l.col = ?1 AND l.card = ?2 AND l.win = 1 ORDER BY l.at, l.k";
+
+/// 规范日志 ID `?2` 的别名类里每个成员的 `win = 1` 行：(操作主键, 发生时刻, 卡)。成员的口径同 [Index::members]
+/// （`alias_ix` 里 `canon = ?2 AND canon != id` 的，加上它自己）。[Index::log_class_rep] 用。
+pub(crate) const LOG_REP_SQL: &str = "SELECT k, at, card FROM log_ix WHERE col = ?1 AND id = ?2 AND win = 1 \
+     UNION ALL SELECT l.k, l.at, l.card FROM alias_ix a \
+     JOIN log_ix l ON l.col = a.col AND l.id = a.id AND l.win = 1 \
+     WHERE a.col = ?1 AND a.canon = ?2 AND a.canon != a.id";
 
 /// 一批碰到的东西里缓存层要重看的（[Index::settle] 边判边记，收尾时 [Index::refresh_caches] 用掉）。
 #[derive(Default, Debug)]
@@ -990,31 +1003,26 @@ impl<'t, 'c> Index<'t, 'c> {
         let mut reps: BTreeMap<Ref, (i64, i64)> = BTreeMap::new();
         let class = self.class_of(card)?;
         for m in &class {
-            let rows: Vec<(i64, Ref, i64)> = {
-                let mut stmt = self
-                    .t
-                    .conn()
-                    .prepare_cached(
-                        "SELECT k, id, at FROM log_ix WHERE col = ?1 AND card = ?2 AND win = 1 ORDER BY at, k",
-                    )
-                    .map_err(sql)?;
+            // 每条日志的规范日志 ID（[Index::canonical] 的同一张表：表里没有 = 它自己）与它的别名类里有没有别的成员
+            // （[Index::members] 的同一个条件 `canon != id`，走 `alias_canon`），与日志行同一条语句带出来：不再每条日志
+            // 各查三四次别名表（一张复习过几十次的卡就是上百次点查，BUG-5572）。
+            let rows: Vec<(i64, i64, Ref, bool)> = {
+                let mut stmt = self.t.conn().prepare_cached(CARD_LOGS_SQL).map_err(sql)?;
                 let rows = stmt
                     .query_map(params![self.col, m], |r| {
-                        Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+                        Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
                     })
                     .map_err(sql)?;
                 rows.collect::<Result<_, _>>().map_err(sql)?
             };
-            for (k, id, at) in rows {
-                let canon = self.canon(&id)?;
+            for (k, at, canon, aliased) in rows {
                 if reps.contains_key(&canon) {
                     continue;
                 }
-                let log_class = self.class_of(&canon)?;
-                let pick = if log_class.len() == 1 {
-                    Some((at, k))
+                let pick = if aliased {
+                    self.log_rep(&canon, &class)?
                 } else {
-                    self.log_rep(&log_class, &class)?
+                    Some((at, k))
                 };
                 if let Some(p) = pick {
                     reps.insert(canon, p);
@@ -1026,36 +1034,33 @@ impl<'t, 'c> Index<'t, 'c> {
         order.into_iter().map(|(_, k)| self.log_at(k)).collect()
     }
 
-    /// 一个规范日志 ID（类 [log_class]）的代表：全部份里操作号最小的；它落在 [cards] 里才返回 (发生时刻, 操作主键)。
-    fn log_rep(&self, log_class: &[Ref], cards: &[Ref]) -> Result<Option<(i64, i64)>, String> {
+    /// 规范日志 ID [canon] 的代表：全部份里操作号最小的；它落在 [cards] 里才返回 (发生时刻, 操作主键)。
+    fn log_rep(&self, canon: &Ref, cards: &[Ref]) -> Result<Option<(i64, i64)>, String> {
         Ok(self
-            .log_class_rep(log_class)?
+            .log_class_rep(canon)?
             .filter(|(_, _, card)| cards.contains(card))
             .map(|(k, at, _)| (at, k)))
     }
 
-    /// 一个规范日志 ID（类 [log_class]：规范 ID 与出现过的成员）的代表：类里每个成员的 `win = 1` 行（每个原值日志 ID
-    /// 操作号最小的那份）中操作号最小的那条，(操作主键, 发生时刻, 落在哪张卡上（原值）)；类里一条日志都没有 = None。
+    /// 规范日志 ID [canon]（必须已是规范 ID）的别名类（它自己与出现过的成员，[Index::class_of]）的代表：类里每个成员的
+    /// `win = 1` 行（每个原值日志 ID 操作号最小的那份）中操作号最小的那条，(操作主键, 发生时刻, 落在哪张卡上（原值）)；
+    /// 类里一条日志都没有 = None。全类的行一条语句取齐（[LOG_REP_SQL]），不先列成员再逐个查（迁移来的库里每条日志都
+    /// 带一条旧 ID 的别名，逐个查是每条日志四五次点查，BUG-5572）。
     /// 「按类取代表」只有这一份：缓存层的 [Index::card_logs]、`cmd/training.rs` 的 RWKV 尾巴都调它。
-    pub(crate) fn log_class_rep(
-        &self,
-        log_class: &[Ref],
-    ) -> Result<Option<(i64, i64, Ref)>, String> {
+    pub(crate) fn log_class_rep(&self, canon: &Ref) -> Result<Option<(i64, i64, Ref)>, String> {
         let mut best: Option<(crate::sync2::vv::OpId, i64, i64, Ref)> = None;
-        for id in log_class {
-            let mut stmt = self.t.conn().prepare_cached(LOG_REP_SQL).map_err(sql)?;
-            let rows: Vec<(i64, i64, Ref)> = stmt
-                .query_map(params![self.col, id], |r| {
-                    Ok((r.get(0)?, r.get(1)?, r.get(2)?))
-                })
-                .map_err(sql)?
-                .collect::<Result<_, _>>()
-                .map_err(sql)?;
-            for (k, at, card) in rows {
-                let op = self.t.id_of_key(k)?;
-                if best.as_ref().is_none_or(|b| op < b.0) {
-                    best = Some((op, k, at, card));
-                }
+        let mut stmt = self.t.conn().prepare_cached(LOG_REP_SQL).map_err(sql)?;
+        let rows: Vec<(i64, i64, Ref)> = stmt
+            .query_map(params![self.col, canon], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+            })
+            .map_err(sql)?
+            .collect::<Result<_, _>>()
+            .map_err(sql)?;
+        for (k, at, card) in rows {
+            let op = self.t.id_of_key(k)?;
+            if best.as_ref().is_none_or(|b| op < b.0) {
+                best = Some((op, k, at, card));
             }
         }
         Ok(best.map(|(_, k, at, card)| (k, at, card)))

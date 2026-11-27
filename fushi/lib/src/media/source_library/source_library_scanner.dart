@@ -55,6 +55,9 @@ import 'package:fushi_engine/media/torrent/download_save_root.dart'
     show isSourceIncomingPath;
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
+import 'package:fushi_engine/epub/epub_image_index_cache.dart'
+    show deleteEpubImageIndexCache;
+import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi_engine/epub/epub_parser.dart' show EpubParser;
 import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart';
 import 'package:fushi_engine/media/audiobook/book_audiobook_pairing.dart';
@@ -330,6 +333,10 @@ class _MangaVolumeTally {
   final List<String> failedPaths = <String>[];
   Object? firstError;
 
+  /// BUG-5569：书目录丢了、本轮按原条目从**页数变了的**原件就地重建的卷：阅读进度
+  /// 留在原条目上不重置，但可能对不上新内容，扫描结果里要提示出来。
+  final List<String> repairedFromChangedPaths = <String>[];
+
   /// 跑一卷：[body] 返回 true 计一卷入库，false 是「已在库 / 不是漫画」的正常
   /// 跳过；[DuplicateImportCancelledException] 同样是正常跳过；其它异常记为该卷
   /// 失败。
@@ -558,6 +565,71 @@ class _MangaSourceIdentity {
         return null;
     }
   }
+
+  /// BUG-5569：卷 [path] 已在索引里（本来源早先导进来的那一行），但它的书目录丢了：
+  /// 返回就地重建的目标与重建前的页数；没在索引里 / 行不归本来源 / 内容还在都返回
+  /// null（只是一次按 uid 的查询加几次 stat，不读原件、不下载）。书目录不在当前书库
+  /// 根下时不重建，抛出交给逐卷失败记账提示出来（理由同书籍的 `_repairBookContent`）。
+  Future<({MangaRebuildTarget target, int pageCount})?> repairFor(
+    String path,
+  ) async {
+    final String? uid = index.uidOf(relOf(path));
+    if (uid == null) return null;
+    final EpubBookRow? row = await db.getEpubBookByUid(uid);
+    if (row == null ||
+        row.sourceId != sourceId ||
+        row.format != BookFormat.manga.dbValue) {
+      return null;
+    }
+    if (await bookManagedContentIntact(
+      format: row.format,
+      extractDir: row.extractDir,
+      epubPath: row.epubPath,
+    )) {
+      return null;
+    }
+    final String base = await EpubStorage.baseDirectory();
+    if (!p.isWithin(p.canonicalize(base), p.canonicalize(row.extractDir))) {
+      throw StateError(
+        'content of "${row.title}" is missing and its book folder '
+        '(${row.extractDir}) is outside the library folder ($base); '
+        'not rebuilt',
+      );
+    }
+    return (
+      target: MangaRebuildTarget(
+        bookKey: row.bookKey,
+        extractDir: row.extractDir,
+      ),
+      pageCount: row.chapterCount,
+    );
+  }
+
+  /// 卷 [path] 的导入器跑完了，结果是书 [bookKey]：新导入就登记进索引并返回 true
+  /// （计一卷入库）；就地重建（[repair] 非 null）不是新入库，返回 false，页数变了的
+  /// 记进 [repairedFromChangedPaths]。
+  Future<bool> finish(
+    String path,
+    String bookKey,
+    ({MangaRebuildTarget target, int pageCount})? repair,
+  ) async {
+    if (repair == null) {
+      await record(path, bookKey);
+      return true;
+    }
+    final EpubBookRow? row = await db.getEpubBook(bookKey);
+    if (row != null && row.chapterCount != repair.pageCount) {
+      repairedFromChangedPaths.add(path);
+    }
+    debugPrint(
+      'SourceLibraryScanner rebuilt missing manga content of $bookKey '
+      'from $path',
+    );
+    return false;
+  }
+
+  /// 本轮就地重建、但页数与原条目不同的卷（[finish]）。
+  final List<String> repairedFromChangedPaths = <String>[];
 
   /// 卷 [path] 导入成了书 [bookKey]：登记进索引。
   Future<void> record(String path, String bookKey) async {
@@ -1096,6 +1168,14 @@ class _BookImportTally {
   int transcribeQueued = 0;
   final List<String> ambiguous;
 
+  /// BUG-5569：已入库、但受管内容（解包书目录 / 有声书持久目录里的音频与字幕）丢了，
+  /// 本轮按原条目从来源原件就地重建的书（来源路径）。
+  final List<String> repairedPaths = <String>[];
+
+  /// 其中重建所用的原件与当初入库的那份不一样（内容指纹变了 / 章节结构变了）的书：
+  /// 阅读进度与对齐保留在原条目上，但可能对不上新内容，扫描结果里要提示出来。
+  final List<String> repairedFromChangedPaths = <String>[];
+
   /// 导入 / 挂有声书时抛了异常的书（来源路径）与第一个失败原因。
   final List<String> failedPaths = <String>[];
   Object? firstError;
@@ -1192,8 +1272,8 @@ class _BookSourceIdentity {
       ? localSourceContentFingerprint(path)
       : _entryByPath[path]?.contentFingerprint;
 
-  /// 书 [path] 是不是本来源早先导入、且之后没被换过的那本：是就返回它的 bookKey。
-  String? knownBookKey(String path) {
+  /// 书 [path] 是不是本来源早先导入、且之后没被换过的那本：是就返回它的书行。
+  BookSourceRow? knownRow(String path) {
     final String rel = relOf(path);
     final String? uid = index.uidOf(rel);
     if (uid == null) return null;
@@ -1203,7 +1283,16 @@ class _BookSourceIdentity {
     if (fingerprint == null || index.signatureOf(rel) != fingerprint) {
       return null;
     }
-    return row.bookKey;
+    return row;
+  }
+
+  /// [path] 的内容指纹与索引里记下的那份**确实不同**（两边都有值且不等）：文件在
+  /// 入库之后被换过。拿不到其中任何一个都不算「变了」（旧版索引没有签名、传输不给
+  /// 元数据），只是不知道。
+  bool fingerprintChanged(String path) {
+    final String? recorded = index.signatureOf(relOf(path));
+    final String? now = fingerprintOf(path);
+    return recorded != null && now != null && recorded != now;
   }
 
   /// 不导入就能知道的书名（null = 要整本拿到手才知道，即远端 EPUB）。
@@ -1232,20 +1321,25 @@ class _BookSourceIdentity {
   void record(String path, ScanBookItem item, BookSourceRow row) {
     _rowByTitleKey[sanitizeTtuFilename(row.title)] = row;
     if (row.uid.isNotEmpty) _rowByUid[row.uid] = row;
-    final String fileName = p.basename(path);
-    final String format = item.isPdf
-        ? BookFormat.pdf.dbValue
-        : BookFormat.epub.dbValue;
-    if (row.uid.isEmpty ||
-        row.sourceId != sourceId ||
-        row.format != format ||
-        (!item.isPdf && row.epubPath != fileName)) {
-      return;
-    }
+    if (!owns(path, item, row)) return;
     final String rel = relOf(path);
     index.put(rel, row.uid);
     final String? fingerprint = fingerprintOf(path);
     if (fingerprint != null) index.putSignature(rel, fingerprint);
+  }
+
+  /// 书行 [row] 是不是本来源这个文件 [path] 导进来的（[record] 的认领判据）：
+  /// `sourceId` 是本来源、PDF / EPUB 格式一致，EPUB 还要源文件名一致。只有这样的行，
+  /// 扫描才有资格拿 [path] 去重建它丢了的受管内容（BUG-5569）——手动导入 / 别的来源
+  /// 的同名书不是这份原件的产物。
+  bool owns(String path, ScanBookItem item, BookSourceRow row) {
+    final String format = item.isPdf
+        ? BookFormat.pdf.dbValue
+        : BookFormat.epub.dbValue;
+    return row.uid.isNotEmpty &&
+        row.sourceId == sourceId &&
+        row.format == format &&
+        (item.isPdf || row.epubPath == p.basename(path));
   }
 
   /// 书行 [bookKey] 的瘦投影（刚导入 / 判重复后补进内存表用）。
@@ -1889,6 +1983,17 @@ class SourceLibraryScanner {
                 '${books.firstError}';
             partialError = partialError == null ? note : '$partialError; $note';
           }
+          // BUG-5569：受管内容丢了、按原条目从一份**变过的**原件重建的书：进度 / 对齐
+          // 留在原条目上不重置，但可能对不上新内容，必须让用户看得见。
+          if (books.repairedFromChangedPaths.isNotEmpty) {
+            final String note =
+                'Rebuilt missing content of '
+                '${books.repairedFromChangedPaths.length} book(s) from a source '
+                'file that changed since import; saved reading positions may '
+                'not match. First: '
+                '${p.basename(books.repairedFromChangedPaths.first)}';
+            partialError = partialError == null ? note : '$partialError; $note';
+          }
           // 与视频分支对称：入库后把分卷按系列持久归组（BUG-3441）。不留到书架页
           // 打开才归——本机作为互联 host / 合集云同步源时，对端拿到的归属来自这里。
           await BookSeriesGrouper(_db).groupAll();
@@ -2044,6 +2149,16 @@ class SourceLibraryScanner {
                 '${manga.firstError}';
             partialError = partialError == null ? note : '$partialError; $note';
           }
+          // BUG-5569：同书籍分支，页数变了的就地重建要让用户看得见。
+          if (manga.repairedFromChangedPaths.isNotEmpty) {
+            final String note =
+                'Rebuilt missing content of '
+                '${manga.repairedFromChangedPaths.length} manga volume(s) from '
+                'a source whose page count changed since import; saved reading '
+                'positions may not match. First: '
+                '${p.basename(manga.repairedFromChangedPaths.first)}';
+            partialError = partialError == null ? note : '$partialError; $note';
+          }
           await BookSeriesGrouper(_db).groupAll();
         case SourceLibraryKind.music:
           // 音乐来源在进 try 之前就分流给 [_scanMusicSource]，走不到这里。
@@ -2152,8 +2267,19 @@ class SourceLibraryScanner {
       // 只接重复信号，任何别的异常（坏 EPUB、下载中断）直接跳出：后面的书全不导，
       // 远端来源的临时目录也不删。
       try {
-        String? bookKey = identity.knownBookKey(item.bookPath);
-        if (bookKey == null) {
+        String? bookKey;
+        final BookSourceRow? known = identity.knownRow(item.bookPath);
+        if (known != null) {
+          bookKey = known.bookKey;
+          // BUG-5569：认出是已入库的书不等于它的受管内容还在。
+          await _repairBookContent(
+            item,
+            known,
+            fs,
+            tally,
+            sourceChanged: false,
+          );
+        } else {
           final String? title = await _BookSourceIdentity.predictTitle(
             item,
             fs.isLocal,
@@ -2163,6 +2289,17 @@ class SourceLibraryScanner {
               : identity.rowForTitle(title);
           if (taken != null) {
             // 导入器用 DuplicatePolicy.skip() 也会判它重复：结论一样，不开包。
+            // 重建排在 [record] 之前：它要看的是「这份原件与入库时那份是否同一份」，
+            // record 会把索引里的指纹换成现在的；重建失败时也不记，下一轮重试。
+            if (identity.owns(item.bookPath, item, taken)) {
+              await _repairBookContent(
+                item,
+                taken,
+                fs,
+                tally,
+                sourceChanged: identity.fingerprintChanged(item.bookPath),
+              );
+            }
             identity.record(item.bookPath, item, taken);
             bookKey = taken.bookKey;
             debugPrint(
@@ -2250,8 +2387,8 @@ class SourceLibraryScanner {
     // 每本书各用一个临时目录、导完即删——整轮共用一个的话，整库的书要在临时盘上
     // 留到扫描结束。
     Directory? bookTmp;
+    String localBook = item.bookPath;
     try {
-      String localBook = item.bookPath;
       if (!fs.isLocal) {
         bookTmp = createSourceScanTempDir('m1c_scan_books_');
         localBook = await fs.copyToLocal(item.bookPath, bookTmp.path);
@@ -2293,6 +2430,18 @@ class SourceLibraryScanner {
       final String existingKey = sanitizeTtuFilename(e.title);
       final BookSourceRow? existing = await identity.rowOf(existingKey);
       if (existing != null) {
+        // BUG-5569：远端 EPUB 要下载下来才知道标题，走到这里时原件已在本地临时盘上，
+        // 受管内容丢了就直接拿它重建（不再下第二遍）。
+        if (identity.owns(item.bookPath, item, existing)) {
+          await _repairBookContent(
+            item,
+            existing,
+            fs,
+            tally,
+            sourceChanged: identity.fingerprintChanged(item.bookPath),
+            localBookPath: localBook,
+          );
+        }
         bookKey = existingKey;
         identity.record(item.bookPath, item, existing);
       }
@@ -2304,6 +2453,217 @@ class SourceLibraryScanner {
       _deleteScanTempDir(bookTmp);
     }
     return bookKey;
+  }
+
+  /// BUG-5569：已入库的书 [row]（本来源这个文件 [item] 导进来的）受管内容丢了时，拿
+  /// 来源原件按**原条目**就地重建，不删行、不重导：bookKey / uid / 进度 / 统计 / 合集 /
+  /// 有声书对齐全挂在原行上，原样保留。内容还在就什么都不做（只是几次 stat，不读原件、
+  /// 不下载）。
+  ///
+  /// 「丢了」只认阅读器开书必需的产物（[bookManagedContentIntact]）。书目录不在当前书库
+  /// 根下（旧数据根、没 rebase 的路径）不重建：往那里写只会把书散落到库外，抛出交给逐本
+  /// 失败记账，让扫描结果提示出来。
+  ///
+  /// [sourceChanged]：原件的内容指纹与入库时记下的不同。重建出来的章节结构与原行不同
+  /// 也算变了。两者都只提示（[_BookImportTally.repairedFromChangedPaths]），不重置
+  /// 进度——内容已经没了，拿现有原件重建是这本书还能打开的唯一办法。
+  ///
+  /// [localBookPath]：原件已在本地的副本（远端 EPUB 判重复时刚下载的）；null 时远端
+  /// 来源按需下载到本书自己的临时目录、用完即删。
+  Future<void> _repairBookContent(
+    ScanBookItem item,
+    BookSourceRow row,
+    SourceFileSystem fs,
+    _BookImportTally tally, {
+    required bool sourceChanged,
+    String? localBookPath,
+  }) async {
+    if (await bookManagedContentIntact(
+      format: row.format,
+      extractDir: row.extractDir,
+      epubPath: row.epubPath,
+    )) {
+      return;
+    }
+    final String base = await EpubStorage.baseDirectory();
+    if (!p.isWithin(p.canonicalize(base), p.canonicalize(row.extractDir))) {
+      throw StateError(
+        'content of "${row.title}" is missing and its book folder '
+        '(${row.extractDir}) is outside the library folder ($base); '
+        'not rebuilt',
+      );
+    }
+    final EpubBookRow? full = await _db.getEpubBook(row.bookKey);
+    if (full == null) return;
+    Directory? tmp;
+    try {
+      String local = localBookPath ?? item.bookPath;
+      if (localBookPath == null && !fs.isLocal) {
+        tmp = createSourceScanTempDir('m1c_scan_book_repair_');
+        local = await fs.copyToLocal(item.bookPath, tmp.path);
+      }
+      final bool structureChanged;
+      if (item.isPdf) {
+        final ({int pageCount, String? coverRel}) rebuilt =
+            await PdfImporter.rebuildBookDirInPlace(
+              filePath: local,
+              extractDir: row.extractDir,
+            );
+        structureChanged = rebuilt.pageCount != full.chapterCount;
+        await _db.updateEpubBookChapters(
+          row.bookKey,
+          chapterCount: rebuilt.pageCount,
+          chaptersJson: full.chaptersJson,
+        );
+        if (full.coverPath == null && rebuilt.coverRel != null) {
+          await _db.updateEpubBookContentPaths(
+            row.bookKey,
+            coverPath: rebuilt.coverRel,
+          );
+        }
+      } else {
+        // 插图索引缓存按解压目录路径记，跟着旧树一起作废（重建后路径不变）。
+        await deleteEpubImageIndexCache(row.extractDir);
+        final ({int chapterCount, String chaptersJson, String? coverPath})
+        rebuilt = await EpubImporter.rebuildExtractedInPlace(
+          epubFilePath: local,
+          extractDir: row.extractDir,
+        );
+        structureChanged =
+            rebuilt.chapterCount != full.chapterCount ||
+            !sameChapterHrefs(full.chaptersJson, rebuilt.chaptersJson);
+        // 章节元数据必须与盘上的新树一致（阅读器按它定位章节文件）；原件没变时逐字
+        // 相同，只有字数口径可能升到当前版本。
+        await _db.updateEpubBookChapters(
+          row.bookKey,
+          chapterCount: rebuilt.chapterCount,
+          chaptersJson: rebuilt.chaptersJson,
+        );
+        // 封面列只在原来为空时补：用户换过 / 刮削过的封面不被原件的封面盖掉。
+        if (full.coverPath == null && rebuilt.coverPath != null) {
+          await _db.updateEpubBookContentPaths(
+            row.bookKey,
+            coverPath: rebuilt.coverPath,
+          );
+        }
+      }
+      tally.repairedPaths.add(item.bookPath);
+      if (sourceChanged || structureChanged) {
+        tally.repairedFromChangedPaths.add(item.bookPath);
+      }
+      debugPrint(
+        'SourceLibraryScanner rebuilt missing content of ${row.title} '
+        'from ${item.bookPath} (sourceChanged=$sourceChanged, '
+        'structureChanged=$structureChanged)',
+      );
+    } finally {
+      _deleteScanTempDir(tmp);
+    }
+  }
+
+  /// BUG-5569：书 [bookKey] 已挂着有声书 [existing]，但它持久目录里的音频 / 字幕副本
+  /// 丢了：拿 [item] 配上的来源原件按原条目补回，不重挂、不清对齐。都还在就什么都
+  /// 不做（判据在下载之前，网络来源重扫零音频流量）。
+  ///
+  /// 只补**这本书当初挂上的那一组**：库里每个音频副本都要与原件按位对得上名字
+  /// （[audiobookPersistedNameMatches]），字幕副本丢了时还要原件字幕同名。对不上（用户
+  /// 手动重匹配过 / 原件换了一套）就不猜，抛出交给逐本失败记账提示出来。丢的文件不在
+  /// 这本书的持久目录里（引用导入的用户原件）同样不碰。
+  ///
+  /// - 只丢音频：[replaceAudiobookAudio]，还在的副本原地零拷贝保留，只补丢的那几个；
+  ///   补回的副本落回原名，音频清单不变，cue 与播放进度都不动；
+  /// - 字幕副本也丢了：[alignAndPersistAudiobook] 用原件字幕重新对齐（与首次挂载同一
+  ///   函数，同一份字幕得到同一组 cue），匹配率照旧写进有声书健康度；cue 条数与原来
+  ///   不同说明字幕变了，记进 [_BookImportTally.repairedFromChangedPaths] 提示。
+  Future<void> _repairAudiobookFiles(
+    ScanBookItem item, {
+    required String bookKey,
+    required Audiobook existing,
+    required AudiobookRepository audiobookRepo,
+    required SourceFileSystem fs,
+    required _BookImportTally tally,
+  }) async {
+    final List<String>? stored = existing.audioPaths;
+    if (existing.audioRoot != null || stored == null || stored.isEmpty) return;
+    final String alignment = existing.alignmentPath;
+    final bool alignmentMissing =
+        alignment.isNotEmpty && !await File(alignment).exists();
+    final List<bool> audioMissing = <bool>[
+      for (final String path in stored) !await File(path).exists(),
+    ];
+    if (!alignmentMissing && !audioMissing.contains(true)) return;
+
+    final String label = p.basename(item.bookPath);
+    final Directory persistDir = await AudiobookStorage.ensurePersistDir(
+      bookKey,
+    );
+    final String persistRoot = p.canonicalize(persistDir.path);
+    bool managed(String path) => p.isWithin(persistRoot, p.canonicalize(path));
+    if ((alignmentMissing && !managed(alignment)) ||
+        <String>[
+          for (int i = 0; i < stored.length; i++)
+            if (audioMissing[i]) stored[i],
+        ].any((String path) => !managed(path))) {
+      throw StateError(
+        'audiobook files of $label are missing outside the app-managed '
+        'folder; not rebuilt',
+      );
+    }
+    bool sameAudio = stored.length == item.audioPaths.length;
+    for (int i = 0; sameAudio && i < stored.length; i++) {
+      sameAudio = audiobookPersistedNameMatches(stored[i], item.audioPaths[i]);
+    }
+    final String? subtitle = item.subtitlePath;
+    if (!sameAudio ||
+        (alignmentMissing &&
+            (subtitle == null ||
+                !audiobookPersistedNameMatches(alignment, subtitle)))) {
+      throw StateError(
+        'audiobook files of $label are missing and the source files no '
+        'longer match the attached ones; not rebuilt (re-attach manually)',
+      );
+    }
+
+    final List<String> fetch = <String>[
+      if (alignmentMissing) subtitle!,
+      for (int i = 0; i < stored.length; i++)
+        if (audioMissing[i]) item.audioPaths[i],
+    ];
+    final int cuesBefore = (await audiobookRepo.cuesForBook(bookKey)).length;
+    bool changed = false;
+    await _withLocalCopies(fs, fetch, (List<String> local) async {
+      int next = 0;
+      final String? localSubtitle = alignmentMissing ? local[next++] : null;
+      // 还在的副本原样传回去：持久目录里的源在同步原语里是零拷贝、原地不动。
+      final List<String> audio = <String>[
+        for (int i = 0; i < stored.length; i++)
+          audioMissing[i] ? local[next++] : stored[i],
+      ];
+      if (localSubtitle != null) {
+        final AudiobookAlignmentResult result = await alignAndPersistAudiobook(
+          db: _db,
+          audiobookRepo: audiobookRepo,
+          bookKey: bookKey,
+          title: p.basenameWithoutExtension(item.bookPath),
+          subtitlePath: localSubtitle,
+          audioPaths: audio,
+        );
+        changed = result.cueCount != cuesBefore;
+      } else {
+        await replaceAudiobookAudio(
+          db: _db,
+          bookKey: bookKey,
+          audioPaths: audio,
+        );
+      }
+    });
+    tally.repairedPaths.add(item.bookPath);
+    if (changed) tally.repairedFromChangedPaths.add(item.bookPath);
+    debugPrint(
+      'SourceLibraryScanner restored missing audiobook files of $label '
+      '(subtitle=${alignmentMissing ? 'realigned' : 'kept'}, '
+      'audio=${audioMissing.where((bool m) => m).length} file(s))',
+    );
   }
 
   /// 一本书失败之后：来源本身还连得上吗？本地来源恒为 true；远端重新列一次来源根
@@ -2351,7 +2711,19 @@ class SourceLibraryScanner {
   }) async {
     if (!item.isAudiobook && !item.hasAudioWithoutSubtitle) return;
     final AudiobookRepository audiobookRepo = AudiobookRepository(_db);
-    if (await audiobookRepo.findByBookKey(bookKey) != null) return;
+    final Audiobook? existing = await audiobookRepo.findByBookKey(bookKey);
+    if (existing != null) {
+      // 已挂过：不重挂、不覆盖用户手动重匹配；只把丢了的持久副本补回（BUG-5569）。
+      await _repairAudiobookFiles(
+        item,
+        bookKey: bookKey,
+        existing: existing,
+        audiobookRepo: audiobookRepo,
+        fs: fs,
+        tally: tally,
+      );
+      return;
+    }
     if (item.isAudiobook) {
       await _withLocalSidecars(
         item,
@@ -2400,8 +2772,20 @@ class SourceLibraryScanner {
     ScanBookItem item,
     SourceFileSystem fs,
     Future<T> Function(String subtitlePath, List<String> audioPaths) body,
+  ) => _withLocalCopies(fs, <String>[
+    item.subtitlePath!,
+    ...item.audioPaths,
+  ], (List<String> local) => body(local.first, local.sublist(1)));
+
+  /// 让 [body] 拿到来源文件 [paths] 的本地路径（顺序一一对应）：本地来源原样透传；
+  /// 网络来源逐个下到同一个临时目录下各自的子目录（理由见 [_withLocalSidecars]），
+  /// [body] 结束后（无论成败）删掉。
+  static Future<T> _withLocalCopies<T>(
+    SourceFileSystem fs,
+    List<String> paths,
+    Future<T> Function(List<String> local) body,
   ) async {
-    if (fs.isLocal) return body(item.subtitlePath!, item.audioPaths);
+    if (fs.isLocal) return body(paths);
     final Directory tmp = createSourceScanTempDir('m1c_scan_book_sidecars_');
     int slot = 0;
     Future<String> download(String remote) {
@@ -2411,11 +2795,10 @@ class SourceLibraryScanner {
     }
 
     try {
-      final String subtitle = await download(item.subtitlePath!);
-      final List<String> audio = <String>[
-        for (final String remote in item.audioPaths) await download(remote),
+      final List<String> local = <String>[
+        for (final String remote in paths) await download(remote),
       ];
-      return await body(subtitle, audio);
+      return await body(local);
     } finally {
       try {
         tmp.deleteSync(recursive: true);
@@ -2476,6 +2859,7 @@ class SourceLibraryScanner {
       }
       await _retireFlattenedSeries(plan, identity, tally);
     } finally {
+      tally.repairedFromChangedPaths.addAll(identity.repairedFromChangedPaths);
       await identity.index.save(_db);
     }
     return tally;
@@ -2537,7 +2921,9 @@ class SourceLibraryScanner {
     for (final ScanMangaItem item in plan.mangas) {
       final String path = item.mokuroPath;
       await tally.attempt(path, () async {
-        if (id.isIndexed(path)) return false;
+        final ({MangaRebuildTarget target, int pageCount})? repair = await id
+            .repairFor(path);
+        if (repair == null && id.isIndexed(path)) return false;
         // 标题与导入器同一派生（mokuro 顶层 title/volume，再退化文件名），显式传给
         // 导入器，判据与落库用的是同一个标题。
         // mokuro 旧版 `.html` manifest 没有 JSON 顶层，元数据按路径派生（与导入器
@@ -2548,7 +2934,9 @@ class SourceLibraryScanner {
               : _decodeMokuroRoot(await File(path).readAsString()),
           p.basename(path),
         );
-        final DuplicatePolicy? policy = await id.policyFor(path, title);
+        final DuplicatePolicy? policy = repair != null
+            ? const DuplicatePolicy.skip()
+            : await id.policyFor(path, title);
         if (policy == null) return false;
         final String bookKey = await MangaImporter.importFromMokuroPath(
           db: _db,
@@ -2556,9 +2944,9 @@ class SourceLibraryScanner {
           title: title,
           sourceId: id.sourceId,
           policy: policy,
+          rebuildInto: repair?.target,
         );
-        await id.record(path, bookKey);
-        return true;
+        return await id.finish(path, bookKey, repair);
       });
     }
     for (final ScanMangaArchiveItem item in plan.mangaArchives) {
@@ -2566,30 +2954,40 @@ class SourceLibraryScanner {
       await tally.attempt(path, () async {
         // 先查索引 / 负向表 / 重复判据（都只读库），全部放行才开包：已在库的卷每次
         // 重扫都整包解压一遍、文字 EPUB 每次整本解析一遍，正是这几步要挡掉的。
-        if (id.isIndexed(path) || id.isRejected(path)) return false;
+        final ({MangaRebuildTarget target, int pageCount})? repair = await id
+            .repairFor(path);
+        if (repair == null && (id.isIndexed(path) || id.isRejected(path))) {
+          return false;
+        }
         final String title = p.basenameWithoutExtension(path);
-        final DuplicatePolicy? policy = await id.policyFor(path, title);
+        final DuplicatePolicy? policy = repair != null
+            ? const DuplicatePolicy.skip()
+            : await id.policyFor(path, title);
         if (policy == null) return false;
         final String? bookKey = await _importMangaCarrierFile(
           localPath: path,
           title: title,
           sourceId: id.sourceId,
           policy: policy,
+          rebuildInto: repair?.target,
         );
         if (bookKey == null) {
           id.reject(path);
           return false;
         }
-        await id.record(path, bookKey);
-        return true;
+        return await id.finish(path, bookKey, repair);
       });
     }
     for (final ScanMangaFolderItem item in plan.mangaFolders) {
       final String path = item.folderPath;
       await tally.attempt(path, () async {
-        if (id.isIndexed(path)) return false;
+        final ({MangaRebuildTarget target, int pageCount})? repair = await id
+            .repairFor(path);
+        if (repair == null && id.isIndexed(path)) return false;
         final String title = item.series?.title ?? p.basename(path);
-        final DuplicatePolicy? policy = await id.policyFor(path, title);
+        final DuplicatePolicy? policy = repair != null
+            ? const DuplicatePolicy.skip()
+            : await id.policyFor(path, title);
         if (policy == null) return false;
         final String bookKey = await MangaImporter.importFromImageFolder(
           db: _db,
@@ -2597,9 +2995,9 @@ class SourceLibraryScanner {
           title: title,
           sourceId: id.sourceId,
           policy: policy,
+          rebuildInto: repair?.target,
         );
-        await id.record(path, bookKey);
-        return true;
+        return await id.finish(path, bookKey, repair);
       });
     }
   }
@@ -2615,11 +3013,16 @@ class SourceLibraryScanner {
   ///
   /// 返回 null 表示「扩展名对得上但内容不是漫画」（词典 `.zip`、文字 `.epub`）：
   /// 漫画来源里混进这种文件不算导入失败，跳过即可，与其它非漫画文件同样处理。
+  ///
+  /// [rebuildInto]（BUG-5569）：把这一卷就地重建进已入库的那一行。逐页栅格化的 PDF
+  /// 卷还不支持（它先落成一本 PDF 书再转成漫画，两步都按新行写），抛出交给逐卷失败
+  /// 记账提示；内容已不是漫画时同样抛出，不把它当「跳过」。
   Future<String?> _importMangaCarrierFile({
     required String localPath,
     required String title,
     required int sourceId,
     required DuplicatePolicy policy,
+    MangaRebuildTarget? rebuildInto,
   }) async {
     final bool isImageArchive =
         mangaArchiveNeedsContentProbe(localPath) &&
@@ -2648,8 +3051,15 @@ class SourceLibraryScanner {
               MangaSevenZipExtractor(
                 passwords: const StoredOnlyArchivePasswords(),
               ),
+          rebuildInto: rebuildInto,
         );
       case ImportCarrier.pdf:
+        if (rebuildInto != null) {
+          throw StateError(
+            'content of ${p.basename(localPath)} is missing; PDF manga volumes '
+            'cannot be rebuilt in place yet (remove and re-import it)',
+          );
+        }
         return importMangaFromPdf(
           db: _db,
           pdfPath: localPath,
@@ -2664,6 +3074,12 @@ class SourceLibraryScanner {
       case ImportCarrier.mangaAudioPackage:
       case ImportCarrier.epub:
       case ImportCarrier.text:
+        if (rebuildInto != null) {
+          throw StateError(
+            'content of ${p.basename(localPath)} is missing and the source is '
+            'no longer a manga volume ($carrier); not rebuilt',
+          );
+        }
         debugPrint(
           'SourceLibraryScanner skip non-manga file in manga source '
           '($carrier): $localPath',
@@ -2717,9 +3133,16 @@ class SourceLibraryScanner {
     required _MangaSourceIdentity id,
     required SourceFileSystem fs,
   }) async {
-    if (id.isIndexed(item.mokuroPath)) return false;
+    final ({MangaRebuildTarget target, int pageCount})? repair = await id
+        .repairFor(item.mokuroPath);
+    if (repair == null && id.isIndexed(item.mokuroPath)) return false;
     if (isMokuroLegacyHtmlPath(item.mokuroPath, context: p.url)) {
-      return _importRemoteLegacyMokuroVolume(item: item, id: id, fs: fs);
+      return _importRemoteLegacyMokuroVolume(
+        item: item,
+        id: id,
+        fs: fs,
+        repair: repair,
+      );
     }
     final String mokuroName = sourceEntryBasename(item.mokuroPath);
     final String jsonStr = await fs.readText(item.mokuroPath);
@@ -2727,7 +3150,9 @@ class SourceLibraryScanner {
       _decodeMokuroRoot(jsonStr),
       mokuroName,
     );
-    final DuplicatePolicy? policy = await id.policyFor(item.mokuroPath, title);
+    final DuplicatePolicy? policy = repair != null
+        ? const DuplicatePolicy.skip()
+        : await id.policyFor(item.mokuroPath, title);
     if (policy == null) return false;
     final MokuroPayload payload = parseMokuro(jsonStr);
     if (payload.images.isEmpty) {
@@ -2821,9 +3246,9 @@ class SourceLibraryScanner {
         policy: policy,
         // 远端镜像临时目录，finally 里整个删掉：页图直接移进书目录。
         pageSource: MangaPageSource.disposable,
+        rebuildInto: repair?.target,
       );
-      await id.record(item.mokuroPath, bookKey);
-      return true;
+      return await id.finish(item.mokuroPath, bookKey, repair);
     } finally {
       try {
         tmp.deleteSync(recursive: true);
@@ -2839,6 +3264,7 @@ class SourceLibraryScanner {
     required ScanMangaItem item,
     required _MangaSourceIdentity id,
     required SourceFileSystem fs,
+    ({MangaRebuildTarget target, int pageCount})? repair,
   }) async {
     final String htmlName = sourceEntryBasename(item.mokuroPath);
     final String parentDir = _remoteParentDir(item.mokuroPath);
@@ -2847,7 +3273,9 @@ class SourceLibraryScanner {
       legacyMokuroRoot(item.mokuroPath, context: p.url),
       htmlName,
     );
-    final DuplicatePolicy? policy = await id.policyFor(item.mokuroPath, title);
+    final DuplicatePolicy? policy = repair != null
+        ? const DuplicatePolicy.skip()
+        : await id.policyFor(item.mokuroPath, title);
     if (policy == null) return false;
     final String prefix = parentDir.isEmpty ? '' : '$parentDir/';
     final Directory tmp = createSourceScanTempDir('m1c_scan_manga_legacy_');
@@ -2878,9 +3306,9 @@ class SourceLibraryScanner {
         policy: policy,
         // 远端镜像临时目录，finally 里整个删掉：页图直接移进书目录。
         pageSource: MangaPageSource.disposable,
+        rebuildInto: repair?.target,
       );
-      await id.record(item.mokuroPath, bookKey);
-      return true;
+      return await id.finish(item.mokuroPath, bookKey, repair);
     } finally {
       try {
         tmp.deleteSync(recursive: true);
@@ -2901,9 +3329,15 @@ class SourceLibraryScanner {
     required SourceFileSystem fs,
   }) async {
     final String path = item.archivePath;
-    if (id.isIndexed(path) || id.isRejected(path)) return false;
+    final ({MangaRebuildTarget target, int pageCount})? repair = await id
+        .repairFor(path);
+    if (repair == null && (id.isIndexed(path) || id.isRejected(path))) {
+      return false;
+    }
     final String title = p.basenameWithoutExtension(sourceEntryBasename(path));
-    final DuplicatePolicy? policy = await id.policyFor(path, title);
+    final DuplicatePolicy? policy = repair != null
+        ? const DuplicatePolicy.skip()
+        : await id.policyFor(path, title);
     if (policy == null) return false;
     final Directory tmp = createSourceScanTempDir('m1c_scan_manga_archive_');
     try {
@@ -2917,14 +3351,14 @@ class SourceLibraryScanner {
         title: title,
         sourceId: id.sourceId,
         policy: policy,
+        rebuildInto: repair?.target,
       );
       if (bookKey == null) {
         // 指纹取远端列目录给的元数据：下次列出来没变就不再下载这个包。
         id.reject(path);
         return false;
       }
-      await id.record(path, bookKey);
-      return true;
+      return await id.finish(path, bookKey, repair);
     } finally {
       try {
         tmp.deleteSync(recursive: true);
@@ -2939,10 +3373,14 @@ class SourceLibraryScanner {
     required _MangaSourceIdentity id,
     required SourceFileSystem fs,
   }) async {
-    if (id.isIndexed(item.folderPath)) return false;
+    final ({MangaRebuildTarget target, int pageCount})? repair = await id
+        .repairFor(item.folderPath);
+    if (repair == null && id.isIndexed(item.folderPath)) return false;
     final String title =
         item.series?.title ?? sourceEntryBasename(item.folderPath);
-    final DuplicatePolicy? policy = await id.policyFor(item.folderPath, title);
+    final DuplicatePolicy? policy = repair != null
+        ? const DuplicatePolicy.skip()
+        : await id.policyFor(item.folderPath, title);
     if (policy == null) return false;
     final Directory tmp = createSourceScanTempDir('m1c_scan_manga_folder_');
     try {
@@ -2959,9 +3397,9 @@ class SourceLibraryScanner {
         policy: policy,
         // 远端镜像临时目录，finally 里整个删掉：页图直接移进书目录。
         pageSource: MangaPageSource.disposable,
+        rebuildInto: repair?.target,
       );
-      await id.record(item.folderPath, bookKey);
-      return true;
+      return await id.finish(item.folderPath, bookKey, repair);
     } finally {
       try {
         tmp.deleteSync(recursive: true);
@@ -3961,4 +4399,62 @@ Future<bool> _isDeadLocalPath(String? path) async {
   if (path == null || path.isEmpty || path.contains('://')) return false;
   if (!p.isAbsolute(path)) return false;
   return !await File(path).exists();
+}
+
+/// BUG-5569：一本已入库书的受管内容是否还在——只认阅读器开书必需的产物：书目录在且
+/// 非空；EPUB 还要有 `META-INF/container.xml`（重新解析解压树的入口），PDF / 漫画还要
+/// 有书目录里的 `extractDir/epubPath`（`document.pdf` / `manga.json`）。封面不算：它有
+/// 大小写不敏感的兜底解析，还可能被用户换成别处的文件。[extractDir] 为空或是别的格式
+/// 一律算「在」（没有可判、可重建的受管目录）。
+@visibleForTesting
+Future<bool> bookManagedContentIntact({
+  required String format,
+  required String extractDir,
+  required String epubPath,
+}) async {
+  if (extractDir.isEmpty) return true;
+  final bool isEpub = format == BookFormat.epub.dbValue;
+  final bool isFileBook =
+      format == BookFormat.pdf.dbValue || format == BookFormat.manga.dbValue;
+  if (!isEpub && !isFileBook) return true;
+  if (!await EpubStorage.bookDirExists(extractDir)) return false;
+  final String entry = isEpub
+      ? p.join(extractDir, 'META-INF', 'container.xml')
+      : p.join(extractDir, epubPath);
+  return File(entry).exists();
+}
+
+/// [a] 与 [b] 两份 `chaptersJson` 的章节 href 序列是否逐个相同（字数等别的字段不比）。
+/// 解析不了的一律算不同。
+@visibleForTesting
+bool sameChapterHrefs(String a, String b) {
+  List<String>? hrefs(String json) {
+    try {
+      final Object? decoded = jsonDecode(json);
+      if (decoded is! List) return null;
+      return <String>[
+        for (final Object? e in decoded)
+          if (e is Map) '${e['href']}',
+      ];
+    } catch (_) {
+      return null;
+    }
+  }
+
+  final List<String>? x = hrefs(a);
+  final List<String>? y = hrefs(b);
+  if (x == null || y == null) return false;
+  return listEquals(x, y);
+}
+
+/// 有声书持久目录里的副本 [persisted] 是不是来源文件 [source] 当初复制进来的那份：
+/// 按文件名主干比（大小写不敏感）。持久化可能改名——撞名时追加 ` _<n>`
+/// （`AudiobookStorage._freeDestIn`，分碟布局 `CD1/01.mp3` 与 `CD2/01.mp3`），转码改扩展名
+/// ——所以去掉这个后缀、不比扩展名。
+@visibleForTesting
+bool audiobookPersistedNameMatches(String persisted, String source) {
+  final String stored = p.basenameWithoutExtension(persisted).toLowerCase();
+  final String original = p.basenameWithoutExtension(source).toLowerCase();
+  return stored == original ||
+      stored.replaceFirst(RegExp(r' _\d+$'), '') == original;
 }

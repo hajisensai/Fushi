@@ -55,7 +55,7 @@ extension _CloudBookContentRecovery on SyncOrchestrator {
     } on SyncCancelledException {
       rethrow;
     } catch (error) {
-      report.noteError('list cloud books for recovery', error);
+      _noteDimensionError(report, 'list cloud books for recovery', error);
       return;
     }
 
@@ -105,7 +105,11 @@ extension _CloudBookContentRecovery on SyncOrchestrator {
       } on SyncCancelledException {
         rethrow;
       } catch (error) {
-        report.noteError('recover cloud book "${book.title}"', error);
+        _noteDimensionError(
+          report,
+          'recover cloud book "${book.title}"',
+          error,
+        );
       }
     }
   }

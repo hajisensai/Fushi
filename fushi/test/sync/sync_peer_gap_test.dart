@@ -123,10 +123,11 @@ void main() {
   group('SyncRunReport.notePeerGap', () {
     test('每维度至多一条；日志行与类型并存；mergeFrom 不重复类型', () {
       final List<String> observed = <String>[];
-      final SyncRunReport r = SyncRunReport(onError: observed.add)
-        ..notePeerGap(SyncPeerGapDimension.tags, outdated: true)
-        ..notePeerGap(SyncPeerGapDimension.tags, outdated: true)
-        ..notePeerGap(SyncPeerGapDimension.pdfBooks, outdated: false);
+      final SyncRunReport r =
+          SyncRunReport(onError: (SyncFailure f) => observed.add(f.message))
+            ..notePeerGap(SyncPeerGapDimension.tags, outdated: true)
+            ..notePeerGap(SyncPeerGapDimension.tags, outdated: true)
+            ..notePeerGap(SyncPeerGapDimension.pdfBooks, outdated: false);
       expect(r.peerGaps.map((SyncPeerGap g) => g.dimension), <Object>[
         SyncPeerGapDimension.tags,
         SyncPeerGapDimension.pdfBooks,

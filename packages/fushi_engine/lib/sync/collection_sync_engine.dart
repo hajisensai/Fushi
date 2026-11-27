@@ -965,8 +965,9 @@ Future<int> applyCollectionLocalChanges(
   // v83：wire 清单 epub entryKey 恒为 bookKey，成员表本地面貌是 uid——落地前经
   // bookKey→uid 换算（一趟全表 map）。查不上**必须照抄透传，绝不丢弃**：合集清单
   // 是跨端 union，本机没有这本书也要替对端转发其归属（透传行，entry_key 保持
-  // 对端 bookKey）；书下载落地后，下一轮 apply 该 bookKey 可解析 → desiredKeys
-  // 变成 uid → diff 自动删 bookKey 行、插 uid 行，归属收敛，无需专用改键。
+  // 对端 bookKey）；书下载 / 推送落地时由 `insertEpubBook`（及入口自愈
+  // `reconcileEpubCollectionMemberKeys`）立即把透传行升格为 uid 并去重，不依赖
+  // 「后续必须出现新成员变更才能触发 apply」的偶然调和。
   // 仅 epub 门控——srt/video/game 键误换算即数据损坏。事务内不增删书行，map
   // 在事务外构建一次是安全的。
   final CollectionBookIdentityIndex identities =

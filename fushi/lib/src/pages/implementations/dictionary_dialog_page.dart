@@ -1699,7 +1699,11 @@ class _DictionaryDialogPageState extends BasePageState {
   }
 
   bool _isDictInstalled(RecommendedDictionary rec) =>
-      isRecommendedDictionaryInstalled(appModel.dictionaries, rec);
+      isRecommendedDictionaryInstalled(
+        appModel.dictionaries,
+        rec,
+        fileHealth: DictionaryFileHealthMonitor.instance.value,
+      );
 
   Set<int> _computeInstalledIndices(List<RecommendedDictionary> cat) {
     final Set<int> indices = {};
@@ -2223,6 +2227,7 @@ class _DictionaryDialogPageState extends BasePageState {
     final int missing = health.missingCount;
     final int unreadable = health.unreadableCount;
     final bool show = missing > 0 || unreadable > 0;
+    final int restorable = missing > 0 ? _restorableFromHosts().length : 0;
     return FushiAnimatedSize(
       duration: context.fushiMotion.spatialDefault.duration,
       curve: context.fushiMotion.spatialDefault.curve,
@@ -2242,6 +2247,18 @@ class _DictionaryDialogPageState extends BasePageState {
                 message: missing > 0
                     ? t.dictionary_files_list_banner_missing(n: missing)
                     : t.dictionary_files_list_banner_unreadable(n: unreadable),
+                actions: <Widget>[
+                  if (restorable > 0)
+                    FushiTextButton(
+                      key: const ValueKey<String>(
+                        'dict-file-health-restore-all',
+                      ),
+                      onPressed: () => unawaited(_restoreAllFromHosts()),
+                      child: Text(
+                        t.dictionary_files_restore_all(n: restorable),
+                      ),
+                    ),
+                ],
               ),
             ),
     );
@@ -3643,7 +3660,120 @@ class _DictionaryDialogPageState extends BasePageState {
       transferSection: _buildTransferSection(dictionary),
       fileIssue: _fileIssueOf(dictionary),
       onReimport: () => _reimportDictionary(dictionary),
+      restoreHosts: _restoreHostsFor(dictionary),
+      onRestore: (String hostId) =>
+          unawaited(_restoreDictionaryFromHost(dictionary, hostId)),
     );
+  }
+
+  /// 文件不在的本机词典可以从哪些 host 拉回来（hostId → 展示名）：目录上有同名副本（没缺席）
+  /// 的 host（反馈 ujt4V8GdT8：此前只能在线重下或手选文件，host 上明明有却拉不回来）。弹窗
+  /// 进程没有传输服务，不给。
+  Map<String, String> _restoreHostsFor(Dictionary dictionary) {
+    if (appModel.dictionaryTransferService == null) {
+      return const <String, String>{};
+    }
+    return <String, String>{
+      for (final RemoteDictionary r in _serverCopiesOf(dictionary.name))
+        r.hostId: _hostName(r.hostId),
+    };
+  }
+
+  /// 文件不在、且有 host 副本可以恢复的本机词典，配上从哪台拉（排最前的那份，与「两者」
+  /// 行详情同一口径），按管理页顺序。
+  List<({Dictionary dictionary, String hostId})> _restorableFromHosts() {
+    if (appModel.dictionaryTransferService == null) {
+      return const <({Dictionary dictionary, String hostId})>[];
+    }
+    final DictionaryFileHealth health =
+        DictionaryFileHealthMonitor.instance.value;
+    return <({Dictionary dictionary, String hostId})>[
+      for (final Dictionary d in appModel.dictionaries)
+        if (health.issueOf(d.name) == DictionaryFileIssue.missing)
+          if (_serverCopiesOf(d.name).firstOrNull case final RemoteDictionary r)
+            (dictionary: d, hostId: r.hostId),
+    ];
+  }
+
+  /// 「从 <host> 恢复」：与「下载到本机」同一条单本传输（[DictionaryTransferService
+  /// .downloadFromHost] 认得文件丢了的那本，照拉并保住本机的顺序 / 开关 / 改名）。
+  Future<void> _restoreDictionaryFromHost(
+    Dictionary dictionary,
+    String hostId,
+  ) => _runDictionaryTransfer(
+    push: false,
+    hostId: hostId,
+    name: dictionary.name,
+    displayName: dictionary.effectiveDisplayName,
+  );
+
+  /// 横幅上的「从服务器恢复 n 本」：同一个进度框里逐本拉回（每本一次单本传输，与详情里的
+  /// 「从 <host> 恢复」同一条路），结束后一条汇总。
+  Future<void> _restoreAllFromHosts() async {
+    final DictionaryTransferService? service =
+        appModel.dictionaryTransferService;
+    final List<({Dictionary dictionary, String hostId})> plan =
+        _restorableFromHosts();
+    if (service == null || plan.isEmpty) return;
+    await _runWithDownloadProgressDialog(
+      initialMessage: t.dict_downloading(
+        name: plan.first.dictionary.effectiveDisplayName,
+      ),
+      body: (DictionaryDownloadJob job) async {
+        job.markImportPhase();
+        int restored = 0;
+        final List<String> failed = <String>[];
+        for (final ({Dictionary dictionary, String hostId}) item in plan) {
+          final String displayName = item.dictionary.effectiveDisplayName;
+          job.message.value = t.dict_downloading(name: displayName);
+          job.progress.value = 0;
+          final DictionaryTransferResult result = await service
+              .downloadFromHost(
+                item.hostId,
+                item.dictionary.name,
+                onProgress: (DictionaryTransferProgress progress) {
+                  if (progress.stage == DictionaryTransferStage.importing) {
+                    enterDictionaryImportStage(
+                      name: displayName,
+                      progressNotifier: job.message,
+                      downloadProgress: job.progress,
+                      job: job,
+                    );
+                    return;
+                  }
+                  job.progress.value = progress.fraction ?? 0;
+                },
+              );
+          switch (result) {
+            case DictionaryTransferDone():
+            case DictionaryTransferAlreadyPresent():
+              restored++;
+            case DictionaryTransferFailed():
+              failed.add(displayName);
+              ErrorLogService.instance.log(
+                'DictionaryDialog.restoreAll',
+                '${result.kind.name} ${item.dictionary.name}@${item.hostId}: '
+                    '${result.error ?? ''}',
+                StackTrace.current,
+              );
+          }
+        }
+        return DictionaryDownloadOutcome(
+          message: failed.isEmpty
+              ? t.dictionary_files_restore_all_done(n: restored)
+              : t.dictionary_files_restore_all_partial(
+                  ok: restored,
+                  failed: failed.length,
+                  names: failed.join(', '),
+                ),
+          severity: failed.isEmpty
+              ? ToastSeverity.success
+              : ToastSeverity.error,
+          toastLength: Toast.LENGTH_LONG,
+        );
+      },
+    );
+    await _loadServerSources();
   }
 
   /// 「推送到 <服务器>」分组；没有还缺这本的查词 host 时不画。

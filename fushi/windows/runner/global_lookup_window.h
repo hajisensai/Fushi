@@ -179,7 +179,12 @@ class GlobalLookupWindow {
   // route form a one-shot transaction: a stale release can never resurrect a
   // card belonging to an older lookup.
   bool SuspendForCapture(int64_t capture_generation);
-  bool RestoreAfterCapture(int64_t capture_generation);
+  // |return_foreground|（可为 nullptr）：卡片收起期间主窗被临时拉到前台（截屏识字
+  // 「制卡时框选截图」，反馈 6RETmKY1TH），放回卡片前先把前台交还给这个窗口——
+  // 用户发起这次查词时正在用的程序。前台钩子会看到这次交还，登记成「本进程主动
+  // 交还」放过它，不当成用户点了卡外。
+  bool RestoreAfterCapture(int64_t capture_generation,
+                           HWND return_foreground = nullptr);
 
   // Injects |popup_json| and calls window.renderPopup(). Cached until the
   // WebView2 finishes initial navigation if called too early.
@@ -606,8 +611,9 @@ class GlobalLookupWindow {
   // 自绘右键菜单的模态循环进行中：全局点击钩子此时不得把点在菜单上的那一下当成
   // 「点卡外」关卡。
   bool context_menu_active_ = false;
-  // 为弹菜单临时抢前台后，要把前台还给的那个窗口；前台钩子看到它回来时不关卡。
-  HWND context_menu_return_foreground_ = nullptr;
+  // 本进程主动把前台交还给的那个窗口（为弹菜单临时抢前台后交还，BUG-2651；
+  // 截屏识字框选完把前台还给原程序，反馈 6RETmKY1TH）；前台钩子看到它回来时不关卡。
+  HWND expected_foreground_return_ = nullptr;
   wil::com_ptr<ICoreWebView2ContextMenuRequestedEventArgs>
       pending_context_menu_args_;
   wil::com_ptr<ICoreWebView2Deferral> pending_context_menu_deferral_;

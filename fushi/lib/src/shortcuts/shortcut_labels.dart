@@ -118,6 +118,8 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_global_toggle_fullscreen;
       case ShortcutAction.globalOpenAiAssistant:
         return t.shortcut_action_global_open_ai_assistant;
+      case ShortcutAction.globalOpenPendingCards:
+        return t.shortcut_action_global_open_pending_cards;
       case ShortcutAction.globalContextMenu:
         return t.shortcut_action_global_context_menu;
       case ShortcutAction.audiobookPlayPause:
@@ -341,6 +343,8 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_srs_review_zoom_out;
       case ShortcutAction.srsReviewZoomReset:
         return t.shortcut_action_srs_review_zoom_reset;
+      case ShortcutAction.srsReviewDismissDict:
+        return t.shortcut_action_srs_review_dismiss_dict;
       // 焦点导航四向（动作名 dpad* 冻结，语义是「焦点往该方向移」）。
       case ShortcutAction.dpadUp:
         return t.shortcut_action_focus_move_up;

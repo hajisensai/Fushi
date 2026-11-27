@@ -192,11 +192,15 @@ import 'package:fushi/src/srs/srs_mining.dart';
 import 'package:fushi_engine/srs/srs_mining_target.dart';
 import 'package:fushi/src/srs/srs_profile_stores.dart';
 import 'package:fushi/src/srs/srs_storage_host.dart';
+import 'package:fushi/src/srs/srs_write_relay.dart';
+import 'package:fushi/src/srs/srs_write_relay_channel.dart';
+import 'package:path_provider/path_provider.dart' show getTemporaryDirectory;
 import 'package:fushi/src/srs/srs_review_gestures.dart';
 import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/models/home_dashboard_panel.dart';
 import 'package:fushi/src/models/home_widget_layout.dart';
 import 'package:fushi/src/storage/android_stray_library_merge.dart';
+import 'package:fushi/src/storage/library_content_audit.dart';
 import 'package:fushi/src/storage/library_sentinel.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/storage/books_directory.dart';
@@ -1861,14 +1865,114 @@ class AppModel
   SrsStorageHost? _srsStorageHost;
 
   /// 换一份 SRS 存储持有者（旧的先关）。[isMainProcess] 为 false 时不搬迁旧库（见 [SrsStorageHost]）。
-  Future<void> _resetSrsStorageHost({required bool isMainProcess}) async {
+  /// [beforePrimaryOpen] 见 [SrsStorageHost]（主界面的引擎开主库前让无界面执行引擎交出主库，BUG-5542）。
+  Future<void> _resetSrsStorageHost({
+    required bool isMainProcess,
+    Future<void> Function()? beforePrimaryOpen,
+  }) async {
     await _closeSrsStorage();
     await useSrsTempDirectory();
     _srsStorageHost = SrsStorageHost(
       dbDirectory: _databaseDirectory.path,
       isMainProcess: isMainProcess,
       legacyDatabase: () => _database,
+      beforePrimaryOpen: beforePrimaryOpen,
     );
+  }
+
+  /// 本进程复习笔记写入的执行方（BUG-5542，见 [SrsNoteWriter]）：只读打开复习库的 Android 辅助进程（`:popup` 查词窗 /
+  /// 第二块屏面板）转交主进程执行，其余进程本地写。每次写入现选：装饰链可能先于本进程的初始化建好。
+  late final SrsNoteWriter srsNoteWriter = SelectingSrsNoteWriter(
+    _selectSrsNoteWriter,
+  );
+
+  SrsNoteWriter? _relaySrsNoteWriter;
+
+  SrsNoteWriter _selectSrsNoteWriter() {
+    final SrsStorageHost? host = _srsStorageHost;
+    if (!Platform.isAndroid || host == null || host.isMainProcess) {
+      return const LocalSrsNoteWriter();
+    }
+    return _relaySrsNoteWriter ??= RelaySrsNoteWriter(
+      transport: srsWriteRelayForward,
+      // 两个进程共用 app 的 cache 目录。
+      spoolDirectory: () async => Directory(
+        path.join((await getTemporaryDirectory()).path, 'srs_write_relay'),
+      ),
+    );
+  }
+
+  /// 主进程执行辅助进程转交来的写入时用的制卡器（BUG-5542，`SrsWriteRelayHost`）：[profileUid] 那份配置的复习副本 +
+  /// 辅助进程取定的 [destination]（它按自己的作品会话 / 激活配置算好，主进程照写，不另叠自己的作品会话）。等本实例
+  /// 初始化完再取；复习不可用时 null；库在换代途中原样抛出代际异常。
+  Future<SrsMiner?> srsRelayMiner(
+    String profileUid,
+    SrsMiningDestination destination,
+  ) async {
+    await _awaitInitialisedForSrsRelay();
+    final SrsProfileStores Function()? reader = srsProfileStoresReader;
+    if (reader == null || !moduleVisibility.isEnabled(ModuleId.srs)) {
+      return null;
+    }
+    return reader().minerFor(
+      profileUid: profileUid,
+      destination: destination,
+      fallbackRolloverHour: () => statDayResetHour,
+    );
+  }
+
+  /// 等 [initialise] / [initialiseForSrsWriteHost] 走完（主界面冷启动时转交的写入可能先到）；初始化失败时抛。
+  Future<void> _awaitInitialisedForSrsRelay() async {
+    if (_isInitialised) return;
+    final Completer<void> done = Completer<void>();
+    void check() {
+      if (done.isCompleted) return;
+      if (_isInitialised) {
+        done.complete();
+      } else if (_initError != null) {
+        done.completeError(
+          StateError('app initialisation failed: $_initError'),
+        );
+      }
+    }
+
+    addListener(check);
+    check();
+    try {
+      await done.future;
+    } finally {
+      removeListener(check);
+    }
+  }
+
+  /// 无界面的复习写入执行引擎（Android 主进程里主界面不在时，由 `SrsWriteRelayService` 拉起，BUG-5542）的初始化：
+  /// 只装执行转交写入要的几样——数据目录、主库（不接手主进程的恢复职责）、复习库（Primary：此刻进程里唯一的写者，
+  /// 主界面的引擎开库之前会先让本引擎交出，见 [closeForSrsWriteHost]）、偏好。不装词典 / 主题 / 媒体源：载荷里的媒体
+  /// 已由辅助进程冻结成字节。
+  Future<void> initialiseForSrsWriteHost() async {
+    if (_isInitialised) return;
+    try {
+      await _prepareRuntimeDirectories();
+      _database = FushiDatabase(_databaseDirectory.path, isMainProcess: false);
+      _databaseOpened = true;
+      await _resetSrsStorageHost(isMainProcess: true);
+      _prefsRepo = PreferencesRepository(_database);
+      await prefsRepo.loadFromDb();
+      _applyStatDayResetHour();
+      _isInitialised = true;
+      notifyListeners();
+    } catch (e, stack) {
+      ErrorLogService.instance.log('AppModel.srsWriteHostInit', e, stack);
+      _initError = '$e';
+      notifyListeners();
+    }
+  }
+
+  /// 无界面执行引擎交出主库（[initialiseForSrsWriteHost] 的反向）：先关复习库、再关主库。
+  Future<void> closeForSrsWriteHost() async {
+    _isInitialised = false;
+    await _closeSrsStorage();
+    if (_databaseOpened) await _database.close();
   }
 
   /// 关 SRS 存储（幂等）。必须在关主库之前：主进程打开时的搬迁读的是主库连接。
@@ -3544,12 +3648,18 @@ class AppModel
   String? _dataRootMigrationFailure;
   String? get dataRootMigrationFailure => _dataRootMigrationFailure;
 
+  /// 失败态原因下面的建议（null = 不显示）。只有对这次失败真有用时才给：迁移已成功只是
+  /// 重启失败、Android 固定目标、撞名这几种，通用的「换个空文件夹」建议是错的。
+  String? _dataRootMigrationFailureHint;
+  String? get dataRootMigrationFailureHint => _dataRootMigrationFailureHint;
+
   /// 进入迁移态：先于 [closeDatabase] 调用，确保「遮罩已上屏 → 关库 → 搬文件」的顺序，
   /// 这样根 widget 在 DB 关闭引发的 rebuild 里看到的是迁移遮罩而非裸 loading。
   void beginDataRootMigration() {
     _dataRootMigrationActive = true;
     _dataRootMigrationProgress = null;
     _dataRootMigrationFailure = null;
+    _dataRootMigrationFailureHint = null;
     notifyListeners();
   }
 
@@ -3561,10 +3671,11 @@ class AppModel
 
   /// TODO-1182：迁移失败 → 切到失败态。**保持**遮罩激活（DB 已关，撤遮罩会落到裸 loading），
   /// 让根 widget 在同一遮罩上渲染「失败原因 + 建议 + 重启按钮」，确保用户醒目看到失败。
-  void failDataRootMigration(String message) {
+  void failDataRootMigration(String message, {String? hint}) {
     _dataRootMigrationActive = true;
     _dataRootMigrationProgress = null;
     _dataRootMigrationFailure = message;
+    _dataRootMigrationFailureHint = hint;
     notifyListeners();
   }
 
@@ -3574,6 +3685,7 @@ class AppModel
     _dataRootMigrationActive = false;
     _dataRootMigrationProgress = null;
     _dataRootMigrationFailure = null;
+    _dataRootMigrationFailureHint = null;
     notifyListeners();
   }
 
@@ -3824,6 +3936,12 @@ class AppModel
   @override
   Directory get databaseDirectory => _databaseDirectory;
   late Directory _databaseDirectory;
+
+  /// BUG-5570：本次冷启动的书库内容对账（[LibraryContentAudit.run]，后台 isolate、不挡启动）。
+  /// 首页的「书库文件不见了」提示读现场前先等它（带超时）；启动还没走到对账时为 null。
+  Future<LibraryContentAuditResult>? get libraryContentAudit =>
+      _libraryContentAudit;
+  Future<LibraryContentAuditResult>? _libraryContentAudit;
 
   /// Directory where database data is persisted.
   /// 磁盘上是否真装着名为 [name] 的词典（`dictionaryResourceDirectory/<name>/`）。
@@ -5743,7 +5861,13 @@ class AppModel
       MediaServerRouteFailover.install(
         mediaServerRouteFailoverForRepository(() => SyncRepository(_database)),
       );
-      await _resetSrsStorageHost(isMainProcess: true);
+      // Android 主进程里替辅助进程执行写入的无界面引擎（BUG-5542）在主界面开主库之前交出主库。
+      await _resetSrsStorageHost(
+        isMainProcess: true,
+        beforePrimaryOpen: Platform.isAndroid
+            ? SrsWriteRelayHostChannel.claimPrimary
+            : null,
+      );
       // 服务器曲目的离线副本（v175）：进程内索引跟着表走，播放项据此换成本地文件。
       MusicServerDownloadIndex.instance.attach(_database);
       // 服务器曲目离线 / 配置删了时没送达的播放与收藏（v176 补发队列）：「连不上」的判据补上
@@ -5882,6 +6006,45 @@ class AppModel
           );
         }
       }
+      // BUG-5570：哨兵只看书库根里那一个文件，哨兵还在时书库内容部分丢失（整树被清后部分
+      // 恢复、外部工具删掉大部分书目录）它看不出来。拿数据库当账本对一遍受管文件在不在：
+      // 后台 isolate 只读另开连接、逐条 stat，不挡冷启动；书库根不可读（卷未挂载、权限被
+      // 收回）不判。只判定、只写现场文件，不动任何行与文件。五端都跑：部分丢失哪端都会有。
+      _libraryContentAudit = LibraryContentAudit.run(
+        libraryRoot: _appDirectory,
+        supportRoot: _databaseDirectory,
+      );
+      unawaited(
+        _libraryContentAudit!.then((LibraryContentAuditResult audit) {
+          final LibraryContentLoss? loss = audit.loss;
+          switch (audit.status) {
+            case LibraryContentAuditStatus.clean:
+              return;
+            case LibraryContentAuditStatus.incident:
+              ErrorLogService.instance.logDataLocation(
+                'LibraryContentAudit',
+                loss!.describe(),
+              );
+            case LibraryContentAuditStatus.minor:
+            case LibraryContentAuditStatus.alreadyReported:
+              // 同一批缺失每次启动只在内容变了时占一条，平静的启动不写盘。
+              ErrorLogService.instance.logDataLocationIfChanged(
+                'LibraryContentAudit',
+                '${audit.status.name}：${loss!.summary()}',
+              );
+            case LibraryContentAuditStatus.rootUnreadable:
+              ErrorLogService.instance.logDataLocationIfChanged(
+                'LibraryContentAudit',
+                '书库根不可读，未对账：${_appDirectory.path}',
+              );
+            case LibraryContentAuditStatus.error:
+              ErrorLogService.instance.logDataLocationIfChanged(
+                'LibraryContentAudit',
+                '对账失败（未改动任何文件）：${audit.error}',
+              );
+          }
+        }),
+      );
       //    cloud backup backend can now coexist);
       // 4) BUG-1576: drop the pre-decoupling GLOBAL folder cache. Two channels
       //    took turns writing that single pair of keys, so its value can no

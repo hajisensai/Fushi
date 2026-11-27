@@ -95,7 +95,7 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
         } on InterconnectHostChangedException {
           rethrow;
         } on Exception catch (e) {
-          report.noteError('recover book "${book.title}"', e);
+          _noteDimensionError(report, 'recover book "${book.title}"', e);
         }
       }
     });
@@ -285,7 +285,7 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
           ),
         );
       } catch (e) {
-        report.noteError('live push book "$title"', e);
+        _noteDimensionError(report, 'live push book "$title"', e);
       } finally {
         _safeDelete(tmp);
       }
@@ -333,7 +333,7 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
     try {
       await sync.bind();
     } catch (e) {
-      report.noteError('live book progress', e);
+      _noteDimensionError(report, 'live book progress', e);
       return;
     }
     // BUG-1569③：退出书的单本同步不再等整轮 sweep 结束，它在互联上只锁那本书。
@@ -355,7 +355,7 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
       remotes = await sync.readRemoteForSweep(localBooks);
     } catch (e) {
       // 整批读不到（网络 / 鉴权 / 5xx）：本阶段整体失败，记一条，后续阶段照跑。
-      report.noteError('live book progress', e);
+      _noteDimensionError(report, 'live book progress', e);
       return;
     }
     try {
@@ -376,7 +376,7 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
     } on InterconnectHostChangedException catch (e) {
       // 会话中途换了 host（BUG-4434）：用这台 host 的基线判另一台 host 的值会把它
       // 当成「对端单边改动」落到本机。本阶段到此为止，报一条，下一轮重新绑定。
-      report.noteError('live progress: host changed mid-round', e);
+      _noteDimensionError(report, 'live progress: host changed mid-round', e);
     }
   }
 
@@ -445,7 +445,7 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
     } on InterconnectHostChangedException {
       rethrow;
     } catch (e) {
-      report.noteError('live book progress "${book.title}"', e);
+      _noteDimensionError(report, 'live book progress "${book.title}"', e);
     }
   }
 
@@ -472,7 +472,11 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
     try {
       capabilities = await _roundHostCapabilities(report, backend);
     } catch (e) {
-      report.noteError('live manga chapter progress: capabilities', e);
+      _noteDimensionError(
+        report,
+        'live manga chapter progress: capabilities',
+        e,
+      );
       return;
     }
     if (capabilities is! Map ||
@@ -510,11 +514,19 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
         } on InterconnectHostChangedException {
           rethrow;
         } catch (e) {
-          report.noteError('live manga chapter progress "${book.title}"', e);
+          _noteDimensionError(
+            report,
+            'live manga chapter progress "${book.title}"',
+            e,
+          );
         }
       }
     } on InterconnectHostChangedException catch (e) {
-      report.noteError('live manga chapter progress: host changed', e);
+      _noteDimensionError(
+        report,
+        'live manga chapter progress: host changed',
+        e,
+      );
     }
   }
 
@@ -555,7 +567,7 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
     try {
       await sync.bind();
     } catch (e) {
-      report.noteError(errorLabel, e);
+      _noteDimensionError(report, errorLabel, e);
       return;
     }
     // 整轮一次读齐基线 / 待确认基线（两条查询）；本端位置由调用方从 sweep 开头的
@@ -591,7 +603,7 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
         );
       }
     } on InterconnectHostChangedException catch (e) {
-      report.noteError('live progress: host changed mid-round', e);
+      _noteDimensionError(report, 'live progress: host changed mid-round', e);
     }
   }
 
@@ -659,7 +671,7 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
     } on InterconnectHostChangedException {
       rethrow;
     } catch (e) {
-      report.noteError('$errorLabel "$key"', e);
+      _noteDimensionError(report, '$errorLabel "$key"', e);
     }
   }
 }

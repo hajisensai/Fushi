@@ -73,7 +73,10 @@ void main() {
       sentenceContext: '',
       pickFrame: (ScreenOcrCardImage s) async {
         picked.add(s);
-        return frame?.call();
+        final MiningRequestOverrides? overrides = frame?.call();
+        return overrides == null
+            ? null
+            : ScreenOcrFramePick(overrides, reportOutcomeOnHost: false);
       },
     );
     return (handler: handler, picked: picked);

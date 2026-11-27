@@ -44,6 +44,10 @@ class ErrorLogService extends ChangeNotifier
   static const int _maxDiagnosticEntries = 100;
   static const int _maxFileBytes = 512 * 1024;
 
+  /// 超过 [_maxFileBytes] 时裁到的字节数（BUG-5571）。正好裁到上限的话文件长满后下一条
+  /// 就又超限、每条日志都整文件读回重写；留 1/4 余量，两次裁之间至少隔 128 KB 新内容。
+  static const int _trimTargetBytes = _maxFileBytes * 3 ~/ 4;
+
   final List<ErrorLogEntry> _entries = [];
   List<ErrorLogEntry> get entries => List.unmodifiable(_entries);
 
@@ -152,6 +156,8 @@ class ErrorLogService extends ChangeNotifier
     int maxBytes = _maxFileBytes,
   }) {
     if (maxBytes <= 0) return '';
+    // 常态下内容本来就在上限内：别逐 rune 编码一遍（BUG-5571）。
+    if (utf8.encode(content).length <= maxBytes) return content;
     int totalBytes = 0;
     final List<int> suffixRunes = <int>[];
     for (final int rune in content.runes.toList().reversed) {
@@ -164,8 +170,8 @@ class ErrorLogService extends ChangeNotifier
   }
 
   static String _trimLogBytes(List<int> bytes) {
-    if (bytes.length > _maxFileBytes) {
-      bytes = bytes.sublist(bytes.length - _maxFileBytes);
+    if (bytes.length > _trimTargetBytes) {
+      bytes = bytes.sublist(bytes.length - _trimTargetBytes);
     }
     var content = utf8.decode(bytes, allowMalformed: true);
     final String separator = '─' * 60;

@@ -14,6 +14,7 @@ use crate::gen4_ids::rules;
 use crate::store::ffi::{SrsCoreHandle, ffsrs_store_close};
 use crate::store::gen4::cmd::dispatch_tests::{T1, open};
 use crate::store::gen4::cmd::tests_class;
+use crate::store::gen4::cmd::views_tests::entity_view_rows;
 use crate::store::gen4::files::OpenMode;
 use crate::store::gen4::kernel::G4Core;
 use crate::store::sync2::config::default_deck_id;
@@ -169,18 +170,11 @@ fn import(h: *mut SrsCoreHandle, profile: &str, exp: &(Value, String)) -> Value 
 
 /// [profile] 的集合里 [kind] 种实体 [ids] 的视图（`entity_views` 的 `v` 文本，按请求顺序）。
 fn views(h: *mut SrsCoreHandle, profile: &str, kind: &str, ids: &[&str]) -> Vec<String> {
-    let v = run(
-        h,
-        profile,
-        "entity_views",
-        json!({"kind": kind, "ids": ids}),
-        &[],
-    );
-    v["views"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|x| x["v"].as_str().unwrap().to_owned())
+    let req =
+        json!({"op": "entity_views", "profile": profile, "now": T1, "kind": kind, "ids": ids});
+    entity_view_rows(h, &req)
+        .into_iter()
+        .map(|(_, _, v)| v)
         .collect()
 }
 

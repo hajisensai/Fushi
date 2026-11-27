@@ -276,6 +276,15 @@ class FeedbackService extends ChangeNotifier {
 
   /// [_accountTickets] 属于哪个账户（设备钥匙 id）；换账户 / 退出登录时整份丢掉。
   String? _accountKey;
+
+  /// 正在读盘恢复 [_accountKey] 缓存的 Future（读完清回 null）；同账户的并发
+  /// [_switchAccount] 必须等它读完，不能看到 `_accountKey == key` 就提前放行去
+  /// 刷新（否则刷新会在 `_accountTickets` 仍为空时以 `seenAt = 0` 覆写落盘缓存）。
+  Future<void>? _accountLoadInFlight;
+
+  /// 账户切换代次：每次真正切换 [_accountKey] 自增，用于识别异步读盘或
+  /// [_refreshAccount] 拉取期间是否发生过切换（含 `key → null → key` 的短暂往返）。
+  int _accountGeneration = 0;
   bool _loaded = false;
 
   /// 进行中的那次 [refresh]；没有时为 null。并发的 [refresh] 合并到它上面。
@@ -384,11 +393,12 @@ class FeedbackService extends ChangeNotifier {
   Future<void> _persistAccount() async {
     final String? key = _accountKey;
     if (key == null) return;
+    final List<FeedbackTicket> snapshot = _accountTickets;
     try {
       await FeedbackTicketStore.account(
         await _supportRoot(),
         key,
-      ).write(_accountTickets);
+      ).write(snapshot);
     } on Object catch (e, st) {
       ErrorLogService.instance.log('feedback.account_cache_write', e, st);
     }
@@ -464,25 +474,45 @@ class FeedbackService extends ChangeNotifier {
   /// null；此前这里只会把列表清空，随后 [_refreshAccount] 用 seenAt=0 的新条目重建
   /// 并覆盖缓存，读过的回复每次重启都回到「新回复」。身份何时可用都不该决定已读状态。
   Future<void> _switchAccount(String? key) async {
-    if (key == _accountKey) return;
-    _accountKey = key;
-    _accountTickets = <FeedbackTicket>[];
-    notifyListeners();
-    if (key == null) return;
-    final List<FeedbackTicket> cached;
-    try {
-      cached = await FeedbackTicketStore.account(
-        await _supportRoot(),
-        key,
-      ).read();
-    } on Object catch (e, st) {
-      ErrorLogService.instance.log('feedback.account_cache_read', e, st);
+    if (key == _accountKey) {
+      final Future<void>? loading = _accountLoadInFlight;
+      if (loading != null) await loading;
       return;
     }
-    // 读缓存期间又换了账户 / 已被刷新填好：以那边为准。
-    if (_accountKey != key || _accountTickets.isNotEmpty) return;
-    _accountTickets = _withoutLocal(cached);
+    final int gen = ++_accountGeneration;
+    _accountKey = key;
+    _accountTickets = <FeedbackTicket>[];
+    _accountLoadInFlight = null;
     notifyListeners();
+    if (key == null) return;
+    late final Future<void> run;
+    run =
+        () async {
+          final List<FeedbackTicket> cached;
+          try {
+            cached = await FeedbackTicketStore.account(
+              await _supportRoot(),
+              key,
+            ).read();
+          } on Object catch (e, st) {
+            ErrorLogService.instance.log('feedback.account_cache_read', e, st);
+            return;
+          }
+          // 读缓存期间又换了账户（含切走再切回）/ 已被刷新填好：以那边为准。
+          if (_accountGeneration != gen ||
+              _accountKey != key ||
+              _accountTickets.isNotEmpty) {
+            return;
+          }
+          _accountTickets = _withoutLocal(cached);
+          notifyListeners();
+        }().whenComplete(() {
+          if (identical(_accountLoadInFlight, run)) {
+            _accountLoadInFlight = null;
+          }
+        });
+    _accountLoadInFlight = run;
+    await run;
   }
 
   /// 账户列表最多拉几页（每页 [FeedbackLimits.minePage] 条）。
@@ -495,7 +525,8 @@ class FeedbackService extends ChangeNotifier {
     final String? key = client.identity?.accountId;
     // 批量查进度的那段时间里也可能换了账户：这里再核对一次。
     await _switchAccount(key);
-    if (key == null) return;
+    if (key == null || _accountKey != key) return;
+    final int gen = _accountGeneration;
     final List<FeedbackSummary> items = <FeedbackSummary>[];
     String? cursor;
     for (int page = 0; page < _kMinePages; page++) {
@@ -509,6 +540,14 @@ class FeedbackService extends ChangeNotifier {
     }
     // 拉的过程中换了账户：结果作废。
     if (_client().identity?.accountId != key) return;
+    // 拉的过程中账户曾短暂切走（例如并发 refresh 撞上身份短暂为 null，把 _accountKey
+    // 置空并清空了 _accountTickets）又恢复为同一账户：必须先从磁盘缓存恢复该账户的
+    // _accountKey 与已有 seenAt，再合并服务端摘要；绝不能拿空表重建 seenAt=0，更不能
+    // 在 _accountKey == null 时填充 _accountTickets（否则后续看详情落盘会静默跳过）。
+    if (_accountGeneration != gen || _accountKey != key) {
+      await _switchAccount(key);
+      if (_client().identity?.accountId != key || _accountKey != key) return;
+    }
     final Map<String, FeedbackTicket> previous = <String, FeedbackTicket>{
       for (final FeedbackTicket t in _accountTickets) t.id: t,
     };
@@ -1189,21 +1228,28 @@ class FeedbackService extends ChangeNotifier {
   }
 
   Future<void> _applyDetail(FeedbackTicket t, FeedbackDetail d) async {
+    final FeedbackTicket current = byId(t.id) ?? t;
     final int seen = <int>[
+      current.seenAt,
       t.seenAt,
       d.summary.devReplyAt ?? 0,
       d.summary.updatedAt,
     ].reduce((int a, int b) => a > b ? a : b);
     await _replace(
-      t.mergeSummary(d.summary).copyWith(seenAt: seen, body: d.body),
+      current.mergeSummary(d.summary).copyWith(seenAt: seen, body: d.body),
     );
   }
 
   Future<void> _replace(FeedbackTicket next) async {
     if (next.viaAccount) {
+      final int index = _accountTickets.indexWhere(
+        (FeedbackTicket t) => t.id == next.id,
+      );
+      if (index < 0) return;
       _accountTickets = <FeedbackTicket>[
-        for (final FeedbackTicket t in _accountTickets)
-          t.id == next.id ? next : t,
+        ..._accountTickets.sublist(0, index),
+        next,
+        ..._accountTickets.sublist(index + 1),
       ];
       await _persistAccount();
       notifyListeners();

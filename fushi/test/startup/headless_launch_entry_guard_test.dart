@@ -59,8 +59,6 @@ void main() {
       // 闪退提示与 auto_send。
       'CrashReporter.instance',
       'await runCrashReportStartupGate(CrashReporter.instance);',
-      // flutter_logs。
-      'FlutterLogs.initLogs(',
       // 数据库 / 同步 / 词典。
       'await appModel.initialise();',
     ]) {

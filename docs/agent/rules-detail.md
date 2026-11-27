@@ -31,6 +31,31 @@
 - **只有两种情况中途合一次，并在汇报里写明是哪一种**：① 下一批要用的代码只在 `develop` 上有（依赖的 PR 刚合进去）；② 集成分支上的红，根因的修复已经在 `develop` 上。除此之外等到最后。
 - 起因（2026-11-20）：SRS gen4 的集成分支 `pr/srs-gen4-switch` 按规划只该在推送前合一次（[规划 §3](../specs/2026-11-15-srs-gen4-g7-g11-plan.md)），实际第三波、第五波各合了一次最新 `develop`，第六波又排了一次，每次之后都重跑 Rust 全量与 Dart 定向测试；汇报里的落后数从 293 报到 345，用户看到的是一条没法据此做任何决定的数字。
 
+## 只做根本解
+
+- **用户 2026-11-27 拍板**，原话「不要打补丁式解决问题，要从根本上解决，如果从根本上解决要动很多地方也没关系，丢到拍版里面」。取代原「方案取最优、一次做到位」「根因修复」两条里「明显扩大范围先问用户」「确实只能分期的写明还缺什么」的写法——那两处给了退回补丁的口子：范围一大就先交补丁、把根本解挂成「以后再补」。
+- **算补丁的**：只在症状冒出来的调用点加判空 / 特例分支；加延迟、重试、超时、`try/catch` 吞掉；硬编码某个输入 / 平台 / 设备的值；放宽或删掉测试断言让红变绿；在坏的数据结构外面再包一层同步 / 缓存来「对齐」状态；同一根因在多处各修一遍。
+- **波及面大时的流程**：① 照常定位根因、写好 BUG 文件（bug 类）；② 拍板台 `add` 一条 `kind: "design"`，`ask` 写根因 `file:line`、根本方案、要动的文件 / 模块清单、为什么补丁不行、能否分批及每批的边界，`rec: "do"`；③ BUG 文件里记拍板台 id；④ 拍板前不提交补丁版。拍板结果「做 / 你定」就按根本方案一次做完（可按拍板时说好的批次分 PR，每批自身完整、不留临时代码）。
+- **不需要上拍板台的**：波及面在一个子系统内、不改用户可见行为 / 持久化格式 / 公共契约的根本解，改动行数再多也直接做完。
+- **临时兼容层**只用于外部不可控限制（上游库 / 平台 / 第三方服务的 bug），写明影响范围、清理条件（如「上游 X 版本修复后删」），登记进 `docs/BUGS.md` 或拍板台。
+
+## 按类解决
+
+- **用户 2026-11-27 拍板**，原话「比如互联缺少某些功能，cli缺少某些功能，这些都应该系统上的解决，而不是每次发现少功能去补充」，随后补充「我是举例，类似的所有方向都应该看，比如bug之类的」。这是「只做根本解」从单个问题推到一类问题：报上来的一个问题通常只是一类问题里被看见的那一个，根因是让这类问题能出现的机制（缺约束、缺单一实现、缺登记源、缺守卫），只修看见的那个，同类的下一个照样会出现。
+- **通用处理顺序**：① 修之前先归类：同一错误写法 / 同一缺失约束 / 同一漏接的能力面，在仓库里还有哪些实例（`sym.py refs`、`grep`、按模式扫）；② 找出让这类问题能出现的机制并修它，优先级：让错误写不出来（类型、单一实现、构造约束）> 写出来立刻红（守卫 / lint / 断言）> 文档约定；③ 用修好的机制一次盘点、修完同类全部实例；④ 刻意保留的例外写进清单并写明理由，守卫按清单放行。
+- **各方向的样子**：
+  - bug：同一错误模式（漏判空、漏解码、漏编码、生命周期漏释放、焦点漏归还……）在别处的副本一起修，并把约束收进共用实现或守卫；BUG 文件里写这一类的盘点结果，而不只写这一处。
+  - CI 红 / 守卫红：不只让这一次变绿，查清为什么这类红能进来（守卫没覆盖、快门没选到、本地没法提前发现），补上那一层。
+  - 审查发现 / 反馈：一条意见指出的问题按类找全再修，别只改被点到的那一行。
+  - 性能 / 文档漂移：同一种慢写法、同一类过时描述，一次清干净，并让它以后会被发现（基准、守卫、单一真相源）。
+- 机制改造波及多个子系统、改 wire / CLI / 持久化契约时，按「只做根本解」的流程上拍板台；拍板前不先手修那一个实例。
+
+### 能力缺口
+
+- 某个功能在 A 面有、在 B 面没有，根因通常不是「B 忘了写」，而是没有任何机制保证新功能会出现在 B。
+- **能力面举例**：互联 host / client（`packages/fushi_engine/lib/sync/`、`fushi/lib/src/sync/`）、命令行（`fushi_cli`、`fushi_server ctl`）、服务端当 host（缺口清单 [server-parity-gaps.md](server-parity-gaps.md)）、操作目录 / MCP / AI 助手（`fushi/lib/src/ops/`）、远程复习（`SrsRemoteStore`）、WebUI / admin API。
+- **处理顺序**：① 找出这个能力面的功能是从哪里来的：有登记源（操作目录、能力位表、种类登记表）还是各处手写；② 没有登记源就建一个，让能力面从登记源派生（路由、CLI 子命令、帮助、能力位尽量生成或统一分发，不再逐个手写）；③ 补对齐守卫：新增能力没接到该能力面、也没写进明确的「刻意不接」清单（带理由）就红；④ 用新机制一次盘点、补齐同类全部缺口，不留「这次只补用户提到的那个」；⑤ 「刻意不接」的写进对应缺口文档，不默默缺着。
+- **现成可参照的机制**：`fushi/test/ops/op_catalog_ratchet_guard_test.dart`（路由必须有描述）、`fushi/test/srs/srs_remote_store_parity_guard_test.dart`（可达页面用到的库成员都已转发）、`interconnect_source_share_kinds.dart`（来源共享种类登记表）。
 ## 外部 PR 与反馈只列决策
 
 - **外部 PR / 反馈里需要用户决策的，列出来让用户决策；除非明显是 bug，否则反馈的东西不要直接实现（用户 2026-11-07 拍板）**。适用来源：第三方作者的 PR（作者不是 `hajisensai` / `W1ght`）本身的改动内容、任何 PR 上的评论与 review 建议（含 CodeRabbit 等机器人）、GitHub issue、应用内反馈、用户转述的他人意见。做法：
@@ -57,7 +82,7 @@
 
 ## 五平台与 Apple 设计系统
 
-- 5 平台均出包（Android/iOS/macOS/Windows/Linux）：`auto` 下五个平台统一走 Material Design 3；Cupertino / macOS renderer 仅保留为隐藏内部能力。**Apple（Cupertino）设计系统（所有者 2026-10-13 拍板）**：组件悬浮面实色（`glassMaterialTier` 钉成 off，悬浮胶囊 / 面板统一 `fushiAppleSolidFloatingDecoration`），窗口级 Mica（Windows 11）/ vibrancy（macOS）保留——开关只认 `windowBackdropRequestedOf`（设计系统 + 系统「降低透明度」+ 增强对比度），**不读**组件材质档；按压缩放 / 悬停放大与 MD3 一样照常（`FushiPressScale` / `FushiHoverLift` 不按设计系统关闭）。桌面端 EPUB 渲染：Windows 依赖 fork 的 `flutter_inappwebview_windows`；Linux 依赖 vendored 的 `packages/flutter_inappwebview_linux`（WPE WebKit，薄注册层运行时 dlopen 实现库，缺 WPE / 不允许 user namespace 时 app 照常启动、WebView 位置显示原因）。**Linux App 只能从源码构建**：CI 不构建 Linux App（只有 `linux-server`），构建 / 运行依赖与 Docker 验证法见 [docs/agent/build.md](build.md)「Linux 桌面（源码构建）」。**macOS 只出 Apple Silicon（arm64），不再支持 Intel Mac**（Runner `EXCLUDED_ARCHS = x86_64`，随包原生件全部只出 arm64，见 build.md「平台与 SDK」）。
+- 5 平台均出包（Android/iOS/macOS/Windows/Linux）：`auto` 下五个平台统一走 Material Design 3；Cupertino / macOS renderer 仅保留为隐藏内部能力。**Apple（Cupertino）设计系统（所有者 2026-10-13 拍板）**：组件悬浮面实色（`glassMaterialTier` 钉成 off，悬浮胶囊 / 面板统一 `fushiAppleSolidFloatingDecoration`），窗口级 Mica（Windows 11）/ vibrancy（macOS）保留——开关只认 `windowBackdropRequestedOf`（设计系统 + 系统「降低透明度」+ 增强对比度），**不读**组件材质档；按压缩放 / 悬停放大与 MD3 一样照常（`FushiPressScale` / `FushiHoverLift` 不按设计系统关闭）。桌面端 EPUB 渲染：Windows 依赖 fork 的 `flutter_inappwebview_windows`；Linux 依赖 vendored 的 `packages/flutter_inappwebview_linux`（WPE WebKit，薄注册层运行时 dlopen 实现库，缺 WPE / 不允许 user namespace 时 app 照常启动、WebView 位置显示原因）。**Linux App 随 `release-desktop.yml` 自动出包（2026-11-23 起，取代此前的「只能从源码构建」）**：每个通道的 release 带 `fushi-<v>-linux-x86_64.flatpak`（主分发，签名 OSTree 仓库在 GitHub Pages，应用内自更新）与 `fushi-<v>-linux-x64.tar.gz`（便携 bundle），官网下载页有 Linux 一行；源码构建 / 运行依赖与 Docker 验证法见 [docs/agent/build.md](build.md)「Linux 桌面（源码构建）」。**macOS 只出 Apple Silicon（arm64），不再支持 Intel Mac**（Runner `EXCLUDED_ARCHS = x86_64`，随包原生件全部只出 arm64，见 build.md「平台与 SDK」）。
 
 ## iOS 商店合规
 

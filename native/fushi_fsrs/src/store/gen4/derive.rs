@@ -313,6 +313,9 @@ pub(super) struct Line {
     pub(super) rep: usize,
     /// 这一行判定用的 HLC 物理时刻（带旧戳的取旧戳的）。
     pub(super) physical: i64,
+    /// [json] 写成文本之前的那个对象：只有要求留着时有（[Index::edit_lines_with] 的 `keep`），读命令拿它直接交给寄存器
+    /// 内核物化，不再把 [json] 解析一遍（`registers::note_entity_of_objects`，BUG-5572）。
+    pub(super) obj: Option<Map<String, Value>>,
 }
 
 /// [Index::settle] / [Index::rebuild_all] 做了多少。
@@ -427,6 +430,9 @@ pub struct Index<'t, 'c> {
     pub(super) pass_writers: Option<std::rc::Rc<super::class::WriterAliases>>,
     /// 一次缓存层的物化期间缓存的内置实体规则表（`class.rs` [Index::rule_canon]；读的时候盐集合不变）。
     pub(super) pass_rules: Option<Rc<RuleCanon>>,
+    /// 一趟只读的按类读（[Index::in_read_pass]、读命令的 `read_pass`）里别名表的查询结果（`alias.rs` [PassMemo]）：
+    /// 读快照里别名表不变，同一个 ID 只查一次。只读的一趟之外是 None（写、收尾、缓存层里别名表会变）。
+    pub(super) pass_memo: Option<RefCell<super::alias::PassMemo>>,
     /// 物化之外按盐集合记住的同一张表（盐集合变了就重算）。
     pub(super) rule_memo: RefCell<Option<(Vec<String>, Rc<RuleCanon>)>>,
     /// 缓存层按类拼行时没走捷径、按类重判了的寄存器数（`class.rs` [Index::class_lines]；只增不减，测试与量测读）。
@@ -471,6 +477,7 @@ impl<'t, 'c> Index<'t, 'c> {
             writers_moved: false,
             pass_writers: None,
             pass_rules: None,
+            pass_memo: None,
             rule_memo: RefCell::new(None),
             class_judged: 0,
             cache_touched: BTreeSet::new(),
@@ -1123,7 +1130,7 @@ impl<'t, 'c> Index<'t, 'c> {
         class: Option<&super::class::Canon>,
     ) -> Result<Vec<i64>, String> {
         let ks: Vec<i64> = rows.iter().map(|r| r.0).collect();
-        let lines = self.edit_lines_as(&ks, &|_| true, class)?;
+        let lines = self.edit_lines_as(&ks, &|_| true, class, "")?;
         let stored: Vec<StoredEdit<'_>> = lines
             .iter()
             .map(|l| (l.json.as_str(), l.server_time, None))
@@ -1147,11 +1154,27 @@ impl<'t, 'c> Index<'t, 'c> {
     /// 全要）；Some 时按别名类拼（`class.rs` 文件头；按类判定与缓存层只要活着的，`cache.rs`）：dot 的写入者、HLC 的
     /// 写入者、旧上下文的键三处一起换成规范写入者（同一个规范 dot 的并成一次写入），实体、键换成规范形，值里嵌的 ID 归一。
     /// 不带旧戳的写入「见没见过」按规范 dot 问，闭包过同一个换名（[Index::seen]）。
+    ///
+    /// 分区键 `p` 填 [profile]：判定 / 缓存层用的行给空串（寄存器内核不看它），读命令直接给集合绑定的 profile uid，
+    /// 不再把拼好的行解开、换 `p`、再写回一遍（字段正文几十 KB 的笔记，那一遍比拼行本身还贵，BUG-5572）。
     pub(super) fn edit_lines_as(
         &mut self,
         ks: &[i64],
         emit: &dyn Fn(usize) -> bool,
         class: Option<&super::class::Canon>,
+        profile: &str,
+    ) -> Result<Vec<Line>, String> {
+        self.edit_lines_with(ks, emit, class, profile, false)
+    }
+
+    /// [Index::edit_lines_as]；[keep] = true 时每行另留着写成文本前的对象（[Line::obj]）。
+    pub(super) fn edit_lines_with(
+        &mut self,
+        ks: &[i64],
+        emit: &dyn Fn(usize) -> bool,
+        class: Option<&super::class::Canon>,
+        profile: &str,
+        keep: bool,
     ) -> Result<Vec<Line>, String> {
         struct Write {
             k: i64,
@@ -1255,7 +1278,7 @@ impl<'t, 'c> Index<'t, 'c> {
                 }
             };
             let mut m = Map::new();
-            m.insert("p".into(), json!(""));
+            m.insert("p".into(), json!(profile));
             m.insert("k".into(), json!(w.ed.kind.wire()));
             m.insert("e".into(), json!(entity));
             m.insert("f".into(), json!(key));
@@ -1268,10 +1291,11 @@ impl<'t, 'c> Index<'t, 'c> {
                 m.insert("m".into(), json!(true));
             }
             lines.push(Line {
-                json: Value::Object(m).to_string(),
+                json: serde_json::to_string(&m).map_err(|e| e.to_string())?,
                 server_time: st,
                 rep,
                 physical,
+                obj: keep.then_some(m),
             });
         }
         Ok(lines)
@@ -2235,7 +2259,7 @@ pub(crate) mod tests {
                     })
                     .collect();
                 let mut fresh = Index::new(t, col);
-                fresh.edit_lines_as(&ks, &|_| true, None)?;
+                fresh.edit_lines_as(&ks, &|_| true, None, "")?;
                 assert_eq!(fresh.partial_stamps, 0);
                 // FIELD 寄存器（问 w1:n，整份含）：从检查点接着并。
                 let ks: Vec<i64> = [(0xd1, seen_at), (0xd1, n), (0xa1, 1)]
@@ -2253,7 +2277,7 @@ pub(crate) mod tests {
                     })
                     .collect();
                 let mut fresh = Index::new(t, col);
-                fresh.edit_lines_as(&ks, &|_| true, None)?;
+                fresh.edit_lines_as(&ks, &|_| true, None, "")?;
                 assert!(
                     fresh.partial_stamps > 0 && fresh.partial_stamps <= CLOSURE_STEP,
                     "{}",

@@ -75,7 +75,7 @@ Widget _app({
   required Widget home,
   required List<Override> overrides,
 }) => ProviderScope(
-  overrides: overrides,
+  overrides: <Override>[...srsTestDonationOverrides, ...overrides],
   child: TranslationProvider(
     child: MaterialApp(
       theme: buildFushiThemeData(
@@ -810,6 +810,7 @@ void main() {
       final ProviderContainer container = ProviderContainer(
         overrides: <Override>[
           appProvider.overrideWith((Ref ref) => SrsTestAppModel()),
+          ...srsTestDonationOverrides,
           srsStoreProvider.overrideWith((Ref ref) async => store),
           srsConflictCountProvider.overrideWith((Ref ref) async => 0),
           srsImportControllerProvider.overrideWithValue(imports),

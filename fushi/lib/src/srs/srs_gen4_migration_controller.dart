@@ -10,12 +10,15 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart' show ChangeNotifier, Listenable;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart' show ProfileRow;
 import 'package:fushi_engine/srs/srs_db_store.dart' show srsCacheConfigFor;
 import 'package:fushi_srs/fushi_srs.dart';
+import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
@@ -88,6 +91,7 @@ class SrsGen4MigrationController extends ChangeNotifier {
   SrsGen4MigrationProgress? _progress;
   SrsGen4MigrationOutcome? _outcome;
   Object? _error;
+  String? _errorReportPath;
   String? _runId;
   bool _cancelRequested = false;
   Timer? _poll;
@@ -104,6 +108,11 @@ class SrsGen4MigrationController extends ChangeNotifier {
 
   /// 上一次跑出的错误（内核报错，例如上次失败留下的半成品让迁移拒绝开始）。
   Object? get error => _error;
+
+  /// 这次出错时内核写下的错误报告（库目录里的 [SrsGen4Migration.reportFileName]，`verdict` 为 `error`、
+  /// `startedAtMs` 正是这次的）：页面据此同样给「发给开发者」与「分享 / 保存」，出错的步骤、错误原文与库的环境随反馈
+  /// 附上。没出错、或内核没写出这一次的报告 = null。
+  String? get errorReportPath => _error == null ? null : _errorReportPath;
 
   /// 页面此刻要说明的那次失败（原因与报告都由内核判定，这里不读报告文件）：
   /// - 在跑 = null；
@@ -143,13 +152,15 @@ class SrsGen4MigrationController extends ChangeNotifier {
   /// [onCommitted]。
   Future<void> start() async {
     if (!canStart) return;
-    final String runId = 'gen4-${_nowMs()}';
+    final int startedAt = _nowMs();
+    final String runId = 'gen4-$startedAt';
     final Completer<void> finished = _finished = Completer<void>();
     _runId = runId;
     _phase = SrsGen4MigrationPhase.running;
     _progress = null;
     _outcome = null;
     _error = null;
+    _errorReportPath = null;
     _cancelRequested = false;
     _notify();
     _poll = Timer.periodic(pollInterval, (_) => _pollStatus());
@@ -177,7 +188,7 @@ class SrsGen4MigrationController extends ChangeNotifier {
       final SrsGen4MigrationOutcome o = await backend.run(
         directory,
         caches: caches,
-        nowMs: _nowMs(),
+        nowMs: startedAt,
         runId: runId,
       );
       _stopPolling();
@@ -192,6 +203,7 @@ class SrsGen4MigrationController extends ChangeNotifier {
       _stopPolling();
       ErrorLogService.instance.log('SrsGen4Migration.run', e, stack);
       _error = e;
+      _errorReportPath = await _errorReportOf(startedAt);
       _phase = SrsGen4MigrationPhase.idle;
     } finally {
       _runId = null;
@@ -231,6 +243,24 @@ class SrsGen4MigrationController extends ChangeNotifier {
       // 进度只是显示：读不到就保留上一次的，结论以 run 的返回为准。
       ErrorLogService.instance.log('SrsGen4Migration.status', e, stack);
     }
+  }
+
+  /// 这一次（[startedAt]）出错时内核写下的错误报告的路径；没有、读不了或不是这一次的 = null。
+  Future<String?> _errorReportOf(int startedAt) async {
+    final String path = p.join(directory, SrsGen4Migration.reportFileName);
+    try {
+      final Object? report = jsonDecode(await File(path).readAsString());
+      if (report is Map<String, Object?> &&
+          report['verdict'] == 'error' &&
+          report['startedAtMs'] == startedAt) {
+        return path;
+      }
+    } on Object catch (e, stack) {
+      if (e is! PathNotFoundException) {
+        ErrorLogService.instance.log('SrsGen4Migration.errorReport', e, stack);
+      }
+    }
+    return null;
   }
 
   void _stopPolling() {

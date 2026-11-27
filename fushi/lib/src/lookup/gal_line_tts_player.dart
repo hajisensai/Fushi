@@ -216,7 +216,10 @@ class GalLineTtsPlayer {
     );
     switch (decision) {
       case GalLineTtsSkip(:final String reason):
-        glog('galtts: line=${line.id} skip ($reason)');
+        glog(
+          'galtts: line=${line.id} skip ($reason) '
+          'audio=${line.audioStatus.name}/${line.fallbackReason}',
+        );
         _settledLineId = line.id;
         _settledLineText = line.text;
         if (_current?.lineId == line.id) _cancelCurrent();

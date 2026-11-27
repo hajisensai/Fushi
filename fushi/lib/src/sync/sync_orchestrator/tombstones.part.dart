@@ -131,7 +131,8 @@ extension _SyncOrchestratorTombstones on SyncOrchestrator {
       );
       return out;
     } catch (e) {
-      report.noteError(
+      _noteDimensionError(
+        report,
         '$phase: host deletion tombstones unreadable, push skipped',
         e,
       );
@@ -229,7 +230,7 @@ extension _SyncOrchestratorTombstones on SyncOrchestrator {
         report.noteDeletionHighWater(_scope, at);
       }
     } catch (e) {
-      report.noteError('deletion tombstones live sync', e);
+      _noteDimensionError(report, 'deletion tombstones live sync', e);
     }
   }
 
@@ -291,14 +292,18 @@ extension _SyncOrchestratorTombstones on SyncOrchestrator {
           }
         } catch (e) {
           retryable = true;
-          report.noteError('deletion push ${row.mediaType}/${row.itemKey}', e);
+          _noteDimensionError(
+            report,
+            'deletion push ${row.mediaType}/${row.itemKey}',
+            e,
+          );
         }
       }
       if (!retryable) {
         await repo.setDeletionTombstonesPushBaselineMs(nextBaseline);
       }
     } catch (e) {
-      report.noteError('deletion tombstones live push', e);
+      _noteDimensionError(report, 'deletion tombstones live push', e);
     }
   }
 

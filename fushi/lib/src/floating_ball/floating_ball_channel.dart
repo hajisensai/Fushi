@@ -227,6 +227,13 @@ class FloatingBallChannel {
   /// 关冻结层、恢复球（Dart 主动关，原生不回调 `screenOcrDismissed`）。
   static Future<void> stopScreenOcr() => _invoke<void>('stopScreenOcr');
 
+  /// 此刻用户正在用的前台窗口 / app（Windows HWND、macOS pid）；前台就是 Fushi 自己
+  /// 或平台没有这条方法时为 null。截屏识字开始时记下，框选截图临时拉起主窗后经
+  /// `GlobalLookupChannel.restoreAfterCapture` 的 `returnForeground` 把前台还给它
+  /// （反馈 6RETmKY1TH）。
+  static Future<int?> foregroundAppToken() =>
+      _invoke<int>('foregroundAppToken');
+
   // ── iOS ─────────────────────────────────────────────────────────────
 
   /// 截 app 自己的窗口，返回物理像素 PNG；失败返回 null。iOS 用于截屏 OCR；

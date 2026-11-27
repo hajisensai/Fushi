@@ -24,6 +24,15 @@ import 'fake_asset_store.dart';
 
 FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
 
+/// 在 [dir] 写一本能装载的词典目录：装载必需的三组文件（kDictionaryRequiredFileGroups）都在，
+/// 同步按文件判「本机有没有这本」，只写 index.json 会被当成文件缺失（只剩元数据）。
+void _writeLoadableDictionary(String dir, {String indexJson = '{}'}) {
+  Directory(dir).createSync(recursive: true);
+  File('$dir/index.json').writeAsStringSync(indexJson);
+  File('$dir/blobs.bin').writeAsBytesSync(<int>[1, 2, 3]);
+  File('$dir/key.index').writeAsBytesSync(<int>[4, 5]);
+}
+
 /// Minimal [SyncBackend] test double: asset-store methods delegate to a shared
 /// in-memory [FakeAssetStore]; book-folder/metadata methods are stubbed only as
 /// far as the orchestrator's dictionary/audiobook paths need. Members the test
@@ -222,10 +231,10 @@ void main() {
       );
       final Directory srcDictRoot = Directory('${work.path}/src_dicts')
         ..createSync();
-      Directory('${srcDictRoot.path}/testdict').createSync(recursive: true);
-      File(
-        '${srcDictRoot.path}/testdict/index.json',
-      ).writeAsStringSync('{"title":"testdict"}');
+      _writeLoadableDictionary(
+        '${srcDictRoot.path}/testdict',
+        indexJson: '{"title":"testdict"}',
+      );
 
       final SyncRunReport pushReport = SyncRunReport();
       await _orchestrator(
@@ -288,8 +297,7 @@ void main() {
       ),
     );
     final Directory dictRoot = Directory('${work.path}/dicts')..createSync();
-    Directory('${dictRoot.path}/progdict').createSync(recursive: true);
-    File('${dictRoot.path}/progdict/index.json').writeAsStringSync('{}');
+    _writeLoadableDictionary('${dictRoot.path}/progdict');
 
     final List<SyncProgress> events = <SyncProgress>[];
     final orchestrator = SyncOrchestrator(
@@ -346,8 +354,7 @@ void main() {
       ),
     );
     final Directory dictRoot = Directory('${work.path}/dicts')..createSync();
-    Directory('${dictRoot.path}/shared').createSync(recursive: true);
-    File('${dictRoot.path}/shared/index.json').writeAsStringSync('{}');
+    _writeLoadableDictionary('${dictRoot.path}/shared');
 
     // First run pushes; second run on the same DB must be a no-op (present
     // on both sides → neither exported again nor imported).
@@ -533,10 +540,10 @@ void main() {
       );
       final Directory srcRoot = Directory('${work.path}/src_$tag')
         ..createSync();
-      Directory('${srcRoot.path}/remoteonly').createSync(recursive: true);
-      File(
-        '${srcRoot.path}/remoteonly/index.json',
-      ).writeAsStringSync('{"title":"remoteonly"}');
+      _writeLoadableDictionary(
+        '${srcRoot.path}/remoteonly',
+        indexJson: '{"title":"remoteonly"}',
+      );
       await _orchestrator(
         srcDb,
         backend,
@@ -556,10 +563,10 @@ void main() {
           collapsedLanguagesJson: const Value('[]'),
         ),
       );
-      Directory('${localDictRoot.path}/localonly').createSync(recursive: true);
-      File(
-        '${localDictRoot.path}/localonly/index.json',
-      ).writeAsStringSync('{"title":"localonly"}');
+      _writeLoadableDictionary(
+        '${localDictRoot.path}/localonly',
+        indexJson: '{"title":"localonly"}',
+      );
       return _orchestrator(localDb, backend, localDictRoot, tmp, tmp);
     }
 

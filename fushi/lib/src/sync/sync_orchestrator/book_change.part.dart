@@ -87,7 +87,8 @@ extension _SyncOrchestratorBookChange on SyncOrchestrator {
             // 本机那份坏了：收尾时强制重发即可自愈，本轮全扫。
             ownStale = true;
           } else {
-            report.noteError(
+            _noteDimensionError(
+              report,
               'peer book manifest "${e.name}" unreadable; full sweep this run',
               err,
             );
@@ -129,7 +130,7 @@ extension _SyncOrchestratorBookChange on SyncOrchestrator {
     } on SyncAuthError {
       rethrow;
     } catch (e) {
-      report.noteError('book manifests', e);
+      _noteDimensionError(report, 'book manifests', e);
       reasons.add('manifest read failed');
     }
 
@@ -195,7 +196,7 @@ extension _SyncOrchestratorBookChange on SyncOrchestrator {
     } on SyncAuthError {
       rethrow;
     } catch (e) {
-      report.noteError('publish book manifest', e);
+      _noteDimensionError(report, 'publish book manifest', e);
     }
   }
 }

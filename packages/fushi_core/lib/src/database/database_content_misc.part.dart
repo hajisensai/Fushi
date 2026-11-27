@@ -556,6 +556,16 @@ mixin _FushiDbContentMisc
     // 监听只在提交时收到一次失效，而不是每条语句各触发一次书架重算。
     await transaction(() async {
       await into(epubBooks).insert(withUid);
+      final String wireKey = collectionBookWireKey(
+        bookKey: withUid.bookKey.value,
+        sourceMetadata: withUid.sourceMetadata.present
+            ? withUid.sourceMetadata.value
+            : null,
+      );
+      await _promoteEpubCollectionPassthroughInTx(
+        uid: withUid.uid.value,
+        wireKeys: <String>{withUid.bookKey.value, wireKey},
+      );
       // Re-adding a book cancels any prior deletion tombstone so a later merge
       // may bring its data again (TODO-1195 part B).
       await clearBookTombstone(book.bookKey.value);

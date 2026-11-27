@@ -2376,6 +2376,22 @@ void FlutterWindow::RegisterFloatingBallChannel() {
         } else if (method == "stopScreenOcr") {
           StopScreenOcr();
           result->Success();
+        } else if (method == "foregroundAppToken") {
+          // 反馈 6RETmKY1TH：截屏识字开始时用户正在用的那个窗口（不属于本进程才回，
+          // 否则 null）。框选截图要临时把主窗拉到前台，结束后经 restoreAfterCapture
+          // 的 returnForeground 把前台还给它。
+          const HWND foreground = GetForegroundWindow();
+          DWORD foreground_pid = 0;
+          if (foreground != nullptr) {
+            GetWindowThreadProcessId(foreground, &foreground_pid);
+          }
+          if (foreground == nullptr || foreground_pid == 0 ||
+              foreground_pid == GetCurrentProcessId()) {
+            result->Success();
+          } else {
+            result->Success(flutter::EncodableValue(static_cast<int64_t>(
+                reinterpret_cast<intptr_t>(foreground))));
+          }
         } else if (method == "isSystemBallRunning") {
           result->Success(
               flutter::EncodableValue(floating_ball_window_->IsRunning()));
@@ -3542,9 +3558,13 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
         } else if (method == "restoreAfterCapture") {
           const int64_t capture_generation =
               Int64FromValue(args, "captureGeneration", 0);
+          // 反馈 6RETmKY1TH：Dart 在截屏识字开始时经 floating_ball 通道的
+          // foregroundAppToken 记下的前台窗口（0 = 不交还）。
+          const HWND return_foreground = reinterpret_cast<HWND>(
+              static_cast<intptr_t>(Int64FromValue(args, "returnForeground", 0)));
           result->Success(flutter::EncodableValue(
               capture_generation > 0 &&
-              win->RestoreAfterCapture(capture_generation)));
+              win->RestoreAfterCapture(capture_generation, return_foreground)));
         } else if (method == "prepare") {
           const std::wstring assets_dir = WideFromValue(args, "assetsDir", L"");
           win->SetPopupAssetsDir(assets_dir);

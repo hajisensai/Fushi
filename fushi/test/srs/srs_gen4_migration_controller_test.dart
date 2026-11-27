@@ -2,11 +2,14 @@
 // 覆盖：每个 profile 交一份缓存配置、轮询进度、提交点前后能否取消、各种结论 / 报错落到 outcome / error、
 // 提交后才调 onCommitted、跑着时重复 start 无操作、关库前的 quiesce（提交点前叫停并等、之后只等）。
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart' show ChangeNotifier;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/srs/srs_gen4_migration_controller.dart';
 import 'package:fushi_srs/fushi_srs.dart';
+import 'package:path/path.dart' as p;
 
 class FakeGen4Backend implements SrsGen4MigrationBackend {
   Completer<SrsGen4MigrationOutcome> pending =
@@ -439,5 +442,61 @@ void main() {
     expect(c.error, isA<SrsCoreException>());
     expect(c.outcome, isNull);
     expect(c.phase, SrsGen4MigrationPhase.idle);
+    expect(c.errorReportPath, isNull, reason: '目录里没有报告');
+  });
+
+  // 反馈 QW3kL_jEQF：内核出错时也写报告（verdict = error，带出错的步骤、错误原文与库的环境）；控制器认出这一次的那份，
+  // 页面据此给「发给开发者」。别的运行留下的、或中止报告不认。
+  test("a kernel error that left this run's error report exposes it", () async {
+    final Directory dir = await Directory.systemTemp.createTemp('gen4-err');
+    addTearDown(() => dir.delete(recursive: true));
+    final String path = p.join(dir.path, SrsGen4Migration.reportFileName);
+    Future<String?> errorReportAfter(Map<String, Object?>? report) async {
+      final FakeGen4Backend b = FakeGen4Backend();
+      final SrsGen4MigrationController c = SrsGen4MigrationController(
+        directory: dir.path,
+        profileUids: () async => <String>['p1'],
+        onCommitted: () async {},
+        backend: b,
+        pollInterval: const Duration(milliseconds: 5),
+        nowMs: () => 1000,
+      );
+      addTearDown(c.dispose);
+      final File f = File(path);
+      if (f.existsSync()) f.deleteSync();
+      if (report != null) f.writeAsStringSync(jsonEncode(report));
+      final Future<void> done = c.start();
+      await settle();
+      b.pending.completeError(const SrsCoreException(-1, 'disk full'));
+      await done;
+      expect(c.error, isA<SrsCoreException>());
+      return c.errorReportPath;
+    }
+
+    expect(
+      await errorReportAfter(<String, Object?>{
+        'verdict': 'error',
+        'startedAtMs': 1000,
+        'error': 'disk full',
+      }),
+      path,
+    );
+    expect(
+      await errorReportAfter(<String, Object?>{
+        'verdict': 'error',
+        'startedAtMs': 999,
+      }),
+      isNull,
+      reason: '上一次运行的报告',
+    );
+    expect(
+      await errorReportAfter(<String, Object?>{
+        'verdict': 'aborted',
+        'startedAtMs': 1000,
+      }),
+      isNull,
+      reason: '中止报告由内核的失败原因给，不在这里认',
+    );
+    expect(await errorReportAfter(null), isNull);
   });
 }

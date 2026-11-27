@@ -1,0 +1,15 @@
+## BUG-5562 · 词典文件丢了之后从互联 host 拉不回来：同步与「下载到本机」只看元数据判「已装」，还会把空目录打成包推出去
+- **报告**：2026-11-27（应用内反馈 ujt4V8GdT8：Android OnePlus CPH2747，3.4.0-debug.32705，「缺失文件，我手动下载也没有从fushi互联重拉」；截图 26 本词典行都标「本机与服务器」+「文件缺失」，互联 host 在线）
+- **真实性**：✅ 真 bug。文件丢失本身是 BUG-5492（外部书库被整树删除，已另修）；本条是丢了之后恢复不了：
+  - 「本机有没有这本」全链路只看 `dictionary_metadata`：`DictionaryTransferService.downloadFromHost`（`fushi/lib/src/sync/dictionary_transfer_service.dart:116-120`）与 `SyncOrchestrator.runSingleDictionaryTransfer`（`sync_orchestrator.dart`，`installed = 元数据里有同名`）同名即回 `AlreadyPresent`；整轮同步 `_syncDictionariesLive` / `_syncDictionariesStaged`（`sync_orchestrator/dictionaries.part.dart`）按元数据名做 union diff，两边都「有」既不拉也不推。
+  - 反过来，文件丢了的本机独有词典被当成「本机有、对端没有」→ `exportDictionaryPackage` 对不存在的目录照样出一个只有 manifest 的空包推给对端，对端装上一本坏词典。
+  - 词典管理页：本机行的「重新导入」只走在线源强制重下或手选文件（`dictionary_dialog_page.dart:534-538`）；「下载到本机」只给纯服务器行（同文件 :3338）——「本机与服务器」行没有任何从 host 拉回的入口。
+  - 推荐词典弹窗按元数据判已装（`isRecommendedDictionaryInstalled`，`dictionary_dialog_page.dart:1702`），文件缺失的勾不了；就算能勾，导入时同名非强制会被判「已是最新」跳过。
+- **[x] ① 已修复** —
+  - 唯一判据 `localDictionaryFileStates`（`dictionary_file_health.dart`，与 `DictionaryFileIssue.missing` 同口径：资源根可读且装载必需文件不全）：`complete`（可推、不必再拉）/ `restorable`（只剩元数据，应从别处拉回、绝不推）；资源根读不到时两组都空（读不到不等于没了）。
+  - 同步与单本传输全部改用它（`_LocalDictionaries`）：拉 = 本机没有或 restorable 且对端有；推 = 文件齐全且对端没有。整轮同步、云盘 staged 路径、单本「下载到本机 / 推送到」同一判据；`downloadFromHost` 的免联网预检也用它。
+  - 恢复不是新装：拉回 restorable 那本后 `DictionaryRepository.restoreLocalPlacement` 把导入前本机那一行的顺序 / 语言开关 / 折叠 / 内容语言 / 混合词典汉字部分设置写回（不接替目录行、不照搬对端的值）；改名导入本来不碰。
+  - 词典管理页：文件缺失的详情给「从 <host> 恢复」（每台目录上有同名副本的 host 一个），排在「重新导入 / 删除」前；顶部横幅有可恢复的就给「从服务器恢复 n 本」，一个进度框里逐本拉回、结束一条汇总。
+  - 推荐词典：`isRecommendedDictionaryInstalled` 带 `fileHealth`，文件缺失的不算已装；`downloadAndImportRecommendedDictionary` 以它为显式替换目标导入（iOS 续传配方同步改成 update 形态），保住顺序 / 开关 / 改名。控制通道 `dict` 路由同口径。
+- **[x] ② 已加自动化测试** — `fushi/test/sync/dictionary_transfer_service_test.dart`（真 host：文件丢了的本机词典从 host 恢复并保住顺序 / 开关 / 折叠 / 内容语言 / 改名 / 汉字部分设置；文件丢了的不推）；`fushi/test/sync/sync_orchestrator_live_dict_test.dart`（整轮同步拉回 restorable、只剩元数据的本机独有词典不推）；`fushi/test/pages/dictionary_manager_server_rows_test.dart`「missing files with a server copy」（详情恢复按钮只给有副本的 host、横幅一键恢复）；`fushi/test/ops/ctl_dictionary_routes_test.dart`（推荐词典判已装排除文件缺失、替换目标）。两份同步测试的 `_seedDictionary` 与 `sync_orchestrator_test.dart` 的词典目录桩（`_writeLoadableDictionary`）补齐装载必需的三组文件（以前只写 `blobs.bin` 或 `index.json`，按新判据算「文件不全」）。
+- **备注**：横幅「全部恢复」每本一次单本传输，每本导入后都会重载一次词典与引擎（`onPostRun`）；26 本时会慢一些但结果正确，没做合批。未做真机复测（需要真互联 host + 删掉外部书库）。

@@ -5,6 +5,8 @@
 // - SrsLoadErrorView 把代际状态转给这一页，把「profile 未绑定」「功能未接线」写成明确的「暂不可用」。
 // 迁移执行端是假的（与控制器测试同一个），不碰原生库。
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -24,6 +26,7 @@ import 'package:fushi_engine/srs/srs_storage.dart'
     show SrsLegacyMainDatabasePending;
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:path/path.dart' as p;
 
 import 'srs_gen4_migration_controller_test.dart' show FakeGen4Backend;
 
@@ -451,6 +454,55 @@ void main() {
       expect(find.text(t.srs_gen4_aborted_fail), findsNothing);
       expect(find.text(t.srs_gen4_interrupted), findsNothing);
       expect(find.byKey(SrsGenerationView.reportSendKey), findsNothing);
+    });
+
+    // 反馈 QW3kL_jEQF：出错（不是对拍不过）时内核也写报告；出错页同样给「发给开发者」与「分享 / 保存」，发的就是这份。
+    testWidgets('a kernel error offers the error report it left ($design)', (
+      WidgetTester tester,
+    ) async {
+      final Directory dir = (await tester.runAsync(
+        () => Directory.systemTemp.createTemp('gen4-view-err'),
+      ))!;
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final String path = p.join(dir.path, SrsGen4Migration.reportFileName);
+      File(path).writeAsStringSync(
+        jsonEncode(<String, Object?>{'verdict': 'error', 'startedAtMs': 1}),
+      );
+      final FakeGen4Backend b = FakeGen4Backend();
+      final FakeReportActions actions = FakeReportActions(desktop: apple);
+      final SrsGen4MigrationController c = SrsGen4MigrationController(
+        directory: dir.path,
+        profileUids: () async => <String>['p1'],
+        onCommitted: () async {},
+        backend: b,
+        nowMs: () => 1,
+      );
+      addTearDown(c.dispose);
+      await pumpView(
+        tester,
+        apple: apple,
+        controller: c,
+        reportActions: actions,
+        child: const SrsLoadErrorView(error: needs, onRetry: null),
+      );
+      expect(find.byKey(SrsGenerationView.reportSendKey), findsNothing);
+      await tester.runAsync(() async {
+        // 在真实 zone 里另起 Completer：测试体（FakeAsync zone）里建的 future 完成时把续体排进假时钟的微任务队列，
+        // runAsync 等真实事件时没人冲刷它，start() 永远等不到这次报错（实测整条用例卡到 10 分钟超时）。
+        b.pending = Completer<SrsGen4MigrationOutcome>();
+        final Future<void> done = c.start();
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+        b.pending.completeError(const SrsCoreException(-1, 'disk full'));
+        await done;
+      });
+      await tester.pump();
+      expect(find.text(t.srs_gen4_failed), findsOneWidget);
+      await tester.tap(find.byKey(SrsGenerationView.reportSendKey));
+      await tester.pump();
+      expect(actions.sent, <String>[path]);
+      await tester.tap(find.byKey(SrsGenerationView.reportExportKey));
+      await tester.pump();
+      expect(actions.exported, <String>[path]);
     });
 
     testWidgets('blocked outcomes say why, by code ($design)', (

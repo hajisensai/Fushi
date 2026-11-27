@@ -164,6 +164,66 @@ void main() {
       expect(release.containsKey('releaseSequence'), isFalse);
     });
 
+    // BUG-5579：调试版清单顶层 tag 是版本印记，包全挂在滚动 release 上。按印记拼
+    // 发布页是 404（iOS 切到调试通道点更新就打开它），发布页要跟着包的真实 release 走。
+    test(
+      'BUG-5579: release page follows the rolling release the assets live on',
+      () {
+        const String tag = 'v3.4.0-debug.32865+8e2fbbf';
+        const String base =
+            'https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling';
+        final Map<String, dynamic> release = buildReleaseFromManifest(
+          _manifestJson(
+            tag: tag,
+            version: '3.4.0-debug.32865',
+            channel: 'debug',
+            assets: <Map<String, dynamic>>[
+              // 同一份清单里还留着旧滚动 release 上的旧包（另一个 release tag）。
+              <String, dynamic>{
+                'name': 'fushi-1.3.3-debug.9114-ios.ipa',
+                'tag': 'v1.3.3-debug.9114+d684e6d',
+                'browser_download_url':
+                    'https://github.com/hajisensai/Fushi/releases/download/debug-rolling/fushi-1.3.3-debug.9114-ios.ipa',
+              },
+              <String, dynamic>{
+                'name': 'fushi-3.4.0-debug.32865-ios.ipa',
+                'tag': tag,
+                'browser_download_url': '$base/fushi-3.4.0-debug.32865-ios.ipa',
+              },
+            ],
+          ),
+        )!;
+        expect(release['tag_name'], tag);
+        expect(
+          release['html_url'],
+          'https://github.com/$kGitHubRepo/releases/tag/fushi-debug-rolling',
+        );
+      },
+    );
+
+    test('BUG-5579: release page tag falls back to the manifest tag', () {
+      expect(
+        manifestReleasePageTag('v1.0.0', <Map<String, dynamic>>[
+          <String, dynamic>{
+            'name': 'a.apk',
+            'browser_download_url': 'https://example.com/a.apk',
+          },
+        ]),
+        'v1.0.0',
+      );
+      // 没有同版印记的包时取任意一个能解析的包。
+      expect(
+        manifestReleasePageTag('v1.0.0', <Map<String, dynamic>>[
+          <String, dynamic>{
+            'name': 'a.apk',
+            'browser_download_url':
+                'https://github.com/o/r/releases/download/v1.0.0-rc/a.apk',
+          },
+        ]),
+        'v1.0.0-rc',
+      );
+    });
+
     test('legacy manifest source keeps legacy release page fallback', () {
       final Map<String, dynamic> release = buildReleaseFromManifest(
         _manifestJson(),

@@ -54,6 +54,7 @@ Future<void> _pumpDeckList(
     ProviderScope(
       overrides: <Override>[
         appProvider.overrideWith((Ref ref) => appModel),
+        ...srsTestDonationOverrides,
         srsStoreProvider.overrideWith((Ref ref) async => store),
         srsCardFaceBuilderProvider.overrideWithValue(
           (BuildContext context, SrsCardFace face) =>

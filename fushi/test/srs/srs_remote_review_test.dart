@@ -361,6 +361,7 @@ Future<void> _pumpHome(
     ProviderScope(
       overrides: <Override>[
         appProvider.overrideWith((Ref ref) => app),
+        ...srsTestDonationOverrides,
         srsStoreProvider.overrideWith((Ref ref) async => local),
         srsRwkvServiceProvider.overrideWith((Ref ref) async => null),
         ...overrides,
@@ -1137,6 +1138,7 @@ void main() {
         ProviderScope(
           overrides: <Override>[
             appProvider.overrideWith((Ref ref) => app),
+            ...srsTestDonationOverrides,
             srsCardFaceBuilderProvider.overrideWithValue((
               BuildContext context,
               SrsCardFace face,
@@ -2038,6 +2040,7 @@ void main() {
         ProviderScope(
           overrides: <Override>[
             appProvider.overrideWith((Ref ref) => app),
+            ...srsTestDonationOverrides,
             srsCardFaceBuilderProvider.overrideWithValue((
               BuildContext context,
               SrsCardFace face,
@@ -2123,6 +2126,7 @@ void main() {
         ProviderScope(
           overrides: <Override>[
             appProvider.overrideWith((Ref ref) => app),
+            ...srsTestDonationOverrides,
             srsCardFaceBuilderProvider.overrideWithValue((
               BuildContext context,
               SrsCardFace face,
@@ -2212,7 +2216,10 @@ void main() {
       host.malformed['editHistory'] = <String, Object?>{'result': 7};
       await tester.pumpWidget(
         ProviderScope(
-          overrides: <Override>[appProvider.overrideWith((Ref ref) => app)],
+          overrides: <Override>[
+            appProvider.overrideWith((Ref ref) => app),
+            ...srsTestDonationOverrides,
+          ],
           child: TranslationProvider(
             child: MaterialApp(
               theme: buildFushiThemeData(

@@ -39,6 +39,11 @@ class PdfImporter {
   /// 书目录内固定的封面文件名。
   static const String kCoverFileName = 'cover.png';
 
+  /// 把 PDF 原件拷成书目录里的 [kPdfFileName]：首次导入与原地重建共用这一处裸写
+  /// （cover_write_sink_bug_2496_guard_test 按锚点数这一行）。
+  static Future<File> _copyPdfInto(String filePath, String dir) =>
+      File(filePath).copy(p.join(dir, kPdfFileName));
+
   /// 从磁盘路径导入一份 PDF。成功返回 bookKey（= 净化后的标题，`EpubBooks` 主键）；
   /// 用户在同名弹窗取消时抛 [DuplicateImportCancelledException]（由调用方按取消处理）；
   /// 其它失败抛异常并回滚本次自己建的行与目录。
@@ -123,7 +128,7 @@ class PdfImporter {
           final String dir = await EpubImporter.createStagingDir(db);
           stagedDir = dir;
           // 把 PDF 拷进书目录（原文件在缓存/外部目录，阅读器需稳定内部副本）。
-          await File(filePath).copy(p.join(dir, kPdfFileName));
+          await _copyPdfInto(filePath, dir);
           // BUG-2496：封面走收口（校验完整可解码 + 原子写）。pdfrx 渲染出的字节
           // 理应是完整 PNG，但栅格化失败/半截时不能让整本 PDF 导入失败——记诊断、
           // coverPath 留空，书架回落占位图。
@@ -222,6 +227,86 @@ class PdfImporter {
             stack,
           );
         }
+      }
+      rethrow;
+    }
+  }
+
+  /// 用 [filePath] 这份 PDF **就地重建**一本已入库 PDF 书的书目录 [extractDir]
+  /// （`document.pdf` + 栅格化首页封面），返回页数与封面相对路径（栅格化失败为 null）。
+  ///
+  /// 来源扫描发现书目录丢了、而原件还在时用（BUG-5569）：不插新行、不派生新 bookKey、
+  /// 不动 `extract_dir` 列，书的身份 / 进度 / 合集原样保留。与 EPUB 的
+  /// [EpubImporter.rebuildExtractedInPlace] 同一套原子替换：新目录先备进暂存，持落位锁
+  /// 经 [EpubStorage.moveDirIntoPlace] 换上（目标就是本书自己的目录，`liveExtractDirs`
+  /// 传空 = 允许覆盖它）。
+  static Future<({int pageCount, String? coverRel})> rebuildBookDirInPlace({
+    required String filePath,
+    required String extractDir,
+  }) async {
+    await PdfEngine.ensureInitialized();
+    final int pageCount;
+    Uint8List? coverPng;
+    final PdfDocument document = await PdfDocument.openFile(filePath);
+    try {
+      pageCount = document.pages.length;
+      if (pageCount <= 0) {
+        throw StateError('PDF 无任何页：$filePath');
+      }
+      coverPng = await _renderCoverPng(document.pages.first);
+    } finally {
+      await document.dispose();
+    }
+    final String? coverRel = await restoreRenderedInPlace(
+      filePath: filePath,
+      extractDir: extractDir,
+      coverPng: coverPng,
+    );
+    return (pageCount: pageCount, coverRel: coverRel);
+  }
+
+  /// [rebuildBookDirInPlace] 的落盘段（页数与封面字节已在手），返回封面相对路径。
+  ///
+  /// 公开只为测试（PDF 栅格化要 pdfium，单测里起不来）。
+  @visibleForTesting
+  static Future<String?> restoreRenderedInPlace({
+    required String filePath,
+    required String extractDir,
+    required Uint8List? coverPng,
+  }) async {
+    final String staging = await EpubStorage.createStagingDirectory();
+    try {
+      await _copyPdfInto(filePath, staging);
+      String? coverRel;
+      if (coverPng != null) {
+        try {
+          await writeCoverBytesAtomically(
+            bytes: coverPng,
+            destPath: p.join(staging, kCoverFileName),
+          );
+          coverRel = kCoverFileName;
+        } on CoverImageInvalidException catch (e) {
+          ErrorLogService.instance.logDiagnostic('PdfImporter.cover', e);
+        }
+      }
+      await EpubStorage.withBookPlacementLock(() async {
+        EpubStorage.moveDirIntoPlace(
+          srcDir: Directory(staging),
+          targetDir: extractDir,
+          liveExtractDirs: const <String>[],
+        );
+      });
+      return coverRel;
+    } catch (_) {
+      try {
+        final Directory dir = Directory(staging);
+        if (dir.existsSync()) dir.deleteSync(recursive: true);
+      } catch (cleanupError, stack) {
+        ErrorLogService.instance.log(
+          'PdfImporter.rebuildInPlace',
+          cleanupError,
+          stack,
+        );
       }
       rethrow;
     }

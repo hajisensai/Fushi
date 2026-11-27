@@ -462,6 +462,62 @@ class DictionaryRepository {
         0;
   }
 
+  /// 从别处把一本**本机已登记、文件丢了**的词典拉回来之后（反馈 ujt4V8GdT8）：同步包导入
+  /// 按名 upsert，把包里 host 自己的 `order` / 开关 / 折叠写进了本机这一行。这里把导入前
+  /// 本机那一行 [before] 的「怎么排、开不开」整份写回（顺序、语言开关、折叠、内容语言、混合
+  /// 词典汉字部分的开关 / 位置）——恢复不是新装，用户的设置一样都不能丢。改名
+  /// （`display_name`）导入本来就不碰。返回是否改了。
+  static Future<bool> restoreLocalPlacement(
+    FushiDatabase db,
+    DictionaryMetaRow before,
+  ) async {
+    DictionaryMetaRow? now;
+    for (final DictionaryMetaRow r in await db.getAllDictionaryMetadata()) {
+      if (r.name == before.name) now = r;
+    }
+    if (now == null) return false;
+    return await db.applyDictionaryMetaProfileColumns(
+          name: before.name,
+          order: before.order,
+          hiddenLanguagesJson: before.hiddenLanguagesJson,
+          collapsedLanguagesJson: before.collapsedLanguagesJson,
+          expandedLanguagesJson: before.expandedLanguagesJson,
+          languageOverride: before.languageOverride,
+          metadataJson: _withKanjiPartSettingsOf(
+            now.metadataJson,
+            before.metadataJson,
+          ),
+        ) >
+        0;
+  }
+
+  /// [installed]（刚导入的安装事实）换上 [settingsFrom] 里混合词典汉字部分的用户设置
+  /// （[kDictKanjiPartSettingKeys]）；两边任一不是 JSON 对象就原样留 [installed]。
+  static String _withKanjiPartSettingsOf(
+    String installed,
+    String settingsFrom,
+  ) {
+    final Object? live;
+    final Object? old;
+    try {
+      live = jsonDecode(installed);
+      old = jsonDecode(settingsFrom);
+    } on FormatException {
+      return installed;
+    }
+    if (live is! Map || old is! Map) return installed;
+    final Map<String, String> wanted = kanjiPartSettingsIn(<String, String>{
+      for (final MapEntry<dynamic, dynamic> e in old.entries)
+        if (e.key is String && e.value is String)
+          e.key as String: e.value as String,
+    });
+    return jsonEncode(<String, dynamic>{
+      for (final MapEntry<dynamic, dynamic> e in live.entries)
+        if (!kDictKanjiPartSettingKeys.contains(e.key)) '${e.key}': e.value,
+      ...wanted,
+    });
+  }
+
   static List<String> _decodeLanguageList(String json) {
     try {
       final Object? decoded = jsonDecode(json);

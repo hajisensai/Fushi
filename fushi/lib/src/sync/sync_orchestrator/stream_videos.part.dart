@@ -57,7 +57,7 @@ extension _SyncOrchestratorStreamVideos on SyncOrchestrator {
     } on SyncCancelledException {
       rethrow;
     } catch (e) {
-      report.noteError('live push stream videos', e);
+      _noteDimensionError(report, 'live push stream videos', e);
     }
 
     // 推过东西就先重取清单再拉：本机刚推上去的行要进拉取基线（它们在 [localUids]
@@ -78,7 +78,7 @@ extension _SyncOrchestratorStreamVideos on SyncOrchestrator {
     } on SyncCancelledException {
       rethrow;
     } catch (e) {
-      report.noteError('live pull stream videos', e);
+      _noteDimensionError(report, 'live pull stream videos', e);
       // 中途抛出时可能已落了几行：按「落过」处理，调用方重读一次行表。
       pulled = true;
     }
@@ -151,7 +151,7 @@ extension _SyncOrchestratorStreamVideos on SyncOrchestrator {
             break;
         }
       } catch (e) {
-        report.noteError('live push stream video "${row.title}"', e);
+        _noteDimensionError(report, 'live push stream video "${row.title}"', e);
       }
     }
     return changed;
@@ -203,7 +203,11 @@ extension _SyncOrchestratorStreamVideos on SyncOrchestrator {
         created.add((uid: info.id, url: stream.url));
       } catch (e) {
         incomplete = true;
-        report.noteError('live pull stream video "${info.title}"', e);
+        _noteDimensionError(
+          report,
+          'live pull stream video "${info.title}"',
+          e,
+        );
       }
     }
     // 有条目没落成就不推进基线，否则它们再也拉不到。

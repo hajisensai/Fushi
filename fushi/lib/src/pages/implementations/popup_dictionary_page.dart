@@ -22,6 +22,8 @@ import 'package:fushi/src/lookup/ocr_block_sentence.dart';
 import 'package:fushi/src/lookup/source_line_sentence.dart';
 import 'package:fushi/src/lookup/source_lookup_sentence.dart'
     show withFallbackMiningSentence;
+import 'package:fushi/src/media/favorites/favorite_lookup_context.dart'
+    show FavoriteLookupContext;
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
@@ -1304,6 +1306,24 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       isSessionOnScreen: () => _popup.isEntryOnScreen(entry),
       onDuplicateCheck: checkDuplicate,
       onOverwriteTargetNoteId: findOverwriteTargetNoteId,
+      // 反馈 z26A3IZcKZ：☆ 收藏此前没接线，webview 的 favoriteEntry 桥见回调为 null 直接回
+      // false（点了没反应、不落库）。收藏写主库 FavoriteWords（:popup 已以可写方式开着 Drift
+      // 主库，与本窗的查词 / 制卡统计同一个库），与 app 内弹窗同一个 [onFavoriteEntry]；
+      // 原句与制卡 `{sentence}` 同源（基础层补外部入口那一行，嵌套层是被点处那一句）。
+      onFavoriteEntry: (Map<String, String> fields) => onFavoriteEntry(
+        fields,
+        lookupContext: FavoriteLookupContext(
+          sentence:
+              (isBase
+                  ? _withSourceSentence(fields)
+                  : withFallbackMiningSentence(
+                      fields,
+                      entry.contextSentence,
+                    ))['sentence'] ??
+              '',
+        ),
+      ),
+      onFavoriteCheck: onFavoriteCheck,
       // 制卡目标切换不放层顶栏：基础层没有 header / 关闭 / 返回 / 历史，层顶栏整条不画，
       // 按钮跟着消失（BUG-3731）。本窗口在自己的搜索条上给一颗（[_buildMiningTargetButton]），
       // 基础层与嵌套层共用，不在子层顶栏里重复出现。

@@ -239,6 +239,28 @@ void main() {
     );
   });
 
+  // BUG-5550（反馈 T3n0B8tO7F）：loopback 兜底切片不是「有配音」的证据。旧裁决把除
+  // line_has_no_voice 以外的 fallback 一律判 voiced，「仅无原声」在 loopback 会话里
+  // 一句都不读。
+  test('loopback 兜底切片：检测中等、无人声 / 判不出读、有人声跳过', () {
+    GalLineVoiceEvidence of(String? reason) => galLineVoiceEvidenceOf(
+      _line(
+        'a',
+        'x',
+        status: TexthookerLineAudioStatus.fallback,
+        fallbackReason: reason,
+      ),
+    );
+    expect(of(kGalLoopbackVoiceCheckingReason), GalLineVoiceEvidence.pending);
+    expect(
+      of(kGalLoopbackVoiceUnverifiedReason),
+      GalLineVoiceEvidence.unvoiced,
+    );
+    expect(of(kGalLineNoVoiceReason), GalLineVoiceEvidence.unvoiced);
+    expect(of(kGalLoopbackVoiceDetectedReason), GalLineVoiceEvidence.voiced);
+    expect(of('manual_recapture'), GalLineVoiceEvidence.voiced);
+  });
+
   test('设置 JSON 往返，坏规则丢弃', () {
     final GalLineTtsSettings settings = _auto.copyWith(
       presetId: 'p1',

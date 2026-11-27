@@ -230,12 +230,15 @@ class SrsCardLookupController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 弹窗打开时页面的按键闸：Esc 关一层；会翻面 / 评分 / 换卡的键一律吞掉（不落到
-  /// 复习 / 浏览动作上）；其它键照常。弹窗没开时返回 null（页面照常处理）。
-  KeyEventResult? guardKey(KeyEvent event) {
+  /// 弹窗打开时页面的按键闸：Esc 与 [dismiss] 为 true 的键关一层；会翻面 / 评分 / 换卡的键
+  /// 一律吞掉（不落到复习 / 浏览动作上）；其它键照常。弹窗没开时返回 null（页面照常处理）。
+  ///
+  /// [dismiss]：页面按快捷键注册表判定这个键是不是「关闭词典」/「返回上一级」（用户改过的键、
+  /// 自绑的键都算，反馈 wJmcCQBVn1）；本控制器不认注册表，只认写死的 Esc 兜底。
+  KeyEventResult? guardKey(KeyEvent event, {bool dismiss = false}) {
     if (!_open) return null;
     final LogicalKeyboardKey key = event.logicalKey;
-    if (key == LogicalKeyboardKey.escape) {
+    if (dismiss || key == LogicalKeyboardKey.escape) {
       if (event is KeyDownEvent) closeTop();
       return KeyEventResult.handled;
     }
@@ -244,10 +247,11 @@ class SrsCardLookupController extends ChangeNotifier {
   }
 
   /// 卡面 WebView 键盘桥回传的 token 在弹窗打开时的处置：返回 true = 已消费（页面
-  /// 不再按复习 / 浏览动作处理）。
-  bool guardBridgeToken(String token) {
+  /// 不再按复习 / 浏览动作处理）。`Escape` 与 [dismiss] 为 true 的 token 关一层（[dismiss] 同
+  /// [guardKey]）。
+  bool guardBridgeToken(String token, {bool dismiss = false}) {
     if (!_open) return false;
-    if (token == 'Escape') closeTop();
+    if (dismiss || token == 'Escape') closeTop();
     return true;
   }
 }

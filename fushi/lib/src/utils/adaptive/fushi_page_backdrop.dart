@@ -377,6 +377,9 @@ ThemeData withoutFushiPageBackdrop(ThemeData theme) {
 }
 
 /// 给任意转场 builder 垫上 [FushiPageBackdrop]：转场作用在「底 + 页面」整体上。
+///
+/// 同时给这一页装 [FushiCoveredPageSnapshot]：被新页盖住 / 重新露出的转场途中
+/// 画快照，不逐帧实时重画整页。
 class FushiBackdropPageTransitionsBuilder extends PageTransitionsBuilder {
   const FushiBackdropPageTransitionsBuilder(this.inner);
 
@@ -405,6 +408,132 @@ class FushiBackdropPageTransitionsBuilder extends PageTransitionsBuilder {
     context,
     animation,
     secondaryAnimation,
-    FushiPageBackdrop(child: child),
+    FushiCoveredPageSnapshot(
+      secondaryAnimation: secondaryAnimation,
+      enabled: route.allowSnapshotting,
+      child: FushiPageBackdrop(child: child),
+    ),
+  );
+}
+
+/// 被盖住的那一页在转场途中画成一张快照（[SnapshotWidget]）：新页推入 / 弹出、
+/// 侧滑返回跟手时（[secondaryAnimation] 正在动），这一页从转场第 3 帧起只完整画
+/// 一次，之后每帧贴这张图，随转场位移 / 压暗；转场一落定立刻回实时绘制。
+///
+/// **前两帧照常实时画再拍**：推页这一刻被盖住的页还会变——[Hero] 飞行在第一帧
+/// 画完后才起飞（`HeroController` 的 post-frame），起点的 Hero 第二帧才换成占位；
+/// `isCurrent` / `RouteAware.didPushNext` 引起的重建也在第一帧。快照拍下后子树
+/// 再变不会反映到图上（[SnapshotWidget] 的语义），拍早了就会留下一个重影 Hero。
+///
+/// 起因（2026-11-27「打开视频系列这种二级页面会掉帧」，BUG-5582）：被盖住的页在
+/// UI 侧并不重画（路由的 RepaintBoundary 层原样复用），但桌面 Impeller 没有 raster
+/// cache，转场的每一帧都要把上下两页的绘制命令整页重放。视频库页静止一帧的 raster
+/// 就要 5.5–6.4 ms（4K、RTX 4070 Ti，真实库），合集页约 2 ms，转场 600 ms 内平均
+/// 约 10 ms 一帧，165 Hz 屏每帧预算约 6 ms，推入 / 返回全程掉帧；关掉玻璃材质与
+/// 页面背景也只降 1–2 ms。同一次运行交替对照（`video_collection_perf_itest`，各 3
+/// 次）：推入 raster 均值 9.6–11.1 → 4.5–4.9 ms、超 6 ms 的帧 44–54 → 13–23；
+/// 返回 10.0–12.7 → 3.4–4.5 ms、38–43 → 5–7。被盖住的页在转场里不可交互，画快照
+/// 与实时绘制看起来一样——Flutter 自己的 Zoom 转场也是这样做的（`allowSnapshotting`）。
+///
+/// - 转场途中页内若有东西在动（加载圈、视频画面），快照里它停在第一帧，落定后
+///   恢复；这与 Flutter Zoom 转场的取舍一致。
+/// - 含平台视图（WebView）的页拍不了快照，[SnapshotMode.permissive] 下照常实时画。
+/// - 路由的 [TransitionRoute.allowSnapshotting] 为 false 时不拍。
+/// - 子树结构恒定（[SnapshotWidget] 一直在，只切换控制器），转场前后页面 State
+///   不重建。
+///
+/// 纯合成层优化，与设计系统无关（M3E / Apple 两套转场都经过这里）。
+class FushiCoveredPageSnapshot extends StatefulWidget {
+  const FushiCoveredPageSnapshot({
+    required this.secondaryAnimation,
+    required this.child,
+    this.enabled = true,
+    super.key,
+  });
+
+  /// 本页被上面那页盖住的进度（路由的 secondaryAnimation）。
+  final Animation<double> secondaryAnimation;
+
+  /// 允许拍快照（[TransitionRoute.allowSnapshotting]）。
+  final bool enabled;
+
+  final Widget child;
+
+  @override
+  State<FushiCoveredPageSnapshot> createState() =>
+      _FushiCoveredPageSnapshotState();
+}
+
+class _FushiCoveredPageSnapshotState extends State<FushiCoveredPageSnapshot> {
+  final SnapshotController _controller = SnapshotController();
+
+  /// 已排了「隔两帧开拍」、还没轮到。转场途中页面照常重建（`didUpdateWidget`
+  /// 每帧都可能来），不能每次都把计时重来，否则永远等不满两帧。
+  bool _pending = false;
+
+  /// 每次「不该拍」+1：作废还没轮到的延迟开拍。
+  int _generation = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.secondaryAnimation.addStatusListener(_onStatus);
+    _sync();
+  }
+
+  @override
+  void didUpdateWidget(FushiCoveredPageSnapshot oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.secondaryAnimation != widget.secondaryAnimation) {
+      oldWidget.secondaryAnimation.removeStatusListener(_onStatus);
+      widget.secondaryAnimation.addStatusListener(_onStatus);
+    }
+    _sync();
+  }
+
+  @override
+  void dispose() {
+    widget.secondaryAnimation.removeStatusListener(_onStatus);
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onStatus(AnimationStatus _) => _sync();
+
+  bool get _wanted =>
+      widget.enabled && widget.secondaryAnimation.status.isAnimating;
+
+  void _sync() {
+    if (!_wanted) {
+      _generation++;
+      _pending = false;
+      _controller.allowSnapshotting = false;
+      return;
+    }
+    if (_controller.allowSnapshotting || _pending) return;
+    _pending = true;
+    final int generation = _generation;
+    // 隔两帧再开拍（见类注释）。转场本身每帧都在出帧，post-frame 不必自己要帧。
+    void afterFrames(int left) {
+      SchedulerBinding.instance.addPostFrameCallback((Duration _) {
+        if (!mounted || generation != _generation) return;
+        if (left > 1) {
+          afterFrames(left - 1);
+          return;
+        }
+        _pending = false;
+        if (_wanted) _controller.allowSnapshotting = true;
+      });
+    }
+
+    afterFrames(2);
+  }
+
+  @override
+  Widget build(BuildContext context) => SnapshotWidget(
+    controller: _controller,
+    mode: SnapshotMode.permissive,
+    autoresize: true,
+    child: widget.child,
   );
 }

@@ -11,6 +11,7 @@
 #include "code_integrity_probe.h"
 #include "code_integrity_report.h"
 #include "crash_dump.h"
+#include "dart_aot_image.h"
 #include "native_glog.h"
 #include "startup_reveal_policy.h"
 
@@ -128,6 +129,9 @@ namespace fushi
       bool startup_reveal_forced = false;
       // 本次启动的代码完整性拦截记录查过没有（code_integrity_probe.h，BUG-5484）。
       bool code_integrity_probed = false;
+      // 上一圈循环的两只钟（[CheckWatchdogStarvation]）。
+      ULONGLONG last_loop_unbiased_ms = 0;
+      ULONGLONG last_loop_wall_ms = 0;
     };
 
     // 抓一份 hang dump 并记录：dump 与 hang_watchdog.log 这两样证据只用栈缓冲和
@@ -144,6 +148,16 @@ namespace fushi
       swprintf_s(text, log_format, ms,
         dump_path[0] ? dump_path : L"(write failed)");
       AppendHangLogLine(text);
+      // dump 里也有同一行（user stream）；日志里再记一份，只拿到日志的人也能对上
+      // 符号文件（tool/windows_dump_symbolize.dart，BUG-5568）。
+      DartAotImageInfo aot;
+      char aot_line[160];
+      if (FindDartAotImage(&aot) &&
+          FormatDartAotImageLine(aot, aot_line, sizeof(aot_line)) > 0) {
+        wchar_t aot_text[160];
+        swprintf_s(aot_text, L"%hs", aot_line);
+        AppendHangLogLine(aot_text);
+      }
       NativeGlog(std::string(glog_prefix) + std::to_string(ms) + " dump=" +
         (dump_path[0] ? DumpFileName(dump_path) : "(write failed)"));
       PruneOldHangDumps();
@@ -279,17 +293,45 @@ namespace fushi
       StartCodeIntegrityProbe(false);
     }
 
+    // 看门狗线程自己隔了多久才又跑一圈（BUG-5568）。它每 100 ms 醒一次，所有判据都
+    // 靠它醒着：整个进程被挂起 / 换页换到饿死时它一样不跑，量出的就是「什么都没发生」
+    // （2026-11-27 视频冻结 130 s，期间 hang_watchdog.log 一行没有）。两只钟一起记：
+    // 不含睡眠的那只也跳了 = 进程没被调度；只有含睡眠的那只跳了 = 系统睡眠，不是卡。
+    void CheckWatchdogStarvation(WatchdogState& s)
+    {
+      const ULONGLONG unbiased_ms = UnbiasedNowMs();
+      const ULONGLONG wall_ms = GetTickCount64();
+      const ULONGLONG unbiased_gap =
+        unbiased_ms > s.last_loop_unbiased_ms
+          ? unbiased_ms - s.last_loop_unbiased_ms : 0;
+      const ULONGLONG wall_gap =
+        wall_ms > s.last_loop_wall_ms ? wall_ms - s.last_loop_wall_ms : 0;
+      s.last_loop_unbiased_ms = unbiased_ms;
+      s.last_loop_wall_ms = wall_ms;
+      if (!IsWatchdogLoopStarved(unbiased_gap) || IsDebuggerPresent()) return;
+      wchar_t text[160];
+      swprintf_s(text,
+        L"watchdog thread did not run for %llu ms (wall clock %llu ms): the "
+        L"process was not scheduled (suspended or starved)", unbiased_gap, wall_gap);
+      AppendHangLogLine(text);
+      NativeGlog("watchdog-starved: ms=" + std::to_string(unbiased_gap) +
+        " wall_ms=" + std::to_string(wall_gap));
+    }
+
     DWORD WINAPI WatchdogMain(LPVOID)
     {
       const UINT heartbeat = g_heartbeat_message.load();
       WatchdogState s;
       s.started_ms = UnbiasedNowMs();
+      s.last_loop_unbiased_ms = s.started_ms;
+      s.last_loop_wall_ms = GetTickCount64();
 
       for (;;) {
         if (WaitForSingleObject(g_stop_event, kPollIntervalMs) == WAIT_OBJECT_0 ||
             !IsWindow(g_main_window)) {
           return 0;
         }
+        CheckWatchdogStarvation(s);
         CheckStartupReveal(s);
         CheckCodeIntegrityProbe(s);
         CheckDartSilence(s);
