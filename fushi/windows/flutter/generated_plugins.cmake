@@ -3,6 +3,7 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
+  battery_plus
   bonsoir_windows
   desktop_drop
   dynamic_color

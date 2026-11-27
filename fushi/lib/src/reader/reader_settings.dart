@@ -951,6 +951,12 @@ class ReaderSettings {
   Future<void> toggleStatusFooterPersistent() =>
       _set<bool>('status_footer_persistent', !statusFooterPersistent);
 
+  /// 常驻页眉 / 页脚的槽位布局 JSON（per-reader，`ReaderStatusBarLayout.encode`）。
+  /// 空串 = 默认（页眉页脚都不放内容，反馈 JONk4qmF8V 拍板默认不显示）。
+  String get statusBarLayout => _get<String>('reader_status_bar_layout', '');
+  Future<void> setStatusBarLayout(String value) =>
+      _set<String>('reader_status_bar_layout', value);
+
   bool get keepScreenAwake => _get<bool>('keep_screen_awake', true);
   Future<void> toggleKeepScreenAwake() =>
       _set<bool>('keep_screen_awake', !keepScreenAwake);

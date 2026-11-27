@@ -52,6 +52,7 @@ import 'package:fushi/src/reader/reader_tap_zones.dart';
 import 'package:fushi/src/reader/reader_chrome_floating.dart';
 import 'package:fushi/src/reader/highlight_stroke_style.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
+import 'package:fushi/src/reader/reader_status_bar_layout.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart' show sanitizeTtuFilename;
 import 'package:fushi/src/shortcuts/visual/gamepad_glyphs.dart';
@@ -2101,6 +2102,21 @@ class ReaderFushiSource extends ReaderMediaSource {
           key: 'status_footer_persistent',
           value: !statusFooterPersistent,
         ));
+  }
+
+  /// 常驻页眉 / 页脚布局（分层同 [statusFooterPersistent]；反馈 JONk4qmF8V）。
+  ReaderStatusBarLayout get statusBarLayout => ReaderStatusBarLayout.decode(
+    readerSettings?.statusBarLayout ??
+        getPreference<String>(
+          key: 'reader_status_bar_layout',
+          defaultValue: '',
+        ),
+  );
+
+  Future<void> setStatusBarLayout(ReaderStatusBarLayout layout) async {
+    final String encoded = layout.encode();
+    await (readerSettings?.setStatusBarLayout(encoded) ??
+        setPreference<String>(key: 'reader_status_bar_layout', value: encoded));
   }
 
   bool get keepScreenAwake =>

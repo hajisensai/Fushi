@@ -1535,6 +1535,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
           _progressTotalChars = newTotal;
         });
       }
+      unawaited(_refreshStatusBarPageInfo());
       if (!topProgressWasShown && _showTopProgress) {
         unawaited(
           _applyChromeInsetsAndReanchor().catchError((Object e, StackTrace s) {

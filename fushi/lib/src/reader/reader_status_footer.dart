@@ -8,6 +8,11 @@ import 'package:fushi_audio/fushi_audio.dart' show StudySessionTotals;
 
 import 'package:fushi/src/reader/reader_chrome_floating.dart'
     show kTopProgressFontSize;
+import 'package:fushi/src/reader/reader_status_bar.dart'
+    show
+        ReaderStatusBarRow,
+        kReaderStatusBarTrailingGap,
+        readerStatusBarTextStyle;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -66,7 +71,8 @@ const double kReaderStatusFooterFontSize = kTopProgressFontSize;
 /// 不经 `setChromeInsets`；状态行在歌词模式下既不画也不占预留。
 ///
 /// 「计时 / 本次字数 / 字每时 / 进度」四个读数开关**都**关掉时整条行不画也不占预留——
-/// 空行照占 28px 是白吃正文高度。判据只此一处（[readerStatusFooterReserve] 的
+/// 空行照占 28px 是白吃正文高度。页脚槽位放了内容（[hasSlotItems]，常驻页脚
+/// JONk4qmF8V）时即使四个读数全关也启用。判据只此一处（[readerStatusFooterReserve] 的
 /// `enabled` 就是它），绘制与预留不会各判各的。
 bool readerStatusFooterEnabled({
   required bool desktop,
@@ -75,7 +81,10 @@ bool readerStatusFooterEnabled({
   required bool showProgress,
   required bool showChars,
   required bool showSpeed,
-}) => !lyricsMode && (showTimer || showProgress || showChars || showSpeed);
+  bool hasSlotItems = false,
+}) =>
+    !lyricsMode &&
+    (showTimer || showProgress || showChars || showSpeed || hasSlotItems);
 
 /// 状态行是否已被底栏**吸收**：挤压态底栏占位（[bottomChromeReserve] > 0）且宽屏把
 /// 同一串读数并进了底栏右端（[inlineStatus]，[ReaderStatusInline]）。
@@ -548,7 +557,13 @@ class ReaderStatusFooter extends StatefulWidget {
     this.onTapProgress,
     this.floating = false,
     this.resting = false,
+    this.slotTexts,
   });
+
+  /// 页脚左 / 中 / 右三格的文字（[ReaderStatusBarLayout] 页脚槽位，反馈 JONk4qmF8V）。
+  /// null = 页脚没放内容，读数照旧整串贴右（或居中）——老用户的默认形态逐字不变。
+  /// 非 null 时整行三等分：左槽靠左、中槽居中、右槽文字紧贴在读数（胶囊）左边。
+  final ({String? start, String? center, String? end})? slotTexts;
 
   /// 悬浮工具栏样式（M3E，默认）：读数是一枚浮在正文上的小胶囊（底色
   /// [backgroundColor]、全圆角、轻阴影），整条带透明——不画整条实体底栏，竖排 /
@@ -676,9 +691,41 @@ class _ReaderStatusFooterState extends State<ReaderStatusFooter>
   /// 悬浮胶囊左右内边距（单侧）。
   static const double _pillPadding = 12;
 
+  /// 悬浮形态的读数胶囊（底色 / 全圆角 / 轻阴影，静息态更透明）。
+  Widget _pill(BuildContext context, Widget child) {
+    final bool resting = widget.resting;
+    return AnimatedContainer(
+      key: const ValueKey<String>('fushi_status_footer_pill'),
+      duration: fushiMotionDuration(context, FushiMotion.short),
+      curve: FushiMotion.standard,
+      padding: const EdgeInsets.symmetric(horizontal: _pillPadding),
+      decoration: ShapeDecoration(
+        color: resting
+            ? widget.backgroundColor.withValues(
+                alpha: widget.backgroundColor.a * 0.72,
+              )
+            : widget.backgroundColor,
+        shape: const StadiumBorder(),
+        shadows: <BoxShadow>[
+          BoxShadow(
+            color: Colors.black.withValues(alpha: resting ? 0 : 0.12),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final StudySessionTotals totals = widget.sessionTotals();
+    final bool readoutsShown =
+        widget.showTimer ||
+        widget.showChars ||
+        widget.showSpeed ||
+        widget.showProgress;
     final Color muted = widget.textColor.withValues(alpha: 0.55);
     final double bandHeight = readerStatusFooterBandHeight(
       footerReserve: readerStatusFooterPaintedHeight(
@@ -699,6 +746,14 @@ class _ReaderStatusFooterState extends State<ReaderStatusFooter>
             padding: EdgeInsets.fromLTRB(16, 0, 16, bandHeight - widget.height),
             child: LayoutBuilder(
               builder: (BuildContext context, BoxConstraints constraints) {
+                final ({String? start, String? center, String? end})? slots =
+                    widget.slotTexts;
+                // 有页脚槽位时读数只分到右边三分之一（密度按这个宽度降级）。
+                // 右槽有文字时再让出它与读数之间的间距（[ReaderStatusBarRow]）。
+                final double readoutsMaxWidth = slots == null
+                    ? constraints.maxWidth
+                    : constraints.maxWidth / 3 -
+                          (slots.end == null ? 0 : kReaderStatusBarTrailingGap);
                 final Widget readouts = ReaderStatusReadouts(
                   keyPrefix: 'fushi_status',
                   totals: totals,
@@ -712,11 +767,24 @@ class _ReaderStatusFooterState extends State<ReaderStatusFooter>
                   clockSize: widget.height,
                   rowHeight: widget.height,
                   maxWidth:
-                      constraints.maxWidth -
+                      readoutsMaxWidth -
                       (widget.floating ? 2 * _pillPadding : 0),
                   onTapTracker: widget.onTapTracker,
                   onTapStats: widget.onTapProgress,
                 );
+                if (slots != null) {
+                  return ReaderStatusBarRow(
+                    start: slots.start,
+                    center: slots.center,
+                    end: slots.end,
+                    style: readerStatusBarTextStyle(widget.textColor),
+                    trailing: readoutsShown
+                        ? (widget.floating
+                              ? _pill(context, readouts)
+                              : readouts)
+                        : null,
+                  );
+                }
                 // 读数整串贴右（或居中），只有一处落点。
                 final Widget row = Row(
                   mainAxisSize: widget.floating
@@ -728,37 +796,11 @@ class _ReaderStatusFooterState extends State<ReaderStatusFooter>
                   children: <Widget>[Flexible(child: readouts)],
                 );
                 if (!widget.floating) return row;
-                final bool resting = widget.resting;
                 return Align(
                   alignment: widget.centered
                       ? Alignment.center
                       : AlignmentDirectional.centerEnd,
-                  child: AnimatedContainer(
-                    key: const ValueKey<String>('fushi_status_footer_pill'),
-                    duration: fushiMotionDuration(context, FushiMotion.short),
-                    curve: FushiMotion.standard,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: _pillPadding,
-                    ),
-                    decoration: ShapeDecoration(
-                      color: resting
-                          ? widget.backgroundColor.withValues(
-                              alpha: widget.backgroundColor.a * 0.72,
-                            )
-                          : widget.backgroundColor,
-                      shape: const StadiumBorder(),
-                      shadows: <BoxShadow>[
-                        BoxShadow(
-                          color: Colors.black.withValues(
-                            alpha: resting ? 0 : 0.12,
-                          ),
-                          blurRadius: 6,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: row,
-                  ),
+                  child: _pill(context, row),
                 );
               },
             ),

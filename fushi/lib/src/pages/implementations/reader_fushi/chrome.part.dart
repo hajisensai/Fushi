@@ -3849,8 +3849,34 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// 读数行本体。屏底独立成行（[_buildStatusFooter]）与并进底栏遮罩最底部
   /// （[_wrapBottomChromeBar]，[_statusFooterInBottomBar]）两处共用同一份，
   /// 差别只有贴右 / 居中。
-  Widget _buildStatusFooterRow({required bool centered}) => ReaderStatusFooter(
+  Widget _buildStatusFooterRow({required bool centered}) {
+    final ReaderStatusBarLayout layout = _statusBarLayout;
+    if (!layout.hasFooter) return _buildStatusFooterWidget(centered: centered);
+    return ReaderStatusBarClock(
+      tickClock: layout.shows(ReaderStatusBarItem.clock),
+      watchBattery: layout.shows(ReaderStatusBarItem.battery),
+      builder: (BuildContext context, DateTime now, int? battery) {
+        final ReaderStatusBarData data = _statusBarData(now, battery);
+        String? slot(ReaderStatusBarSlot s) =>
+            _statusBarSlotText(context, layout, s, data);
+        return _buildStatusFooterWidget(
+          centered: centered,
+          slotTexts: (
+            start: slot(ReaderStatusBarSlot.footerLeft),
+            center: slot(ReaderStatusBarSlot.footerCenter),
+            end: slot(ReaderStatusBarSlot.footerRight),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildStatusFooterWidget({
+    required bool centered,
+    ({String? start, String? center, String? end})? slotTexts,
+  }) => ReaderStatusFooter(
     key: const ValueKey<String>('fushi_status_footer'),
+    slotTexts: slotTexts,
     bottomInset: _stableBottomInset,
     centered: centered,
     sessionTotals: _readingSessionTotals,
@@ -3879,6 +3905,115 @@ extension _ReaderChrome on _ReaderFushiPageState {
     onTapTracker: _toggleStudyClockManualPause,
     onTapProgress: _openReadingStatistics,
   );
+
+  // ── 常驻页眉 / 页脚（反馈 JONk4qmF8V）──────────────────────────────
+
+  /// 页眉：正文上方常驻一行，左 / 中 / 右三格。坐在顶栏预留与顶部进度之下
+  /// （[_readerTopOffset] 的最后一段就是它的 [_statusHeaderReserve]），挤压式、
+  /// 常驻，不随控制栏显隐；悬浮控制栏唤出时盖在它之上。纯指针面：点它与点状态行
+  /// 同义（唤出 / 收起控制栏），不进焦点遍历池。
+  Widget _buildStatusHeader() {
+    final ReaderStatusBarLayout layout = _statusBarLayout;
+    if (!layout.hasHeader || !_hasEverLoaded) return const SizedBox.shrink();
+    final EdgeInsets padding = MediaQuery.viewPaddingOf(context);
+    return Positioned(
+      left: padding.left,
+      right: padding.right,
+      top: _readerTopOffset - _statusHeaderReserve,
+      height: kReaderStatusHeaderHeight,
+      child: RepaintBoundary(
+        child: GestureDetector(
+          key: const ValueKey<String>('fushi_status_header'),
+          behavior: HitTestBehavior.opaque,
+          onTap: _anyChromeFloating
+              ? () => _handleFloatingChromeReveal()
+              : _toggleChrome,
+          child: ColoredBox(
+            color: _floatingToolbars
+                ? Colors.transparent
+                : _chromeSurfaceColor(),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: ReaderStatusBarClock(
+                tickClock: layout.shows(ReaderStatusBarItem.clock),
+                watchBattery: layout.shows(ReaderStatusBarItem.battery),
+                builder: (BuildContext context, DateTime now, int? battery) {
+                  final ReaderStatusBarData data = _statusBarData(now, battery);
+                  String? slot(ReaderStatusBarSlot s) =>
+                      _statusBarSlotText(context, layout, s, data);
+                  return ReaderStatusBarRow(
+                    start: slot(ReaderStatusBarSlot.headerLeft),
+                    center: slot(ReaderStatusBarSlot.headerCenter),
+                    end: slot(ReaderStatusBarSlot.headerRight),
+                    style: readerStatusBarTextStyle(_themeTextColor()),
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  String? _statusBarSlotText(
+    BuildContext context,
+    ReaderStatusBarLayout layout,
+    ReaderStatusBarSlot slot,
+    ReaderStatusBarData data,
+  ) => readerStatusBarSlotText(
+    layout,
+    slot,
+    data,
+    locale: Localizations.maybeLocaleOf(context)?.toLanguageTag() ?? 'en',
+    formatClock: (DateTime now) =>
+        MaterialLocalizations.of(context).formatTimeOfDay(
+          TimeOfDay.fromDateTime(now),
+          alwaysUse24HourFormat: MediaQuery.alwaysUse24HourFormatOf(context),
+        ),
+  );
+
+  /// 页眉 / 页脚这一帧的读数原料：全部取自现有进度状态（不另起采样），页码取
+  /// [_statusBarPageInfo]（只认当前章的那次回报）。
+  ReaderStatusBarData _statusBarData(DateTime now, int? battery) {
+    final ReaderStatusBarLayout layout = _statusBarLayout;
+    final int section = _readingChapter;
+    final ({int section, int page, int total})? pageInfo = _statusBarPageInfo;
+    final bool pageFresh = pageInfo != null && pageInfo.section == section;
+    return ReaderStatusBarData(
+      now: now,
+      continuous: _settings?.isContinuousMode == true,
+      batteryLevel: battery,
+      chapterTitle: layout.shows(ReaderStatusBarItem.chapterTitle)
+          ? _currentChapterLabel()
+          : null,
+      bookTitle: _book?.title,
+      chapterPage: pageFresh ? pageInfo.page : null,
+      chapterPageTotal: pageFresh ? pageInfo.total : null,
+      chapterChars: _progress.chapterCurrent(section),
+      chapterCharsTotal: _progress.chapterTotal(section),
+      bookChars: _progressCurrentChars,
+      bookCharsTotal: _progressTotalChars,
+    );
+  }
+
+  /// 进度刷新后补采一次分页页码：只在页眉 / 页脚放了「本章页码」且不是连续模式
+  /// 时才多跑这一次 `pageInfo()`（连续模式页码项改画本章进度，见
+  /// [readerStatusBarItemText]）。
+  Future<void> _refreshStatusBarPageInfo() async {
+    if (!_statusBarLayout.shows(ReaderStatusBarItem.chapterPage)) return;
+    if (_settings?.isContinuousMode == true) return;
+    final int section = _currentChapter;
+    final (int, int)? info = await _bookmarkPageInfo();
+    if (!mounted || info == null || section != _currentChapter) return;
+    final ({int section, int page, int total}) next = (
+      section: section,
+      page: info.$1,
+      total: info.$2,
+    );
+    if (next == _statusBarPageInfo) return;
+    _rebuild(() => _statusBarPageInfo = next);
+  }
 
   /// 悬浮态状态行收起后留在屏底的细进度线（[ReaderProgressEdgeLine]）：
   /// 贴 `bottom: 0`，不占预留、不吃指针；状态行唤出时它让位（同一真相源

@@ -11,6 +11,8 @@ import 'package:fushi/src/media/video/video_asbplayer_config.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
 import 'package:fushi/src/media/video/video_control_layout_editor.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart'
+    show isDesktopPlatform;
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_immersive_mode.dart';
 import 'package:fushi/src/media/video/video_hdr_output.dart';
@@ -1146,6 +1148,30 @@ Widget buildVideoControlLayoutEditor(SettingsContext context) {
     customActionBindings:
         host.customActionBindings?.call() ?? VideoCustomActionBindings.empty,
     onCustomActionBindingsChanged: host.onCustomActionBindingsChanged,
+  );
+}
+
+/// 设置页里（没有播放器宿主）的控制条编辑器：直接读写 appModel 偏好，下次打开
+/// 视频生效（「自定义布局」集中入口，反馈 JONk4qmF8V）。触屏门按平台判：桌面端
+/// 有右键菜单兜底，移动端禁止把「设置」按钮移出（TODO-554，与播放页同一判据）。
+Widget buildVideoControlLayoutSettingsEditor(SettingsContext context) {
+  return StatefulBuilder(
+    builder: (BuildContext buildContext, StateSetter setState) {
+      return VideoControlLayoutEditor(
+        layout: context.appModel.videoControlLayout,
+        onLayoutChanged: (VideoControlLayout layout) async {
+          await context.appModel.setVideoControlLayout(layout);
+          setState(() {});
+        },
+        isTouchControls: !isDesktopPlatform,
+        customActionBindings: context.appModel.videoCustomActionBindings,
+        onCustomActionBindingsChanged:
+            (VideoCustomActionBindings bindings) async {
+              await context.appModel.setVideoCustomActionBindings(bindings);
+              setState(() {});
+            },
+      );
+    },
   );
 }
 
