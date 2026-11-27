@@ -72,6 +72,11 @@
 | [BUG-5539](bugs/BUG-5539-v182-collection-side-orphans-not-purged.md) | 🚧 | 🚧 | v182-collection-side-orphans-not-purged |
 | [BUG-5538](bugs/BUG-5538-curator-ai-blocked-no-auto-recovery.md) | 🚧 | 🚧 | curator-ai-blocked-no-auto-recovery |
 | [BUG-5537](bugs/BUG-5537-i18n-merge-driver-corrupts-flutter-sdk.md) | ✅ | ✅ | i18n-merge-driver-corrupts-flutter-sdk |
+> 共 4816 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5543](bugs/BUG-5543-web-video-subtitles.md) | ✅ | ✅ | web-video-subtitles |
 | [BUG-5536](bugs/BUG-5536-storage-scan-ui-freeze.md) | ✅ | ✅ | 打开 设置 › 存储 扫描期间整窗冻结（有声书逐文件音频路径在 UI isolate 上 O(n²) 去嵌套） |
 | [BUG-5535](bugs/BUG-5535-masthead-icons-title-misaligned.md) | ✅ | ✅ | 页头大字顶栏的返回键、动作图标和页名上下没对齐（二级页收缩后返回键高出一截，库页动作组和页名错开） |
 | [BUG-5534](bugs/BUG-5534-feedback-video-diag-missing.md) | ✅ | ✅ | 反馈附带的日志里没有视频性能诊断（上屏 / 丢帧 / 帧耗时） |
