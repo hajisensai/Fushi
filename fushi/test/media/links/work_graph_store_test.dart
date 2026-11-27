@@ -40,7 +40,7 @@ void main() {
         .whenComplete(() => store.removeListener(listener));
   }
 
-  test('后台 isolate 建的图与在调用方建的一致（BUG-5589：建图不占 UI isolate）', () async {
+  test('后台 isolate 建的图与在调用方建的一致（BUG-5595：建图不占 UI isolate）', () async {
     final WorkLinksSeed seed = await WorkLinksSeed.create(db);
     final WorkGraphSnapshot here = await loadWorkGraphSnapshot(db);
     final bool inline = debugWorkGraphInline;

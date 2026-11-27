@@ -7,7 +7,7 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_folder_group_coordinator.dart';
 import 'package:test/test.dart';
 
-/// BUG-5589：视频库页、首页继续观看、伴屏的折叠归属不再搬整张成员表。
+/// BUG-5595：视频库页、首页继续观看、伴屏的折叠归属不再搬整张成员表。
 ///
 /// [resolveVideoLibraryMembership] 只吃「每条目一行的主合集 + 组内序」和「本机视频
 /// 自己的成员行」，这里钉住它在视频键上与旧管线（整表主归属 + 整表成员 + 目录合集

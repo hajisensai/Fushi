@@ -806,7 +806,7 @@ fn silu(values: &mut [f32]) {
 /// int8: shifts as float16, the matrix by rows of 16 as a float32 scale +
 /// 16 int8 codes, as the fork's `precision.rs` stores card and note states.
 /// (Fushi removed int4: its rows let long histories' states grow without
-/// bound, BUG-5588.)
+/// bound, BUG-5594.)
 #[derive(Clone)]
 pub(super) struct Layout {
     pub precision: StatePrecision,
@@ -944,7 +944,7 @@ impl Layout {
             // history 101 heavily reviewed cards grew x1.06 per review under
             // the since removed int4 (0.25 -> 7,962 in 175 reviews). The refit
             // was not enough for int4: its error alone still diverged on long
-            // cards (BUG-5588).
+            // cards (BUG-5594).
             let (dot, norm) = codes
                 .iter()
                 .zip(values.iter())

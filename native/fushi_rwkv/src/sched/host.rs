@@ -610,7 +610,7 @@ impl RowsView<'_> {
 
 // ------------------------------------------------------------------ runtime 后端
 
-/// 排程用的状态精度：card / note 状态 int8（int4 已删，BUG-5588）。快照头带精度字节，int4 时代的
+/// 排程用的状态精度：card / note 状态 int8（int4 已删，BUG-5594）。快照头带精度字节，int4 时代的
 /// 主快照 / 检查点读进来会被拒（「taken with another state precision」），按日志全量重建一次。
 pub const PRECISION: StatePrecision = StatePrecision::Int8;
 

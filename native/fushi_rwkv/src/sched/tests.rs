@@ -1114,7 +1114,7 @@ fn production_mode_owns_the_runtime_and_matches_direct_runtime_calls() {
     let trace = rig.take_trace();
     assert_eq!(bits(&scores_of(&trace, 2)), bits(&restored));
 
-    // BUG-5588：int4 时代留下的主快照（同名文件，精度字节 4）被拒，按日志全量重建一次并存新快照，
+    // BUG-5594：int4 时代留下的主快照（同名文件，精度字节 4）被拒，按日志全量重建一次并存新快照，
     // 分数与直接调用（int8）逐位相同。
     rig.keep_dir = true;
     rig.command(|w| {

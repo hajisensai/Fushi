@@ -186,7 +186,7 @@ class SrsRwkvService implements SrsRwkvScheduling, SrsRwkvStatusSource {
   Future<void> Function()? debugAfterRebuildFingerprint;
 
   /// 排程用的状态精度（卡 / 笔记状态 int8，牌组 / 预设 / 全局 f32，见 native/fushi_rwkv）。校准图的临时回放用同一个。
-  /// int4 已删（超长历史上状态发散，BUG-5588）。
+  /// int4 已删（超长历史上状态发散，BUG-5594）。
   static const RwkvPrecision precision = RwkvPrecision.int8;
 
   /// 有未存的追加 / 撤回时，空闲这么久后存一次快照。

@@ -1,7 +1,7 @@
 // Copyright: Fushi contributors
 // License: GNU AGPL, version 3 or later; http://www.gnu.org/licenses/agpl.html
 //
-//! 诊断（BUG-5588）：一张卡按几种作答模式答 N 次，比较 int8 与 f32 的 card / note 状态峰值、
+//! 诊断（BUG-5594）：一张卡按几种作答模式答 N 次，比较 int8 与 f32 的 card / note 状态峰值、
 //! 回放预测与有限性。
 //! cargo run --profile quick --example long_card_drift -- <small.int8.bin> [answers] [pattern]
 //! 给了 pattern 时改为逐段追踪（每 answers/40 次打印一次各精度的峰值与最后一次预测）。

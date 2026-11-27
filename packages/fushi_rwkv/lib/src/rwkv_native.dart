@@ -23,7 +23,7 @@ enum RwkvModelKind {
 
 /// 状态精度（`frwkv_runtime_new` 的 precision）。[recommended]：int8。
 ///
-/// 曾经的 int4（code 4）已删：它让超长复习历史的卡 / 笔记状态指数发散、该卡预测卡死（BUG-5588），
+/// 曾经的 int4（code 4）已删：它让超长复习历史的卡 / 笔记状态指数发散、该卡预测卡死（BUG-5594），
 /// 原生库自 ABI 7 起拒收。
 enum RwkvPrecision {
   f32(0),

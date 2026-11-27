@@ -264,7 +264,7 @@ fn version_1_snapshots_are_refused() {
     }
 }
 
-/// BUG-5588：int4 已删。int4 时代的快照（精度字节 4）读进 int8 runtime 被拒、状态不变，
+/// BUG-5594：int4 已删。int4 时代的快照（精度字节 4）读进 int8 runtime 被拒、状态不变，
 /// 排程内核据此全量重放（`sched/tests.rs` 的 production 测试）。
 #[test]
 fn int4_snapshots_are_refused() {

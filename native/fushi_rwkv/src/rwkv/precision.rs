@@ -1,6 +1,6 @@
 // Copyright: Ankitects Pty Ltd and contributors
 // License: GNU AGPL, version 3 or later; http://www.gnu.org/licenses/agpl.html
-// Adapted for Fushi from https://github.com/Pedrubik2000/kuma3-anki-core@c639bcec696f2317f9bb9a736d433b9d6c0d9c56 rslib/src/rwkv/precision.rs (Fushi: test module removed, least-squares row scale, int4 removed — BUG-5588).
+// Adapted for Fushi from https://github.com/Pedrubik2000/kuma3-anki-core@c639bcec696f2317f9bb9a736d433b9d6c0d9c56 rslib/src/rwkv/precision.rs (Fushi: test module removed, least-squares row scale, int4 removed — BUG-5594).
 
 //! Compact card/note state. Computation and the shared scopes remain f32.
 
@@ -26,7 +26,7 @@ pub enum StatePrecision {
     Int8,
     // Fushi: upstream's `Int4` is gone. Its 4-bit rows let card and note
     // states of long histories grow without bound on every small model and
-    // the big one (BUG-5588, tests/long_history.rs); int8 rows do not.
+    // the big one (BUG-5594, tests/long_history.rs); int8 rows do not.
 }
 
 impl StatePrecision {
@@ -153,7 +153,7 @@ pub(super) fn decode(bytes: &[u8]) -> io::Result<ModuleState> {
     let mut cursor = Cursor::new(bytes);
     cursor.expect_magic(MAGIC)?;
     let precision = match cursor.u8()? {
-        // 4 was upstream's int4 layout (BUG-5588): rejected, the state is rebuilt.
+        // 4 was upstream's int4 layout (BUG-5594): rejected, the state is rebuilt.
         8 => StatePrecision::Int8,
         _ => return Err(invalid_state()),
     };

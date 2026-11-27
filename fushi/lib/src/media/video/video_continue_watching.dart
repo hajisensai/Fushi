@@ -374,7 +374,7 @@ const String kVideoMembershipIsolateDebugName = 'fushi-video-membership';
 /// `Isolate.exit` 交回、不逐对象拷贝。
 ///
 /// 远端主机的视频也要归属，主归属查询收不窄：媒体服务器镜像的播放列表让它达数万行，
-/// 从前在 UI isolate 上解码这批行是首次打开视频页时最大的一段掉帧（BUG-5589）。
+/// 从前在 UI isolate 上解码这批行是首次打开视频页时最大的一段掉帧（BUG-5595）。
 /// [books] 是调用方口径的本机视频（目录合集策略只改这些键的归属）。
 Future<VideoLibraryMembership> loadVideoLibraryMembership(
   FushiDatabase db, {

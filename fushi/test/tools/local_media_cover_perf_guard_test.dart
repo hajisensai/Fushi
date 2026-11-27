@@ -128,7 +128,7 @@ void main() {
         expect(
           body.contains('getAllCollectionItems()'),
           isFalse,
-          reason: '不把整张成员表搬进 UI isolate（BUG-5589：媒体服务器镜像让它达数万行）。',
+          reason: '不把整张成员表搬进 UI isolate（BUG-5595：媒体服务器镜像让它达数万行）。',
         );
         expect(
           body.contains('getCollectionItems('),
@@ -148,7 +148,7 @@ void main() {
         isTrue,
         reason:
             '书架页合集分组必须一次查全部书 / 字幕书成员（BUG-959），且不读别的'
-            '种类：媒体服务器镜像的视频成员可达数万行（BUG-5589）。',
+            '种类：媒体服务器镜像的视频成员可达数万行（BUG-5595）。',
       );
       expect(
         body.contains('getCollectionItems('),

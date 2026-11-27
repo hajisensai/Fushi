@@ -33,7 +33,7 @@ pub struct Checkpoint {
     pub last_at: Option<i64>,
 }
 
-/// 快照文件名里的模型键（沿用小模型 + int4 时的旧名，冻结不追改；状态早已改 int8，BUG-5588，
+/// 快照文件名里的模型键（沿用小模型 + int4 时的旧名，冻结不追改；状态早已改 int8，BUG-5594，
 /// 精度看快照头的精度字节）。
 const MODEL_KEY: &str = "small-int4";
 /// 已移除的大模型留下的快照。

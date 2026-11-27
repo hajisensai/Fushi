@@ -253,7 +253,7 @@ elapsed / preset）→ `scheduler/rwkv/history.rs:67` `historical_review`（card
 card / note 状态按精度紧凑存储（每行 16 个值一个 f32 比例 + 8 位码字，shift 存 f16）；deck /
 preset / user 状态恒为 f32。
 
-**int4 已删（BUG-5588，2026-11-27）。** 下面 10-20 的最小二乘修复之后，int4 在更长的单卡历史上照样发散：
+**int4 已删（BUG-5594，2026-11-27）。** 下面 10-20 的最小二乘修复之后，int4 在更长的单卡历史上照样发散：
 每卡 2 万次复习时，sm101（一天里连按 Again）的笔记状态到 9.4e3、4 万次左右状态坏掉、该卡预测卡死在
 0.8577；sm113 / 六层 Tiny sm130io（每天按 Again）的笔记 / 卡状态到 4e33 / 1e4，预测与 f32 差到 0.85
 （f32 的峰值都在 2～8）。上游 JSchoreels/anki 同期因同样的现象弃用 int4（2dc21da67fed）。int8 在同样的

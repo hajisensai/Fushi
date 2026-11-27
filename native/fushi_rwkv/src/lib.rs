@@ -76,7 +76,7 @@ pub use sched::{
 /// `frwkv_runtime_restore_from_file`），文件格式与 `frwkv_runtime_snapshot` 的字节逐位相同。
 /// 6：排程内核（`frwkv_sched_alloc` / `frwkv_sched_new` / `frwkv_sched_step` / `frwkv_sched_free`，
 /// 见 `sched/mod.rs`）：RWKV 排程的编排状态机搬进本库，宿主只递命令、替它取数。
-/// 7：去掉 int4 精度（`FRWKV_PRECISION_INT4` 不再接受；小模型推荐精度改 int8，BUG-5588）。
+/// 7：去掉 int4 精度（`FRWKV_PRECISION_INT4` 不再接受；小模型推荐精度改 int8，BUG-5594）。
 pub const ABI_VERSION: i32 = 7;
 
 #[cfg(test)]
@@ -173,7 +173,7 @@ impl ModelKind {
 
     /// 推荐的状态精度：大小模型都是 int8（card / note 状态按 16 个一行、f32 比例因子 + int8 码）。
     ///
-    /// 曾经的 int4 已删（BUG-5588）：4 位行的量化误差在超长复习历史上被状态递推放大，
+    /// 曾经的 int4 已删（BUG-5594）：4 位行的量化误差在超长复习历史上被状态递推放大，
     /// card / note 状态指数增长到 f32 溢出、该卡预测卡死在一个常数上——大模型每卡 1 万次复习
     /// 峰值 1.3e16，小模型 sm101 / sm113 / sm130io 每卡 2 万次复习就到 1e4～4e33（f32 为 2～8）；
     /// 最小二乘比例因子救不回。int8 在同样的历史（每卡 10 万次）上与 f32 同量级，见
@@ -1125,7 +1125,7 @@ pub const FRWKV_HAS_ELAPSED_SECONDS: u32 = 1 << 7;
 const FRWKV_KNOWN_BITS: u32 = (1 << 8) - 1;
 
 /// precision 参数：f32 状态 / int8 紧凑 card+note 状态 / 按模型取推荐值
-/// （[ModelKind::default_precision]：int8）。4（曾经的 int4）自 ABI 7 起拒收（BUG-5588）。
+/// （[ModelKind::default_precision]：int8）。4（曾经的 int4）自 ABI 7 起拒收（BUG-5594）。
 pub const FRWKV_PRECISION_F32: i32 = 0;
 pub const FRWKV_PRECISION_INT8: i32 = 8;
 pub const FRWKV_PRECISION_DEFAULT: i32 = -1;

@@ -1,4 +1,4 @@
-## BUG-5589 · 启动后切模块掉帧：合集成员表被反复整表读进 UI isolate
+## BUG-5595 · 启动后切模块掉帧：合集成员表被反复整表读进 UI isolate
 - **报告**：2026-11-27（用户：「fushi 刚启动后，频繁操作比如左右滑动切换模块会掉帧严重。过一会稳定下来才正常」；多端都有）
 - **真实性**：✅ 真 bug。用户真实库只读拷贝（`D:\hibiki-dev-data-perf3`）+ Windows profile 构建，
   `integration_test/home_tab_switch_perf_itest.dart`（新增 `FUSHI_PERF_WARMUP_MS` / `FUSHI_PERF_IDLE_PROBE_MS` /

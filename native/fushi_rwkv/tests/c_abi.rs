@@ -209,7 +209,7 @@ fn c_abi_errors_are_codes_with_messages_not_panics() {
     assert!(unsafe { frwkv_model_load(bytes.as_ptr(), bytes.len() - 1) }.is_null());
 
     let handles = Handles::new(FRWKV_PRECISION_F32, 0);
-    // 4 是 ABI 6 及以前的 int4（BUG-5588 删除）。
+    // 4 是 ABI 6 及以前的 int4（BUG-5594 删除）。
     for bad in [1, 4, 16, -2] {
         assert!(unsafe { frwkv_runtime_new(handles.model, bad, 0) }.is_null());
         assert!(last_error().contains("precision"));

@@ -1,4 +1,4 @@
-## BUG-5588 · RWKV 小模型 int4 卡片 / 笔记状态在超长复习历史上指数发散，之后该卡预测卡死
+## BUG-5594 · RWKV 小模型 int4 卡片 / 笔记状态在超长复习历史上指数发散，之后该卡预测卡死
 - **报告**：2026-11-27（上游 JSchoreels/anki 2dc21da67fed 的发布说明转来：「The earlier int4 card state could drift on very long card histories, stop predicting for that card, or crash the state build.」）
 - **真实性**：✅ 真 bug，Fushi 上复现（单卡长历史，`examples/long_card_drift.rs`，int8 权重）：
   - sm101（当前 Tiny）一天里连按 Again：2 万次时笔记状态峰值 9.4e3（f32 7.6），之后指数增长到 1.9e36；约 4.2 万次时状态坏掉，该卡此后每次预测都卡在 R = 0.8577。

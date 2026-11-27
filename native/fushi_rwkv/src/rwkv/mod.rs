@@ -222,7 +222,7 @@ impl RwkvInference {
 
     fn set_precision(model: &mut SrsModel, precision: StatePrecision) {
         // Card and note states share the precision (upstream's int4 cards with
-        // int8 notes are gone, BUG-5588).
+        // int8 notes are gone, BUG-5594).
         model.modules[0].precision = precision;
         model.modules[2].precision = precision;
     }
