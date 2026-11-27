@@ -120,7 +120,7 @@ class AppleSidebarTabsShell extends StatefulWidget {
 }
 
 class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, StateResourceScope<AppleSidebarTabsShell> {
   late final FushiSpring _t = FushiSpring(
     vsync: this,
     initial: widget.tabBar ? 1 : 0,
@@ -142,6 +142,7 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
   void initState() {
     super.initState();
     widget.libraryHost?.addListener(_onLibraryRows);
+    onTeardown(() => widget.libraryHost?.removeListener(_onLibraryRows));
   }
 
   void _onLibraryRows() {
@@ -165,7 +166,6 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
 
   @override
   void dispose() {
-    widget.libraryHost?.removeListener(_onLibraryRows);
     _lensDrag.dispose();
     _t.dispose();
     super.dispose();
@@ -1007,7 +1007,7 @@ class _AppleWindowActiveBuilder extends StatefulWidget {
 }
 
 class _AppleWindowActiveBuilderState extends State<_AppleWindowActiveBuilder>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, StateResourceScope<_AppleWindowActiveBuilder> {
   late bool _active = _isActive(WidgetsBinding.instance.lifecycleState);
 
   static bool _isActive(AppLifecycleState? state) =>
@@ -1017,18 +1017,13 @@ class _AppleWindowActiveBuilderState extends State<_AppleWindowActiveBuilder>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    onTeardown(() => WidgetsBinding.instance.removeObserver(this));
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     final bool active = _isActive(state);
     if (active != _active) setState(() => _active = active);
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    super.dispose();
   }
 
   @override

@@ -17,6 +17,7 @@ import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
@@ -109,7 +110,8 @@ class GameStreamCompanionPage extends StatefulWidget {
       _GameStreamCompanionPageState();
 }
 
-class _GameStreamCompanionPageState extends State<GameStreamCompanionPage> {
+class _GameStreamCompanionPageState extends State<GameStreamCompanionPage>
+    with StateResourceScope<GameStreamCompanionPage> {
   final GlobalKey<DictionaryPopupWebViewState> _dictionaryKey =
       GlobalKey<DictionaryPopupWebViewState>();
   StreamSubscription<GameStreamCompanionDictionaryCommand>? _commands;
@@ -119,7 +121,7 @@ class _GameStreamCompanionPageState extends State<GameStreamCompanionPage> {
   @override
   void initState() {
     super.initState();
-    _commands = _controller.commands.listen(_runCommand);
+    _commands = ownSubscription(_controller.commands.listen(_runCommand));
   }
 
   @override

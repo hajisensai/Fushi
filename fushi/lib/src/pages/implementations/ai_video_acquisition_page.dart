@@ -52,6 +52,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart'
     show subtitleLanguageNativeName;
 
@@ -79,7 +80,8 @@ class AiVideoAcquisitionPage extends StatefulWidget {
   State<AiVideoAcquisitionPage> createState() => _AiVideoAcquisitionPageState();
 }
 
-class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
+class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage>
+    with StateResourceScope<AiVideoAcquisitionPage> {
   final TextEditingController _input = TextEditingController();
   final FocusNode _inputFocus = FocusNode(debugLabel: 'ai-video-acquire-input');
   final ScrollController _scroll = ScrollController();
@@ -87,7 +89,6 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
   /// 浮在底部的输入栏占的高度（胶囊 + 上下留白）：对话列表底部留出这么多，
   /// 滚到底时最后一条消息落在输入栏上方。
   static const double _kComposerReserve = 84;
-  StreamSubscription<VideoAcquisitionView>? _subscription;
   late VideoAcquisitionView _state = widget.service.view;
 
   /// 当前问题里「以后默认」勾选框的值（问题切换时重置为 `rememberDefault`）。
@@ -102,7 +103,7 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
   @override
   void initState() {
     super.initState();
-    _subscription = widget.service.views.listen(_onState);
+    ownSubscription(widget.service.views.listen(_onState));
     final String initial = widget.initialQuery?.trim() ?? '';
     if (initial.isNotEmpty && widget.service.view.transcript.isEmpty) {
       unawaited(widget.service.submitText(initial));
@@ -111,7 +112,6 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
 
   @override
   void dispose() {
-    _subscription?.cancel();
     _input.dispose();
     _inputFocus.dispose();
     _scroll.dispose();

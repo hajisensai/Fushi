@@ -44,6 +44,7 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/toast_severity.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 参考区的数据源。全部是**读取函数**而不是快照：面板开着时视频照常播，
 /// [listenable]（播放位置推送）一响就按当前值重算对照表。
@@ -373,7 +374,8 @@ class VideoSubtitleStudioPage extends StatefulWidget {
       _VideoSubtitleStudioPageState();
 }
 
-class _VideoSubtitleStudioPageState extends State<VideoSubtitleStudioPage> {
+class _VideoSubtitleStudioPageState extends State<VideoSubtitleStudioPage>
+    with StateResourceScope<VideoSubtitleStudioPage> {
   /// 放得下「逐句表格 | 工具」两栏的最小宽度；更窄时上下排。
   static const double _twoPaneMinWidth = 840;
   static const double _toolsPaneWidth = 380;
@@ -416,10 +418,12 @@ class _VideoSubtitleStudioPageState extends State<VideoSubtitleStudioPage> {
   void initState() {
     super.initState();
     _ref.listenable.addListener(_onPosition);
+    onTeardown(() => _ref.listenable.removeListener(_onPosition));
     _ref.noticeListenable?.addListener(_onNotice);
+    onTeardown(() => _ref.noticeListenable?.removeListener(_onNotice));
     if (_ref.captureFrame != null) unawaited(_capture());
     // 首帧排完版才有滚动范围：直接跳到当前句（不做动画，打开就在位置上）。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       if (!mounted) return;
       _anchor = videoSubtitleStudioAnchorIndex(
         _tableRows(),
@@ -447,8 +451,7 @@ class _VideoSubtitleStudioPageState extends State<VideoSubtitleStudioPage> {
 
   @override
   void dispose() {
-    _ref.listenable.removeListener(_onPosition);
-    _ref.noticeListenable?.removeListener(_onNotice);
+    releaseResources();
     _tableScroll.dispose();
     super.dispose();
   }

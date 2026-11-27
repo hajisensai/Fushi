@@ -332,10 +332,6 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
   final Map<OnboardingSystemPermission, bool> _permissionGranted =
       <OnboardingSystemPermission, bool>{};
 
-  /// 悬浮窗 / 所有文件访问是跳系统设置页授权的：申请调用早于用户做完决定返回，
-  /// 只能等回到应用时再查一遍。
-  AppLifecycleListener? _permissionResumeListener;
-
   Future<void> _refreshPermissions() async {
     final OnboardingSystemPermissions? ops = _systemPermissions;
     if (ops == null) return;
@@ -387,9 +383,13 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     super.initState();
     if (widget.tutorialOnly) return;
     if (_systemPermissions != null) {
-      _permissionResumeListener = AppLifecycleListener(
-        onResume: () => unawaited(_refreshPermissions()),
-      );
+      // 悬浮窗 / 所有文件访问是跳系统设置页授权的：申请调用早于用户做完决定返回，
+      // 只能等回到应用时再查一遍。
+      final AppLifecycleListener permissionResumeListener =
+          AppLifecycleListener(
+            onResume: () => unawaited(_refreshPermissions()),
+          );
+      onTeardown(permissionResumeListener.dispose);
       unawaited(_refreshPermissions());
     }
     // 模块方格的初值 = 用户此刻的意愿（pref 真值，缺省全开）。遍历
@@ -416,12 +416,6 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     // 包目录进场收尾（删已导入的残包、搬旧命名的半截文件、按磁盘对齐阶段）。
     // 下载正在跑时 controller 整体跳过——那些都是在动同一批文件。
     unawaited(_packController.prepareDiskState());
-  }
-
-  @override
-  void dispose() {
-    _permissionResumeListener?.dispose();
-    super.dispose();
   }
 
   // dispose 里**没有**取消下载：BUG-2097 的根因就是这里曾经有一句

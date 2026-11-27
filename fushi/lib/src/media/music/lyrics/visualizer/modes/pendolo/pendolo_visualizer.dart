@@ -21,6 +21,7 @@ import 'dart:ui' as ui;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_cover.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_frame.dart';
@@ -95,7 +96,8 @@ class _CachedBlock {
   int frame;
 }
 
-class _PendoloStageState extends State<_PendoloStage> {
+class _PendoloStageState extends State<_PendoloStage>
+    with StateResourceScope<_PendoloStage> {
   final PendoloClockworkMotion _motion = PendoloClockworkMotion();
   final PendoloClockworkPaths _paths = PendoloClockworkPaths();
   final PendoloDrumhead _drum = PendoloDrumhead();
@@ -131,6 +133,7 @@ class _PendoloStageState extends State<_PendoloStage> {
     super.initState();
     _readTuning();
     widget.ticks.addListener(_onTick);
+    onTeardown(() => widget.ticks.removeListener(_onTick));
     _onTick();
     _syncCover();
   }
@@ -170,7 +173,6 @@ class _PendoloStageState extends State<_PendoloStage> {
 
   @override
   void dispose() {
-    widget.ticks.removeListener(_onTick);
     _cover.dispose();
     _clearBlocks();
     super.dispose();

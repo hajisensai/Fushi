@@ -68,6 +68,7 @@ import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/utils/components/fushi_search.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 「番剧下载」选种对话框：搜番（AniList）→ 选种（Nyaa）→ 确认字幕（Jimaku）→
 /// 推送 qBittorrent + 落盘 [AnimeDownloadPlan]（完成后由常驻服务自动入库挂合集）。
@@ -391,7 +392,9 @@ class AnimeDownloadDialog extends ConsumerStatefulWidget {
 }
 
 class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
-    with FushiPagePlaceholders<AnimeDownloadDialog> {
+    with
+        FushiPagePlaceholders<AnimeDownloadDialog>,
+        StateResourceScope<AnimeDownloadDialog> {
   final TextEditingController _animeQueryCtrl = TextEditingController();
   final TextEditingController _nyaaQueryCtrl = TextEditingController();
   late final TextEditingController _jimakuKeyCtrl;
@@ -520,7 +523,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     final AniListMedia? seedMedia = widget.initialMedia;
     final String? seedQuery = widget.initialSearchQuery?.trim();
     if (_selectedMedia == null && seedMedia != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+      schedulePostFrame((_) {
         if (mounted) {
           unawaited(
             _selectMedia(seedMedia, presetEpisode: widget.initialEpisode),
@@ -531,19 +534,21 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
         seedQuery != null &&
         seedQuery.isNotEmpty) {
       _animeQueryCtrl.text = animeSearchSeedQuery(seedQuery);
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+      schedulePostFrame((_) {
         if (mounted) unawaited(_searchAnime());
       });
     }
     _observedPlanStore = appModel.animeDownloadPlanStore;
     _observedPlanStore?.revision.addListener(_onPlanStoreChanged);
+    onTeardown(
+      () => _observedPlanStore?.revision.removeListener(_onPlanStoreChanged),
+    );
     unawaited(_reloadPlans());
   }
 
   @override
   void dispose() {
     _planLoadGeneration++;
-    _observedPlanStore?.revision.removeListener(_onPlanStoreChanged);
     _torrentRequestGeneration++;
     _activeNyaaClient?.close();
     _activeNyaaClient = null;

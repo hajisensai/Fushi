@@ -7,6 +7,7 @@
 /// 的确认卡片只能在这里点（模型代答不了）；候选卡片交给用户点选。
 library;
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'dart:async';
 import 'dart:convert';
 
@@ -846,7 +847,8 @@ class AiAgentConversation extends StatefulWidget {
   State<AiAgentConversation> createState() => _AiAgentConversationState();
 }
 
-class _AiAgentConversationState extends State<AiAgentConversation> {
+class _AiAgentConversationState extends State<AiAgentConversation>
+    with StateResourceScope<AiAgentConversation> {
   final TextEditingController _input = TextEditingController();
   final FocusNode _inputFocus = FocusNode(debugLabel: 'ai-agent-input');
   final ScrollController _scroll = ScrollController();
@@ -876,7 +878,7 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
       _input.text = prompt;
       // 等首帧：发送失败的引导（没指派提供商）要用到挂好的 context。
       // addPostFrameCallback 本身不调度帧，补一次 ensureVisualUpdate。
-      WidgetsBinding.instance.addPostFrameCallback((Duration _) {
+      schedulePostFrame((Duration _) {
         if (mounted) unawaited(_send());
       });
       WidgetsBinding.instance.ensureVisualUpdate();

@@ -1148,9 +1148,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     // （[requestVideoCollectionOpen]）。tab 懒构建时请求先于本页存在，补查一次。
     listenTo(videoCollectionOpenRequest, _onVideoCollectionOpenRequested);
     if (videoCollectionOpenRequest.value != null) {
-      WidgetsBinding.instance.addPostFrameCallback(
-        (_) => _onVideoCollectionOpenRequested(),
-      );
+      schedulePostFrame((_) => _onVideoCollectionOpenRequested());
     }
     assert(() {
       HomeVideoPage.debugRefreshVideos = _refresh;

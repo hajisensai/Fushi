@@ -9,6 +9,7 @@ import 'dart:ui' as ui;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_frame.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
@@ -115,7 +116,8 @@ class _StillLyrics extends StatefulWidget {
   State<_StillLyrics> createState() => _StillLyricsState();
 }
 
-class _StillLyricsState extends State<_StillLyrics> {
+class _StillLyricsState extends State<_StillLyrics>
+    with StateResourceScope<_StillLyrics> {
   late int _index;
 
   int _resolve() => resolveStillEffectiveIndex(
@@ -133,6 +135,7 @@ class _StillLyricsState extends State<_StillLyrics> {
     super.initState();
     _index = _resolve();
     widget.ticks.addListener(_onTick);
+    onTeardown(() => widget.ticks.removeListener(_onTick));
   }
 
   @override
@@ -143,12 +146,6 @@ class _StillLyricsState extends State<_StillLyrics> {
       widget.ticks.addListener(_onTick);
     }
     _index = _resolve();
-  }
-
-  @override
-  void dispose() {
-    widget.ticks.removeListener(_onTick);
-    super.dispose();
   }
 
   @override

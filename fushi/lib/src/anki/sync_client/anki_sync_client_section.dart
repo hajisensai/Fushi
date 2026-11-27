@@ -6,6 +6,7 @@ import 'package:fushi_engine/anki_sync/anki_sync_session.dart';
 import 'package:fushi_engine/anki_sync/fushi_anki_sync_client.dart'
     show FushiAnkiSyncException;
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/sync_client/anki_sync_client_actions.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
@@ -59,11 +60,11 @@ class AnkiSyncClientSection extends ConsumerStatefulWidget {
       _AnkiSyncClientSectionState();
 }
 
-class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
+class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection>
+    with StateResourceScope<AnkiSyncClientSection> {
   final TextEditingController _server = TextEditingController();
   final TextEditingController _username = TextEditingController();
   final TextEditingController _password = TextEditingController();
-  StreamSubscription<AnkiSyncState>? _sub;
   AnkiSyncState? _state;
   AnkiSyncAccount? _account;
   bool _switching = false;
@@ -105,11 +106,13 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
     super.initState();
     final AnkiSyncSession? session = _session;
     if (session == null) return;
-    _sub = session.states.listen((AnkiSyncState s) {
-      if (mounted) setState(() => _state = s);
-      _armRateLimitExpiry(s.rateLimitedUntil);
-      unawaited(_loadAccount());
-    });
+    ownSubscription(
+      session.states.listen((AnkiSyncState s) {
+        if (mounted) setState(() => _state = s);
+        _armRateLimitExpiry(s.rateLimitedUntil);
+        unawaited(_loadAccount());
+      }),
+    );
     unawaited(session.refresh());
     unawaited(_loadAccount());
   }
@@ -145,7 +148,6 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
   @override
   void dispose() {
     _rateLimitExpiry?.cancel();
-    unawaited(_sub?.cancel());
     _server.dispose();
     _username.dispose();
     _password.dispose();

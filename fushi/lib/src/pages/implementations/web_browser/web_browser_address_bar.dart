@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/pages/implementations/web_browser/web_browser_layout.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -63,7 +64,8 @@ class WebBrowserAddressBar extends StatefulWidget {
   State<WebBrowserAddressBar> createState() => WebBrowserAddressBarState();
 }
 
-class WebBrowserAddressBarState extends State<WebBrowserAddressBar> {
+class WebBrowserAddressBarState extends State<WebBrowserAddressBar>
+    with StateResourceScope<WebBrowserAddressBar> {
   final TextEditingController _text = TextEditingController();
   final OverlayPortalController _portal = OverlayPortalController();
   final LayerLink _link = LayerLink();
@@ -77,7 +79,10 @@ class WebBrowserAddressBarState extends State<WebBrowserAddressBar> {
   void initState() {
     super.initState();
     widget.focusNode.addListener(_onFocus);
-    _sub = widget.suggestions.suggestions.listen(_onSuggestions);
+    onTeardown(() => widget.focusNode.removeListener(_onFocus));
+    _sub = ownSubscription(
+      widget.suggestions.suggestions.listen(_onSuggestions),
+    );
     _editing = widget.focusNode.hasFocus;
   }
 
@@ -96,7 +101,6 @@ class WebBrowserAddressBarState extends State<WebBrowserAddressBar> {
 
   @override
   void dispose() {
-    widget.focusNode.removeListener(_onFocus);
     unawaited(_sub?.cancel());
     _text.dispose();
     super.dispose();

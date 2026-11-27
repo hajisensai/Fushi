@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
@@ -67,7 +68,8 @@ class FavoriteBatchMiningPage extends ConsumerStatefulWidget {
 }
 
 class _FavoriteBatchMiningPageState
-    extends ConsumerState<FavoriteBatchMiningPage> {
+    extends ConsumerState<FavoriteBatchMiningPage>
+    with StateResourceScope<FavoriteBatchMiningPage> {
   final GlobalKey<DictionaryPopupWebViewState> _popupKey =
       GlobalKey<DictionaryPopupWebViewState>();
 
@@ -87,7 +89,7 @@ class _FavoriteBatchMiningPageState
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_run()));
+    schedulePostFrame((_) => unawaited(_run()));
   }
 
   @override

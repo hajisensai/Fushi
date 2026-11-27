@@ -319,7 +319,8 @@ String? _collectionCover(_Collection c) =>
         .firstOrNull;
 
 class _MusicPluginCollectionPageState
-    extends ConsumerState<MusicPluginCollectionPage> {
+    extends ConsumerState<MusicPluginCollectionPage>
+    with StateResourceScope<MusicPluginCollectionPage> {
   late Future<_Collection> _data = _load();
 
   /// 歌单模式下订阅的收藏状态：这张歌单是该插件账号的喜欢歌单时，喜欢集合一变就重拉
@@ -338,14 +339,9 @@ class _MusicPluginCollectionPageState
         .musicSession
         .favorites;
     if (favorites == null) return;
-    _favorites = favorites..addListener(_onFavoritesChanged);
+    _favorites = favorites;
+    listenTo(favorites, _onFavoritesChanged);
     _seenLikedRevision = _likedRevision();
-  }
-
-  @override
-  void dispose() {
-    _favorites?.removeListener(_onFavoritesChanged);
-    super.dispose();
   }
 
   /// 这张歌单是喜欢歌单时返回喜欢集合修订号，否则 null。

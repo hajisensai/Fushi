@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/media/manga/extension_catalog_controls.dart';
 import 'package:fushi/src/media/manga/extension_management_tile.dart';
 import 'package:fushi/src/media/manga/extension_store_list.dart';
@@ -56,7 +57,8 @@ class LnReaderExtensionsSection extends StatefulWidget {
       _LnReaderExtensionsSectionState();
 }
 
-class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
+class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection>
+    with StateResourceScope<LnReaderExtensionsSection> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   String _language = '*';
@@ -78,6 +80,7 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
   void initState() {
     super.initState();
     widget.manager.addListener(_changed);
+    onTeardown(() => widget.manager.removeListener(_changed));
     unawaited(widget.manager.initialise());
   }
 
@@ -91,7 +94,6 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
 
   @override
   void dispose() {
-    widget.manager.removeListener(_changed);
     _searchController.dispose();
     super.dispose();
   }

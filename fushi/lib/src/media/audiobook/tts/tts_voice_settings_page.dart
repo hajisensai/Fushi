@@ -33,6 +33,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/media/audiobook/tts/system_tts_provider.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_two_pane_layout.dart';
@@ -543,7 +544,8 @@ class _TtsVoiceEditorPage extends StatefulWidget {
   State<_TtsVoiceEditorPage> createState() => _TtsVoiceEditorPageState();
 }
 
-class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
+class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage>
+    with StateResourceScope<_TtsVoiceEditorPage> {
   final Map<String, TextEditingController> _controllers =
       <String, TextEditingController>{};
   late final TextEditingController _testText = TextEditingController(
@@ -582,9 +584,17 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
   void initState() {
     super.initState();
     _local.addListener(_onLocalEngine);
+    onTeardown(() => _local.removeListener(_onLocalEngine));
     _localIrodori.addListener(_onLocalEngine);
+    onTeardown(() => _localIrodori.removeListener(_onLocalEngine));
     widget.services.localVoicevox.addListener(_onLocalEngine);
+    onTeardown(
+      () => widget.services.localVoicevox.removeListener(_onLocalEngine),
+    );
     widget.services.localAivisSpeech.addListener(_onLocalEngine);
+    onTeardown(
+      () => widget.services.localAivisSpeech.removeListener(_onLocalEngine),
+    );
     _maybeAutoDetectVoicepeak(_preset);
   }
 
@@ -594,10 +604,6 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
 
   @override
   void dispose() {
-    _local.removeListener(_onLocalEngine);
-    _localIrodori.removeListener(_onLocalEngine);
-    widget.services.localVoicevox.removeListener(_onLocalEngine);
-    widget.services.localAivisSpeech.removeListener(_onLocalEngine);
     _testCancel?.cancel();
     unawaited(_releaseTestPlayer());
     for (final TextEditingController c in _controllers.values) {

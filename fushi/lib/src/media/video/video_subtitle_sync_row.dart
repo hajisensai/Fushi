@@ -22,6 +22,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/components/apple/apple_radii.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// TODO-413：「自动对轴」按钮的功能开关。音频能量互相关自动对轴（TODO-701 阶段1）算法
 /// 管线已完整落地（抽包络 + 互相关 + 置信门控 + 写穿 delayMs），TODO-742 曾因「真机未验、
@@ -57,7 +58,8 @@ class VideoSubtitleSyncRow extends StatefulWidget {
   State<VideoSubtitleSyncRow> createState() => _VideoSubtitleSyncRowState();
 }
 
-class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
+class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow>
+    with StateResourceScope<VideoSubtitleSyncRow> {
   /// 调轴 clamp 上界（±600 s，与 VideoPlayerController 一致）。滑条可拖范围不再钉死
   /// ±10 s，而是按已落盘值扩展（[subtitleDelaySliderRangeMs]，反馈 pHsnXu5YSg）。
   static const int _subtitleSyncClampMs = kSubtitleDelayClampMs;
@@ -117,6 +119,11 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
   void initState() {
     super.initState();
     widget.host.subtitlePositionListenable?.addListener(_syncDelayFromHost);
+    onTeardown(
+      () => widget.host.subtitlePositionListenable?.removeListener(
+        _syncDelayFromHost,
+      ),
+    );
   }
 
   @override
@@ -156,7 +163,7 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
 
   @override
   void dispose() {
-    widget.host.subtitlePositionListenable?.removeListener(_syncDelayFromHost);
+    releaseResources();
     _delayInput.dispose();
     _delayController.dispose();
     _secondaryDelayInput.dispose();

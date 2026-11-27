@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// 启动品牌标的前景图：与 Android 12+ 系统启动画面
@@ -37,8 +38,8 @@ class DelayedReveal extends StatefulWidget {
   State<DelayedReveal> createState() => _DelayedRevealState();
 }
 
-class _DelayedRevealState extends State<DelayedReveal> {
-  Timer? _timer;
+class _DelayedRevealState extends State<DelayedReveal>
+    with StateResourceScope<DelayedReveal> {
   bool _revealed = false;
 
   @override
@@ -47,16 +48,12 @@ class _DelayedRevealState extends State<DelayedReveal> {
     if (widget.delay <= Duration.zero) {
       _revealed = true;
     } else {
-      _timer = Timer(widget.delay, () {
-        if (mounted) setState(() => _revealed = true);
-      });
+      ownTimer(
+        Timer(widget.delay, () {
+          if (mounted) setState(() => _revealed = true);
+        }),
+      );
     }
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
   }
 
   @override

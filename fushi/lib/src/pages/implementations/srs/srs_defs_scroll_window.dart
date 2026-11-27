@@ -18,6 +18,7 @@ import 'dart:math' as math;
 import 'package:flutter/rendering.dart' show RenderAbstractViewport;
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart'
     show SrsPageWindowLink;
 
@@ -72,7 +73,8 @@ class SrsDefsScrollWindow extends StatefulWidget {
   State<SrsDefsScrollWindow> createState() => _SrsDefsScrollWindowState();
 }
 
-class _SrsDefsScrollWindowState extends State<SrsDefsScrollWindow> {
+class _SrsDefsScrollWindowState extends State<SrsDefsScrollWindow>
+    with StateResourceScope<SrsDefsScrollWindow> {
   /// 平台视图当前摆放的窗口起点（内容坐标）。
   double _top = 0;
 
@@ -85,6 +87,7 @@ class _SrsDefsScrollWindowState extends State<SrsDefsScrollWindow> {
   void initState() {
     super.initState();
     widget.controller.addListener(_reposition);
+    onTeardown(() => widget.controller.removeListener(_reposition));
     _schedule();
   }
 
@@ -107,7 +110,6 @@ class _SrsDefsScrollWindowState extends State<SrsDefsScrollWindow> {
 
   @override
   void dispose() {
-    widget.controller.removeListener(_reposition);
     if (widget.link.top != null) unawaited(widget.link.apply(null));
     super.dispose();
   }

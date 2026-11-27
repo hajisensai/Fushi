@@ -12,6 +12,7 @@ import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/pages/implementations/updates_center_open.dart';
 import 'package:fushi/src/pages/implementations/updates_center_page.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -39,12 +40,12 @@ class UpdatesDashboardBanner extends StatefulWidget {
   State<UpdatesDashboardBanner> createState() => _UpdatesDashboardBannerState();
 }
 
-class _UpdatesDashboardBannerState extends State<UpdatesDashboardBanner> {
+class _UpdatesDashboardBannerState extends State<UpdatesDashboardBanner>
+    with StateResourceScope<UpdatesDashboardBanner> {
   /// 用户关掉横幅时的未读总数（进程级；null = 没关过）。见库注释。
   static int? _dismissedAtTotal;
 
   Map<UpdateFeedKind, int> _counts = const <UpdateFeedKind, int>{};
-  StreamSubscription<void>? _changes;
 
   @override
   void initState() {
@@ -52,14 +53,8 @@ class _UpdatesDashboardBannerState extends State<UpdatesDashboardBanner> {
     // 走 service 的 tableUpdates 信号流，**不是**裸 `select(...).watch()`：drift 的
     // QueryStream 在 dispose 取消时会排一个 Timer.run，widget 测试里「构建再卸载」
     // 的用例会因此全红（BUG-834）。
-    _changes = widget.service.watchChanged().listen((_) => _reload());
+    ownSubscription(widget.service.watchChanged().listen((_) => _reload()));
     _reload();
-  }
-
-  @override
-  void dispose() {
-    unawaited(_changes?.cancel());
-    super.dispose();
   }
 
   Future<void> _reload() async {

@@ -7,13 +7,14 @@ library;
 
 import 'dart:async';
 
-import 'package:drift/drift.dart' show TableUpdate, TableUpdateQuery;
+import 'package:drift/drift.dart' show TableUpdateQuery;
 import 'package:fushi/src/media/detail/media_detail_kit.dart';
 import 'package:fushi/src/media/people/person_detail_page.dart';
 import 'package:fushi/src/media/people/person_directory.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/people/person_identity.dart';
 import 'package:fushi_engine/media/people/vndb_voice_cast.dart';
@@ -187,9 +188,9 @@ class MusicTrackPeopleSection extends StatefulWidget {
       _MusicTrackPeopleSectionState();
 }
 
-class _MusicTrackPeopleSectionState extends State<MusicTrackPeopleSection> {
+class _MusicTrackPeopleSectionState extends State<MusicTrackPeopleSection>
+    with StateResourceScope<MusicTrackPeopleSection> {
   late Future<List<MusicTrackPersonCredit>> _credits = _load();
-  StreamSubscription<Set<TableUpdate>>? _sub;
 
   Future<List<MusicTrackPersonCredit>> _load() async => groupMusicTrackCredits(
     await widget.database.musicCreditsForTracks(<String>{widget.trackUid}),
@@ -200,28 +201,24 @@ class _MusicTrackPeopleSectionState extends State<MusicTrackPeopleSection> {
     super.initState();
     // 音乐刮削补写署名后本区块跟着刷新（tableUpdates 手动订阅，不用 drift
     // `.watch()`：长驻页面订阅 watch 流在 dispose 时留 Timer，BUG-834 范式）。
-    _sub = widget.database
-        .tableUpdates(
-          TableUpdateQuery.onTable(widget.database.musicTrackCredits),
-        )
-        .listen((_) {
-          if (!mounted) return;
-          setState(() {
-            _credits = _load();
-          });
-        });
+    ownSubscription(
+      widget.database
+          .tableUpdates(
+            TableUpdateQuery.onTable(widget.database.musicTrackCredits),
+          )
+          .listen((_) {
+            if (!mounted) return;
+            setState(() {
+              _credits = _load();
+            });
+          }),
+    );
   }
 
   @override
   void didUpdateWidget(covariant MusicTrackPeopleSection oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.trackUid != widget.trackUid) _credits = _load();
-  }
-
-  @override
-  void dispose() {
-    unawaited(_sub?.cancel());
-    super.dispose();
   }
 
   @override

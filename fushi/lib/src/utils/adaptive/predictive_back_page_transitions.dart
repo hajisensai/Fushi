@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:flutter/services.dart';
 
 /// Android 预测性返回（侧滑返回）的转场 + **手势记账**。
@@ -101,7 +102,9 @@ class _FushiPredictiveBackGestureDetector extends StatefulWidget {
 
 class _FushiPredictiveBackGestureDetectorState
     extends State<_FushiPredictiveBackGestureDetector>
-    with WidgetsBindingObserver {
+    with
+        WidgetsBindingObserver,
+        StateResourceScope<_FushiPredictiveBackGestureDetector> {
   /// 本 detector 是否正持有一次「已开始、尚未结束」的手势。
   ///
   /// 这是整个修复的核心状态：`didStartUserGesture` 只在它由 false 翻 true 时发生一次，
@@ -120,6 +123,7 @@ class _FushiPredictiveBackGestureDetectorState
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    onTeardown(() => WidgetsBinding.instance.removeObserver(this));
   }
 
   @override
@@ -131,7 +135,6 @@ class _FushiPredictiveBackGestureDetectorState
       _holdsGesture = false;
       _releaseNavigatorGesture();
     }
-    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 

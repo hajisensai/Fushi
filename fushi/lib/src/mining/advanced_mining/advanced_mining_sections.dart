@@ -31,6 +31,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi_anki/fushi_anki_core.dart' show MiningMosaicRegion;
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show VideoMiningImageMode;
@@ -1332,7 +1333,8 @@ class AdvancedMiningRangeBar extends StatefulWidget {
   State<AdvancedMiningRangeBar> createState() => _AdvancedMiningRangeBarState();
 }
 
-class _AdvancedMiningRangeBarState extends State<AdvancedMiningRangeBar> {
+class _AdvancedMiningRangeBarState extends State<AdvancedMiningRangeBar>
+    with StateResourceScope<AdvancedMiningRangeBar> {
   final FocusNode _startFocus = FocusNode(debugLabel: 'miningRangeStart');
   final FocusNode _endFocus = FocusNode(debugLabel: 'miningRangeEnd');
 
@@ -1367,6 +1369,11 @@ class _AdvancedMiningRangeBarState extends State<AdvancedMiningRangeBar> {
   void initState() {
     super.initState();
     FocusManager.instance.addHighlightModeListener(_onHighlightModeChanged);
+    onTeardown(
+      () => FocusManager.instance.removeHighlightModeListener(
+        _onHighlightModeChanged,
+      ),
+    );
   }
 
   @override
@@ -1381,7 +1388,6 @@ class _AdvancedMiningRangeBarState extends State<AdvancedMiningRangeBar> {
 
   @override
   void dispose() {
-    FocusManager.instance.removeHighlightModeListener(_onHighlightModeChanged);
     _startFocus.dispose();
     _endFocus.dispose();
     super.dispose();

@@ -12,6 +12,7 @@ library;
 import 'dart:ui' as ui;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 import 'package:fushi/src/sync/sync_background_activity.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -86,7 +87,7 @@ class MascotGlow extends StatefulWidget {
 // 呼吸是永不停止的纯装饰动画，悬浮球常驻时从启动一直挂着帧回调：用 ambient ticker，
 // 不算「有动画在跑」，启动期等空闲的工作才等得到（BUG-4893）。
 class _MascotGlowState extends State<MascotGlow>
-    with AmbientTickerProviderStateMixin {
+    with AmbientTickerProviderStateMixin, StateResourceScope<MascotGlow> {
   AnimationController? _breath;
 
   /// 当前 [_breath] 按哪一档节奏在跑（档位变了要换时长重开）。
@@ -100,8 +101,9 @@ class _MascotGlowState extends State<MascotGlow>
   @override
   void initState() {
     super.initState();
-    mascotGlowEnabled.addListener(_onChanged);
+    listenTo(mascotGlowEnabled, _onChanged);
     _busyListenable.addListener(_onChanged);
+    onTeardown(() => _busyListenable.removeListener(_onChanged));
   }
 
   @override
@@ -121,8 +123,6 @@ class _MascotGlowState extends State<MascotGlow>
 
   @override
   void dispose() {
-    mascotGlowEnabled.removeListener(_onChanged);
-    _busyListenable.removeListener(_onChanged);
     _breath?.dispose();
     super.dispose();
   }

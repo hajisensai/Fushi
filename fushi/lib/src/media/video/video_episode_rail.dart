@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/detail/media_detail_kit.dart'
     show kMediaDetailCompletedOpacity;
@@ -116,7 +117,8 @@ class VideoEpisodeRail extends StatefulWidget {
   State<VideoEpisodeRail> createState() => VideoEpisodeRailState();
 }
 
-class VideoEpisodeRailState extends State<VideoEpisodeRail> {
+class VideoEpisodeRailState extends State<VideoEpisodeRail>
+    with StateResourceScope<VideoEpisodeRail> {
   static const double _gap = 12;
   final ScrollController _controller = ScrollController();
 
@@ -132,9 +134,7 @@ class VideoEpisodeRailState extends State<VideoEpisodeRail> {
       _claimCurrent();
       return;
     }
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) => _revealCurrent(animate: false),
-    );
+    schedulePostFrame((_) => _revealCurrent(animate: false));
   }
 
   /// 无动画定位到当前集（面板本身在 spring 进场），下一帧再把焦点交给当前集

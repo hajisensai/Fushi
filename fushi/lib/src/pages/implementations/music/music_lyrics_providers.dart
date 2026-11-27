@@ -33,6 +33,7 @@ import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 class MusicLyricsProvidersBody extends StatefulWidget {
   const MusicLyricsProvidersBody({
@@ -57,7 +58,8 @@ class MusicLyricsProvidersBody extends StatefulWidget {
       _MusicLyricsProvidersBodyState();
 }
 
-class _MusicLyricsProvidersBodyState extends State<MusicLyricsProvidersBody> {
+class _MusicLyricsProvidersBodyState extends State<MusicLyricsProvidersBody>
+    with StateResourceScope<MusicLyricsProvidersBody> {
   MusicPluginManager get _manager => widget.appModel.musicPluginManager;
 
   /// null = 还在加载。
@@ -68,21 +70,13 @@ class _MusicLyricsProvidersBodyState extends State<MusicLyricsProvidersBody> {
   Map<String, InstalledMusicPlugin> _byId =
       const <String, InstalledMusicPlugin>{};
 
-  /// 歌词插件可能由本页按钮装上，也可能由外层页面的拖放落点（[MusicPluginDropTarget]）
-  /// 装上：一律经 [MusicPluginManager.changes] 刷新。
-  StreamSubscription<void>? _changes;
-
   @override
   void initState() {
     super.initState();
-    _changes = _manager.changes.listen((_) => unawaited(_load()));
+    // 歌词插件可能由本页按钮装上，也可能由外层页面的拖放落点（[MusicPluginDropTarget]）
+    // 装上：一律经 [MusicPluginManager.changes] 刷新。
+    ownSubscription(_manager.changes.listen((_) => unawaited(_load())));
     unawaited(_load());
-  }
-
-  @override
-  void dispose() {
-    unawaited(_changes?.cancel());
-    super.dispose();
   }
 
   Future<void> _load() async {

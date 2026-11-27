@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
@@ -52,7 +53,8 @@ class ReaderLyricsPlayerOverlay extends StatefulWidget {
       _ReaderLyricsPlayerOverlayState();
 }
 
-class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
+class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay>
+    with StateResourceScope<ReaderLyricsPlayerOverlay> {
   ColorScheme? _coverScheme;
   ImageProvider? _schemeSource;
   Brightness? _schemeBrightness;
@@ -70,7 +72,7 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
   void initState() {
     super.initState();
     GestureBinding.instance.pointerRouter.addGlobalRoute(_onGlobalPointer);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _syncCursor());
+    schedulePostFrame((_) => _syncCursor());
     _mineToastAnchor = FushiToast.anchorMineToCorner(_lyricsRegionGlobal);
   }
 

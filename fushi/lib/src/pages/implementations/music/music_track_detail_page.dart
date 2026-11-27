@@ -57,6 +57,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/music/music_cover_source.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 角色在「出现在」里的短标签（OP / ED / 插入曲 / 主题曲）；没写角色返回 null。
 String? themeSongRoleLabel(ThemeSongRole? role) => switch (role) {
@@ -620,15 +621,18 @@ class _TrackResumeActions extends ConsumerStatefulWidget {
       _TrackResumeActionsState();
 }
 
-class _TrackResumeActionsState extends ConsumerState<_TrackResumeActions> {
+class _TrackResumeActionsState extends ConsumerState<_TrackResumeActions>
+    with StateResourceScope<_TrackResumeActions> {
   late final MusicSession session = ref.read(appProvider).musicSession;
   late final MusicResumePointsWatch _resume;
 
   @override
   void initState() {
     super.initState();
-    _resume = session.watchResumePoints(<String>[widget.track.trackUid])
-      ..addListener(_onResumeChanged);
+    _resume = session.watchResumePoints(<String>[widget.track.trackUid]);
+    // 先登记 dispose、后挂监听：撤销逆序 = 先摘监听、再 dispose。
+    onTeardown(_resume.dispose);
+    listenTo(_resume, _onResumeChanged);
   }
 
   @override
@@ -637,14 +641,6 @@ class _TrackResumeActionsState extends ConsumerState<_TrackResumeActions> {
     if (oldWidget.track.trackUid != widget.track.trackUid) {
       _resume.watch(<String>[widget.track.trackUid]);
     }
-  }
-
-  @override
-  void dispose() {
-    _resume
-      ..removeListener(_onResumeChanged)
-      ..dispose();
-    super.dispose();
   }
 
   void _onResumeChanged() {

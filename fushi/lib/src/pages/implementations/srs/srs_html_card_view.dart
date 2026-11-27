@@ -22,6 +22,7 @@ import 'package:fushi_anki/fushi_anki.dart' show CardSourceLink;
 import 'package:fushi_dictionary/fushi_dictionary.dart' show FushiRubySpan;
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
@@ -168,7 +169,8 @@ class SrsHtmlCardView extends ConsumerStatefulWidget {
   ConsumerState<SrsHtmlCardView> createState() => _SrsHtmlCardViewState();
 }
 
-class _SrsHtmlCardViewState extends ConsumerState<SrsHtmlCardView> {
+class _SrsHtmlCardViewState extends ConsumerState<SrsHtmlCardView>
+    with StateResourceScope<SrsHtmlCardView> {
   final ScrollController _scroll = ScrollController();
   final FocusNode _selectionFocus = FocusNode(
     debugLabel: 'srs-html-selection',
@@ -189,6 +191,7 @@ class _SrsHtmlCardViewState extends ConsumerState<SrsHtmlCardView> {
   void initState() {
     super.initState();
     widget.bottomInset?.addListener(_onBottomInset);
+    onTeardown(() => widget.bottomInset?.removeListener(_onBottomInset));
   }
 
   @override
@@ -206,7 +209,6 @@ class _SrsHtmlCardViewState extends ConsumerState<SrsHtmlCardView> {
 
   @override
   void dispose() {
-    widget.bottomInset?.removeListener(_onBottomInset);
     _scroll.dispose();
     _selectionFocus.dispose();
     super.dispose();

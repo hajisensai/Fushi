@@ -25,6 +25,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/utils/components/apple/apple_text_style.dart';
 
 // M3 Expressive 播放器公共件：歌词模式（MD3）与手机字幕遥控器共用。
@@ -606,7 +607,7 @@ Color fushiAppleTrackPlayedColor(FushiAppleColors apple, double emphasis) =>
 enum _SeekGesture { tap, drag }
 
 class _FushiWavySeekBarState extends State<FushiWavySeekBar>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, StateResourceScope<FushiWavySeekBar> {
   /// 只在过渡期（振幅弹簧 / 拖动 / thumb 弹簧）跑的逐 vsync 驱动。
   late final Ticker _ticker = createTicker(_onTick);
 
@@ -657,6 +658,7 @@ class _FushiWavySeekBarState extends State<FushiWavySeekBar>
     _position = widget.clock.position;
     _duration = widget.clock.duration;
     widget.clockListenable?.addListener(_onClockChanged);
+    onTeardown(() => widget.clockListenable?.removeListener(_onClockChanged));
   }
 
   /// 推送源通知：读一次时钟，有变化才重建（拖动中不打断拖动显示）。
@@ -784,7 +786,6 @@ class _FushiWavySeekBarState extends State<FushiWavySeekBar>
 
   @override
   void dispose() {
-    widget.clockListenable?.removeListener(_onClockChanged);
     _ticker.dispose();
     _flow.stop();
     _idlePoll?.cancel();

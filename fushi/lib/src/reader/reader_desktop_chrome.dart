@@ -20,6 +20,7 @@ library;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/physics.dart' show SpringSimulation;
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_theme_host.dart';
 import 'package:fushi/src/reader/reader_panel_chrome_kit.dart';
 import 'package:fushi/src/stats/study_cover_tracker.dart'
@@ -919,7 +920,8 @@ class _ReaderSideSheetThemes extends StatefulWidget {
   State<_ReaderSideSheetThemes> createState() => _ReaderSideSheetThemesState();
 }
 
-class _ReaderSideSheetThemesState extends State<_ReaderSideSheetThemes> {
+class _ReaderSideSheetThemesState extends State<_ReaderSideSheetThemes>
+    with StateResourceScope<_ReaderSideSheetThemes> {
   late CapturedThemes _themes;
 
   @override
@@ -927,8 +929,9 @@ class _ReaderSideSheetThemesState extends State<_ReaderSideSheetThemes> {
     super.initState();
     _themes = widget.initialThemes;
     widget.changes.addListener(_refreshThemes);
+    onTeardown(() => widget.changes.removeListener(_refreshThemes));
     // Also cover a theme change between push and the route's first build.
-    WidgetsBinding.instance.addPostFrameCallback((_) => _refreshThemes());
+    schedulePostFrame((_) => _refreshThemes());
   }
 
   void _refreshThemes() {
@@ -938,12 +941,6 @@ class _ReaderSideSheetThemesState extends State<_ReaderSideSheetThemes> {
       to: Navigator.of(widget.source).context,
     );
     setState(() => _themes = themes);
-  }
-
-  @override
-  void dispose() {
-    widget.changes.removeListener(_refreshThemes);
-    super.dispose();
   }
 
   @override

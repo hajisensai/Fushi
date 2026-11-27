@@ -92,6 +92,7 @@ import 'package:fushi_music/fushi_music.dart'
 import 'package:material_ui/material_ui.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// MV 页的音频源。
 enum MusicMvAudioSource { mv, library }
@@ -605,7 +606,8 @@ class MusicKaraokeStagePage extends ConsumerStatefulWidget {
       _MusicKaraokeStagePageState();
 }
 
-class _MusicKaraokeStagePageState extends ConsumerState<MusicKaraokeStagePage> {
+class _MusicKaraokeStagePageState extends ConsumerState<MusicKaraokeStagePage>
+    with StateResourceScope<MusicKaraokeStagePage> {
   // libass: true —— media_kit 默认把 sub-ass / sub-visibility 关掉，原样渲染要它们。
   late final Player _player = Player(
     configuration: const PlayerConfiguration(libass: true),
@@ -626,8 +628,6 @@ class _MusicKaraokeStagePageState extends ConsumerState<MusicKaraokeStagePage> {
   bool _playing = false;
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
-  final List<StreamSubscription<Object?>> _subs =
-      <StreamSubscription<Object?>>[];
 
   AppModel get _app => ref.read(appProvider);
   bool get _isMv => widget.picture == MusicKaraokePicture.mv;
@@ -640,22 +640,21 @@ class _MusicKaraokeStagePageState extends ConsumerState<MusicKaraokeStagePage> {
   @override
   void initState() {
     super.initState();
-    _subs
-      ..add(
-        _player.stream.playing.listen((bool p) {
-          if (mounted) setState(() => _playing = p);
-        }),
-      )
-      ..add(
-        _player.stream.position.listen((Duration p) {
-          if (mounted) setState(() => _position = p);
-        }),
-      )
-      ..add(
-        _player.stream.duration.listen((Duration d) {
-          if (mounted) setState(() => _duration = d);
-        }),
-      );
+    ownSubscription(
+      _player.stream.playing.listen((bool p) {
+        if (mounted) setState(() => _playing = p);
+      }),
+    );
+    ownSubscription(
+      _player.stream.position.listen((Duration p) {
+        if (mounted) setState(() => _position = p);
+      }),
+    );
+    ownSubscription(
+      _player.stream.duration.listen((Duration d) {
+        if (mounted) setState(() => _duration = d);
+      }),
+    );
     unawaited(_start());
   }
 
@@ -857,9 +856,8 @@ class _MusicKaraokeStagePageState extends ConsumerState<MusicKaraokeStagePage> {
   @override
   void dispose() {
     _playbackRouteMark.dispose();
-    for (final StreamSubscription<Object?> s in _subs) {
-      unawaited(s.cancel());
-    }
+    // 订阅要在释放播放器之前撤掉：流事件回调里会 setState。
+    releaseResources();
     // 画布 / CD+G 放的就是这首歌：把引擎拨到这里的位置，回到歌词页接着唱。
     if (!_isMv) {
       final AppModel app = _app;

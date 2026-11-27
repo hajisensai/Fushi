@@ -649,8 +649,14 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     _popupHost =
         SharedLookupPopupScope.maybeOf(context) ??
         (_ownedPopupHost = SharedLookupPopupHost());
+    // 私有宿主随本页销毁：先于 detach 登记 = 逆序撤销时先 detach、后释放（摘根
+    // Overlay 浮层 entry 再释放 controller，见 dispose）。initState 半途抛错时同样
+    // 按这个顺序撤（BUG-5604）。
+    final SharedLookupPopupHost? ownedPopupHost = _ownedPopupHost;
+    if (ownedPopupHost != null) onTeardown(ownedPopupHost.dispose);
     // 登记为宿主页；成为渲染方时经 [onSharedLookupPopupClaimed] 接线查词计数。
     _popupHost.attach(this);
+    onTeardown(() => _popupHost.detach(this));
     final List<TexthookerLineEntry> initialLines =
         TexthookerService.instance.entries;
     _lastObservedLineId = initialLines.isEmpty ? null : initialLines.last.id;
@@ -673,7 +679,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     );
     // BUG-1028：开页 seed 常驻隐藏热槽，使查词弹窗 WebView 冷加载一次后全程复用，
     // 消除本页此前「每次点词 replaceStack 冷建 WebView」的高延迟（对齐 home_dictionary_page）。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       if (mounted) _seedWarmPopup();
       // 跟随实时开着且进页前已有台词时，首帧后定位到最新一行——列表视口高度
       // 有限（筛选 chips/线程下拉占位后更矮），不定位则最新台词可能在视口外。
@@ -749,9 +755,9 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   void dispose() {
     _linePreviewResetTimer?.cancel();
     // 共用宿主：注销即可（渲染方是本页时宿主把栈交给查词 tab 并收回热槽）；私有
-    // 宿主随本页销毁（摘浮层、释放 controller）。
-    _popupHost.detach(this);
-    _ownedPopupHost?.dispose();
+    // 宿主随本页销毁（摘浮层、释放 controller）。两步都登记在 initState（detach 先撤、
+    // 私有宿主后释放），在这里跑完整份撤销清单。
+    releaseResources();
     _scroll.dispose();
     super.dispose();
   }

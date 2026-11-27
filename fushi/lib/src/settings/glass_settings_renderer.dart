@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
@@ -509,7 +510,7 @@ class GlassSettingsSidebarRow extends StatefulWidget {
 }
 
 class _GlassSettingsSidebarRowState extends State<GlassSettingsSidebarRow>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, StateResourceScope<GlassSettingsSidebarRow> {
   late final FushiFocusId _focusId = FushiFocusId(
     'settings-sidebar-${identityHashCode(this)}',
   );
@@ -524,12 +525,7 @@ class _GlassSettingsSidebarRowState extends State<GlassSettingsSidebarRow>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    super.dispose();
+    onTeardown(() => WidgetsBinding.instance.removeObserver(this));
   }
 
   @override

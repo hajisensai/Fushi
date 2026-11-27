@@ -36,6 +36,7 @@ import 'package:fushi/src/media/video/video_clip_subtitle_image.dart'
     show buildClipSubtitleStyledSpan;
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/lookup/hover_lookup_modifier.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 export 'subtitle_transcript_text.dart';
 
@@ -832,7 +833,8 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
   State<VideoSubtitleJumpPanel> createState() => _VideoSubtitleJumpPanelState();
 }
 
-class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
+class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel>
+    with StateResourceScope<VideoSubtitleJumpPanel> {
   late final ScrollController _scrollController;
 
   /// BUG-1907：搜索框是否展开（收起时不占高度，也不影响过滤）。
@@ -1288,7 +1290,9 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     // 滚动控制器在首次 [didChangeDependencies] 里建：初始偏移要按**真实**的行形态
     // （M3E / 经典）与排版环境估算，这些只能从 context 读。
     widget.controller.addListener(_onControllerChanged);
+    onTeardown(() => widget.controller.removeListener(_onControllerChanged));
     widget.searchRequests?.addListener(_onSearchRequested);
+    onTeardown(() => widget.searchRequests?.removeListener(_onSearchRequested));
     // PR#1032 审查 B1：挂载即对齐水位线。Ctrl+F 在列表关着时按下，页面会先开列表再立刻 +1，
     // 而面板要到下一帧才 mount —— 那一刻 notifier 上零监听者。只靠 addListener 的边沿
     // 通知必然丢掉这次请求（症状：第一次 Ctrl+F 只把列表开出来，要再按一次才出搜索框）。
@@ -1297,6 +1301,9 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     _syncSearchRequests(duringInit: true);
     // BUG-878：跟踪 Ctrl / ⌘ 键状态，供 Ctrl+滚轮缩字号时把列表滚动物理切成禁滚。
     HardwareKeyboard.instance.addHandler(_handleHardwareKey);
+    onTeardown(
+      () => HardwareKeyboard.instance.removeHandler(_handleHardwareKey),
+    );
     _scheduleScrollToCurrentCue();
   }
 
@@ -1423,9 +1430,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     widget.hitTester?.unbind();
     // BUG-2093：回落定时器随面板一起死，否则到点 setState 打到已 dispose 的 State。
     _copyFeedbackTimer?.cancel();
-    HardwareKeyboard.instance.removeHandler(_handleHardwareKey);
-    widget.controller.removeListener(_onControllerChanged);
-    widget.searchRequests?.removeListener(_onSearchRequested);
+    releaseResources();
     _scrollController.dispose();
     _searchController.dispose();
     _searchFocusNode.dispose();

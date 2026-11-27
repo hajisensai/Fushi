@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
@@ -3775,14 +3776,15 @@ class _ReaderVolumeChipRow extends StatefulWidget {
   State<_ReaderVolumeChipRow> createState() => _ReaderVolumeChipRowState();
 }
 
-class _ReaderVolumeChipRowState extends State<_ReaderVolumeChipRow> {
+class _ReaderVolumeChipRowState extends State<_ReaderVolumeChipRow>
+    with StateResourceScope<_ReaderVolumeChipRow> {
   final GlobalKey _currentChipKey = GlobalKey();
 
   @override
   void initState() {
     super.initState();
     if (widget.centerCurrent) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _centerCurrent());
+      schedulePostFrame((_) => _centerCurrent());
     }
   }
 

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
@@ -364,7 +365,8 @@ class GalgameScrapeDialog extends StatefulWidget {
   State<GalgameScrapeDialog> createState() => _GalgameScrapeDialogState();
 }
 
-class _GalgameScrapeDialogState extends State<GalgameScrapeDialog> {
+class _GalgameScrapeDialogState extends State<GalgameScrapeDialog>
+    with StateResourceScope<GalgameScrapeDialog> {
   late final TextEditingController _queryCtrl = TextEditingController(
     text: galgameScrapeInitialQuery(widget.game, widget.initialQuery),
   );
@@ -388,7 +390,7 @@ class _GalgameScrapeDialogState extends State<GalgameScrapeDialog> {
   void initState() {
     super.initState();
     // 首帧后按预填词自动首搜（与书/视频刮削弹窗同款省一次点击）。
-    WidgetsBinding.instance.addPostFrameCallback((_) => _search());
+    schedulePostFrame((_) => _search());
   }
 
   @override

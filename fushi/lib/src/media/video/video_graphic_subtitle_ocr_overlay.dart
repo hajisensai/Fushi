@@ -19,6 +19,7 @@ import 'package:fushi/src/media/video/video_graphic_subtitle_ocr_progress.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart' show OcrRgbaImage;
 
 /// 识别触发的防抖：逐帧步进 / 连续 seek 时只识别停下来的那一帧。
@@ -215,7 +216,8 @@ class VideoGraphicSubtitleOcrOverlay extends StatefulWidget {
 typedef _FrameKey = ({int positionMs, String? trackId});
 
 class _VideoGraphicSubtitleOcrOverlayState
-    extends State<VideoGraphicSubtitleOcrOverlay> {
+    extends State<VideoGraphicSubtitleOcrOverlay>
+    with StateResourceScope<VideoGraphicSubtitleOcrOverlay> {
   GraphicSubtitleOcrSession? _session;
   GraphicSubtitleOcrFrame? _frame;
   _FrameKey? _key;
@@ -260,6 +262,7 @@ class _VideoGraphicSubtitleOcrOverlayState
   void initState() {
     super.initState();
     widget.controller.addListener(_onControllerChanged);
+    onTeardown(() => widget.controller.removeListener(_onControllerChanged));
     // 首帧 build 之前：直接赋值，不走 setState。
     _offerEnable = _enableHintWanted();
     _onControllerChanged();
@@ -317,7 +320,7 @@ class _VideoGraphicSubtitleOcrOverlayState
 
   @override
   void dispose() {
-    widget.controller.removeListener(_onControllerChanged);
+    releaseResources();
     _settle?.cancel();
     _statusFade?.cancel();
     _generation++;

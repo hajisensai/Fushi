@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
@@ -224,7 +225,8 @@ class _FushiSelectionToolbar extends StatefulWidget {
   State<_FushiSelectionToolbar> createState() => _FushiSelectionToolbarState();
 }
 
-class _FushiSelectionToolbarState extends State<_FushiSelectionToolbar> {
+class _FushiSelectionToolbarState extends State<_FushiSelectionToolbar>
+    with StateResourceScope<_FushiSelectionToolbar> {
   void _onChangedClipboardStatus() {
     setState(() {});
   }
@@ -233,6 +235,9 @@ class _FushiSelectionToolbarState extends State<_FushiSelectionToolbar> {
   void initState() {
     super.initState();
     widget.clipboardStatus?.addListener(_onChangedClipboardStatus);
+    onTeardown(
+      () => widget.clipboardStatus?.removeListener(_onChangedClipboardStatus),
+    );
   }
 
   @override
@@ -242,12 +247,6 @@ class _FushiSelectionToolbarState extends State<_FushiSelectionToolbar> {
       widget.clipboardStatus?.addListener(_onChangedClipboardStatus);
       oldWidget.clipboardStatus?.removeListener(_onChangedClipboardStatus);
     }
-  }
-
-  @override
-  void dispose() {
-    widget.clipboardStatus?.removeListener(_onChangedClipboardStatus);
-    super.dispose();
   }
 
   /// 菜单项的唯一来源：主项（复制 / 查词 / 暂存）+ 次项（全选 / 分享 / 剪切 /

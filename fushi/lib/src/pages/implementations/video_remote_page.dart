@@ -6,6 +6,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/lookup/lookup_overlay_navigator.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
@@ -113,7 +114,10 @@ class VideoRemotePage extends ConsumerStatefulWidget {
 ///   [lookupOpen]。
 /// * 连接：[errorText] / [reconnect]。
 class VideoRemotePageState extends ConsumerState<VideoRemotePage>
-    with WidgetsBindingObserver, DictionaryPageMixin {
+    with
+        WidgetsBindingObserver,
+        DictionaryPageMixin,
+        StateResourceScope<VideoRemotePage> {
   late final VideoRemoteClient _client = VideoRemoteClient(
     repository: widget.repository,
     peer: widget.peer,
@@ -217,9 +221,9 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _clock = Timer.periodic(
-      const Duration(milliseconds: 250),
-      (_) => _highlight(),
+    onTeardown(() => WidgetsBinding.instance.removeObserver(this));
+    _clock = ownTimer(
+      Timer.periodic(const Duration(milliseconds: 250), (_) => _highlight()),
     );
     unawaited(_start());
   }
@@ -291,7 +295,6 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
     _generation++;
     _clock?.cancel();
     _retry?.cancel();
-    WidgetsBinding.instance.removeObserver(this);
     unawaited(_disconnect(lookupContextId: lookupContext));
     super.dispose();
   }

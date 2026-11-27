@@ -86,6 +86,7 @@ import 'package:fushi/src/pages/implementations/library_view_options.dart'
     show libraryGridSizeClassOf;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 合集详情页（书架 / 漫画库 / 游戏库共用；2026-10-06 M3E 重设计）。
 ///
@@ -247,7 +248,8 @@ class _MediaCollectionGridDetailPageState
     extends State<MediaCollectionGridDetailPage>
     with
         CollectionDetailShared<MediaCollectionGridDetailPage>,
-        LibraryReorderHost<MediaCollectionGridDetailPage> {
+        LibraryReorderHost<MediaCollectionGridDetailPage>,
+        StateResourceScope<MediaCollectionGridDetailPage> {
   late String _name;
   List<MediaCollectionItemRow> _rows = const <MediaCollectionItemRow>[];
 
@@ -321,6 +323,9 @@ class _MediaCollectionGridDetailPageState
     _name = widget.collection.name;
     _scroll.addListener(_onScroll);
     widget.memberInfoRefresh?.addListener(_onMemberInfoChanged);
+    onTeardown(
+      () => widget.memberInfoRefresh?.removeListener(_onMemberInfoChanged),
+    );
     _artChanges = widget.artScrape?.changes;
     _artChanges?.addListener(_onArtStoreChanged);
     _reload();
@@ -364,7 +369,6 @@ class _MediaCollectionGridDetailPageState
 
   @override
   void dispose() {
-    widget.memberInfoRefresh?.removeListener(_onMemberInfoChanged);
     _artChanges?.removeListener(_onArtStoreChanged);
     _scroll.removeListener(_onScroll);
     _scroll.dispose();

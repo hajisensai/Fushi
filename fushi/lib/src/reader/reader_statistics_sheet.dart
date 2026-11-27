@@ -37,6 +37,7 @@ library;
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_audio/fushi_audio.dart' show StudySessionTotals;
 import 'package:fushi_core/fushi_core.dart' show LookupMiningCounterRow;
@@ -317,8 +318,8 @@ class ReaderStatisticsSheet extends StatefulWidget {
   State<ReaderStatisticsSheet> createState() => _ReaderStatisticsSheetState();
 }
 
-class _ReaderStatisticsSheetState extends State<ReaderStatisticsSheet> {
-  Timer? _ticker;
+class _ReaderStatisticsSheetState extends State<ReaderStatisticsSheet>
+    with StateResourceScope<ReaderStatisticsSheet> {
   ReaderBookStatTotals? _book;
   Object? _lastSnapshot;
 
@@ -327,22 +328,24 @@ class _ReaderStatisticsSheetState extends State<ReaderStatisticsSheet> {
     super.initState();
     // 会话 / 位置读数按秒采样，但只在秒 / 字数 / 计时态 / 位置变了才重建
     // （暂停且不翻页时零重建）。
-    _ticker = Timer.periodic(widget.tick, (_) {
-      if (!mounted) return;
-      final StudySessionTotals s = widget.sessionTotals();
-      final ReaderPositionSnapshot p = widget.progress();
-      final Object snap = (
-        seconds: s.durationMs ~/ 1000,
-        chars: s.chars,
-        pages: widget.sessionPages?.call() ?? 0,
-        active: s.active,
-        chapter: p.chapterCurrent,
-        chapterTotal: p.chapterTotal,
-        book: p.bookCurrent,
-      );
-      if (snap == _lastSnapshot) return;
-      setState(() => _lastSnapshot = snap);
-    });
+    ownTimer(
+      Timer.periodic(widget.tick, (_) {
+        if (!mounted) return;
+        final StudySessionTotals s = widget.sessionTotals();
+        final ReaderPositionSnapshot p = widget.progress();
+        final Object snap = (
+          seconds: s.durationMs ~/ 1000,
+          chars: s.chars,
+          pages: widget.sessionPages?.call() ?? 0,
+          active: s.active,
+          chapter: p.chapterCurrent,
+          chapterTotal: p.chapterTotal,
+          book: p.bookCurrent,
+        );
+        if (snap == _lastSnapshot) return;
+        setState(() => _lastSnapshot = snap);
+      }),
+    );
     // 读失败（库被关 / 查询异常）不能成为无人接的异步错误：记进错误日志，今日 /
     // 累计停在空态，侧栏其余实时读数照常（BUG-5051）。
     unawaited(
@@ -359,12 +362,6 @@ class _ReaderStatisticsSheetState extends State<ReaderStatisticsSheet> {
         },
       ),
     );
-  }
-
-  @override
-  void dispose() {
-    _ticker?.cancel();
-    super.dispose();
   }
 
   /// 本次会话 hero 下挂的两个读数：书 / 视频 = 字数 + 字时（视频是字幕字数）；漫画 =

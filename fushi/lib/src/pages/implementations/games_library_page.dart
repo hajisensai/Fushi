@@ -294,7 +294,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
     // 已是新视图，这里消费掉即可）。
     listenTo(galgameLibraryViewRequestNotifier, _onViewRequest);
     if (galgameLibraryViewRequestNotifier.value != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _onViewRequest());
+      schedulePostFrame((_) => _onViewRequest());
     }
     // 刮削写回 / 控制通道脚本写的单个游戏资料与附加图、合集刮削资料与附加图：
     // 系列色块的背景图 / 概览走预取映射，任何写入者落库后都重载一次。

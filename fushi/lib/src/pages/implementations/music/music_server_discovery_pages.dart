@@ -486,7 +486,8 @@ class MusicServerFavoritesView extends StatefulWidget {
       _MusicServerFavoritesViewState();
 }
 
-class _MusicServerFavoritesViewState extends State<MusicServerFavoritesView> {
+class _MusicServerFavoritesViewState extends State<MusicServerFavoritesView>
+    with StateResourceScope<MusicServerFavoritesView> {
   late Future<MusicServerItems> _items = _load();
   MusicServerItems? _last;
 
@@ -504,13 +505,7 @@ class _MusicServerFavoritesViewState extends State<MusicServerFavoritesView> {
   @override
   void initState() {
     super.initState();
-    MusicServerFavoriteStore.instance.addListener(_reload);
-  }
-
-  @override
-  void dispose() {
-    MusicServerFavoriteStore.instance.removeListener(_reload);
-    super.dispose();
+    listenTo(MusicServerFavoriteStore.instance, _reload);
   }
 
   @override

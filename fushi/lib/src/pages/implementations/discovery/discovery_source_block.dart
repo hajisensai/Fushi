@@ -36,6 +36,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 来源块的固定高度：glyph + 两行名称 + 一行 chip（封面条与失败态都排在同一高度
 /// 里，有没有封面块高都不变）。
@@ -183,11 +184,12 @@ class DiscoverySourceColorsBuilder extends StatefulWidget {
 }
 
 class _DiscoverySourceColorsBuilderState
-    extends State<DiscoverySourceColorsBuilder> {
+    extends State<DiscoverySourceColorsBuilder>
+    with StateResourceScope<DiscoverySourceColorsBuilder> {
   @override
   void initState() {
     super.initState();
-    DiscoverySourceHues.instance.addListener(_changed);
+    listenTo(DiscoverySourceHues.instance, _changed);
     _offer();
   }
 
@@ -199,12 +201,6 @@ class _DiscoverySourceColorsBuilderState
         oldWidget.cover != widget.cover) {
       _offer();
     }
-  }
-
-  @override
-  void dispose() {
-    DiscoverySourceHues.instance.removeListener(_changed);
-    super.dispose();
   }
 
   void _changed() {

@@ -367,12 +367,18 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     _popupHost =
         SharedLookupPopupScope.maybeOf(context) ??
         (_ownedPopupHost = SharedLookupPopupHost());
+    // 私有宿主随本页销毁：先于 detach 登记 = 逆序撤销时先 detach、后释放（摘根
+    // Overlay 浮层 entry 再释放 controller，见 dispose）。initState 半途抛错时同样
+    // 按这个顺序撤（BUG-5604）。
+    final SharedLookupPopupHost? ownedPopupHost = _ownedPopupHost;
+    if (ownedPopupHost != null) onTeardown(ownedPopupHost.dispose);
     // 登记为宿主页；成为渲染方时经 [onSharedLookupPopupClaimed] 接线查词计数。
     _popupHost.attach(this);
+    onTeardown(() => _popupHost.detach(this));
     WidgetsBinding.instance.addObserver(this);
     onTeardown(() => WidgetsBinding.instance.removeObserver(this));
     // 挂载时键盘可能已经弹着（从别的输入框切过来），补读一次初值。
-    WidgetsBinding.instance.addPostFrameCallback((_) => didChangeMetrics());
+    schedulePostFrame((_) => didChangeMetrics());
     listenTo(appModelNoUpdate.dictionarySearchAgainNotifier, _searchAgain);
     listenTo(
       appModelNoUpdate.dictionaryEntriesNotifier,
@@ -387,19 +393,19 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     // 本 tab *之前* 就把待查词排进 pendingText 并 notify，那次 notify 发生在本页
     // addListener 之前收不到。故挂载即排一次后帧消费已存在的 pending（有 pending 才
     // 消费，无 pending 则 no-op，不会乱消费）。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       if (mounted) _onDesktopLookupPending();
     });
     // 同理，导航点进本 tab 的聚焦请求也排在本页挂载**之前**（本页不保活，点击那
     // 一刻它还不存在），挂载即消费一次已排入的 pending。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       if (mounted) _consumeFocusRequest();
     });
     // 新手引导的练习句子：挂载后当作用户输入查一次（不写历史），源文本条随即显示
     // 整句供点词。
     final String? initialQuery = widget.initialQuery;
     if (initialQuery != null && initialQuery.trim().isNotEmpty) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+      schedulePostFrame((_) {
         if (mounted) _search(initialQuery, writeHistory: false);
       });
     }
@@ -408,7 +414,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     // inappwebview fork 里 use-after-free 崩溃。与 reader（base_source_page）/ video 一致，
     // 开页 seed 一个常驻隐藏热槽：弹窗 WebView 冷加载一次后全程复用，消除「每次查词销毁+重建
     // WebView」的高频 create/destroy。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       if (mounted) _seedWarmPopup();
     });
   }
@@ -716,9 +722,9 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     // 共用宿主：注销即可（渲染方是本页时宿主把栈交给 texthooker 并收回热槽）。私有
     // 宿主随本页销毁：先摘根 Overlay 浮层 entry 再释放 controller（TODO-617：entry 移除后
     // 不会再被根 Overlay 重建，杜绝销毁期用失效 State 重建浮层；TODO-058：controller 的
-    // 挂起层兜底 Timer 随之取消）。
-    _popupHost.detach(this);
-    _ownedPopupHost?.dispose();
+    // 挂起层兜底 Timer 随之取消）。两步都登记在 initState（detach 先撤、私有宿主
+    // 后释放），在这里跑完整份撤销清单。
+    releaseResources();
     super.dispose();
   }
 

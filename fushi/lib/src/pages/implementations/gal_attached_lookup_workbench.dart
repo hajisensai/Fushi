@@ -24,6 +24,7 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// Compact, always-present controls for the Windows no-OCR lookup surface.
 ///
@@ -951,7 +952,8 @@ class GalAttachedCalibrationDialog extends StatefulWidget {
 }
 
 class _GalAttachedCalibrationDialogState
-    extends State<GalAttachedCalibrationDialog> {
+    extends State<GalAttachedCalibrationDialog>
+    with StateResourceScope<GalAttachedCalibrationDialog> {
   late GalLookupNormalizedRectV1 _rect;
   late GalLookupTextLayoutV1 _layout;
   late final TextEditingController _fontController;
@@ -971,11 +973,11 @@ class _GalAttachedCalibrationDialogState
     _fontController = TextEditingController(text: _layout.fontFamily);
     _previewTextGeneration = widget.controller.textGeneration;
     widget.controller.addListener(_adoptNativeDraft);
+    onTeardown(() => widget.controller.removeListener(_adoptNativeDraft));
   }
 
   @override
   void dispose() {
-    widget.controller.removeListener(_adoptNativeDraft);
     _fontController.dispose();
     super.dispose();
   }

@@ -19,6 +19,7 @@ import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 「管理合集」页：与「管理标签」对等，一处列出本库页域（书架 / 漫画 / 视频 /
 /// 游戏）的全部合集。
@@ -65,25 +66,24 @@ class CollectionManagementPage extends StatefulWidget {
       _CollectionManagementPageState();
 }
 
-class _CollectionManagementPageState extends State<CollectionManagementPage> {
+class _CollectionManagementPageState extends State<CollectionManagementPage>
+    with StateResourceScope<CollectionManagementPage> {
   List<MediaCollectionRow> _collections = const <MediaCollectionRow>[];
   final TextEditingController _search = TextEditingController();
   final FocusNode _searchFocus = FocusNode();
-  StreamSubscription<void>? _changes;
   bool _loaded = false;
 
   @override
   void initState() {
     super.initState();
-    _changes = widget.database.watchCollectionTablesChanged().listen(
-      (_) => _reload(),
+    ownSubscription(
+      widget.database.watchCollectionTablesChanged().listen((_) => _reload()),
     );
     _reload();
   }
 
   @override
   void dispose() {
-    unawaited(_changes?.cancel());
     _search.dispose();
     _searchFocus.dispose();
     super.dispose();

@@ -1,5 +1,6 @@
 import 'package:flutter/scheduler.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 import 'package:fushi/src/models/home_tab.dart';
 import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart';
@@ -464,7 +465,8 @@ class FushiCoveredPageSnapshot extends StatefulWidget {
       _FushiCoveredPageSnapshotState();
 }
 
-class _FushiCoveredPageSnapshotState extends State<FushiCoveredPageSnapshot> {
+class _FushiCoveredPageSnapshotState extends State<FushiCoveredPageSnapshot>
+    with StateResourceScope<FushiCoveredPageSnapshot> {
   final SnapshotController _controller = SnapshotController();
 
   /// 已排了「隔两帧开拍」、还没轮到。转场途中页面照常重建（`didUpdateWidget`
@@ -478,6 +480,7 @@ class _FushiCoveredPageSnapshotState extends State<FushiCoveredPageSnapshot> {
   void initState() {
     super.initState();
     widget.secondaryAnimation.addStatusListener(_onStatus);
+    onTeardown(() => widget.secondaryAnimation.removeStatusListener(_onStatus));
     _sync();
   }
 
@@ -493,7 +496,6 @@ class _FushiCoveredPageSnapshotState extends State<FushiCoveredPageSnapshot> {
 
   @override
   void dispose() {
-    widget.secondaryAnimation.removeStatusListener(_onStatus);
     _controller.dispose();
     super.dispose();
   }

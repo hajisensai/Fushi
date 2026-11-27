@@ -55,6 +55,7 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart'
     show shelfCoverCard;
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 曲目行是否换成 [MusicTrackRowSurface]（重设计外壳生效、非墨水屏）。
 bool musicTrackRowSurfaceActive(BuildContext context) =>
@@ -680,13 +681,15 @@ class MusicNowPlayingMatch extends StatefulWidget {
   State<MusicNowPlayingMatch> createState() => _MusicNowPlayingMatchState();
 }
 
-class _MusicNowPlayingMatchState extends State<MusicNowPlayingMatch> {
+class _MusicNowPlayingMatchState extends State<MusicNowPlayingMatch>
+    with StateResourceScope<MusicNowPlayingMatch> {
   late bool _playing = widget.isCurrent();
 
   @override
   void initState() {
     super.initState();
     widget.listenable.addListener(_changed);
+    onTeardown(() => widget.listenable.removeListener(_changed));
   }
 
   @override
@@ -697,12 +700,6 @@ class _MusicNowPlayingMatchState extends State<MusicNowPlayingMatch> {
       widget.listenable.addListener(_changed);
     }
     _playing = widget.isCurrent();
-  }
-
-  @override
-  void dispose() {
-    widget.listenable.removeListener(_changed);
-    super.dispose();
   }
 
   void _changed() {

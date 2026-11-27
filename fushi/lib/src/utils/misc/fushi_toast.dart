@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:flutter/scheduler.dart' show SchedulerBinding;
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -595,7 +596,7 @@ class _FushiToastView extends StatefulWidget {
 }
 
 class _FushiToastViewState extends State<_FushiToastView>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, StateResourceScope<_FushiToastView> {
   late final AnimationController _controller;
   late final Animation<double> _opacity;
   late final Animation<Offset> _slide;
@@ -633,7 +634,7 @@ class _FushiToastViewState extends State<_FushiToastView>
     );
     _controller.forward();
     // 页面 chrome 显隐 / 移动时重新摆位（底栏抬起时卡片跟着抬）。
-    FushiNoticeObstacles.instance.addListener(_onObstaclesChanged);
+    listenTo(FushiNoticeObstacles.instance, _onObstaclesChanged);
   }
 
   @override
@@ -667,7 +668,6 @@ class _FushiToastViewState extends State<_FushiToastView>
 
   @override
   void dispose() {
-    FushiNoticeObstacles.instance.removeListener(_onObstaclesChanged);
     _controller.dispose();
     super.dispose();
   }

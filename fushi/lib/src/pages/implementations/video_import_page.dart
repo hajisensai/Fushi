@@ -18,6 +18,7 @@ import 'dart:async' show unawaited;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audio_cd/audio_cd_import.dart'
     show audioCdRipAvailableOnHost;
@@ -193,7 +194,8 @@ class VideoImportPage extends ConsumerStatefulWidget {
   ConsumerState<VideoImportPage> createState() => _VideoImportPageState();
 }
 
-class _VideoImportPageState extends ConsumerState<VideoImportPage> {
+class _VideoImportPageState extends ConsumerState<VideoImportPage>
+    with StateResourceScope<VideoImportPage> {
   final GlobalKey<MediaSourcesViewState> _viewKey =
       GlobalKey<MediaSourcesViewState>();
 
@@ -205,6 +207,7 @@ class _VideoImportPageState extends ConsumerState<VideoImportPage> {
   void initState() {
     super.initState();
     widget.scrapeTaskController?.addListener(_taskChanged);
+    onTeardown(() => widget.scrapeTaskController?.removeListener(_taskChanged));
   }
 
   @override
@@ -213,12 +216,6 @@ class _VideoImportPageState extends ConsumerState<VideoImportPage> {
     if (oldWidget.scrapeTaskController == widget.scrapeTaskController) return;
     oldWidget.scrapeTaskController?.removeListener(_taskChanged);
     widget.scrapeTaskController?.addListener(_taskChanged);
-  }
-
-  @override
-  void dispose() {
-    widget.scrapeTaskController?.removeListener(_taskChanged);
-    super.dispose();
   }
 
   void _taskChanged() {

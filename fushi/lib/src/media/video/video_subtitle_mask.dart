@@ -23,6 +23,7 @@ import 'package:fushi/src/media/video/smart_subtitle_mask_sampler.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_subtitle_mask_config.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 视频画面内容区在视口里的矩形（按 [fit]，含黑边计算；cover 时可超出视口）。
 /// 视频尺寸未知时退回整个视口。
@@ -70,7 +71,8 @@ class _VideoFrameSizeListener extends StatefulWidget {
       _VideoFrameSizeListenerState();
 }
 
-class _VideoFrameSizeListenerState extends State<_VideoFrameSizeListener> {
+class _VideoFrameSizeListenerState extends State<_VideoFrameSizeListener>
+    with StateResourceScope<_VideoFrameSizeListener> {
   Size? _frame;
 
   Size? _read() {
@@ -85,6 +87,7 @@ class _VideoFrameSizeListenerState extends State<_VideoFrameSizeListener> {
     super.initState();
     _frame = _read();
     widget.controller.addListener(_onChanged);
+    onTeardown(() => widget.controller.removeListener(_onChanged));
   }
 
   @override
@@ -95,12 +98,6 @@ class _VideoFrameSizeListenerState extends State<_VideoFrameSizeListener> {
       widget.controller.addListener(_onChanged);
       _frame = _read();
     }
-  }
-
-  @override
-  void dispose() {
-    widget.controller.removeListener(_onChanged);
-    super.dispose();
   }
 
   void _onChanged() {
@@ -153,7 +150,8 @@ class VideoSubtitleMaskLayer extends StatefulWidget {
   State<VideoSubtitleMaskLayer> createState() => _VideoSubtitleMaskLayerState();
 }
 
-class _VideoSubtitleMaskLayerState extends State<VideoSubtitleMaskLayer> {
+class _VideoSubtitleMaskLayerState extends State<VideoSubtitleMaskLayer>
+    with StateResourceScope<VideoSubtitleMaskLayer> {
   SmartSubtitleMaskSampler? _sampler;
   SmartSubtitleMaskDetector? _detector;
 
@@ -166,6 +164,11 @@ class _VideoSubtitleMaskLayerState extends State<VideoSubtitleMaskLayer> {
   void initState() {
     super.initState();
     widget.smartDetectorIdentity?.addListener(_onDetectorIdentityChanged);
+    onTeardown(
+      () => widget.smartDetectorIdentity?.removeListener(
+        _onDetectorIdentityChanged,
+      ),
+    );
     _syncSampler();
   }
 
@@ -188,7 +191,7 @@ class _VideoSubtitleMaskLayerState extends State<VideoSubtitleMaskLayer> {
 
   @override
   void dispose() {
-    widget.smartDetectorIdentity?.removeListener(_onDetectorIdentityChanged);
+    releaseResources();
     _disposeSampler();
     super.dispose();
   }
@@ -389,14 +392,15 @@ class VideoSubtitleMaskEditLayer extends StatefulWidget {
 
 enum _MaskHandle { move, topLeft, topRight, bottomLeft, bottomRight }
 
-class _VideoSubtitleMaskEditLayerState
-    extends State<VideoSubtitleMaskEditLayer> {
+class _VideoSubtitleMaskEditLayerState extends State<VideoSubtitleMaskEditLayer>
+    with StateResourceScope<VideoSubtitleMaskEditLayer> {
   Rect get _current => widget.draftRect.value ?? widget.config.rect;
 
   @override
   void initState() {
     super.initState();
     widget.draftRect.addListener(_onDraft);
+    onTeardown(() => widget.draftRect.removeListener(_onDraft));
   }
 
   @override
@@ -406,12 +410,6 @@ class _VideoSubtitleMaskEditLayerState
       oldWidget.draftRect.removeListener(_onDraft);
       widget.draftRect.addListener(_onDraft);
     }
-  }
-
-  @override
-  void dispose() {
-    widget.draftRect.removeListener(_onDraft);
-    super.dispose();
   }
 
   void _onDraft() => setState(() {});

@@ -32,6 +32,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 
 /// Android PiP 允许的最小宽高比（1:2.39，竖向极限）。
@@ -400,12 +401,11 @@ class AndroidPictureInPicturePlaybackSync extends StatefulWidget {
 }
 
 class _AndroidPictureInPicturePlaybackSyncState
-    extends State<AndroidPictureInPicturePlaybackSync> {
+    extends State<AndroidPictureInPicturePlaybackSync>
+    with StateResourceScope<AndroidPictureInPicturePlaybackSync> {
   /// 当前挂载着的全部实例，按挂载先后排；只有末尾那一份生效。
   static final List<_AndroidPictureInPicturePlaybackSyncState> _mounted =
       <_AndroidPictureInPicturePlaybackSyncState>[];
-
-  StreamSubscription<PictureInPictureAction>? _actionSub;
 
   bool get _isCurrent => _mounted.isNotEmpty && identical(_mounted.last, this);
 
@@ -419,7 +419,8 @@ class _AndroidPictureInPicturePlaybackSyncState
     super.initState();
     _mounted.add(this);
     widget.playback.addListener(_push);
-    _actionSub = AndroidPictureInPicture.actions.listen(_handleAction);
+    onTeardown(() => widget.playback.removeListener(_push));
+    ownSubscription(AndroidPictureInPicture.actions.listen(_handleAction));
     // 挂载即推一次：本地换集是 pushReplacement 的新页，PiP 窗口上还是上一集留下的
     // 按钮图标与比例。
     _push();
@@ -437,9 +438,6 @@ class _AndroidPictureInPicturePlaybackSyncState
 
   @override
   void dispose() {
-    widget.playback.removeListener(_push);
-    unawaited(_actionSub?.cancel());
-    _actionSub = null;
     _mounted.remove(this);
     if (_mounted.isNotEmpty) {
       // 接手的那一份立刻对齐一次（它在让位期间没推过参数）。

@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/pages/implementations/web_browser/pages/web_browser_page_common.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -49,7 +50,8 @@ class WebBrowserDownloadsPage extends StatefulWidget {
 
 enum _DownloadAction { open, reveal, remove }
 
-class _WebBrowserDownloadsPageState extends State<WebBrowserDownloadsPage> {
+class _WebBrowserDownloadsPageState extends State<WebBrowserDownloadsPage>
+    with StateResourceScope<WebBrowserDownloadsPage> {
   List<WebBrowserDownload> _items = const <WebBrowserDownload>[];
   bool _loading = true;
   int _loadGeneration = 0;
@@ -63,13 +65,8 @@ class _WebBrowserDownloadsPageState extends State<WebBrowserDownloadsPage> {
   void initState() {
     super.initState();
     widget.store.addListener(_onStoreChanged);
+    onTeardown(() => widget.store.removeListener(_onStoreChanged));
     unawaited(_load(replay: true));
-  }
-
-  @override
-  void dispose() {
-    widget.store.removeListener(_onStoreChanged);
-    super.dispose();
   }
 
   void _onStoreChanged() => unawaited(_load());

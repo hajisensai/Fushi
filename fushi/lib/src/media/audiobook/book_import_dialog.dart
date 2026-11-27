@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'dart:developer' as developer;
 import 'dart:io';
 import 'dart:isolate';
@@ -141,7 +142,9 @@ class BookImportDialog extends StatefulWidget {
 }
 
 class _BookImportDialogState extends State<BookImportDialog>
-    with ImportFlowMixin<BookImportDialog> {
+    with
+        ImportFlowMixin<BookImportDialog>,
+        StateResourceScope<BookImportDialog> {
   final TextEditingController _titleCtrl = TextEditingController();
   final TextEditingController _authorCtrl = TextEditingController();
 
@@ -256,7 +259,7 @@ class _BookImportDialogState extends State<BookImportDialog>
       _audioPaths = List<String>.of(audios);
       // 预填音频时尝试抽内嵌封面（与 _pickAudio 路径一致）。首帧后跑，避免在
       // initState 内同步触发 setState / 平台通道调用。
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+      schedulePostFrame((_) {
         if (!mounted) return;
         if (_coverPath == null) {
           _tryExtractAudioCover();
@@ -266,7 +269,7 @@ class _BookImportDialogState extends State<BookImportDialog>
       });
     }
     if (widget.pickAudioFirst) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+      schedulePostFrame((_) {
         if (mounted) unawaited(_pickAudio());
       });
     }

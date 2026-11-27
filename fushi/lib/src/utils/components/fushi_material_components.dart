@@ -6,6 +6,7 @@ import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoIcons;
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 // SelectedContent 住在 rendering 层（selection.dart），material 不转出它。
 import 'package:flutter/rendering.dart'
     show BoxHitTestResult, BoxParentData, RenderShiftedBox, SelectedContent;
@@ -2214,13 +2215,15 @@ class FushiFieldFocusReveal extends StatefulWidget {
   State<FushiFieldFocusReveal> createState() => _FushiFieldFocusRevealState();
 }
 
-class _FushiFieldFocusRevealState extends State<FushiFieldFocusReveal> {
+class _FushiFieldFocusRevealState extends State<FushiFieldFocusReveal>
+    with StateResourceScope<FushiFieldFocusReveal> {
   bool _selfFocused = false;
 
   @override
   void initState() {
     super.initState();
     widget.fieldFocus.addListener(_onFieldFocus);
+    onTeardown(() => widget.fieldFocus.removeListener(_onFieldFocus));
   }
 
   @override
@@ -2230,12 +2233,6 @@ class _FushiFieldFocusRevealState extends State<FushiFieldFocusReveal> {
       oldWidget.fieldFocus.removeListener(_onFieldFocus);
       widget.fieldFocus.addListener(_onFieldFocus);
     }
-  }
-
-  @override
-  void dispose() {
-    widget.fieldFocus.removeListener(_onFieldFocus);
-    super.dispose();
   }
 
   void _onFieldFocus() {

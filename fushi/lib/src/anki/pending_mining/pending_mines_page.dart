@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart'
@@ -71,11 +72,10 @@ String _pendingFailureReason(MineOutcome outcome) {
 
 /// 订阅待发队列：表一变就重读一次（行数 / 行列表）。
 mixin _PendingMineQueueListener<W extends ConsumerStatefulWidget>
-    on ConsumerState<W> {
+    on ConsumerState<W>, StateResourceScope<W> {
   late final PendingMineStore store = pendingMineStoreFor(
     ref.read(appProvider),
   );
-  StreamSubscription<void>? _changes;
 
   /// 表有变化（以及首帧）时调用。
   Future<void> reload();
@@ -83,14 +83,8 @@ mixin _PendingMineQueueListener<W extends ConsumerStatefulWidget>
   @override
   void initState() {
     super.initState();
-    _changes = store.changes().listen((_) => unawaited(reload()));
+    ownSubscription(store.changes().listen((_) => unawaited(reload())));
     unawaited(reload());
-  }
-
-  @override
-  void dispose() {
-    unawaited(_changes?.cancel());
-    super.dispose();
   }
 }
 
@@ -215,7 +209,9 @@ class PendingMinesPage extends ConsumerStatefulWidget {
 }
 
 class _PendingMinesPageState extends ConsumerState<PendingMinesPage>
-    with _PendingMineQueueListener<PendingMinesPage> {
+    with
+        StateResourceScope<PendingMinesPage>,
+        _PendingMineQueueListener<PendingMinesPage> {
   List<PendingMineRow> _rows = const <PendingMineRow>[];
 
   /// 首次读表完成前显示骨架，而不是先闪一下空状态。

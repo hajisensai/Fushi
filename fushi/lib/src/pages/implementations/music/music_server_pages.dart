@@ -92,6 +92,7 @@ import 'package:fushi/src/utils/components/fushi_cover_block.dart'
     show FushiCoverBlockSize;
 import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart'
     show SliverFushiCoverBlocks;
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 // 详情页头部色块 / 页头大字外壳与 [musicBrowseScaffold] 同属「音乐二级页外壳」：
 // 一并导出，插件详情页（`music_plugin_pages.dart` 的 part）经本文件拿到。

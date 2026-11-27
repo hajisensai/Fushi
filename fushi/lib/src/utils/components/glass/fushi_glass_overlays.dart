@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'dart:ui' show SemanticsRole, lerpDouble;
 
 import 'package:cupertino_ui/cupertino_ui.dart';
@@ -2557,7 +2558,8 @@ class _FushiMenuBody<T> extends StatefulWidget {
   State<_FushiMenuBody<T>> createState() => _FushiMenuBodyState<T>();
 }
 
-class _FushiMenuBodyState<T> extends State<_FushiMenuBody<T>> {
+class _FushiMenuBodyState<T> extends State<_FushiMenuBody<T>>
+    with StateResourceScope<_FushiMenuBody<T>> {
   /// 每个菜单项外包一个不可聚焦的 Focus 节点，只用来在打开后找到「该项里
   /// 第一个可聚焦后代」（PopupMenuItem 的 InkWell / Apple 菜单行），把初始
   /// 焦点落过去。
@@ -2573,7 +2575,7 @@ class _FushiMenuBodyState<T> extends State<_FushiMenuBody<T>> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _focusInitial());
+    schedulePostFrame((_) => _focusInitial());
   }
 
   int get _initialIndex {

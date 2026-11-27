@@ -10,6 +10,7 @@
 //   时不问，提交在后台跑、不拖住初始化）；那时数据库还没开，提交落在
 //   [CrashReporter.spoolDir]，首页出来后并入反馈中心。
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'dart:async';
 
 import 'package:fushi/i18n/strings.g.dart';
@@ -476,13 +477,14 @@ class CrashReportStartupPrompt extends StatefulWidget {
       _CrashReportStartupPromptState();
 }
 
-class _CrashReportStartupPromptState extends State<CrashReportStartupPrompt> {
+class _CrashReportStartupPromptState extends State<CrashReportStartupPrompt>
+    with StateResourceScope<CrashReportStartupPrompt> {
   bool _shown = false;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       if (mounted) setState(() => _shown = true);
     });
   }

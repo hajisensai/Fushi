@@ -20,6 +20,7 @@
 import 'dart:io';
 
 import 'package:flutter/widgets.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/sync/desktop_foreground_guard.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -96,7 +97,8 @@ class MainWindowFocusGate extends StatefulWidget {
   State<MainWindowFocusGate> createState() => _MainWindowFocusGateState();
 }
 
-class _MainWindowFocusGateState extends State<MainWindowFocusGate> {
+class _MainWindowFocusGateState extends State<MainWindowFocusGate>
+    with StateResourceScope<MainWindowFocusGate> {
   bool _open = true;
 
   /// 闸门自己的节点：兜底恢复时先由它接住焦点，再 [FocusNode.nextFocus] 交给
@@ -115,15 +117,11 @@ class _MainWindowFocusGateState extends State<MainWindowFocusGate> {
     super.initState();
     if (!mainWindowFocusGateApplies) return;
     _open = mainWindowForegroundNotifier.value;
-    mainWindowForegroundNotifier.addListener(_onForegroundChanged);
+    listenTo(mainWindowForegroundNotifier, _onForegroundChanged);
   }
 
   @override
   void dispose() {
-    // 无条件退订：removeListener 对没订阅过的监听器本就是 no-op，而「订阅时判一
-    // 次、退订时再判一次」会在判据中途变化时漏退订（测试覆盖开关就会这样变）。
-    // 少一个特殊情况，就少一处泄漏。
-    mainWindowForegroundNotifier.removeListener(_onForegroundChanged);
     _gateNode.dispose();
     super.dispose();
   }

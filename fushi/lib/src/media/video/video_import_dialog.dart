@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
@@ -377,7 +378,9 @@ class VideoImportDialog extends StatefulWidget {
 }
 
 class _VideoImportDialogState extends State<VideoImportDialog>
-    with ImportFlowMixin<VideoImportDialog> {
+    with
+        ImportFlowMixin<VideoImportDialog>,
+        StateResourceScope<VideoImportDialog> {
   String? _videoPath;
 
   /// [_videoPath] 是不是用户原始位置的真实路径（拖入 / 初始路径恒为 true）。
@@ -402,7 +405,7 @@ class _VideoImportDialogState extends State<VideoImportDialog>
     // 避免在 initState 内同步 setState）。
     final String? dropped = widget.initialPlaylistPath;
     if (dropped != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+      schedulePostFrame((_) {
         if (mounted) _importPlaylistFromPath(dropped);
       });
     }
@@ -412,7 +415,7 @@ class _VideoImportDialogState extends State<VideoImportDialog>
     if (droppedUrl != null) {
       _streamUrlController.text = droppedUrl;
       if (isPlayableStreamUrl(droppedUrl)) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
+        schedulePostFrame((_) {
           if (mounted) _importStreamUrl(droppedUrl.trim());
         });
       }

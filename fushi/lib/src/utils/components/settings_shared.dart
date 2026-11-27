@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_backdrop_frost.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -3333,7 +3334,8 @@ class _SegmentedStripScroller extends StatefulWidget {
       _SegmentedStripScrollerState();
 }
 
-class _SegmentedStripScrollerState extends State<_SegmentedStripScroller> {
+class _SegmentedStripScrollerState extends State<_SegmentedStripScroller>
+    with StateResourceScope<_SegmentedStripScroller> {
   final ScrollController _controller = ScrollController();
 
   /// 让相邻段露出一截的余量：既是视觉提示（还有前/后段），也抵消估宽误差。
@@ -3343,9 +3345,7 @@ class _SegmentedStripScrollerState extends State<_SegmentedStripScroller> {
   void initState() {
     super.initState();
     // 首帧后定位（jump 不动画）：打开页面时选中段就在可视区内。
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) => _ensureSelectedVisible(animate: false),
-    );
+    schedulePostFrame((_) => _ensureSelectedVisible(animate: false));
   }
 
   @override

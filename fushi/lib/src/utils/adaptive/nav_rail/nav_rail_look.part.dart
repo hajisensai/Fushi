@@ -144,7 +144,8 @@ class _RailNotchHost extends InheritedWidget {
       !identical(oldWidget.state, state);
 }
 
-class _RailNotchSurfaceState extends State<_RailNotchSurface> {
+class _RailNotchSurfaceState extends State<_RailNotchSurface>
+    with StateResourceScope<_RailNotchSurface> {
   /// 侧栏目的地列表的滚动控制器：滚动时缺口跟着当前项走。
   final ScrollController scroll = ScrollController();
 
@@ -155,7 +156,7 @@ class _RailNotchSurfaceState extends State<_RailNotchSurface> {
   @override
   void initState() {
     super.initState();
-    scroll.addListener(_tick);
+    listenTo(scroll, _tick);
   }
 
   void _tick() => _repaint.value++;
@@ -217,7 +218,8 @@ class _RailNotchSurfaceState extends State<_RailNotchSurface> {
   @override
   void dispose() {
     _slider?._progress.animation.removeListener(_tick);
-    scroll.removeListener(_tick);
+    // 先摘监听再释放 scroll。
+    releaseResources();
     scroll.dispose();
     _repaint.dispose();
     super.dispose();

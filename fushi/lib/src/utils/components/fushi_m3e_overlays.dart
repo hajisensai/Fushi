@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'dart:ui' show SemanticsRole;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
@@ -917,26 +918,21 @@ class _FushiDialogActionCountdown extends StatefulWidget {
 }
 
 class _FushiDialogActionCountdownState
-    extends State<_FushiDialogActionCountdown> {
+    extends State<_FushiDialogActionCountdown>
+    with StateResourceScope<_FushiDialogActionCountdown> {
   late int _remaining = (widget.delay.inMilliseconds / 1000).ceil();
-  Timer? _timer;
-
   @override
   void initState() {
     super.initState();
     if (_remaining > 0) {
-      _timer = Timer.periodic(const Duration(seconds: 1), (Timer timer) {
-        if (!mounted) return;
-        setState(() => _remaining--);
-        if (_remaining <= 0) timer.cancel();
-      });
+      ownTimer(
+        Timer.periodic(const Duration(seconds: 1), (Timer timer) {
+          if (!mounted) return;
+          setState(() => _remaining--);
+          if (_remaining <= 0) timer.cancel();
+        }),
+      );
     }
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
   }
 
   @override
@@ -1544,13 +1540,14 @@ class _FushiProgressDialog extends StatefulWidget {
   State<_FushiProgressDialog> createState() => _FushiProgressDialogState();
 }
 
-class _FushiProgressDialogState extends State<_FushiProgressDialog> {
+class _FushiProgressDialogState extends State<_FushiProgressDialog>
+    with StateResourceScope<_FushiProgressDialog> {
   @override
   void initState() {
     super.initState();
     widget.handle._dismiss = _pop;
     if (widget.handle.isClosed) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _pop());
+      schedulePostFrame((_) => _pop());
       WidgetsBinding.instance.ensureVisualUpdate();
     }
   }

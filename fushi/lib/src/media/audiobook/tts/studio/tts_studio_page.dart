@@ -27,6 +27,7 @@ import 'package:fushi_engine/tts/tts_reject_split.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/asr_host/asr_host.dart' show isAsrSupported;
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/media/audiobook/tts/cast/cast_substitutions_page.dart';
@@ -117,7 +118,8 @@ class _StudioChapter {
   int chars = 0;
 }
 
-class _TtsStudioPageState extends State<TtsStudioPage> {
+class _TtsStudioPageState extends State<TtsStudioPage>
+    with StateResourceScope<TtsStudioPage> {
   late final TtsServices _tts = TtsServices.of(widget.appModel.prefsRepo);
   late final TtsRenderQueue _queue = ttsRenderQueueFor(widget.appModel);
 
@@ -142,7 +144,6 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
   bool _starting = false;
 
   /// 文本处理规则（与设置页同一份）变了：发音词典 / 合成前替换改了合成文本，重建计划。
-  StreamSubscription<TtsTextRuleKind>? _textRulesSub;
 
   /// 在线声音的限流参数（沿用本书上一次任务的选择）：null = 声音预设自己的并发。
   int? _onlineConcurrency;
@@ -217,16 +218,17 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
       _rateLimitAction = last.rateLimitAction;
     }
     _reloadPresets(preferJobPreset: true);
-    _textRulesSub = _tts.textRules.changes.listen((TtsTextRuleKind kind) {
-      if (kind == TtsTextRuleKind.postRecognition || !mounted) return;
-      unawaited(_rebuildPlan());
-    });
+    ownSubscription(
+      _tts.textRules.changes.listen((TtsTextRuleKind kind) {
+        if (kind == TtsTextRuleKind.postRecognition || !mounted) return;
+        unawaited(_rebuildPlan());
+      }),
+    );
     unawaited(_loadBook());
   }
 
   @override
   void dispose() {
-    unawaited(_textRulesSub?.cancel());
     _annotateCancelled = true;
     _previewCancel?.cancel();
     unawaited(_releasePreview());

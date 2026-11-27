@@ -3,7 +3,8 @@ import 'dart:io' show File;
 import 'dart:math' as math;
 import 'dart:ui' show PathMetric;
 
-import 'package:drift/drift.dart' show TableUpdate, TableUpdateQuery;
+import 'package:drift/drift.dart' show TableUpdateQuery;
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/links/media_link_editor_dialog.dart';
 import 'package:fushi/src/media/links/media_link_entries.dart';
@@ -100,9 +101,9 @@ class _NetworkData {
   final List<List<MediaLinkRow>> edgeRows;
 }
 
-class _WorkNetworkPageState extends State<WorkNetworkPage> {
+class _WorkNetworkPageState extends State<WorkNetworkPage>
+    with StateResourceScope<WorkNetworkPage> {
   late final WorkGraphStore _store = WorkGraphStore.of(widget.database);
-  StreamSubscription<Set<TableUpdate>>? _tableSub;
   Future<_NetworkData?>? _data;
   final ScrollController _vertical = ScrollController();
   final ScrollController _horizontal = ScrollController();
@@ -111,18 +112,18 @@ class _WorkNetworkPageState extends State<WorkNetworkPage> {
   @override
   void initState() {
     super.initState();
-    _store.addListener(_reload);
+    listenTo(_store, _reload);
     _data = _load();
     // 建议边确认 / 否决后，图要等 store 去抖重建；边上的 AI 标识等行级信息先跟上。
-    _tableSub = widget.database
-        .tableUpdates(TableUpdateQuery.onTable(widget.database.mediaLinks))
-        .listen((_) => _reload());
+    ownSubscription(
+      widget.database
+          .tableUpdates(TableUpdateQuery.onTable(widget.database.mediaLinks))
+          .listen((_) => _reload()),
+    );
   }
 
   @override
   void dispose() {
-    _store.removeListener(_reload);
-    unawaited(_tableSub?.cancel());
     _vertical.dispose();
     _horizontal.dispose();
     super.dispose();

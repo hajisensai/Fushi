@@ -14,6 +14,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
@@ -59,9 +60,9 @@ class MangaOcrManagerPage extends ConsumerStatefulWidget {
       _MangaOcrManagerPageState();
 }
 
-class _MangaOcrManagerPageState extends ConsumerState<MangaOcrManagerPage> {
+class _MangaOcrManagerPageState extends ConsumerState<MangaOcrManagerPage>
+    with StateResourceScope<MangaOcrManagerPage> {
   late final MangaOcrJobRegistry _registry;
-  StreamSubscription<void>? _changes;
 
   /// 运行中任务的进度观察（按任务对象身份，不按 bookKey：同一本书前一章结束 /
   /// 被暂停、下一章接着开跑，两次变更可能在同一轮通知里合并，按 bookKey 会让
@@ -82,13 +83,12 @@ class _MangaOcrManagerPageState extends ConsumerState<MangaOcrManagerPage> {
   void initState() {
     super.initState();
     _registry = ref.read(mangaOcrJobRegistryProvider);
-    _changes = _registry.changes.listen((_) => _onRegistryChanged());
+    ownSubscription(_registry.changes.listen((_) => _onRegistryChanged()));
     _observeRunning();
   }
 
   @override
   void dispose() {
-    unawaited(_changes?.cancel());
     for (final StreamSubscription<MangaOcrBackgroundEvent> sub
         in _progress.values) {
       unawaited(sub.cancel());

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/video/video_remote_control_layout.dart';
 import 'package:fushi/src/pages/implementations/video_remote/video_remote_models.dart';
@@ -785,9 +786,8 @@ class VideoRemoteSeekBar extends StatefulWidget {
   State<VideoRemoteSeekBar> createState() => _VideoRemoteSeekBarState();
 }
 
-class _VideoRemoteSeekBarState extends State<VideoRemoteSeekBar> {
-  Timer? _poll;
-
+class _VideoRemoteSeekBarState extends State<VideoRemoteSeekBar>
+    with StateResourceScope<VideoRemoteSeekBar> {
   /// 拖动中的比例（null = 跟随播放器）。
   double? _drag;
 
@@ -798,15 +798,11 @@ class _VideoRemoteSeekBarState extends State<VideoRemoteSeekBar> {
   @override
   void initState() {
     super.initState();
-    _poll = Timer.periodic(const Duration(milliseconds: 250), (Timer _) {
-      if (mounted && _drag == null) setState(() {});
-    });
-  }
-
-  @override
-  void dispose() {
-    _poll?.cancel();
-    super.dispose();
+    ownTimer(
+      Timer.periodic(const Duration(milliseconds: 250), (Timer _) {
+        if (mounted && _drag == null) setState(() {});
+      }),
+    );
   }
 
   double _fraction() {

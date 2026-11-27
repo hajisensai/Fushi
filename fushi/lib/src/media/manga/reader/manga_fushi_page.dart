@@ -14,6 +14,7 @@ import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     show Consumer, WidgetRef;
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/lookup/lookup_match_measure.dart';
 import 'package:fushi/src/anki/mined_card_undo.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -2057,6 +2058,14 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
   }
 
+  // 进程级注册的撤销（BUG-5604）：都在 initState 登记，挂载半途抛错时随
+  // StateResourceScope 的清单按登记逆序撤；正常退场时 dispose 在原来的位置逐条
+  // release（音量键所有权必须早于其它拆栈交还，退出 flush 与停表有先后依赖）。
+  late final ScopedRelease _controllerLookupRelease;
+  late final ScopedRelease _volumeKeyPagingRelease;
+  late final ScopedRelease _sessionRemoteRelease;
+  late final ScopedRelease _exitFlushRelease;
+
   @override
   void initState() {
     super.initState();
@@ -2068,6 +2077,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     listenTo(appModelNoUpdate.prefsRepo, _onPanelNavigationPrefChanged);
     _panelNavigationWasOn = appModelNoUpdate.mangaPanelNavigation;
     _attachControllerLookup();
+    _controllerLookupRelease = onTeardown(_detachControllerLookup);
     _volumeKeyPagingController = MangaVolumeKeyPagingController(
       onPrevious: () => _executeReaderInputAction(
         MangaReaderInputAction.previous,
@@ -2078,6 +2088,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         source: _MangaReaderInputSource.volumeKey,
       ),
     );
+    _volumeKeyPagingRelease = onTeardown(_volumeKeyPagingController.dispose);
     _chrome.addListener(_onChromeChanged);
     _studyClockStartGate = ReaderStudyClockStartGate(
       appModelNoUpdate.readerStudyClockStartMode,
@@ -2087,16 +2098,25 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     onTeardown(() => WidgetsBinding.instance.removeObserver(this));
     // 桌面控制通道（`fushi_cli reader ...`）的遥控面；dispose 注销。
     readerSessionRemotes.register(_sessionRemote);
+    _sessionRemoteRelease = onTeardown(
+      () => readerSessionRemotes.unregister(_sessionRemote),
+    );
     if (Platform.isWindows || Platform.isLinux) {
       windowManager.addListener(this);
       onTeardown(() => windowManager.removeListener(this));
     }
+    // 进程退出兜底：把未落盘的页码 + 学习段 flush 掉（与 EPUB/PDF 阅读器同纪律）。
+    ExitFlushRegistry.instance.register(_flushForExit);
+    _exitFlushRelease = onTeardown(
+      () => ExitFlushRegistry.instance.unregister(_flushForExit),
+    );
+    // 以下异步任务起跑就撤不回来（只认 mounted），放在同步装配全部完成之后
+    // （BUG-5602 / BUG-5604）。开书排在首帧之后，经 schedulePostFrame：挂载失败后
+    // 不再回调。
     if (desktopWindowFullscreenSupported) {
       unawaited(_readInitialFullscreenState());
     }
-    // 进程退出兜底：把未落盘的页码 + 学习段 flush 掉（与 EPUB/PDF 阅读器同纪律）。
-    ExitFlushRegistry.instance.register(_flushForExit);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadBook());
+    schedulePostFrame((_) => _loadBook());
     // TODO-2936：应用「漫画」媒体类型 / 本书 book 级的 Profile 绑定（与 EPUB/
     // 视频阅读器同范式：非致命、与开书链并行；漫画的 bookKey 就是 Profile 的
     // book 级 entryKey，见 book_format_convert.dart 的身份说明）。
@@ -2214,8 +2234,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         );
       }),
     );
-    readerSessionRemotes.unregister(_sessionRemote);
-    _detachControllerLookup();
+    _sessionRemoteRelease.release();
+    _controllerLookupRelease.release();
     _companion.dispose();
     _disposedDuringSourceReview = _sourceReviewActive;
     _sourceReviewSession?.removeListener(_onSourceReviewChanged);
@@ -2224,8 +2244,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       unawaited(_restoreOwnedFullscreenAfterDispose());
     }
     // 交还音量键所有权：必须早于其它拆栈，且无条件执行。
-    _volumeKeyPagingController.dispose();
-    ExitFlushRegistry.instance.unregister(_flushForExit);
+    _volumeKeyPagingRelease.release();
+    _exitFlushRelease.release();
     // 加载中的窗口必须以明确状态收尾：否则 _loadInitialWindow 会挂满 10s 超时，
     // 再从 unawaited 调用点抛出未捕获异步异常（BUG-1171）。
     _windowGate.abandon();

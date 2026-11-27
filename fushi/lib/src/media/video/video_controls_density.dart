@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/widgets.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 播放器 chrome 的「小窗表面」种类：视频当前被摆在什么形态的窗口里。
 ///
@@ -243,7 +244,8 @@ class VideoControlsDensityBuilder extends StatefulWidget {
 }
 
 class _VideoControlsDensityBuilderState
-    extends State<VideoControlsDensityBuilder> {
+    extends State<VideoControlsDensityBuilder>
+    with StateResourceScope<VideoControlsDensityBuilder> {
   Widget? _child;
   VideoControlsDensitySpec? _spec;
 
@@ -261,12 +263,7 @@ class _VideoControlsDensityBuilderState
   void initState() {
     super.initState();
     widget.surface.addListener(_onSurfaceChanged);
-  }
-
-  @override
-  void dispose() {
-    widget.surface.removeListener(_onSurfaceChanged);
-    super.dispose();
+    onTeardown(() => widget.surface.removeListener(_onSurfaceChanged));
   }
 
   // 小窗表面变了：让 LayoutBuilder 重跑一次解档（换档才会重建子树）。

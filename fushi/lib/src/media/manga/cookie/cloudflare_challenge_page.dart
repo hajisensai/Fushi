@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/media/manga/cookie/manga_cookie_jar.dart';
 import 'package:fushi/src/media/manga/cookie/manga_web_view_environment.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -57,7 +58,8 @@ class CloudflareChallengePage extends StatefulWidget {
       _CloudflareChallengePageState();
 }
 
-class _CloudflareChallengePageState extends State<CloudflareChallengePage> {
+class _CloudflareChallengePageState extends State<CloudflareChallengePage>
+    with StateResourceScope<CloudflareChallengePage> {
   Timer? _poll;
   bool _checking = false;
   bool _done = false;
@@ -87,7 +89,9 @@ class _CloudflareChallengePageState extends State<CloudflareChallengePage> {
   @override
   void initState() {
     super.initState();
-    _poll = Timer.periodic(widget.pollInterval, (_) => unawaited(_check()));
+    _poll = ownTimer(
+      Timer.periodic(widget.pollInterval, (_) => unawaited(_check())),
+    );
     unawaited(_initBaseline());
     unawaited(_prepareEnvironment());
   }
@@ -105,12 +109,6 @@ class _CloudflareChallengePageState extends State<CloudflareChallengePage> {
       _environment = environment;
       _environmentReady = true;
     });
-  }
-
-  @override
-  void dispose() {
-    _poll?.cancel();
-    super.dispose();
   }
 
   Future<void> _initBaseline() async {

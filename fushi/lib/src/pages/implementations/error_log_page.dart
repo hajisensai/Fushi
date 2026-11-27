@@ -14,6 +14,7 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/settings/settings_kit_core.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 class ErrorLogPage extends StatefulWidget {
   const ErrorLogPage({super.key});
@@ -22,7 +23,8 @@ class ErrorLogPage extends StatefulWidget {
   State<ErrorLogPage> createState() => _ErrorLogPageState();
 }
 
-class _ErrorLogPageState extends State<ErrorLogPage> {
+class _ErrorLogPageState extends State<ErrorLogPage>
+    with StateResourceScope<ErrorLogPage> {
   // TODO-762：把 getFullLog() 的全量拼接移出 build。旧实现是 StatelessWidget，每次
   // rebuild 都在 build() 里同步重拼最大 ~512KB 日志字符串（O(条目数) StringBuffer）。
   // 改 StatefulWidget：initState 拼一次缓存进 _log，并监听 ErrorLogService（新错误
@@ -33,13 +35,7 @@ class _ErrorLogPageState extends State<ErrorLogPage> {
   void initState() {
     super.initState();
     _log = ErrorLogService.instance.getFullLog();
-    ErrorLogService.instance.addListener(_onLogChanged);
-  }
-
-  @override
-  void dispose() {
-    ErrorLogService.instance.removeListener(_onLogChanged);
-    super.dispose();
+    listenTo(ErrorLogService.instance, _onLogChanged);
   }
 
   void _onLogChanged() {

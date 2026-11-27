@@ -42,6 +42,7 @@ import 'package:fushi_anki/fushi_anki_core.dart'
 import 'package:fushi_dictionary/fushi_dictionary.dart' show FushiRubySpan;
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/anki/card_source_origin.dart'
     show CardSourceLocatorText, cardSourceKindIcon;
 import 'package:fushi/src/anki/card_source_router.dart'
@@ -281,7 +282,8 @@ class SrsFushiCardView extends ConsumerStatefulWidget {
   ConsumerState<SrsFushiCardView> createState() => _SrsFushiCardViewState();
 }
 
-class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
+class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView>
+    with StateResourceScope<SrsFushiCardView> {
   final ScrollController _scroll = ScrollController();
   double? _defsHeight;
 
@@ -363,6 +365,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       (SrsCardAppearance? _, SrsCardAppearance _) => _declareSentenceAudio(),
     );
     widget.bottomInset?.addListener(_onBottomInset);
+    onTeardown(() => widget.bottomInset?.removeListener(_onBottomInset));
   }
 
   @override
@@ -386,7 +389,6 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
 
   @override
   void dispose() {
-    widget.bottomInset?.removeListener(_onBottomInset);
     _channel.clearSentenceAudio(this);
     _scroll.dispose();
     _selectionFocus.dispose();

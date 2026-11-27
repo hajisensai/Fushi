@@ -70,6 +70,7 @@ import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/utils/misc/error_details_dialog.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 // ── BUG-1493：下载/导入两阶段的可归因进度 ──────────────────────────────
 //
@@ -486,7 +487,7 @@ class _DictionaryDialogPageState extends BasePageState {
     // BUG-5489：词典文件状态（不在 / 读不到）由 AppModel 的装载路径判定，变了就重建
     // 行标签、顶部横幅与详情（sheet 经 [_revision] 跟着刷新）。
     listenTo(DictionaryFileHealthMonitor.instance, _onFileHealthChanged);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       if (!mounted) return;
       unawaited(_loadServerSources());
       unawaited(_loadProfileName());
@@ -495,14 +496,14 @@ class _DictionaryDialogPageState extends BasePageState {
       final DictionaryImportAction? action =
           (widget as DictionaryDialogPage).initialAction;
       if (action != null) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
+        schedulePostFrame((_) {
           if (mounted) unawaited(runImportAction(action));
         });
       }
       final List<String> paths =
           (widget as DictionaryDialogPage).initialImportPaths;
       if (paths.isNotEmpty) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
+        schedulePostFrame((_) {
           debugPrint(
             '[fushi-drop] [dictionary-dialog] initialImportPaths=${paths.length}',
           );
@@ -4719,20 +4720,16 @@ class DictionaryDownloadProgressAutoCloser extends StatefulWidget {
 }
 
 class _DictionaryDownloadProgressAutoCloserState
-    extends State<DictionaryDownloadProgressAutoCloser> {
+    extends State<DictionaryDownloadProgressAutoCloser>
+    with StateResourceScope<DictionaryDownloadProgressAutoCloser> {
   @override
   void initState() {
     super.initState();
     widget.phase.addListener(_onPhaseChanged);
+    onTeardown(() => widget.phase.removeListener(_onPhaseChanged));
     // 任务可能在对话框插进树之前就跑完了（本地覆盖导入的极快路径），此时不会再有
     // 任何一次 phase 变化来触发关闭，必须在首帧后补查一次。
-    WidgetsBinding.instance.addPostFrameCallback((_) => _onPhaseChanged());
-  }
-
-  @override
-  void dispose() {
-    widget.phase.removeListener(_onPhaseChanged);
-    super.dispose();
+    schedulePostFrame((_) => _onPhaseChanged());
   }
 
   void _onPhaseChanged() {

@@ -35,6 +35,7 @@ import 'package:fushi_engine/srs/srs_note_type_store.dart';
 import 'package:fushi_engine/srs/srs_template_duplicates.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/ai/ai_failure_text.dart';
 import 'package:fushi/src/ai/ai_saved_prompt_picker.dart';
 import 'package:fushi/src/ai/ai_saved_prompts.dart';
@@ -160,7 +161,8 @@ class SrsTemplateEditorPage extends ConsumerStatefulWidget {
       _SrsTemplateEditorPageState();
 }
 
-class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
+class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage>
+    with StateResourceScope<SrsTemplateEditorPage> {
   final TextEditingController _front = TextEditingController();
   final TextEditingController _back = TextEditingController();
   final TextEditingController _css = TextEditingController();
@@ -212,7 +214,7 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
       _back,
       _css,
     ]) {
-      c.addListener(_onEdited);
+      listenTo(c, _onEdited);
     }
     unawaited(_load());
   }
@@ -220,6 +222,8 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
   @override
   void dispose() {
     _debounce?.cancel();
+    // 先摘监听再释放输入框控制器。
+    releaseResources();
     _front.dispose();
     _back.dispose();
     _css.dispose();

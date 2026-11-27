@@ -58,6 +58,7 @@ import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteVideoInfo;
 import 'package:fushi/src/utils/components/fushi_sliver_width_builder.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 剧 / 电影详情（2026-10 M3E 重做）：hero 与本地「系列」详情同一套
 /// （`collection_detail_layout.dart`：fanart / 封面模糊 + 色晕 scrim 大背景、2:3
@@ -97,7 +98,10 @@ class MediaServerDetailView extends StatefulWidget {
 }
 
 class _MediaServerDetailViewState extends State<MediaServerDetailView>
-    with TickerProviderStateMixin, MediaServerUserDataRefresh {
+    with
+        TickerProviderStateMixin,
+        StateResourceScope<MediaServerDetailView>,
+        MediaServerUserDataRefresh {
   final ScrollController _scrollController = ScrollController();
 
   /// 季分段控制器：只在 ≥2 季时存在（季清单回来后建一次）。
@@ -137,10 +141,6 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
   MediaServerWorkLibraryStatus? _libraryStatus;
   bool _libraryBusy = false;
 
-  /// 入库行增删就重读入库状态：库页菜单 / 合集详情页移出、后台探针补新集后，
-  /// 压在栈里的本页回来时按钮与「已在库」chip 不是旧的。
-  StreamSubscription<void>? _libraryChanges;
-
   /// 每次读入库状态 +1：并发的两次读，旧的那次晚回来时丢掉。
   int _libraryGeneration = 0;
 
@@ -169,12 +169,18 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
     unawaited(_loadDetail());
     if (_isSeries) unawaited(_loadSeasons());
     unawaited(_reloadLibraryState());
-    _libraryChanges = widget.session.library?.membershipChanges.listen(
-      (_) => unawaited(_reloadLibraryState()),
-    );
+    // 入库行增删就重读入库状态：库页菜单 / 合集详情页移出、后台探针补新集后，
+    // 压在栈里的本页回来时按钮与「已在库」chip 不是旧的。
+    final Stream<void>? libraryChanges =
+        widget.session.library?.membershipChanges;
+    if (libraryChanges != null) {
+      ownSubscription(
+        libraryChanges.listen((_) => unawaited(_reloadLibraryState())),
+      );
+    }
     // 从滚到半截的网格点进来：库页浮动工具区回到展开态（新页面从顶部开始），
     // 与 [MediaServerPageFrame] 每层路由成为栈顶时同一口径。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       if (!mounted) return;
       FushiFloatingChromeScope.peek(context)?.resetToTop();
     });
@@ -182,7 +188,6 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
 
   @override
   void dispose() {
-    unawaited(_libraryChanges?.cancel());
     _scrollController
       ..removeListener(_onScroll)
       ..dispose();

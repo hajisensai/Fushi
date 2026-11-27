@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/manga/library/manga_chapter_list.dart';
@@ -63,7 +64,8 @@ class MangaChapterDrawer extends StatefulWidget {
 /// 抽屉标题至少留的宽度（「章节」两三个字）；动作按钮先保它。
 const double _kDrawerTitleMinWidth = 72;
 
-class _MangaChapterDrawerState extends State<MangaChapterDrawer> {
+class _MangaChapterDrawerState extends State<MangaChapterDrawer>
+    with StateResourceScope<MangaChapterDrawer> {
   final ScrollController _scroll = ScrollController();
   final GlobalKey _currentAnchor = GlobalKey(
     debugLabel: 'manga_chapter_current',
@@ -77,7 +79,7 @@ class _MangaChapterDrawerState extends State<MangaChapterDrawer> {
     super.initState();
     // 首帧布局完成后直接（不带动画）落到当前章：打开目录就该看到自己在哪。
     // 本帧正在构建，post-frame 回调必然在这一帧末尾执行。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       if (mounted) _scrollToCurrent();
     });
   }

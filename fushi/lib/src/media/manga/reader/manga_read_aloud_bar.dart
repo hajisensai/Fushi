@@ -34,6 +34,7 @@ import 'package:fushi_engine/tts/render/tts_cast.dart'
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/media/audiobook/audiobook_speed_slider.dart';
 import 'package:fushi/src/media/audiobook/audiobook_volume_slider.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_ui_text.dart';
@@ -243,28 +244,23 @@ class MangaAudioPlaybackBar extends StatefulWidget {
   State<MangaAudioPlaybackBar> createState() => _MangaAudioPlaybackBarState();
 }
 
-class _MangaAudioPlaybackBarState extends State<MangaAudioPlaybackBar> {
+class _MangaAudioPlaybackBarState extends State<MangaAudioPlaybackBar>
+    with StateResourceScope<MangaAudioPlaybackBar> {
   /// 拖动中的进度（松手才 seek）。
   double? _dragFraction;
-
-  /// 播放中位置流不是每个 tick 都通知（控制器只在换句 / 换状态时通知）：进度线自己
-  /// 按固定节拍刷新。
-  Timer? _ticker;
 
   @override
   void initState() {
     super.initState();
-    _ticker = Timer.periodic(const Duration(milliseconds: 250), (_) {
-      if (mounted && widget.driver.isPlaying && _dragFraction == null) {
-        setState(() {});
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _ticker?.cancel();
-    super.dispose();
+    // 播放中位置流不是每个 tick 都通知（控制器只在换句 / 换状态时通知）：进度线自己
+    // 按固定节拍刷新。
+    ownTimer(
+      Timer.periodic(const Duration(milliseconds: 250), (_) {
+        if (mounted && widget.driver.isPlaying && _dragFraction == null) {
+          setState(() {});
+        }
+      }),
+    );
   }
 
   @override

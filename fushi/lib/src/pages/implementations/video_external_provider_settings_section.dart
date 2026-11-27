@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'dart:io';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -282,7 +283,8 @@ class VideoExternalProviderSettingsSection extends ConsumerStatefulWidget {
 }
 
 class _VideoExternalProviderSettingsSectionState
-    extends ConsumerState<VideoExternalProviderSettingsSection> {
+    extends ConsumerState<VideoExternalProviderSettingsSection>
+    with StateResourceScope<VideoExternalProviderSettingsSection> {
   VideoExternalSettingsStore? _store;
   bool _loading = true;
   bool _saveFailed = false;
@@ -309,7 +311,7 @@ class _VideoExternalProviderSettingsSectionState
   void initState() {
     super.initState();
     _openSubtitles = _OpenSubtitlesDraft.fromConfig(null);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+    schedulePostFrame((_) => _load());
   }
 
   @override

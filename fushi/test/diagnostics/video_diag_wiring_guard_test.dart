@@ -184,11 +184,15 @@ void main() {
 
     test('帧耗时探针随页面生命周期起停', () {
       expect(src, contains('_frameProbe.start();'));
-      expect(src, contains('_frameProbe.stop();'));
+      // 停表登记进撤销清单（BUG-5604：挂载失败也停），dispose 里按位置 release。
+      expect(
+        src,
+        contains('_frameProbeRelease = onTeardown(_frameProbe.stop);'),
+      );
     });
 
     test('dispose 里先停探针再拆页（保住最后一窗证据）', () {
-      final int stopIdx = src.indexOf('_frameProbe.stop();');
+      final int stopIdx = src.indexOf('_frameProbeRelease.release();');
       final int disposeIdx = src.lastIndexOf('void dispose() {', stopIdx);
       expect(disposeIdx, greaterThan(0));
       expect(

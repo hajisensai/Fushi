@@ -2546,11 +2546,13 @@ class _SrsSwitchPrimaryScope extends StatefulWidget {
   State<_SrsSwitchPrimaryScope> createState() => _SrsSwitchPrimaryScopeState();
 }
 
-class _SrsSwitchPrimaryScopeState extends State<_SrsSwitchPrimaryScope> {
+class _SrsSwitchPrimaryScopeState extends State<_SrsSwitchPrimaryScope>
+    with StateResourceScope<_SrsSwitchPrimaryScope> {
   @override
   void initState() {
     super.initState();
     widget.animation.addStatusListener(_onStatus);
+    onTeardown(() => widget.animation.removeStatusListener(_onStatus));
   }
 
   @override
@@ -2560,12 +2562,6 @@ class _SrsSwitchPrimaryScopeState extends State<_SrsSwitchPrimaryScope> {
       oldWidget.animation.removeStatusListener(_onStatus);
       widget.animation.addStatusListener(_onStatus);
     }
-  }
-
-  @override
-  void dispose() {
-    widget.animation.removeStatusListener(_onStatus);
-    super.dispose();
   }
 
   void _onStatus(AnimationStatus _) => setState(() {});

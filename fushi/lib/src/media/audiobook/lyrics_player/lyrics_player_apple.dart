@@ -6,6 +6,7 @@ import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoIcons;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_control_layout.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustration_view.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustrations.dart';
@@ -962,21 +963,16 @@ class _PeriodicRebuild extends StatefulWidget {
   State<_PeriodicRebuild> createState() => _PeriodicRebuildState();
 }
 
-class _PeriodicRebuildState extends State<_PeriodicRebuild> {
-  Timer? _timer;
-
+class _PeriodicRebuildState extends State<_PeriodicRebuild>
+    with StateResourceScope<_PeriodicRebuild> {
   @override
   void initState() {
     super.initState();
-    _timer = Timer.periodic(widget.interval, (Timer _) {
-      if (mounted) setState(() {});
-    });
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
+    ownTimer(
+      Timer.periodic(widget.interval, (Timer _) {
+        if (mounted) setState(() {});
+      }),
+    );
   }
 
   // 自带重绘边界：按间隔重建的读数只重录这一小块，不连带整个控件层。
@@ -1478,8 +1474,8 @@ class _LyricsScrubber extends StatefulWidget {
   State<_LyricsScrubber> createState() => _LyricsScrubberState();
 }
 
-class _LyricsScrubberState extends State<_LyricsScrubber> {
-  Timer? _timer;
+class _LyricsScrubberState extends State<_LyricsScrubber>
+    with StateResourceScope<_LyricsScrubber> {
   bool _hovered = false;
   bool _focused = false;
 
@@ -1495,15 +1491,11 @@ class _LyricsScrubberState extends State<_LyricsScrubber> {
   void initState() {
     super.initState();
     // 只重建进度条这一小块（250ms 足够顺滑且省电），不经整个覆盖层。
-    _timer = Timer.periodic(const Duration(milliseconds: 250), (Timer _) {
-      if (mounted && _dragFraction == null) setState(() {});
-    });
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
+    ownTimer(
+      Timer.periodic(const Duration(milliseconds: 250), (Timer _) {
+        if (mounted && _dragFraction == null) setState(() {});
+      }),
+    );
   }
 
   Duration get _duration {

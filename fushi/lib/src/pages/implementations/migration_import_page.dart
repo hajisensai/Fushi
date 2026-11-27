@@ -38,6 +38,7 @@ import 'package:fushi_core/fushi_core.dart'
         UnsupportedLegacySchemaException;
 import 'package:path/path.dart' as p;
 import 'package:url_launcher/url_launcher.dart' show LaunchMode, launchUrl;
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 「从 Hibiki 导入」页（改名迁移计划 P2-2/P2-3，Fushi 侧）。
 ///
@@ -70,7 +71,7 @@ Future<Directory> migrationTransferDir() async {
 }
 
 class _MigrationImportPageState extends State<MigrationImportPage>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, StateResourceScope<MigrationImportPage> {
   static const MigrationImporter _importer = MigrationImporter();
   static const MigrationTargetChannel _channel = MigrationTargetChannel();
 
@@ -91,13 +92,8 @@ class _MigrationImportPageState extends State<MigrationImportPage>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    onTeardown(() => WidgetsBinding.instance.removeObserver(this));
     unawaited(_rescan());
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    super.dispose();
   }
 
   @override

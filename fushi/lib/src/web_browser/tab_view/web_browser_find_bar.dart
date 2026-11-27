@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:material_ui/material_ui.dart';
@@ -36,7 +37,7 @@ class WebBrowserFindBar extends StatefulWidget {
 /// 壳经 `GlobalKey` 调 [step] / [focusQuery]：F3 / Ctrl+G 查找下一处、查找条已开时
 /// 再按 Ctrl+F 回到输入框（与桌面浏览器一致）。
 class WebBrowserFindBarState extends State<WebBrowserFindBar>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, StateResourceScope<WebBrowserFindBar> {
   final TextEditingController _query = TextEditingController();
   final FocusNode _focus = FocusNode(debugLabel: 'web-browser-find');
   late final AnimationController _enter = AnimationController(
@@ -58,7 +59,7 @@ class WebBrowserFindBarState extends State<WebBrowserFindBar>
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       if (mounted) _focus.requestFocus();
     });
   }

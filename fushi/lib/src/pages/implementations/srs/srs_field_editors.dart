@@ -22,6 +22,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/creator/mining_tts_fallback.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart'
@@ -327,7 +328,8 @@ class SrsFieldEditor extends ConsumerStatefulWidget {
   ConsumerState<SrsFieldEditor> createState() => _SrsFieldEditorState();
 }
 
-class _SrsFieldEditorState extends ConsumerState<SrsFieldEditor> {
+class _SrsFieldEditorState extends ConsumerState<SrsFieldEditor>
+    with StateResourceScope<SrsFieldEditor> {
   late SrsFieldKind _kind;
   late int _generation;
   bool _source = false;
@@ -353,9 +355,11 @@ class _SrsFieldEditorState extends ConsumerState<SrsFieldEditor> {
     _generation = _model.generation;
     _setup();
     _model.addListener(_onModel);
+    onTeardown(() => _model.removeListener(_onModel));
     _richFocus.addListener(_onFocus);
     for (final SrsFieldModel m in widget.speechSources) {
       m.addListener(_onSpeechSource);
+      onTeardown(() => m.removeListener(_onSpeechSource));
     }
   }
 
@@ -375,16 +379,13 @@ class _SrsFieldEditorState extends ConsumerState<SrsFieldEditor> {
       }
       for (final SrsFieldModel m in widget.speechSources) {
         m.addListener(_onSpeechSource);
+        onTeardown(() => m.removeListener(_onSpeechSource));
       }
     }
   }
 
   @override
   void dispose() {
-    _model.removeListener(_onModel);
-    for (final SrsFieldModel m in widget.speechSources) {
-      m.removeListener(_onSpeechSource);
-    }
     _rich?.dispose();
     _sourceCtl.dispose();
     _richFocus.dispose();

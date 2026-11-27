@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -488,11 +489,12 @@ class _AudiobookClipTextCard extends StatefulWidget {
   State<_AudiobookClipTextCard> createState() => _AudiobookClipTextCardState();
 }
 
-class _AudiobookClipTextCardState extends State<_AudiobookClipTextCard> {
+class _AudiobookClipTextCardState extends State<_AudiobookClipTextCard>
+    with StateResourceScope<_AudiobookClipTextCard> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       widget.onFirstFrame();
     });
   }

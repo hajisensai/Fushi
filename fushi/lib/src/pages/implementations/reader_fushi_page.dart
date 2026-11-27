@@ -32,6 +32,7 @@ import 'package:fushi/src/shortcuts/shortcut_labels.dart'
     show tooltipWithShortcutHint;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:path/path.dart' as p;
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -3408,6 +3409,14 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     writingMode: _settings?.writingMode,
   );
 
+  // 进程级注册的撤销（BUG-5604）：都在 initState 登记，挂载半途抛错时随
+  // StateResourceScope 的清单按登记逆序撤；正常退场时 dispose 在原来的位置逐条
+  // release（与停表 / 关书 flush 等步骤有先后依赖）。
+  late final ScopedRelease _controllerLookupRelease;
+  late final ScopedRelease _sessionRemoteRelease;
+  late final ScopedRelease _exitFlushRelease;
+  late final ScopedRelease _liveHooksRelease;
+
   @override
   void initState() {
     super.initState();
@@ -3419,6 +3428,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       listenTo(sourceReviewSession, _onSourceReviewChanged);
     }
     _attachControllerLookup();
+    _controllerLookupRelease = onTeardown(_detachControllerLookup);
     // 阅读计时开始方式：打开书这一刻定初值（手动 / 翻页后开始 = 先暂停）。
     _studyClockStartGate = ReaderStudyClockStartGate(
       appModelNoUpdate.readerStudyClockStartMode,
@@ -3446,18 +3456,22 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     onTeardown(() => WidgetsBinding.instance.removeObserver(this));
     // 桌面控制通道（`fushi_cli reader ...`）的遥控面；dispose 注销。
     readerSessionRemotes.register(_sessionRemote);
+    _sessionRemoteRelease = onTeardown(
+      () => readerSessionRemotes.unregister(_sessionRemote),
+    );
     // app 明暗 / 主题在阅读器外变化（系统切深色、桌面设置窗、同步恢复）时，正文
     // CSS 必须即时重注入——旧实现只在阅读器内的主题选择器回调里重注入。
     listenTo(appModelNoUpdate.themeNotifier, _onAppThemeMaybeChanged);
-    // 底栏全屏按钮的图标镜像：进页时问一次 native 真值。不问的话，「在已经全屏的窗口里
-    // 打开这本书」从第一帧起图标就是错的（镜像默认 false）。与漫画页的
-    // `_readInitialFullscreenState` 同款；桌面才有窗口可全屏。
-    if (desktopWindowFullscreenSupported) {
-      unawaited(_readInitialWindowFullscreenState());
-    }
     _exitFlushCallback = ExitFlushRegistry.instance.register(
       _flushAllForProcessExit,
     );
+    _exitFlushRelease = onTeardown(() {
+      final ExitFlushCallback? exitFlush = _exitFlushCallback;
+      if (exitFlush != null) {
+        ExitFlushRegistry.instance.unregister(exitFlush);
+        _exitFlushCallback = null;
+      }
+    });
     // The inset reading-content focus ring only paints in traditional
     // (keyboard/gamepad) highlight mode; rebuild it when the mode flips so it
     // appears/disappears with the input device, not only on focus changes.
@@ -3523,6 +3537,23 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       },
     );
     ReaderFushiSource.attachLiveHooks(_liveHooks!);
+    // BUG-3001：只注销自己登记的那组；切卷（pushReplacement）时新页已先登记，
+    // 旧页晚于它 dispose 不能把新页的 hook 一起置 null。
+    _liveHooksRelease = onTeardown(() {
+      final ReaderLiveHooks? liveHooks = _liveHooks;
+      if (liveHooks != null) {
+        ReaderFushiSource.detachLiveHooks(liveHooks);
+        _liveHooks = null;
+      }
+    });
+    // 以下异步任务起跑就撤不回来（只认 mounted），放在同步装配全部完成之后
+    // （BUG-5602 / BUG-5604）。
+    // 底栏全屏按钮的图标镜像：进页时问一次 native 真值。不问的话，「在已经全屏的窗口里
+    // 打开这本书」从第一帧起图标就是错的（镜像默认 false）。与漫画页的
+    // `_readInitialFullscreenState` 同款；桌面才有窗口可全屏。
+    if (desktopWindowFullscreenSupported) {
+      unawaited(_readInitialWindowFullscreenState());
+    }
     _initBook();
   }
 
@@ -4325,8 +4356,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     // [ExitFlushRegistry] 的退出汇合点统一 await。时钟为空 = 本页从没开始计时，
     // 整段跳过。
     _studyClock?.detach();
-    readerSessionRemotes.unregister(_sessionRemote);
-    _detachControllerLookup();
+    _sessionRemoteRelease.release();
+    _controllerLookupRelease.release();
     _companion.dispose();
     // Kavita 绑定书：关书时限时 flush 待推进度（不阻塞 dispose，内部吞错）。
     // 防抖里还没落库的最后一章也要带上：dispose 之后 [_persistPosition] 的转发会撞
@@ -4358,18 +4389,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       ReaderFushiPage.debugFlushReadingStats = null;
       return true;
     }());
-    // BUG-3001：只注销自己登记的那组；切卷（pushReplacement）时新页已先登记，
-    // 旧页晚于它 dispose 不能把新页的 hook 一起置 null。
-    final ReaderLiveHooks? liveHooks = _liveHooks;
-    if (liveHooks != null) {
-      ReaderFushiSource.detachLiveHooks(liveHooks);
-      _liveHooks = null;
-    }
-    final ExitFlushCallback? exitFlush = _exitFlushCallback;
-    if (exitFlush != null) {
-      ExitFlushRegistry.instance.unregister(exitFlush);
-      _exitFlushCallback = null;
-    }
+    // BUG-3001：只注销自己登记的那组（登记见 initState）。
+    _liveHooksRelease.release();
+    _exitFlushRelease.release();
     _removeSelectionActionBar();
     _progressPollTimer?.cancel();
     _jumpAutoHideOrNull?.dispose();

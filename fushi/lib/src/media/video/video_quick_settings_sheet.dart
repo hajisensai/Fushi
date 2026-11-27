@@ -1,4 +1,5 @@
 import 'package:cupertino_ui/cupertino_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -124,7 +125,8 @@ class VideoQuickSettingsSheet extends StatefulWidget {
 class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
     with
         SettingsContextHost<VideoQuickSettingsSheet>,
-        TickerProviderStateMixin<VideoQuickSettingsSheet> {
+        TickerProviderStateMixin<VideoQuickSettingsSheet>,
+        StateResourceScope<VideoQuickSettingsSheet> {
   /// 当前分类 id；null = 默认（playback）。TODO-1351：初值取 [VideoQuickSettingsSheet.initialCategory]，让「音频轨/字幕轨」
   /// 按钮直接把面板开在对应分类。
   late String? _subPage = widget.initialCategory;
@@ -177,9 +179,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) => _firstFrameShown = true,
-    );
+    schedulePostFrame((_) => _firstFrameShown = true);
     // TODO-1350：直接开在「字幕」分类（如「字幕轨」按钮驱动 initialCategory=='subtitle'）时，
     // 挂载即触发一次字幕源加载回调（延后到帧后，避免在 initState 阶段同步触发父页 setState）。
     if (widget.initialCategory == 'subtitle') {

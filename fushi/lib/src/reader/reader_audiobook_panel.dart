@@ -14,6 +14,7 @@ import 'dart:io';
 
 import 'package:flutter/rendering.dart' show RenderAbstractViewport;
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/media/audiobook/audiobook_play_bar.dart'
     show AudiobookFollowAudioButton, AudiobookPlayFab;
@@ -140,9 +141,8 @@ class ReaderAudiobookPanel extends StatefulWidget {
   State<ReaderAudiobookPanel> createState() => _ReaderAudiobookPanelState();
 }
 
-class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
-  Timer? _ticker;
-
+class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel>
+    with StateResourceScope<ReaderAudiobookPanel> {
   /// 拖动整书进度条期间 / 跨文件 seek 落定前本地保留的目标位置（毫秒），避免松手
   /// 后拇指先跳回旧位置再追上。位置追上（±1.5s）或超过 2s 自动放手。
   int? _scrubTargetMs;
@@ -171,9 +171,11 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
   @override
   void initState() {
     super.initState();
-    _ticker = Timer.periodic(widget.tick, (_) {
-      if (mounted) setState(() {});
-    });
+    ownTimer(
+      Timer.periodic(widget.tick, (_) {
+        if (mounted) setState(() {});
+      }),
+    );
   }
 
   @override
@@ -204,7 +206,6 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
 
   @override
   void dispose() {
-    _ticker?.cancel();
     _routeAnimation?.removeStatusListener(_onRouteStatus);
     super.dispose();
   }

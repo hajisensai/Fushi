@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_extension_uninstall.dart';
@@ -129,7 +130,8 @@ class MihonInstalledSourcesSection extends StatefulWidget {
 }
 
 class _MihonInstalledSourcesSectionState
-    extends State<MihonInstalledSourcesSection> {
+    extends State<MihonInstalledSourcesSection>
+    with StateResourceScope<MihonInstalledSourcesSection> {
   /// 已安装在线源列表的搜索（BUG-2479）：源一多，找「要登录的那一个」得翻半天。
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
@@ -149,6 +151,7 @@ class _MihonInstalledSourcesSectionState
   void initState() {
     super.initState();
     widget.manager.addListener(_changed);
+    onTeardown(() => widget.manager.removeListener(_changed));
   }
 
   @override
@@ -161,7 +164,6 @@ class _MihonInstalledSourcesSectionState
 
   @override
   void dispose() {
-    widget.manager.removeListener(_changed);
     _searchController.dispose();
     super.dispose();
   }

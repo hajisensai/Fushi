@@ -15,6 +15,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi_engine/media/video/youtube_live_chat_replay.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -128,7 +129,8 @@ class VideoLiveChatPanel extends StatefulWidget {
   State<VideoLiveChatPanel> createState() => _VideoLiveChatPanelState();
 }
 
-class _VideoLiveChatPanelState extends State<VideoLiveChatPanel> {
+class _VideoLiveChatPanelState extends State<VideoLiveChatPanel>
+    with StateResourceScope<VideoLiveChatPanel> {
   final ScrollController _scroll = ScrollController();
   final Map<String, GlobalKey> _textKeys = <String, GlobalKey>{};
   final Map<String, YoutubeChatMessage> _keyedMessages =
@@ -145,7 +147,9 @@ class _VideoLiveChatPanelState extends State<VideoLiveChatPanel> {
   void initState() {
     super.initState();
     widget.chat.addListener(_onChatChanged);
+    onTeardown(() => widget.chat.removeListener(_onChatChanged));
     widget.chat.position.addListener(_onPosition);
+    onTeardown(() => widget.chat.position.removeListener(_onPosition));
     widget.chat.attachViewer();
     widget.hitTester?.bindHitTest(_hitTest);
   }
@@ -170,8 +174,7 @@ class _VideoLiveChatPanelState extends State<VideoLiveChatPanel> {
 
   @override
   void dispose() {
-    widget.chat.removeListener(_onChatChanged);
-    widget.chat.position.removeListener(_onPosition);
+    releaseResources();
     widget.chat.detachViewer();
     widget.hitTester?.unbind(_hitTest);
     _scroll.dispose();

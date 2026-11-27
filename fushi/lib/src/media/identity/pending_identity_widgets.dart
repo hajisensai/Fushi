@@ -12,6 +12,7 @@ import 'package:flutter/foundation.dart' show setEquals;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/media/identity/pending_identity_text.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/apple/apple_text_style.dart';
@@ -242,7 +243,8 @@ class PendingIdentityBannerHost extends StatefulWidget {
       _PendingIdentityBannerHostState();
 }
 
-class _PendingIdentityBannerHostState extends State<PendingIdentityBannerHost> {
+class _PendingIdentityBannerHostState extends State<PendingIdentityBannerHost>
+    with StateResourceScope<PendingIdentityBannerHost> {
   Set<String> _pending = const <String>{};
   Set<String> _dismissed = const <String>{};
   StreamSubscription<void>? _sub;
@@ -253,6 +255,7 @@ class _PendingIdentityBannerHostState extends State<PendingIdentityBannerHost> {
   void initState() {
     super.initState();
     _sub = widget.changes?.listen((_) => unawaited(_reload()));
+    onTeardown(() => unawaited(_sub?.cancel()));
     unawaited(_reload());
   }
 
@@ -263,12 +266,6 @@ class _PendingIdentityBannerHostState extends State<PendingIdentityBannerHost> {
       unawaited(_sub?.cancel());
       _sub = widget.changes?.listen((_) => unawaited(_reload()));
     }
-  }
-
-  @override
-  void dispose() {
-    unawaited(_sub?.cancel());
-    super.dispose();
   }
 
   /// 在飞时又来一次：在飞那次读到的可能是旧状态，完成后再补一次（同视频页

@@ -644,9 +644,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       onStateChange: _onStudyLifecycleChanged,
     );
     onTeardown(studyLifecycle.dispose);
-    _studyClockGate.manualPauseListenable.addListener(
-      _onStudyManualPauseChanged,
-    );
+    listenTo(_studyClockGate.manualPauseListenable, _onStudyManualPauseChanged);
     // 桌面查词窗被关掉：焦点不再「在本 app 的查词窗里」，计时门按真实失焦重判。
     GlobalLookupController.instance.addHiddenListener(_studyClockGate.sync);
     onTeardown(
@@ -778,9 +776,8 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     unawaited(_preStartedAudio?.source.stop());
     _preStartedAudio = null;
     unawaited(_watchTracker?.stop());
-    _studyClockGate.manualPauseListenable.removeListener(
-      _onStudyManualPauseChanged,
-    );
+    // 先摘监听再释放计时门。
+    releaseResources();
     _studyClockGate.dispose();
     _studyAccrualClaim.release();
     // 机器驱动的播放头不是用户的续播点，[_persistPosition] 自己会挡（[_playheadIsUsers]）。

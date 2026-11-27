@@ -45,6 +45,7 @@ import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
 import 'package:fushi/src/lookup/hover_lookup_modifier.dart';
 import 'package:fushi/src/webview/web_payload_limits.dart';
@@ -1087,11 +1088,12 @@ class WebVideoSurface extends StatefulWidget {
   State<WebVideoSurface> createState() => _WebVideoSurfaceState();
 }
 
-class _WebVideoSurfaceState extends State<WebVideoSurface> {
+class _WebVideoSurfaceState extends State<WebVideoSurface>
+    with StateResourceScope<WebVideoSurface> {
   @override
   void initState() {
     super.initState();
-    underlayInputExclusions.addListener(_syncExclusions);
+    listenTo(underlayInputExclusions, _syncExclusions);
   }
 
   @override
@@ -1105,12 +1107,6 @@ class _WebVideoSurfaceState extends State<WebVideoSurface> {
   void didUpdateWidget(WebVideoSurface oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.session != widget.session) _syncExclusions();
-  }
-
-  @override
-  void dispose() {
-    underlayInputExclusions.removeListener(_syncExclusions);
-    super.dispose();
   }
 
   /// 全局区域 → 相对本 WebView 左上角（与原生 setPosition 同一套逻辑坐标），只留压在网页上的。

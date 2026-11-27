@@ -132,17 +132,11 @@ void main() {
     );
 
     // 复习页：切回时刷新已配对主机（原先靠每次挂载在 initState 里做）。
+    // 经 StateResourceScope.listenTo 登记：dispose 与挂载失败都会移除（BUG-5604）。
     expect(
-      srsSrc.contains('homeShellTabNotifier.addListener(_onShellTabActivated)'),
+      srsSrc.contains('listenTo(homeShellTabNotifier, _onShellTabActivated)'),
       isTrue,
-      reason: '复习页必须监听 tab 信号',
-    );
-    expect(
-      srsSrc.contains(
-        'homeShellTabNotifier.removeListener(_onShellTabActivated)',
-      ),
-      isTrue,
-      reason: '复习页 dispose 必须移除监听（防泄漏）',
+      reason: '复习页必须监听 tab 信号，且经 listenTo 登记以便退场时移除（防泄漏）',
     );
     expect(
       srsSrc.contains('SectionPopScope('),

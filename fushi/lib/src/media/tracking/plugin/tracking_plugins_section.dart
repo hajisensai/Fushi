@@ -31,6 +31,7 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_service.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -72,7 +73,8 @@ class TrackingPluginsSection extends StatefulWidget {
   State<TrackingPluginsSection> createState() => _TrackingPluginsSectionState();
 }
 
-class _TrackingPluginsSectionState extends State<TrackingPluginsSection> {
+class _TrackingPluginsSectionState extends State<TrackingPluginsSection>
+    with StateResourceScope<TrackingPluginsSection> {
   TrackingPluginManager get _manager => widget.manager;
 
   /// The first [TrackingPluginManager.list] has not finished.
@@ -90,16 +92,12 @@ class _TrackingPluginsSectionState extends State<TrackingPluginsSection> {
   @override
   void initState() {
     super.initState();
-    _manager.changes.addListener(_changed);
+    listenTo(_manager.changes, _changed);
     widget.service.statusRevision.addListener(_reloadStatuses);
+    onTeardown(
+      () => widget.service.statusRevision.removeListener(_reloadStatuses),
+    );
     unawaited(_open());
-  }
-
-  @override
-  void dispose() {
-    _manager.changes.removeListener(_changed);
-    widget.service.statusRevision.removeListener(_reloadStatuses);
-    super.dispose();
   }
 
   void _changed() {

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart'
@@ -153,7 +154,7 @@ class PopupDictionaryPage extends ConsumerStatefulWidget {
 }
 
 class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
-    with DictionaryPageMixin {
+    with DictionaryPageMixin, StateResourceScope<PopupDictionaryPage> {
   final DictionaryPopupController _popup = DictionaryPopupController(
     lowMemory: false,
     onLookupStackDepthChanged: recordLookupStackDepth,
@@ -249,11 +250,11 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     // appModel 未初始化时 seedWarmSlot 内部据 lowMemory 早退前先设真值；此处与首页
     // 查词一致——独立查词窗在 appModel 初始化完成（popupMain 的 initialiseForDictionaryPopup）
     // 后才有真实查词，未就绪则跳过 seed（无热槽，等价旧行为），不引入新崩溃。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       if (mounted) _seedWarmPopup();
     });
     if (widget.autoSearchOnOpen && appModel.isInitialised) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+      schedulePostFrame((_) {
         if (!mounted) return;
         _lookupWidgetSource();
       });

@@ -33,6 +33,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -84,7 +85,8 @@ class _VideoSourceScrapeRunDetailDialog extends StatefulWidget {
 }
 
 class _VideoSourceScrapeRunDetailDialogState
-    extends State<_VideoSourceScrapeRunDetailDialog> {
+    extends State<_VideoSourceScrapeRunDetailDialog>
+    with StateResourceScope<_VideoSourceScrapeRunDetailDialog> {
   late final SourceScrapeReport? _report = decodeSourceScrapeReport(
     widget.run.summaryJson,
   );
@@ -100,16 +102,11 @@ class _VideoSourceScrapeRunDetailDialogState
   void initState() {
     super.initState();
     widget.controller?.addListener(_taskChanged);
+    onTeardown(() => widget.controller?.removeListener(_taskChanged));
   }
 
   void _taskChanged() {
     if (mounted) setState(() {});
-  }
-
-  @override
-  void dispose() {
-    widget.controller?.removeListener(_taskChanged);
-    super.dispose();
   }
 
   bool get _canBindManually =>

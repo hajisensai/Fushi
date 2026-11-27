@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_user_data_refresh.dart';
@@ -73,7 +74,7 @@ class MediaServerHomeView extends StatefulWidget {
 }
 
 class _MediaServerHomeViewState extends State<MediaServerHomeView>
-    with MediaServerUserDataRefresh {
+    with StateResourceScope<MediaServerHomeView>, MediaServerUserDataRefresh {
   List<MediaServerLibrary>? _libraries;
   Object? _librariesError;
   List<MediaServerItem> _continueWatching = const <MediaServerItem>[];

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:fushi_cli/fushi_cli.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/ai/agent/ai_agent_skills.dart';
 import 'package:fushi/src/ai/agent/ai_agent_toolbox.dart';
 import 'package:fushi/src/ai/mcp/ai_mcp_access.dart';
@@ -131,17 +132,18 @@ class _AiMcpConfirmContent extends StatefulWidget {
   State<_AiMcpConfirmContent> createState() => _AiMcpConfirmContentState();
 }
 
-class _AiMcpConfirmContentState extends State<_AiMcpConfirmContent> {
-  Timer? _expiry;
-
+class _AiMcpConfirmContentState extends State<_AiMcpConfirmContent>
+    with StateResourceScope<_AiMcpConfirmContent> {
   @override
   void initState() {
     super.initState();
-    _expiry = Timer(widget.timeout, () {
-      if (!mounted) return;
-      final ModalRoute<Object?>? route = ModalRoute.of(context);
-      if (route != null && route.isCurrent) Navigator.of(context).pop(false);
-    });
+    ownTimer(
+      Timer(widget.timeout, () {
+        if (!mounted) return;
+        final ModalRoute<Object?>? route = ModalRoute.of(context);
+        if (route != null && route.isCurrent) Navigator.of(context).pop(false);
+      }),
+    );
     unawaited(widget.request.cancellation.whenCancelled.then((_) => _close()));
   }
 
@@ -156,12 +158,6 @@ class _AiMcpConfirmContentState extends State<_AiMcpConfirmContent> {
     } else {
       navigator.removeRoute<Object?>(route, false);
     }
-  }
-
-  @override
-  void dispose() {
-    _expiry?.cancel();
-    super.dispose();
   }
 
   @override

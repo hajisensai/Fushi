@@ -1,3 +1,4 @@
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/media/downloads/download_batch.dart';
 import 'package:fushi/src/media/downloads/download_source_method.dart';
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
@@ -1064,7 +1065,8 @@ class _VideoDownloadJobList extends StatefulWidget {
   State<_VideoDownloadJobList> createState() => _VideoDownloadJobListState();
 }
 
-class _VideoDownloadJobListState extends State<_VideoDownloadJobList> {
+class _VideoDownloadJobListState extends State<_VideoDownloadJobList>
+    with StateResourceScope<_VideoDownloadJobList> {
   static const Duration _refreshInterval = Duration(seconds: 3);
 
   Timer? _timer;
@@ -1076,6 +1078,9 @@ class _VideoDownloadJobListState extends State<_VideoDownloadJobList> {
   void initState() {
     super.initState();
     widget.snapshotRefresh.addListener(_onSnapshotRefreshRequested);
+    onTeardown(
+      () => widget.snapshotRefresh.removeListener(_onSnapshotRefreshRequested),
+    );
     _restartMetrics();
   }
 
@@ -1152,7 +1157,6 @@ class _VideoDownloadJobListState extends State<_VideoDownloadJobList> {
 
   @override
   void dispose() {
-    widget.snapshotRefresh.removeListener(_onSnapshotRefreshRequested);
     _timer?.cancel();
     super.dispose();
   }

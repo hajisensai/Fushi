@@ -21,6 +21,7 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 验证码重发冷却（服务端另有按 IP / 邮箱的限流）。
 const int kLeaderboardCodeCooldownSeconds = 60;
@@ -45,7 +46,8 @@ class LeaderboardSignInPage extends ConsumerStatefulWidget {
       _LeaderboardSignInPageState();
 }
 
-class _LeaderboardSignInPageState extends ConsumerState<LeaderboardSignInPage> {
+class _LeaderboardSignInPageState extends ConsumerState<LeaderboardSignInPage>
+    with StateResourceScope<LeaderboardSignInPage> {
   final TextEditingController _email = TextEditingController();
   final TextEditingController _code = TextEditingController();
   final TextEditingController _nickname = TextEditingController();
@@ -107,7 +109,7 @@ class _LeaderboardSignInPageState extends ConsumerState<LeaderboardSignInPage> {
       _code,
       _nickname,
     ]) {
-      c.addListener(_onChanged);
+      listenTo(c, _onChanged);
     }
   }
 
@@ -121,6 +123,8 @@ class _LeaderboardSignInPageState extends ConsumerState<LeaderboardSignInPage> {
   @override
   void dispose() {
     _cooldownTimer?.cancel();
+    // 输入监听挂在下面要 dispose 的控制器上：先撤销再释放控制器。
+    releaseResources();
     _email.dispose();
     _code.dispose();
     _nickname.dispose();

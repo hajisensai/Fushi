@@ -15,6 +15,7 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteBookInfo;
 import 'package:fushi_engine/sync/sync_backend_type.dart';
@@ -48,7 +49,8 @@ class HiddenRemoteBooksPage extends StatefulWidget {
   State<HiddenRemoteBooksPage> createState() => _HiddenRemoteBooksPageState();
 }
 
-class _HiddenRemoteBooksPageState extends State<HiddenRemoteBooksPage> {
+class _HiddenRemoteBooksPageState extends State<HiddenRemoteBooksPage>
+    with StateResourceScope<HiddenRemoteBooksPage> {
   /// 当前远端来源及其书目里的身份键；null = 未知（没有来源 / 拉取失败）。
   String? _liveSourceId;
   String? _liveSourceHost;
@@ -58,13 +60,8 @@ class _HiddenRemoteBooksPageState extends State<HiddenRemoteBooksPage> {
   void initState() {
     super.initState();
     widget.prefs.addListener(_onPrefs);
+    onTeardown(() => widget.prefs.removeListener(_onPrefs));
     _probeRemote();
-  }
-
-  @override
-  void dispose() {
-    widget.prefs.removeListener(_onPrefs);
-    super.dispose();
   }
 
   void _onPrefs() {

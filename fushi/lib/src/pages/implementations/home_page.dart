@@ -522,8 +522,6 @@ class _HomePageState extends BasePageState<HomePage>
   /// 于是每次都回到第一个「首页」分区。持有 [GlobalKey] 让换布局变成同一子树换父节点。
   final GlobalKey _homeBodyKey = GlobalKey(debugLabel: 'home-tab-body');
 
-  /// 网页视频制卡队列的后台空闲自动制卡（Windows：网页播放器与静音录音只在那儿有）。
-  WebMineBackgroundRunner? _webMineBackground;
 
   /// Android games tab（串流接收端）的依赖装配；只在首次切到该 tab 时构造。
   late final GameStreamLibraryServices _gameStreamLibraryServices =
@@ -588,6 +586,7 @@ class _HomePageState extends BasePageState<HomePage>
   /// （制卡页叠在上面，跑完关掉回到原处），只在 Fushi 里有东西在播时不开：
   /// 视频（本地 / 网页）在播、有声书 / 音乐在播，或者阅读器开着且窗口在前台（人可能
   /// 正盯着一页在读，键鼠两分钟不动很正常）。
+  /// 调度器随 [StateResourceScope] 的撤销清单释放（BUG-5604：挂载失败与 dispose 共用）。
   void _startWebMineBackground() {
     // widget 测试里不起：调度器是常驻周期计时器，会让每个泵首页的测试都留下 pending timer。
     if (!Platform.isWindows ||
@@ -642,7 +641,7 @@ class _HomePageState extends BasePageState<HomePage>
         );
       },
     );
-    _webMineBackground = runner;
+    onTeardown(runner.dispose);
     runner.start();
   }
 
@@ -697,11 +696,11 @@ class _HomePageState extends BasePageState<HomePage>
     );
 
     // 首帧后的启动清理 + 来源自动扫描（与下面的新手引导 / 更新弹窗互不阻塞）。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       if (mounted) unawaited(_startupCleanupThenAutoScan());
     });
 
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
+    schedulePostFrame((_) async {
       if (!mounted) return;
       // 在下面任何分支改写 first_time_setup 之前取：「下载 → 浏览」搬迁提示要据此
       // 区分全新安装与升级（见 browse_moved_notice.dart）。
@@ -1146,7 +1145,6 @@ class _HomePageState extends BasePageState<HomePage>
     if (_backdropShellRoute case final Route<Object?> route) {
       setFushiPageRouteModuleShell(route, false);
     }
-    _webMineBackground?.dispose();
     _appleChrome.dispose();
     _largeTitle.dispose();
     _shellActions.dispose();

@@ -288,7 +288,19 @@ void main() {
       for (final String page in <String>[reader, video, manga]) {
         final String src = _read(page);
         expect(src, contains('_attachControllerLookup();'), reason: page);
-        expect(src, contains('_detachControllerLookup();'), reason: page);
+        // 摘除登记进撤销清单（BUG-5604：挂载失败也摘），dispose 里按位置 release。
+        expect(
+          src,
+          contains(
+            '_controllerLookupRelease = onTeardown(_detachControllerLookup);',
+          ),
+          reason: page,
+        );
+        expect(
+          src,
+          contains('_controllerLookupRelease.release();'),
+          reason: page,
+        );
       }
       final String src = _read(music);
       expect(

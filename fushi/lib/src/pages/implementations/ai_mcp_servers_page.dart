@@ -37,6 +37,7 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 打开 MCP 服务器页。[liveStatuses] 由调用方注入（生产接 AI 助手控制器的 MCP
 /// 工具箱）：本页不 import 控制器，免得经 `op_context → app_model` 被拖进 lib/ 的
@@ -98,17 +99,13 @@ class AiMcpServersPage extends StatefulWidget {
   State<AiMcpServersPage> createState() => _AiMcpServersPageState();
 }
 
-class _AiMcpServersPageState extends State<AiMcpServersPage> {
+class _AiMcpServersPageState extends State<AiMcpServersPage>
+    with StateResourceScope<AiMcpServersPage> {
   @override
   void initState() {
     super.initState();
     widget.prefs.addListener(_onPrefs);
-  }
-
-  @override
-  void dispose() {
-    widget.prefs.removeListener(_onPrefs);
-    super.dispose();
+    onTeardown(() => widget.prefs.removeListener(_onPrefs));
   }
 
   void _onPrefs() {

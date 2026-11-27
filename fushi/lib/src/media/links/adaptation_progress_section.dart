@@ -9,9 +9,10 @@ library;
 
 import 'dart:async';
 
-import 'package:drift/drift.dart' show TableUpdate, TableUpdateQuery;
+import 'package:drift/drift.dart' show TableUpdateQuery;
 import 'package:flutter/services.dart'
     show FilteringTextInputFormatter, TextInputFormatter;
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/media/links/media_link_entries.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -214,10 +215,10 @@ class _AdaptationProgressCard extends StatefulWidget {
       _AdaptationProgressCardState();
 }
 
-class _AdaptationProgressCardState extends State<_AdaptationProgressCard> {
+class _AdaptationProgressCardState extends State<_AdaptationProgressCard>
+    with StateResourceScope<_AdaptationProgressCard> {
   late Future<({List<AdaptationProgressAnchor> anchors, int? watched})> _data =
       _load();
-  StreamSubscription<Set<TableUpdate>>? _sub;
 
   Future<({List<AdaptationProgressAnchor> anchors, int? watched})>
   _load() async {
@@ -239,28 +240,24 @@ class _AdaptationProgressCardState extends State<_AdaptationProgressCard> {
   void initState() {
     super.initState();
     // tableUpdates 手动订阅（BUG-834 范式，不用 drift `.watch()`）。
-    _sub = widget.database
-        .tableUpdates(
-          TableUpdateQuery.onTable(widget.database.adaptationProgressAnchors),
-        )
-        .listen((_) {
-          if (!mounted) return;
-          setState(() {
-            _data = _load();
-          });
-        });
+    ownSubscription(
+      widget.database
+          .tableUpdates(
+            TableUpdateQuery.onTable(widget.database.adaptationProgressAnchors),
+          )
+          .listen((_) {
+            if (!mounted) return;
+            setState(() {
+              _data = _load();
+            });
+          }),
+    );
   }
 
   @override
   void didUpdateWidget(covariant _AdaptationProgressCard oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.link.pair != widget.link.pair) _data = _load();
-  }
-
-  @override
-  void dispose() {
-    unawaited(_sub?.cancel());
-    super.dispose();
   }
 
   @override

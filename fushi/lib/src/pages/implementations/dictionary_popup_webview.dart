@@ -50,6 +50,7 @@ import 'package:fushi/src/shortcuts/reader_space_override.dart'
 import 'package:fushi/src/utils/misc/dictionary_external_link.dart';
 import 'package:fushi/src/lookup/lookup_audio_playback.dart';
 import 'package:fushi/src/utils/misc/webview_scroll_notification_bridge.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -695,15 +696,12 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
 
 class DictionaryPopupWebViewState
     extends DictionaryPopupRealmState<DictionaryPopupWebView>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, StateResourceScope<DictionaryPopupWebView> {
   InAppWebViewController? _controller;
 
   /// BUG-3064：正文滚动 → Flutter 滚动通知（[DictionaryPopupWebView.forwardScrollToHost]）。
   final WebViewScrollNotificationBridge _hostScrollBridge =
       WebViewScrollNotificationBridge();
-
-  /// 制卡态失效通知的订阅（见 [MinedStateSignal]）。
-  StreamSubscription<MinedStateChange>? _minedStateSubscription;
 
   @override
   void initState() {
@@ -712,9 +710,13 @@ class DictionaryPopupWebViewState
     // 正是「制卡 → 切到 Anki 里删掉那张卡 → 切回 Fushi」，`resumed` 就是回到 app 的
     // 那一刻，而弹窗上的 ✓ 是查词那一刻探测出来的、自己不会再变。
     WidgetsBinding.instance.addObserver(this);
-    _minedStateSubscription = MinedStateSignal.instance.changes.listen(
-      (MinedStateChange change) =>
-          unawaited(_refreshMineStates(expression: change.expression)),
+    onTeardown(() => WidgetsBinding.instance.removeObserver(this));
+    // 制卡态失效通知的订阅（见 [MinedStateSignal]）。
+    ownSubscription(
+      MinedStateSignal.instance.changes.listen(
+        (MinedStateChange change) =>
+            unawaited(_refreshMineStates(expression: change.expression)),
+      ),
     );
   }
 
@@ -724,9 +726,6 @@ class DictionaryPopupWebViewState
   @override
   void dispose() {
     _menuDismiss.detach();
-    unawaited(_minedStateSubscription?.cancel());
-    _minedStateSubscription = null;
-    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 

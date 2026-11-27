@@ -11,6 +11,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 import 'package:fushi/src/utils/misc/logo_accent_tint.dart';
 
@@ -191,7 +192,8 @@ class AccentLogoTintBuilder extends StatefulWidget {
   State<AccentLogoTintBuilder> createState() => _AccentLogoTintBuilderState();
 }
 
-class _AccentLogoTintBuilderState extends State<AccentLogoTintBuilder> {
+class _AccentLogoTintBuilderState extends State<AccentLogoTintBuilder>
+    with StateResourceScope<AccentLogoTintBuilder> {
   late LogoAccentTint _settled = LogoAccentTint.fromAccent(
     widget.accent.toARGB32(),
   );
@@ -201,7 +203,7 @@ class _AccentLogoTintBuilderState extends State<AccentLogoTintBuilder> {
   @override
   void initState() {
     super.initState();
-    appLogoFollowsAccent.addListener(_onSwitchChanged);
+    listenTo(appLogoFollowsAccent, _onSwitchChanged);
   }
 
   void _onSwitchChanged() {
@@ -235,7 +237,6 @@ class _AccentLogoTintBuilderState extends State<AccentLogoTintBuilder> {
 
   @override
   void dispose() {
-    appLogoFollowsAccent.removeListener(_onSwitchChanged);
     _timer?.cancel();
     super.dispose();
   }

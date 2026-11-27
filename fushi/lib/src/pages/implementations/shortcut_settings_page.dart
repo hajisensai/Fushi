@@ -62,6 +62,7 @@ import 'package:fushi/src/shortcuts/visual/gamepad_button_widget.dart';
 import 'package:fushi/src/shortcuts/visual/gamepad_glyphs.dart';
 import 'package:fushi/src/shortcuts/visual/gamepad_layout_view.dart';
 import 'package:fushi/src/shortcuts/visual/keyboard_layout_view.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 part 'shortcut_settings/action_tile.part.dart';
 part 'shortcut_settings/binding_edit_dialog.part.dart';
@@ -124,21 +125,14 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
     _hotKeyBackendKind =
         GlobalLookupController.instance.hotKeyStatus.value?.kind ??
         GlobalLookupController.platformHotKeyBackendKind;
-    GlobalLookupController.instance.hotKeyStatus.addListener(
+    listenTo(
+      GlobalLookupController.instance.hotKeyStatus,
       _onHotKeyStatusChanged,
     );
     _gamepadBrand = ReaderFushiSource.instance.gamepadGlyphBrand;
     // Surface the hint only on a gamepad-related surface (this settings page),
     // never as a startup popup — a mouse/keyboard-only user is not nagged.
     unawaited(_checkGameInputAvailability());
-  }
-
-  @override
-  void dispose() {
-    GlobalLookupController.instance.hotKeyStatus.removeListener(
-      _onHotKeyStatusChanged,
-    );
-    super.dispose();
   }
 
   /// TODO-1223: asks the platform whether the controller backend is available

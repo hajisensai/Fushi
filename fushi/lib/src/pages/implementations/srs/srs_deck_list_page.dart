@@ -37,6 +37,7 @@ import 'package:fushi_engine/srs/srs_remote_store.dart'
         SrsRemoteWireError;
 import 'package:fushi_srs/fushi_srs.dart';
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/home_tab.dart'
     show HomeTab, homeShellTabNotifier;
@@ -204,7 +205,8 @@ class SrsDeckListPage extends ConsumerStatefulWidget {
   ConsumerState<SrsDeckListPage> createState() => _SrsDeckListPageState();
 }
 
-class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
+class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage>
+    with StateResourceScope<SrsDeckListPage> {
   /// 首次 v2 同步的确认每次启动最多主动问一次（「稍后」之后点「立即同步」还会再问）。
   static bool _askedFirstSync = false;
 
@@ -225,17 +227,6 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
     List<SrsRemoteServedProfile> profiles,
   ) async => mounted ? showSrsRemoteProfileChoice(context, profiles) : null;
 
-  @override
-  void dispose() {
-    // 只摘监听与选库对话框：缓存与会话归 [_srsPairedHostsProvider]，后台刷新跑完照样落进缓存。
-    homeShellTabNotifier.removeListener(_onShellTabActivated);
-    _paired.removeListener(_onPairedChanged);
-    if (_paired.chooseProfile == _chooseRemoteProfile) {
-      _paired.chooseProfile = null;
-    }
-    super.dispose();
-  }
-
   /// 切回复习 tab：刷新已配对主机。本页保活（`HomePage` 的 `_keepAliveTabs`）
   /// 之后 initState 只跑一次，原先靠「每次切入重新挂载」做的这次刷新改在这里做。
   void _onShellTabActivated() {
@@ -247,12 +238,18 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
   void initState() {
     super.initState();
     _hasPaired = _paired.hosts.isNotEmpty;
-    _paired
-      ..chooseProfile = _chooseRemoteProfile
-      ..addListener(_onPairedChanged);
-    homeShellTabNotifier.addListener(_onShellTabActivated);
+    _paired.chooseProfile = _chooseRemoteProfile;
+    // 退场只摘监听与选库对话框：缓存与会话归 [_srsPairedHostsProvider]，后台刷新跑完
+    // 照样落进缓存（BUG-5604：挂载失败与 dispose 共用）。
+    onTeardown(() {
+      if (_paired.chooseProfile == _chooseRemoteProfile) {
+        _paired.chooseProfile = null;
+      }
+    });
+    listenTo(_paired, _onPairedChanged);
+    listenTo(homeShellTabNotifier, _onShellTabActivated);
     srsRunLogged('SrsPairedHosts.refresh', _paired.refresh);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       if (_askedFirstSync || !mounted) return;
       _askedFirstSync = true;
       srsRunLogged(

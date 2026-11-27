@@ -5,6 +5,7 @@ import 'dart:ui' show lerpDouble;
 
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart'
@@ -418,7 +419,8 @@ class SettingsSearchBar extends StatefulWidget {
   State<SettingsSearchBar> createState() => _SettingsSearchBarState();
 }
 
-class _SettingsSearchBarState extends State<SettingsSearchBar> {
+class _SettingsSearchBarState extends State<SettingsSearchBar>
+    with StateResourceScope<SettingsSearchBar> {
   FocusNode? _ownFocusNode;
 
   FocusNode get _focusNode =>
@@ -429,6 +431,7 @@ class _SettingsSearchBarState extends State<SettingsSearchBar> {
     super.initState();
     _focusNode.addListener(_onFocusChanged);
     widget.controller.addListener(_onTextChanged);
+    onTeardown(() => widget.controller.removeListener(_onTextChanged));
   }
 
   @override
@@ -447,7 +450,6 @@ class _SettingsSearchBarState extends State<SettingsSearchBar> {
   @override
   void dispose() {
     _focusNode.removeListener(_onFocusChanged);
-    widget.controller.removeListener(_onTextChanged);
     _ownFocusNode?.dispose();
     super.dispose();
   }
@@ -768,7 +770,8 @@ class SettingsFloatingHeader extends StatefulWidget {
   State<SettingsFloatingHeader> createState() => _SettingsFloatingHeaderState();
 }
 
-class _SettingsFloatingHeaderState extends State<SettingsFloatingHeader> {
+class _SettingsFloatingHeaderState extends State<SettingsFloatingHeader>
+    with StateResourceScope<SettingsFloatingHeader> {
   bool _collapsed = false;
 
   /// 页头大字形态（重设计外壳，墨水屏除外）下的滚动偏移（封顶
@@ -783,6 +786,7 @@ class _SettingsFloatingHeaderState extends State<SettingsFloatingHeader> {
   void initState() {
     super.initState();
     widget.scrollController?.addListener(_onScroll);
+    onTeardown(() => widget.scrollController?.removeListener(_onScroll));
   }
 
   @override
@@ -793,12 +797,6 @@ class _SettingsFloatingHeaderState extends State<SettingsFloatingHeader> {
       widget.scrollController?.addListener(_onScroll);
       _onScroll();
     }
-  }
-
-  @override
-  void dispose() {
-    widget.scrollController?.removeListener(_onScroll);
-    super.dispose();
   }
 
   void _onScroll() {

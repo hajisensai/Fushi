@@ -7,6 +7,7 @@ library;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_frame.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/lumiere/lumiere_audio.dart';
@@ -284,7 +285,8 @@ class LumiereVisualizer extends StatefulWidget {
   State<LumiereVisualizer> createState() => LumiereVisualizerState();
 }
 
-class LumiereVisualizerState extends State<LumiereVisualizer> {
+class LumiereVisualizerState extends State<LumiereVisualizer>
+    with StateResourceScope<LumiereVisualizer> {
   LumiereScene? _scene;
   Object? _sceneKey;
   final LumiereAudioSampler _audio = LumiereAudioSampler();
@@ -296,7 +298,7 @@ class LumiereVisualizerState extends State<LumiereVisualizer> {
   void initState() {
     super.initState();
     // 自定义字体是异步注册的：注册表一变（字体加载完）就让图集重画，不停在回落字体上。
-    PaintingBinding.instance.systemFonts.addListener(_onSystemFontsChanged);
+    listenTo(PaintingBinding.instance.systemFonts, _onSystemFontsChanged);
   }
 
   void _onSystemFontsChanged() => _scene?.glyphs.reload();
@@ -336,7 +338,6 @@ class LumiereVisualizerState extends State<LumiereVisualizer> {
 
   @override
   void dispose() {
-    PaintingBinding.instance.systemFonts.removeListener(_onSystemFontsChanged);
     _scene?.dispose();
     _scene = null;
     super.dispose();

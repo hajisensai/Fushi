@@ -21,6 +21,7 @@
 library;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:flutter/rendering.dart';
@@ -556,7 +557,7 @@ class FushiScrollAwayChrome extends StatefulWidget {
 }
 
 class _FushiScrollAwayChromeState extends State<FushiScrollAwayChrome>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, StateResourceScope<FushiScrollAwayChrome> {
   // 1 = 完全可见，0 = 收起。MD3 出现带一点回弹落位（default spatial 偏软），
   // 收起同一弹簧；Apple 走临界阻尼的 Apple 弹簧（[fushiChromeRevealSpring]）。
   // 首次访问在 build 里（可读设计系统）。
@@ -581,6 +582,7 @@ class _FushiScrollAwayChromeState extends State<FushiScrollAwayChrome>
   void initState() {
     super.initState();
     widget.controller.addListener(_sync);
+    onTeardown(() => widget.controller.removeListener(_sync));
   }
 
   @override
@@ -604,7 +606,6 @@ class _FushiScrollAwayChromeState extends State<FushiScrollAwayChrome>
 
   @override
   void dispose() {
-    widget.controller.removeListener(_sync);
     _shown.dispose();
     _fade.dispose();
     super.dispose();

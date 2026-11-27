@@ -78,12 +78,7 @@ class _CropImageDialogPageState extends BasePageState<CropImageDialogPage> {
     super.initState();
     _stream = _provider.resolve(ImageConfiguration.empty)
       ..addListener(_decodeListener);
-  }
-
-  @override
-  void dispose() {
-    _stream?.removeListener(_decodeListener);
-    super.dispose();
+    onTeardown(() => _stream?.removeListener(_decodeListener));
   }
 
   void _onDecodeError(Object error, StackTrace? stack) {

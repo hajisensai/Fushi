@@ -87,6 +87,53 @@ void main() {
     expect(r.controller.hasListener, isFalse, reason: '先登记的照样撤掉');
     expect(r.notifier.listenerCount, 0);
   });
+
+  testWidgets('子类 deactivate 覆写在调 super 前抛错：微任务兜底照样回滚', (
+    WidgetTester tester,
+  ) async {
+    final StreamController<int> controller = StreamController<int>.broadcast();
+    final ValueNotifier<int> notifier = ValueNotifier<int>(0);
+    await tester.pumpWidget(
+      _ThrowingDeactivate(stream: controller.stream, notifier: notifier),
+    );
+    // 框架吞掉 deactivate 的异常，只上报 initState 的原始错误。
+    expect(tester.takeException().toString(), contains(_Probe.failure));
+    await tester.pump();
+    expect(controller.hasListener, isFalse);
+    // ignore: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
+    expect(notifier.hasListeners, isFalse);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('releaseResources：撤销在 dispose 的指定位置跑完，super.dispose 不重复', (
+    WidgetTester tester,
+  ) async {
+    final List<String> log = <String>[];
+    await tester.pumpWidget(_OrderedRelease(log: log));
+    await tester.pumpWidget(const SizedBox());
+    expect(log, <String>['detach', 'own dispose']);
+  });
+
+  testWidgets('ScopedRelease：dispose 里提前撤一条，其余仍在 super.dispose 撤', (
+    WidgetTester tester,
+  ) async {
+    final List<String> log = <String>[];
+    await tester.pumpWidget(_EarlyRelease(log: log));
+    await tester.pumpWidget(const SizedBox());
+    expect(log, <String>['a', 'mid', 'b']);
+  });
+
+  testWidgets('schedulePostFrame：挂载失败后不回调，正常挂载照常回调', (
+    WidgetTester tester,
+  ) async {
+    final List<String> log = <String>[];
+    await tester.pumpWidget(_PostFrame(log: log, fail: true));
+    expect(tester.takeException(), isA<StateError>());
+    await tester.pump();
+    expect(log, isEmpty);
+    await tester.pumpWidget(_PostFrame(log: log, fail: false));
+    expect(log, <String>['frame']);
+  });
 }
 
 class _Resources {
@@ -177,4 +224,121 @@ class _FailingListenable implements Listenable {
 
   @override
   void removeListener(VoidCallback listener) => removeCalls++;
+}
+
+class _ThrowingDeactivate extends StatefulWidget {
+  const _ThrowingDeactivate({required this.stream, required this.notifier});
+
+  final Stream<int> stream;
+  final ValueNotifier<int> notifier;
+
+  @override
+  State<_ThrowingDeactivate> createState() => _ThrowingDeactivateState();
+}
+
+class _ThrowingDeactivateState extends State<_ThrowingDeactivate>
+    with StateResourceScope<_ThrowingDeactivate> {
+  @override
+  void initState() {
+    super.initState();
+    ownSubscription(widget.stream.listen((_) {}));
+    listenTo(widget.notifier, () {});
+    throw StateError(_Probe.failure);
+  }
+
+  // initState 抛错点之后才赋值：失败挂载时还没初始化。
+  late final List<int> _halfInitialised;
+
+  @override
+  void deactivate() {
+    // 读 initState 没来得及初始化的状态 → 在调 super 之前抛 LateInitializationError。
+    _halfInitialised.clear();
+    super.deactivate();
+  }
+
+  @override
+  Widget build(BuildContext context) => const SizedBox();
+}
+
+class _OrderedRelease extends StatefulWidget {
+  const _OrderedRelease({required this.log});
+
+  final List<String> log;
+
+  @override
+  State<_OrderedRelease> createState() => _OrderedReleaseState();
+}
+
+class _OrderedReleaseState extends State<_OrderedRelease>
+    with StateResourceScope<_OrderedRelease> {
+  @override
+  void initState() {
+    super.initState();
+    onTeardown(() => widget.log.add('detach'));
+  }
+
+  @override
+  void dispose() {
+    releaseResources();
+    widget.log.add('own dispose');
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => const SizedBox();
+}
+
+class _EarlyRelease extends StatefulWidget {
+  const _EarlyRelease({required this.log});
+
+  final List<String> log;
+
+  @override
+  State<_EarlyRelease> createState() => _EarlyReleaseState();
+}
+
+class _EarlyReleaseState extends State<_EarlyRelease>
+    with StateResourceScope<_EarlyRelease> {
+  late final ScopedRelease _a;
+
+  @override
+  void initState() {
+    super.initState();
+    _a = onTeardown(() => widget.log.add('a'));
+    onTeardown(() => widget.log.add('b'));
+  }
+
+  @override
+  void dispose() {
+    _a.release();
+    _a.release(); // 幂等：不会再跑一次。
+    widget.log.add('mid');
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => const SizedBox();
+}
+
+class _PostFrame extends StatefulWidget {
+  const _PostFrame({required this.log, required this.fail});
+
+  final List<String> log;
+  final bool fail;
+
+  @override
+  State<_PostFrame> createState() => _PostFrameState();
+}
+
+class _PostFrameState extends State<_PostFrame>
+    with StateResourceScope<_PostFrame> {
+  @override
+  void initState() {
+    super.initState();
+    schedulePostFrame((_) => widget.log.add('frame'));
+    if (widget.fail) throw StateError('initState failed');
+  }
+
+  @override
+  Widget build(BuildContext context) => const SizedBox();
 }

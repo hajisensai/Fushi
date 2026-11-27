@@ -6,6 +6,7 @@ import 'package:flutter/gestures.dart'
     show PointerScrollEvent, PointerSignalEvent;
 import 'package:fushi_audio/fushi_audio_core.dart' show decodeTextBytes;
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
     show FushiDividerControl;
 
@@ -313,8 +314,8 @@ class WebBrowserSubtitlePanel extends StatefulWidget {
 }
 
 /// 侧栏状态（测试经它读）。
-class WebBrowserSubtitlePanelState$ extends State<WebBrowserSubtitlePanel> {
-  Timer? _poll;
+class WebBrowserSubtitlePanelState$ extends State<WebBrowserSubtitlePanel>
+    with StateResourceScope<WebBrowserSubtitlePanel> {
   bool _polling = false;
   bool _connected = true;
   WebBrowserSubtitlePanelState? _state;
@@ -369,6 +370,7 @@ class WebBrowserSubtitlePanelState$ extends State<WebBrowserSubtitlePanel> {
     super.initState();
     _readPrefs();
     widget.storage?.addListener(_onStorageChanged);
+    onTeardown(() => widget.storage?.removeListener(_onStorageChanged));
     _offsetFocus.addListener(_onOffsetFocusChanged);
     if (!WebBrowserExtensionStrings.instance.isLoaded) {
       unawaited(
@@ -378,7 +380,7 @@ class WebBrowserSubtitlePanelState$ extends State<WebBrowserSubtitlePanel> {
       );
     }
     unawaited(_refresh());
-    _poll = Timer.periodic(widget.pollInterval, (_) => unawaited(_refresh()));
+    ownTimer(Timer.periodic(widget.pollInterval, (_) => unawaited(_refresh())));
   }
 
   @override
@@ -404,9 +406,7 @@ class WebBrowserSubtitlePanelState$ extends State<WebBrowserSubtitlePanel> {
 
   @override
   void dispose() {
-    _poll?.cancel();
     _lookup?.removeListener(_onLookupChanged);
-    widget.storage?.removeListener(_onStorageChanged);
     _scroll.dispose();
     _offsetText.dispose();
     _offsetFocus.dispose();

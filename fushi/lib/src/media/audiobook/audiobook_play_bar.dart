@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
@@ -562,7 +563,8 @@ class AudiobookMiniPlayer extends StatefulWidget {
   State<AudiobookMiniPlayer> createState() => _AudiobookMiniPlayerState();
 }
 
-class _AudiobookMiniPlayerState extends State<AudiobookMiniPlayer> {
+class _AudiobookMiniPlayerState extends State<AudiobookMiniPlayer>
+    with StateResourceScope<AudiobookMiniPlayer> {
   Timer? _ticker;
 
   /// 所在子树的 [TickerMode]（被歌词覆盖层盖住 / 被别的路由盖住时为 false）。
@@ -572,6 +574,7 @@ class _AudiobookMiniPlayerState extends State<AudiobookMiniPlayer> {
   void initState() {
     super.initState();
     widget.controller.addListener(_onController);
+    onTeardown(() => widget.controller.removeListener(_onController));
   }
 
   @override
@@ -595,7 +598,6 @@ class _AudiobookMiniPlayerState extends State<AudiobookMiniPlayer> {
 
   @override
   void dispose() {
-    widget.controller.removeListener(_onController);
     _ticker?.cancel();
     super.dispose();
   }

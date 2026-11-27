@@ -24,6 +24,7 @@ import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 打开一部作品（由首页按各域既有路径实现）。
 typedef PanoramaOpenWork = Future<void> Function(PanoramaWork work);
@@ -318,16 +319,19 @@ class PanoramaCinematicPage extends ConsumerStatefulWidget {
       _PanoramaCinematicPageState();
 }
 
-class _PanoramaCinematicPageState extends ConsumerState<PanoramaCinematicPage> {
+class _PanoramaCinematicPageState extends ConsumerState<PanoramaCinematicPage>
+    with StateResourceScope<PanoramaCinematicPage> {
   bool _chrome = true;
   Timer? _hide;
 
   @override
   void initState() {
     super.initState();
-    _hide = Timer(const Duration(seconds: 2), () {
-      if (mounted) setState(() => _chrome = false);
-    });
+    _hide = ownTimer(
+      Timer(const Duration(seconds: 2), () {
+        if (mounted) setState(() => _chrome = false);
+      }),
+    );
   }
 
   @override

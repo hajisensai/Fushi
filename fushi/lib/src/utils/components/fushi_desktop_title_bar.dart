@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -387,7 +388,7 @@ class FushiDesktopTitleBar extends StatefulWidget {
 }
 
 class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
-    with WindowListener {
+    with WindowListener, StateResourceScope<FushiDesktopTitleBar> {
   bool _isMaximized = false;
 
   /// 窗口是否在前台。失焦时窗口按钮组整体降低强调（与系统标题栏失焦变灰
@@ -401,12 +402,14 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
   void initState() {
     super.initState();
     windowManager.addListener(this);
+    onTeardown(() => windowManager.removeListener(this));
     if (FushiDesktopTitleBar._hostIsMacOS) {
       // macOS 上 window_manager 的 [WindowListener] 收不到全屏通知：
       // macos_window_utils 持有 NSWindow.delegate 并把它的 delegate 覆盖掉。
       // [MacosFullscreenState] 挂的是 NSWindowDelegate，AppKit 在**所有**入口
       // （快捷键 / 「显示」菜单 / 系统全屏手势）上都发，是唯一能覆盖全部路径的信号。
-      MacosFullscreenState.instance.isFullscreen.addListener(
+      listenTo(
+        MacosFullscreenState.instance.isFullscreen,
         _onMacosFullscreenChanged,
       );
       unawaited(MacosFullscreenState.instance.ensureRegistered());
@@ -455,14 +458,11 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
 
   @override
   void dispose() {
-    windowManager.removeListener(this);
+    releaseResources();
     if (WindowCaptionChannel.onCaptionMaxButtonClick == _toggleMaximize) {
       WindowCaptionChannel.onCaptionMaxButtonClick = null;
     }
     if (FushiDesktopTitleBar._hostIsMacOS) {
-      MacosFullscreenState.instance.isFullscreen.removeListener(
-        _onMacosFullscreenChanged,
-      );
       FushiDesktopTitleBar.setContentFullscreen(
         owner: _macosNativeFullscreenOwner,
         enabled: false,
@@ -902,7 +902,8 @@ class _ImmersiveCaptionReveal extends StatefulWidget {
       _ImmersiveCaptionRevealState();
 }
 
-class _ImmersiveCaptionRevealState extends State<_ImmersiveCaptionReveal> {
+class _ImmersiveCaptionRevealState extends State<_ImmersiveCaptionReveal>
+    with StateResourceScope<_ImmersiveCaptionReveal> {
   bool _hovered = false;
   bool _focused = false;
   bool _touchRevealed = false;
@@ -1039,16 +1040,18 @@ class _ImmersiveCaptionRevealState extends State<_ImmersiveCaptionReveal> {
     // Windows 的最大化按钮命中区交给 runner（HTMAXBUTTON，贴靠布局）：指针停在
     // 它上面时 Flutter 只收到「离开」，悬停真值改由原生回传——不并进来，指针
     // 一移到最大化键整条就隐去（用户 2026-10-30 截图）。
-    WindowCaptionChannel.captionMaxButtonHovered.addListener(
-      _onNativeMaxButton,
-    );
-    WindowCaptionChannel.captionMaxButtonPressed.addListener(
-      _onNativeMaxButton,
-    );
-    FushiDesktopTitleBar._captionRevealRequested.addListener(
+    listenTo(WindowCaptionChannel.captionMaxButtonHovered, _onNativeMaxButton);
+    listenTo(WindowCaptionChannel.captionMaxButtonPressed, _onNativeMaxButton);
+    listenTo(
+      FushiDesktopTitleBar._captionRevealRequested,
       _onPageRevealRequest,
     );
     GestureBinding.instance.pointerRouter.addGlobalRoute(_onGlobalPointer);
+    onTeardown(
+      () => GestureBinding.instance.pointerRouter.removeGlobalRoute(
+        _onGlobalPointer,
+      ),
+    );
     // 挂上即把初始显隐推给红绿灯（沉浸页从隐藏态开始）。
     _syncConcealed();
   }
@@ -1057,16 +1060,7 @@ class _ImmersiveCaptionRevealState extends State<_ImmersiveCaptionReveal> {
   void dispose() {
     _cancelRevealDwell();
     FushiDesktopTitleBar._setImmersiveCaptionConcealed(false);
-    GestureBinding.instance.pointerRouter.removeGlobalRoute(_onGlobalPointer);
-    FushiDesktopTitleBar._captionRevealRequested.removeListener(
-      _onPageRevealRequest,
-    );
-    WindowCaptionChannel.captionMaxButtonHovered.removeListener(
-      _onNativeMaxButton,
-    );
-    WindowCaptionChannel.captionMaxButtonPressed.removeListener(
-      _onNativeMaxButton,
-    );
+    releaseResources();
     super.dispose();
   }
 

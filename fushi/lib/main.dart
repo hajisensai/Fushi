@@ -1443,17 +1443,11 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     }
     if (Platform.isWindows || Platform.isLinux) {
       _externalVideoChannel.setMethodCallHandler(_handleExternalVideoChannel);
-    }
-    if (Platform.isLinux) {
-      // BUG-3089：处理器挂上之前 runner 收到的二次启动参数在它那边排队，这里
-      // 通知它冲出来；不排队的话处理器注册前只有 ChannelBuffers 的 1 条容量，
-      // 首启加载期间连续转交，前一个会被挤掉。
-      unawaited(
-        LinuxExternalOpenChannel.notifyHandlerReady(_externalVideoChannel),
-      );
+      onTeardown(() => _externalVideoChannel.setMethodCallHandler(null));
     }
     if (Platform.isWindows) {
       _systemThemeChannel.setMethodCallHandler(_handleSystemThemeChannel);
+      onTeardown(() => _systemThemeChannel.setMethodCallHandler(null));
     }
     registerAppOpContext(
       OpContext(
@@ -1468,9 +1462,6 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     registerAppLibraryCurator();
     // AI 管库自动复查（流水线之后起无人值守的助手会话，spec 2026-11-22 §7）。
     registerAppLibraryAgentReviewer();
-    if (_isDesktop) {
-      unawaited(_startCtlServer());
-    }
     FushiToast.navigatorKey = ref.read(appProvider).navigatorKey;
     // 加密归档（zip / 7z / rar）导入的口令来源：所有走归档解包的导入入口共用。
     ArchivePasswords.provider = AppArchivePasswordProvider.forNavigator(
@@ -1494,7 +1485,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     installDownloadGatewayChallengeSolver(ref.read(appProvider).navigatorKey);
 
     if (Platform.isAndroid) {
-      WidgetsBinding.instance.addPostFrameCallback((_) async {
+      schedulePostFrame((_) async {
         intents.ReceiveIntent.getInitialIntent().then(
           (intent) => handleIntent(intent: intent, isInitial: true),
         );
@@ -1524,7 +1515,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       );
     }
     if (Platform.isIOS) {
-      WidgetsBinding.instance.addPostFrameCallback((_) async {
+      schedulePostFrame((_) async {
         IosUrlEventChannel.getInitialUrl().then(
           (url) => handleIncomingUrl(data: url, isInitial: true),
         );
@@ -1534,6 +1525,19 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
           ),
         );
       });
+    }
+    // 以下异步任务起跑就撤不回来，放在同步装配全部完成之后（BUG-5604）。
+    if (Platform.isLinux) {
+      // BUG-3089：处理器挂上之前 runner 收到的二次启动参数在它那边排队，这里
+      // 通知它冲出来；不排队的话处理器注册前只有 ChannelBuffers 的 1 条容量，
+      // 首启加载期间连续转交，前一个会被挤掉。
+      unawaited(
+        LinuxExternalOpenChannel.notifyHandlerReady(_externalVideoChannel),
+      );
+    }
+    if (_isDesktop) {
+      // 起好时本 State 已挂载失败 / 已 dispose 则当场停掉（[resourcesReleased]）。
+      unawaited(_startCtlServer());
     }
   }
 
@@ -2619,7 +2623,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
         appVersion: () => ref.read(appProvider).packageInfo.version,
       ),
     );
-    if (!mounted) {
+    if (!mounted || resourcesReleased) {
       await server?.stop();
       return;
     }

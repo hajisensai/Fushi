@@ -32,6 +32,7 @@ import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 档位显示名（`Hi-Res` 是通行写法，各语言不译，仍走 i18n 便于个别语言调整）。
 String musicPluginQualityLabel(MusicPluginQuality q) => switch (q) {
@@ -74,9 +75,9 @@ class MusicQualitySheet extends StatefulWidget {
   State<MusicQualitySheet> createState() => _MusicQualitySheetState();
 }
 
-class _MusicQualitySheetState extends State<MusicQualitySheet> {
+class _MusicQualitySheetState extends State<MusicQualitySheet>
+    with StateResourceScope<MusicQualitySheet> {
   MusicSignalPathSnapshot? _snapshot;
-  Timer? _refresh;
   bool _setDefault = true;
 
   MusicPlayerEngine get _engine => widget.host.musicPlayerEngine;
@@ -84,20 +85,12 @@ class _MusicQualitySheetState extends State<MusicQualitySheet> {
   @override
   void initState() {
     super.initState();
-    _engine.addListener(_onEngine);
+    listenTo(_engine, _onEngine);
     unawaited(_read());
     // 换档后重取要一会儿：开着时每秒重读一次实际规格。
-    _refresh = Timer.periodic(
-      const Duration(seconds: 1),
-      (_) => unawaited(_read()),
+    ownTimer(
+      Timer.periodic(const Duration(seconds: 1), (_) => unawaited(_read())),
     );
-  }
-
-  @override
-  void dispose() {
-    _refresh?.cancel();
-    _engine.removeListener(_onEngine);
-    super.dispose();
   }
 
   void _onEngine() {

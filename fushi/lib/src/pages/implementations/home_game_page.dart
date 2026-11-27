@@ -53,6 +53,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/pages/shared/library_section_tabs.dart';
 import 'package:fushi/src/utils/components/section_swipe_navigator.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 // GameSection / gameSectionNotifier 已迁到 game_shared.dart（三页共享），
 // 这里 re-export 保持既有 import 站点（如原生浮窗控制器）零改动。
@@ -135,7 +136,8 @@ class HomeGamePage extends StatefulWidget {
   State<HomeGamePage> createState() => _HomeGamePageState();
 }
 
-class _HomeGamePageState extends State<HomeGamePage> {
+class _HomeGamePageState extends State<HomeGamePage>
+    with StateResourceScope<HomeGamePage> {
   late GameSection _section = gameSectionNotifier.value;
 
   /// 「发现」子区访问过才构建：[IndexedStack] 会急切构建全部子区，而发现页一挂载
@@ -166,8 +168,8 @@ class _HomeGamePageState extends State<HomeGamePage> {
   @override
   void initState() {
     super.initState();
-    gameSectionNotifier.addListener(_onSectionRequested);
-    _controller.gameExitedCount.addListener(_onGameExited);
+    listenTo(gameSectionNotifier, _onSectionRequested);
+    listenTo(_controller.gameExitedCount, _onGameExited);
   }
 
   /// 游戏关掉、会话随之自动结束（BUG-4002）：还停在捕获工作台上就回游戏首页。
@@ -192,8 +194,8 @@ class _HomeGamePageState extends State<HomeGamePage> {
   void dispose() {
     _chrome.dispose();
     _actionsSlot.dispose();
-    gameSectionNotifier.removeListener(_onSectionRequested);
-    _controller.gameExitedCount.removeListener(_onGameExited);
+    // 先摘监听再复位 notifier：复位不该回灌到本页（此刻已在 dispose 中）。
+    releaseResources();
     // HomeGamePage 生命周期结束后不要把一次外部导航请求泄漏给下一次挂载（也避免
     // profile/窗口重建后意外停在旧工作台）。回落到默认首屏（游戏首页）。运行中的
     // 页面仍由 notifier 正常保态。

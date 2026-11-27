@@ -61,11 +61,10 @@ class _PanoramaBookFlipState extends State<PanoramaBookFlip>
     widget.excerpt?.then((String? v) {
       if (mounted) setState(() => _text = v);
     });
-    _c
-      ..addStatusListener((AnimationStatus s) {
-        if (s == AnimationStatus.completed) widget.onOpened();
-      })
-      ..forward();
+    _c.addStatusListener((AnimationStatus s) {
+      if (s == AnimationStatus.completed) widget.onOpened();
+    });
+    _c.forward();
   }
 
   @override

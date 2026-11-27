@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi_engine/media/torrent/embedded_torrent_host_client.dart';
@@ -98,7 +99,9 @@ class TorrentTaskDetailDialog extends ConsumerStatefulWidget {
 
 class _TorrentTaskDetailDialogState
     extends ConsumerState<TorrentTaskDetailDialog>
-    with SingleTickerProviderStateMixin {
+    with
+        SingleTickerProviderStateMixin,
+        StateResourceScope<TorrentTaskDetailDialog> {
   static const Duration _pollInterval = Duration(seconds: 2);
 
   late final TabController _tabController;
@@ -109,7 +112,6 @@ class _TorrentTaskDetailDialogState
 
   /// 后端是否归本状态所有（注入的测试后端不 close）。
   bool _ownsBackend = true;
-  Timer? _timer;
   bool _snapshotRefreshing = false;
   bool _snapshotRefreshPending = false;
   final Set<int> _refreshingTabs = <int>{};
@@ -168,12 +170,11 @@ class _TorrentTaskDetailDialogState
       }
     }
     unawaited(_refresh());
-    _timer = Timer.periodic(_pollInterval, (_) => unawaited(_refresh()));
+    ownTimer(Timer.periodic(_pollInterval, (_) => unawaited(_refresh())));
   }
 
   @override
   void dispose() {
-    _timer?.cancel();
     _tabController.dispose();
     if (_ownsBackend) _backend?.close();
     super.dispose();

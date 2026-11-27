@@ -1,4 +1,5 @@
 import 'dart:async' show unawaited;
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:collection/collection.dart' show mergeSort;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -171,7 +172,8 @@ enum _GameTypeFilter {
   }
 }
 
-class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
+class _MediaDiscoveryPageState extends State<MediaDiscoveryPage>
+    with StateResourceScope<MediaDiscoveryPage> {
   /// Apple macOS 档「来源」货架是否展开成网格（「查看全部」）。
   bool _appleSourcesExpanded = false;
 
@@ -469,7 +471,7 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
   void initState() {
     super.initState();
     _sourceId = widget.initialSourceId ?? kDiscoveryAllSourcesId;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       if (mounted) unawaited(_load());
     });
   }

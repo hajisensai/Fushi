@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
@@ -87,7 +88,8 @@ const double kSrsStatsThreeColumnMinWidth = 1240;
 /// 记忆分布的四个视图。
 enum _MemoryView { interval, stability, difficulty, retrievability }
 
-class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
+class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab>
+    with StateResourceScope<SrsStatisticsTab> {
   SrsStatsLoad? _bundle;
 
   /// 当前范围 + 牌组的统计（内核 `stats_report`）；换范围 / 牌组时新的一份到之前照旧显示这份。
@@ -155,7 +157,7 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
         if (mounted) setState(() => _dateSymbolsReady = true);
       }),
     );
-    WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_load()));
+    schedulePostFrame((_) => unawaited(_load()));
   }
 
   @override

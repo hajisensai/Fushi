@@ -6,6 +6,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// One reminder shared by the video library's home, series and all sections.
 class VideoOnlineServicesBanner extends StatefulWidget {
@@ -25,11 +26,13 @@ class VideoOnlineServicesBanner extends StatefulWidget {
       _VideoOnlineServicesBannerState();
 }
 
-class _VideoOnlineServicesBannerState extends State<VideoOnlineServicesBanner> {
+class _VideoOnlineServicesBannerState extends State<VideoOnlineServicesBanner>
+    with StateResourceScope<VideoOnlineServicesBanner> {
   @override
   void initState() {
     super.initState();
     widget.preferences.addListener(_preferencesChanged);
+    onTeardown(() => widget.preferences.removeListener(_preferencesChanged));
   }
 
   @override
@@ -39,12 +42,6 @@ class _VideoOnlineServicesBannerState extends State<VideoOnlineServicesBanner> {
       oldWidget.preferences.removeListener(_preferencesChanged);
       widget.preferences.addListener(_preferencesChanged);
     }
-  }
-
-  @override
-  void dispose() {
-    widget.preferences.removeListener(_preferencesChanged);
-    super.dispose();
   }
 
   void _preferencesChanged() {

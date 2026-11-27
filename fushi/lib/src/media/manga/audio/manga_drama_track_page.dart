@@ -19,6 +19,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/media/display_title.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart'
     show pickRealFilePaths;
@@ -190,7 +191,8 @@ class MangaDramaTrackPanel extends StatefulWidget {
   State<MangaDramaTrackPanel> createState() => _MangaDramaTrackPanelState();
 }
 
-class _MangaDramaTrackPanelState extends State<MangaDramaTrackPanel> {
+class _MangaDramaTrackPanelState extends State<MangaDramaTrackPanel>
+    with StateResourceScope<MangaDramaTrackPanel> {
   bool _loaded = false;
   MangaDramaVolume? _volume;
   List<String> _files = const <String>[];
@@ -203,21 +205,16 @@ class _MangaDramaTrackPanelState extends State<MangaDramaTrackPanel> {
   @override
   void initState() {
     super.initState();
-    widget.tasks.addListener(_onTasks);
+    listenTo(widget.tasks, _onTasks);
+    // 只摘监听：任务属于进程级任务表，离开页面照跑，结束时全局提示。挂的是哪个任务
+    // 随 [_attach] 变，撤销时读当下那个（BUG-5604：挂载失败与 dispose 共用）。
+    onTeardown(() => _task?.removeListener(_onTask));
     final MangaDramaTask? existing = widget.tasks.taskFor(widget.bookKey);
     if (existing != null) {
       _files = existing.audioPaths;
       _attach(existing);
     }
     unawaited(_load());
-  }
-
-  @override
-  void dispose() {
-    // 只摘监听：任务属于进程级任务表，离开页面照跑，结束时全局提示。
-    widget.tasks.removeListener(_onTasks);
-    _task?.removeListener(_onTask);
-    super.dispose();
   }
 
   void _attach(MangaDramaTask? task) {

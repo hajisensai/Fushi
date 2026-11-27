@@ -60,6 +60,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 读齐本机全部在线来源（插件音源 + 服务器），未排序。插件含本机装的与经互联中继的
 /// （[isMusicPluginSourcesUsable]）；两者都没有的平台没有插件。
@@ -135,8 +136,8 @@ class MusicOnlineSourcesView extends ConsumerStatefulWidget {
       _MusicOnlineSourcesViewState();
 }
 
-class _MusicOnlineSourcesViewState
-    extends ConsumerState<MusicOnlineSourcesView> {
+class _MusicOnlineSourcesViewState extends ConsumerState<MusicOnlineSourcesView>
+    with StateResourceScope<MusicOnlineSourcesView> {
   /// null = 还在加载。
   List<MusicOrderedSource>? _rows;
   final GlobalKey _addAnchor = GlobalKey(debugLabel: 'music-sources-add');
@@ -144,22 +145,14 @@ class _MusicOnlineSourcesViewState
   /// initState 里取一次：await 之后页面可能已 dispose，不再经过 ref。
   late final AppModel _app = ref.read(appProvider);
 
-  /// 插件装 / 卸 / 启停都会改变「来源」列表：本页的拖放落点装上的插件要立刻出现。
-  StreamSubscription<void>? _pluginChanges;
-
   @override
   void initState() {
     super.initState();
-    _pluginChanges = _app.musicPluginManager.changes.listen(
-      (_) => unawaited(_load()),
+    // 插件装 / 卸 / 启停都会改变「来源」列表：本页的拖放落点装上的插件要立刻出现。
+    ownSubscription(
+      _app.musicPluginManager.changes.listen((_) => unawaited(_load())),
     );
     unawaited(_load());
-  }
-
-  @override
-  void dispose() {
-    unawaited(_pluginChanges?.cancel());
-    super.dispose();
   }
 
   Future<void> _load() async {

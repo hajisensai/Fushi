@@ -15,6 +15,7 @@ import 'dart:ui' as ui;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_assets.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_cover.dart';
@@ -335,7 +336,8 @@ class TemperaVisualizer extends StatefulWidget {
   State<TemperaVisualizer> createState() => _TemperaVisualizerState();
 }
 
-class _TemperaVisualizerState extends State<TemperaVisualizer> {
+class _TemperaVisualizerState extends State<TemperaVisualizer>
+    with StateResourceScope<TemperaVisualizer> {
   late TemperaEngine _engine;
   int _revision = 0;
 
@@ -371,7 +373,7 @@ class _TemperaVisualizerState extends State<TemperaVisualizer> {
     _engine = TemperaEngine(_buildConfig());
     _loadCover();
     _loadPack();
-    LyricVisualizerAssetStore.changes.addListener(_onAssetsChanged);
+    listenTo(LyricVisualizerAssetStore.changes, _onAssetsChanged);
   }
 
   /// 素材库变了（参数面板里加 / 删图、改摆放）：重读当前包，已解码的图不重新解码。
@@ -388,7 +390,6 @@ class _TemperaVisualizerState extends State<TemperaVisualizer> {
 
   @override
   void dispose() {
-    LyricVisualizerAssetStore.changes.removeListener(_onAssetsChanged);
     _detachCover();
     _coverInfo?.dispose();
     _clearLayers();

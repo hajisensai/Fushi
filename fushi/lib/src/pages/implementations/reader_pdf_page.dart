@@ -206,6 +206,7 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    onTeardown(() => WidgetsBinding.instance.removeObserver(this));
     // 进程退出兜底：把未落盘的页码 + 学习段 flush 掉（与 EPUB 阅读器同纪律）。
     ExitFlushRegistry.instance.register(_flushForExit);
     // 桌面控制通道（`fushi_cli reader ...`）的遥控面；dispose 注销。
@@ -216,7 +217,6 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
   void dispose() {
     ExitFlushRegistry.instance.unregister(_flushForExit);
     readerSessionRemotes.unregister(_sessionRemote);
-    WidgetsBinding.instance.removeObserver(this);
     _saveDebounce?.cancel();
     // 有声书：解绑本页回调（会话可能比本页活得久，后台续播）；没开「退出后续播」
     // 时一并停掉。正常退出已在 onSourcePagePop 停过，这里是硬拆栈的兜底，二次 stop

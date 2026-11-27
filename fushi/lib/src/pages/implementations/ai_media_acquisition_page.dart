@@ -7,6 +7,7 @@
 /// AI 永远不直接触发下载。
 library;
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
@@ -287,7 +288,8 @@ class AiMediaAcquisitionPage extends StatefulWidget {
   State<AiMediaAcquisitionPage> createState() => _AiMediaAcquisitionPageState();
 }
 
-class _AiMediaAcquisitionPageState extends State<AiMediaAcquisitionPage> {
+class _AiMediaAcquisitionPageState extends State<AiMediaAcquisitionPage>
+    with StateResourceScope<AiMediaAcquisitionPage> {
   late final TextEditingController _input = TextEditingController(
     text: widget.initialQuery?.trim() ?? '',
   );
@@ -307,7 +309,7 @@ class _AiMediaAcquisitionPageState extends State<AiMediaAcquisitionPage> {
   void initState() {
     super.initState();
     if (_input.text.isNotEmpty) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+      schedulePostFrame((_) {
         if (mounted) unawaited(_submit());
       });
     }

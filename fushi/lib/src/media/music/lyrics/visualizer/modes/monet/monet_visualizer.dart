@@ -25,6 +25,7 @@ import 'package:flutter/rendering.dart'
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/backgrounds/monet_background.dart'
     show kMonetBackgroundId;
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
@@ -83,7 +84,8 @@ class _MonetStage extends StatefulWidget {
   State<_MonetStage> createState() => _MonetStageState();
 }
 
-class _MonetStageState extends State<_MonetStage> {
+class _MonetStageState extends State<_MonetStage>
+    with StateResourceScope<_MonetStage> {
   final MonetRailController _rail = MonetRailController();
   late double _introStart = widget.ticks.value.elapsed;
 
@@ -136,6 +138,7 @@ class _MonetStageState extends State<_MonetStage> {
     super.initState();
     _lastTimeMs = widget.ticks.value.timeMs;
     widget.ticks.addListener(_onTick);
+    onTeardown(() => widget.ticks.removeListener(_onTick));
   }
 
   @override
@@ -165,7 +168,6 @@ class _MonetStageState extends State<_MonetStage> {
 
   @override
   void dispose() {
-    widget.ticks.removeListener(_onTick);
     _rail.dispose();
     super.dispose();
   }

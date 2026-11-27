@@ -213,7 +213,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage>
   void initState() {
     super.initState();
     _rangeSelection.addListener(_onRangeChanged);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _syncAndLoad());
+    schedulePostFrame((_) => _syncAndLoad());
   }
 
   @override

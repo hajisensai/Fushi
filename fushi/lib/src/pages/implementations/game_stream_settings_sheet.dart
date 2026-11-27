@@ -10,6 +10,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// Moonlight-style stream settings. Returns the edited settings, or null when
 /// dismissed without saving. [volumeAvailable] shows the receiver-only
@@ -55,13 +56,17 @@ class GameStreamSettingsSheet extends StatefulWidget {
       _GameStreamSettingsSheetState();
 }
 
-class _GameStreamSettingsSheetState extends State<GameStreamSettingsSheet> {
+class _GameStreamSettingsSheetState extends State<GameStreamSettingsSheet>
+    with StateResourceScope<GameStreamSettingsSheet> {
   late GameStreamVideoSettings _settings = widget.initial;
 
   @override
   void initState() {
     super.initState();
     widget.volumeAvailable?.addListener(_onVolumeAvailableChanged);
+    onTeardown(
+      () => widget.volumeAvailable?.removeListener(_onVolumeAvailableChanged),
+    );
   }
 
   @override
@@ -71,12 +76,6 @@ class _GameStreamSettingsSheetState extends State<GameStreamSettingsSheet> {
       oldWidget.volumeAvailable?.removeListener(_onVolumeAvailableChanged);
       widget.volumeAvailable?.addListener(_onVolumeAvailableChanged);
     }
-  }
-
-  @override
-  void dispose() {
-    widget.volumeAvailable?.removeListener(_onVolumeAvailableChanged);
-    super.dispose();
   }
 
   void _onVolumeAvailableChanged() {

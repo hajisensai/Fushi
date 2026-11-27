@@ -42,6 +42,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 选来源面板里一份歌词候选的标题：插件来源（标签是插件 id）标出是平台曲目自带歌词
 /// （`lyrics` 能力）还是歌词插件按标题 / 艺人搜到的（`lyricsSearch` 能力）——同一个插件
@@ -186,25 +187,18 @@ class MusicPluginSettingsBody extends StatefulWidget {
       _MusicPluginSettingsBodyState();
 }
 
-class _MusicPluginSettingsBodyState extends State<MusicPluginSettingsBody> {
+class _MusicPluginSettingsBodyState extends State<MusicPluginSettingsBody>
+    with StateResourceScope<MusicPluginSettingsBody> {
   MusicPluginManager get _manager => widget.appModel.musicPluginManager;
   late Future<List<InstalledMusicPlugin>> _plugins = _manager.listInstalled();
   bool _busy = false;
 
-  /// 安装 / 卸载 / 启停一律经 [MusicPluginManager.changes] 刷新：安装可能来自本页的
-  /// 按钮，也可能来自页面上的拖放落点（[MusicPluginDropTarget]），列表不该只认其一。
-  StreamSubscription<void>? _changes;
-
   @override
   void initState() {
     super.initState();
-    _changes = _manager.changes.listen((_) => _reload());
-  }
-
-  @override
-  void dispose() {
-    unawaited(_changes?.cancel());
-    super.dispose();
+    // 安装 / 卸载 / 启停一律经 [MusicPluginManager.changes] 刷新：安装可能来自本页的
+    // 按钮，也可能来自页面上的拖放落点（[MusicPluginDropTarget]），列表不该只认其一。
+    ownSubscription(_manager.changes.listen((_) => _reload()));
   }
 
   void _reload() {

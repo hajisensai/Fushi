@@ -49,6 +49,7 @@ import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 「问题没解决，重新提交」的原反馈：用来预填提交页（分类 / 标题 / 正文），截图可选带上。
 class FeedbackReopenSeed {
@@ -117,7 +118,8 @@ class FeedbackComposePage extends ConsumerStatefulWidget {
       _FeedbackComposePageState();
 }
 
-class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
+class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage>
+    with StateResourceScope<FeedbackComposePage> {
   final TextEditingController _title = TextEditingController();
   final TextEditingController _body = TextEditingController();
   final TextEditingController _contact = TextEditingController();
@@ -211,7 +213,6 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
   /// 本次打开恢复了草稿：显示「已恢复 · 丢弃草稿」。
   int? _restoredAt;
   Timer? _draftTimer;
-  late final AppLifecycleListener _lifecycle;
 
   /// 磁盘上草稿此刻的内容：[_kNoDraftOnDisk] = 没有草稿，[FeedbackComposeDraft] = 上次
   /// 写下去的那份，null = 不知道（下一次落盘照写）。落盘前与它比，没变就不写——桌面
@@ -228,19 +229,19 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
     super.initState();
     _service = ref.read(feedbackServiceProvider);
     HardwareKeyboard.instance.addHandler(_onKey);
+    onTeardown(() => HardwareKeyboard.instance.removeHandler(_onKey));
     for (final TextEditingController c in <TextEditingController>[
       _title,
       _body,
       _contact,
     ]) {
-      c.addListener(_scheduleDraftSave);
+      listenTo(c, _scheduleDraftSave);
     }
     // 进后台（切走 / 锁屏 / 可能随后被杀）时立刻落盘，不等防抖。
-    _lifecycle = AppLifecycleListener(
-      onStateChange: (AppLifecycleState state) {
-        if (state != AppLifecycleState.resumed) _flushDraft();
-      },
+    final AppLifecycleListener lifecycle = AppLifecycleListener(
+      onStateChange: _onLifecycleState,
     );
+    onTeardown(lifecycle.dispose);
     final FeedbackReopenSeed? seed = widget.reopenOf;
     final FeedbackComposePrefill? prefill = widget.prefill;
     if (seed != null) {
@@ -509,6 +510,10 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
     unawaited(_prefillContact());
   }
 
+  void _onLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) _flushDraft();
+  }
+
   @override
   void dispose() {
     // 离开页面：进行中的压缩一并中止（强杀 ffmpeg、清掉半成品），压好没发的产物也删掉。
@@ -517,8 +522,8 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
     _staged = null;
     // 返回 / 切走页面：把还在防抖里的改动落盘。
     _flushDraft();
-    _lifecycle.dispose();
-    HardwareKeyboard.instance.removeHandler(_onKey);
+    // 草稿监听挂在下面要 dispose 的控制器上：先撤销再释放控制器。
+    releaseResources();
     _title.dispose();
     _body.dispose();
     _contact.dispose();

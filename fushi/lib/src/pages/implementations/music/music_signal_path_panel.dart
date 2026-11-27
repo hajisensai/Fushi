@@ -26,6 +26,7 @@ import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 打开面板。
 Future<void> showMusicSignalPathPanel(
@@ -61,29 +62,21 @@ class MusicSignalPathPanel extends StatefulWidget {
   State<MusicSignalPathPanel> createState() => _MusicSignalPathPanelState();
 }
 
-class _MusicSignalPathPanelState extends State<MusicSignalPathPanel> {
+class _MusicSignalPathPanelState extends State<MusicSignalPathPanel>
+    with StateResourceScope<MusicSignalPathPanel> {
   MusicSignalPathSnapshot? _snapshot;
-  Timer? _refresh;
 
   MusicPlayerEngine get _engine => widget.appModel.musicSession.engine;
 
   @override
   void initState() {
     super.initState();
-    _engine.addListener(_onEngine);
+    listenTo(_engine, _onEngine);
     unawaited(_read());
     // 面板开着时每秒重读一次属性（切歌 / 设备重开 / 用户在别处改了设置都看得到）。
-    _refresh = Timer.periodic(
-      const Duration(seconds: 1),
-      (_) => unawaited(_read()),
+    ownTimer(
+      Timer.periodic(const Duration(seconds: 1), (_) => unawaited(_read())),
     );
-  }
-
-  @override
-  void dispose() {
-    _refresh?.cancel();
-    _engine.removeListener(_onEngine);
-    super.dispose();
   }
 
   void _onEngine() {

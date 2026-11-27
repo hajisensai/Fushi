@@ -21,6 +21,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi_core/fushi_core.dart' show MediaTrackingMappingRow;
 import 'package:fushi_engine/media/tracking/book_series_link.dart';
 import 'package:fushi_engine/media/tracking/book_tracking_link.dart';
@@ -73,7 +74,8 @@ class BookTrackingDialog extends StatefulWidget {
   State<BookTrackingDialog> createState() => _BookTrackingDialogState();
 }
 
-class _BookTrackingDialogState extends State<BookTrackingDialog> {
+class _BookTrackingDialogState extends State<BookTrackingDialog>
+    with StateResourceScope<BookTrackingDialog> {
   BookTrackingOverview? _overview;
   bool _linking = true;
 
@@ -101,12 +103,12 @@ class _BookTrackingDialogState extends State<BookTrackingDialog> {
   void initState() {
     super.initState();
     _service.statusRevision.addListener(_reload);
+    onTeardown(() => _service.statusRevision.removeListener(_reload));
     unawaited(_open());
   }
 
   @override
   void dispose() {
-    _service.statusRevision.removeListener(_reload);
     for (final TextEditingController controller in _queries.values) {
       controller.dispose();
     }

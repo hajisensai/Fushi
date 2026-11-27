@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
     show FushiDividerControl;
 
@@ -621,7 +622,8 @@ class _SidebarBookmarks extends StatefulWidget {
   State<_SidebarBookmarks> createState() => _SidebarBookmarksState();
 }
 
-class _SidebarBookmarksState extends State<_SidebarBookmarks> {
+class _SidebarBookmarksState extends State<_SidebarBookmarks>
+    with StateResourceScope<_SidebarBookmarks> {
   List<WebBrowserBookmark> _items = const <WebBrowserBookmark>[];
   int _generation = 0;
 
@@ -629,6 +631,7 @@ class _SidebarBookmarksState extends State<_SidebarBookmarks> {
   void initState() {
     super.initState();
     widget.store.addListener(_load);
+    onTeardown(() => widget.store.removeListener(_load));
     _load();
   }
 
@@ -640,12 +643,6 @@ class _SidebarBookmarksState extends State<_SidebarBookmarks> {
       widget.store.addListener(_load);
       _load();
     }
-  }
-
-  @override
-  void dispose() {
-    widget.store.removeListener(_load);
-    super.dispose();
   }
 
   Future<void> _load() async {

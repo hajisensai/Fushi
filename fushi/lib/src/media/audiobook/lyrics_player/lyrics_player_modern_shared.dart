@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_control_layout.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_control_layout_editor.dart'
     show lyricsControlItemIcon, lyricsControlItemLabel;
@@ -366,15 +367,14 @@ class LyricsClockSecondsBuilder extends StatefulWidget {
       _LyricsClockSecondsBuilderState();
 }
 
-class _LyricsClockSecondsBuilderState extends State<LyricsClockSecondsBuilder> {
+class _LyricsClockSecondsBuilderState extends State<LyricsClockSecondsBuilder>
+    with StateResourceScope<LyricsClockSecondsBuilder> {
   late int _second = widget.clock.position.inSeconds;
   late int _total = widget.clock.duration.inSeconds;
-  Timer? _timer;
-
   @override
   void initState() {
     super.initState();
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) => _poll());
+    ownTimer(Timer.periodic(const Duration(seconds: 1), (_) => _poll()));
   }
 
   @override
@@ -393,12 +393,6 @@ class _LyricsClockSecondsBuilderState extends State<LyricsClockSecondsBuilder> {
         _total = total;
       });
     }
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
   }
 
   @override
@@ -426,14 +420,13 @@ class LyricsStatsBuilder extends StatefulWidget {
   State<LyricsStatsBuilder> createState() => _LyricsStatsBuilderState();
 }
 
-class _LyricsStatsBuilderState extends State<LyricsStatsBuilder> {
+class _LyricsStatsBuilderState extends State<LyricsStatsBuilder>
+    with StateResourceScope<LyricsStatsBuilder> {
   late LyricsPlayerStats _stats = widget.clock.stats;
-  Timer? _timer;
-
   @override
   void initState() {
     super.initState();
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) => _poll());
+    ownTimer(Timer.periodic(const Duration(seconds: 1), (_) => _poll()));
   }
 
   @override
@@ -446,12 +439,6 @@ class _LyricsStatsBuilderState extends State<LyricsStatsBuilder> {
     if (!mounted) return;
     final LyricsPlayerStats next = widget.clock.stats;
     if (next != _stats) setState(() => _stats = next);
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
   }
 
   // 自带重绘边界：读数每秒一变只重录这一小块，不连带播放卡投影与封面。

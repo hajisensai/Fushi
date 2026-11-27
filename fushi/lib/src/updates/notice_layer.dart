@@ -27,6 +27,7 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// 用外部应用打开通知链接。
@@ -61,7 +62,8 @@ class NoticeLayer extends StatefulWidget {
   State<NoticeLayer> createState() => _NoticeLayerState();
 }
 
-class _NoticeLayerState extends State<NoticeLayer> {
+class _NoticeLayerState extends State<NoticeLayer>
+    with StateResourceScope<NoticeLayer> {
   bool _dialogOpen = false;
 
   /// 已取到、还没弹的本地对话框。
@@ -71,10 +73,11 @@ class _NoticeLayerState extends State<NoticeLayer> {
   void initState() {
     super.initState();
     widget.feed.notices.addListener(_onNoticesChanged);
+    onTeardown(() => widget.feed.notices.removeListener(_onNoticesChanged));
     _onNoticesChanged();
     final Future<RemoteNotice?> Function()? local = widget.localDialog;
     if (local != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+      schedulePostFrame((_) {
         unawaited(_loadLocalDialog(local));
       });
     }
@@ -95,12 +98,6 @@ class _NoticeLayerState extends State<NoticeLayer> {
       widget.feed.notices.addListener(_onNoticesChanged);
       _onNoticesChanged();
     }
-  }
-
-  @override
-  void dispose() {
-    widget.feed.notices.removeListener(_onNoticesChanged);
-    super.dispose();
   }
 
   void _onNoticesChanged() {

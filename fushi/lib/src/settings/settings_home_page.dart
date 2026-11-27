@@ -118,12 +118,10 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
   void initState() {
     super.initState();
     _narrowScrollController.addListener(_onNarrowScroll);
-    settingsDestinationRequest.addListener(_onDestinationRequested);
+    listenTo(settingsDestinationRequest, _onDestinationRequested);
     // 设置 tab 还没挂载时就发来的请求：挂载后第一帧消费（那时才知道宽窄）。
     if (settingsDestinationRequest.value != null) {
-      WidgetsBinding.instance.addPostFrameCallback(
-        (_) => _onDestinationRequested(),
-      );
+      schedulePostFrame((_) => _onDestinationRequested());
     }
     // 错误 / 调试日志、游戏内查词准入、推荐包下载阶段（BUG-2165：宽屏内联主从
     // 同样要实时刷新）由读它们的分组自己订阅（SettingsSection.liveListenable），
@@ -158,7 +156,6 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
         (Duration _) => companionSettingsHomeCategory.value = null,
       );
     }
-    settingsDestinationRequest.removeListener(_onDestinationRequested);
     _searchController.dispose();
     _searchFocusNode.dispose();
     _narrowScrollController.removeListener(_onNarrowScroll);

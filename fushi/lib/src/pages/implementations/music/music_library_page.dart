@@ -529,9 +529,6 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage>
     super.initState();
     listenTo(MusicViewStyleStore.instance, _onViewStyleChanged);
     listenTo(MusicDiscArtIndex.instance.albums, _onDiscArtChanged);
-    unawaited(_reload());
-    unawaited(_reloadServerAlbums());
-    unawaited(_reloadOnlineSources());
     // 「在线 › 插件」/ 来源页拖放装上、卸掉、启停的插件：推荐页签与搜索来源跟着变。
     if (widget.snapshotLoader == null &&
         _app.isPreferencesReady &&
@@ -567,6 +564,10 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage>
       // 解锁 / 重新隐藏上锁的作品。
       listenTo(MediaLockSession.instance.unlocked, _onLockSessionChanged);
     }
+    // 首载起跑就撤不回来（只认 mounted），放在同步装配全部完成之后（BUG-5604）。
+    unawaited(_reload());
+    unawaited(_reloadServerAlbums());
+    unawaited(_reloadOnlineSources());
   }
 
   void _onLockSessionChanged() => unawaited(_reload());

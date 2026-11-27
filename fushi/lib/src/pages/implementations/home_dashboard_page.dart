@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:math' as math;
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart'
     show FushiShellHeaderActions;
 import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
@@ -321,13 +322,11 @@ class _HomeAvatarPill extends ConsumerStatefulWidget {
   ConsumerState<_HomeAvatarPill> createState() => _HomeAvatarPillState();
 }
 
-class _HomeAvatarPillState extends ConsumerState<_HomeAvatarPill> {
+class _HomeAvatarPillState extends ConsumerState<_HomeAvatarPill>
+    with StateResourceScope<_HomeAvatarPill> {
   /// 当前 Profile 名（没开排行榜账户时的首字来源）。
   String? _profileName;
   bool _selfRequested = false;
-
-  /// `profiles` / `preferences` 表的写入通知（改名、切换激活 Profile）。
-  StreamSubscription<Set<TableUpdate>>? _profileChanges;
 
   /// 名字读取的代次：写入通知可能连发，只认最后一次发起的读取结果。
   int _loadGeneration = 0;
@@ -336,23 +335,20 @@ class _HomeAvatarPillState extends ConsumerState<_HomeAvatarPill> {
   void initState() {
     super.initState();
     final FushiDatabase db = ref.read(appProvider).database;
-    _profileChanges = db
-        .tableUpdates(
-          TableUpdateQuery.onAllTables(
-            <ResultSetImplementation<dynamic, dynamic>>[
-              db.profiles,
-              db.preferences,
-            ],
-          ),
-        )
-        .listen((Set<TableUpdate> _) => unawaited(_loadProfileName()));
+    // `profiles` / `preferences` 表的写入通知（改名、切换激活 Profile）。
+    ownSubscription(
+      db
+          .tableUpdates(
+            TableUpdateQuery.onAllTables(
+              <ResultSetImplementation<dynamic, dynamic>>[
+                db.profiles,
+                db.preferences,
+              ],
+            ),
+          )
+          .listen((Set<TableUpdate> _) => unawaited(_loadProfileName())),
+    );
     unawaited(_loadProfileName());
-  }
-
-  @override
-  void dispose() {
-    unawaited(_profileChanges?.cancel());
-    super.dispose();
   }
 
   Future<void> _loadProfileName() async {
@@ -1092,9 +1088,7 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
     super.initState();
     listenTo(homeWidgetEditRequested, _onWidgetEditRequested);
     // 设置页「编辑首页」在本页建出来之前就发了请求（首页 tab 首次进入）。
-    WidgetsBinding.instance.addPostFrameCallback(
-      (Duration _) => _onWidgetEditRequested(),
-    );
+    schedulePostFrame((Duration _) => _onWidgetEditRequested());
     // 有上一轮快照：首帧直接用它渲染（骨架只在「本进程第一次进首页」出现），
     // 下面的整批重拉照常跑、到达后整体替换。
     final _HomeDashboardSnapshot? snapshot =
@@ -1106,9 +1100,6 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
     _serverContinue = ServerContinueFeed.of(
       ref.read(appProvider).database,
     ).current;
-    // 「本版新内容」：没有基线（新装 / 降级）先定基线，升级上来的才出卡片。
-    unawaited(ref.read(appProvider).whatsNew?.ensureBaseline());
-    unawaited(_loadDashboardData());
     // Kavita 绑定书：服务器端改了进度（网页端翻页 / 标已读未读）时静默对账，
     // 采用后写本地阅读位置，表级信号会带动本页重载。进入 / 切回首页 / 回前台触发。
     final AppLifecycleListener kavitaLifecycle = AppLifecycleListener(
@@ -1116,8 +1107,6 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
     );
     onTeardown(kavitaLifecycle.dispose);
     listenTo(homeShellTabNotifier, _onTabForKavita);
-    _reconcileKavitaProgress();
-    unawaited(_loadServerContinue());
     // 阅读/观看/导入写库 → 表级变更 → 防抖后重查聚合，首页自动刷新（竞态无关：
     // 信号在写入 commit 后才发，重查读到的是已落库数据）。
     // 首页不保活、且阅读器是 pushed 路由（读完回来首页不重建 initState），故必须靠
@@ -1164,7 +1153,19 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
     // 「显示远端条目」开关落在 prefsRepo（独立 ChangeNotifier），不经 AppModel
     // 通知、也不在 [_scheduleReload] 的表级信号里——必须显式订阅才能让翻开关立即生效。
     listenTo(ref.read(appProvider).prefsRepo, _onPrefsChangedForRemoteGate);
-    _updateCount = HomeUpdateCount(ref.read(appProvider).updateFeedService);
+    // 更新计数器在构造时就订阅了更新源：随清单释放（BUG-5604）。
+    final HomeUpdateCount updateCount = HomeUpdateCount(
+      ref.read(appProvider).updateFeedService,
+    );
+    _updateCount = updateCount;
+    onTeardown(updateCount.dispose);
+    // 以下取数起跑就撤不回来（只认 mounted），放在同步装配全部完成之后
+    // （BUG-5602 / BUG-5604）。
+    // 「本版新内容」：没有基线（新装 / 降级）先定基线，升级上来的才出卡片。
+    unawaited(ref.read(appProvider).whatsNew?.ensureBaseline());
+    unawaited(_loadDashboardData());
+    _reconcileKavitaProgress();
+    unawaited(_loadServerContinue());
   }
 
   /// prefsRepo 变更回调：只关心「显示远端条目」门控是否翻转，其余偏好变动一概
@@ -1329,7 +1330,6 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
     _toolbarScroll.dispose();
     _mastheadChrome.dispose();
     _mastheadActions.dispose();
-    _updateCount?.dispose();
     super.dispose();
   }
 
@@ -5225,7 +5225,7 @@ class _FushiMigrationBanner extends StatefulWidget {
 }
 
 class _FushiMigrationBannerState extends State<_FushiMigrationBanner>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, StateResourceScope<_FushiMigrationBanner> {
   static const MigrationTargetChannel _channel = MigrationTargetChannel();
   static const MigrationImporter _importer = MigrationImporter();
 
@@ -5243,13 +5243,8 @@ class _FushiMigrationBannerState extends State<_FushiMigrationBanner>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    onTeardown(() => WidgetsBinding.instance.removeObserver(this));
     _refresh();
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    super.dispose();
   }
 
   @override

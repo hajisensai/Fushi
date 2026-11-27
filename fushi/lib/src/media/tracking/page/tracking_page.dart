@@ -33,6 +33,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart'
     show FushiSnackBar;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi_core/fushi_core.dart'
     show
         FushiDatabase,
@@ -93,7 +94,9 @@ class TrackingPage extends StatefulWidget {
 }
 
 class _TrackingPageState extends State<TrackingPage>
-    with MediaVisibilityDependent<TrackingPage> {
+    with
+        MediaVisibilityDependent<TrackingPage>,
+        StateResourceScope<TrackingPage> {
   TrackingPageData? _data;
   TrackingPageTab? _tab;
   Set<TrackingRowKind> _kinds = const <TrackingRowKind>{};
@@ -113,9 +116,6 @@ class _TrackingPageState extends State<TrackingPage>
   ScaffoldFeatureController<SnackBar, SnackBarClosedReason>? _linkSnack;
   ScaffoldMessengerState? _linkSnackMessenger;
 
-  /// The app going to the background sends held hand links at once.
-  late final AppLifecycleListener _lifecycle;
-
   MediaTrackingService get _service => widget.service;
 
   @override
@@ -123,17 +123,18 @@ class _TrackingPageState extends State<TrackingPage>
     super.initState();
     _tab = widget.initialTab;
     _service.statusRevision.addListener(_onStatusChanged);
-    _lifecycle = AppLifecycleListener(
+    onTeardown(() => _service.statusRevision.removeListener(_onStatusChanged));
+    // The app going to the background sends held hand links at once.
+    final AppLifecycleListener lifecycle = AppLifecycleListener(
       onPause: _releaseHeldLinks,
       onDetach: _releaseHeldLinks,
     );
+    onTeardown(lifecycle.dispose);
     unawaited(_reload());
   }
 
   @override
   void dispose() {
-    _service.statusRevision.removeListener(_onStatusChanged);
-    _lifecycle.dispose();
     // Leaving the page: a hand link still in its Undo window is sent now
     // (T2 G2), and its Undo bar goes with the page. Closed after this frame:
     // the messenger is an ancestor and must not rebuild during unmount.

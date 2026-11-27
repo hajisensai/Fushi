@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -52,13 +53,12 @@ class MangaDownloadTasksSection extends ConsumerStatefulWidget {
 }
 
 class _MangaDownloadTasksSectionState
-    extends ConsumerState<MangaDownloadTasksSection> {
+    extends ConsumerState<MangaDownloadTasksSection>
+    with StateResourceScope<MangaDownloadTasksSection> {
   MangaDownloadService? _downloads;
   OnlineMangaReshelf? _reshelf;
   List<MangaDownloadJobRow> _jobs = const <MangaDownloadJobRow>[];
   List<RecoverableOnlineManga> _recoverable = const <RecoverableOnlineManga>[];
-  StreamSubscription<void>? _watch;
-  StreamSubscription<void>? _reshelfWatch;
 
   @override
   void initState() {
@@ -70,31 +70,29 @@ class _MangaDownloadTasksSectionState
     _reshelf = sources.reshelf;
     // 删书时保留下来的章节目录（「重新入库」候选）：删书 / 重新入库 / 改下载根
     // 后由 [OnlineMangaReshelf.changes] 通知重扫。
-    _reshelfWatch = OnlineMangaReshelf.changes.listen(
-      (_) => unawaited(_reloadRecoverable()),
+    ownSubscription(
+      OnlineMangaReshelf.changes.listen((_) => unawaited(_reloadRecoverable())),
     );
     unawaited(_reloadRecoverable());
     final MangaDownloadService? downloads = _downloads;
     if (downloads == null) return;
-    _watch = downloads.watchJobs().listen(
-      (_) => unawaited(_reload()),
-      onError: (Object error, StackTrace stack) {
-        ErrorLogService.instance.log(
-          'MangaDownloadTasksSection.watch',
-          error,
-          stack,
-        );
-      },
+    ownSubscription(
+      downloads.watchJobs().listen(
+        (_) => unawaited(_reload()),
+        onError: (Object error, StackTrace stack) {
+          ErrorLogService.instance.log(
+            'MangaDownloadTasksSection.watch',
+            error,
+            stack,
+          );
+        },
+      ),
     );
     unawaited(_reload());
   }
 
   @override
   void dispose() {
-    unawaited(_watch?.cancel());
-    _watch = null;
-    unawaited(_reshelfWatch?.cancel());
-    _reshelfWatch = null;
     DownloadTaskShare.instance.clearOwner(
       DownloadTaskSharedPart.mangaRecoverable,
       this,

@@ -41,6 +41,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/reader/illustration_zoom_viewer.dart'
     show showImageZoomViewer;
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 class FeedbackDetailPage extends ConsumerStatefulWidget {
   const FeedbackDetailPage({
@@ -62,7 +63,8 @@ class FeedbackDetailPage extends ConsumerStatefulWidget {
   ConsumerState<FeedbackDetailPage> createState() => _FeedbackDetailPageState();
 }
 
-class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
+class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage>
+    with StateResourceScope<FeedbackDetailPage> {
   final TextEditingController _reply = TextEditingController();
 
   /// 包住整页的焦点节点（自身不取焦点、不进遍历），只用来判断主焦点在不在本页：
@@ -81,12 +83,12 @@ class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
   void initState() {
     super.initState();
     HardwareKeyboard.instance.addHandler(_onKey);
+    onTeardown(() => HardwareKeyboard.instance.removeHandler(_onKey));
     unawaited(_load());
   }
 
   @override
   void dispose() {
-    HardwareKeyboard.instance.removeHandler(_onKey);
     _pageFocus.dispose();
     _reply.dispose();
     super.dispose();

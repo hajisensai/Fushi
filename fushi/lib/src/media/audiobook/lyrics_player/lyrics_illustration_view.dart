@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustrations.dart';
 import 'package:fushi/src/reader/illustration_zoom_viewer.dart'
     show
@@ -798,7 +799,8 @@ class LyricsIllustrationViewer extends StatefulWidget {
       _LyricsIllustrationViewerState();
 }
 
-class _LyricsIllustrationViewerState extends State<LyricsIllustrationViewer> {
+class _LyricsIllustrationViewerState extends State<LyricsIllustrationViewer>
+    with StateResourceScope<LyricsIllustrationViewer> {
   late final PageController _pages = PageController(
     initialPage: widget.initialIndex,
   );
@@ -816,6 +818,7 @@ class _LyricsIllustrationViewerState extends State<LyricsIllustrationViewer> {
   void initState() {
     super.initState();
     widget.controller.addListener(_onControllerChanged);
+    onTeardown(() => widget.controller.removeListener(_onControllerChanged));
   }
 
   @override
@@ -842,7 +845,6 @@ class _LyricsIllustrationViewerState extends State<LyricsIllustrationViewer> {
 
   @override
   void dispose() {
-    widget.controller.removeListener(_onControllerChanged);
     _pages.dispose();
     for (final TransformationController z in _zoom.values) {
       z.dispose();

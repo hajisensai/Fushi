@@ -13,6 +13,7 @@ import 'package:fushi_engine/tts/tts_pronunciation.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/settings/settings_kit_core.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
@@ -104,21 +105,16 @@ class TtsTextRulesSection extends StatefulWidget {
   State<TtsTextRulesSection> createState() => _TtsTextRulesSectionState();
 }
 
-class _TtsTextRulesSectionState extends State<TtsTextRulesSection> {
-  StreamSubscription<TtsTextRuleKind>? _sub;
-
+class _TtsTextRulesSectionState extends State<TtsTextRulesSection>
+    with StateResourceScope<TtsTextRulesSection> {
   @override
   void initState() {
     super.initState();
-    _sub = widget.store.changes.listen((_) {
-      if (mounted) setState(() {});
-    });
-  }
-
-  @override
-  void dispose() {
-    unawaited(_sub?.cancel());
-    super.dispose();
+    ownSubscription(
+      widget.store.changes.listen((_) {
+        if (mounted) setState(() {});
+      }),
+    );
   }
 
   @override
@@ -163,24 +159,20 @@ class TtsTextRulesPage extends StatefulWidget {
   State<TtsTextRulesPage> createState() => _TtsTextRulesPageState();
 }
 
-class _TtsTextRulesPageState extends State<TtsTextRulesPage> {
+class _TtsTextRulesPageState extends State<TtsTextRulesPage>
+    with StateResourceScope<TtsTextRulesPage> {
   late List<TtsPronunciationRule> _rules = widget.store.load(widget.kind);
-  StreamSubscription<TtsTextRuleKind>? _sub;
   bool _saving = false;
 
   @override
   void initState() {
     super.initState();
-    _sub = widget.store.changes.listen((TtsTextRuleKind kind) {
-      if (kind != widget.kind || !mounted) return;
-      setState(() => _rules = widget.store.load(widget.kind));
-    });
-  }
-
-  @override
-  void dispose() {
-    unawaited(_sub?.cancel());
-    super.dispose();
+    ownSubscription(
+      widget.store.changes.listen((TtsTextRuleKind kind) {
+        if (kind != widget.kind || !mounted) return;
+        setState(() => _rules = widget.store.load(widget.kind));
+      }),
+    );
   }
 
   Future<void> _commit(List<TtsPronunciationRule> next) async {

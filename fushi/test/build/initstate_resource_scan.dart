@@ -1,22 +1,11 @@
 // initState 裸挂外部资源扫描器（BUG-5604），守卫
-// `initstate_resource_rollback_guard_test.dart` 与基线重写共用这一份实现。
-//
-// 只依赖 dart:io，可直接跑：在 fushi/ 下 `dart run test/build/initstate_resource_scan.dart`
-// 按当前 lib/ 重写基线（只在裸挂变少、收紧基线时用）。
+// `initstate_resource_rollback_guard_test.dart` 用。只依赖 dart:io。
 import 'dart:io';
-
-void main() {
-  File(initStateBaselineFile).writeAsStringSync(
-    formatInitStateBaseline(scanInitStateRawAttachments(Directory('lib'))),
-  );
-}
-
-const String initStateBaselineFile =
-    'test/build/initstate_resource_rollback_baseline.txt';
 
 final RegExp _attach = RegExp(
   r'\.listen\(|\.add\w*Listener\(|\.addObserver\(|\.addHandler\(|'
-  r'\bTimer(\.periodic)?\(|\bAppLifecycleListener\(',
+  r'\bTimer(\.periodic)?\(|\bAppLifecycleListener\(|'
+  r'\.addPostFrameCallback\(|\bscheduleMicrotask\(',
 );
 final RegExp _ownPrivateListener = RegExp(
   r'(?<![\w.])_\w*\??\.add\w*Listener\($',
@@ -39,7 +28,11 @@ Map<String, int> scanInitStateRawAttachments(Directory lib) {
             (File f) =>
                 f.path.endsWith('.dart') &&
                 !f.path.endsWith('.g.dart') &&
-                !f.path.endsWith('.freezed.dart'),
+                !f.path.endsWith('.freezed.dart') &&
+                // 登记器本身（它的 initState 排的是失败兜底微任务）。
+                !f.path
+                    .replaceAll(r'\', '/')
+                    .endsWith('utils/state_resource_scope.dart'),
           )
           .toList()
         ..sort((File a, File b) => a.path.compareTo(b.path));
@@ -113,26 +106,4 @@ int _matchingBrace(String code, int afterOpen) {
     }
   }
   return code.length;
-}
-
-Map<String, int> parseInitStateBaseline(String text) {
-  final Map<String, int> out = <String, int>{};
-  for (final String raw in text.split('\n')) {
-    final String line = raw.trim();
-    if (line.isEmpty || line.startsWith('#')) continue;
-    final int sp = line.lastIndexOf(' ');
-    out[line.substring(0, sp)] = int.parse(line.substring(sp + 1));
-  }
-  return out;
-}
-
-String formatInitStateBaseline(Map<String, int> counts) {
-  final List<String> keys = counts.keys.toList()..sort();
-  return <String>[
-    '# initState 裸挂外部资源的存量基线（BUG-5604），只许减不许增。',
-    '# 由 test/build/initstate_resource_scan.dart 生成，守卫见 initstate_resource_rollback_guard_test.dart：',
-    '# dart run test/build/initstate_resource_scan.dart（在 fushi/ 下）',
-    for (final String k in keys) '$k ${counts[k]}',
-    '',
-  ].join('\n');
 }

@@ -31,6 +31,7 @@ import 'package:fushi/src/media/video/video_simultaneous_cues.dart'
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/lookup/hover_lookup_modifier.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 命中字幕某字符的结果：整条字幕、被点 grapheme 下标、该字符的全局屏幕矩形、
 /// **该字符所属的那条 cue**。与 [VideoSubtitleOverlay.onCharTap] 的回调四元组同构。
@@ -980,7 +981,9 @@ const double _kWindowsMissingAssFontRasterYScale = 1.055;
 }
 
 class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
-    with SingleTickerProviderStateMixin {
+    with
+        SingleTickerProviderStateMixin,
+        StateResourceScope<VideoSubtitleOverlay> {
   /// 主 / 副字幕层里认领查词高亮的 cue（BUG-3691，按身份比较）。每帧在
   /// [_buildSubtitleLayer] 按绘制顺序重算。
   Set<AudioCue> _lookupHighlightOwnersMain = HashSet<AudioCue>.identity();
@@ -1293,6 +1296,11 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     // BUG-897：字体表索引（内嵌字体注册 / 系统扫描完成）更新时，k=cell/em 缓存里可能
     // 还存着索引就绪前的 TextPainter 近似值——清缓存重算并重绘，使字号自动校正到真表值。
     AssFontCellIndex.instance.revision.addListener(_onFontMetricsRevision);
+    onTeardown(
+      () => AssFontCellIndex.instance.revision.removeListener(
+        _onFontMetricsRevision,
+      ),
+    );
     _fadeTicker = createTicker((_) {
       // 时钟变了才重建：build 里按最新播放位置重算各 cue 的动画值（值来自 controller，
       // 不在此保存，故空 setState 足矣）。签名在 build 里记下，任何来源的重建都算数。
@@ -1310,7 +1318,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
 
   @override
   void dispose() {
-    AssFontCellIndex.instance.revision.removeListener(_onFontMetricsRevision);
+    releaseResources();
     // 停并释放 ticker：SingleTickerProviderStateMixin.dispose 会断言 ticker 不再 active，
     // 故必须在 super.dispose 之前 dispose 掉它（dispose 内部会取消在途 tick）。
     _fadeTicker?.dispose();

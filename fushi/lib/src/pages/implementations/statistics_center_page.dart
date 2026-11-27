@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/media/privacy/media_visibility.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/media_source.dart';
@@ -202,7 +203,9 @@ class _StatsOverviewTab extends ConsumerStatefulWidget {
 }
 
 class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab>
-    with MediaVisibilityDependent<_StatsOverviewTab> {
+    with
+        MediaVisibilityDependent<_StatsOverviewTab>,
+        StateResourceScope<_StatsOverviewTab> {
   /// 解锁 / 重新上锁 / 上锁标记变了：重读（上锁作品不进统计，[MediaVisibility]）。
   @override
   void onMediaVisibilityChanged() => unawaited(_load());
@@ -251,13 +254,8 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab>
   void initState() {
     super.initState();
     widget.rangeSelection.addListener(_onRangeChanged);
-    WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_load()));
-  }
-
-  @override
-  void dispose() {
-    widget.rangeSelection.removeListener(_onRangeChanged);
-    super.dispose();
+    onTeardown(() => widget.rangeSelection.removeListener(_onRangeChanged));
+    schedulePostFrame((_) => unawaited(_load()));
   }
 
   void _onRangeChanged() {

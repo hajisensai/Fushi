@@ -50,6 +50,7 @@ import 'package:fushi/src/utils/components/fushi_neutral_decor.dart'
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// 探测默认浏览器的注入点（测试里换成同步返回，避免真起 `reg` / `defaults`）。
@@ -108,7 +109,8 @@ class BrowserExtensionPage extends ConsumerStatefulWidget {
       _BrowserExtensionPageState();
 }
 
-class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
+class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage>
+    with StateResourceScope<BrowserExtensionPage> {
   /// 解压出的扩展目录绝对路径（已复制到剪贴板）；null 表示尚未准备。
   String? _extensionDir;
   bool _preparing = false;
@@ -132,27 +134,21 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
   /// 安装引导是否展开；null = 跟随连接状态（已连接折叠、未连接展开）。
   bool? _guideExpanded;
 
-  // 连接状态卡片的轻量刷新（扩展 last-seen 由 server 端异步更新，这里定时重绘显示）。
-  Timer? _statusTimer;
-
   @override
   void initState() {
     super.initState();
-    _statusTimer = Timer.periodic(const Duration(seconds: 3), (_) {
-      if (mounted) setState(() {});
-    });
+    // 连接状态卡片的轻量刷新（扩展 last-seen 由 server 端异步更新，这里定时重绘显示）。
+    ownTimer(
+      Timer.periodic(const Duration(seconds: 3), (_) {
+        if (mounted) setState(() {});
+      }),
+    );
     unawaited(
       widget.detectBrowser().then((BrowserKind? kind) {
         if (!mounted || kind == null) return;
         setState(() => _detectedBrowser = kind);
       }),
     );
-  }
-
-  @override
-  void dispose() {
-    _statusTimer?.cancel();
-    super.dispose();
   }
 
   void _snack(String message) {

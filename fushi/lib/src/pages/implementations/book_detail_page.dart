@@ -21,6 +21,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 书 / 漫画 / 字幕书详情页此刻的书架侧状态（标题 / 作者 / 封面 / 进度）。
 ///
@@ -93,9 +94,9 @@ class BookDetailPage extends StatefulWidget {
   State<BookDetailPage> createState() => _BookDetailPageState();
 }
 
-class _BookDetailPageState extends State<BookDetailPage> {
+class _BookDetailPageState extends State<BookDetailPage>
+    with StateResourceScope<BookDetailPage> {
   ItemScrapeDetail _detail = ItemScrapeDetail.empty;
-  StreamSubscription<void>? _changesSub;
   bool _opening = false;
   bool _scraping = false;
 
@@ -103,13 +104,10 @@ class _BookDetailPageState extends State<BookDetailPage> {
   void initState() {
     super.initState();
     unawaited(_reload());
-    _changesSub = widget.changes?.listen((_) => unawaited(_reload()));
-  }
-
-  @override
-  void dispose() {
-    unawaited(_changesSub?.cancel());
-    super.dispose();
+    final Stream<void>? changes = widget.changes;
+    if (changes != null) {
+      ownSubscription(changes.listen((_) => unawaited(_reload())));
+    }
   }
 
   Future<void> _reload() async {

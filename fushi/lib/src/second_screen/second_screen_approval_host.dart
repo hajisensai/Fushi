@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/second_screen/companion/companion_bridge.dart';
@@ -34,7 +35,8 @@ class SecondScreenApprovalHost extends ConsumerStatefulWidget {
 }
 
 class _SecondScreenApprovalHostState
-    extends ConsumerState<SecondScreenApprovalHost> {
+    extends ConsumerState<SecondScreenApprovalHost>
+    with StateResourceScope<SecondScreenApprovalHost> {
   bool _asking = false;
   late final CompanionBridge _bridge;
 
@@ -43,7 +45,7 @@ class _SecondScreenApprovalHostState
     super.initState();
     _bridge = ref.read(companionBridgeProvider)..bindOpenLink(widget.openLink);
     // The controller may already need an answer by the time this mounts.
-    WidgetsBinding.instance.addPostFrameCallback((Duration _) {
+    schedulePostFrame((Duration _) {
       if (mounted) _maybeAsk(ref.read(secondScreenControllerProvider));
     });
   }

@@ -30,6 +30,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -110,7 +111,8 @@ class _VideoSourceScrapeTaskPanel extends StatefulWidget {
 }
 
 class _VideoSourceScrapeTaskPanelState
-    extends State<_VideoSourceScrapeTaskPanel> {
+    extends State<_VideoSourceScrapeTaskPanel>
+    with StateResourceScope<_VideoSourceScrapeTaskPanel> {
   List<VideoSourceScrapeRunRow> _runs = const <VideoSourceScrapeRunRow>[];
   Object? _historyError;
   bool _loadingHistory = true;
@@ -134,15 +136,10 @@ class _VideoSourceScrapeTaskPanelState
   void initState() {
     super.initState();
     widget.controller.addListener(_changed);
+    onTeardown(() => widget.controller.removeListener(_changed));
     _lastPhase = widget.controller.progress.phase;
     unawaited(_reloadHistory());
     unawaited(_reloadPendingWorks());
-  }
-
-  @override
-  void dispose() {
-    widget.controller.removeListener(_changed);
-    super.dispose();
   }
 
   void _changed() {

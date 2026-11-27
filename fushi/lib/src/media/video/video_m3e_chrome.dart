@@ -13,6 +13,7 @@ import 'package:fushi/src/utils/components/fushi_m3e_player.dart'
     show fushiPlayButtonBorder, fushiPlayButtonRotation;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
@@ -876,7 +877,9 @@ final SpringDescription _videoChromeSpring = SpringDescription.withDampingRatio(
 );
 
 class _VideoM3eChromeSlideState extends State<VideoM3eChromeSlide>
-    with SingleTickerProviderStateMixin {
+    with
+        SingleTickerProviderStateMixin,
+        StateResourceScope<VideoM3eChromeSlide> {
   late final AnimationController _c = AnimationController.unbounded(
     vsync: this,
   );
@@ -886,6 +889,7 @@ class _VideoM3eChromeSlideState extends State<VideoM3eChromeSlide>
   void initState() {
     super.initState();
     widget.visible.addListener(_sync);
+    onTeardown(() => widget.visible.removeListener(_sync));
   }
 
   @override
@@ -934,7 +938,7 @@ class _VideoM3eChromeSlideState extends State<VideoM3eChromeSlide>
 
   @override
   void dispose() {
-    widget.visible.removeListener(_sync);
+    releaseResources();
     _c.dispose();
     super.dispose();
   }
@@ -1625,7 +1629,9 @@ class VideoM3eDoubleTapRipple extends StatefulWidget {
 }
 
 class _VideoM3eDoubleTapRippleState extends State<VideoM3eDoubleTapRipple>
-    with SingleTickerProviderStateMixin {
+    with
+        SingleTickerProviderStateMixin,
+        StateResourceScope<VideoM3eDoubleTapRipple> {
   late final AnimationController _c = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 650),
@@ -1636,6 +1642,7 @@ class _VideoM3eDoubleTapRippleState extends State<VideoM3eDoubleTapRipple>
   void initState() {
     super.initState();
     widget.events.addListener(_onEvent);
+    onTeardown(() => widget.events.removeListener(_onEvent));
   }
 
   @override
@@ -1664,7 +1671,7 @@ class _VideoM3eDoubleTapRippleState extends State<VideoM3eDoubleTapRipple>
 
   @override
   void dispose() {
-    widget.events.removeListener(_onEvent);
+    releaseResources();
     _c.dispose();
     super.dispose();
   }

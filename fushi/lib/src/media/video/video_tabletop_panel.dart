@@ -13,6 +13,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
     show FushiTooltip;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:material_ui/material_ui.dart';
 
 /// 桌面姿态（折叠屏半开平放、横向折痕）下视频页**下半屏**的播放控制面板。
@@ -186,7 +187,8 @@ class _AppleTabletopPanel extends StatefulWidget {
   State<_AppleTabletopPanel> createState() => _AppleTabletopPanelState();
 }
 
-class _AppleTabletopPanelState extends State<_AppleTabletopPanel> {
+class _AppleTabletopPanelState extends State<_AppleTabletopPanel>
+    with StateResourceScope<_AppleTabletopPanel> {
   /// 拖动中的目标位置（毫秒）；null = 跟随播放位置。
   double? _dragMs;
 
@@ -194,6 +196,9 @@ class _AppleTabletopPanelState extends State<_AppleTabletopPanel> {
   void initState() {
     super.initState();
     widget.panel.positionListenable.addListener(_onPositionChanged);
+    onTeardown(
+      () => widget.panel.positionListenable.removeListener(_onPositionChanged),
+    );
   }
 
   @override
@@ -210,12 +215,6 @@ class _AppleTabletopPanelState extends State<_AppleTabletopPanel> {
   /// 位置推送：拖动中滑块跟手指，不被播放位置拽回。
   void _onPositionChanged() {
     if (mounted && _dragMs == null) setState(() {});
-  }
-
-  @override
-  void dispose() {
-    widget.panel.positionListenable.removeListener(_onPositionChanged);
-    super.dispose();
   }
 
   @override

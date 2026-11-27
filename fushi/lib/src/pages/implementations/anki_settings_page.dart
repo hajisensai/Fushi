@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
@@ -129,7 +130,8 @@ class AnkiSettingsBody extends ConsumerStatefulWidget {
   ConsumerState<AnkiSettingsBody> createState() => _AnkiSettingsBodyState();
 }
 
-class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
+class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody>
+    with StateResourceScope<AnkiSettingsBody> {
   AppModel get appModel => ref.watch(appProvider);
   ThemeData get theme => Theme.of(context);
   TextTheme get textTheme => theme.textTheme;
@@ -215,7 +217,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     if (widget.row == null ||
         widget.row == AnkiSectionRow.reposition ||
         widget.row == AnkiSectionRow.autoReposition) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+      schedulePostFrame((_) {
         if (!mounted) return;
         ref.read(ankiViewModelProvider.notifier).probeDeckReposition();
       });
@@ -227,7 +229,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     // 媒体去重区的门控要的是「此刻真能不能用」，不是后端类型（手机连局域网
     // 桌面 Anki 时后端类型说支持、媒体目录本机却不存在）。探测要一次网络往返，
     // 只在真正需要这个结论的设置页发起，不塞进 vm 构造。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       if (!mounted) return;
       ref.read(ankiViewModelProvider.notifier).probeMediaMaintenance();
     });

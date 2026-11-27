@@ -221,7 +221,6 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
     _tokenController = TextEditingController();
     _tokenController.addListener(_onTokenTextChanged);
     _tokenFocus = FocusNode();
-    _load();
     listenTo(
       _syncSettings(widget.settingsContext).clientConfigRevision,
       _onClientConfigRevision,
@@ -238,6 +237,8 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
       _syncSettings(widget.settingsContext).roleRevision,
       _onRoleRevision,
     );
+    // 首载起跑就撤不回来（只认 mounted），放在同步装配全部完成之后（BUG-5604）。
+    _load();
   }
 
   @override
@@ -1640,7 +1641,8 @@ class _ServerModeWidget extends StatefulWidget {
   State<_ServerModeWidget> createState() => _ServerModeWidgetState();
 }
 
-class _ServerModeWidgetState extends State<_ServerModeWidget> {
+class _ServerModeWidgetState extends State<_ServerModeWidget>
+    with StateResourceScope<_ServerModeWidget> {
   bool _enabled = false;
   int _port = SyncRepository.defaultServerPort;
   // TODO-961: 互联加密（HTTPS/TLS + TOFU 指纹钉扎）开关状态，镜像
@@ -1679,20 +1681,18 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
     _portController = TextEditingController(text: '$_port');
     _publicUrlsController = TextEditingController();
     _p2pRelayController = TextEditingController();
-    _serverController.addListener(_onServerChanged);
+    // app 级的服务器控制器（BUG-085：由 AppModel 持有，不随本页销毁）。
+    listenTo(_serverController, _onServerChanged);
     // Rebuild when the client-connection flag flips so the toggle re-gates.
-    _syncSettings(
-      widget.settingsContext,
-    ).roleRevision.addListener(_onRoleRevision);
+    listenTo(
+      _syncSettings(widget.settingsContext).roleRevision,
+      _onRoleRevision,
+    );
     _loadSettings();
   }
 
   @override
   void dispose() {
-    _serverController.removeListener(_onServerChanged);
-    _syncSettings(
-      widget.settingsContext,
-    ).roleRevision.removeListener(_onRoleRevision);
     _portController.dispose();
     _publicUrlsController.dispose();
     _p2pRelayController.dispose();
@@ -2161,7 +2161,9 @@ class _LanDiscoveryWidget extends StatefulWidget {
 }
 
 class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
-    with _PairingV2FlowMixin<_LanDiscoveryWidget> {
+    with
+        _PairingV2FlowMixin<_LanDiscoveryWidget>,
+        StateResourceScope<_LanDiscoveryWidget> {
   @override
   SettingsContext get _pairSettingsContext => widget.settingsContext;
 
@@ -2183,9 +2185,10 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
   void initState() {
     super.initState();
     // Rebuild when the server-enabled flag flips so device taps re-gate.
-    _syncSettings(
-      widget.settingsContext,
-    ).roleRevision.addListener(_onRoleRevision);
+    listenTo(
+      _syncSettings(widget.settingsContext).roleRevision,
+      _onRoleRevision,
+    );
     _init();
   }
 
@@ -2220,9 +2223,6 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
 
   @override
   void dispose() {
-    _syncSettings(
-      widget.settingsContext,
-    ).roleRevision.removeListener(_onRoleRevision);
     _devicesSub?.cancel();
     final LanDiscoveryService? discovery = _discovery;
     if (discovery != null) {
@@ -2691,7 +2691,8 @@ class _InterconnectBackupBackendWidget extends StatefulWidget {
 }
 
 class _InterconnectBackupBackendWidgetState
-    extends State<_InterconnectBackupBackendWidget> {
+    extends State<_InterconnectBackupBackendWidget>
+    with StateResourceScope<_InterconnectBackupBackendWidget> {
   bool _busy = false;
 
   _SyncSettingsState get _state => _syncSettings(widget.settingsContext);
@@ -2701,13 +2702,7 @@ class _InterconnectBackupBackendWidgetState
     super.initState();
     // 同页配对成功后 hasClientConnection 才翻 true（roleRevision 通知），按钮据此解禁；
     // 不听就会停在「请先连接一台设备」直到重开页面。
-    _state.roleRevision.addListener(_onRoleRevision);
-  }
-
-  @override
-  void dispose() {
-    _state.roleRevision.removeListener(_onRoleRevision);
-    super.dispose();
+    listenTo(_state.roleRevision, _onRoleRevision);
   }
 
   void _onRoleRevision() {

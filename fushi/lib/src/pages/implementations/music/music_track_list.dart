@@ -57,6 +57,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 part 'music_track_selection.part.dart';
 
@@ -336,7 +337,8 @@ class MusicTrackList extends ConsumerStatefulWidget {
   ConsumerState<MusicTrackList> createState() => _MusicTrackListState();
 }
 
-class _MusicTrackListState extends ConsumerState<MusicTrackList> {
+class _MusicTrackListState extends ConsumerState<MusicTrackList>
+    with StateResourceScope<MusicTrackList> {
   /// 这一列曲目的断点：挂上时按块查齐，之后只吃这一列里那几首的改动。
   late final MusicResumePointsWatch _resume;
 
@@ -398,8 +400,13 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
   @override
   void initState() {
     super.initState();
-    _resume = ref.read(appProvider).musicSession.watchResumePoints(_uids(_list))
-      ..addListener(_onResumeChanged);
+    _resume = ref
+        .read(appProvider)
+        .musicSession
+        .watchResumePoints(_uids(_list));
+    // 先登记 dispose、后挂监听：撤销逆序 = 先摘监听、再 dispose。
+    onTeardown(_resume.dispose);
+    listenTo(_resume, _onResumeChanged);
     _syncSelectionOrder();
   }
 
@@ -583,14 +590,6 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
       child: list,
     ),
   );
-
-  @override
-  void dispose() {
-    _resume
-      ..removeListener(_onResumeChanged)
-      ..dispose();
-    super.dispose();
-  }
 
   void _onResumeChanged() {
     if (mounted) setState(() {});

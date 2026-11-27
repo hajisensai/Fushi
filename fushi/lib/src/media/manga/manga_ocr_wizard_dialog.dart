@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_sheet_header.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -117,7 +118,8 @@ typedef MangaOcrImportRunner =
 /// 向导所处阶段。
 enum _WizardStage { pick, configure, running, importing }
 
-class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
+class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog>
+    with StateResourceScope<MangaOcrWizardDialog> {
   final TextEditingController _titleCtrl = TextEditingController();
 
   _WizardStage _stage = _WizardStage.pick;
@@ -176,7 +178,7 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
     if (_offersModelChoice) {
       _downloads = ref.read(mangaOcrModelDownloadsProvider);
       _modelWasDownloading = _modelDownloading;
-      _downloads!.addListener(_onModelDownloadsChanged);
+      listenTo(_downloads!, _onModelDownloadsChanged);
     }
     final EpubBookRow? existingBook = widget.existingBook;
     if (existingBook != null) {
@@ -189,7 +191,7 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
           ? _WizardStage.configure
           : _WizardStage.pick;
       if (_folderStatus == MangaOcrFolderStatus.valid) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
+        schedulePostFrame((_) {
           unawaited(_refreshEngines());
         });
       }
@@ -203,7 +205,7 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
           ? _WizardStage.configure
           : _WizardStage.pick;
       if (_folderStatus == MangaOcrFolderStatus.valid) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
+        schedulePostFrame((_) {
           unawaited(_refreshEngines());
         });
       }
@@ -245,7 +247,6 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
 
   @override
   void dispose() {
-    _downloads?.removeListener(_onModelDownloadsChanged);
     _runSub?.cancel();
     _titleCtrl.dispose();
     super.dispose();

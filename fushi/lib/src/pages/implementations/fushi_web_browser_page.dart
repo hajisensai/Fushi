@@ -66,6 +66,7 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/web_browser/web_browser_chrome_colors.dart';
 import 'package:fushi/src/web_browser/data/web_browser_store.dart';
 import 'package:fushi/src/web_browser/data/web_browser_store_provider.dart';
@@ -924,7 +925,10 @@ class FushiWebBrowserPage extends ConsumerStatefulWidget {
 
 /// 浏览页壳的状态（测试经它读标签列表、直接执行快捷键动作）。
 class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
-    with WidgetsBindingObserver, RouteAware
+    with
+        WidgetsBindingObserver,
+        RouteAware,
+        StateResourceScope<FushiWebBrowserPage>
     implements WebBrowserTabHost {
   late final WebBrowserStore _store = ref.read(webBrowserStoreProvider);
   late final List<WebBrowserFeature> _features;
@@ -1003,6 +1007,7 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    onTeardown(() => WidgetsBinding.instance.removeObserver(this));
     final PrefStore prefs = _appModel.prefsRepo;
     _tabStyle = webBrowserTabStyle(prefs);
     _sidebarOpen = webBrowserSidebarOpen(prefs);
@@ -1019,7 +1024,8 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
       ),
     ];
     for (final WebBrowserFeature f in _features) {
-      f.actionsChanged?.addListener(_rebuild);
+      final Listenable? actionsChanged = f.actionsChanged;
+      if (actionsChanged != null) listenTo(actionsChanged, _rebuild);
     }
     _tabs = WebBrowserTabsController(store: _store, features: _features)
       ..persistSession = webBrowserRestoreTabs(prefs);
@@ -1029,7 +1035,7 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
     if (initial != null) openTab(initial);
     _tabs.addListener(_onTabsChanged);
     _bindActiveTab();
-    _store.addListener(_onStoreChanged);
+    listenTo(_store, _onStoreChanged);
     _suggestions = WebBrowserSuggestionsController(
       store: _store,
       provider: () => readWebBrowserSearchProvider(_appModel.prefsRepo),
@@ -1110,7 +1116,6 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
     if (_observedRoute != null) _routeObserver.unsubscribe(this);
     _studyCoverWatch.dispose();
     _playbackCoverWatch.dispose();
-    WidgetsBinding.instance.removeObserver(this);
     if (_systemUiHidden) {
       unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
     }
@@ -1121,9 +1126,9 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
     }
     _watched?.removeListener(_onActiveTabChanged);
     _tabs.removeListener(_onTabsChanged);
-    _store.removeListener(_onStoreChanged);
+    // 功能的 actionsChanged 监听要先于 f.dispose 撤销（对已 dispose 的 notifier 摘监听会断言）。
+    releaseResources();
     for (final WebBrowserFeature f in _features) {
-      f.actionsChanged?.removeListener(_rebuild);
       f.dispose();
     }
     _tabs.dispose();

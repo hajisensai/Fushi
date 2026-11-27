@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/second_screen/companion/companion_protocol.dart';
 import 'package:fushi/src/second_screen/panel/companion/companion_lookup_controller.dart';
@@ -71,7 +72,8 @@ class CompanionShell extends ConsumerStatefulWidget {
   ConsumerState<CompanionShell> createState() => CompanionShellState();
 }
 
-class CompanionShellState extends ConsumerState<CompanionShell> {
+class CompanionShellState extends ConsumerState<CompanionShell>
+    with StateResourceScope<CompanionShell> {
   CompanionTab _tab = CompanionTab.now;
 
   /// The tab a main-screen lookup switched away from; null when the user
@@ -163,7 +165,6 @@ class CompanionShellState extends ConsumerState<CompanionShell> {
   }
 
   int _seenSurfaced = 0;
-  StreamSubscription<CompanionHostMessage>? _controllerInput;
   bool _driving = false;
   final GlobalKey _focusScopeKey = GlobalKey(debugLabel: 'companion-focus');
 
@@ -190,15 +191,16 @@ class CompanionShellState extends ConsumerState<CompanionShell> {
       _beforeLookup = _tab;
       _tab = CompanionTab.lookup;
     }
-    _controllerInput = ref
-        .read(companionPanelSessionProvider)
-        .controllerInput
-        .listen(_onControllerInput);
+    ownSubscription(
+      ref
+          .read(companionPanelSessionProvider)
+          .controllerInput
+          .listen(_onControllerInput),
+    );
   }
 
   @override
   void dispose() {
-    unawaited(_controllerInput?.cancel());
     if (_driving) {
       FocusManager.instance.highlightStrategy =
           FocusHighlightStrategy.automatic;

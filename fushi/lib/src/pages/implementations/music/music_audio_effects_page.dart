@@ -43,6 +43,7 @@ import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart'
     show HorizontalDragScrollable, kFushiSettingsHomeTwoPaneMinWidth;
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 预设显示名。
 String musicEqPresetLabel(MusicEqPreset p) => switch (p) {
@@ -110,7 +111,8 @@ class MusicAudioEffectsBody extends StatefulWidget {
 }
 
 /// 音效编辑的状态（草稿 + 停手写回）：音效页与播放页浮层面板共用一份。
-mixin _EffectsEditing<W extends StatefulWidget> on State<W> {
+mixin _EffectsEditing<W extends StatefulWidget>
+    on State<W>, StateResourceScope<W> {
   late MusicAudioEffects _fx;
   late MusicEqPreset _preset;
 
@@ -125,12 +127,13 @@ mixin _EffectsEditing<W extends StatefulWidget> on State<W> {
   void initState() {
     super.initState();
     _reload();
-    _app.musicAudioEffectsChanges.addListener(_onPrefs);
+    listenTo(_app.musicAudioEffectsChanges, _onPrefs);
   }
 
   @override
   void dispose() {
-    _app.musicAudioEffectsChanges.removeListener(_onPrefs);
+    // 先摘监听再落盘：落盘改偏好会回灌 [_onPrefs]。
+    releaseResources();
     _flush();
     super.dispose();
   }
@@ -215,7 +218,9 @@ mixin _EffectsEditing<W extends StatefulWidget> on State<W> {
 }
 
 class _MusicAudioEffectsBodyState extends State<MusicAudioEffectsBody>
-    with _EffectsEditing<MusicAudioEffectsBody> {
+    with
+        StateResourceScope<MusicAudioEffectsBody>,
+        _EffectsEditing<MusicAudioEffectsBody> {
   @override
   MusicAudioEffectsHost get _app => widget.host;
 
@@ -992,7 +997,9 @@ class MusicAudioEffectsPanel extends StatefulWidget {
 }
 
 class _MusicAudioEffectsPanelState extends State<MusicAudioEffectsPanel>
-    with _EffectsEditing<MusicAudioEffectsPanel> {
+    with
+        StateResourceScope<MusicAudioEffectsPanel>,
+        _EffectsEditing<MusicAudioEffectsPanel> {
   @override
   MusicAudioEffectsHost get _app => widget.host;
 

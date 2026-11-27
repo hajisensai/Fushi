@@ -48,6 +48,7 @@ import 'package:fushi_engine/srs/srs_fushi_card_native_media.dart'
 import 'package:fushi_engine/srs/srs_rwkv_service.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/anki/card_source_origin.dart'
     show cardSourceKindIcon, cardSourceLinkOfFields;
 import 'package:fushi/src/anki/card_source_router.dart'
@@ -233,7 +234,7 @@ const double _kZoomMin = 0.6;
 const double _kZoomMax = 2.0;
 
 class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, StateResourceScope<SrsReviewPage> {
   /// 卡面缩放（Ctrl / ⌘ + 滚轮、Ctrl + 加减号 / 0）：原生区按倍率放大文字，WebView
   /// 走页面 `zoom`（随主题样式原地更新，不重放卡片）。持久化为偏好，下次打开沿用。
   void _setZoom(double value) {
@@ -461,6 +462,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     super.initState();
     _audio = SrsCardAudioSequencer(ref.read(srsCardAudioOutputProvider));
     WidgetsBinding.instance.addObserver(this);
+    onTeardown(() => WidgetsBinding.instance.removeObserver(this));
     _focusNode.addListener(_onPageFocusChanged);
     // 正在复习：自动优化让路（在跑的那一轮立即取消，见 srs_optimization_scheduler.dart）。
     _activeSessions = ref.read(srsActiveReviewSessionsProvider);
@@ -489,7 +491,6 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     _companion.dispose();
     unawaited(_rwkvSubscription?.cancel());
     _activeSessions.value--;
-    WidgetsBinding.instance.removeObserver(this);
     _focusNode.removeListener(_onPageFocusChanged);
     _lookup.dispose();
     srsRunLogged('SrsReviewPage.stopAudio', _audio.cancel);

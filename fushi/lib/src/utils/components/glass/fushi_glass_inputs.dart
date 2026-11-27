@@ -5,6 +5,7 @@ import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -2280,7 +2281,8 @@ class _GlassTextFormField extends FormField<String> {
   FormFieldState<String> createState() => _GlassTextFormFieldState();
 }
 
-class _GlassTextFormFieldState extends FormFieldState<String> {
+class _GlassTextFormFieldState extends FormFieldState<String>
+    with StateResourceScope<FormField<String>> {
   TextEditingController? _controller;
   late final String? _initialValue;
 
@@ -2297,6 +2299,10 @@ class _GlassTextFormFieldState extends FormFieldState<String> {
       _controller = TextEditingController(text: widget.initialValue);
     } else {
       external.addListener(_handleControllerChanged);
+      onTeardown(
+        () =>
+            _field.config.controller?.removeListener(_handleControllerChanged),
+      );
     }
     _initialValue = _field.config.initialValue ?? external?.text;
   }
@@ -2325,7 +2331,6 @@ class _GlassTextFormFieldState extends FormFieldState<String> {
 
   @override
   void dispose() {
-    _field.config.controller?.removeListener(_handleControllerChanged);
     _controller?.dispose();
     super.dispose();
   }

@@ -32,6 +32,7 @@ import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_compute/fushi_compute.dart';
 import 'package:fushi/src/utils/components/fushi_scrollbar.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 字幕对轴的「音频波形」入口面板（TODO-1051 阶段B；TODO-1207 改为按钮触发的放大可交互视图）。
 ///
@@ -418,7 +419,8 @@ class SubtitleWaveformZoomView extends StatefulWidget {
       _SubtitleWaveformZoomViewState();
 }
 
-class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
+class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView>
+    with StateResourceScope<SubtitleWaveformZoomView> {
   /// 本地权威延迟（毫秒，乐观更新）。改动经 [_commit] 写回上方 `_delayMs`。
   late int _delayMs = widget.initialDelayMs;
 
@@ -546,6 +548,7 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
   void initState() {
     super.initState();
     widget.segments.addListener(_onSegmentsChanged);
+    onTeardown(() => widget.segments.removeListener(_onSegmentsChanged));
     // 横向滚动时重建：文本条按新视口裁剪出可见 cue 片段（[_cullMarginPx] 余量）。
     _scrollController.addListener(_onScroll);
     // 字幕列表展示行（过滤空文本）：cue 弹窗内不变，一次算好。
@@ -557,13 +560,15 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
     // 自驱播放头刷新：仅在能读到播放位置时启动。
     if (widget.currentPositionMs != null) {
       _livePositionMs.value = widget.currentPositionMs!.call();
-      _positionTicker = Timer.periodic(
-        const Duration(milliseconds: 33),
-        (_) => _onPositionTick(),
+      _positionTicker = ownTimer(
+        Timer.periodic(
+          const Duration(milliseconds: 33),
+          (_) => _onPositionTick(),
+        ),
       );
       // 打开即把**两个视图**锚到播放头（BUG-1486）：滚动控制器要等首帧布局完才有
       // clients，故落在 postFrame。开场不做动画（一步到位，别让用户看着列表/波形滑过去）。
-      WidgetsBinding.instance.addPostFrameCallback((Duration _) {
+      schedulePostFrame((Duration _) {
         if (!mounted) return;
         _anchorToPlayhead(animate: false);
       });
@@ -788,7 +793,7 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
 
   @override
   void dispose() {
-    widget.segments.removeListener(_onSegmentsChanged);
+    releaseResources();
     _delayInput.dispose();
     _positionTicker?.cancel();
     _positionTicker = null;

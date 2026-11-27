@@ -14,6 +14,7 @@ import 'dart:ui' as ui;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_assets.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_cover.dart';
@@ -101,11 +102,13 @@ class _SceneTicker extends StatefulWidget {
   State<_SceneTicker> createState() => _SceneTickerState();
 }
 
-class _SceneTickerState extends State<_SceneTicker> {
+class _SceneTickerState extends State<_SceneTicker>
+    with StateResourceScope<_SceneTicker> {
   @override
   void initState() {
     super.initState();
     widget.ticks.addListener(_onTick);
+    onTeardown(() => widget.ticks.removeListener(_onTick));
     _onTick();
   }
 
@@ -116,12 +119,6 @@ class _SceneTickerState extends State<_SceneTicker> {
       oldWidget.ticks.removeListener(_onTick);
       widget.ticks.addListener(_onTick);
     }
-  }
-
-  @override
-  void dispose() {
-    widget.ticks.removeListener(_onTick);
-    super.dispose();
   }
 
   // 画家的 repaint 监听在这之后注册，推进先于重画。

@@ -282,7 +282,7 @@ void main() {
       // 悬浮歌词查词的关卡续播信号（notifyLookupClosed）。漏覆写 = 「关闭、不续播」
       // 照样续播（审查发现的悬浮歌词漏洞即此类）。
       final RegExp hostDecl = RegExp(
-        r'with DictionaryPageMixin|extends BaseSourcePageState<',
+        r'with\s+DictionaryPageMixin|extends BaseSourcePageState<',
       );
       final RegExp pauses = RegExp(r'pausedForLookup|notifyLookupClosed\(\)');
       final RegExp override = RegExp(

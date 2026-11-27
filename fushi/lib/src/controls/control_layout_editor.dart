@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'dart:ui' show PathMetric;
 
 import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoIcons;
@@ -1589,7 +1590,8 @@ class _ChipFocusShell extends StatefulWidget {
   State<_ChipFocusShell> createState() => _ChipFocusShellState();
 }
 
-class _ChipFocusShellState extends State<_ChipFocusShell> {
+class _ChipFocusShellState extends State<_ChipFocusShell>
+    with StateResourceScope<_ChipFocusShell> {
   final FocusNode _node = FocusNode(debugLabel: 'ControlLayoutEditorChip');
   bool _hovered = false;
   bool _focused = false;
@@ -1600,7 +1602,7 @@ class _ChipFocusShellState extends State<_ChipFocusShell> {
     if (widget.focusOnMount) {
       // 键盘落位后新挂载的这颗接过焦点；挂载发生在 setState 触发的那一帧里，
       // 帧尾回调必然会跑。
-      WidgetsBinding.instance.addPostFrameCallback((Duration _) {
+      schedulePostFrame((Duration _) {
         if (mounted) _node.requestFocus();
       });
     }

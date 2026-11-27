@@ -9,7 +9,7 @@ library;
 import 'dart:async';
 
 import 'package:drift/drift.dart'
-    show ResultSetImplementation, TableUpdate, TableUpdateQuery;
+    show ResultSetImplementation, TableUpdateQuery;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:material_ui/material_ui.dart';
@@ -49,6 +49,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 推入一个本地歌单页。
 void openMusicLocalPlaylist(BuildContext context, MusicPlaylistRow playlist) =>
@@ -86,10 +87,11 @@ typedef _PlaylistData = ({
 });
 
 class _MusicLocalPlaylistPageState extends ConsumerState<MusicLocalPlaylistPage>
-    with MediaVisibilityDependent<MusicLocalPlaylistPage> {
+    with
+        MediaVisibilityDependent<MusicLocalPlaylistPage>,
+        StateResourceScope<MusicLocalPlaylistPage> {
   late Future<_PlaylistData> _data = _load();
   _PlaylistData? _shown;
-  StreamSubscription<Set<TableUpdate>>? _dbSub;
 
   AppModel get _app => ref.read(appProvider);
 
@@ -98,30 +100,26 @@ class _MusicLocalPlaylistPageState extends ConsumerState<MusicLocalPlaylistPage>
     super.initState();
     if (widget.itemsLoader == null && _app.isDatabaseReady) {
       final FushiDatabase db = _app.database;
-      _dbSub = db
-          .tableUpdates(
-            TableUpdateQuery.onAllTables(
-              <ResultSetImplementation<Object?, Object?>>[
-                db.musicPlaylists,
-                db.musicPlaylistEntries,
-                db.musicRemoteTracks,
-                db.musicTracks,
-              ],
-            ),
-          )
-          .listen((_) {
-            if (!mounted) return;
-            setState(() {
-              _data = _load();
-            });
-          });
+      ownSubscription(
+        db
+            .tableUpdates(
+              TableUpdateQuery.onAllTables(
+                <ResultSetImplementation<Object?, Object?>>[
+                  db.musicPlaylists,
+                  db.musicPlaylistEntries,
+                  db.musicRemoteTracks,
+                  db.musicTracks,
+                ],
+              ),
+            )
+            .listen((_) {
+              if (!mounted) return;
+              setState(() {
+                _data = _load();
+              });
+            }),
+      );
     }
-  }
-
-  @override
-  void dispose() {
-    unawaited(_dbSub?.cancel());
-    super.dispose();
   }
 
   /// 解锁 / 重新上锁 / 专辑上锁状态变了：重读（上锁专辑的曲目不列、不播）。

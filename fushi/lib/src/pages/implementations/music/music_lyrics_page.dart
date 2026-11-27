@@ -169,6 +169,7 @@ import 'package:fushi/src/utils/misc/tts_channel.dart';
 import 'package:fushi/src/media/shared/controller_lookup_steps.dart';
 import 'package:fushi/src/second_screen/input/controller_lookup_mode.dart';
 import 'package:fushi/src/second_screen/input/controller_lookup_target.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 part 'music_lyrics_controller_lookup.part.dart';
 part 'music_lyrics_page_apple.part.dart';
@@ -553,30 +554,30 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     return _themed = rethemeFushiWithScheme(base, scheme);
   }
 
-  /// 生成字幕写进当前这首（任务常在页面打开期间或之后才结束）：重新解析显示它。
-  StreamSubscription<String>? _generatedSub;
-
-  /// 等转录的纯文本歌词自动对时跑完（[MusicLyricsService.autoSyncResults]）：提示结果。
-  StreamSubscription<MusicLyricsAutoSyncEvent>? _autoSyncSub;
-
   /// 纯文本歌词自动对时进行中（对齐在后台 isolate，长歌要一两秒）：入口置灰防重复点。
   bool _autoSyncing = false;
 
   @override
   void initState() {
     super.initState();
-    _engine.addListener(_onEngine);
-    _generatedSub = _service.generatedUpdates.listen((String uid) {
-      final MusicPlayItem? item = _engine.current;
-      if (!mounted || item == null || uid != item.trackUid) return;
-      unawaited(_load(item));
-    });
-    _autoSyncSub = _service.autoSyncResults.listen(
-      (MusicLyricsAutoSyncEvent e) => _showAutoSyncOutcome(e.outcome),
+    listenTo(_engine, _onEngine);
+    // 生成字幕写进当前这首（任务常在页面打开期间或之后才结束）：重新解析显示它。
+    ownSubscription(
+      _service.generatedUpdates.listen((String uid) {
+        final MusicPlayItem? item = _engine.current;
+        if (!mounted || item == null || uid != item.trackUid) return;
+        unawaited(_load(item));
+      }),
+    );
+    // 等转录的纯文本歌词自动对时跑完（[MusicLyricsService.autoSyncResults]）：提示结果。
+    ownSubscription(
+      _service.autoSyncResults.listen(
+        (MusicLyricsAutoSyncEvent e) => _showAutoSyncOutcome(e.outcome),
+      ),
     );
     _companion.startSnapshots(_companionSnapshot);
     ControllerLookupMode.instance.attach(_controllerLookupTarget);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _onEngine());
+    schedulePostFrame((_) => _onEngine());
   }
 
   /// Controller lookup mode (S6, hold L1 / Select): cursor drawn by the
@@ -608,9 +609,6 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     _companion.dispose();
     _lyricsExtras.dispose();
     _playbackRouteMark.dispose();
-    _engine.removeListener(_onEngine);
-    unawaited(_generatedSub?.cancel());
-    unawaited(_autoSyncSub?.cancel());
     _releaseAnalysis();
     _aiTheme.dispose();
     _mvBackdrop
@@ -3590,14 +3588,15 @@ class _DiscArtLookup extends StatefulWidget {
   State<_DiscArtLookup> createState() => _DiscArtLookupState();
 }
 
-class _DiscArtLookupState extends State<_DiscArtLookup> {
+class _DiscArtLookupState extends State<_DiscArtLookup>
+    with StateResourceScope<_DiscArtLookup> {
   /// 曲库页没发布到、按曲目目录现找出的盘面图（专辑 uid → 路径；找过没有记 null）。
   final Map<String, String?> _lookedUp = <String, String?>{};
 
   @override
   void initState() {
     super.initState();
-    MusicDiscArtIndex.instance.albums.addListener(_onDiscArt);
+    listenTo(MusicDiscArtIndex.instance.albums, _onDiscArt);
     _lookUp();
   }
 
@@ -3639,12 +3638,6 @@ class _DiscArtLookupState extends State<_DiscArtLookup> {
   void didUpdateWidget(_DiscArtLookup old) {
     super.didUpdateWidget(old);
     if (old.albumUid != widget.albumUid) _lookUp();
-  }
-
-  @override
-  void dispose() {
-    MusicDiscArtIndex.instance.albums.removeListener(_onDiscArt);
-    super.dispose();
   }
 
   @override

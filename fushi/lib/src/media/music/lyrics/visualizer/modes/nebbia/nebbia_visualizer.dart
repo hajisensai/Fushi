@@ -13,6 +13,7 @@ library;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_frame.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/nebbia/nebbia_glyphs.dart';
@@ -44,13 +45,14 @@ class NebbiaVisualizer extends StatefulWidget {
   State<NebbiaVisualizer> createState() => _NebbiaVisualizerState();
 }
 
-class _NebbiaVisualizerState extends State<NebbiaVisualizer> {
+class _NebbiaVisualizerState extends State<NebbiaVisualizer>
+    with StateResourceScope<NebbiaVisualizer> {
   final NebbiaController _controller = NebbiaController();
 
   @override
   void initState() {
     super.initState();
-    NebbiaGlyphCache.instance.addListener(_onGlyphs);
+    listenTo(NebbiaGlyphCache.instance, _onGlyphs);
   }
 
   /// 骨架追踪好一批：重画（场景按字形版本号自己重排）。
@@ -60,7 +62,6 @@ class _NebbiaVisualizerState extends State<NebbiaVisualizer> {
 
   @override
   void dispose() {
-    NebbiaGlyphCache.instance.removeListener(_onGlyphs);
     _controller.dispose();
     super.dispose();
   }

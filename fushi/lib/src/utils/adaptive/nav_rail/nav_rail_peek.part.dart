@@ -201,7 +201,7 @@ class _NavRailPeekTarget {
 }
 
 class _NavRailPeekScopeState extends State<_NavRailPeekScope>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, StateResourceScope<_NavRailPeekScope> {
   final OverlayPortalController _portal = OverlayPortalController();
   late final FushiSpring _open = FushiSpring(
     vsync: this,
@@ -234,6 +234,7 @@ class _NavRailPeekScopeState extends State<_NavRailPeekScope>
   void initState() {
     super.initState();
     _open.animation.addStatusListener(_onOpenStatus);
+    onTeardown(() => _open.animation.removeStatusListener(_onOpenStatus));
   }
 
   void _onOpenStatus(AnimationStatus status) {
@@ -357,7 +358,8 @@ class _NavRailPeekScopeState extends State<_NavRailPeekScope>
   void dispose() {
     _openTimer?.cancel();
     _closeTimer?.cancel();
-    _open.animation.removeStatusListener(_onOpenStatus);
+    // 先摘监听再释放 _open。
+    releaseResources();
     _open.dispose();
     _move.dispose();
     super.dispose();

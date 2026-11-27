@@ -477,7 +477,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage>
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+    schedulePostFrame((_) => _load());
   }
 
   /// 解锁 / 重新上锁 / 上锁标记变了：重读（上锁作品的收藏 / 制卡不列、不导出）。

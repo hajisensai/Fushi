@@ -64,6 +64,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/srs/srs_action_error_text.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 检查器的页签。
 enum SrsBrowseInspectorTab { preview, edit, history }
@@ -543,7 +544,8 @@ class _EditTab extends ConsumerStatefulWidget {
   ConsumerState<_EditTab> createState() => _EditTabState();
 }
 
-class _EditTabState extends ConsumerState<_EditTab> {
+class _EditTabState extends ConsumerState<_EditTab>
+    with StateResourceScope<_EditTab> {
   final Map<String, SrsFieldModel> _models = <String, SrsFieldModel>{};
 
   /// 每个字段最近一次落库（或载入）的值：外部重读时只重置没在改的字段。
@@ -577,7 +579,9 @@ class _EditTabState extends ConsumerState<_EditTab> {
     for (final SrsFieldDef f in widget.detail.noteType.fields) {
       final String v = widget.detail.note.field(f.id);
       _saved[f.id] = v;
-      _models[f.id] = SrsFieldModel(v)..addListener(() => _schedule(f));
+      final SrsFieldModel model = SrsFieldModel(v);
+      _models[f.id] = model;
+      listenTo(model, () => _schedule(f));
     }
   }
 
@@ -626,6 +630,8 @@ class _EditTabState extends ConsumerState<_EditTab> {
     }
     // [_saveTags] 在第一个 await 之前就读完了输入框，随后释放控制器不影响落库。
     if (_tagsDirty) unawaited(_saveTags());
+    // 先摘监听再 dispose 各字段模型。
+    releaseResources();
     for (final SrsFieldModel m in _models.values) {
       m.dispose();
     }
@@ -1249,7 +1255,8 @@ class SrsBrowseDetailPage extends ConsumerStatefulWidget {
       _SrsBrowseDetailPageState();
 }
 
-class _SrsBrowseDetailPageState extends ConsumerState<SrsBrowseDetailPage> {
+class _SrsBrowseDetailPageState extends ConsumerState<SrsBrowseDetailPage>
+    with StateResourceScope<SrsBrowseDetailPage> {
   final FocusNode _focusNode = FocusNode(debugLabel: 'srs-browse-detail');
   late final PageFocusOwnership _focusOwnership = PageFocusOwnership(
     node: _focusNode,
@@ -1264,12 +1271,11 @@ class _SrsBrowseDetailPageState extends ConsumerState<SrsBrowseDetailPage> {
   @override
   void initState() {
     super.initState();
-    widget.revision.addListener(_onRevision);
+    listenTo(widget.revision, _onRevision);
   }
 
   @override
   void dispose() {
-    widget.revision.removeListener(_onRevision);
     _lookupCtl.dispose();
     _focusNode.dispose();
     super.dispose();

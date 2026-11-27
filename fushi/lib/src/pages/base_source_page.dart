@@ -123,7 +123,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       () => FushiDesktopTitleBar.removeCaptionTapListener(_onCaptionTap),
     );
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       _seedWarmPopup();
     });
   }

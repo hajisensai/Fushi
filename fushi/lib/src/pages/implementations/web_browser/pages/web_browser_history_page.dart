@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/pages/implementations/web_browser/pages/web_browser_page_common.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -49,7 +50,8 @@ groupWebBrowserHistoryByDay(List<WebBrowserHistoryEntry> entries) {
   return groups;
 }
 
-class _WebBrowserHistoryPageState extends State<WebBrowserHistoryPage> {
+class _WebBrowserHistoryPageState extends State<WebBrowserHistoryPage>
+    with StateResourceScope<WebBrowserHistoryPage> {
   final TextEditingController _search = TextEditingController();
   final FocusNode _searchFocus = FocusNode();
   List<WebBrowserHistoryEntry> _entries = const <WebBrowserHistoryEntry>[];
@@ -63,6 +65,7 @@ class _WebBrowserHistoryPageState extends State<WebBrowserHistoryPage> {
   void initState() {
     super.initState();
     widget.store.addListener(_onStoreChanged);
+    onTeardown(() => widget.store.removeListener(_onStoreChanged));
     unawaited(_load(replay: true));
   }
 
@@ -78,7 +81,6 @@ class _WebBrowserHistoryPageState extends State<WebBrowserHistoryPage> {
 
   @override
   void dispose() {
-    widget.store.removeListener(_onStoreChanged);
     _search.dispose();
     _searchFocus.dispose();
     super.dispose();

@@ -38,6 +38,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
     show FushiExpansionTile;
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 随机模式下本首的样式：按曲目种子稳定地挑一个（同一首重进不换）。
 LyricVisualizerMode lyricVisualizerRandomModeFor(String trackUid) {
@@ -120,7 +121,8 @@ class MusicLyricVisualizerView extends StatefulWidget {
       _MusicLyricVisualizerViewState();
 }
 
-class _MusicLyricVisualizerViewState extends State<MusicLyricVisualizerView> {
+class _MusicLyricVisualizerViewState extends State<MusicLyricVisualizerView>
+    with StateResourceScope<MusicLyricVisualizerView> {
   late final _PlaybackClockAdapter _clock = _PlaybackClockAdapter(
     () => widget.clock,
   );
@@ -182,15 +184,15 @@ class _MusicLyricVisualizerViewState extends State<MusicLyricVisualizerView> {
   void initState() {
     super.initState();
     widget.aiTheme?.addListener(_onAiTheme);
+    onTeardown(() => widget.aiTheme?.removeListener(_onAiTheme));
     _attachAiTheme();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       if (mounted) _focus.requestFocus();
     });
   }
 
   @override
   void dispose() {
-    widget.aiTheme?.removeListener(_onAiTheme);
     _hoverHide?.cancel();
     _focus.dispose();
     super.dispose();

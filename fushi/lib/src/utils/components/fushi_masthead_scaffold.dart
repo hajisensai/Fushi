@@ -21,6 +21,7 @@ import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 import 'package:fushi/src/focus/page_scroll_registry.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
@@ -654,7 +655,8 @@ class FushiMastheadFrame extends StatefulWidget {
   State<FushiMastheadFrame> createState() => _FushiMastheadFrameState();
 }
 
-class _FushiMastheadFrameState extends State<FushiMastheadFrame> {
+class _FushiMastheadFrameState extends State<FushiMastheadFrame>
+    with StateResourceScope<FushiMastheadFrame> {
   ScrollController? _primary;
   final FushiScrollOwnerDepth _owner = FushiScrollOwnerDepth();
 
@@ -698,6 +700,7 @@ class _FushiMastheadFrameState extends State<FushiMastheadFrame> {
       PageScrollRegistry.push(primary);
     }
     widget.titleRevealOffset?.addListener(_syncReveal);
+    onTeardown(() => widget.titleRevealOffset?.removeListener(_syncReveal));
   }
 
   @override
@@ -712,7 +715,6 @@ class _FushiMastheadFrameState extends State<FushiMastheadFrame> {
 
   @override
   void dispose() {
-    widget.titleRevealOffset?.removeListener(_syncReveal);
     final ScrollController? primary = _primary;
     if (primary != null) {
       PageScrollRegistry.pop(primary);

@@ -4486,24 +4486,45 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     );
   }
 
+  // 进程级注册 / 显示态的撤销（BUG-5604）：都在 initState 登记，挂载半途抛错时随
+  // StateResourceScope 的清单按登记逆序撤；正常退场时 dispose 在原来的位置逐条
+  // release（前后步骤有依赖，不能挪到 super.dispose 里一起跑）。
+  late final ScopedRelease _frameProbeRelease;
+  late final ScopedRelease _externalNavigationRelease;
+  late final ScopedRelease _playbackRemoteRelease;
+  late final ScopedRelease _controllerLookupRelease;
+  late final ScopedRelease _miniWindowRelease;
+  late final ScopedRelease _handedOverFullscreenRelease;
+  late final ScopedRelease _contentFullscreenRelease;
+  late final ScopedRelease _exitFlushRelease;
+  late final ScopedRelease _displayClaimRelease;
+
   @override
   void initState() {
     super.initState();
     // 诊断时间轴（2026-09-22，用户：分析视频为什么卡顿 / 查词为什么卡）。探针自己判
     // 开关，关着时 start() 立即返回、连回调都不注册——默认路径零开销。
     _frameProbe.start();
+    _frameProbeRelease = onTeardown(_frameProbe.stop);
     videoDiag(
       VideoDiagCategory.video,
       VideoDiagLevel.info,
       'page open platform=${Platform.operatingSystem}',
     );
     _registerExternalNavigation();
+    _externalNavigationRelease = onTeardown(
+      () => ExternalMediaNavigation.instance.unregister(this),
+    );
     // 字幕列表侧栏按刘海 / 灵动岛所在边让位（BUG-3411）：横屏左 ↔ 右翻转时只有它变。
     listenTo(sensorHousingEdge, _onSensorHousingEdgeChanged);
     listenTo(appFloatingBallPointerInside, _onFloatingBallPointerChanged);
     // 桌面控制通道遥控（`fushi_cli play`）：按路由压栈顺序登记，最上层的视频页优先。
     videoPlaybackRemotes.register(_playbackRemote);
+    _playbackRemoteRelease = onTeardown(
+      () => videoPlaybackRemotes.unregister(_playbackRemote),
+    );
     _attachControllerLookup();
+    _controllerLookupRelease = onTeardown(_detachControllerLookup);
     // 不在 initState 读 appModel.lowMemoryMode（它读 prefsRepo，未初始化会抛；
     // 错误态 smoke 用未初始化 AppModel）。先建空 controller，真实 lowMemory 留到
     // _seedWarmPopup（成功路径、必已初始化）再设——与 base_source_page 同范式。
@@ -4513,8 +4534,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     );
     // TODO-1204：接线查词计数（视频来源，带 bookUid + 剧集标题）。
     attachLookupCounter(_popup);
-    // 上次没写完的「看完再制卡」列表：进页就把角标亮出来（best-effort）。
-    unawaited(_refreshStagedMineCount());
     _subtitleListVisible.value = widget.initialSubtitleListVisible;
     // cehHSgF04K：换集 / 连播交接沉浸锁定态。必须在下面订阅 [_immersiveLocked] 之前
     // 赋值——控制条可见性由订阅派生，首帧就按锁定态算（不弹控制条、不先闪一下）。
@@ -4522,8 +4541,24 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 小窗能力探测 + 系统画中画进出回程（见 mini_window.part.dart）。放 initState
     // 是因为入口按钮的显隐必须在首帧就定下来，不能在用户眼皮底下冒出来。
     _initMiniWindowSupport();
+    // 小窗所有权 / 画中画订阅：退页必须还原（见 dispose 与 mini_window.part.dart）。
+    _miniWindowRelease = onTeardown(() {
+      unawaited(_pictureInPictureSub?.cancel());
+      _pictureInPictureSub = null;
+      _disposeMiniWindow();
+    });
     // BUG-2043：从全屏页换集而来 → 认领旧页留下的原生全屏（见 fullscreen.part.dart）。
     _claimHandedOverNativeFullscreen();
+    _handedOverFullscreenRelease = onTeardown(
+      _releaseHandedOverNativeFullscreen,
+    );
+    _contentFullscreenRelease = onTeardown(() {
+      if (Platform.isWindows) {
+        // Abnormal route teardown must never leave the app frame hidden. The
+        // normal fullscreen exit releases this owner only after HWND restoration.
+        FushiDesktopTitleBar.setContentFullscreen(owner: this, enabled: false);
+      }
+    });
     // TODO-364 单一真相源：字幕避让可见性恒由 media_kit 真实可见性
     // （[_mediaKitControlsVisible]）+ 三个门控派生。订阅这四个输入，任一变化即重派生
     // [_videoControlsVisible]，杜绝旧镜像与真实控制条相位反。
@@ -4565,15 +4600,32 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _exitFlushCallback = ExitFlushRegistry.instance.register(
       _flushAllForProcessExit,
     );
-    // TODO-057: 进入视频即快照系统屏幕亮度（移动端），供亮度手势初值与退出还原；
-    // 桌面 no-op。
-    unawaited(_ensureEnterBrightness());
+    _exitFlushRelease = onTeardown(() {
+      final ExitFlushCallback? exitFlush = _exitFlushCallback;
+      if (exitFlush != null) {
+        ExitFlushRegistry.instance.unregister(exitFlush);
+        _exitFlushCallback = null;
+      }
+    });
     // BUG-2105：先登记「本页持有进程级显示态」（横屏锁 / 系统栏回调 / macOS 交通灯），
     // 再去设这三件。换集的窗口模式分支用 `pushReplacement`，旧页 dispose 晚于本页
     // initState —— 登记表让旧页释放时看到「还有人持有」而不还原，否则新页刚设好的
     // 横屏锁被放宽成含竖屏（旋转锁定下当即翻竖屏 = 掉出全屏）、刚注册的系统栏回调被
     // 置空。见 [VideoDisplayClaim] 与 [_releaseVideoDisplayClaim]。
     VideoDisplayClaim.claim(this);
+    _displayClaimRelease = onTeardown(_releaseVideoDisplayClaim);
+    // TODO-658/BUG-383: 监听系统栏真实可见性，喂 [_videoBottomSystemInset] 的门控
+    // （隐栏归零、可见才避让），根治手势导航下进度条被恒非零 viewPadding 顶高。
+    _registerSystemBarsVisibilityCallback();
+    // 以下异步任务一起跑完就撤不回来（只认 mounted，而 initState 半途抛错的孤儿
+    // State 的 mounted 恒为 true），所以放在同步装配全部完成之后（BUG-5602 /
+    // BUG-5604）。方向锁 / 沉浸隐栏仍在 [VideoDisplayClaim.claim] 之后（它们先查
+    // `VideoDisplayClaim.owns`）。
+    // 上次没写完的「看完再制卡」列表：进页就把角标亮出来（best-effort）。
+    unawaited(_refreshStagedMineCount());
+    // TODO-057: 进入视频即快照系统屏幕亮度（移动端），供亮度手势初值与退出还原；
+    // 桌面 no-op。
+    unawaited(_ensureEnterBrightness());
     // TODO-099 → 拍板台 P9AS-fvjJh：进入视频页按方向策略锁方向（默认横屏；设置可改
     // 按视频比例 / 跟随旋转），退出 [dispose] 还原；桌面 no-op。
     unawaited(_applyVideoOrientationLock());
@@ -4588,9 +4640,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 入口），从不重申 → 后台返回 / 通知栏交互 / 全屏路由后系统栏残留。退出时，
     // 最后一个视频页释放显示态时由 [_releaseVideoDisplayClaim] 还原；桌面 no-op。
     unawaited(_applyVideoImmersiveMode());
-    // TODO-658/BUG-383: 监听系统栏真实可见性，喂 [_videoBottomSystemInset] 的门控
-    // （隐栏归零、可见才避让），根治手势导航下进度条被恒非零 viewPadding 顶高。
-    _registerSystemBarsVisibilityCallback();
     _init();
   }
 
@@ -8435,7 +8484,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   void dispose() {
     // 先停帧探针：它会把残留的最后一窗打掉。退页前那一秒往往正是要看的那一窗（卡死
     // / 黑闪就发生在退出之前），丢掉它等于丢掉现场。必须排在任何拆页步骤之前。
-    _frameProbe.stop();
+    _frameProbeRelease.release();
     _playlistStillExists.dispose();
     // 播放列表是进程内共享的（换页后的新页接着用），只摘本页的监听。
     _youtubePlaylist?.removeListener(_onYoutubePlaylistChanged);
@@ -8463,42 +8512,32 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _discardRemoteTimingAudio();
     videoDiag(VideoDiagCategory.video, VideoDiagLevel.info, 'page close');
     _disposedDuringSourceReview = _sourceReviewActive;
-    ExternalMediaNavigation.instance.unregister(this);
-    videoPlaybackRemotes.unregister(_playbackRemote);
-    _detachControllerLookup();
+    _externalNavigationRelease.release();
+    _playbackRemoteRelease.release();
+    _controllerLookupRelease.release();
     _companionHook.dispose();
     unawaited(_favoriteChangesSub?.cancel());
     _favoriteChangesSub = null;
     _sourceReviewSession?.removeListener(_onSourceReviewChanged);
     // BUG-2043：加载中就被退出（ESC / 系统返回）而还没压上全屏路由 → 接管来的原生
     // 全屏由本页亲自退，不能把窗口留在「原生全屏、栈上无全屏路由」的悬空态。
-    _releaseHandedOverNativeFullscreen();
+    _handedOverFullscreenRelease.release();
     // 网页档：退窗口全屏、拆会话、归还底层合成（见 web_source.part.dart）。
     _disposeWebSource();
-    if (Platform.isWindows) {
-      // Abnormal route teardown must never leave the app frame hidden. The
-      // normal fullscreen exit releases this owner only after HWND restoration.
-      FushiDesktopTitleBar.setContentFullscreen(owner: this, enabled: false);
-    }
+    _contentFullscreenRelease.release();
     // BUG-2105：进程级显示态（系统栏回调 / 横屏锁 / macOS 交通灯）统一在
     // [_releaseVideoDisplayClaim] 里按所有者记账还原——本页不是最后一个持有者
     // （换集期间新页已认领）就不得还原，否则会把新页刚设好的显示态掰掉。
-    _releaseVideoDisplayClaim();
+    _displayClaimRelease.release();
     // 小窗必须在退页时还原：页面没了、窗口却还是个无边框置顶小窗，用户就只剩
     // 任务管理器可用了（见 mini_window.part.dart 的 [_disposeMiniWindow]）。
-    // 画中画订阅在这里取消（写进 part 的 extension 里 `cancel_subscriptions`
-    // lint 看不见，会对字段报假的「未取消」）。
-    unawaited(_pictureInPictureSub?.cancel());
-    _pictureInPictureSub = null;
-    _disposeMiniWindow();
+    // 画中画订阅的取消与小窗还原一起登记在 initState（类体内，`cancel_subscriptions`
+    // lint 看得见），这里在原位置撤。
+    _miniWindowRelease.release();
     // 离开播放页 = 看完了：把「看完再制卡」列表写进 Anki（异步，不挡退出）。必须在
     // controller / notifier 释放前取好 `ref` 与在途任务。
     _flushStagedMinesOnExit();
-    final ExitFlushCallback? exitFlush = _exitFlushCallback;
-    if (exitFlush != null) {
-      ExitFlushRegistry.instance.unregister(exitFlush);
-      _exitFlushCallback = null;
-    }
+    _exitFlushRelease.release();
     // 悬停离开的意图确认表活得比本页久就会在已 dispose 的 State 上关栈（_popNestedPopupAt
     // → setState），故与其它 debounce 一起在这里收掉。
     _cancelHoverLeaveResume();

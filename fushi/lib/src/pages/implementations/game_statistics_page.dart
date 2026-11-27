@@ -109,7 +109,7 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage>
   void initState() {
     super.initState();
     _rangeSelection.addListener(_onRangeChanged);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+    schedulePostFrame((_) => _load());
   }
 
   @override

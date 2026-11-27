@@ -49,6 +49,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 // BUG-2953：根 Overlay 查词浮层的自带导航层；宿主经本文件取用，故此处 re-export。
 export 'package:fushi/src/lookup/lookup_overlay_navigator.dart'
@@ -581,13 +582,15 @@ class DictionaryPopupEntryBinding extends StatefulWidget {
 }
 
 class _DictionaryPopupEntryBindingState
-    extends State<DictionaryPopupEntryBinding> {
+    extends State<DictionaryPopupEntryBinding>
+    with StateResourceScope<DictionaryPopupEntryBinding> {
   Widget? _lastBuilt;
 
   @override
   void initState() {
     super.initState();
     widget.controller.addListener(_onControllerChanged);
+    onTeardown(() => widget.controller.removeListener(_onControllerChanged));
   }
 
   @override
@@ -597,12 +600,6 @@ class _DictionaryPopupEntryBindingState
       oldWidget.controller.removeListener(_onControllerChanged);
       widget.controller.addListener(_onControllerChanged);
     }
-  }
-
-  @override
-  void dispose() {
-    widget.controller.removeListener(_onControllerChanged);
-    super.dispose();
   }
 
   void _onControllerChanged() {

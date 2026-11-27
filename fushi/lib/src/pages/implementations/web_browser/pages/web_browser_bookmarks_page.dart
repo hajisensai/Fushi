@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/pages/implementations/web_browser/pages/web_browser_page_common.dart';
 import 'package:fushi/src/utils/components/fushi_form_dialog.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
@@ -61,7 +62,8 @@ Future<List<WebBrowserFolderTarget>> webBrowserBookmarkFolderTargets(
   return result;
 }
 
-class _WebBrowserBookmarksPageState extends State<WebBrowserBookmarksPage> {
+class _WebBrowserBookmarksPageState extends State<WebBrowserBookmarksPage>
+    with StateResourceScope<WebBrowserBookmarksPage> {
   /// 当前所在文件夹链（空 = 根目录）。
   final List<WebBrowserBookmark> _path = <WebBrowserBookmark>[];
   List<WebBrowserBookmark> _items = const <WebBrowserBookmark>[];
@@ -75,13 +77,8 @@ class _WebBrowserBookmarksPageState extends State<WebBrowserBookmarksPage> {
   void initState() {
     super.initState();
     widget.store.addListener(_onStoreChanged);
+    onTeardown(() => widget.store.removeListener(_onStoreChanged));
     unawaited(_load(replay: true));
-  }
-
-  @override
-  void dispose() {
-    widget.store.removeListener(_onStoreChanged);
-    super.dispose();
   }
 
   void _onStoreChanged() => unawaited(_load());

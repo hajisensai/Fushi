@@ -26,6 +26,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi_core/fushi_core.dart' show MediaTrackingMappingRow;
 import 'package:fushi_engine/media/tracking/book_series_link.dart';
 import 'package:fushi_engine/media/tracking/book_tracking_link.dart';
@@ -52,7 +53,8 @@ class SeriesCardTrackingSection extends StatefulWidget {
       _SeriesCardTrackingSectionState();
 }
 
-class _SeriesCardTrackingSectionState extends State<SeriesCardTrackingSection> {
+class _SeriesCardTrackingSectionState extends State<SeriesCardTrackingSection>
+    with StateResourceScope<SeriesCardTrackingSection> {
   SeriesCardTracking? _data;
 
   /// Provider ids with an action running (their buttons off meanwhile).
@@ -63,7 +65,8 @@ class _SeriesCardTrackingSectionState extends State<SeriesCardTrackingSection> {
   @override
   void initState() {
     super.initState();
-    _service.statusRevision.addListener(_reload);
+    widget.service.statusRevision.addListener(_reload);
+    onTeardown(() => widget.service.statusRevision.removeListener(_reload));
     unawaited(_reload());
   }
 
@@ -78,12 +81,6 @@ class _SeriesCardTrackingSectionState extends State<SeriesCardTrackingSection> {
         oldWidget.service != widget.service) {
       unawaited(_reload());
     }
-  }
-
-  @override
-  void dispose() {
-    _service.statusRevision.removeListener(_reload);
-    super.dispose();
   }
 
   Future<void> _reload() async {

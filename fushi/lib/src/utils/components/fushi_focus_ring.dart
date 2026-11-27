@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:flutter/rendering.dart';
 import 'package:fushi/src/focus/focus_geometry.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
@@ -34,7 +35,7 @@ class FushiFocusRing extends StatefulWidget {
 }
 
 class _FushiFocusRingState extends State<FushiFocusRing>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, StateResourceScope<FushiFocusRing> {
   final FocusManager _fm = FocusManager.instance;
   final GlobalKey _stackKey = GlobalKey(debugLabel: 'fushi-focus-ring-stack');
 
@@ -66,19 +67,13 @@ class _FushiFocusRingState extends State<FushiFocusRing>
   @override
   void initState() {
     super.initState();
-    _fm.addListener(_onFocusManagerChange);
+    listenTo(_fm, _onFocusManagerChange);
     _fm.addHighlightModeListener(_onHighlight);
+    onTeardown(() => _fm.removeHighlightModeListener(_onHighlight));
     WidgetsBinding.instance.addObserver(this);
+    onTeardown(() => WidgetsBinding.instance.removeObserver(this));
     _lastFocused = _fm.primaryFocus;
     _scheduleRecompute();
-  }
-
-  @override
-  void dispose() {
-    _fm.removeListener(_onFocusManagerChange);
-    _fm.removeHighlightModeListener(_onHighlight);
-    WidgetsBinding.instance.removeObserver(this);
-    super.dispose();
   }
 
   // Fires on ANY inherited dependency read in build() changing — that is both

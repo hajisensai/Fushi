@@ -51,6 +51,7 @@ import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_engine/media/kavita/kavita_api.dart';
 import 'package:fushi_engine/media/kavita/kavita_models.dart';
 import 'package:fushi/src/media/media_source.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 class KavitaBookSeriesPage extends ConsumerStatefulWidget {
   const KavitaBookSeriesPage({
@@ -87,7 +88,7 @@ String kavitaChapterProgressLabel(KavitaChapter chapter) {
 }
 
 class _KavitaBookSeriesPageState extends ConsumerState<KavitaBookSeriesPage>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, StateResourceScope<KavitaBookSeriesPage> {
   List<KavitaChapter> _chapters = const <KavitaChapter>[];
   Map<int, ({String bookKey, KavitaBookBinding binding})> _bound =
       const <int, ({String bookKey, KavitaBookBinding binding})>{};
@@ -118,6 +119,7 @@ class _KavitaBookSeriesPageState extends ConsumerState<KavitaBookSeriesPage>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    onTeardown(() => WidgetsBinding.instance.removeObserver(this));
     unawaited(_load());
   }
 
@@ -129,7 +131,6 @@ class _KavitaBookSeriesPageState extends ConsumerState<KavitaBookSeriesPage>
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
     _settleGeneration++;
     for (final KavitaCancelToken token in _tokens.values) {
       token.cancel();

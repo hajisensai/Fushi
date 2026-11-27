@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
@@ -95,24 +96,20 @@ class CompanionPanelApp extends ConsumerStatefulWidget {
   ConsumerState<CompanionPanelApp> createState() => _CompanionPanelAppState();
 }
 
-class _CompanionPanelAppState extends ConsumerState<CompanionPanelApp> {
-  StreamSubscription<void>? _prefsChanges;
+class _CompanionPanelAppState extends ConsumerState<CompanionPanelApp>
+    with StateResourceScope<CompanionPanelApp> {
   bool _reloading = false;
   bool _reloadAgain = false;
 
   @override
   void initState() {
     super.initState();
-    _prefsChanges = ref
-        .read(companionPanelSessionProvider)
-        .prefsChanges
-        .listen((_) => unawaited(_reloadPrefs()));
-  }
-
-  @override
-  void dispose() {
-    unawaited(_prefsChanges?.cancel());
-    super.dispose();
+    ownSubscription(
+      ref
+          .read(companionPanelSessionProvider)
+          .prefsChanges
+          .listen((_) => unawaited(_reloadPrefs())),
+    );
   }
 
   /// The main process changed preferences: reload them the way the warm

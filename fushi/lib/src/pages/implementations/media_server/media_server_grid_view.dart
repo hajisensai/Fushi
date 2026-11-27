@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_user_data_refresh.dart';
@@ -65,7 +66,7 @@ class MediaServerGridView extends StatefulWidget {
 }
 
 class _MediaServerGridViewState extends State<MediaServerGridView>
-    with MediaServerUserDataRefresh {
+    with StateResourceScope<MediaServerGridView>, MediaServerUserDataRefresh {
   static const Duration _searchDebounce = Duration(milliseconds: 350);
 
   final TextEditingController _searchController = TextEditingController();

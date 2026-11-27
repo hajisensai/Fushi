@@ -21,6 +21,7 @@ import 'package:fushi_engine/srs/sync2/srs_fushisrs.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/utils/components/fushi_date_time_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -187,7 +188,8 @@ class SrsHistoryPage extends ConsumerStatefulWidget {
   ConsumerState<SrsHistoryPage> createState() => _SrsHistoryPageState();
 }
 
-class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
+class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage>
+    with StateResourceScope<SrsHistoryPage> {
   bool _loading = true;
 
   /// 复习库打开失败（[readSrsStore] 原样抛出的错误）：页面显示错误态 + 重试，不停在转圈。
@@ -207,14 +209,8 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
   @override
   void initState() {
     super.initState();
-    srsSyncProgress.addListener(_onSyncProgress);
+    listenTo(srsSyncProgress, _onSyncProgress);
     unawaited(_reload());
-  }
-
-  @override
-  void dispose() {
-    srsSyncProgress.removeListener(_onSyncProgress);
-    super.dispose();
   }
 
   /// 一轮同步跑完（进度回到 null）后重读状态：未上传 / 落后条数要换成这轮之后的值，

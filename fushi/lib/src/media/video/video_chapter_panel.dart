@@ -9,6 +9,7 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 视频内封章节（chapter）列表面板（TODO-424）。复用 [VideoTranslucentSidePanel]
 /// 的侧栏外壳，本 widget 只负责列出 [VideoPlayerController.chapters]：每行「序号 +
@@ -45,14 +46,15 @@ class VideoChapterPanel extends StatefulWidget {
   State<VideoChapterPanel> createState() => _VideoChapterPanelState();
 }
 
-class _VideoChapterPanelState extends State<VideoChapterPanel> {
+class _VideoChapterPanelState extends State<VideoChapterPanel>
+    with StateResourceScope<VideoChapterPanel> {
   // 「当前章滚到视口中部偏上」的机器与剧集面板共享（[VideoPanelAutoScroller]）。
   final VideoPanelAutoScroller _autoScroller = VideoPanelAutoScroller();
 
   @override
   void initState() {
     super.initState();
-    widget.controller.addListener(_onControllerChanged);
+    listenTo(widget.controller, _onControllerChanged);
   }
 
   @override
@@ -68,7 +70,6 @@ class _VideoChapterPanelState extends State<VideoChapterPanel> {
 
   @override
   void dispose() {
-    widget.controller.removeListener(_onControllerChanged);
     _autoScroller.dispose();
     super.dispose();
   }

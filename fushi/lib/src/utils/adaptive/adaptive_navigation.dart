@@ -4,6 +4,7 @@ import 'dart:ui' show PointerDeviceKind;
 
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
     show
@@ -2308,7 +2309,7 @@ class _SlidingIndicatorRegistry extends InheritedWidget {
 }
 
 class _SlidingIndicatorScopeState extends State<_SlidingIndicatorScope>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, StateResourceScope<_SlidingIndicatorScope> {
   final Map<FushiFocusId, GlobalKey> _slots = <FushiFocusId, GlobalKey>{};
 
   late final FushiSpring _progress = FushiSpring(
@@ -2349,7 +2350,8 @@ class _SlidingIndicatorScopeState extends State<_SlidingIndicatorScope>
   void initState() {
     super.initState();
     _progress.animation.addStatusListener(_onStatus);
-    _progress.animation.addListener(_onProgress);
+    onTeardown(() => _progress.animation.removeStatusListener(_onStatus));
+    listenTo(_progress.animation, _onProgress);
     // 挂载时的当前项也要在可视区里（BUG-4971：矮窗口冷启动 / 侧栏重建时停在
     // 「设置」这类末尾项，旧实现只在选中变化时滚入，缺口与指示器都在视口外）。
     _revealSelected();
@@ -2545,8 +2547,8 @@ class _SlidingIndicatorScopeState extends State<_SlidingIndicatorScope>
   @override
   void dispose() {
     _notchHost?.detach(this);
-    _progress.animation.removeStatusListener(_onStatus);
-    _progress.animation.removeListener(_onProgress);
+    // 先摘监听再释放 _progress。
+    releaseResources();
     _progress.dispose();
     _lift.dispose();
     _dragTick.dispose();

@@ -5,7 +5,7 @@ library;
 import 'dart:async';
 
 import 'package:drift/drift.dart'
-    show ResultSetImplementation, TableUpdate, TableUpdateQuery;
+    show ResultSetImplementation, TableUpdateQuery;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -69,6 +69,7 @@ import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart'
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 一张专辑要显示的格式徽章（去重、按出现顺序；混格式专辑各列一枚）+ 是否 Hi-Res。
 ({List<String> badges, bool hiRes}) musicAlbumBadges(
@@ -119,7 +120,8 @@ class MusicAlbumPage extends ConsumerStatefulWidget {
   ConsumerState<MusicAlbumPage> createState() => _MusicAlbumPageState();
 }
 
-class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
+class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage>
+    with StateResourceScope<MusicAlbumPage> {
   late MusicAlbumRow album = widget.album;
 
   /// 播放来源（最近播放按它归组，推荐页「最近播放」点回这张专辑）。
@@ -130,7 +132,6 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
   );
   late List<MusicTrackRow> tracks = widget.tracks;
   late MusicDiscSourceRow? disc = widget.disc;
-  StreamSubscription<Set<TableUpdate>>? _dbSub;
   bool _busy = false;
 
   /// 已经在退回曲库（专辑被移除）。
@@ -309,24 +310,20 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
       final FushiDatabase db = _app.database;
       // 表级变更流（不是 drift .watch()：长驻页面订阅 watch 会在 dispose 时挂死测试）。
       // 章节导入 / MusicBrainz 对号 / 重扫都在别处落库，这里跟着重读。
-      _dbSub = db
-          .tableUpdates(
-            TableUpdateQuery.onAllTables(
-              <ResultSetImplementation<Object?, Object?>>[
-                db.musicTracks,
-                db.musicAlbums,
-                db.musicDiscSources,
-              ],
-            ),
-          )
-          .listen((_) => unawaited(_reload()));
+      ownSubscription(
+        db
+            .tableUpdates(
+              TableUpdateQuery.onAllTables(
+                <ResultSetImplementation<Object?, Object?>>[
+                  db.musicTracks,
+                  db.musicAlbums,
+                  db.musicDiscSources,
+                ],
+              ),
+            )
+            .listen((_) => unawaited(_reload())),
+      );
     }
-  }
-
-  @override
-  void dispose() {
-    unawaited(_dbSub?.cancel());
-    super.dispose();
   }
 
   Future<void> _reload() async {
@@ -766,7 +763,8 @@ class _AlbumDiscList extends ConsumerStatefulWidget {
   ConsumerState<_AlbumDiscList> createState() => _AlbumDiscListState();
 }
 
-class _AlbumDiscListState extends ConsumerState<_AlbumDiscList> {
+class _AlbumDiscListState extends ConsumerState<_AlbumDiscList>
+    with StateResourceScope<_AlbumDiscList> {
   /// 这一碟的断点：挂上时按块查齐，之后只吃这一碟里那几首的改动。
   late final MusicResumePointsWatch _resume;
 
@@ -778,12 +776,13 @@ class _AlbumDiscListState extends ConsumerState<_AlbumDiscList> {
   @override
   void initState() {
     super.initState();
-    _resume =
-        ref
-            .read(appProvider)
-            .musicSession
-            .watchResumePoints(_uids(widget.tracks))
-          ..addListener(_onResumeChanged);
+    _resume = ref
+        .read(appProvider)
+        .musicSession
+        .watchResumePoints(_uids(widget.tracks));
+    // 先登记 dispose、后挂监听：撤销逆序 = 先摘监听、再 dispose。
+    onTeardown(_resume.dispose);
+    listenTo(_resume, _onResumeChanged);
   }
 
   @override
@@ -792,14 +791,6 @@ class _AlbumDiscListState extends ConsumerState<_AlbumDiscList> {
     if (!identical(oldWidget.tracks, widget.tracks)) {
       _resume.watch(_uids(widget.tracks));
     }
-  }
-
-  @override
-  void dispose() {
-    _resume
-      ..removeListener(_onResumeChanged)
-      ..dispose();
-    super.dispose();
   }
 
   void _onResumeChanged() {

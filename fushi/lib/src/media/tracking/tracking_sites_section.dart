@@ -2,6 +2,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/tracking/media_tracking_labels.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_repository.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_service.dart';
 import 'package:fushi_engine/media/tracking/tracking_provider.dart';
@@ -19,19 +20,15 @@ class TrackingSitesSection extends StatefulWidget {
   State<TrackingSitesSection> createState() => _TrackingSitesSectionState();
 }
 
-class _TrackingSitesSectionState extends State<TrackingSitesSection> {
+class _TrackingSitesSectionState extends State<TrackingSitesSection>
+    with StateResourceScope<TrackingSitesSection> {
   MediaTrackingService get _service => widget.service;
 
   @override
   void initState() {
     super.initState();
     _service.statusRevision.addListener(_changed);
-  }
-
-  @override
-  void dispose() {
-    _service.statusRevision.removeListener(_changed);
-    super.dispose();
+    onTeardown(() => _service.statusRevision.removeListener(_changed));
   }
 
   void _changed() {

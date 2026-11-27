@@ -6,6 +6,7 @@ import 'package:flutter/gestures.dart'
 import 'package:flutter/rendering.dart' show RenderAbstractViewport;
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/video/subtitle_transcript_text.dart';
 import 'package:fushi/src/pages/implementations/video_remote/video_remote_models.dart';
@@ -147,7 +148,8 @@ class VideoRemoteTranscriptView extends StatefulWidget {
       _VideoRemoteTranscriptViewState();
 }
 
-class _VideoRemoteTranscriptViewState extends State<VideoRemoteTranscriptView> {
+class _VideoRemoteTranscriptViewState extends State<VideoRemoteTranscriptView>
+    with StateResourceScope<VideoRemoteTranscriptView> {
   final ScrollController _scroll = ScrollController();
   final Map<int, GlobalKey> _rowKeys = <int, GlobalKey>{};
   int _seenRecenterRequests = 0;
@@ -162,6 +164,7 @@ class _VideoRemoteTranscriptViewState extends State<VideoRemoteTranscriptView> {
     super.initState();
     _seenRecenterRequests = widget.controller.recenterRequests;
     widget.controller.addListener(_onControllerChanged);
+    onTeardown(() => widget.controller.removeListener(_onControllerChanged));
     _scheduleRecenter(animate: false);
   }
 
@@ -183,7 +186,6 @@ class _VideoRemoteTranscriptViewState extends State<VideoRemoteTranscriptView> {
 
   @override
   void dispose() {
-    widget.controller.removeListener(_onControllerChanged);
     _scroll.dispose();
     super.dispose();
   }

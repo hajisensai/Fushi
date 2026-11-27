@@ -77,6 +77,7 @@ import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show FushiFloatingChromePinnedOffset;
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 游戏模块的默认首屏（游戏首页 / 仪表盘），布局对齐 ReinaManager `HomePage`
 /// （见 `docs/design/galgame-library-reina-visual-parity.md` §3）。
@@ -156,7 +157,8 @@ class _GameKpis {
   );
 }
 
-class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
+class _GalgameHomePageState extends ConsumerState<GalgameHomePage>
+    with StateResourceScope<GalgameHomePage> {
   late final AppModel _appModel = ref.read(appProvider);
   late final GalgameRepository _repo = _appModel.galgameRepo;
   late final FushiDatabase _db = _appModel.database;
@@ -259,12 +261,13 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
   @override
   void initState() {
     super.initState();
-    _repo.addListener(_onRepoChanged);
+    listenTo(_repo, _onRepoChanged);
     _games = _repo.games;
-    gameSectionNotifier.addListener(_onSectionChanged);
+    listenTo(gameSectionNotifier, _onSectionChanged);
     _listenedSession = _session?..addListener(_onSessionChanged);
+    onTeardown(() => _listenedSession?.removeListener(_onSessionChanged));
     if (Platform.isWindows) {
-      _appModel.syncServerController.addListener(_onSyncChanged);
+      listenTo(_appModel.syncServerController, _onSyncChanged);
       _onSyncChanged();
     }
     unawaited(_reload());
@@ -272,13 +275,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
 
   @override
   void dispose() {
-    _repo.removeListener(_onRepoChanged);
-    gameSectionNotifier.removeListener(_onSectionChanged);
-    _listenedSession?.removeListener(_onSessionChanged);
     _streamHost?.removeListener(_onStreamChanged);
-    if (Platform.isWindows) {
-      _appModel.syncServerController.removeListener(_onSyncChanged);
-    }
     super.dispose();
   }
 

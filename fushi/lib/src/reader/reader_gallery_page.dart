@@ -2,6 +2,7 @@
 /// 页面只负责提供图片列表 / 文件解析 / 揭开写回 / 跳章回调。
 library;
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
@@ -449,7 +450,8 @@ const double _kMarkerHeight = 32;
 /// 同合集卷切换（BUG-2521）：头部卷 chip 行只换网格数据源，不切书；兄弟卷没有
 /// 「当前阅读位置」，也不参与解锁判据（全视为已解锁），跳转 / 看大图带卷号走
 /// [ReaderGalleryVolumeSwitch] 的回调。
-class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
+class _ReaderGalleryPageState extends State<ReaderGalleryPage>
+    with StateResourceScope<ReaderGalleryPage> {
   final ScrollController _scrollController = ScrollController();
   final FocusNode _focusNode = FocusNode(debugLabel: 'reader-gallery');
   final Set<String> _revealedHere = <String>{};
@@ -634,7 +636,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
   void initState() {
     super.initState();
     _probeAspects();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       if (!mounted) return;
       _autoScrolledTo = _scrollToCurrentPosition(animate: false);
     });

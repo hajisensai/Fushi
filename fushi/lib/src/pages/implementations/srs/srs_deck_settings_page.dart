@@ -16,6 +16,7 @@ import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_optimizer.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/srs/srs_app_runtime.dart';
 import 'package:fushi_engine/srs/srs_optimization_scheduler.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_rwkv_panel.dart';
@@ -95,7 +96,8 @@ class SrsDeckSettingsPage extends ConsumerStatefulWidget {
       _SrsDeckSettingsPageState();
 }
 
-class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
+class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage>
+    with StateResourceScope<SrsDeckSettingsPage> {
   SrsDbStore? _store;
   SrsDeckView? _deck;
   SrsDeckView? _owner;
@@ -239,7 +241,7 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
     // RWKV 牌组「还带着步长」的提示随输入实时刷新；返回拦截（PopScope.canPop）也要跟着
     // 「有没有没保存的改动」走，漏掉哪个框，改了它再按返回就会不问直接丢。
     for (final TextEditingController c in _controllers) {
-      c.addListener(_onFormEdited);
+      listenTo(c, _onFormEdited);
     }
     unawaited(_load());
   }
@@ -250,6 +252,8 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
 
   @override
   void dispose() {
+    // 先摘监听再释放输入框控制器。
+    releaseResources();
     for (final TextEditingController c in _controllers) {
       c.dispose();
     }

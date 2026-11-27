@@ -1,4 +1,5 @@
 import 'dart:async' show unawaited;
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'dart:math' as math;
 import 'dart:ui' show SemanticsRole;
 
@@ -305,7 +306,8 @@ class _LibraryFilterPopover extends StatefulWidget {
   State<_LibraryFilterPopover> createState() => _LibraryFilterPopoverState();
 }
 
-class _LibraryFilterPopoverState extends State<_LibraryFilterPopover> {
+class _LibraryFilterPopoverState extends State<_LibraryFilterPopover>
+    with StateResourceScope<_LibraryFilterPopover> {
   final FocusNode _contentNode = FocusNode(
     debugLabel: 'library-filter-popover',
     skipTraversal: true,
@@ -315,7 +317,7 @@ class _LibraryFilterPopoverState extends State<_LibraryFilterPopover> {
   void initState() {
     super.initState();
     // 打开即把焦点放到面板首项（第一枚 chip），键盘 / 手柄不必先按一次 Tab。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    schedulePostFrame((_) {
       if (!mounted) return;
       for (final FocusNode node in _contentNode.traversalDescendants) {
         if (node.canRequestFocus) {

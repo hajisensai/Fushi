@@ -24,6 +24,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 class DownloadSubscriptionsPanel extends ConsumerStatefulWidget {
   const DownloadSubscriptionsPanel({super.key});
@@ -35,7 +36,9 @@ class DownloadSubscriptionsPanel extends ConsumerStatefulWidget {
 
 class _DownloadSubscriptionsPanelState
     extends ConsumerState<DownloadSubscriptionsPanel>
-    with FushiPagePlaceholders<DownloadSubscriptionsPanel> {
+    with
+        FushiPagePlaceholders<DownloadSubscriptionsPanel>,
+        StateResourceScope<DownloadSubscriptionsPanel> {
   AnimeDownloadSubscriptionStore? _store;
   List<AnimeDownloadSubscription> _subscriptions =
       const <AnimeDownloadSubscription>[];
@@ -46,13 +49,9 @@ class _DownloadSubscriptionsPanelState
     super.initState();
     _store = ref.read(appProvider).animeDownloadSubscriptionStore;
     _store?.revision.addListener(_onStoreChanged);
+    // _reload 里 _store 会换成新实例（旧的已摘监听），撤销时读当前的。
+    onTeardown(() => _store?.revision.removeListener(_onStoreChanged));
     unawaited(_reload());
-  }
-
-  @override
-  void dispose() {
-    _store?.revision.removeListener(_onStoreChanged);
-    super.dispose();
   }
 
   void _onStoreChanged() => unawaited(_reload());

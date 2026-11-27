@@ -260,7 +260,8 @@ class ShortcutBindingsBrowser extends StatefulWidget {
       _ShortcutBindingsBrowserState();
 }
 
-class _ShortcutBindingsBrowserState extends State<ShortcutBindingsBrowser> {
+class _ShortcutBindingsBrowserState extends State<ShortcutBindingsBrowser>
+    with StateResourceScope<ShortcutBindingsBrowser> {
   final TextEditingController _queryController = TextEditingController();
   final FocusNode _queryFocus = FocusNode(debugLabel: 'shortcut-search');
   final FocusNode _keySearchFocus = FocusNode(
@@ -292,6 +293,7 @@ class _ShortcutBindingsBrowserState extends State<ShortcutBindingsBrowser> {
   void initState() {
     super.initState();
     widget.registry.addListener(_onRegistryChanged);
+    onTeardown(() => widget.registry.removeListener(_onRegistryChanged));
   }
 
   @override
@@ -308,7 +310,6 @@ class _ShortcutBindingsBrowserState extends State<ShortcutBindingsBrowser> {
 
   @override
   void dispose() {
-    widget.registry.removeListener(_onRegistryChanged);
     _queryController.dispose();
     _queryFocus.dispose();
     _keySearchFocus.dispose();
@@ -1696,7 +1697,8 @@ class _InlineRecorder extends StatefulWidget {
   State<_InlineRecorder> createState() => _InlineRecorderState();
 }
 
-class _InlineRecorderState extends State<_InlineRecorder> {
+class _InlineRecorderState extends State<_InlineRecorder>
+    with StateResourceScope<_InlineRecorder> {
   final FocusNode _focusNode = FocusNode(debugLabel: 'shortcut-record');
 
   @override
@@ -1704,7 +1706,7 @@ class _InlineRecorderState extends State<_InlineRecorder> {
     super.initState();
     // TODO-838 同一个坑：autofocus 要和对话框 / 路由里其它可聚焦物抢主焦点，
     // 输了就会让裸字母键冒泡到全局 Shortcuts 被吞掉。挂载后的这一帧显式要焦点。
-    WidgetsBinding.instance.addPostFrameCallback((Duration _) {
+    schedulePostFrame((Duration _) {
       if (mounted) _focusNode.requestFocus();
     });
   }

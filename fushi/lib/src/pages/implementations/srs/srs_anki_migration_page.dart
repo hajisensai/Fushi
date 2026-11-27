@@ -57,6 +57,7 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 快照失败 → 给人看的一句话。
 String srsAnkiSnapshotErrorText(AnkiSnapshotFailure reason) => switch (reason) {
@@ -90,7 +91,7 @@ class SrsAnkiMigrationPage extends ConsumerStatefulWidget {
 }
 
 class _SrsAnkiMigrationPageState extends ConsumerState<SrsAnkiMigrationPage>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, StateResourceScope<SrsAnkiMigrationPage> {
   final bool _canScan = srsAnkiMigrationCanScan(Platform.operatingSystem);
   bool _scanning = true;
   bool _busy = false;
@@ -107,13 +108,8 @@ class _SrsAnkiMigrationPageState extends ConsumerState<SrsAnkiMigrationPage>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    onTeardown(() => WidgetsBinding.instance.removeObserver(this));
     unawaited(_scan());
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    super.dispose();
   }
 
   /// 用户常是看到「Anki 正开着」后切出去关 Anki 再回来：回到前台时静默重扫，

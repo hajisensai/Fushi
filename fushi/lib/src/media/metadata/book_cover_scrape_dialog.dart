@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
 import 'package:material_ui/material_ui.dart';
 
@@ -193,7 +194,8 @@ class BookCoverScrapeDialog extends StatefulWidget {
   return (BookScrapeSource.bangumi, initialQuery);
 }
 
-class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
+class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog>
+    with StateResourceScope<BookCoverScrapeDialog> {
   late final TextEditingController _queryCtrl;
   late final BookMetadataScraper _scraper;
 
@@ -266,7 +268,7 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
       downloadImage: widget.downloaderOverride,
     );
     // 首帧后按预填标题自动搜一次。
-    WidgetsBinding.instance.addPostFrameCallback((_) => _search());
+    schedulePostFrame((_) => _search());
   }
 
   @override

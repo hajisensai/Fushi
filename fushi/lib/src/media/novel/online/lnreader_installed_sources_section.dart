@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/media/manga/extension_management_tile.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
@@ -50,7 +51,8 @@ class LnReaderInstalledSourcesSection extends StatefulWidget {
 }
 
 class _LnReaderInstalledSourcesSectionState
-    extends State<LnReaderInstalledSourcesSection> {
+    extends State<LnReaderInstalledSourcesSection>
+    with StateResourceScope<LnReaderInstalledSourcesSection> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
 
@@ -68,6 +70,7 @@ class _LnReaderInstalledSourcesSectionState
   void initState() {
     super.initState();
     widget.manager.addListener(_changed);
+    onTeardown(() => widget.manager.removeListener(_changed));
     unawaited(
       widget.manager.initialise().whenComplete(() {
         if (mounted) setState(() => _ready = true);
@@ -85,7 +88,6 @@ class _LnReaderInstalledSourcesSectionState
 
   @override
   void dispose() {
-    widget.manager.removeListener(_changed);
     _searchController.dispose();
     super.dispose();
   }

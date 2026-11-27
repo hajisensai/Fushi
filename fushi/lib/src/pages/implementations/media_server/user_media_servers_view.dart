@@ -18,6 +18,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_api.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// 取 Audiobookshelf 服务器的共享协议层实例；未登录返回 null。
 typedef AudiobookshelfApiFor =
@@ -152,19 +153,14 @@ class UserMediaServersView extends ConsumerStatefulWidget {
       _UserMediaServersViewState();
 }
 
-class _UserMediaServersViewState extends ConsumerState<UserMediaServersView> {
+class _UserMediaServersViewState extends ConsumerState<UserMediaServersView>
+    with StateResourceScope<UserMediaServersView> {
   late final AppModel _appModel = ref.read(appProvider);
 
   @override
   void initState() {
     super.initState();
-    _appModel.prefsRepo.addListener(_onChanged);
-  }
-
-  @override
-  void dispose() {
-    _appModel.prefsRepo.removeListener(_onChanged);
-    super.dispose();
+    listenTo(_appModel.prefsRepo, _onChanged);
   }
 
   void _onChanged() {

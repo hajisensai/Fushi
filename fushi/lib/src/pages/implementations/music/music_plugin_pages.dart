@@ -125,6 +125,7 @@ import 'package:fushi/src/utils/components/fushi_focusable.dart';
 import 'package:fushi/src/utils/components/fushi_header_more_button.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart'
     show FushiRefreshIndicator;
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 part 'apple/apple_music_recommend_layout.part.dart';
 part 'music_plugin_actions.dart';
