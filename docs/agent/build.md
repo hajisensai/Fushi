@@ -297,6 +297,18 @@ GitHub 默认分支是 `develop`（用户 2026-11-25 拍板：开发分支才是
 - formal（手动）：通过手动 GitHub Release 或 `workflow_dispatch` 选择 `formal`。默认 tag 为 `v<version>`；Android 产物包含 debug APK 与 split ABI release APK，Windows 产物为 installer，macOS 为 app zip，iOS 为 no-codesign IPA。formal 是唯一允许成为 Latest 的通道。**`workflow_dispatch` 的 formal / beta 构建完不直接发布**，停在审批门等「发版」批准，见下「正式版预构建与审批发布」。
 - 禁止事项：不要把 push、debug tag、debug APK 或 beta/test workflow 接到 formal/Latest；不要让 push 上传正式 release APK 或发布 formal/Latest；不要把 beta/test 发布成 non-prerelease 或 Latest。
 
+### 暂停调试版自动发布（2026-11-27）
+
+用途：测试版放出去试用期间（例如「测试版测 1 天再发正式版」），让 develop / main 的 push 不再出滚动 debug 包，免得 debug 通道的用户被新提交打断、runner 也让给 beta / formal。开关是**仓库变量** `FUSHI_PAUSE_DEBUG_RELEASE`，值为 `true`（GitHub 表达式比较不分大小写）时暂停，删掉或改成别的值即恢复，不用改代码、不用提交。
+
+- **暂停**：`gh variable set FUSHI_PAUSE_DEBUG_RELEASE --body true --repo hajisensai/Fushi`
+- **恢复**：`gh variable delete FUSHI_PAUSE_DEBUG_RELEASE --repo hajisensai/Fushi`（或 `--body false`）。恢复后不自动补发暂停期间的提交：下一次进 push 路径的提交照常出包（序号 = commit 数，跳号无害）；想立刻出一版就手动 dispatch `channel=debug`。
+- 只作用于 **push 事件**（= debug 通道，push 在两条 workflow 里只会解析成 debug）。`workflow_dispatch` 的 debug / beta / formal、`release: published` 事件一律不看这个变量，暂停期间照常发，包括它们的 TestFlight。
+- `release.yml`：`build` 与 `publish-android` 两个 job 在 job 级 `if` 上跳过（Android 构建、debug pulse、滚动 debug 资产上传、更新清单全不跑，连 runner 都不占）。`web-core-linux` / `test-native-linux` / `fushidicts-linux` / `tests` 不受影响——它们是 develop 上唯一的 app 全量单测门；`publish-settings-catalog`（官网设置目录）跟着 `tests` 照跑，它不是调试版发布。
+- `release-desktop.yml`：windows / macos / flatpak-baseapp / linux / ios / testflight / publish 每个 job 都在 job 级 `if` 上跳过（含 develop push 每次的 debug TestFlight 上传）；`publish` 带 `always()`，不会随 needs 跳过，所以它自己也判。
+- 服务端 `hajisensai/fushi-server`：`release-server.yml` 的 plan step 把同名变量交给 `tool/server_release_plan.py`，暂停时 auto 不再挑「develop 新提交 → debug」，app 正式版 / beta 的服务端候选照常。注意可复用 workflow 的 `vars` 取的是**调用方**仓的变量，所以要连服务端 debug 一起停，得在 fushi-server 上另设同名变量（`--repo hajisensai/fushi-server`）；只在本仓设时服务端 debug 照发（它不进五端 app 的更新通道，不影响测试版试用）。
+- 守卫：`fushi/test/build/release_debug_pause_guard_test.dart`（每处引用必须是 `!(github.event_name == 'push' && vars.FUSHI_PAUSE_DEBUG_RELEASE == 'true')` 整体表达式、哪些 job 挡哪些不挡、服务端暂停判断排在 formal / beta 之后）、`tool/check_release_policy.ps1`（同一表达式与出现次数）、`tool/server_release_plan_test.py`。
+
 ### 反馈修复的发布回填（2026-10-13）
 
 应用内反馈的状态挂在**修复 commit** 上：`.github/workflows/feedback-link.yml` 只挂 push develop/main，由 `tool/feedback_link.mjs` 逐个 commit 解析 message，并用 `GITHUB_TOKEN` 查 `GET /repos/{repo}/commits/{sha}/pulls` 取关联 PR（只认已合并、base 是本分支的）解析其描述，把 `Feedback: <id>[, <id>…]` / `Feedback-NoApp: <id>…` 行（行首、不区分大小写）登记到反馈服务 `POST /v1/ci/feedback/fixed`（幂等：sha 与 scope 不变的重登记不重置发布记录）。commit message 里的 id 归该 commit，PR 描述里的 id 归该 PR 在这次 push 里最后一个 commit，同一 id 多次出现取 push 顺序最后的那个；main 上只处理 distinct 的 commit（正式版后 develop 同步进 main 不重登记）。不用 `pull_request_target`：它要在有 secret 的上下文里处理外部 PR，而合并本身就是 push。两条发布 workflow 在「Publish mirror update manifest」之后各有回填步骤（`release.yml` = android；`release-desktop.yml` 的 publish job 按本次真实存在的产物分别回填 windows / macos / ios），跑 `tool/feedback_mark_released.sh`：GET `pending?channel&platform` → 本地 `git cat-file -e` + `git merge-base --is-ancestor <fix> <github.sha>` → POST `released`，把「这个通道 / 平台的这个版本已包含修复」记下（`manifest_channel` 的 `formal` 映射成 `stable`）。回填与登记**都不会让 workflow 变红**：步骤 `continue-on-error: true`，脚本任何失败只打 `::warning`。需要仓库 **secret `FEEDBACK_CI_TOKEN`**（与反馈 Worker 的同名 secret 一致；未配置时两个脚本 `::notice` 后直接跳过）与可选的仓库 **variable `FEEDBACK_API_BASE`**（接口根，缺省 `https://rank.fushi.moe`）。守卫 `fushi/test/build/feedback_workflow_guard_test.dart`，脚本离线测试 `fushi/test/tools/feedback_{mark_released,link}_script_test.dart`。

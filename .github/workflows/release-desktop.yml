@@ -154,7 +154,14 @@ jobs:
     # release（manga-panel-detector-onnx-v1、vendor-libmpv、voice-hook-helper…）被手动
     # 发布时不许整套构建、把安装包挂到它们身上。表达式没有正则，只能逐个列 v0..v9；
     # 守卫 fushi/test/build/release_event_app_tag_guard_test.dart 钉住每个 job 都带它。
-    if: ${{ github.event.inputs.testflight_only != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
+    #
+    # 暂停调试版自动发布（2026-11-27）：仓库变量 FUSHI_PAUSE_DEBUG_RELEASE = 'true' 时，push
+    # 事件（= 滚动 debug 通道）在**每个** job 的 job 级 if 上跳过（windows / macos /
+    # flatpak-baseapp / linux / ios / testflight / publish；publish 带 always()，不能靠
+    # needs 传染，必须自己挡）。本 workflow 不承担 app 单测门（那在 release.yml 的 tests），push 上整条都是发包，全停无副作用；
+    # workflow_dispatch 与 release 事件不看这个变量。恢复 = 删变量或改成别的值。
+    # 守卫 fushi/test/build/release_debug_pause_guard_test.dart；说明见 docs/agent/build.md「暂停调试版自动发布」。
+    if: ${{ !(github.event_name == 'push' && vars.FUSHI_PAUSE_DEBUG_RELEASE == 'true') && github.event.inputs.testflight_only != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
     runs-on: windows-2022
     timeout-minutes: 150
     permissions:
@@ -1380,7 +1387,7 @@ jobs:
     # release（manga-panel-detector-onnx-v1、vendor-libmpv、voice-hook-helper…）被手动
     # 发布时不许整套构建、把安装包挂到它们身上。表达式没有正则，只能逐个列 v0..v9；
     # 守卫 fushi/test/build/release_event_app_tag_guard_test.dart 钉住每个 job 都带它。
-    if: ${{ github.event.inputs.testflight_only != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
+    if: ${{ !(github.event_name == 'push' && vars.FUSHI_PAUSE_DEBUG_RELEASE == 'true') && github.event.inputs.testflight_only != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
     runs-on: macos-latest
     # 120：内置 torrent 引擎 bridge 冷编（boost + openssl + libtorrent）要几十分钟，
     # 只在 native/fushi_torrent 改动或 runner 镜像更新后的首跑发生，其余命中持久库。
@@ -2550,7 +2557,7 @@ jobs:
   # artifact expiry) rebuilds it. Built without debug info (-g0): with -g WebCore
   # needs ~4 GB per compiler and a ~50 GB ccache, neither of which a runner has.
   flatpak-baseapp:
-    if: ${{ github.event.inputs.testflight_only != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
+    if: ${{ !(github.event_name == 'push' && vars.FUSHI_PAUSE_DEBUG_RELEASE == 'true') && github.event.inputs.testflight_only != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 350
     permissions:
@@ -2607,7 +2614,7 @@ jobs:
   # without it the bundle is built unsigned and publish ships neither repo nor asset.
   linux:
     needs: flatpak-baseapp
-    if: ${{ github.event.inputs.testflight_only != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
+    if: ${{ !(github.event_name == 'push' && vars.FUSHI_PAUSE_DEBUG_RELEASE == 'true') && github.event.inputs.testflight_only != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     permissions:
@@ -2952,7 +2959,7 @@ jobs:
     # release（manga-panel-detector-onnx-v1、vendor-libmpv、voice-hook-helper…）被手动
     # 发布时不许整套构建、把安装包挂到它们身上。表达式没有正则，只能逐个列 v0..v9；
     # 守卫 fushi/test/build/release_event_app_tag_guard_test.dart 钉住每个 job 都带它。
-    if: ${{ (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
+    if: ${{ !(github.event_name == 'push' && vars.FUSHI_PAUSE_DEBUG_RELEASE == 'true') && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
     runs-on: macos-latest
     timeout-minutes: 90
     permissions:
@@ -3778,7 +3785,7 @@ jobs:
   # 门本身（传不传）仍是 ios job「Resolve Apple signing mode」那一处判定，这里只认它的输出。
   testflight:
     needs: ios
-    if: ${{ needs.ios.outputs.testflight == 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
+    if: ${{ !(github.event_name == 'push' && vars.FUSHI_PAUSE_DEBUG_RELEASE == 'true') && needs.ios.outputs.testflight == 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
     environment: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.channel == 'formal' || github.event.inputs.channel == 'beta')) && 'release-publish' || 'release-auto' }}
     runs-on: macos-latest
     timeout-minutes: 45
@@ -3837,7 +3844,7 @@ jobs:
     # hajisensai），三个平台构建完后停在这里等「发版」批准；push / `release` 事件走无
     # 保护规则的 `release-auto`。build_only 什么都不发，整个 job 跳过、不弹审批。理由与
     # 流程见 release.yml publish-android job 头注释与 docs/agent/build.md「正式版预构建与审批发布」。
-    if: ${{ always() && github.event.inputs.testflight_only != 'true' && github.event.inputs.build_only != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
+    if: ${{ always() && !(github.event_name == 'push' && vars.FUSHI_PAUSE_DEBUG_RELEASE == 'true') && github.event.inputs.testflight_only != 'true' && github.event.inputs.build_only != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
     environment: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.channel == 'formal' || github.event.inputs.channel == 'beta')) && 'release-publish' || 'release-auto' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
