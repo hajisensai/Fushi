@@ -149,6 +149,63 @@ void main() {
     expect(adminWebUiHtml, contains('x.send(file);'));
   });
 
+  test('导入可一次选 / 拖入多个文件：逐个复用单文件 PUT，失败不中断，结束只刷新一次', () {
+    // input 透明铺满拖放区，拖入的文件由浏览器直接落到 input 上，带 multiple 才能一次收多个。
+    expect(
+      dictionariesSection(),
+      contains(
+        '<input type="file" id="dict-file" '
+        'accept="${kDictionaryImportExtensions.join(',')}" multiple>',
+      ),
+    );
+    expect(
+      adminWebUiHtml,
+      contains("T('{0} 个文件：{1}', names.length, names.join(T('、')))"),
+    );
+    final int start = adminWebUiHtml.indexOf(
+      "\$('#btn-dict-up').onclick = guard(",
+    );
+    final int end = adminWebUiHtml.indexOf("\$('#btn-dict-reload')", start);
+    expect(start, isNonNegative);
+    final String handler = adminWebUiHtml.substring(start, end);
+    expect(handler, contains('files=Array.from(input.files)'));
+    expect(handler, isNot(contains('.files[0]')));
+    // 顺序上传：for…of + await，单个文件的异常在循环里接住、记进失败清单。
+    expect(handler, contains('for (const [i, f] of files.entries()){'));
+    expect(handler, contains('await uploadDictionary(f,'));
+    expect(
+      handler,
+      contains('catch(e){ failed.push({file:f, error:e.message}); }'),
+    );
+    // 清单只在循环结束后刷新一次。
+    expect('loadDictionaries()'.allMatches(handler), hasLength(1));
+    expect(
+      handler.indexOf('loadDictionaries()'),
+      greaterThan(handler.indexOf('failed.push(')),
+    );
+    // 结束报成功 / 失败；失败的文件留在选择框里可重试。
+    expect(handler, contains("T('导入完成：{0} 个成功，{1} 个失败'"));
+    expect(handler, contains("T('「{0}」导入失败：{1}', x.file.name, x.error)"));
+    expect(handler, contains('failed.forEach(x=>keep.items.add(x.file))'));
+    // 汇总一行一条，只有失败行标红（err-text），成功行不染色；部分失败不抛错，
+    // 提示条报「N / M 个失败」，不再是「失败: 导入完成…」。
+    expect(
+      handler,
+      contains("<span\${err?' class=\"err-text\"':''}>\${esc(text)}</span>"),
+    );
+    expect(handler, contains("x.error), true))].join('<br>');"));
+    expect(
+      handler,
+      contains(
+        "if (failed.length){ toast(T('{0} / {1} 个词典导入失败', "
+        'failed.length, files.length), true); return; }',
+      ),
+    );
+    expect(handler, isNot(contains('throw new Error(head)')));
+    // 单文件仍是原来的提示。
+    expect(handler, contains("T('导入失败：{0}', failed[0].error)"));
+  });
+
   test('显示名就地编辑：铅笔 → 文本框，回车 / 失焦保存，Esc 取消，留空或填回原名 = 清掉', () {
     expect(
       adminWebUiHtml,
@@ -184,6 +241,11 @@ void main() {
       '已恢复原名',
       '已重新装载，{0} 本',
       '先选择一个词典文件',
+      '{0} 个文件：{1}',
+      '（{0}/{1}）{2}：',
+      '导入完成：{0} 个成功，{1} 个失败',
+      '「{0}」导入失败：{1}',
+      '{0} / {1} 个词典导入失败',
     ]) {
       expect(kWebUiEnglish[key], isNotNull, reason: key);
     }
