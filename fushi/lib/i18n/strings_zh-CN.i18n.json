@@ -10498,6 +10498,7 @@
   "shortcut_action_reader_toggle_furigana": "切换振假名",
   "shortcut_action_reader_toggle_study_clock": "暂停 / 继续阅读计时",
   "shortcut_action_srs_review_again": "评分：重来",
+  "shortcut_action_srs_review_dismiss_dict": "关闭词典",
   "shortcut_action_srs_review_easy": "评分：简单",
   "shortcut_action_srs_review_good": "评分：良好",
   "shortcut_action_srs_review_hard": "评分：困难",

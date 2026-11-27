@@ -10498,6 +10498,7 @@
   "shortcut_action_reader_toggle_furigana": "Фуригана вкл./выкл.",
   "shortcut_action_reader_toggle_study_clock": "Приостановить / возобновить таймер чтения",
   "shortcut_action_srs_review_again": "Rate Again",
+  "shortcut_action_srs_review_dismiss_dict": "Закрыть словарь",
   "shortcut_action_srs_review_easy": "Rate Easy",
   "shortcut_action_srs_review_good": "Rate Good",
   "shortcut_action_srs_review_hard": "Rate Hard",
