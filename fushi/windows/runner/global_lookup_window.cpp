@@ -863,9 +863,9 @@ void CALLBACK GlobalLookupWindow::ForegroundHookProc(HWINEVENTHOOK, DWORD,
   // BUG-2651 — 自绘右键菜单结束后，我们把为弹菜单而临时抢来的前台还给原窗口；
   // 那一下是本进程主动交还，不是用户点了卡外，不能关卡。只放过这一次、只认
   // 那个窗口：用户在菜单开着时点进别的应用，那是另一个 hwnd，照常关卡。
-  if (self->context_menu_return_foreground_ != nullptr &&
-      hwnd == self->context_menu_return_foreground_) {
-    self->context_menu_return_foreground_ = nullptr;
+  if (self->expected_foreground_return_ != nullptr &&
+      hwnd == self->expected_foreground_return_) {
+    self->expected_foreground_return_ = nullptr;
     return;
   }
   if (self->IsShowing() && hwnd != self->hwnd_) {
@@ -2045,7 +2045,7 @@ void GlobalLookupWindow::Hide(bool notify) {
   if (context_menu_active_) {
     EndMenu();
   }
-  context_menu_return_foreground_ = nullptr;
+  expected_foreground_return_ = nullptr;
   // 投影窗随卡片同步隐藏（WM_WINDOWPOSCHANGED 也会兜到，这里显式先藏，
   // 避免"卡没了影子晚一拍"）。
   shadow_.Hide();
@@ -2135,7 +2135,8 @@ bool GlobalLookupWindow::SuspendForCapture(int64_t capture_generation) {
   return true;
 }
 
-bool GlobalLookupWindow::RestoreAfterCapture(int64_t capture_generation) {
+bool GlobalLookupWindow::RestoreAfterCapture(int64_t capture_generation,
+                                             HWND return_foreground) {
   if (!capture_suppressed_ || capture_generation <= 0 ||
       capture_generation_ != capture_generation || !CaptureRouteIsCurrent()) {
     return false;
@@ -2143,6 +2144,15 @@ bool GlobalLookupWindow::RestoreAfterCapture(int64_t capture_generation) {
   const bool restore = capture_was_window_visible_ && OwnsLiveWindow() &&
                        visible_ && revealed_;
   CancelCaptureSuppression();
+  // 反馈 6RETmKY1TH：先交还前台、再放回卡片（SW_SHOWNOACTIVATE 不改前台）。前台
+  // 已经是它（主窗收起时系统已按 Z 序交给它）就不再调，免得登记一个等不来的放行。
+  if (return_foreground != nullptr && IsWindow(return_foreground) &&
+      GetForegroundWindow() != return_foreground) {
+    expected_foreground_return_ = return_foreground;
+    if (!SetForegroundWindow(return_foreground)) {
+      expected_foreground_return_ = nullptr;
+    }
+  }
   if (restore) {
     ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
     ReassertTopmost();
@@ -4327,9 +4337,9 @@ void GlobalLookupWindow::ShowPendingContextMenu() {
   if (took_foreground && previous_foreground != nullptr &&
       IsWindow(previous_foreground) && GetForegroundWindow() == hwnd_) {
     // 前台钩子会看到这次交还；它不是用户点卡外，登记一下让钩子放过它。
-    context_menu_return_foreground_ = previous_foreground;
+    expected_foreground_return_ = previous_foreground;
     if (!SetForegroundWindow(previous_foreground)) {
-      context_menu_return_foreground_ = nullptr;
+      expected_foreground_return_ = nullptr;
     }
   }
 }

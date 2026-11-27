@@ -338,9 +338,16 @@ class OverlayWindowChannel {
       })) ??
       false;
 
-  Future<bool> restoreAfterCapture(int captureGeneration) async =>
+  /// [returnForeground]：放回卡片前先把前台交还给这个窗口 / app（Windows HWND、
+  /// macOS pid，由 `FloatingBallChannel.foregroundAppToken` 记下），原生把这次交还
+  /// 登记成本进程主动交还、不当成点了卡外关卡（反馈 6RETmKY1TH）。null = 不交还。
+  Future<bool> restoreAfterCapture(
+    int captureGeneration, {
+    int? returnForeground,
+  }) async =>
       (await _invoke<bool>('restoreAfterCapture', <String, Object?>{
         'captureGeneration': captureGeneration,
+        'returnForeground': ?returnForeground,
       })) ??
       false;
 

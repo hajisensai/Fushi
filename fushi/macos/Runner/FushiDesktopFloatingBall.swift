@@ -821,6 +821,17 @@ final class DesktopFloatingBallController: NSObject {
       // Dart 主动关：不回调。
       endScreenOcr(restoreBall: true)
       result(nil)
+    case "foregroundAppToken":
+      // 反馈 6RETmKY1TH：截屏识字开始时用户正在用的 app（不是 Fushi 才回 pid，否则
+      // nil）。框选截图要临时把主窗拉到前台，结束后经查词卡的 restoreAfterCapture
+      // 把前台还给它。
+      if let front = NSWorkspace.shared.frontmostApplication,
+        front.processIdentifier != NSRunningApplication.current.processIdentifier
+      {
+        result(NSNumber(value: Int64(front.processIdentifier)))
+      } else {
+        result(nil)
+      }
     case "showProfileMenu":
       // 同步模态：菜单收起后才回 result（选中项 id / nil）。
       showProfileMenu(call.arguments as? [String: Any] ?? [:], result: result)

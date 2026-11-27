@@ -267,6 +267,9 @@ final class GlobalLookupOverlayController: NSObject, WKScriptMessageHandler, WKN
 
   private var captureSuppressed = false
   private var captureGeneration: Int64 = 0
+  /// 本进程主动把前台交还给的 app（反馈 6RETmKY1TH：截屏识字框选完把前台还给原
+  /// 程序）。激活观察者看到它被激活时放过一次，不当成用户切走了。
+  private var expectedActivationPid: pid_t = 0
 
   private var globalClickMonitor: Any?
   private var localClickMonitor: Any?
@@ -373,7 +376,10 @@ final class GlobalLookupOverlayController: NSObject, WKScriptMessageHandler, WKN
     case "suspendForCapture":
       result(suspendForCapture(int64Arg(args, "captureGeneration", 0)))
     case "restoreAfterCapture":
-      result(restoreAfterCapture(int64Arg(args, "captureGeneration", 0)))
+      result(
+        restoreAfterCapture(
+          int64Arg(args, "captureGeneration", 0),
+          returnForeground: int64Arg(args, "returnForeground", 0)))
     case "setBlockCapture":
       blockCapture = (args["block"] as? Bool) ?? false
       applyBlockCapture()
@@ -727,6 +733,7 @@ final class GlobalLookupOverlayController: NSObject, WKScriptMessageHandler, WKN
     let hiddenRoute = route
     captureSuppressed = false
     captureGeneration = 0
+    expectedActivationPid = 0
     visible = false
     revealed = false
     measuring = false
@@ -751,10 +758,22 @@ final class GlobalLookupOverlayController: NSObject, WKScriptMessageHandler, WKN
     return true
   }
 
-  private func restoreAfterCapture(_ generation: Int64) -> Bool {
+  private func restoreAfterCapture(_ generation: Int64, returnForeground: Int64 = 0) -> Bool {
     guard generation > 0, captureSuppressed, captureGeneration == generation else { return false }
     captureSuppressed = false
     captureGeneration = 0
+    // 反馈 6RETmKY1TH：卡片收起期间主窗被临时拉到前台（框选截图），放回卡片前先把
+    // 前台交还给发起查词时用户在用的 app（Dart 经 floating_ball 通道的
+    // foregroundAppToken 记下的 pid；0 = 不交还）。
+    if returnForeground > 0,
+      let app = NSRunningApplication(processIdentifier: pid_t(returnForeground)),
+      app.processIdentifier != ProcessInfo.processInfo.processIdentifier, !app.isActive
+    {
+      expectedActivationPid = app.processIdentifier
+      if !app.activate(options: []) {
+        expectedActivationPid = 0
+      }
+    }
     if visible {
       panel?.orderFrontRegardless()
     }
@@ -770,7 +789,9 @@ final class GlobalLookupOverlayController: NSObject, WKScriptMessageHandler, WKN
       globalClickMonitor = NSEvent.addGlobalMonitorForEvents(
         matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
       ) { [weak self] _ in
-        self?.hide(notify: true)
+        // 收起中（suspendForCapture）卡片不在屏上，点哪儿都不是「点卡外」。
+        guard let self = self, !self.captureSuppressed else { return }
+        self.hide(notify: true)
       }
     }
     if localClickMonitor == nil {
@@ -780,7 +801,9 @@ final class GlobalLookupOverlayController: NSObject, WKScriptMessageHandler, WKN
       localClickMonitor = NSEvent.addLocalMonitorForEvents(
         matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
       ) { [weak self] event in
-        guard let self = self, self.visible, let panel = self.panel else { return event }
+        // 收起中（suspendForCapture，例如截屏识字在主窗里框选截图）：点主窗不关卡。
+        guard let self = self, self.visible, !self.captureSuppressed, let panel = self.panel
+        else { return event }
         if event.window === panel {
           let p = event.locationInWindow
           let localX = Double(p.x)
@@ -804,7 +827,15 @@ final class GlobalLookupOverlayController: NSObject, WKScriptMessageHandler, WKN
            app.processIdentifier == ProcessInfo.processInfo.processIdentifier {
           return
         }
-        self?.hide(notify: true)
+        guard let self = self, !self.captureSuppressed else { return }
+        // 本进程主动交还前台（restoreAfterCapture 的 returnForeground）：放过这一次。
+        if let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+           self.expectedActivationPid != 0,
+           app.processIdentifier == self.expectedActivationPid {
+          self.expectedActivationPid = 0
+          return
+        }
+        self.hide(notify: true)
       }
     }
   }
