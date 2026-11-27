@@ -219,6 +219,9 @@ class ShortcutDefaults {
     ShortcutAction.globalOpenAiAssistant: _kb([
       _key(LogicalKeyboardKey.keyJ, {ModifierKey.ctrl}),
     ]),
+    // 打开待发卡片（应用内反馈 OElRvCndxk）：用户拍板默认不绑键，用户自己在快捷键
+    // 设置里绑（键盘 / 手柄 / 鼠标侧键都行）。
+    ShortcutAction.globalOpenPendingCards: const ShortcutBindingSet(),
     // 右键菜单的默认绑定 = 鼠标右键（DOM button 2），与改造前各处硬绑
     // `onSecondaryTap*` 的行为逐字一致。键盘/手柄留空：菜单是**位置型**动作
     // （要一个 globalPosition 作锚点），键盘触发没有锚点可用。

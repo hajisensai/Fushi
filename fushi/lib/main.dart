@@ -182,8 +182,7 @@ import 'package:fushi/src/anki/source_review_navigation.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mine_relay.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mining_anki_repository.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mines_page.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
-    show adaptivePageRoute;
+import 'package:fushi/src/shortcuts/shortcut_action.dart' show ShortcutAction;
 import 'package:fushi/src/platform/app_exit_coordinator.dart';
 import 'package:fushi/src/platform/desktop/windows_native_pre_exit.dart';
 import 'package:fushi/src/platform/platform_services.dart';
@@ -914,18 +913,17 @@ void main([List<String> args = const <String>[]]) {
       };
       // 「已加入待发队列」提示上的「查看队列」：在主导航器上推待发卡片列表（与 Anki 设置页
       // 「待发卡片」入口同一页）。
-      mineQueuedOpenPending = () {
-        final NavigatorState? navigator = appModel.navigatorKey.currentState;
-        if (navigator == null) return;
-        unawaited(
-          navigator.push<void>(
-            adaptivePageRoute<void>(
-              context: navigator.context,
-              builder: (BuildContext context) => const PendingMinesPage(),
-            ),
-          ),
-        );
-      };
+      mineQueuedOpenPending = () =>
+          openPendingMinesPage(appModel.navigatorKey.currentState);
+      // 桌面手柄按钮不是键事件、到不了 app 根的键处理器：global scope「直接做一件事」的
+      // 动作（全屏 / AI 助手 / 待发卡片）由 GamepadService 兜底交给同一个执行体。
+      appModel.gamepadService.runGlobalCommand = (ShortcutAction action) =>
+          runGlobalCommandAction(
+            action,
+            openAiAssistant: () => openAiAgentFromShortcut(appModel),
+            openPendingCards: () =>
+                openPendingMinesPage(appModel.navigatorKey.currentState),
+          );
       appModel.ankiRepositoryReader = () =>
           container.read(ankiRepositoryProvider);
       appModel.hostMiningRepositoryReader = () =>
@@ -3609,6 +3607,11 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                             // AI 模块关着时不认领。
                             openAiAssistant: () =>
                                 openAiAgentFromShortcut(appModel),
+                            // 全局快捷键「打开待发卡片」（应用内反馈 OElRvCndxk，默认
+                            // 不绑键）：与「查看队列」同一个落点。
+                            openPendingCards: () => openPendingMinesPage(
+                              appModel.navigatorKey.currentState,
+                            ),
 
                             // BUG-1349（第二处根因）：焦点导航层（FushiFocusRoot 的
                             // fallbackNode）必须在全局导航层**之内**。键事件沿焦点树

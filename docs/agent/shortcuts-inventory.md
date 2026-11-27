@@ -1,5 +1,11 @@
 # Fushi 快捷键清单（TODO-048a 统计）
 
+> **2026-11-27 增补（打开待发卡片）：** global scope 新增 `globalOpenPendingCards`（`global_open_pending_cards`），
+> 三平台默认空绑定（用户拍板，应用内反馈 OElRvCndxk），不在播放器 / 阅读器工具栏放常驻按钮。全屏 / AI 助手 / 待发卡片
+> 三个「直接做一件事」的 global 动作收口到 `runGlobalCommandAction`（`shortcuts/global_navigation.dart`）；桌面手柄
+> 以前只经页面 Actions 派发、到不了 app 根的键事件处理器，这三个动作绑在手柄上按了没反应，现在由
+> `GamepadService.runGlobalCommand`（main.dart 装上）兜底（BUG-5556）。
+
 > **2026-11-24 增补（音乐推荐页刷新）：** home scope 新增 `musicRecommendRefresh`（`music_recommend_refresh`），
 > 默认 Ctrl + R（macOS ⌘R），移动端无键盘绑定。执行体是音乐「推荐」（在线）Apple 布局的键事件节点
 > （`music/apple/apple_music_recommend_layout.part.dart`，只在 Apple 外壳生效；焦点在推荐页内时命中即重载全部来源，
@@ -179,6 +185,7 @@
 | globalScrollToBottom | End | — | 滚到底 |
 | globalScrollToTop | Home | — | 滚到顶 |
 | globalOpenAiAssistant | Ctrl+J（macOS ⌘J） | — | 呼出 AI 助手浮层（带当前悬浮球场景上下文；AI 模块关着时不响应、照常冒泡）。执行体在 app 根 `wrapWithGlobalNavigation`，三通道（键盘 / 手柄 / 鼠标）共用 `openAiAgentFromShortcut` |
+| globalOpenPendingCards | —（默认不绑） | — | 打开「待发卡片」列表（应用内反馈 OElRvCndxk）。与「已加入待发队列」提示上的「查看队列」同一个落点 `openPendingMinesPage`（已在栈顶不再叠一份）。执行体 `runGlobalCommandAction`：app 根 `wrapWithGlobalNavigation`（键盘 / Android 手柄键事件 / 鼠标）+ 桌面手柄 `GamepadService.runGlobalCommand` |
 
 > 页面滚动六件套（2026-09-12）：键盘 / 手柄 / 鼠标三通道共用执行体
 > `shortcuts/page_scroll_shortcuts.dart`，目标解析唯一入口
