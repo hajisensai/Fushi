@@ -6,6 +6,8 @@ import 'package:fushi_engine/tts/local/local_service_support.dart'
 import 'package:fushi_engine/tts/providers/azure_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/custom_http_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/edge_tts_provider.dart';
+import 'package:fushi_engine/tts/providers/elevenlabs_tts_provider.dart';
+import 'package:fushi_engine/tts/providers/fish_audio_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/google_cloud_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/gpt_sovits_tts_provider.dart';
 import 'package:fushi_engine/tts/local/irodori_voice_pack_provider.dart'
@@ -24,6 +26,8 @@ import 'package:fushi_engine/tts/tts_voice_preset.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/tts/system_tts_provider.dart';
 import 'package:fushi/src/onboarding/onboarding_sample_text.dart';
+import 'package:fushi/src/utils/components/content_language_picker.dart'
+    show contentLanguageLabelOf;
 import 'package:fushi/src/utils/misc/system_tts.dart';
 
 /// 「删除本机引擎」删不掉时的提示（路径 + 系统给的原因）。
@@ -56,6 +60,8 @@ String ttsProviderLabel(String providerId) => switch (providerId) {
   SharevoxTtsDescriptor.providerId => t.audiobook_tts_provider_sharevox,
   VoicepeakTtsDescriptor.providerId => t.audiobook_tts_provider_voicepeak,
   kIrodoriPackProviderId => t.audiobook_tts_provider_irodori_pack,
+  FishAudioTtsDescriptor.providerId => t.audiobook_tts_provider_fish_audio,
+  ElevenLabsTtsDescriptor.providerId => t.audiobook_tts_provider_elevenlabs,
   _ => providerId,
 };
 
@@ -77,6 +83,9 @@ String? ttsProviderHint(String providerId) => switch (providerId) {
     t.audiobook_tts_unofficial_free_hint,
   AzureTtsDescriptor.providerId ||
   GoogleCloudTtsDescriptor.providerId => t.audiobook_tts_key_required_hint,
+  FishAudioTtsDescriptor.providerId => t.audiobook_tts_provider_fish_audio_hint,
+  ElevenLabsTtsDescriptor.providerId =>
+    t.audiobook_tts_provider_elevenlabs_hint,
   VoicevoxTtsDescriptor.providerId ||
   AivisSpeechTtsDescriptor.providerId ||
   SharevoxTtsDescriptor.providerId => t.audiobook_tts_provider_voicevox_hint,
@@ -161,6 +170,14 @@ String ttsChoiceLabel(String providerId, String key, String value) => switch ((
         ? t.audiobook_tts_param_delivery_instructions_off
         : t.audiobook_tts_param_delivery_instructions_on,
   (UnslothStudioTtsDescriptor.providerId, _) => _unslothLanguageLabel(value),
+  (FishAudioTtsDescriptor.providerId, FishAudioTtsDescriptor.modelKey) =>
+    value == FishAudioTtsDescriptor.freeModel
+        ? '$value · ${t.audiobook_tts_param_fish_model_free}'
+        : value,
+  (ElevenLabsTtsDescriptor.providerId, ElevenLabsTtsDescriptor.languageKey) =>
+    value == ElevenLabsTtsDescriptor.autoLanguage
+        ? t.audiobook_tts_lang_auto
+        : contentLanguageLabelOf(value),
   _ => ttsLanguageLabel(value),
 };
 
@@ -219,6 +236,11 @@ String? ttsParamHint(String providerId, String key) => switch ((
     t.audiobook_tts_param_delivery_instructions_hint,
   (UnslothStudioTtsDescriptor.providerId, final String key) =>
     _unslothParamHint(key),
+  (FishAudioTtsDescriptor.providerId, final String key) => _fishAudioParamHint(
+    key,
+  ),
+  (ElevenLabsTtsDescriptor.providerId, final String key) =>
+    _elevenLabsParamHint(key),
   (IrodoriTtsDescriptor.providerId, IrodoriTtsDescriptor.endpointKey) =>
     t.audiobook_tts_param_irodori_endpoint_hint,
   (
@@ -279,6 +301,27 @@ String? _unslothParamHint(String key) => switch (key) {
   _ => null,
 };
 
+/// Fish Audio 各参数的说明。
+String? _fishAudioParamHint(String key) => switch (key) {
+  FishAudioTtsDescriptor.apiKeyKey => t.audiobook_tts_param_fish_api_key_hint,
+  FishAudioTtsDescriptor.modelKey => t.audiobook_tts_param_fish_model_hint,
+  FishAudioTtsDescriptor.voiceKey => t.audiobook_tts_param_fish_voice_hint,
+  _ => null,
+};
+
+/// ElevenLabs 各参数的说明。
+String? _elevenLabsParamHint(String key) => switch (key) {
+  ElevenLabsTtsDescriptor.apiKeyKey =>
+    t.audiobook_tts_param_elevenlabs_api_key_hint,
+  ElevenLabsTtsDescriptor.modelKey =>
+    t.audiobook_tts_param_elevenlabs_model_hint,
+  ElevenLabsTtsDescriptor.voiceKey =>
+    t.audiobook_tts_param_elevenlabs_voice_hint,
+  ElevenLabsTtsDescriptor.languageKey =>
+    t.audiobook_tts_param_elevenlabs_language_hint,
+  _ => null,
+};
+
 /// 自定义 HTTP 各参数的说明（占位符 `{text}` 等是字面文字：本仓 slang 的插值语法是
 /// `${x}`，花括号不会被当成参数）。
 String? _customHttpParamHint(String key) => switch (key) {
@@ -319,6 +362,7 @@ String ttsFailureText(
         TtsFailureCode.badResponse => t.audiobook_tts_failure_bad_response,
         TtsFailureCode.rejected => t.audiobook_tts_failure_rejected,
         TtsFailureCode.busy => t.audiobook_tts_failure_busy,
+        TtsFailureCode.quotaExceeded => t.audiobook_tts_failure_quota_exceeded,
         TtsFailureCode.unsupported => t.audiobook_tts_failure_unsupported,
         TtsFailureCode.cancelled => t.audiobook_tts_failure_cancelled,
       };
@@ -364,6 +408,14 @@ String? ttsPresetLanguage(TtsVoicePreset preset) {
       fallback: UnslothStudioTtsDescriptor.autoLanguage,
     );
     return lang == UnslothStudioTtsDescriptor.autoLanguage ? null : lang;
+  }
+  // ElevenLabs：固定了文本语言就按它试听（自动时由声音 id 推不出）。
+  if (preset.providerId == ElevenLabsTtsDescriptor.providerId) {
+    final String lang = preset.param(
+      ElevenLabsTtsDescriptor.languageKey,
+      fallback: ElevenLabsTtsDescriptor.autoLanguage,
+    );
+    return lang == ElevenLabsTtsDescriptor.autoLanguage ? null : lang;
   }
   final String voice = preset.params['voice'] ?? '';
   return _kVoiceLocalePrefix.firstMatch(voice)?.group(1);

@@ -151,6 +151,10 @@ enum TtsFailureCode {
 
   /// 服务正忙（HTTP 409：本机工作台有别的任务在跑）。稍后重试即可。
   busy,
+
+  /// 额度 / 余额用完（HTTP 402，或服务端在正文里标明额度耗尽）：免费额度当月用完、
+  /// 账户余额不足。等下个计费周期或充值，重试同一句无用，整本书制作应停下。
+  quotaExceeded,
   unsupported,
   cancelled,
 }

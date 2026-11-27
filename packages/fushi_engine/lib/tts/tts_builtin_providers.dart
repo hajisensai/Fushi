@@ -6,6 +6,8 @@ library;
 import 'package:fushi_engine/tts/providers/azure_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/custom_http_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/edge_tts_provider.dart';
+import 'package:fushi_engine/tts/providers/elevenlabs_tts_provider.dart';
+import 'package:fushi_engine/tts/providers/fish_audio_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/google_cloud_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/gpt_sovits_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/irodori_server_tts_provider.dart';
@@ -42,4 +44,7 @@ const List<TtsProviderDescriptor> kBuiltinTtsProviders =
       GoogleTranslateTtsDescriptor(),
       AzureTtsDescriptor(),
       GoogleCloudTtsDescriptor(),
+      // 声音克隆类在线服务（免费 / 付费同一接口，区别在模型与额度）。
+      FishAudioTtsDescriptor(),
+      ElevenLabsTtsDescriptor(),
     ];

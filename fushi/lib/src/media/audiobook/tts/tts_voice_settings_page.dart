@@ -66,6 +66,9 @@ const Duration _kSaveDebounce = Duration(milliseconds: 600);
 /// 声音参数旁边存显示名的键后缀（`voice` → `voice_name`）。
 const String _kVoiceNameSuffix = '_name';
 
+/// 声音选择列表里「手填 id」那一项的值（真实声音 id 不会以 NUL 开头）。
+const String _kCustomVoiceOption = '\u0000custom';
+
 /// 参考音频能选的扩展名（GPT-SoVITS 经 librosa / ffmpeg 读，常见格式都认）。
 const Set<String> _kReferenceAudioExtensions = <String>{
   'wav',
@@ -90,6 +93,14 @@ void ttsApplyPickedOptionParams(
     }
   }
 }
+
+/// 选中的声音 id 对应的选项：列表里有就用那项（带显示名 / 语言）；手填、列表里
+/// 没有的 id（[TtsParamSpec.allowsCustomValue]）只有 id 本身。
+TtsVoice ttsVoiceForPickedId(List<TtsVoice> listed, String id) =>
+    listed.firstWhere(
+      (TtsVoice v) => v.id == id,
+      orElse: () => TtsVoice(id: id, displayName: id, locale: ''),
+    );
 
 /// 服务地址是不是本机回环地址：是的话服务端看得到本机文件，参考音频可以直接
 /// 在本机选；局域网 / 远端服务只能填服务端那台机器上的路径。
@@ -938,7 +949,8 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
       if (mounted) setState(() => _fetchingVoices = false);
     }
     if (!mounted) return;
-    if (voices.isEmpty) {
+    // 能手填 id 的参数（Fish Audio / ElevenLabs）列表为空也照样弹：还能手填。
+    if (voices.isEmpty && !spec.allowsCustomValue) {
       setState(
         () => _testResult = (
           ok: false,
@@ -978,20 +990,38 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
               if (v.gender != null) v.gender!,
             ].join(' · '),
           ),
+        if (spec.allowsCustomValue)
+          FushiChoiceOption<String>(
+            value: _kCustomVoiceOption,
+            label: t.audiobook_tts_voice_enter_id,
+            subtitle: t.audiobook_tts_voice_enter_id_hint,
+          ),
       ],
     );
     if (picked == null || !mounted) return;
+    String pickedId = picked;
+    if (picked == _kCustomVoiceOption) {
+      final String? entered = await showFushiTextInputDialog(
+        context: context,
+        title: t.audiobook_tts_voice_enter_id,
+        message: t.audiobook_tts_voice_enter_id_hint,
+        initialValue: current,
+        labelText: ttsParamLabel(spec.key),
+      );
+      if (entered == null || entered.isEmpty || !mounted) return;
+      pickedId = entered;
+    }
     final Map<String, String> params = <String, String>{..._preset.params};
     TtsVoice? chosen;
-    if (picked.isEmpty) {
+    if (pickedId.isEmpty) {
       params
         ..remove(spec.key)
         ..remove('${spec.key}$_kVoiceNameSuffix');
     } else {
-      final TtsVoice option = sorted.firstWhere((TtsVoice v) => v.id == picked);
+      final TtsVoice option = ttsVoiceForPickedId(sorted, pickedId);
       chosen = option;
       // 显示名只给界面用（不在参数表里，不进缓存键）：Irodori 的声音 id 是不透明串。
-      params[spec.key] = picked;
+      params[spec.key] = pickedId;
       params['${spec.key}$_kVoiceNameSuffix'] = option.displayName;
       // 声音带语言（Edge / Azure / 系统语音等）：试听文本换成该语言的示例句。
       if (option.locale.isNotEmpty) _followTestLanguage(option.locale);
@@ -1004,7 +1034,7 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
     // 系统语音的声音属于某个引擎：换了引擎，旧引擎的声音名在新引擎里没有意义。
     if (_preset.providerId == SystemTtsDescriptor.providerId &&
         spec.key == SystemTtsDescriptor.engineKey &&
-        picked != current) {
+        pickedId != current) {
       params
         ..remove(SystemTtsDescriptor.voiceKey)
         ..remove('${SystemTtsDescriptor.voiceKey}$_kVoiceNameSuffix');
