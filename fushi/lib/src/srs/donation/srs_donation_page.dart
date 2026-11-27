@@ -128,11 +128,16 @@ class _SrsDonationPageState extends ConsumerState<SrsDonationPage> {
       return;
     }
     setState(() => _previewFailed = false);
+    // 统计要等约 20 秒，用户期间离开页面时 ref 已失效：缓存的写入口在 await 前取好，
+    // 页面没了也照样把结果记进缓存，再进页不用重算。
+    final StateController<SrsDonationPreviewSnapshot?> cache = ref.read(
+      srsDonationPreviewCacheProvider.notifier,
+    );
     try {
       final SrsDonationPreview preview = await previewSrsDonationInBackground(
         store: store,
       );
-      ref.read(srsDonationPreviewCacheProvider.notifier).state = (
+      cache.state = (
         profileUid: store.profileUid,
         fingerprint: fingerprint,
         preview: preview,

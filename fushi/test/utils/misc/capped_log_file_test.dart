@@ -5,7 +5,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/utils/misc/capped_log_file.dart';
 
 /// Counts trims so the test can bound how often the file is rewritten.
@@ -48,7 +48,7 @@ void main() {
   test('a trim keeps at most trimToBytes, aligned to a line start', () async {
     final File file = File('${dir.path}/log.txt');
     file.writeAsStringSync(
-      List<String>.generate(100, (int i) => 'row $i').join('\n') + '\n',
+      '${List<String>.generate(100, (int i) => 'row $i').join('\n')}\n',
     );
     final CappedLogFile log = CappedLogFile(file, maxBytes: 200);
     await log.trimIfOver();

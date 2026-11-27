@@ -114,7 +114,9 @@ void main() {
       );
       expect(
         main,
-        contains('case LeaderboardIncomingLink(:final LeaderboardDeepLink link):'),
+        contains(
+          'case LeaderboardIncomingLink(:final LeaderboardDeepLink link):',
+        ),
       );
       expect(main, contains('_leaderboardLinks.schedule();'));
       expect(main, contains('openLeaderboardDeepLink('));

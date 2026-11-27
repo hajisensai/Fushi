@@ -425,21 +425,35 @@ fn read_lofty<R: Read + Seek>(
     want_cover: bool,
 ) -> Result<(FileMeta, Option<Vec<u8>>), String> {
     reader.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;
-    // 先按扩展名给类型提示，再按内容嗅探（嗅探结果优先，嗅探不出时保留扩展名的判断）——与
-    // [embedded_cover] 的 `Probe::open` 同一口径。只靠嗅探时，ID3v2 标签后跟着超过
-    // `max_junk_bytes`（1 KiB）填充的 MP3 找不到帧同步，整首歌退成字段全空（BUG：艺人 /
-    // 专辑 / 码率 / 列表封面都丢，「继续收听」走 embedded_cover 却有封面）。
-    let mut probe = Probe::new(&mut *reader).options(ParseOptions::new());
-    if let Some(hint) = FileType::from_ext(ext) {
-        probe = probe.set_file_type(hint);
-    }
-    let probe = probe.guess_file_type().map_err(|e| e.to_string())?;
-    let Some(file_type) = probe.file_type() else {
-        return Ok((meta_from_extension(ext), None));
+    let probe = Probe::new(&mut *reader)
+        .options(ParseOptions::new())
+        .guess_file_type()
+        .map_err(|e| e.to_string())?;
+    let (file_type, tagged) = match probe.file_type() {
+        // 内容嗅探认出了类型：解析失败（坏文件 / 截断 / 伪装扩展名）如实报错——扫描器记一条
+        // 错误记录、不入库，不把读不出来的东西当成「无标签的歌」塞进曲库。
+        Some(file_type) => (file_type, probe.read().map_err(|e| e.to_string())?),
+        None => {
+            drop(probe);
+            let Some(hint) = FileType::from_ext(ext) else {
+                return Ok((meta_from_extension(ext), None));
+            };
+            // 嗅探认不出时按扩展名的类型再读一次（BUG-5540）：ID3v2 标签后跟着超过
+            // `max_junk_bytes`（1 KiB）填充的 MP3 找不到帧同步，只靠嗅探整首歌退成字段全空
+            // （艺人 / 专辑 / 码率 / 列表封面都丢，「继续收听」走 embedded_cover 却有封面）。
+            // 这一次读不出来（0 字节 / 并非该格式）照旧退回扩展名推断，与只靠嗅探时同语义：
+            // 嗅探都认不出的文件不升级成扫描错误。
+            reader.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;
+            match Probe::new(&mut *reader)
+                .options(ParseOptions::new())
+                .set_file_type(hint)
+                .read()
+            {
+                Ok(tagged) => (hint, tagged),
+                Err(_) => return Ok((meta_from_extension(ext), None)),
+            }
+        }
     };
-    // 解析失败（坏文件 / 截断 / 伪装扩展名）如实报错：扫描器记一条错误记录、不入库，
-    // 不把读不出来的东西当成「无标签的歌」塞进曲库。
-    let tagged = probe.read().map_err(|e| e.to_string())?;
 
     let (mut codec, mut lossless) = codec_of(file_type);
     let mut mp4_chapters: Vec<Mp4Chapter> = Vec::new();
@@ -780,6 +794,17 @@ mod tests {
         // 远程曲目走读取器版本，同一判据。
         let (_, cover) = read_meta_from(&mut std::io::Cursor::new(file), "mp3", true).unwrap();
         assert_eq!(cover.as_deref(), Some(&b"\x89PNGfake"[..]));
+    }
+
+    /// 嗅探认不出、按扩展名再读也读不出的文件（0 字节的 `.flac` / `.mp3`，视频特典夹具就是
+    /// `touch` 出来的）维持修前语义：退回扩展名推断、不报扫描错误。
+    #[test]
+    fn empty_audio_file_falls_back_to_extension_meta() {
+        for (name, ext) in [("empty.flac", "flac"), ("empty.mp3", "mp3")] {
+            let p = write_temp(name, &[]);
+            let meta = read_file_meta(&p).expect(name);
+            assert_eq!(meta.codec, meta_from_extension(ext).codec, "{name}");
+        }
     }
 
     #[test]

@@ -68,4 +68,3 @@ final class LeaderboardWorkLink extends LeaderboardDeepLink {
   @override
   String toString() => 'LeaderboardWorkLink($id)';
 }
-

@@ -71,8 +71,9 @@ void main() {
   });
 
   test('release.yml 的 push 只解析成 debug 通道（停 push = 只停 debug）', () {
-    final String yaml = _repoFile('.github/workflows/release.yml')
-        .readAsStringSync();
+    final String yaml = _repoFile(
+      '.github/workflows/release.yml',
+    ).readAsStringSync();
     final int at = yaml.indexOf('          push)\n');
     expect(at, greaterThan(0), reason: 'channel 解析里找不到 push) 分支');
     final String branch = yaml.substring(at, yaml.indexOf(';;', at));
@@ -146,16 +147,18 @@ void main() {
   });
 
   test('服务端自动发布用同名变量，只停 debug 候选', () {
-    final String workflow = _repoFile('.github/workflows/release-server.yml')
-        .readAsStringSync();
+    final String workflow = _repoFile(
+      '.github/workflows/release-server.yml',
+    ).readAsStringSync();
     expect(
       workflow,
       contains(r'PAUSE_DEBUG_RELEASE: ${{ vars.FUSHI_PAUSE_DEBUG_RELEASE }}'),
       reason: 'release-server.yml 的 plan step 没把暂停开关交给 server_release_plan.py',
     );
 
-    final String plan = _repoFile('tool/server_release_plan.py')
-        .readAsStringSync();
+    final String plan = _repoFile(
+      'tool/server_release_plan.py',
+    ).readAsStringSync();
     final int pauseAt = plan.indexOf('    if pause_debug:');
     final int betaAt = plan.indexOf('beta = _newest_beta(');
     final int developAt = plan.indexOf('commits/develop');

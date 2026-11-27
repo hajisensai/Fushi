@@ -39,6 +39,11 @@ class PdfImporter {
   /// 书目录内固定的封面文件名。
   static const String kCoverFileName = 'cover.png';
 
+  /// 把 PDF 原件拷成书目录里的 [kPdfFileName]：首次导入与原地重建共用这一处裸写
+  /// （cover_write_sink_bug_2496_guard_test 按锚点数这一行）。
+  static Future<File> _copyPdfInto(String filePath, String dir) =>
+      File(filePath).copy(p.join(dir, kPdfFileName));
+
   /// 从磁盘路径导入一份 PDF。成功返回 bookKey（= 净化后的标题，`EpubBooks` 主键）；
   /// 用户在同名弹窗取消时抛 [DuplicateImportCancelledException]（由调用方按取消处理）；
   /// 其它失败抛异常并回滚本次自己建的行与目录。
@@ -123,7 +128,7 @@ class PdfImporter {
           final String dir = await EpubImporter.createStagingDir(db);
           stagedDir = dir;
           // 把 PDF 拷进书目录（原文件在缓存/外部目录，阅读器需稳定内部副本）。
-          await File(filePath).copy(p.join(dir, kPdfFileName));
+          await _copyPdfInto(filePath, dir);
           // BUG-2496：封面走收口（校验完整可解码 + 原子写）。pdfrx 渲染出的字节
           // 理应是完整 PNG，但栅格化失败/半截时不能让整本 PDF 导入失败——记诊断、
           // coverPath 留空，书架回落占位图。
@@ -271,7 +276,7 @@ class PdfImporter {
   }) async {
     final String staging = await EpubStorage.createStagingDirectory();
     try {
-      await File(filePath).copy(p.join(staging, kPdfFileName));
+      await _copyPdfInto(filePath, staging);
       String? coverRel;
       if (coverPng != null) {
         try {
