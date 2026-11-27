@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/mining/gal_loopback_voice_detector.dart';
 import 'package:fushi/src/mining/galgame_audio_encode.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
 import 'package:fushi/src/mining/gal_voice_dump_index.dart';
@@ -1898,6 +1899,137 @@ void main() {
       await controller.close();
       expect(engine.stopCalls, 1);
       expect(loopback.stopCalls, 1);
+      endpoints.dispose();
+    },
+  );
+
+  // BUG-5550（反馈 T3n0B8tO7F）：loopback 切片只证明电脑在出声，不证明这句有配音。
+  // 锁定切片后必须经人声检测落定 fallbackReason，旧实现一律写死
+  // `engine_utterance_unavailable`，朗读裁决因此把旁白句也当成「有原声」。
+  GalHookSessionController bug5550Controller({
+    required TexthookerService service,
+    required ChangeNotifier endpoints,
+    required _FakeLoopbackSource loopback,
+    GalLoopbackVoiceDetector? detector,
+  }) {
+    final _FakeEngineSource engine = _FakeEngineSource(
+      pairedBytes: Uint8List(0),
+      audioFormat: null,
+      textReady: true,
+      polledLines: const <GalHookedLine>[
+        GalHookedLine(
+          seq: 1,
+          timestampMs: 123456,
+          text: 'やめろ化け物め！',
+          threadId: 99,
+          hookName: 'Unity',
+        ),
+      ],
+    );
+    return GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      targetWow64Probe: (_) async => false,
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+      engineSourceFactory:
+          ({
+            required int targetPid,
+            required String? launchExe,
+            required String injectorPath,
+            required bool lunaPcHooks,
+            int? lunaCodepage,
+            List<String> launchArguments = const <String>[],
+            String launchWorkdir = '',
+            GalJapaneseLocaleMode japaneseLocaleMode =
+                kGalDefaultJapaneseLocaleMode,
+            String? contentLanguage,
+          }) => engine,
+      loopbackSourceFactory: () => loopback,
+      loopbackVoiceDetector: detector,
+      textPollInterval: const Duration(milliseconds: 5),
+      loopbackFreezeDelay: const Duration(milliseconds: 10),
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+  }
+
+  for (final (bool?, String) c in <(bool?, String)>[
+    (false, kGalLineNoVoiceReason),
+    (true, kGalLoopbackVoiceDetectedReason),
+    (null, kGalLoopbackVoiceUnverifiedReason),
+  ]) {
+    test('BUG-5550 loopback slice voice detection speech=${c.$1} '
+        '-> ${c.$2}', () async {
+      final TexthookerService service = TexthookerService.test();
+      final ChangeNotifier endpoints = ChangeNotifier();
+      final _FakeLoopbackSource loopback = _FakeLoopbackSource();
+      final _FakeVoiceDetector detector = _FakeVoiceDetector(c.$1);
+      final GalHookSessionController controller = bug5550Controller(
+        service: service,
+        endpoints: endpoints,
+        loopback: loopback,
+        detector: detector,
+      );
+
+      await controller.startAttachedCapture(
+        const ExternalWindowInfo(hwnd: 7, pid: 19332, title: 'manosaba'),
+      );
+      // v13：采集期不按线程丢行，消费期才过滤，选线程是本用例的显式前提。
+      expect(await controller.selectTextThread(99), isTrue);
+      for (int i = 0; i < 100 && detector.calls == 0; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      expect(detector.calls, 1, reason: 'the locked slice must be checked');
+      expect(
+        detector.leadInMs,
+        1000,
+        reason: 'the pre-roll belongs to the previous line',
+      );
+      expect(
+        service.entries.single.fallbackReason,
+        kGalLoopbackVoiceCheckingReason,
+        reason: 'until the detector answers, the line has no voice evidence',
+      );
+      detector.answer();
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        service.entries.single.audioStatus,
+        TexthookerLineAudioStatus.fallback,
+        reason: 'the slice stays usable for mining either way',
+      );
+      expect(service.entries.single.fallbackReason, c.$2);
+
+      await controller.close();
+      endpoints.dispose();
+    });
+  }
+
+  test(
+    'BUG-5550 without a detector the loopback slice is unverified',
+    () async {
+      final TexthookerService service = TexthookerService.test();
+      final ChangeNotifier endpoints = ChangeNotifier();
+      final _FakeLoopbackSource loopback = _FakeLoopbackSource();
+      final GalHookSessionController controller = bug5550Controller(
+        service: service,
+        endpoints: endpoints,
+        loopback: loopback,
+      );
+
+      await controller.startAttachedCapture(
+        const ExternalWindowInfo(hwnd: 7, pid: 19332, title: 'manosaba'),
+      );
+      expect(await controller.selectTextThread(99), isTrue);
+      for (int i = 0; i < 100 && loopback.grabRecentCalls == 0; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      expect(
+        service.entries.single.fallbackReason,
+        kGalLoopbackVoiceUnverifiedReason,
+      );
+
+      await controller.close();
       endpoints.dispose();
     },
   );
@@ -5610,6 +5742,25 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
   @override
   Future<void> stop() async {
     stopCalls++;
+  }
+}
+
+class _FakeVoiceDetector implements GalLoopbackVoiceDetector {
+  _FakeVoiceDetector(this._speech);
+
+  final bool? _speech;
+  final Completer<void> _gate = Completer<void>();
+  int calls = 0;
+  int? leadInMs;
+
+  void answer() => _gate.complete();
+
+  @override
+  Future<bool?> hasSpeech(GalAudioSlice slice, {required int leadInMs}) async {
+    calls++;
+    this.leadInMs = leadInMs;
+    await _gate.future;
+    return _speech;
   }
 }
 

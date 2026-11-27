@@ -36,6 +36,9 @@ const List<String> kFeedbackGalLookupLogPrefixes = <String>[
   'main-thread stall:',
   // Dart 失联计量（同文件，BUG-5374）：只含毫秒数与 dump 文件名。
   'dart-silence:',
+  // 游戏台词自动朗读的裁决（`gal_line_tts_player.dart`，反馈 T3n0B8tO7F）：只含行 id、
+  // 跳过原因、配对状态名与错误码，不含台词正文。
+  'galtts:',
 ];
 
 /// 从 [raw]（hibiki_glookup.log 的一段文本）里摘白名单诊断行，保留最近
