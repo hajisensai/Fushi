@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/sync/host_request_observer.dart';
 import 'package:shelf/shelf.dart' as shelf;
@@ -70,6 +72,80 @@ void main() {
     await expectLater(handler(get('/api/x')), throwsStateError);
     expect(lines.single, contains('status=500'));
     expect(observer.debugTimerActive, isFalse);
+  });
+
+  test('长轮询挂着：不判慢、不让计时器常驻、不分摊同时段普通请求的 loopLag，'
+      '只进频率汇总（标 hold）', () async {
+    final List<String> lines = <String>[];
+    DateTime now = DateTime(2026, 11, 28);
+    final HostRequestObserver observer = HostRequestObserver(
+      log: lines.add,
+      slowThreshold: const Duration(milliseconds: 50),
+      lagThreshold: const Duration(milliseconds: 60),
+      clock: () => now,
+    );
+    final Completer<void> release = Completer<void>();
+    final shelf.Handler handler = observer.middleware()((
+      shelf.Request request,
+    ) async {
+      if (request.url.path == 'api/srs/changes') {
+        await release.future;
+        return shelf.Response.ok('{}');
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      final Stopwatch busy = Stopwatch()..start();
+      while (busy.elapsedMilliseconds < 200) {}
+      return shelf.Response.ok('x');
+    });
+
+    final Future<shelf.Response> poll = Future<shelf.Response>.value(
+      handler(get('/api/srs/changes?after=3')),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    expect(observer.debugTimerActive, isFalse, reason: '只挂着长轮询时不留计时器');
+
+    // 长轮询挂着时来一条普通请求：计时器只为它跑，跑完即停。
+    await handler(get('/api/library/collections'));
+    expect(observer.debugTimerActive, isFalse);
+    expect(lines, hasLength(1));
+    expect(lines.single, startsWith('slow GET /api/library/collections '));
+
+    release.complete();
+    await poll;
+    expect(lines, hasLength(1), reason: '挂了 300+ ms 的长轮询不记 slow');
+    expect(observer.debugTimerActive, isFalse);
+
+    now = now.add(const Duration(minutes: 11));
+    await handler(get('/api/srs/changes'));
+    expect(lines.last, startsWith('requests in last 11min: '));
+    expect(lines.last, contains('GET /api/srs/changes (hold) x2'));
+  });
+
+  test('isHostSuspendingRequest：srs 长轮询与带 wait 的助手会话读', () {
+    expect(isHostSuspendingRequest(get('/api/srs/changes?after=1')), isTrue);
+    expect(
+      isHostSuspendingRequest(
+        shelf.Request('POST', Uri.parse('http://127.0.0.1:1/api/srs/changes')),
+      ),
+      isFalse,
+    );
+    expect(
+      isHostSuspendingRequest(
+        get('/api/assistant/sessions/s1?after=2&wait=25'),
+      ),
+      isTrue,
+    );
+    expect(
+      isHostSuspendingRequest(get('/api/assistant/sessions/s1?wait=0')),
+      isFalse,
+    );
+    expect(isHostSuspendingRequest(get('/api/assistant/sessions/s1')), isFalse);
+    expect(
+      isHostSuspendingRequest(get('/api/assistant/sessions/s1/actions?wait=9')),
+      isFalse,
+    );
+    expect(isHostSuspendingRequest(get('/api/srs/sync-status')), isFalse);
+    expect(isHostSuspendingRequest(get('/api/library/collections')), isFalse);
   });
 
   test('hostRequestRouteKey：/api 取前三段，其余归 WebDAV', () {

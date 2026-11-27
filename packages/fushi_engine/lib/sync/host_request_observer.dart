@@ -9,9 +9,15 @@
 /// - **请求频率**：每 [HostRequestObserver.summaryInterval] 一行各路由的次数与累计耗时，
 ///   看对端（client 的自动同步、预取）多久打一次哪条路由。
 ///
-/// 事件循环延迟用一个只在**有请求在飞时**才跑的周期计时器量（计时器实际触发时刻
-/// 比预定晚多少）；空闲时不留任何计时器。请求结束那一刻再补量一次「距上次触发
+/// 事件循环延迟用一个只在**有普通请求在飞时**才跑的周期计时器量（计时器实际触发
+/// 时刻比预定晚多少）；空闲时不留任何计时器。请求结束那一刻再补量一次「距上次触发
 /// 已经过去多久」，压在请求末尾的同步停顿也量得到。
+///
+/// **挂起类请求**（[isHostSuspendingRequest]：复习同步长轮询 `GET /api/srs/changes`、
+/// 带 `wait` 的助手会话长轮询）按设计就要挂住几十秒等事件，墙钟耗时与本 isolate
+/// 忙不忙无关：它们不按耗时判慢、不让计时器常驻（client 一直挂着长轮询，否则计时器
+/// 就永远停不下来）、也不分摊别的请求处理期间量到的 loopLag——只进请求频率汇总
+/// （键后标 `(hold)`，累计耗时是挂起时长，不是处理耗时）。
 library;
 
 import 'dart:async';
@@ -26,11 +32,14 @@ final class HostRequestObserver {
     this.lagThreshold = const Duration(milliseconds: 100),
     this.summaryInterval = const Duration(minutes: 10),
     this.tick = const Duration(milliseconds: 50),
+    bool Function(shelf.Request request) isSuspending = isHostSuspendingRequest,
     DateTime Function()? clock,
   }) : _log = log,
+       _isSuspending = isSuspending,
        _clock = clock ?? DateTime.now;
 
   final void Function(String line) _log;
+  final bool Function(shelf.Request request) _isSuspending;
   final DateTime Function() _clock;
 
   /// 处理耗时超过它的请求记一行。
@@ -54,6 +63,7 @@ final class HostRequestObserver {
 
   shelf.Middleware middleware() =>
       (shelf.Handler inner) => (shelf.Request request) async {
+        if (_isSuspending(request)) return _observeSuspending(inner, request);
         final _ActiveRequest active = _ActiveRequest();
         _begin(active);
         int status = 500;
@@ -65,6 +75,22 @@ final class HostRequestObserver {
           _end(active, request, status);
         }
       };
+
+  /// 挂起类请求：只记频率，不碰计时器、不判慢（见库注释）。
+  Future<shelf.Response> _observeSuspending(
+    shelf.Handler inner,
+    shelf.Request request,
+  ) async {
+    final Stopwatch watch = Stopwatch()..start();
+    try {
+      return await inner(request);
+    } finally {
+      _record(
+        '${request.method} ${hostRequestRouteKey(request)} (hold)',
+        watch.elapsed,
+      );
+    }
+  }
 
   void _begin(_ActiveRequest active) {
     _active.add(active);
@@ -146,6 +172,28 @@ final class _RouteStats {
     count++;
     total += elapsed;
   }
+}
+
+/// 按设计会挂起等事件的请求（长轮询）：墙钟耗时不代表本 isolate 在干活。
+///
+/// - `GET /api/srs/changes`：复习同步「有新段」通知，令牌没变就挂到
+///   `kSrsChangeWait`（25 s）；
+/// - `GET /api/assistant/sessions/<id>?wait=N`（N > 0）：助手会话视图长轮询。
+bool isHostSuspendingRequest(shelf.Request request) {
+  if (request.method != 'GET') return false;
+  final List<String> segments = request.url.pathSegments;
+  if (segments.length < 3 || segments[0] != 'api') return false;
+  if (segments.length == 3 &&
+      segments[1] == 'srs' &&
+      segments[2] == 'changes') {
+    return true;
+  }
+  if (segments.length == 4 &&
+      segments[1] == 'assistant' &&
+      segments[2] == 'sessions') {
+    return (int.tryParse(request.url.queryParameters['wait'] ?? '') ?? 0) > 0;
+  }
+  return false;
 }
 
 /// 日志里的路由键：`/api/...` 取前三段（`/api/library/books/<书名>/...` →
