@@ -62,7 +62,7 @@ void main() {
 
   Widget buildApp({
     void Function(MediaLinkEntry)? onOpen,
-    Future<RemoteVideoSource?> Function()? remoteVideoSource,
+    Future<List<RemoteVideoSource>> Function()? remoteVideoSources,
   }) => TranslationProvider(
     child: MaterialApp(
       home: Scaffold(
@@ -71,7 +71,7 @@ void main() {
             database: db,
             self: book,
             onOpen: onOpen ?? (MediaLinkEntry _) {},
-            remoteVideoSource: remoteVideoSource,
+            remoteVideoSources: remoteVideoSources,
           ),
         ),
       ),
@@ -370,9 +370,9 @@ void main() {
       sourceResolves = 0;
     });
 
-    Future<RemoteVideoSource?> loader() async {
+    Future<List<RemoteVideoSource>> loader() async {
       sourceResolves++;
-      return source;
+      return <RemoteVideoSource>[source];
     }
 
     Finder cardOf(int collectionId) => find.byKey(
@@ -413,7 +413,7 @@ void main() {
     ) async {
       await db.addToCollection(animeId, MediaKind.video, 'jellyfin-item-1');
       await linkCollection(animeId);
-      await tester.pumpWidget(buildApp(remoteVideoSource: loader));
+      await tester.pumpWidget(buildApp(remoteVideoSources: loader));
       await tester.pumpAndSettle();
 
       expect(posterIn(animeId), findsWidgets);
@@ -442,6 +442,29 @@ void main() {
       expect(source.lookups, hasLength(1));
     });
 
+    testWidgets('多个来源并存：成员只在后一个来源上，海报照样取到（反馈 k5Ey2AglAf）', (
+      WidgetTester tester,
+    ) async {
+      final _FakeLookupSource empty = _FakeLookupSource(<RemoteVideoInfo>[]);
+      await db.addToCollection(animeId, MediaKind.video, 'jellyfin-item-1');
+      await linkCollection(animeId);
+      await tester.pumpWidget(
+        buildApp(
+          remoteVideoSources: () async => <RemoteVideoSource>[empty, source],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(empty.lookups, hasLength(1));
+      expect(source.lookups, hasLength(1));
+      expect(posterIn(animeId), findsWidgets);
+      expect(
+        identical(posterOf(tester, animeId).fetcher, source),
+        isTrue,
+        reason: '取图器必须是查到这条成员的那个来源',
+      );
+    });
+
     testWidgets('没有远端成员的合集：不解析来源、不发查询', (WidgetTester tester) async {
       final int localId = await db.createMediaCollection('本地动画');
       await db.upsertVideoBook(
@@ -453,7 +476,7 @@ void main() {
       );
       await db.addToCollection(localId, MediaKind.video, 'local-ep-1');
       await linkCollection(localId);
-      await tester.pumpWidget(buildApp(remoteVideoSource: loader));
+      await tester.pumpWidget(buildApp(remoteVideoSources: loader));
       await tester.pumpAndSettle();
 
       expect(cardOf(localId), findsOneWidget);
@@ -466,7 +489,7 @@ void main() {
       source.fail = true;
       await db.addToCollection(animeId, MediaKind.video, 'jellyfin-item-1');
       await linkCollection(animeId);
-      await tester.pumpWidget(buildApp(remoteVideoSource: loader));
+      await tester.pumpWidget(buildApp(remoteVideoSources: loader));
       await tester.pumpAndSettle();
 
       expect(source.lookups, hasLength(1));

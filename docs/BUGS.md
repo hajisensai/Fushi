@@ -43,6 +43,7 @@
 | [BUG-5591](bugs/BUG-5591-music-shuffle-always-first.md) | ✅ | ✅ | music-shuffle-always-first |
 | [BUG-5592](bugs/BUG-5592-music-nav-peek-nsfw-cover-not-blurred.md) | ✅ | ✅ | 侧栏音乐速览卡不模糊 NSFW 专辑封面 |
 | [BUG-5593](bugs/BUG-5593-tts-studio-voice-picker-no-add.md) | ✅ | ✅ | tts-studio-voice-picker-no-add |
+| [BUG-5594](bugs/BUG-5594-jellyfin-show-in-library-hides-cloud-videos.md) | ✅ | ✅ | 开了 Jellyfin「显示在视频库」后云盘远端视频全部消失 |
 > 共 4868 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |

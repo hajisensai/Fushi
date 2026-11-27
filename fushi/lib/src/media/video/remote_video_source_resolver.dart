@@ -8,57 +8,81 @@ import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
 
-/// 当前的远端视频来源（TODO-2119）：互联优先、次选 Jellyfin / Emby 媒体服务器、
-/// 否则回退云盘。只解析来源、不取清单。
+/// 当前可用的远端视频来源，按优先级排好（TODO-2119 / 反馈 k5Ey2AglAf）。只解析
+/// 来源、不取清单。
 ///
-/// 这条链的顺序只写在这里：视频库页的取数 / 打开合集与「同一作品」卡片的远端海报
+/// 两条独立的轴：
+///  * **本机库的远端**：互联 host live 库优先，没有（关着 / 未配对）才回退云盘目录
+///    ——与书架同一条判据（`resolveShelfRemoteBookClient`）。云盘目录是各端上传的
+///    备份，host 的库与它大面积重叠，互联能给的（流播 / 续传 / 跨端断点）是它的超集。
+///  * **媒体服务器**（Jellyfin / Emby）：开了「显示在视频库」（`jellyfin_show_in_library`）
+///    就**混入**，与上一条并存，不顶替它。此前这里是「互联 > Jellyfin > 云盘」三选一，
+///    开了 Jellyfin 混排的用户云盘视频整批从视频库消失，与开关说明「混入」矛盾。
+///
+/// 调用方把各来源的清单按返回顺序合并（`mergeRemoteVideoListings`：同一 id 只留
+/// 优先级最高的来源那一条），每条视频按归属来源开播 / 下载 / 取封面。
+///
+/// 这条规则只写在这里：视频库页的取数 / 打开合集与「同一作品」卡片的远端海报
 /// 都经它，不会出现「库页认 Jellyfin、别处认云盘」的分叉。
 ///
 /// [interconnect] / [jellyfin] / [cloud] 是测试注入点（`HomeVideoPage` 的
 /// widget 钩子原样转进来），缺省走生产解析。Jellyfin 的混排闸门
 /// （`jellyfin_show_in_library`，B4）放在注入点**之前**：注入的 client 同样过闸，
 /// 闸门测试测的才是真判据。
-Future<RemoteVideoSource?> resolveRemoteVideoSource({
+Future<List<RemoteVideoSource>> resolveRemoteVideoSources({
   required PreferencesRepository prefs,
   required FushiDatabase database,
   Future<RemoteVideoClient?> Function()? interconnect,
   Future<JellyfinVideoClient?> Function()? jellyfin,
   Future<CloudRemoteVideoClient?> Function()? cloud,
 }) async {
-  final RemoteVideoClient? live = interconnect != null
-      ? await interconnect()
-      : await resolveInterconnectVideoClient(database: database);
-  if (live != null) return live;
-  if (prefs.jellyfinShowInLibrary) {
-    final JellyfinVideoClient? server = jellyfin != null
-        ? await jellyfin()
-        : await resolveJellyfinLibraryClient(
-            prefs: prefs,
-            syncRepo: SyncRepository(database),
-          );
-    if (server != null) return server;
+  Future<RemoteVideoSource?> ownLibrary() async {
+    final RemoteVideoClient? live = interconnect != null
+        ? await interconnect()
+        : await resolveInterconnectVideoClient(database: database);
+    if (live != null) return live;
+    return cloud != null
+        ? cloud()
+        : resolveCloudRemoteVideoClient(database: database);
   }
-  return cloud != null
-      ? await cloud()
-      : await resolveCloudRemoteVideoClient(database: database);
+
+  // 两条轴互不依赖，并行解析（各自要做一次鉴权恢复）。
+  final List<RemoteVideoSource?> resolved =
+      await Future.wait(<Future<RemoteVideoSource?>>[
+        ownLibrary(),
+        if (prefs.jellyfinShowInLibrary)
+          jellyfin != null
+              ? jellyfin()
+              : resolveJellyfinLibraryClient(
+                  prefs: prefs,
+                  syncRepo: SyncRepository(database),
+                ),
+      ]);
+  final RemoteVideoSource? own = resolved.first;
+  final RemoteVideoSource? server = resolved.length > 1 ? resolved[1] : null;
+  // 优先级：互联 > 媒体服务器 > 云盘（互联能流播 / 续传 / 跨端断点，云盘只能整片下载）。
+  return <RemoteVideoSource>[
+    if (own is RemoteVideoClient) own,
+    ?server,
+    if (own != null && own is! RemoteVideoClient) own,
+  ];
 }
 
-/// 视频库可见的远端来源：「显示远端条目」（`show_remote_entries`）关着时 null。
+/// 视频库可见的远端来源：「显示远端条目」（`show_remote_entries`）关着时为空。
 ///
 /// 视频库页在取数与打开合集前用同一个开关挡住远端来源；库页以外要远端视频的地方
 /// （「同一作品」卡片的远端海报）经这里，关掉远端条目的用户不会在别处又看到远端内容。
-Future<RemoteVideoSource?> resolveVisibleRemoteVideoSource({
+Future<List<RemoteVideoSource>> resolveVisibleRemoteVideoSources({
   required PreferencesRepository prefs,
   required FushiDatabase database,
 }) async {
-  if (!prefs.showRemoteEntries) return null;
-  return resolveRemoteVideoSource(prefs: prefs, database: database);
+  if (!prefs.showRemoteEntries) return const <RemoteVideoSource>[];
+  return resolveRemoteVideoSources(prefs: prefs, database: database);
 }
 
 /// 互联分支：互联开关开着且已配对（能恢复鉴权）时出它的 live 库，否则 null。
 ///
-/// 互联已从 backendType 解耦成独立开关，可与云备份并存；关着时 null，链落到
-/// Jellyfin / 云盘。
+/// 互联已从 backendType 解耦成独立开关，可与云备份并存；关着时 null。
 Future<RemoteVideoClient?> resolveInterconnectVideoClient({
   required FushiDatabase database,
 }) async {

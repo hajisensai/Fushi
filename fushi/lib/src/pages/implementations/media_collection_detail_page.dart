@@ -144,6 +144,8 @@ import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/media/selection/media_selection_controller.dart';
 import 'package:fushi/src/media/selection/selection_gestures.dart';
+import 'package:fushi/src/media/video/remote_video_sources.dart'
+    show RoutedRemoteVideoPlayedMark;
 import 'package:fushi/src/media/video/video_watched_marks.dart';
 import 'package:fushi/src/sync/remote_video_client.dart'
     show RemoteVideoPlayedMark;
@@ -175,7 +177,7 @@ import 'package:fushi/src/media/links/media_link_entries.dart'
 import 'package:fushi/src/media/links/media_link_inference_host.dart'
     show mediaLinkInferCallback;
 import 'package:fushi/src/media/links/media_link_opener.dart'
-    show mediaLinkRemoteVideoSource, mediaLinkSearchAction, openMediaLinkEntry;
+    show mediaLinkRemoteVideoSources, mediaLinkSearchAction, openMediaLinkEntry;
 import 'package:fushi/src/media/links/media_links_section.dart'
     show MediaLinksSection;
 
@@ -2266,7 +2268,9 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         break;
     }
     final String? url = remote.coverUrl;
-    final RemoteCoverFetcher? fetcher = widget.remote?.coverFetcher;
+    final RemoteCoverFetcher? fetcher = widget.remote?.coverFetcherFor?.call(
+      remote,
+    );
     if (url != null && url.isNotEmpty && fetcher != null) {
       return RemoteCoverImage(url, fetcher, cacheKey: remote.id);
     }
@@ -3268,7 +3272,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                     onPressed: () => pick(_EpisodeMenuAction.openFileLocation),
                   ),
                 // 标记已看 / 未看：本地集写库，媒体服务器的远端集同步到服务器；其它远端
-                // 源没有这个协议（[CollectionRemoteContext.playedMark] 为 null）就不出。
+                // 源没有这个协议（[CollectionRemoteContext.playedMarkFor] 给 null）就不出。
                 if (_canMarkWatched(episode)) ...<DialogListAction>[
                   DialogListAction(
                     label: episode.completed
@@ -3426,7 +3430,13 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 
   /// 这一集能不能手动标记：本地行总是可以；纯远端集要来源支持（媒体服务器）。
   bool _canMarkWatched(CollectionEpisodeSlot episode) =>
-      episode.local != null || widget.remote?.playedMark != null;
+      episode.local != null ||
+      (episode.remote != null &&
+          _remotePlayedMarkOf(episode.remote!.id) != null);
+
+  /// 远端集 [id] 所在来源的「已播放」协议；来源不支持时 null。
+  RemoteVideoPlayedMark? _remotePlayedMarkOf(String id) =>
+      widget.remote?.playedMarkFor?.call(id);
 
   /// 批量标记已看 / 未看，一次 [setVideosWatched]：本地行（含本地入库的媒体服务器
   /// 条目，顺带回写服务器）写库并盖同步戳；纯远端集与本地集在当前来源上的镜像经
@@ -3437,17 +3447,20 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     required bool watched,
   }) async {
     if (episodes.isEmpty) return;
-    final RemoteVideoPlayedMark? marker = widget.remote?.playedMark;
+    // 远端来源可以多个并存（反馈 k5Ey2AglAf）：每一集按它自己的来源标，来源不支持
+    // 「已播放」的远端集不进服务器回写。
+    final RoutedRemoteVideoPlayedMark marker = RoutedRemoteVideoPlayedMark(
+      _remotePlayedMarkOf,
+    );
     final List<String> localUids = <String>[
       for (final CollectionEpisodeSlot e in episodes)
         if (e.local != null) e.local!.bookUid,
     ];
     final List<String> remoteIds = <String>[
       for (final CollectionEpisodeSlot e in episodes)
-        if (e.local == null && e.remote != null)
-          e.remote!.id
-        else if (marker != null && e.remoteMirror != null)
-          e.remoteMirror!.id,
+        if ((e.local == null ? e.remote : e.remoteMirror)?.id
+            case final String id when marker.supports(id))
+          id,
     ];
     // No container only in widget tests (see [_downloadsAvailable]): nobody
     // listens to the marks there.
@@ -4106,7 +4119,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
             key: collectionTagEntryKey(widget.collection.id),
           );
           return MediaLinksSection(
-            remoteVideoSource: mediaLinkRemoteVideoSource(ref: ref),
+            remoteVideoSources: mediaLinkRemoteVideoSources(ref: ref),
             database: widget.database,
             self: self,
             onOpen: (MediaLinkEntry e) =>

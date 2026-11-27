@@ -671,7 +671,8 @@ Future<NavPeekFeed> _loadVideos({
         primaryCollectionIdByEntry: library.primaryCollectionByEntry,
         collectionsById: library.collectionsById,
       );
-  final RemoteVideoSource? remoteSource = share.remoteSource;
+  // 每条远端视频配着产出它的来源（多个远端来源并存，反馈 k5Ey2AglAf）。
+  final Map<String, RemoteVideoSource> remoteOwners = share.remoteOwners;
 
   // 合集项用合集自己的封面（与视频库合集卡同一条链），不是最近那一集的抽帧
   // 截图——否则一排都是分集画面，认不出是哪部剧。只查要显示的那几个合集。
@@ -710,7 +711,9 @@ Future<NavPeekFeed> _loadVideos({
       return resizedFileImage(File(path));
     }
     final String? url = v.coverUrl;
-    final RemoteCoverFetcher? fetcher = remoteCoverFetcherFor(remoteSource);
+    final RemoteCoverFetcher? fetcher = remoteCoverFetcherFor(
+      remoteOwners[v.id],
+    );
     if (url == null || url.isEmpty || fetcher == null) return null;
     return ResizeImage(
       RemoteCoverImage(url, fetcher, cacheKey: v.id),
@@ -737,7 +740,7 @@ Future<NavPeekFeed> _loadVideos({
   void openRemote(RemoteVideoInfo v) {
     final BuildContext context = contextOf();
     if (!context.mounted) return;
-    final RemoteVideoSource? source = remoteSource;
+    final RemoteVideoSource? source = remoteOwners[v.id];
     if (source is RemoteVideoClient) {
       unawaited(
         openRemoteVideoStream(
