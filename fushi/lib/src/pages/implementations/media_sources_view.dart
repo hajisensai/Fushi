@@ -50,6 +50,7 @@ import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/media/source_library/source_library_removal.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi_engine/media/audiobook/book_audiobook_pairing.dart'
     show BookAudiobookTranscribePort;
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
@@ -204,7 +205,9 @@ class MediaSourcesView extends ConsumerStatefulWidget
 }
 
 class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
-    with FushiPagePlaceholders<MediaSourcesView> {
+    with
+        FushiPagePlaceholders<MediaSourcesView>,
+        StateResourceScope<MediaSourcesView> {
   /// null = 仍在加载；非 null = 已加载（可能为空列表）。
   List<SourceLibraryRow>? _rows;
 
@@ -279,17 +282,22 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     _db = _appModel.database;
     _withdrawFromLeaderboard = ref.read(leaderboardPrivacyWithdrawProvider);
     widget.scrapeTaskController?.addListener(_onScrapeTaskChanged);
+    onTeardown(
+      () => widget.scrapeTaskController?.removeListener(_onScrapeTaskChanged),
+    );
     if (widget.mediaKind == 'video') {
-      videoScrapeCleanupRevision.addListener(_onVideoScrapeCleanupChanged);
+      listenTo(videoScrapeCleanupRevision, _onVideoScrapeCleanupChanged);
     }
     // BUG-1560：互联总开关的另一个写入口是同步设置页；不订阅这条广播，本视图的
     // 开关就停在开页那一刻的值（反之亦然）。真值仍从 preferences 重读。
-    SyncRepository.interconnectEnabledRevision.addListener(
+    listenTo(
+      SyncRepository.interconnectEnabledRevision,
       _onInterconnectEnabledChanged,
     );
     _observedActiveScans = sourceScanActivity.activeSourceIds;
-    sourceScanActivity.addListener(_onSourceScanActivityChanged);
-    sourceScanActivity.progressListenable.addListener(
+    listenTo(sourceScanActivity, _onSourceScanActivityChanged);
+    listenTo(
+      sourceScanActivity.progressListenable,
       _onSourceScanProgressChanged,
     );
     _load();
@@ -364,22 +372,6 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     if (oldWidget.scrapeTaskController == widget.scrapeTaskController) return;
     oldWidget.scrapeTaskController?.removeListener(_onScrapeTaskChanged);
     widget.scrapeTaskController?.addListener(_onScrapeTaskChanged);
-  }
-
-  @override
-  void dispose() {
-    sourceScanActivity.removeListener(_onSourceScanActivityChanged);
-    sourceScanActivity.progressListenable.removeListener(
-      _onSourceScanProgressChanged,
-    );
-    widget.scrapeTaskController?.removeListener(_onScrapeTaskChanged);
-    if (widget.mediaKind == 'video') {
-      videoScrapeCleanupRevision.removeListener(_onVideoScrapeCleanupChanged);
-    }
-    SyncRepository.interconnectEnabledRevision.removeListener(
-      _onInterconnectEnabledChanged,
-    );
-    super.dispose();
   }
 
   void _onInterconnectEnabledChanged() {

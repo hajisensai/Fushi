@@ -74,14 +74,9 @@ void main() {
       );
     });
 
-    test('监听器在 dispose 注销', () {
-      final int at = src.indexOf('void dispose() {');
-      expect(at, greaterThan(-1));
+    test('监听器登记注销（dispose 与 initState 半途失败共用，BUG-5604）', () {
       expect(
-        _methodBody(
-          src,
-          src.indexOf('{', at),
-        ).contains('_exitRequestListener?.dispose()'),
+        src.contains('onTeardown(exitRequestListener.dispose)'),
         isTrue,
         reason: '不注销会把监听器留在 binding 上（热重载 / 重建后累积）',
       );

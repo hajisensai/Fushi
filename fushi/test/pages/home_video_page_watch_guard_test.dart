@@ -31,12 +31,15 @@ void main() {
     );
   });
 
-  test('HomeVideoPage cancels the subscription in dispose', () {
+  test('HomeVideoPage registers the subscription for cancellation', () {
     final String src = page.readAsStringSync();
+    // 经 StateResourceScope 登记：dispose 与 initState 半途失败都会取消（BUG-5604）。
     expect(
-      src.contains('_videoUidsSub?.cancel()'),
+      src
+          .replaceAll(RegExp(r'\s+'), '')
+          .contains('ownSubscription(widget.repo.watchVideoBookUids().listen('),
       isTrue,
-      reason: 'BUG-793：dispose 必须取消 videoBooks 订阅，防止 StreamSubscription 泄漏',
+      reason: 'BUG-793：videoBooks 订阅必须登记取消，防止 StreamSubscription 泄漏',
     );
   });
 }

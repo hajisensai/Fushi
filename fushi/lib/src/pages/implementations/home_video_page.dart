@@ -11,7 +11,7 @@ import 'package:fushi/src/media/links/media_links_section.dart'
 import 'package:fushi/src/media/links/work_kinds_badge.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
 
-import 'dart:async' show StreamSubscription, Timer, unawaited;
+import 'dart:async' show Timer, unawaited;
 import 'dart:convert' show utf8;
 import 'dart:io';
 
@@ -643,17 +643,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// （app 级 provider），切 tab 不再必然重打一轮网络。
   RemoteLibraryCache get _remoteCache => ref.read(remoteLibraryCacheProvider);
 
-  /// BUG-793：视频库 uid 集合监听。列表是一次性 FutureBuilder + 保活 tab，无此
-  /// 订阅时非本页发起的导入（外部「用 Fushi 打开」等直接落库不 _refresh 的路径）
-  /// 要等下拉刷新/重启才出现。订阅 videoBooks 表 → 集合一变（插入/删除）就 _refresh。
-  StreamSubscription<List<String>>? _videoUidsSub;
-
-  /// BUG-3610：视频库**观看进度**变化监听（[VideoBookRepository.watchVideoWatchProgressChanged]）。
-  /// [_videoUidsSub] 按 uid 集合去重、刻意不管进度回写，而本页列表是一次性快照：
-  /// 从合集详情页 / 首页 / 别的入口播放后，或同步回灌对端进度后，库页卡片上的
-  /// 「看到第几集 / 进度条 / 继续观看」停在旧值，只有下拉刷新或重启才更新。改由
-  /// 数据层「进度变了」信号驱动重读，不靠每个入口各自记得通知本页。
-  StreamSubscription<void>? _watchProgressSub;
   Timer? _watchProgressReloadDebounce;
 
   /// 本页不在前台（上面压着详情页 / 播放页，或停在别的 tab）时到达的进度变化：
@@ -661,32 +650,18 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// 再重读一次——不在播放期间隔几秒就在后台重列整个书架。
   bool _watchProgressStale = false;
 
-  /// BUG-4303：本机远端视频断点变化监听（[watchLocalRemoteVideoPositionsChanged]）。
-  /// 远端卡的「看到 X」是清单快照与本机库断点取较新（[withLocalRemoteVideoPositions]）；
-  /// 清单有 TTL 缓存、页面常驻，互联 sweep 落地 host 的新断点或本机刚看完回来时，
-  /// 只有本机库断点变了——由它驱动重算远端卡，不等清单过期 / 下拉刷新。
-  StreamSubscription<void>? _remotePositionsSub;
   Timer? _remotePositionsReloadDebounce;
 
   /// 本页不在前台时到达的本机远端断点变化：露出来再重算一次（同 [_watchProgressStale]）。
   bool _remotePositionsStale = false;
 
-  /// 上一次已知的视频 uid 集合，用于对 [_videoUidsSub] 事件去重：仅集合变化才刷新，
+  /// 上一次已知的视频 uid 集合，用于对 uid 集合订阅（BUG-793）的事件去重：仅集合变化才刷新，
   /// 封面自愈 / 进度回写等纯列更新（集合不变）跳过，避免写回→重刷环。null=尚未收到
   /// 首个事件（首事件仅登记基线，不刷——initState 已首载）。
   Set<String>? _knownVideoUids;
 
-  /// BUG-1699：合集表（MediaCollections / MediaCollectionItems）变更监听。合集
-  /// 折叠映射（_collectionsById 等）是进页快照，而写入方很多（后台互联/云合集
-  /// 同步、备份导入、其它页面的合集编辑）——不订阅数据层，host 同步落库的合集
-  /// 在本页恒散卡，直到下拉刷新或重启。落库常是一批行，经 [_collectionsReloadDebounce]
-  /// 合并后重载一次映射。
-  StreamSubscription<void>? _collectionTablesSub;
   Timer? _collectionsReloadDebounce;
 
-  /// 刮削展示表变化监听。清理 work/identity 时视频 uid 与合集成员都不变，前两条
-  /// watcher 均不会让系列页重读；单独订阅 canonical/兼容投影，批量写入后防抖刷新。
-  StreamSubscription<void>? _scrapePresentationSub;
   Timer? _scrapePresentationReloadDebounce;
 
   /// 视频卡片拖放命中注册表：每张 [CardDropZone] 注册自身几何，拖放时按屏幕坐标
@@ -1054,10 +1029,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   final ScrollController _recentRowController = ScrollController();
   final ScrollController _subscriptionRowController = ScrollController();
 
-  /// 「已更新未看」行的订阅表变更流；旧 JSON 订阅 store 走 [revision] 通知。
-  StreamSubscription<void>? _downloadSubscriptionsSub;
-  AnimeDownloadSubscriptionStore? _legacySubscriptionStore;
-
   @override
   void initState() {
     super.initState();
@@ -1065,6 +1036,139 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     _seriesFilter = videoSeriesFilterFromName(
       appModelNoUpdate.prefsRepo.videoAllSeriesFilterName,
     );
+    // 以下外部订阅 / 监听一律经 StateResourceScope 登记：dispose 与「initState
+    // 半途抛错」两条退场路径共用这份撤销清单（BUG-5604）。随 widget 换的几项
+    // （didUpdateWidget 里换挂）在撤销时读当前 widget，两条路径都撤在对的对象上。
+    widget.importDropPort?.attach(_importSurfaceDrop);
+    onTeardown(() => widget.importDropPort?.detach(_importSurfaceDrop));
+    // BUG-793：视频库 uid 集合监听。列表是一次性 FutureBuilder + 保活 tab，无此
+    // 订阅时非本页发起的导入（外部「用 Fushi 打开」等直接落库不 _refresh 的路径）
+    // 要等下拉刷新/重启才出现。订阅 videoBooks 表 → 集合一变（插入/删除）就 _refresh。
+    ownSubscription(
+      widget.repo.watchVideoBookUids().listen(_onVideoUidsChanged),
+    );
+    // BUG-3610：视频库**观看进度**变化监听（[VideoBookRepository.watchVideoWatchProgressChanged]）。
+    // 上面的 uid 集合订阅按集合去重、刻意不管进度回写，而本页列表是一次性快照：
+    // 从合集详情页 / 首页 / 别的入口播放后，或同步回灌对端进度后，库页卡片上的
+    // 「看到第几集 / 进度条 / 继续观看」停在旧值，只有下拉刷新或重启才更新。改由
+    // 数据层「进度变了」信号驱动重读，不靠每个入口各自记得通知本页。
+    ownSubscription(
+      widget.repo.watchVideoWatchProgressChanged().listen(
+        _onWatchProgressChanged,
+      ),
+    );
+    // BUG-4303：本机远端视频断点变化监听（[watchLocalRemoteVideoPositionsChanged]）。
+    // 远端卡的「看到 X」是清单快照与本机库断点取较新（[withLocalRemoteVideoPositions]）；
+    // 清单有 TTL 缓存、页面常驻，互联 sweep 落地 host 的新断点或本机刚看完回来时，
+    // 只有本机库断点变了——由它驱动重算远端卡，不等清单过期 / 下拉刷新。
+    ownSubscription(
+      watchLocalRemoteVideoPositionsChanged(
+        appModelNoUpdate.database,
+      ).listen(_onRemotePositionsChanged),
+    );
+    // BUG-1699：合集表（MediaCollections / MediaCollectionItems）变更监听。合集
+    // 折叠映射（_collectionsById 等）是进页快照，而写入方很多（后台互联/云合集
+    // 同步、备份导入、其它页面的合集编辑）——不订阅数据层，host 同步落库的合集
+    // 在本页恒散卡，直到下拉刷新或重启。落库常是一批行，经 [_collectionsReloadDebounce]
+    // 合并后重载一次映射。
+    ownSubscription(
+      appModelNoUpdate.database.watchCollectionTablesChanged().listen(
+        _onCollectionTablesChanged,
+      ),
+    );
+    // 刮削展示表变化监听。清理 work/identity 时视频 uid 与合集成员都不变，前两条
+    // watcher 均不会让系列页重读；单独订阅 canonical/兼容投影，批量写入后防抖刷新。
+    ownSubscription(
+      appModelNoUpdate.database.watchVideoScrapePresentationChanged().listen(
+        _onScrapePresentationChanged,
+      ),
+    );
+    _scrapeBatchWasBusy = widget.scrapeTaskController?.isBusy == true;
+    widget.scrapeTaskController?.addListener(_onScrapeTaskBusyChanged);
+    onTeardown(
+      () =>
+          widget.scrapeTaskController?.removeListener(_onScrapeTaskBusyChanged),
+    );
+    _backgroundTasksVisible =
+        widget.scrapeTaskController != null &&
+        videoBackgroundTasksSummaryOf(widget.scrapeTaskController!).visible;
+    // 「已更新未看」行的订阅表变更流；旧 JSON 订阅 store 走 [revision] 通知。
+    // 「已更新未看」行：订阅增删（订阅面板）后重解析订阅→合集映射。新订阅表走
+    // Drift 流；旧 AniList JSON 订阅 store 没有表，用它的 revision 通知。入库落
+    // 合集那一步已由上面的合集表流覆盖，这里只补「订阅本身变了」。
+    // 只要「订阅变了」这个信号，不要行——所以走 *Changed（tableUpdates + 手写
+    // controller）而不是裸 drift QueryStream：后者取消订阅时会排 Timer.run，
+    // 页面 dispose 后它仍 pending，撞 widget 测试的 !timersPending（BUG-834）。
+    ownSubscription(
+      appModelNoUpdate.database.watchVideoDownloadSubscriptionsChanged().listen(
+        _onCollectionTablesChanged,
+      ),
+    );
+    final AnimeDownloadSubscriptionStore? legacySubscriptionStore =
+        appModelNoUpdate.animeDownloadSubscriptionStore;
+    if (legacySubscriptionStore != null) {
+      listenTo(
+        legacySubscriptionStore.revision,
+        _onLegacySubscriptionStoreChanged,
+      );
+    }
+    widget.libraryRefreshSignal?.addListener(_onLibraryRefreshRequested);
+    onTeardown(
+      () => widget.libraryRefreshSignal?.removeListener(
+        _onLibraryRefreshRequested,
+      ),
+    );
+    widget.pendingScrapeChangedSignal?.addListener(_onPendingScrapeChanged);
+    onTeardown(
+      () => widget.pendingScrapeChangedSignal?.removeListener(
+        _onPendingScrapeChanged,
+      ),
+    );
+    // BUG-1182：「显示远端条目」开关落在 prefsRepo（独立 ChangeNotifier），不经
+    // AppModel 通知，本页不会因它重建 → 门控翻转后既不重取也不重渲染。显式订阅。
+    // 用 appModelNoUpdate：initState 里读 appModel 会走 ref.watch，触发
+    // 「initState 完成前依赖 InheritedWidget」断言。
+    // （门控基线由 initState 末尾 _startBackgroundWork 里的 _loadRemoteVideos()
+    // 首帧取数写入 _remoteGateAtLastLoad；监听不会同步触发，先挂后取不丢变化。）
+    listenTo(appModelNoUpdate.prefsRepo, _onPrefsChangedForRemoteGate);
+    // 页头遥控按钮：进页面、回前台、配对清单 / 互联开关变化时重探，build 不探。
+    listenTo(
+      SyncRepository.fushiClientUrlsRevision,
+      _onVideoRemoteConfigChanged,
+    );
+    listenTo(
+      SyncRepository.interconnectEnabledRevision,
+      _onVideoRemoteConfigChanged,
+    );
+    final AppLifecycleListener videoRemoteLifecycle = AppLifecycleListener(
+      onResume: _onVideoRemoteConfigChanged,
+    );
+    onTeardown(videoRemoteLifecycle.dispose);
+    // 别处（「同一作品」等）要打开某个视频合集 = 请本页用唯一出口打开
+    // （[requestVideoCollectionOpen]）。tab 懒构建时请求先于本页存在，补查一次。
+    listenTo(videoCollectionOpenRequest, _onVideoCollectionOpenRequested);
+    if (videoCollectionOpenRequest.value != null) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _onVideoCollectionOpenRequested(),
+      );
+    }
+    assert(() {
+      HomeVideoPage.debugRefreshVideos = _refresh;
+      return true;
+    }());
+    // 必须放在最后（BUG-5602）。
+    _startBackgroundWork();
+  }
+
+  /// 首帧的取数与后台任务，只在 [initState] 的同步装配**全部完成后**才起。
+  ///
+  /// 生命周期语义：initState 半途抛错时 Flutter 把元素停用
+  /// （`_deactivateFailedChildSilently`）却永远不调 [dispose]，`mounted` 也一直是
+  /// true——之前起的异步任务因此既不会被 [dispose] 停掉，`mounted` 闸门也挡不住，
+  /// 跑完后在停用的元素上 `ref.read` 即断言「deactivated widget's ancestor」
+  /// （BUG-5602）。initState 走到这里 = 装配成功、本 State 保证有配对的 dispose，
+  /// 这些任务的「随页面 dispose 停」才成立。
+  void _startBackgroundWork() {
     // TODO-1255：书架展示走 listForShelf（自愈数据根迁移遗弃的封面路径）。
     _future = _listForShelf();
     _remoteFuture = _loadRemoteVideos();
@@ -1079,75 +1183,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     // 在线补刮 + 待确认提醒（BUG-2199/BUG-2201）。视频 tab 访问过才挂载
     // （HomePage `_visitedKeepAliveTabs`），所以这里就是「首次进入视频页」。
     unawaited(_refreshPendingScrape());
-    widget.importDropPort?.attach(_importSurfaceDrop);
-    // BUG-793：订阅 videoBooks 表，任意导入路径落库后自动刷新库页。
-    _videoUidsSub = widget.repo.watchVideoBookUids().listen(
-      _onVideoUidsChanged,
-    );
-    // BUG-3610：订阅观看进度，任意入口播放 / 同步回灌写下进度后库页跟着更新。
-    _watchProgressSub = widget.repo.watchVideoWatchProgressChanged().listen(
-      _onWatchProgressChanged,
-    );
-    // BUG-4303：本机远端断点（sweep / 冲突弹窗 / 播放页 / 对端 PUT 写入）变了 →
-    // 远端卡的「看到 X」跟着重算。
-    _remotePositionsSub = watchLocalRemoteVideoPositionsChanged(
-      appModelNoUpdate.database,
-    ).listen(_onRemotePositionsChanged);
-    // BUG-1699：订阅合集两张表，任意写入者（后台合集同步/备份导入/合集编辑）
-    // 落库后自动重载折叠映射——远端占位卡与新同步的合集立即成组。
-    _collectionTablesSub = appModelNoUpdate.database
-        .watchCollectionTablesChanged()
-        .listen(_onCollectionTablesChanged);
-    _scrapePresentationSub = appModelNoUpdate.database
-        .watchVideoScrapePresentationChanged()
-        .listen(_onScrapePresentationChanged);
-    _scrapeBatchWasBusy = widget.scrapeTaskController?.isBusy == true;
-    widget.scrapeTaskController?.addListener(_onScrapeTaskBusyChanged);
-    _backgroundTasksVisible =
-        widget.scrapeTaskController != null &&
-        videoBackgroundTasksSummaryOf(widget.scrapeTaskController!).visible;
-    // 「已更新未看」行：订阅增删（订阅面板）后重解析订阅→合集映射。新订阅表走
-    // Drift 流；旧 AniList JSON 订阅 store 没有表，用它的 revision 通知。入库落
-    // 合集那一步已由上面的合集表流覆盖，这里只补「订阅本身变了」。
-    // 只要「订阅变了」这个信号，不要行——所以走 *Changed（tableUpdates + 手写
-    // controller）而不是裸 drift QueryStream：后者取消订阅时会排 Timer.run，
-    // 页面 dispose 后它仍 pending，撞 widget 测试的 !timersPending（BUG-834）。
-    _downloadSubscriptionsSub = appModelNoUpdate.database
-        .watchVideoDownloadSubscriptionsChanged()
-        .listen(_onCollectionTablesChanged);
-    _legacySubscriptionStore = appModelNoUpdate.animeDownloadSubscriptionStore
-      ?..revision.addListener(_onLegacySubscriptionStoreChanged);
-    widget.libraryRefreshSignal?.addListener(_onLibraryRefreshRequested);
-    widget.pendingScrapeChangedSignal?.addListener(_onPendingScrapeChanged);
-    // BUG-1182：「显示远端条目」开关落在 prefsRepo（独立 ChangeNotifier），不经
-    // AppModel 通知，本页不会因它重建 → 门控翻转后既不重取也不重渲染。显式订阅。
-    // 用 appModelNoUpdate：initState 里读 appModel 会走 ref.watch，触发
-    // 「initState 完成前依赖 InheritedWidget」断言。
-    // （门控基线已由上面的 _loadRemoteVideos() 首帧取数写入 _remoteGateAtLastLoad。）
-    appModelNoUpdate.prefsRepo.addListener(_onPrefsChangedForRemoteGate);
-    // 页头遥控按钮：进页面、回前台、配对清单 / 互联开关变化时重探，build 不探。
-    SyncRepository.fushiClientUrlsRevision.addListener(
-      _onVideoRemoteConfigChanged,
-    );
-    SyncRepository.interconnectEnabledRevision.addListener(
-      _onVideoRemoteConfigChanged,
-    );
-    _videoRemoteLifecycle = AppLifecycleListener(
-      onResume: _onVideoRemoteConfigChanged,
-    );
     unawaited(_refreshVideoRemoteTargets());
-    // 别处（「同一作品」等）要打开某个视频合集 = 请本页用唯一出口打开
-    // （[requestVideoCollectionOpen]）。tab 懒构建时请求先于本页存在，补查一次。
-    videoCollectionOpenRequest.addListener(_onVideoCollectionOpenRequested);
-    if (videoCollectionOpenRequest.value != null) {
-      WidgetsBinding.instance.addPostFrameCallback(
-        (_) => _onVideoCollectionOpenRequested(),
-      );
-    }
-    assert(() {
-      HomeVideoPage.debugRefreshVideos = _refresh;
-      return true;
-    }());
   }
 
   /// 接「打开视频合集」请求（[requestVideoCollectionOpen]），用与视频库合集卡同一个
@@ -1346,7 +1382,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
 
   @override
   void dispose() {
-    videoCollectionOpenRequest.removeListener(_onVideoCollectionOpenRequested);
     _continueShare.clearOwner(this);
     _companion.dispose();
     _collectionDisplayCounts.dispose();
@@ -1360,33 +1395,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     _searchController.dispose();
     _recentRowController.dispose();
     _subscriptionRowController.dispose();
-    _videoUidsSub?.cancel();
     _videoUidsRefreshTimer?.cancel();
-    _watchProgressSub?.cancel();
     _watchProgressReloadDebounce?.cancel();
-    _remotePositionsSub?.cancel();
     _remotePositionsReloadDebounce?.cancel();
-    _collectionTablesSub?.cancel();
-    _downloadSubscriptionsSub?.cancel();
-    _legacySubscriptionStore?.revision.removeListener(
-      _onLegacySubscriptionStoreChanged,
-    );
     _collectionsReloadDebounce?.cancel();
-    _scrapePresentationSub?.cancel();
     _scrapePresentationReloadDebounce?.cancel();
-    widget.scrapeTaskController?.removeListener(_onScrapeTaskBusyChanged);
-    widget.importDropPort?.detach(_importSurfaceDrop);
-    widget.libraryRefreshSignal?.removeListener(_onLibraryRefreshRequested);
-    widget.pendingScrapeChangedSignal?.removeListener(_onPendingScrapeChanged);
     _autoScrape?.dispose();
-    appModelNoUpdate.prefsRepo.removeListener(_onPrefsChangedForRemoteGate);
-    SyncRepository.fushiClientUrlsRevision.removeListener(
-      _onVideoRemoteConfigChanged,
-    );
-    SyncRepository.interconnectEnabledRevision.removeListener(
-      _onVideoRemoteConfigChanged,
-    );
-    _videoRemoteLifecycle?.dispose();
     assert(() {
       HomeVideoPage.debugRefreshVideos = null;
       return true;
@@ -3993,7 +4007,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
 
   /// 遥控探测的记代：只认最后一轮的结果，旧轮次晚到时丢弃。
   int _videoRemoteProbeGeneration = 0;
-  AppLifecycleListener? _videoRemoteLifecycle;
 
   void _onVideoRemoteConfigChanged() {
     unawaited(_refreshVideoRemoteTargets());
@@ -5976,9 +5989,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   }
 
   /// 旧封面流水线只组装 sidecar / 本地封面能力，不装配在线 metadata client。
+  ///
+  /// 读挂载时缓存的 [appModelNoUpdate]（与 `ref.read(appProvider)` 同一实例，
+  /// provider 不会重建）：本方法作为 [VideoScrapeAutoService] 的工厂被后台任务
+  /// 在异步缝隙里调用，不能去元素树上找 ProviderScope（BUG-5602）。
   Future<CoverScraperService> _scraperService() => createVideoScraperService(
     repository: widget.repo,
-    artifactDatabase: ref.read(appProvider).database,
+    artifactDatabase: appModelNoUpdate.database,
   );
 
   /// 本地封面补齐：进视频页 + 每次库变化（新视频入库）后跑一遍，仅识别 sidecar
@@ -5993,7 +6010,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           repository: widget.repo,
           serviceFactory: _scraperService,
           // 每轮进场读一次总闸：设置里关掉后下一轮立刻停，无需重建服务。
-          isEnabled: () => ref.read(appProvider).videoAutoScrape,
+          // 读挂载时缓存的 AppModel 而不是 ref：服务比任何一帧都活得长，闭包
+          // 不能依赖元素仍挂在树上（BUG-5602）。
+          isEnabled: () => appModelNoUpdate.videoAutoScrape,
         );
     if (service.isRunning) return;
     final List<VideoBookRow> books = await widget.repo.listAll();

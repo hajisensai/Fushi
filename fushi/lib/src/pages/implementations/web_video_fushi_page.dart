@@ -121,6 +121,7 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart'
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
     show adaptivePageRoute;
 import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi/src/utils/window_caption_channel.dart';
@@ -350,7 +351,7 @@ typedef WebVideoDebugSnapshot = ({
 });
 
 class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
-    with DictionaryPageMixin
+    with DictionaryPageMixin, StateResourceScope<WebVideoFushiPage>
     implements PopupBodyWebViewProvider {
   /// 缓存的 [AppModel]（浮层在 LayoutBuilder 回调里读，widget 失活后 `ref.read` 会抛）。
   late final AppModel _appModel = ref.read(appProvider);
@@ -499,9 +500,6 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   /// 顶栏计时键：手动停 / 续学习计时（与本地视频页控制条计时键同一入口语义）。
   void _toggleStudyClockManualPause() => _studyClockGate.toggleManualPause();
 
-  /// 生命周期 → [_studyClockGate]（本页不是 WidgetsBindingObserver）。
-  AppLifecycleListener? _studyLifecycle;
-
   void _onStudyLifecycleChanged(AppLifecycleState state) {
     switch (state) {
       case AppLifecycleState.inactive:
@@ -561,11 +559,6 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
 
   /// [_closeAfterMining] 已经关过页（让位 / 放弃 / 跑完可能先后都走到收尾）。
   bool _closedAfterMining = false;
-
-  /// 空闲自动制卡页（交接页 / 后台制卡页）的开跑截止：页面开了却一直没开跑（加载失败、
-  /// 站点停在登录 / 选人页、打开时队列已被别处跑空）就按放弃收尾，不让一页无人值守的
-  /// 网页视频挂到用户回来、也不让后台调度卡在这一本上。
-  Timer? _autoStartDeadline;
 
   /// 本页是制卡宿主（交接页 / 后台制卡页），不是用户自己在看的那一页：WebView 一建好
   /// 就要静音（站点会自动播放），也不做用户本人才有的「会话音量残留还原」。
@@ -646,14 +639,21 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   void initState() {
     super.initState();
     attachLookupCounter(_popup);
-    _studyLifecycle = AppLifecycleListener(
+    // 生命周期 → [_studyClockGate]（本页不是 WidgetsBindingObserver）。
+    final AppLifecycleListener studyLifecycle = AppLifecycleListener(
       onStateChange: _onStudyLifecycleChanged,
     );
+    onTeardown(studyLifecycle.dispose);
     _studyClockGate.manualPauseListenable.addListener(
       _onStudyManualPauseChanged,
     );
     // 桌面查词窗被关掉：焦点不再「在本 app 的查词窗里」，计时门按真实失焦重判。
     GlobalLookupController.instance.addHiddenListener(_studyClockGate.sync);
+    onTeardown(
+      () => GlobalLookupController.instance.removeHiddenListener(
+        _studyClockGate.sync,
+      ),
+    );
     _popup.bodyStaticLayer.resolveBody = () => popupBodyWebViewId;
     _controller.addListener(_onControllerChanged);
     assert(() {
@@ -704,7 +704,10 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     // 从前抛出后 `_failReason` 恒 null、`_row` 恒 null ⇒ 页面永久停在**无 AppBar 的转圈**
     // 分支上，桌面端没有系统返回键 ⇒ 用户进来就出不去（与 BUG-2229 同构）。
     if (widget.idleAutoMining) {
-      _autoStartDeadline = Timer(kWebMineAutoStartTimeout, _onAutoStartTimeout);
+      // 空闲自动制卡页（交接页 / 后台制卡页）的开跑截止：页面开了却一直没开跑（加载失败、
+      // 站点停在登录 / 选人页、打开时队列已被别处跑空）就按放弃收尾，不让一页无人值守的
+      // 网页视频挂到用户回来、也不让后台调度卡在这一本上。
+      ownTimer(Timer(kWebMineAutoStartTimeout, _onAutoStartTimeout));
     }
     unawaited(_initGuarded());
   }
@@ -753,8 +756,6 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   void dispose() {
     _overlayInert = true;
     _playbackRouteMark.dispose();
-    _studyLifecycle?.dispose();
-    _studyLifecycle = null;
     assert(() {
       WebVideoFushiPage.debugSnapshot = null;
       WebVideoFushiPage.debugToggleList = null;
@@ -769,7 +770,6 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     }());
     _mineStopRequested = true;
     _unregisterRemote();
-    _autoStartDeadline?.cancel();
     // 本页（可捕获档）里登录的站点会话抄回共享 cookie 罐（app 内浏览器，BUG-3801）。
     final Uri? site = _siteUri;
     if (site != null) unawaited(syncWebVideoLoginToBrowser(site));
@@ -778,7 +778,6 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     unawaited(_preStartedAudio?.source.stop());
     _preStartedAudio = null;
     unawaited(_watchTracker?.stop());
-    GlobalLookupController.instance.removeHiddenListener(_studyClockGate.sync);
     _studyClockGate.manualPauseListenable.removeListener(
       _onStudyManualPauseChanged,
     );

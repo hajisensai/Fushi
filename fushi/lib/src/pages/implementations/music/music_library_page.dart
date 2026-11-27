@@ -6,7 +6,7 @@ import 'dart:async';
 import 'dart:io' show FileSystemEntity;
 
 import 'package:drift/drift.dart'
-    show ResultSetImplementation, TableUpdate, TableUpdateQuery;
+    show ResultSetImplementation, TableUpdateQuery;
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
@@ -108,6 +108,7 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
@@ -330,7 +331,8 @@ class MusicLibraryPage extends ConsumerStatefulWidget {
   ConsumerState<MusicLibraryPage> createState() => _MusicLibraryPageState();
 }
 
-class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
+class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage>
+    with StateResourceScope<MusicLibraryPage> {
   MusicLibrarySection _section = MusicLibrarySection.albums;
 
   /// 「我的」组（曲库）上次停留的分区：在推荐页时点组页签回到这里。
@@ -367,8 +369,6 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
   /// 不在线不拖住本地曲库。
   List<MusicServerAlbumRef> _serverAlbums = const <MusicServerAlbumRef>[];
   bool _scanning = false;
-  StreamSubscription<Set<TableUpdate>>? _dbSub;
-  StreamSubscription<void>? _pluginSub;
 
   /// 有盘面扫描图的专辑（专辑 uid → 图路径，[MusicDiscArtIndex.albums]）：画成
   /// 「封面 + 唱片」色块、点开走 CD 详情（设计稿 M3）。快照读出后在后台识别。
@@ -527,8 +527,8 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
   @override
   void initState() {
     super.initState();
-    MusicViewStyleStore.instance.addListener(_onViewStyleChanged);
-    MusicDiscArtIndex.instance.albums.addListener(_onDiscArtChanged);
+    listenTo(MusicViewStyleStore.instance, _onViewStyleChanged);
+    listenTo(MusicDiscArtIndex.instance.albums, _onDiscArtChanged);
     unawaited(_reload());
     unawaited(_reloadServerAlbums());
     unawaited(_reloadOnlineSources());
@@ -536,32 +536,36 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
     if (widget.snapshotLoader == null &&
         _app.isPreferencesReady &&
         isMusicPluginSourcesUsable) {
-      _pluginSub = _app.musicPluginManager.changes.listen(
-        (_) => unawaited(_reloadOnlineSources()),
+      ownSubscription(
+        _app.musicPluginManager.changes.listen(
+          (_) => unawaited(_reloadOnlineSources()),
+        ),
       );
     }
     if (widget.snapshotLoader == null && _app.isDatabaseReady) {
       final FushiDatabase db = _app.database;
       // 表级变更流（不是 drift .watch()：长驻页面订阅 watch 会在 dispose 时挂死测试）。
-      _dbSub = db
-          .tableUpdates(
-            TableUpdateQuery.onAllTables(
-              <ResultSetImplementation<Object?, Object?>>[
-                db.musicTracks,
-                db.musicAlbums,
-                db.musicPlaylists,
-                db.musicPlaylistEntries,
-                db.musicRemoteTracks,
-                db.musicDiscSources,
-                db.musicPlayEvents,
-                // 专辑上锁 / 解除上锁。
-                db.mediaLockedFlags,
-              ],
-            ),
-          )
-          .listen((_) => unawaited(_reload()));
+      ownSubscription(
+        db
+            .tableUpdates(
+              TableUpdateQuery.onAllTables(
+                <ResultSetImplementation<Object?, Object?>>[
+                  db.musicTracks,
+                  db.musicAlbums,
+                  db.musicPlaylists,
+                  db.musicPlaylistEntries,
+                  db.musicRemoteTracks,
+                  db.musicDiscSources,
+                  db.musicPlayEvents,
+                  // 专辑上锁 / 解除上锁。
+                  db.mediaLockedFlags,
+                ],
+              ),
+            )
+            .listen((_) => unawaited(_reload())),
+      );
       // 解锁 / 重新隐藏上锁的作品。
-      MediaLockSession.instance.unlocked.addListener(_onLockSessionChanged);
+      listenTo(MediaLockSession.instance.unlocked, _onLockSessionChanged);
     }
   }
 
@@ -569,13 +573,8 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
 
   @override
   void dispose() {
-    MusicViewStyleStore.instance.removeListener(_onViewStyleChanged);
-    MusicDiscArtIndex.instance.albums.removeListener(_onDiscArtChanged);
     _companion.dispose();
     _recommendRefresh.dispose();
-    unawaited(_dbSub?.cancel());
-    MediaLockSession.instance.unlocked.removeListener(_onLockSessionChanged);
-    unawaited(_pluginSub?.cancel());
     _searchInputs.dispose();
     _actionsSlot.dispose();
     _chrome.dispose();

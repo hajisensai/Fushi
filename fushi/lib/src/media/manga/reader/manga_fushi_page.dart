@@ -1822,9 +1822,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 本卷的任务排在同书上一章之后、还没轮到（顶栏显示「排队中」）。
   bool _volumeOcrQueued = false;
 
-  /// 注册表任务集合变化的订阅（[_syncVolumeOcrJob]）。
-  StreamSubscription<void>? _ocrRegistryChanges;
-
   /// 自动排任务时没有可用引擎：顶栏挂一颗琥珀色胶囊说明原因。
   bool _volumeOcrNoEngine = false;
 
@@ -2064,12 +2061,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   void initState() {
     super.initState();
     _ocrRegistry = ref.read(mangaOcrJobRegistryProvider);
-    _ocrRegistryChanges = _ocrRegistry.changes.listen(
-      (_) => _syncVolumeOcrJob(),
-    );
+    // 注册表任务集合变化的订阅（[_syncVolumeOcrJob]）。
+    ownSubscription(_ocrRegistry.changes.listen((_) => _syncVolumeOcrJob()));
     _pageNotifier.addListener(_onReaderPageChanged);
-    _panelNavigationPrefs = appModelNoUpdate.prefsRepo
-      ..addListener(_onPanelNavigationPrefChanged);
+    // 分镜导航开关的偏好订阅（开关可在阅读中从设置里打开）。
+    listenTo(appModelNoUpdate.prefsRepo, _onPanelNavigationPrefChanged);
     _panelNavigationWasOn = appModelNoUpdate.mangaPanelNavigation;
     _attachControllerLookup();
     _volumeKeyPagingController = MangaVolumeKeyPagingController(
@@ -2088,10 +2084,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     );
     _studyClockGate.setManualPause(_studyClockStartGate.manualPause);
     WidgetsBinding.instance.addObserver(this);
+    onTeardown(() => WidgetsBinding.instance.removeObserver(this));
     // 桌面控制通道（`fushi_cli reader ...`）的遥控面；dispose 注销。
     readerSessionRemotes.register(_sessionRemote);
     if (Platform.isWindows || Platform.isLinux) {
       windowManager.addListener(this);
+      onTeardown(() => windowManager.removeListener(this));
     }
     if (desktopWindowFullscreenSupported) {
       unawaited(_readInitialFullscreenState());
@@ -2200,8 +2198,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     _pageCurlDrag = null;
     _pageCurl?.dispose();
     _pageCurl = null;
-    _panelNavigationPrefs?.removeListener(_onPanelNavigationPrefChanged);
-    _panelNavigationPrefs = null;
     _panelGeneration++;
     _panelPrewarmer.dispose();
     _panelCursor.reset();
@@ -2223,9 +2219,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     _companion.dispose();
     _disposedDuringSourceReview = _sourceReviewActive;
     _sourceReviewSession?.removeListener(_onSourceReviewChanged);
-    if (Platform.isWindows || Platform.isLinux) {
-      windowManager.removeListener(this);
-    }
     if (_ownsWindowFullscreen) {
       _ownsWindowFullscreen = false;
       unawaited(_restoreOwnedFullscreenAfterDispose());
@@ -2233,7 +2226,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // 交还音量键所有权：必须早于其它拆栈，且无条件执行。
     _volumeKeyPagingController.dispose();
     ExitFlushRegistry.instance.unregister(_flushForExit);
-    WidgetsBinding.instance.removeObserver(this);
     // 加载中的窗口必须以明确状态收尾：否则 _loadInitialWindow 会挂满 10s 超时，
     // 再从 unawaited 调用点抛出未捕获异步异常（BUG-1171）。
     _windowGate.abandon();
@@ -2248,8 +2240,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     unawaited(_wholeVolumeOcrSubscription?.cancel());
     _wholeVolumeOcrSubscription = null;
     _observedOcrJob = null;
-    unawaited(_ocrRegistryChanges?.cancel());
-    _ocrRegistryChanges = null;
     _closeStreamOcr();
     final MangaReaderSession? pageSession = _pageSession;
     _pageSession = null;
@@ -4092,8 +4082,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 迟到的结果自动作废。同时只有一个预热在飞，见 [MangaPanelPrewarmer]。
   void _prewarmPanels() => _panelPrewarmer.request();
 
-  /// 分镜导航开关的偏好订阅（开关可在阅读中从设置里打开）。
-  PreferencesRepository? _panelNavigationPrefs;
   bool _panelNavigationWasOn = false;
 
   /// 分镜导航从关到开：当场预热当前跨页，不等下一次翻页再懒检测。值没变的偏好

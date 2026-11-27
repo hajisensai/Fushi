@@ -1,4 +1,5 @@
 import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'dart:async';
@@ -1706,7 +1707,10 @@ class _VideoControlPopoverPlacement {
 }
 
 class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
-    with DictionaryPageMixin, WidgetsBindingObserver
+    with
+        DictionaryPageMixin,
+        WidgetsBindingObserver,
+        StateResourceScope<VideoFushiPage>
     implements VideoFushiTestHooks, DictionaryCaretHost {
   // 控制条尺寸基线（界面缩放 ×1.0 时的值）。视频页整页被
   // [FushiAppUiScaleNeutralizer] 中和回 scale=1.0（保证 WebView 查词坐标一致），
@@ -4495,8 +4499,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     );
     _registerExternalNavigation();
     // 字幕列表侧栏按刘海 / 灵动岛所在边让位（BUG-3411）：横屏左 ↔ 右翻转时只有它变。
-    sensorHousingEdge.addListener(_onSensorHousingEdgeChanged);
-    appFloatingBallPointerInside.addListener(_onFloatingBallPointerChanged);
+    listenTo(sensorHousingEdge, _onSensorHousingEdgeChanged);
+    listenTo(appFloatingBallPointerInside, _onFloatingBallPointerChanged);
     // 桌面控制通道遥控（`fushi_cli play`）：按路由压栈顺序登记，最上层的视频页优先。
     videoPlaybackRemotes.register(_playbackRemote);
     _attachControllerLookup();
@@ -4541,17 +4545,23 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _videoControlEditMode.addListener(_syncStudyClockLocalCover);
     // 桌面查词窗被关掉：焦点不再「在本 app 的查词窗里」，计时门按真实失焦重判。
     GlobalLookupController.instance.addHiddenListener(_studyClockGate.sync);
+    onTeardown(
+      () => GlobalLookupController.instance.removeHiddenListener(
+        _studyClockGate.sync,
+      ),
+    );
     // BUG-1798：查词浮层也是 [_hasVideoOverlay] 的输入，与上面六个门控同等订阅——否则弹窗
     // 打开 / 关闭时光标策略不重跑，鼠标悬在弹窗上仍被上一轮的 `cursor: none` 吃掉。
     _lookupOverlayActive.addListener(_applyControlsVisibilityFromMediaKit);
     // TODO-611：侧栏面板锁定不持久化。面板一关闭就把锁复位为 false，下次重开默认未锁
     // ——锁生命周期绑定可见性，关闭路径无需逐个复位。
     WidgetsBinding.instance.addObserver(this);
+    onTeardown(() => WidgetsBinding.instance.removeObserver(this));
     // 拍板台 P9AS-fvjJh：播放中在快捷设置里开关「竖屏时显示字幕列表」立即换版式。
     _portraitSubtitleListPref = appModel.videoPortraitSubtitleList;
-    appModel.prefsRepo.addListener(_onPortraitPrefsChanged);
+    listenTo(appModel.prefsRepo, _onPortraitPrefsChanged);
     _liveChatShowAuthorPref = appModel.videoLiveChatShowAuthor;
-    appModel.prefsRepo.addListener(_onLiveChatPrefsChanged);
+    listenTo(appModel.prefsRepo, _onLiveChatPrefsChanged);
     _exitFlushCallback = ExitFlushRegistry.instance.register(
       _flushAllForProcessExit,
     );
@@ -8439,8 +8449,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _subtitleMaskDraft.dispose();
     _themeSongTracker.dispose();
     _themeSongChapters.dispose();
-    sensorHousingEdge.removeListener(_onSensorHousingEdgeChanged);
-    appFloatingBallPointerInside.removeListener(_onFloatingBallPointerChanged);
     _unregisterVideoRemote();
     // 退页时高级制卡对话框可能还开着：它的缓冲副本 / 缩略图缓存跟着页面走。
     _discardAdvancedMiningSession();
@@ -8472,9 +8480,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // normal fullscreen exit releases this owner only after HWND restoration.
       FushiDesktopTitleBar.setContentFullscreen(owner: this, enabled: false);
     }
-    WidgetsBinding.instance.removeObserver(this);
-    appModel.prefsRepo.removeListener(_onPortraitPrefsChanged);
-    appModel.prefsRepo.removeListener(_onLiveChatPrefsChanged);
     // BUG-2105：进程级显示态（系统栏回调 / 横屏锁 / macOS 交通灯）统一在
     // [_releaseVideoDisplayClaim] 里按所有者记账还原——本页不是最后一个持有者
     // （换集期间新页已认领）就不得还原，否则会把新页刚设好的显示态掰掉。
@@ -8518,7 +8523,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       unawaited(_remoteTeardown.track(watchTracker.close));
     }
     _watchTracker = null;
-    GlobalLookupController.instance.removeHiddenListener(_studyClockGate.sync);
     _studyClockGate.dispose();
     _studyAccrualClaim.release();
     _stopAdaptiveQuality();

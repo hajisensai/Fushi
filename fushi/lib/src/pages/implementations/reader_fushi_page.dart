@@ -2063,9 +2063,6 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       ? _lyricsWebViewController?.getViewId()
       : _controller?.getViewId();
 
-  /// 订阅中的 app 主题通知器（dispose 时按同一实例退订）。
-  ThemeNotifier? _observedThemeNotifier;
-
   /// 上次生成正文 CSS 时的配色指纹；app 主题变化后指纹不同才重注入。
   Object? _cssThemeSignature;
 
@@ -3417,7 +3414,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     _sourceReviewSession = SourceReviewScope.read(context);
     _sourceReviewWasActive = _sourceReviewActive;
     _suppressPositionPersist = _sourceReviewActive;
-    _sourceReviewSession?.addListener(_onSourceReviewChanged);
+    final SourceReviewSession? sourceReviewSession = _sourceReviewSession;
+    if (sourceReviewSession != null) {
+      listenTo(sourceReviewSession, _onSourceReviewChanged);
+    }
     _attachControllerLookup();
     // 阅读计时开始方式：打开书这一刻定初值（手动 / 翻页后开始 = 先暂停）。
     _studyClockStartGate = ReaderStudyClockStartGate(
@@ -3427,7 +3427,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     _chrome.addListener(_onChromeControllerChanged);
     // 应用内悬浮球开关变了（设置 → 悬浮球、备份恢复、同步）：栏关掉只在球开着时
     // 生效，球一关栏就要回来。
-    appModelNoUpdate.prefsRepo.addListener(_onPrefsRepoChanged);
+    listenTo(appModelNoUpdate.prefsRepo, _onPrefsRepoChanged);
     assert(() {
       ReaderFushiPage.debugOpenQuickSettings = () async {
         unawaited(_showAppearanceSheet());
@@ -3443,12 +3443,12 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       return true;
     }());
     WidgetsBinding.instance.addObserver(this);
+    onTeardown(() => WidgetsBinding.instance.removeObserver(this));
     // 桌面控制通道（`fushi_cli reader ...`）的遥控面；dispose 注销。
     readerSessionRemotes.register(_sessionRemote);
     // app 明暗 / 主题在阅读器外变化（系统切深色、桌面设置窗、同步恢复）时，正文
     // CSS 必须即时重注入——旧实现只在阅读器内的主题选择器回调里重注入。
-    _observedThemeNotifier = appModelNoUpdate.themeNotifier
-      ..addListener(_onAppThemeMaybeChanged);
+    listenTo(appModelNoUpdate.themeNotifier, _onAppThemeMaybeChanged);
     // 底栏全屏按钮的图标镜像：进页时问一次 native 真值。不问的话，「在已经全屏的窗口里
     // 打开这本书」从第一帧起图标就是错的（镜像默认 false）。与漫画页的
     // `_readInitialFullscreenState` 同款；桌面才有窗口可全屏。
@@ -3462,6 +3462,11 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     // (keyboard/gamepad) highlight mode; rebuild it when the mode flips so it
     // appears/disappears with the input device, not only on focus changes.
     FocusManager.instance.addHighlightModeListener(_onHighlightModeChanged);
+    onTeardown(
+      () => FocusManager.instance.removeHighlightModeListener(
+        _onHighlightModeChanged,
+      ),
+    );
     // BUG-3001：四个 hook 作为一组登记到持有者栈，dispose 只注销自己那组。
     _liveHooks = ReaderLiveHooks(
       settingsChanged: () {
@@ -4301,7 +4306,6 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     _pageCurl = null;
     _stopFollowingScrollDismissPointer();
     _sourceReviewClosed = _sourceReviewActive;
-    _sourceReviewSession?.removeListener(_onSourceReviewChanged);
     // 歌词模式期间本页给控制器挂的「正文面脱开」（[_toggleLyricsMode] 进入分支）
     // 必须随页面一起撤：控制器是会话对象，开着后台播放时会比页面活得久，不撤的话
     // 再开书时正文不跟随音频、也不跨章。只在本页确实还在歌词模式时撤——退出歌词时
@@ -4361,15 +4365,11 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       ReaderFushiSource.detachLiveHooks(liveHooks);
       _liveHooks = null;
     }
-    FocusManager.instance.removeHighlightModeListener(_onHighlightModeChanged);
     final ExitFlushCallback? exitFlush = _exitFlushCallback;
     if (exitFlush != null) {
       ExitFlushRegistry.instance.unregister(exitFlush);
       _exitFlushCallback = null;
     }
-    WidgetsBinding.instance.removeObserver(this);
-    _observedThemeNotifier?.removeListener(_onAppThemeMaybeChanged);
-    _observedThemeNotifier = null;
     _removeSelectionActionBar();
     _progressPollTimer?.cancel();
     _jumpAutoHideOrNull?.dispose();
@@ -4387,7 +4387,6 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     _resizeRepaginateDebounce?.cancel();
     _chromeAutoHideTimer?.cancel();
     _chrome.removeListener(_onChromeControllerChanged);
-    appModelNoUpdate.prefsRepo.removeListener(_onPrefsRepoChanged);
     _chrome.dispose();
     _clearGamepadAHold();
     VolumeKeyChannel.instance.setHandlers();

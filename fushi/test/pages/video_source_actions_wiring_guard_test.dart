@@ -77,7 +77,7 @@ void main() {
     expect(
       view,
       contains(
-        'videoScrapeCleanupRevision.addListener(_onVideoScrapeCleanupChanged)',
+        'listenTo(videoScrapeCleanupRevision, _onVideoScrapeCleanupChanged)',
       ),
     );
     expect(view, contains('if (mounted) unawaited(_load());'));

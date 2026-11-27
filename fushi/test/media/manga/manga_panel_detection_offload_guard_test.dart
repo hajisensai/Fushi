@@ -166,14 +166,11 @@ void main() {
     }
     expect(
       flat,
-      contains('..addListener(_onPanelNavigationPrefChanged);'),
-      reason: '分镜导航开关从关到开要能被阅读页听到',
-    );
-    expect(
-      flat,
+      // 经 StateResourceScope 登记，dispose 与 initState 半途失败共用撤销（BUG-5604）。
       contains(
-        '_panelNavigationPrefs?.removeListener(_onPanelNavigationPrefChanged);',
+        'listenTo(appModelNoUpdate.prefsRepo,_onPanelNavigationPrefChanged);',
       ),
+      reason: '分镜导航开关从关到开要能被阅读页听到',
     );
   });
 

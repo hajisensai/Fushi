@@ -654,8 +654,8 @@ class _HomePageState extends BasePageState<HomePage>
     appModelNoUpdate.videoScrapeControllerResolver = () async =>
         _videoSourceScrapeController;
     appModelNoUpdate.videoScrapeRuntime = _videoScrapeRuntime;
-    syncBackgroundTasksListenable.addListener(_onSyncTasksChanged);
-    _interconnectDownloads.addListener(_onInterconnectDownloadsChanged);
+    listenTo(syncBackgroundTasksListenable, _onSyncTasksChanged);
+    listenTo(_interconnectDownloads, _onInterconnectDownloadsChanged);
 
     // 首页可能被「功能模块」关掉：默认落地改为第一个启用的 tab，不让
     // `_currentTab` 从第一帧起就指向一个隐藏 tab（同 [homeInitialTab] 的理由）。
@@ -671,26 +671,28 @@ class _HomePageState extends BasePageState<HomePage>
     // for external selection from it. No-op on non-macOS (the sidebar that writes
     // it only exists under the macOS shell).
     homeShellTabNotifier.value = _currentTab;
-    homeShellTabNotifier.addListener(_onShellTabRequested);
-    externalBrowseRequest.addListener(_onExternalBrowseRequest);
+    listenTo(homeShellTabNotifier, _onShellTabRequested);
+    listenTo(externalBrowseRequest, _onExternalBrowseRequest);
     // 「功能模块」可在当前 tab 上被关掉（ctl `/api/admin/modules`、互联下载
     // 配置 / 备份恢复刷新偏好、新手引导写回）：选中身份与共享 notifier 要跟着
     // 落到默认落地 tab，否则桌面标题栏 / macOS 侧栏 / ctl 仍报被关掉的 tab。
-    appModelNoUpdate.addListener(_onModuleVisibilityMaybeChanged);
+    listenTo(appModelNoUpdate, _onModuleVisibilityMaybeChanged);
 
     WidgetsBinding.instance.addObserver(this);
+    onTeardown(() => WidgetsBinding.instance.removeObserver(this));
     assert(() {
       HomePage.debugSelectTab = _selectTab;
       HomePage.debugVideoDiscoveryActions = () =>
           _productionVideoDiscoveryActions;
       return true;
     }());
-    appModelNoUpdate.databaseCloseNotifier.addListener(refresh);
+    listenTo(appModelNoUpdate.databaseCloseNotifier, refresh);
     _startWebMineBackground();
     // TODO-376：只监听显式「打开查词 tab」请求（桌面悬浮字幕点词等手势触发），切到
     // 查词 tab 让 HomeDictionaryPage 挂载并消费 pending。不在此监听 DesktopLookupService：
     // pending 只归 HomeDictionaryPage 消费，HomePage 根节点不消费查词请求。
-    appModelNoUpdate.homeDictionaryTabRequest.addListener(
+    listenTo(
+      appModelNoUpdate.homeDictionaryTabRequest,
       _onHomeDictionaryTabRequested,
     );
 
@@ -884,10 +886,12 @@ class _HomePageState extends BasePageState<HomePage>
       // 会话中途关掉「同步与备份 + 互联」模块，下一个 tick 起就不再开跑；重新打开，
       // 下一个 tick 起恢复（反馈 SJeJd5EEZO）。此前这里在启动时把模块开关抄成一个
       // 常量，中途关掉照跑、启动时关着的中途打开也永远不跑。
-      _periodicSyncTimer = Timer.periodic(_periodicSyncInterval, (_) {
-        _triggerFullAutoSync();
-        _maybeSyncLeaderboard();
-      });
+      _periodicSyncTimer = ownTimer(
+        Timer.periodic(_periodicSyncInterval, (_) {
+          _triggerFullAutoSync();
+          _maybeSyncLeaderboard();
+        }),
+      );
 
       // Lapis 模板启动自动迁移：Fushi 基线/客制化变了且 Anki 端仍是 Fushi
       // 已知产物时，自动备份后推送新 styling（手改内容绝不自动覆盖，Anki 未
@@ -1142,7 +1146,6 @@ class _HomePageState extends BasePageState<HomePage>
     if (_backdropShellRoute case final Route<Object?> route) {
       setFushiPageRouteModuleShell(route, false);
     }
-    externalBrowseRequest.removeListener(_onExternalBrowseRequest);
     _webMineBackground?.dispose();
     _appleChrome.dispose();
     _largeTitle.dispose();
@@ -1164,20 +1167,11 @@ class _HomePageState extends BasePageState<HomePage>
     _dictFocusSignal.dispose();
     _videoLibraryRefreshSignal.dispose();
     _videoPendingScrapeChangedSignal.dispose();
-    syncBackgroundTasksListenable.removeListener(_onSyncTasksChanged);
-    _interconnectDownloads.removeListener(_onInterconnectDownloadsChanged);
     _scrapeTaskTick.dispose();
     for (final ScrollController controller in _tabScrollControllers.values) {
       controller.dispose();
     }
     _keyboardFocusNode.dispose();
-    WidgetsBinding.instance.removeObserver(this);
-    appModelNoUpdate.databaseCloseNotifier.removeListener(refresh);
-    appModelNoUpdate.homeDictionaryTabRequest.removeListener(
-      _onHomeDictionaryTabRequested,
-    );
-    homeShellTabNotifier.removeListener(_onShellTabRequested);
-    appModelNoUpdate.removeListener(_onModuleVisibilityMaybeChanged);
     super.dispose();
   }
 

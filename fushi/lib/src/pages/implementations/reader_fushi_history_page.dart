@@ -9,7 +9,7 @@ import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart';
 import 'package:fushi/src/utils/components/fushi_series_cover_block.dart';
 import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
-import 'dart:async' show StreamSubscription, Timer, unawaited;
+import 'dart:async' show Timer, unawaited;
 import 'dart:convert' show jsonEncode;
 import 'dart:io';
 
@@ -846,34 +846,42 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     // 非响应式的 _shelfMapsFuture，只在首帧 `??=` 懒加载一次，父 setState 不会让它
     // 重跑（本 State 存活、future 非 null）。这里显式监听刷新信号重载映射，使后台
     // 合集同步落库后书架立即成组（否则合集不渲染，直到重启 app）。
-    mediaType.tabRefreshNotifier.addListener(_reloadShelfMapsOnTabRefresh);
+    listenTo(mediaType.tabRefreshNotifier, _reloadShelfMapsOnTabRefresh);
     // BUG-1699：refreshTab 信号只覆盖「谁写库谁记得通知」登记过的路径（全量同步
     // 收尾的 refreshAfterSyncRun）；防抖轻量合集同步（runCollectionsOnly）与其它
     // 写入者没有登记，落库后书架照旧散卡。直接订阅合集两张表的数据层信号，任何
     // 写入者天然覆盖。
-    _collectionTablesSub = appModelNoUpdate.database
-        .watchCollectionTablesChanged()
-        .listen(_onCollectionTablesChanged);
+    ownSubscription(
+      appModelNoUpdate.database.watchCollectionTablesChanged().listen(
+        _onCollectionTablesChanged,
+      ),
+    );
     // BUG-4521：分卷归组（[_loadShelfMaps] 里的 BookSeriesGrouper）同样要跟着
     // 「书架上有哪些书」走。书列表 provider 自 BUG-793 起订阅书 / 有声书集合，
     // 任何导入路径落库都会刷新，但归组映射不会：mokuro 目录 / 导入对话框 / 拖放
     // 导入的第 2 卷只出现成散卡，直到别的事碰巧重载映射。订阅书 / 有声书行的
     // 插入与删除，与合集表同一个合并窗口。
-    _shelfBooksSub = appModelNoUpdate.database
-        .watchShelfBookSetChanged()
-        .listen(_onCollectionTablesChanged);
+    ownSubscription(
+      appModelNoUpdate.database.watchShelfBookSetChanged().listen(
+        _onCollectionTablesChanged,
+      ),
+    );
     // 单本刮削资料 / 附加图（刮削写回、控制通道脚本、删书清行）：系列色块的
     // 背景图 / 概览走 [_loadShelfMaps] 预取映射，同一个合并窗口重载。
-    _itemScrapeSub = appModelNoUpdate.database.watchItemScrapeChanged().listen(
-      _onCollectionTablesChanged,
+    ownSubscription(
+      appModelNoUpdate.database.watchItemScrapeChanged().listen(
+        _onCollectionTablesChanged,
+      ),
     );
     // 阅读进度同理：本机作为互联 host 时，对端推来的进度经 putBookProgress 直接
     // 落 reader_positions，不经本机同步收尾的 refreshTab，书架进度条与「继续阅读」
     // 会一直停在旧值（手机读到 2%，电脑书架仍显示 17%）。订阅表信号，任何写入者
     // 天然覆盖。
-    _readerPositionsSub = appModelNoUpdate.database
-        .watchReaderPositionsChanged()
-        .listen(_onReaderPositionsChanged);
+    ownSubscription(
+      appModelNoUpdate.database.watchReaderPositionsChanged().listen(
+        _onReaderPositionsChanged,
+      ),
+    );
     // 统一下载中心：mokuro.moe 卷经漫画下载服务后台落库（可能在「在线目录」
     // 页关闭后才完成）。监听 mokuroImportedCount 增量失效书架 provider，取代旧的
     // 「对话框关闭回传导入数」信号（该信号已随对话框改队列化而移除）。
@@ -882,7 +890,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         .mangaDownloadService
         .mokuroImportedCount;
     _mokuroImportedSeen = _mokuroImported!.value;
-    _mokuroImported!.addListener(_onMokuroImportedChanged);
+    listenTo(_mokuroImported!, _onMokuroImportedChanged);
     // BUG-992：顶层 tab IndexedStack 保活（BUG-750）后，切回书架不再隐式重拉远端书 →
     // 远端占位卡 + 书库概览总数要等用户手动下拉刷新才补齐。监听全局 tab 信号，切回
     // 书架 tab 时自动重拉一次远端（缓存 _lastRemoteState 顶住 waiting、不闪屏）。
@@ -890,17 +898,20 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     // 互联完整支持批次：漫画实例现在也消费远端（远端漫画占位卡 + 漫画包下载），
     // 两个实例都订阅。BUG-1181 担心的重复网络由共享 TTL 清单缓存（BUG-1180）吸收，
     // 两个实例命中同一份清单。
-    homeShellTabNotifier.addListener(_onShellTabActivated);
+    listenTo(homeShellTabNotifier, _onShellTabActivated);
     // 首页「最近添加」系列合并卡点开 = 请本页打开对应合集（H8）。
-    shelfCollectionOpenRequest.addListener(_onCollectionOpenRequested);
+    listenTo(shelfCollectionOpenRequest, _onCollectionOpenRequested);
     // Kavita 绑定书：服务器端改了进度时静默对账，采用后刷新书架进度条。
-    _kavitaLifecycle = AppLifecycleListener(onResume: _onResumeForKavita);
+    final AppLifecycleListener kavitaLifecycle = AppLifecycleListener(
+      onResume: _onResumeForKavita,
+    );
+    onTeardown(kavitaLifecycle.dispose);
     _reconcileKavitaProgress();
     // BUG-1182：「显示远端条目」开关落在 prefsRepo（独立 ChangeNotifier），不经
     // AppModel 通知，本页不会因它重建 → 门控翻转后既不重取也不重渲染。显式订阅。
     // 用 appModelNoUpdate：initState 里读 appModel 会走 ref.watch，触发
     // 「initState 完成前依赖 InheritedWidget」断言。
-    appModelNoUpdate.prefsRepo.addListener(_onPrefsChangedForRemoteGate);
+    listenTo(appModelNoUpdate.prefsRepo, _onPrefsChangedForRemoteGate);
     _hiddenRemoteBooksAtLastLoad = _hiddenRemoteBooksSignature();
     _readStatusFilter = ShelfReadStatus.values
         .asNameMap()[appModelNoUpdate.prefsRepo.shelfReadStatusFilterName];
@@ -931,8 +942,6 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         in appModelNoUpdate.prefsRepo.hiddenRemoteBooks)
       h.key,
   ].join('|');
-
-  AppLifecycleListener? _kavitaLifecycle;
 
   /// 回前台只在书架真的在屏上时对账：书架 tab 被选中、且上面没压着别的路由
   /// （阅读器开着回前台时不去动服务器进度——那本书归阅读器管）。
@@ -982,7 +991,6 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     }
   }
 
-  StreamSubscription<void>? _readerPositionsSub;
   Timer? _progressReloadDebounce;
 
   /// reader_positions 写入回调：防抖后失效书列表 / 最近阅读时刻两个缓存 provider。
@@ -1029,15 +1037,8 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     });
   }
 
-  /// BUG-1699：合集表变更订阅 + 合并窗口（同视频页 _onCollectionTablesChanged，
+  /// BUG-1699：合集表变更订阅的合并窗口（同视频页 _onCollectionTablesChanged，
   /// 同步/导入批量落库合并成一次映射重载）。
-  StreamSubscription<void>? _collectionTablesSub;
-
-  /// BUG-4521：书 / 有声书集合变化订阅（导入、删除），与合集表同一个合并窗口。
-  StreamSubscription<void>? _shelfBooksSub;
-
-  /// 单本刮削资料 / 附加图变化订阅，与合集表同一个合并窗口。
-  StreamSubscription<void>? _itemScrapeSub;
   Timer? _collectionsReloadDebounce;
 
   /// BUG-1699：合集表写入回调——重载书架折叠映射（只动 _shelfMapsFuture，不
@@ -1085,18 +1086,8 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     _headerSearch.dispose();
     _searchController.dispose();
     _shelfScrollController.dispose();
-    mediaType.tabRefreshNotifier.removeListener(_reloadShelfMapsOnTabRefresh);
-    _collectionTablesSub?.cancel();
-    _shelfBooksSub?.cancel();
-    _itemScrapeSub?.cancel();
     _collectionsReloadDebounce?.cancel();
-    _readerPositionsSub?.cancel();
     _progressReloadDebounce?.cancel();
-    _mokuroImported?.removeListener(_onMokuroImportedChanged);
-    homeShellTabNotifier.removeListener(_onShellTabActivated);
-    shelfCollectionOpenRequest.removeListener(_onCollectionOpenRequested);
-    _kavitaLifecycle?.dispose();
-    appModelNoUpdate.prefsRepo.removeListener(_onPrefsChangedForRemoteGate);
     assert(() {
       ReaderFushiHistoryPage.debugOpenBook = null;
       return true;
