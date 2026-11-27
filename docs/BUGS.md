@@ -62,6 +62,7 @@
 | [BUG-5558](bugs/BUG-5558-srs4-migration-stats-owner-diagnostics.md) | ✅ | ✅ | 复习库升级对拍不过（统计归属两侧不同）：报告缺定位根因的诊断，出错时连报告都没有 |
 | [BUG-5564](bugs/BUG-5564-video-extras-ova-sibling-ambiguous.md) | 🚧 | 🚧 | video-extras-ova-sibling-ambiguous |
 | [BUG-5565](bugs/BUG-5565-bluray-menu-click-after-title-return.md) | 🚧 | 🚧 | 远端蓝光原盘：播完 NCOP 回到「映像特典」子菜单后点 NCED 没反应（Android） |
+| [BUG-5563](bugs/BUG-5563-website-linux-download-missing.md) | ✅ | ✅ | 官网下载页没有 Linux，文档仍写「Linux 只能从源码构建」 |
 | [BUG-5548](bugs/BUG-5548-apple-sidebar-scope-rebuilds-hidden-library-pages.md) | ✅ | ✅ | Apple 宽窗侧栏外壳切 tab 后紧跟一帧：所有访问过的保活库页（含藏起的）整页重建 |
 | [BUG-5547](bugs/BUG-5547-srs-rules7-full-rebuild-killed-loop.md) | ✅ | ✅ | 升级到缓存口径 7 后复习一直在加载：开库整层重建几分钟、切后台被杀就回滚重来 |
 | [BUG-5546](bugs/BUG-5546-curator-auto-retries-ai-failures.md) | ✅ | ✅ | AI 库管家默认开、书架每次重载就跑一趟，额度用完还逐个单元问 AI、下一趟再问一遍 |
