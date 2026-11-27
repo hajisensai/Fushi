@@ -1951,8 +1951,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     final ShelfSortMode sortMode = ShelfSortMode.fromName(
       appModel.prefsRepo.videoSortModeName,
     );
-    final Map<String, int> manualRanks = decodeShelfManualOrder(
-      appModel.prefsRepo.libraryManualOrder(_manualOrderLibrary),
+    final Map<String, int> manualRanks = _rehomeMaterializedSeriesRanks(
+      decodeShelfManualOrder(
+        appModel.prefsRepo.libraryManualOrder(_manualOrderLibrary),
+      ),
     );
     // 刮削展示日志游标先于全表查询取：下面读到的快照至少包含它之前的全部刮削
     // 写入，之后的由落地前的补齐覆盖（[_catchUpScrapeMaps]）。
@@ -9086,12 +9088,52 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     );
   }
 
+  /// 媒体服务器剧名临时分组在手动序里的键（自然键，BUG-5601）。
+  static String _seriesUnitKey(String collectionType, String name) =>
+      's:$collectionType:$name';
+
+  /// 本会话物化过的剧：手动序里它按自然键记的名次换到真合集的 `c<id>` 名下，并写回
+  /// 偏好（BUG-5601）。只靠 [_collectionUnitKey] 拿真合集的**当前**名去查 `s:` 键，
+  /// 经改名物化（改名本身就是物化入口）后名字对不上，拖出来的位置就丢了。真合集已有
+  /// 自己的名次时以它为准，`s:` 键直接撤掉。
+  Map<String, int> _rehomeMaterializedSeriesRanks(Map<String, int> ranks) {
+    if (ranks.isEmpty) return ranks;
+    final Map<String, String> rehome = <String, String>{
+      for (final ({String name, String collectionType, int realId}) s
+          in VirtualCollectionRegistry.instance.materializedSeries)
+        _seriesUnitKey(s.collectionType, s.name): 'c${s.realId}',
+    };
+    if (rehome.isEmpty) return ranks;
+    bool changed = false;
+    final List<String> order = <String>[];
+    for (final String key in ranks.keys) {
+      final String? target = rehome[key];
+      if (target == null) {
+        order.add(key);
+        continue;
+      }
+      changed = true;
+      if (!ranks.containsKey(target)) order.add(target);
+    }
+    if (!changed) return ranks;
+    final String encoded = encodeShelfManualOrder(order);
+    unawaited(
+      ref
+          .read(appProvider)
+          .prefsRepo
+          .setLibraryManualOrder(_manualOrderLibrary, encoded),
+    );
+    return decodeShelfManualOrder(encoded);
+  }
+
   /// 合集单元在手动序里的键。真合集 `c<id>`；媒体服务器剧名临时分组（虚拟行，负 id，
   /// BUG-5601）的 id 只在本次会话里稳定，改按自然键记 `s:<类型>:<名>`——物化后的真合集
   /// 没有自己的名次时沿用它，拖过的位置不因物化丢失。
   String _collectionUnitKey(MediaCollectionRow collection) {
-    final String seriesKey =
-        's:${collection.collectionType}:${collection.name}';
+    final String seriesKey = _seriesUnitKey(
+      collection.collectionType,
+      collection.name,
+    );
     if (isVirtualCollection(collection)) return seriesKey;
     final String idKey = 'c${collection.id}';
     if (!_manualRanks.containsKey(idKey) &&

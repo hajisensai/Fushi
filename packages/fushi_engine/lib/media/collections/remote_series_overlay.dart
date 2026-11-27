@@ -9,6 +9,8 @@
 ///
 /// 叠加规则与收养规则（`FushiDatabase._adoptRemoteCollectionMemberInTransaction`）逐条
 /// 对齐，同一份目录叠加出来的折叠归属与组内序和「收养落库再读归属」一致：
+/// 0. 剧名被某个真合集认领过（物化时记下的别名 [derivedSeriesOrganizeAlias]）→ 挂到
+///    它上面，原剧名上的哨兵不挡，成员墓碑也按它的自然键判；
 /// 1. 自然键上有用户删除的合集级哨兵 → 不分组（存量清理写的不挡，
 ///    [remoteSeriesSentinelBlocksGrouping]）；
 /// 2. 成员墓碑 → 这一集不进组；
@@ -230,11 +232,20 @@ RemoteSeriesOverlay buildRemoteSeriesOverlay({
       registry ?? VirtualCollectionRegistry.instance;
   final Map<String, MediaCollectionRow> realByKey =
       <String, MediaCollectionRow>{};
+  // 物化过的剧：目录原剧名的别名 → 持有它的真合集（[derivedSeriesOrganizeAlias]）。
+  final Map<String, MediaCollectionRow> claimByAlias =
+      <String, MediaCollectionRow>{};
   for (final MediaCollectionRow c in collections) {
     if (c.id <= 0) continue;
     final String nk = remoteSeriesNaturalKey(c.name, c.collectionType);
     final MediaCollectionRow? prev = realByKey[nk];
     if (prev == null || c.id < prev.id) realByKey[nk] = c;
+    if (c.organizeAliases.isEmpty) continue;
+    for (final String alias in decodeOrganizeAliases(c.organizeAliases)) {
+      if (!isDerivedSeriesOrganizeAlias(alias)) continue;
+      final MediaCollectionRow? held = claimByAlias[alias];
+      if (held == null || c.id < held.id) claimByAlias[alias] = c;
+    }
   }
   final Map<String, int> primary = Map<String, int>.of(existingPrimary);
   final Map<String, int> sortIndex = Map<String, int>.of(
@@ -251,6 +262,8 @@ RemoteSeriesOverlay buildRemoteSeriesOverlay({
   String? lastName;
   String? lastType;
   String lastKey = '';
+  // 目标合集的自然键：剧名被真合集认领（别名）时是那个合集的，否则同 [lastKey]。
+  String lastTargetKey = '';
   bool lastBlocked = false;
   MediaCollectionRow? lastTarget;
   List<RemoteSeriesEntry>? lastMembers;
@@ -262,19 +275,34 @@ RemoteSeriesOverlay buildRemoteSeriesOverlay({
       lastName = name;
       lastType = type;
       lastKey = remoteSeriesNaturalKey(name, type);
-      lastBlocked = tombstones.deletedCollections.contains(lastKey);
+      // 剧被物化过（别名在某个真合集上）：挂到那个合集，即使它已改名、原剧名上留着
+      // 改名写下的合集级哨兵；成员墓碑也按它判（用户在改名后的合集里移出的集）。
+      final MediaCollectionRow? claimant =
+          claimByAlias[derivedSeriesOrganizeAlias(name, type)];
+      lastBlocked =
+          claimant == null && tombstones.deletedCollections.contains(lastKey);
       if (lastBlocked) {
         lastTarget = null;
         lastMembers = null;
       } else {
-        lastTarget = realByKey[lastKey] ?? ids.rowFor(name, type);
+        final MediaCollectionRow target =
+            claimant ?? realByKey[lastKey] ?? ids.rowFor(name, type);
+        lastTarget = target;
+        lastTargetKey = remoteSeriesNaturalKey(
+          target.name,
+          target.collectionType,
+        );
         lastMembers = members[lastKey] ??= <RemoteSeriesEntry>[];
       }
     }
     if (lastBlocked) continue;
     final String entryKey = series.entryKeys[i];
     if (anyRemoved &&
-        tombstones.removedMembers.contains('$lastKey\u0000$entryKey')) {
+        (tombstones.removedMembers.contains('$lastKey\u0000$entryKey') ||
+            (lastTargetKey != lastKey &&
+                tombstones.removedMembers.contains(
+                  '$lastTargetKey\u0000$entryKey',
+                )))) {
       continue;
     }
     final String key = '$videoPrefix$entryKey';
@@ -374,12 +402,27 @@ final class VirtualCollectionRegistry {
   /// 记下某自然键已物化成 [realId]：同自然键的所有虚拟 id 都指过去。
   void markMaterialized(String name, String collectionType, int realId) {
     final String nk = remoteSeriesNaturalKey(name, collectionType);
+    _materializedSeries[nk] = (
+      name: name,
+      collectionType: collectionType,
+      realId: realId,
+    );
     _rowsById.forEach((int id, MediaCollectionRow row) {
       if (remoteSeriesNaturalKey(row.name, row.collectionType) == nk) {
         _materialized[id] = realId;
       }
     });
   }
+
+  /// 本会话物化过的剧：物化时的剧名 / 类型 → 真合集 id。真合集之后可能改名（改名本身
+  /// 就是物化入口），按物化时的自然键记名次的消费方（视频库手动序）据此把名次换到
+  /// 真合集名下。
+  Iterable<({String name, String collectionType, int realId})>
+  get materializedSeries => _materializedSeries.values;
+
+  final Map<String, ({String name, String collectionType, int realId})>
+  _materializedSeries =
+      <String, ({String name, String collectionType, int realId})>{};
 
   final Map<String, int> _knownIds = <String, int>{};
   final Map<String, MediaCollectionRow> _rowsByKey =
@@ -468,6 +511,7 @@ final class VirtualCollectionRegistry {
     _rowsByKey.clear();
     _rowsById.clear();
     _materialized.clear();
+    _materializedSeries.clear();
     _members = const <String, List<RemoteSeriesEntry>>{};
     _next = -1;
   }

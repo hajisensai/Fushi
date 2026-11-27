@@ -329,6 +329,98 @@ void main() {
       expect(await db.getAllMediaCollections(), isEmpty);
     });
 
+    test('改名物化：原剧名记成别名；重启后新集归改名后的合集，移出的集散着', () async {
+      final List<RemoteVideoInfo> catalog = <RemoteVideoInfo>[
+        _ep('video/a1', 'Alpha', 0),
+        _ep('video/a2', 'Alpha', 1),
+        _ep('video/a3', 'Alpha', 2),
+      ];
+      final VideoLibraryMembership m = await overlay(catalog);
+      await db.renameMediaCollection(m.primary['video|video/a1']!, 'My Alpha');
+      final MediaCollectionRow real =
+          (await db.getAllMediaCollections()).single;
+      expect(decodeOrganizeAliases(real.organizeAliases), <String>{
+        derivedSeriesOrganizeAlias('Alpha', _type),
+      });
+      await db.removeFromCollection(real.id, MediaKind.video, 'video/a1');
+
+      // 重启：进程内登记清空，只剩库。服务器给 Alpha 新加了一集。
+      VirtualCollectionRegistry.instance.debugReset();
+      final VideoLibraryMembership again = await overlay(<RemoteVideoInfo>[
+        ...catalog,
+        _ep('video/a4', 'Alpha', 3),
+      ]);
+      expect(again.virtualCollections, isEmpty, reason: '旧剧名不另起分组');
+      expect(again.primary['video|video/a4'], real.id, reason: '新集归改名后的合集');
+      expect(again.primary['video|video/a2'], real.id);
+      expect(
+        again.primary.containsKey('video|video/a1'),
+        isFalse,
+        reason: '移出的集散着',
+      );
+    });
+
+    test('别名随同步到另一台设备：没有改名哨兵也按别名认领，成员墓碑按真合集判', () async {
+      // 对端同步来的状态：改名后的合集带着别名、a1 的成员墓碑记在新名下（不带旧名哨兵，
+      // 只靠别名本身成立）。
+      final int id = await db.createMediaCollection(
+        'My Alpha',
+        collectionType: _type,
+      );
+      await db.addToCollection(id, MediaKind.video, 'video/a2');
+      await db.setMediaCollectionOrganizeState(
+        id,
+        origin: CollectionOrigin.user,
+        organizeKey: null,
+        organizeAliases: <String>{derivedSeriesOrganizeAlias('Alpha', _type)},
+      );
+      await db.upsertCollectionMemberTombstone(
+        collectionName: 'My Alpha',
+        collectionType: _type,
+        mediaType: MediaKind.video.dbValue,
+        entryKey: 'video/a1',
+        deletedAt: 10,
+      );
+      final VideoLibraryMembership m = await overlay(<RemoteVideoInfo>[
+        _ep('video/a1', 'Alpha', 0),
+        _ep('video/a2', 'Alpha', 1),
+        _ep('video/a3', 'Alpha', 2),
+      ]);
+      expect(m.virtualCollections, isEmpty, reason: '不以旧剧名冒出虚拟组');
+      expect(m.primary['video|video/a3'], id);
+      expect(m.primary.containsKey('video|video/a1'), isFalse);
+    });
+
+    test('按原剧名物化（加入媒体库 / 下载落地）落到持有别名的真合集，不另建', () async {
+      final VideoLibraryMembership m = await overlay(<RemoteVideoInfo>[
+        _ep('video/a1', 'Alpha', 0),
+      ]);
+      await db.renameMediaCollection(m.primary['video|video/a1']!, 'My Alpha');
+      final int realId = (await db.getAllMediaCollections()).single.id;
+      for (final bool userIntent in <bool>[true, false]) {
+        final MediaCollectionRow? row = await materializeRemoteSeries(
+          db,
+          name: 'Alpha',
+          collectionType: _type,
+          members: const <RemoteSeriesEntry>[
+            RemoteSeriesEntry(
+              entryKey: 'video/a4',
+              name: 'Alpha',
+              collectionType: _type,
+              sortIndex: 3,
+            ),
+          ],
+          userIntent: userIntent,
+        );
+        expect(row?.id, realId, reason: 'userIntent=$userIntent');
+      }
+      expect(await db.getAllMediaCollections(), hasLength(1));
+      expect(
+        (await db.getCollectionItems(realId)).map((i) => i.entryKey).toSet(),
+        <String>{'video/a1', 'video/a4'},
+      );
+    });
+
     test('同步应用端的裸写入口拒收负 id（上游漏物化即报错，不写脏行）', () async {
       final VideoLibraryMembership m = await overlay(<RemoteVideoInfo>[
         _ep('video/a1', 'Alpha', 0),
