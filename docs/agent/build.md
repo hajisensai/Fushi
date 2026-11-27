@@ -310,6 +310,7 @@ GitHub 默认分支是 `develop`（用户 2026-11-25 拍板：开发分支才是
 - 服务端：`services/leaderboard/src/feedback_repo_bugs.js` + 迁移 `0028_feedback_repo_bug.sql`（`repo_bug` 部分唯一索引保证一个号只有一条，INSERT … ON CONFLICT 原子 upsert）。不扣用户提交的 `feedback` 日预算，只扣 `write_rows`。
 - 凭据沿用 secret `FEEDBACK_CI_TOKEN` 与 variable `FEEDBACK_API_BASE`；没配 token、或 Worker 还没部署带迁移 0028 的版本（接口 404）→ `::notice` 跳过；其他接口错误让这条 workflow 变红（不重试，下一次 push 重新对账）。
 - 回填范围：仓库 variable `BUG_FEEDBACK_MIN_NUMBER`，只为号 ≥ 它的 BUG **新建**反馈（不设 = 全部未修复的都建），已建的照常更新 / 结案。首次上线：先手动部署 Worker（`leaderboard-worker-deploy.yml`，会先跑迁移 0028），再 `gh workflow run bug-feedback-sync.yml -f dry_run=true` 看 `PLAN` 行，确认后 `-f dry_run=false` 跑一次正式对账（之后每次 develop push 自动跑）。
+- 归属（所有者 2026-11-27 拍板挂上）：仓库 variable `BUG_FEEDBACK_AS` = 开发者账户 id 或昵称，服务端按 `scripts/feedback.mjs --as` 同一口径解析（只认 `role='dev'`，查不到 / 昵称重名整批 400 `bad_account`），新建 / 改写的行 `account_id` 挂到该账户，App「我的反馈」里也看得到、能追加说明 / 结案；不设 = 不挂账户、只在开发者视图出现。不带 `as` 的改写不清已有归属。
 - `bug-number-settle.yml` 用 `GITHUB_TOKEN` 推的改号提交不触发 workflow，改号由下一次 develop push 一并对账。
 - 测试：`services/leaderboard/test/feedback_repo_bugs.test.js`（真迁移 + 真 Worker 路由端到端跑脚本：两次同步只一条、勾 ① 结案、改回重开、删除结案、撞号跳过、回填下限、分批）；守卫 `fushi/test/build/feedback_workflow_guard_test.dart`。
 

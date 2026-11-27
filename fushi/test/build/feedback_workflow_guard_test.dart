@@ -138,6 +138,7 @@ void main() {
         r'${{ secrets.FEEDBACK_CI_TOKEN }}',
         r'${{ vars.FEEDBACK_API_BASE }}',
         r'${{ vars.BUG_FEEDBACK_MIN_NUMBER }}',
+        r'${{ vars.BUG_FEEDBACK_AS }}',
         r"${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}",
       });
       final int runAt = codeLines.indexWhere(

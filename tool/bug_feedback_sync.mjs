@@ -25,6 +25,7 @@
 //   FEEDBACK_CI_TOKEN        secret；为空 → ::notice 后退出 0
 //   FEEDBACK_API_BASE        接口根，空则 https://rank.fushi.moe
 //   BUG_FEEDBACK_MIN_NUMBER  只为号 ≥ 它的 BUG 新建反馈（回填范围；空 = 全部）；已建的照常更新 / 结案
+//   BUG_FEEDBACK_AS          把同步进来的反馈挂到这个开发者账户（id 或昵称，服务端只认 role = 'dev'）；空 = 不挂
 //   GITHUB_SHA               本次 push 的提交（close fixed 记成修复 commit）
 //   GITHUB_SERVER_URL / GITHUB_REPOSITORY   正文里的仓库链接
 // 参数：
@@ -205,7 +206,7 @@ async function api(fetchImpl, base, token, method, path, body) {
 /**
  * 跑一轮对账。
  * @param {{
- *   bugsDir: string, apiBase: string, token: string, sha?: string, repoUrl?: string, minBug?: number,
+ *   bugsDir: string, apiBase: string, token: string, sha?: string, as?: string, repoUrl?: string, minBug?: number,
  *   dryRun?: boolean, fetchImpl?: typeof fetch, log?: (line: string) => void,
  * }} o
  * @returns {Promise<{planned: {upsert: number, close: number}, created: number[], updated: number[], unchanged: number[], closed: number[], missing: number[], collided: number[]}>}
@@ -232,7 +233,7 @@ export async function runSync(o) {
     return out;
   }
   for (const b of batches(plan)) {
-    const r = await api(fetchImpl, base, o.token, 'POST', '/v1/ci/feedback/bugs', { sha: o.sha, ...b });
+    const r = await api(fetchImpl, base, o.token, 'POST', '/v1/ci/feedback/bugs', { sha: o.sha, as: o.as || undefined, ...b });
     for (const k of ['created', 'updated', 'unchanged', 'closed', 'missing']) out[k].push(...r[k]);
   }
   return out;
@@ -257,6 +258,7 @@ async function main(argv, env) {
   try {
     const r = await runSync({
       bugsDir, apiBase: env.FEEDBACK_API_BASE || DEFAULT_API_BASE, token, sha: env.GITHUB_SHA, repoUrl, minBug, dryRun,
+      as: (env.BUG_FEEDBACK_AS || '').trim() || undefined,
     });
     console.log(`RESULT ${JSON.stringify(r)}`);
     return 0;

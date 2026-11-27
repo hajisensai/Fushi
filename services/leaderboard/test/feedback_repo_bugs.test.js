@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import worker from '../src/worker.js';
-import { call, makeEnv } from './harness.js';
+import { call, makeEnv, registerUser } from './harness.js';
 import { devList } from '../src/feedback.js';
 import { REPO_BUG_DROP_NOTE, REPO_BUG_REOPEN_NOTE } from '../src/feedback_repo_bugs.js';
 import { BODY_MAX, TITLE_MAX, feedbackFor, parseBugFile, planSync, runSync } from '../../../tool/bug_feedback_sync.mjs';
@@ -212,6 +212,32 @@ describe('runSync 端到端', () => {
     expect(r.created).toHaveLength(60);
     expect(rows(env)).toHaveLength(60);
     expect((await sync(env)).planned).toEqual({ upsert: 0, close: 0 });
+  });
+
+  it('as：挂到开发者账户，「我的反馈」里看得到；非开发者 / 查不到 → 400 且不写', async () => {
+    const env = ciEnv();
+    const dev = await registerUser(env, '哈吉开发');
+    const plain = await registerUser(env, '普通人');
+    env.DB.raw.prepare("UPDATE accounts SET role = 'dev' WHERE id = ?").run(dev.id);
+    put('BUG-701-a.md', bugText(701, '挂账户'));
+
+    await expect(sync(env, { as: '普通人' })).rejects.toThrow(/bad_account/);
+    await expect(sync(env, { as: '没有这个人' })).rejects.toThrow(/bad_account/);
+    expect(rows(env)).toEqual([]);
+
+    expect((await sync(env, { as: '哈吉开发' })).created).toEqual([701]);
+    expect(row(env, 701).account_id).toBe(dev.id);
+    const mine = await call(env, 'GET', '/v1/feedback/mine', { key: dev.key, account: dev.id });
+    expect(mine.data.items.map((i) => i.title)).toEqual(['BUG-701 · 挂账户']);
+    expect((await call(env, 'GET', '/v1/feedback/mine', { key: plain.key, account: plain.id })).data.items).toEqual([]);
+
+    // 不带 as 改文字：不清掉已有归属；按 id 指定同样可以。
+    put('BUG-701-a.md', bugText(701, '挂账户', { note: '改' }));
+    expect((await sync(env)).updated).toEqual([701]);
+    expect(row(env, 701).account_id).toBe(dev.id);
+    put('BUG-702-b.md', bugText(702, '按 id'));
+    await sync(env, { as: dev.id });
+    expect(row(env, 702).account_id).toBe(dev.id);
   });
 
   it('planSync 纯函数：已结案行不再结案', () => {

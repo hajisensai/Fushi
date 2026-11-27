@@ -5,12 +5,15 @@
 // 对账（算差异）全在 CI 脚本里做，服务端只提供两个原子操作：
 //
 //   GET  /v1/ci/feedback/bugs   → {items:[{bug, id, hash, status}]}  已同步过的全部 BUG 行（按号升序）
-//   POST /v1/ci/feedback/bugs   {sha?, upsert:[{bug, title, body, hash}], close:[{bug, reason}]}（合计 ≤ 25）
+//   POST /v1/ci/feedback/bugs   {sha?, as?, upsert:[{bug, title, body, hash}], close:[{bug, reason}]}（合计 ≤ 25）
 //                               → {created, updated, unchanged, closed, missing}（都是 BUG 号数组）
 //     upsert：没有该号的行 → 新建（category bug、无反馈人、origin {"source":"repo_bug"}）；
 //             有且 hash 不同 → 改标题 / 正文；若该行是「已解决」（BUG 文件曾标修复又被改回未修复 =
 //             回归），同时拉回 open、清掉修复记录、时间线记一笔。hash 相同 → unchanged（幂等）。
 //             wont_fix / duplicate / closed（开发者手动结案）只更新文字，状态不动。
+//             as：开发者账户 id 或昵称（与 scripts/feedback.mjs --as 同口径：只认 role = 'dev'，必须唯一，
+//             否则整批 400 bad_account）。给了就把新建 / 改写的行挂到该账户（反馈人 = 开发者本人，
+//             App「我的反馈」里看得到、能追加说明 / 结案）；不给则不挂账户，只在开发者视图里出现。
 //     close：reason 'fixed'   BUG 文件勾了 ①：走与 /v1/ci/feedback/fixed 同一份 MARK_FIXED_SQL，
 //                            修复 commit 记本次 push 的 sha（scope app），发布回填照常跟进；
 //            reason 'dropped' BUG 文件被删除 / 改号 / 标成 ❌ 未复现：open / in_progress → closed。
@@ -79,7 +82,14 @@ export function normalizeRepoBugSync(body) {
     return { bug: once(normalizeBug(it.bug)), reason: it.reason };
   });
   const sha = close.some((c) => c.reason === 'fixed') ? normalizeFixSha(body.sha) : null;
-  return { sha, upsert, close };
+  let as = null;
+  if (body.as !== undefined && body.as !== null && body.as !== '') {
+    if (typeof body.as !== 'string' || body.as.trim().length === 0 || body.as.trim().length > 64) {
+      throw new HttpError(400, 'bad_account');
+    }
+    as = body.as.trim();
+  }
+  return { sha, as, upsert, close };
 }
 
 /** GET /v1/ci/feedback/bugs。 */
@@ -100,9 +110,10 @@ const REOPEN_SQL = `INSERT INTO feedback_messages (feedback_id, author, account_
 const WAS_RESOLVED = "feedback.status = 'resolved'";
 const UPSERT_SQL = `INSERT INTO feedback (id, ticket_hash, account_id, category, title, body, contact, meta,
     created_at, updated_at, flags, content_hash, origin, repo_bug, repo_bug_hash)
-  VALUES (?1, ?2, NULL, 'bug', ?3, ?4, '', '{}', ?5, ?5, '[]', NULL, ?6, ?7, ?8)
+  VALUES (?1, ?2, ?9, 'bug', ?3, ?4, '', '{}', ?5, ?5, '[]', NULL, ?6, ?7, ?8)
   ON CONFLICT (repo_bug) WHERE repo_bug IS NOT NULL DO UPDATE SET
     title = excluded.title,
+    account_id = COALESCE(excluded.account_id, feedback.account_id),
     body = excluded.body,
     repo_bug_hash = excluded.repo_bug_hash,
     updated_at = excluded.updated_at,
@@ -121,6 +132,15 @@ const DROP_SQL = [
   `UPDATE feedback SET status = 'closed', dev_reply_at = ?3, updated_at = ?3 WHERE repo_bug = ?1 AND ${ACTIVE}`,
 ];
 
+/** `as` → 唯一的开发者账户 id（署名不能猜：查不到 / 昵称重名都 400）。 */
+async function resolveDevAccount(env, who) {
+  const rows = await env.DB.prepare(
+    "SELECT id FROM accounts WHERE role = 'dev' AND (id = ?1 OR nickname = ?1) LIMIT 2",
+  ).bind(who).all();
+  if (rows.results.length !== 1) throw new HttpError(400, 'bad_account');
+  return rows.results[0].id;
+}
+
 /** POST /v1/ci/feedback/bugs。 */
 export async function ciRepoBugSync(env, body, now) {
   const req = normalizeRepoBugSync(body);
@@ -130,6 +150,7 @@ export async function ciRepoBugSync(env, body, now) {
     'SELECT repo_bug, id, status FROM feedback WHERE repo_bug IN (SELECT value FROM json_each(?1))',
   ).bind(JSON.stringify(bugs)).all();
   const byBug = new Map(existing.results.map((r) => [r.repo_bug, r]));
+  const accountId = req.as && req.upsert.length > 0 ? await resolveDevAccount(env, req.as) : null;
 
   // 每条：反馈行 + 时间线 + 几个索引。
   await spend(env, 'write_rows', bugs.length * 6, now);
@@ -145,7 +166,7 @@ export async function ciRepoBugSync(env, body, now) {
   for (const u of req.upsert) {
     stmts.push(env.DB.prepare(REOPEN_SQL).bind(u.bug, REPO_BUG_REOPEN_NOTE, t, u.hash));
     stmts.push(env.DB.prepare(UPSERT_SQL).bind(
-      randomId(10), await ticketHash(randomId(32)), u.title, u.body, t, REPO_BUG_ORIGIN, u.bug, u.hash,
+      randomId(10), await ticketHash(randomId(32)), u.title, u.body, t, REPO_BUG_ORIGIN, u.bug, u.hash, accountId,
     ));
     slots.push({ bug: u.bug, kind: 'upsert', index: stmts.length - 1 });
   }

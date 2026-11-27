@@ -16,6 +16,7 @@
 # * 不从用户设备提交：用户端既会重复提交，也会带上设备信息。
 #
 # 回填范围：仓库变量 BUG_FEEDBACK_MIN_NUMBER（只为号 ≥ 它的 BUG 新建反馈；不设 = 全部未修复的都建）。
+# 归属：仓库变量 BUG_FEEDBACK_AS（开发者账户 id 或昵称）→ 反馈挂到该账户，App「我的反馈」里也看得到；不设 = 不挂。
 # 手动 workflow_dispatch 可选 dry_run，只打印计划（`PLAN {json}`）不写。
 #
 # 注意：bug-number-settle.yml 用 GITHUB_TOKEN 推的改号提交不会再触发 workflow，改号由下一次 develop
@@ -61,6 +62,7 @@ jobs:
           FEEDBACK_CI_TOKEN: ${{ secrets.FEEDBACK_CI_TOKEN }}
           FEEDBACK_API_BASE: ${{ vars.FEEDBACK_API_BASE }}
           BUG_FEEDBACK_MIN_NUMBER: ${{ vars.BUG_FEEDBACK_MIN_NUMBER }}
+          BUG_FEEDBACK_AS: ${{ vars.BUG_FEEDBACK_AS }}
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
         run: |
           if [ "$DRY_RUN" = "true" ]; then
