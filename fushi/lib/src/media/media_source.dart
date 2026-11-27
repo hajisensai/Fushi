@@ -279,6 +279,11 @@ abstract class MediaSource {
   /// return type is contract-compatible.
   Widget buildLaunchPage({MediaItem? item, Bookmark? initialBookmarkJump});
 
+  /// [AppModel.openMedia] 推媒体页时是否不论设计系统都按 Material 设计系统的
+  /// 转场进出（`FushiMaterialTransitionPageRoute`）。默认 false：跟随当前设计系统
+  /// （`adaptivePageRoute`）。
+  bool get launchesWithMaterialTransition => false;
+
   /// If this is not null, this action is executed when the user taps on the
   /// search bar. Sources that do not have a search action should have this
   /// defined.

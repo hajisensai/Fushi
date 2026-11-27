@@ -148,6 +148,7 @@ import 'package:fushi/src/pages/implementations/text_segmentation_dialog_page.da
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/adaptive/fushi_page_transitions_themes.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
@@ -12205,34 +12206,18 @@ class AppModel
 
     final ctx = _ctx;
     if (ctx == null || !ctx.mounted) return;
-    final Future<dynamic> routeDone;
-    if (pushReplacement) {
-      routeDone = Navigator.pushReplacement(
-        ctx,
-        adaptivePageRoute(
-          context: ctx,
-          builder: (context) =>
-              launchPageBuilder?.call() ??
-              mediaSource.buildLaunchPage(
-                item: item,
-                initialBookmarkJump: initialBookmarkJump,
-              ),
-        ),
-      );
-    } else {
-      routeDone = Navigator.push(
-        ctx,
-        adaptivePageRoute(
-          context: ctx,
-          builder: (context) =>
-              launchPageBuilder?.call() ??
-              mediaSource.buildLaunchPage(
-                item: item,
-                initialBookmarkJump: initialBookmarkJump,
-              ),
-        ),
-      );
-    }
+    Widget buildPage(BuildContext context) =>
+        launchPageBuilder?.call() ??
+        mediaSource.buildLaunchPage(
+          item: item,
+          initialBookmarkJump: initialBookmarkJump,
+        );
+    final Route<dynamic> route = mediaSource.launchesWithMaterialTransition
+        ? FushiMaterialTransitionPageRoute<dynamic>(builder: buildPage)
+        : adaptivePageRoute<dynamic>(context: ctx, builder: buildPage);
+    final Future<dynamic> routeDone = pushReplacement
+        ? Navigator.pushReplacement(ctx, route)
+        : Navigator.push(ctx, route);
     if (waitUntilClosed) {
       await routeDone;
     } else {
