@@ -81,7 +81,8 @@ import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_tag.dart';
-import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/reader/illustration_zoom_viewer.dart'
+    show showImageZoomViewer;
 
 export 'package:fushi/src/srs/srs_fushi_card_plan.dart'
     show SrsFushiFrontKind, srsFushiBlockVisible, srsFushiFrontKind;
@@ -2400,17 +2401,6 @@ SrsPictureLimits srsPictureLimits(
   );
 }
 
-/// 全屏查看一张卡面图片（原生卡点图、WebView 卡经 [SrsCardFace.onImageTap] 点图共用）：
-/// 可双指 / 滚轮缩放拖动，点一下关闭。
-Future<void> showSrsCardImageViewer(BuildContext context, Widget picture) =>
-    showAppDialog<void>(
-      context: context,
-      builder: (BuildContext context) => GestureDetector(
-        onTap: () => Navigator.of(context).pop(),
-        child: InteractiveViewer(child: picture),
-      ),
-    );
-
 /// 卡面图片控件：AVIF（制卡默认的动图格式）走 Rust 逐帧解码播放，其余按
 /// [srsCardImageProvider]。来源无法显示时 null。
 Widget? srsCardImageWidget(String src, SrsMediaStore? store, {BoxFit? fit}) {
@@ -2679,7 +2669,7 @@ class _MediaImageState extends ConsumerState<_MediaImage>
     return FushiPressScale(
       child: GestureDetector(
         onTap: () => unawaited(
-          showSrsCardImageViewer(context, picture(fit: BoxFit.contain)),
+          showImageZoomViewer(context, picture(fit: BoxFit.contain)),
         ),
         child: box,
       ),

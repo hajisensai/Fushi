@@ -240,7 +240,10 @@ describe('/dev/decisions', () => {
     expect(fb).not.toContain('/a/log');
     expect(fb).toContain('反馈详情（含视频）');
     const pr = card('pr10');
-    expect(pr.match(/<img /g)).toHaveLength(2);
+    // 每张图一个缩略图 + 一个全屏看图遮罩（共用 lightbox.js），所以 <img 成对出现。
+    expect(pr.match(/<a class="lb-thumb"/g)).toHaveLength(2);
+    expect(pr.match(/<img /g)).toHaveLength(4);
+    expect(pr).toContain('<a class="lb-x" href="#d-pr10-o0-t" aria-label="关闭" title="关闭">×</a>');
     expect(pr).toContain(`<img src="${gh}"`);
     expect(pr).toContain('<img src="https://user-images.githubusercontent.com/1/a.png"');
     expect(pr).not.toContain('<img src="https://evil.example');
@@ -282,6 +285,7 @@ describe('/dev/decisions', () => {
     expect(p).toContain('<iframe src="/dev/d/design-x/f/0"');
     expect(p).toContain('sandbox="allow-scripts allow-popups allow-forms allow-modals"');
     expect(p).toContain('<img src="/dev/d/design-x/f/1"');
+    expect(p).toContain('<a class="lb-thumb" id="d-design-x-f1-t" href="#d-design-x-f1">');
     expect(p).toContain('<a href="/dev/d/design-x/f/2" target="_blank" rel="noopener">spec.md</a>');
     expect(p).not.toContain('evil.html');
     expect(res.res.headers.get('Content-Security-Policy')).toContain("frame-src 'self'");

@@ -19,6 +19,8 @@ import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_compose_page.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_detail_page.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_dev_page.dart';
+import 'package:fushi/src/reader/illustration_zoom_viewer.dart'
+    show ImageZoomFrame;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/src/utils/misc/platform_updater.dart';
@@ -1012,6 +1014,28 @@ void main() {
       ),
       hasLength(1),
     );
+    // 反馈 vh4K5khfVr：共用的全屏看图，右上角有看得见的 × 关闭键；Esc 同样关闭。
+    expect(find.byType(ImageZoomFrame), findsOneWidget);
+    final Finder close = find.descendant(
+      of: find.byType(ImageZoomFrame),
+      matching: find.byTooltip(
+        MaterialLocalizations.of(
+          tester.element(find.byType(ImageZoomFrame)),
+        ).closeButtonTooltip,
+      ),
+    );
+    expect(close, findsOneWidget);
+    await tester.tap(close);
+    await tester.pumpAndSettle();
+    expect(find.byType(ImageZoomFrame), findsNothing);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('feedback-detail-shot-s0')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(ImageZoomFrame), findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(find.byType(ImageZoomFrame), findsNothing);
   });
 
   testWidgets('BUG-3239 反馈人详情：截图下载失败显示坏图，点一下重取，成功后再点看大图', (
@@ -1325,6 +1349,16 @@ void main() {
       find.byKey(const ValueKey<String>('feedback-dev-ai-abcdefghij')),
       findsNothing,
     );
+    // 反馈 vh4K5khfVr：不做页码，底部写「已加载 N 条」并给「回到顶部」。
+    expect(find.text(t.feedback_dev_loaded_count(n: 2)), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('feedback-dev-back-to-top')),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey<String>('feedback-dev-back-to-top')),
+    );
+    await tester.pumpAndSettle();
 
     await tester.enterText(
       find.byKey(const ValueKey<String>('feedback-dev-search')),

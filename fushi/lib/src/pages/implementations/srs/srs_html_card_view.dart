@@ -27,7 +27,7 @@ import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart'
-    show showSrsCardImageViewer, srsCardImageWidget, srsRubyWidgetSpan;
+    show srsCardImageWidget, srsRubyWidgetSpan;
 import 'package:fushi/src/srs/srs_card_appearance.dart'
     show SrsCardAppearance, kSrsCardDefaultFontZh;
 import 'package:fushi/src/srs/srs_card_design_skin.dart'
@@ -48,6 +48,8 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/dictionary_external_link.dart';
+import 'package:fushi/src/reader/illustration_zoom_viewer.dart'
+    show showImageZoomViewer;
 
 /// 卡面上的链接：`fushi://` 来源链接跳回原处（[onSourceLink]），http(s) 外链系统浏览器打开，
 /// 其余不处理。
@@ -873,7 +875,7 @@ class _Painter {
       child: GestureDetector(
         onTap: () {
           final Widget? full = srsCardImageWidget(r.src, store);
-          if (full != null) unawaited(showSrsCardImageViewer(context, full));
+          if (full != null) unawaited(showImageZoomViewer(context, full));
         },
         child: w,
       ),
