@@ -317,10 +317,14 @@ SyncChannelPostRunHook? syncChannelPostRunHook;
 ///
 /// [where] 只挑出其中一部分通道（在认证之前筛，不为用不到的通道刷新令牌）：复习本机写入后的推送按互联 / 云盘分成
 /// 两条、各自退避（反馈 O4MSorhpie，见 `srs_app_runtime.dart`）。null = 全部。
+///
+/// [onChannelError]：某条通道抛错（认证阶段或 [body] 里）时连同通道一起报给调用方——返回的 `errors` 不带通道归属，
+/// 复习同步要据此区分「经互联 host 的那一路没同步成」（BUG-5603）。
 Future<({int ran, List<Object> errors})> runOnAuthenticatedSyncChannels({
   required FushiDatabase db,
   required Future<void> Function(SyncBackend backend) body,
   bool Function(SyncChannel channel)? where,
+  void Function(SyncChannel channel, Object error)? onChannelError,
 }) => runExclusiveWithSync(() async {
   final SyncRepository repo = SyncRepository(db);
   int ran = 0;
@@ -335,6 +339,7 @@ Future<({int ran, List<Object> errors})> runOnAuthenticatedSyncChannels({
       ran++;
     } catch (e, stack) {
       errors.add(e);
+      onChannelError?.call(channel, e);
       // BUG-5262（反馈 w8sFMyflft）：互联对端离线（电脑没开 / 不在同一网络）是预期
       // 状态，不是应用错误：交还给调用方（推送退避、界面显示「对端离线」），不进用户
       // 可见错误日志。此前每次复习自动推送都在这里记一条带整段堆栈的错误。
@@ -818,6 +823,28 @@ void noteAutoSweepOutcomeForBackoff(
 bool debugMarkSweepInProgress(bool active) =>
     active ? _syncingIds.add('__all__') : _syncingIds.remove('__all__');
 
+/// 这一轮自动 sweep 此刻不用跑：在失败退避窗内（[isAutoSweepBackedOff]），或每条自动同步通道都还在成功冷却窗里
+/// （[SyncRepository.getLastSyncMs]，与通道循环里逐通道的判据相同）。只读本地状态，不登记任务、不排锁。读失败按
+/// 「不在冷却」处理，交给正常路径（它在锁里再读一次，失败如实记 failed）。
+Future<bool> _autoSweepCooledDown(FushiDatabase db) async {
+  final int now = DateTime.now().millisecondsSinceEpoch;
+  if (isAutoSweepBackedOff(nowMs: now)) return true;
+  try {
+    final SyncRepository repo = SyncRepository(db);
+    final List<SyncChannel> channels = await autoSyncChannels(repo);
+    if (channels.isEmpty) return false;
+    for (final SyncChannel channel in channels) {
+      final int? lastSync = await repo.getLastSyncMs(channel.scope);
+      if (lastSync == null || (now - lastSync) >= _syncCooldownMs) {
+        return false;
+      }
+    }
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
 Future<void> _runAutoSyncAll({
   required FushiDatabase db,
   required Directory dictionaryResourceRoot,
@@ -832,6 +859,22 @@ Future<void> _runAutoSyncAll({
   // 模块门先于自动开关门：模块关掉时整个同步域不存在，不公布「自动同步已关」。
   if (!syncModuleGate.isOpen) return;
   if (!await _autoSyncGateOpen(db, SyncActivityKind.fullSweep)) return;
+  // 冷却 / 退避先于登记任务与排整轮锁判（与 [_autoSyncGateOpen] 同理）：以前首页每分钟 tick 都先在任务表开一项、
+  // 排到整轮锁之后才发现还在冷却，任务表每分钟闪一项；锁被一轮长的复习同步占着时这一项就一直挂「等待中」。
+  // 这里只做锁外的本地读，拿到锁之后通道循环里照旧逐通道再判一次（排队期间别的同步可能刚跑完某条通道）。
+  if (await _autoSweepCooledDown(db)) {
+    if (!_syncingIds.contains('__all__')) {
+      _publishSyncOutcome(
+        SyncRunOutcome(
+          kind: SyncActivityKind.fullSweep,
+          reason: SyncOutcomeReason.cooledDown,
+          channelsRun: 0,
+          finishedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+    }
+    return;
+  }
   if (!_syncingIds.add('__all__')) return;
 
   final SyncTaskHandle? task = _beginSyncActivity(
@@ -1040,6 +1083,8 @@ Future<ManualSyncResult> runManualFullSync({
   if (!_syncingIds.add('__all__')) {
     return const ManualSyncResult(ManualSyncOutcome.busy);
   }
+  // 用户明说「现在就同步」：不等互联选路的失败退避到期（[InterconnectSyncBackend.resetResolveBackoff]）。
+  InterconnectSyncBackend.instance.resetResolveBackoff();
   final SyncTaskHandle task = _beginSyncActivity(
     const SyncActivity(SyncActivityKind.fullSweep),
   )!;

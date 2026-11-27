@@ -189,16 +189,22 @@ class InterconnectHostClient {
   }
 
   /// The whole `GET /api/capabilities` object of the selected host. Null when
-  /// no address answered or the body is not valid JSON (unknown); a JSON body
-  /// that is not an object counts as declaring nothing.
+  /// no address answered, the host answered anything but 200, or the body is
+  /// not valid JSON (unknown); a JSON body that is not an object counts as
+  /// declaring nothing. Goes through the process-wide capability cache
+  /// ([InterconnectHostChannel.capabilities]): every call asks the host, but
+  /// with `If-None-Match`, so an unchanged table costs a body-less 304 and a
+  /// changed one is seen on the very next call.
   Future<Map<Object?, Object?>?> capabilities({
     Duration timeout = const Duration(seconds: 5),
   }) async {
-    final http.Response? response = await getFromHost(
-      '/api/capabilities',
-      timeout: timeout,
-    );
-    if (response == null) return null;
+    final InterconnectChannelResponse response;
+    try {
+      response = await _channel.capabilities(timeout: timeout);
+    } on InterconnectChannelException {
+      return null;
+    }
+    if (response.statusCode != 200) return null;
     try {
       final Object? decoded = jsonDecode(utf8.decode(response.bodyBytes));
       return decoded is Map ? decoded : const <Object?, Object?>{};

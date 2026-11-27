@@ -935,15 +935,24 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
   /// 用户接手整理器管着的合集（schema v124，spec §5.1）：`ai` / `rule` → `user`，
   /// 永不回退。用户写入口（加减成员、改名、手动排序、合并）都经这里；整理器、同步、
   /// 扫描等自动路径传 `userIntent: false` 绕开。已是 `user` / `folder` 的不动。
-  Future<void> _claimCollectionForUser(int id) => customUpdate(
-    'UPDATE media_collections SET origin = ? '
-    "WHERE id = ? AND origin IN ('ai', 'rule')",
-    variables: <Variable<Object>>[
-      Variable<String>(CollectionOrigin.user.dbValue),
-      Variable<int>(id),
-    ],
-    updates: {mediaCollections},
-  );
+  ///
+  /// 走类型化 update：drift 只在真改到行时才发 media_collections 变更通知；
+  /// `customUpdate(updates: …)` 不论改没改都通知，已是 `user` 的合集每次加成员 /
+  /// 手动排序都会白白排一轮合集同步。
+  Future<void> _claimCollectionForUser(int id) =>
+      (update(mediaCollections)..where(
+            (t) =>
+                t.id.equals(id) &
+                t.origin.isIn(<String>[
+                  CollectionOrigin.ai.dbValue,
+                  CollectionOrigin.rule.dbValue,
+                ]),
+          ))
+          .write(
+            MediaCollectionsCompanion(
+              origin: Value<String>(CollectionOrigin.user.dbValue),
+            ),
+          );
 
   /// 写整理身份（同步应用端 / 整理器专用）：来源、分组键、别名原样落库。
   Future<void> setMediaCollectionOrganizeState(
@@ -2339,19 +2348,38 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
         }
       }
     }
-    final int insertSortIndex = stalePassthrough.isNotEmpty
-        ? stalePassthrough.first.sortIndex
-        : await _nextCollectionSortIndex(collectionId);
-    await into(mediaCollectionItems).insert(
-      MediaCollectionItemsCompanion.insert(
-        collectionId: collectionId,
-        mediaType: mediaType,
-        entryKey: entryKey,
-        sortIndex: Value(insertSortIndex),
-        pinnedByUser: Value<bool>(effectivePin),
-      ),
-      mode: InsertMode.insertOrIgnore,
-    );
+    // 已是成员就不发 INSERT：drift 的 insert 即便 OR IGNORE 整条无操作也发
+    // media_collection_items 变更通知，扫描 / 规则归组每轮对全部既有成员重调本
+    // 方法，合集观察者就每轮白跑一次合集同步。本方法在事务里，查与插之间插不进
+    // 别的写；查不到时仍走 INSERT OR IGNORE 兜住主键。
+    final bool alreadyMember =
+        await (selectOnly(mediaCollectionItems)
+              ..addColumns(<Expression<Object>>[
+                mediaCollectionItems.collectionId,
+              ])
+              ..where(
+                mediaCollectionItems.collectionId.equals(collectionId) &
+                    mediaCollectionItems.mediaType.equals(mediaType) &
+                    mediaCollectionItems.entryKey.equals(entryKey),
+              )
+              ..limit(1))
+            .getSingleOrNull() !=
+        null;
+    if (!alreadyMember) {
+      final int insertSortIndex = stalePassthrough.isNotEmpty
+          ? stalePassthrough.first.sortIndex
+          : await _nextCollectionSortIndex(collectionId);
+      await into(mediaCollectionItems).insert(
+        MediaCollectionItemsCompanion.insert(
+          collectionId: collectionId,
+          mediaType: mediaType,
+          entryKey: entryKey,
+          sortIndex: Value(insertSortIndex),
+          pinnedByUser: Value<bool>(effectivePin),
+        ),
+        mode: InsertMode.insertOrIgnore,
+      );
+    }
     if (effectivePin) {
       await (update(mediaCollectionItems)..where(
             (t) =>
@@ -2821,11 +2849,14 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
     List<CollectionMemberKey> order,
   ) async {
     for (int i = 0; i < order.length; i++) {
+      // 只改槽位真变了的行：UPDATE 同值也算命中行、drift 照发变更通知，规则归组
+      // 每轮自动补排一个已排好的合集就会白排一轮合集同步。
       await (update(mediaCollectionItems)..where(
             (t) =>
                 t.collectionId.equals(collectionId) &
                 t.mediaType.equals(order[i].mediaType) &
-                t.entryKey.equals(order[i].entryKey),
+                t.entryKey.equals(order[i].entryKey) &
+                t.sortIndex.equals(i).not(),
           ))
           .write(MediaCollectionItemsCompanion(sortIndex: Value<int>(i)));
     }
