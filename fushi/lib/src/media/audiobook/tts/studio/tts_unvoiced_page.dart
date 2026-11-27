@@ -13,6 +13,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_text.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_unvoiced_backfill.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_ui_text.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_voice_add_flow.dart';
 import 'package:fushi/src/settings/glass_settings_renderer.dart'
     show GlassSettingsRenderer;
 import 'package:fushi/src/settings/settings_kit_core.dart';
@@ -66,6 +67,7 @@ class TtsUnvoicedPage extends StatefulWidget {
     required this.load,
     required this.backfill,
     required this.voiceOptions,
+    required this.onAddVoice,
     required this.retryVoicesSummary,
     required this.onEditRetryVoices,
     super.key,
@@ -83,6 +85,9 @@ class TtsUnvoicedPage extends StatefulWidget {
 
   /// 「指定声音」的候选（value = 预设 id）。
   final List<FushiChoiceOption<String>> Function() voiceOptions;
+
+  /// 「指定声音」弹窗末尾的「添加声音」：返回新声音 id，取消返回 null。
+  final Future<String?> Function() onAddVoice;
 
   /// 页头「重试候选声音」那一行的摘要。
   final String Function() retryVoicesSummary;
@@ -136,12 +141,13 @@ class _TtsUnvoicedPageState extends State<TtsUnvoicedPage> {
   }
 
   Future<void> _pickVoice(TtsUnvoicedLineView line) async {
-    final String? picked = await showFushiChoiceDialog<String>(
+    final String? picked = await showTtsVoicePickDialog(
       context: context,
       title: t.audiobook_studio_unvoiced_pick_voice,
       message: line.text,
-      icon: FushiIcons.voice,
       options: widget.voiceOptions(),
+      // 加完声音后 [TtsUnvoicedPage.voiceOptions] 已含新声音，下次打开就有。
+      onAdd: widget.onAddVoice,
     );
     if (picked == null || !mounted) return;
     await _run(<TtsBackfillRequest>[
