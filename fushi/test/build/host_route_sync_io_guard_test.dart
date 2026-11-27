@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/scan_scale.dart';
+import '../helpers/source_guard.dart';
 
 /// 互联 host 路由处理代码禁止同步文件 IO（BUG-5606）。
 ///
@@ -49,15 +50,6 @@ void main() {
     r'pruneOnlineMangaPageCache)\(|MangaStorage\.resolvePageFilePath\(',
   );
 
-  /// 去掉 `//` 注释（含 `///` 文档注释）：注释里提到这些名字不算调用。
-  String stripComments(String source) => source
-      .split('\n')
-      .map((String line) {
-        final int i = line.indexOf('//');
-        return i < 0 ? line : line.substring(0, i);
-      })
-      .join('\n');
-
   test('host 路由处理代码零同步文件 IO', () {
     final List<File> files = scopedFiles();
     expectScanScale(
@@ -68,7 +60,7 @@ void main() {
     );
     final List<String> offenders = <String>[];
     for (final File f in files) {
-      final List<String> lines = stripComments(
+      final List<String> lines = maskComments(
         f.readAsStringSync(),
       ).split('\n');
       for (int i = 0; i < lines.length; i++) {
