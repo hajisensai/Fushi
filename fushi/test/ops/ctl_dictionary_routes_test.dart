@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/dictionary/dictionary_file_health.dart';
 import 'package:fushi/src/dictionary/recommended_dictionary_installer.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
 import 'package:fushi/src/ops/ctl_dictionary_pack_routes.dart';
@@ -446,18 +447,72 @@ void main() {
       sizeEstimate: '',
     );
     expect(
-      isRecommendedDictionaryInstalled(<Dictionary>[_dict('JMdict')], rec),
+      isRecommendedDictionaryInstalled(
+        <Dictionary>[_dict('JMdict')],
+        rec,
+        fileHealth: DictionaryFileHealth.healthy,
+      ),
       isTrue,
     );
     expect(
-      isRecommendedDictionaryInstalled(<Dictionary>[
-        _dict('JMdict [2024-01-01]'),
-      ], rec),
+      isRecommendedDictionaryInstalled(
+        <Dictionary>[_dict('JMdict [2024-01-01]')],
+        rec,
+        fileHealth: DictionaryFileHealth.healthy,
+      ),
       isTrue,
     );
     expect(
-      isRecommendedDictionaryInstalled(<Dictionary>[_dict('JMnedict')], rec),
+      isRecommendedDictionaryInstalled(
+        <Dictionary>[_dict('JMnedict')],
+        rec,
+        fileHealth: DictionaryFileHealth.healthy,
+      ),
       isFalse,
+    );
+    // 反馈 ujt4V8GdT8：文件不在的那本不算已装（用户得能勾上重下），重下以它为替换目标。
+    const DictionaryFileHealth gone = DictionaryFileHealth(
+      issues: <String, DictionaryFileIssue>{
+        'JMdict': DictionaryFileIssue.missing,
+      },
+    );
+    expect(
+      isRecommendedDictionaryInstalled(
+        <Dictionary>[_dict('JMdict')],
+        rec,
+        fileHealth: gone,
+      ),
+      isFalse,
+    );
+    expect(
+      recommendedDictionaryRestoreTarget(
+        <Dictionary>[_dict('JMdict')],
+        rec,
+        fileHealth: gone,
+      )?.name,
+      'JMdict',
+    );
+    expect(
+      recommendedDictionaryRestoreTarget(
+        <Dictionary>[_dict('JMdict')],
+        rec,
+        fileHealth: DictionaryFileHealth.healthy,
+      ),
+      isNull,
+    );
+    const DictionaryFileHealth unreadable = DictionaryFileHealth(
+      issues: <String, DictionaryFileIssue>{
+        'JMdict': DictionaryFileIssue.unreadable,
+      },
+    );
+    expect(
+      isRecommendedDictionaryInstalled(
+        <Dictionary>[_dict('JMdict')],
+        rec,
+        fileHealth: unreadable,
+      ),
+      isTrue,
+      reason: '暂时读不到不等于没了',
     );
     expect(recommendedDictionarySourceOverride(rec)['downloadUrl'], rec.url);
   });

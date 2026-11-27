@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:fushi/src/dictionary/dictionary_file_health.dart'
+    show LocalDictionaryFileStates, localDictionaryFileStates;
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
@@ -107,17 +109,28 @@ class DictionaryTransferService {
     void Function(DictionaryTransferProgress progress)? onProgress,
   }) => _run(hostId, dictionaryName, SyncAssetDirection.upload, onProgress);
 
-  /// 把 [hostId] 上的词典 [dictionaryName] 下载并导入本机。本机已有同名词典 =
-  /// 已装，不覆盖、不联网（[DictionaryTransferAlreadyPresent]）。
+  /// 把 [hostId] 上的词典 [dictionaryName] 下载并导入本机。本机已有同名词典且文件
+  /// 齐全 = 已装，不覆盖、不联网（[DictionaryTransferAlreadyPresent]）。本机登记着但文件
+  /// 丢了（[localDictionaryFileStates] 的 `restorable`）= 从这台 host 恢复：照拉，导入后
+  /// 保住本机的顺序 / 开关 / 改名（反馈 ujt4V8GdT8；判据与同步的词典阶段同一份，见
+  /// `SyncOrchestrator.runSingleDictionaryTransfer`）。
   Future<DictionaryTransferResult> downloadFromHost(
     String hostId,
     String dictionaryName, {
     void Function(DictionaryTransferProgress progress)? onProgress,
   }) async {
-    final bool installed = (await _db.getAllDictionaryMetadata()).any(
+    final bool registered = (await _db.getAllDictionaryMetadata()).any(
       (DictionaryMetaRow d) => d.name == dictionaryName,
     );
-    if (installed) return const DictionaryTransferAlreadyPresent();
+    if (registered) {
+      final LocalDictionaryFileStates files = await localDictionaryFileStates(
+        _dictionaryResourceRoot,
+        <String>[dictionaryName],
+      );
+      if (!files.restorable.contains(dictionaryName)) {
+        return const DictionaryTransferAlreadyPresent();
+      }
+    }
     return _run(
       hostId,
       dictionaryName,

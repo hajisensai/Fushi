@@ -13,6 +13,8 @@ import 'package:fushi_engine/media/video/video_storage.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/media/video/video_sidecar.dart'
     show listSidecarSubtitles;
+import 'package:fushi/src/dictionary/dictionary_file_health.dart'
+    show LocalDictionaryFileStates, localDictionaryFileStates;
 import 'package:fushi/src/models/dictionary_repository.dart'
     show DictionaryRepository;
 import 'package:fushi/src/models/local_audio_manager.dart';
@@ -2599,8 +2601,10 @@ class SyncOrchestrator {
   /// [SyncAssetDirection.upload] 或 [SyncAssetDirection.download]。
   ///
   /// 先读两边清单：同名已在目标一侧 → [SingleDictionaryTransferOutcome.alreadyPresent]
-  /// （下载时本机同名 = 已装，不覆盖），来源一侧没有 →
-  /// [SingleDictionaryTransferOutcome.notFound]。传完后把这台 host 的清单对账进
+  /// （下载时本机同名且文件齐全 = 已装，不覆盖），来源一侧没有 →
+  /// [SingleDictionaryTransferOutcome.notFound]。「本机有」按 [localDictionaryFileStates]
+  /// 判：文件丢了、只剩元数据的那本下载时照拉（恢复，保住本机的顺序 / 开关 / 改名），推送时
+  /// 当本机没有（反馈 ujt4V8GdT8）。传完后把这台 host 的清单对账进
   /// 服务器词典目录（推送后重新取一次清单），管理页的行随之从「本机」/「服务器」
   /// 翻成「两者」。导入计数写进 [report]，调用方的同步后置钩子据此重载词典与引擎。
   /// 传输失败原样抛出；对账失败只记进 [report]（词典已经传成了）。
@@ -2618,14 +2622,12 @@ class SyncOrchestrator {
     if (b is! InterconnectSyncBackend) {
       throw StateError('single dictionary transfer needs an interconnect host');
     }
-    final bool installed = (await _db.getAllDictionaryMetadata()).any(
-      (DictionaryMetaRow d) => d.name == name,
-    );
+    final _LocalDictionaries local = await _localDictionaries();
     List<RemoteDictionaryInfo> remote = await b.listRemoteDictionaries();
     final bool onHost = remote.any((RemoteDictionaryInfo d) => d.name == name);
     final SingleDictionaryTransferOutcome outcome;
     if (direction == SyncAssetDirection.download) {
-      if (installed) {
+      if (local.has(name)) {
         outcome = SingleDictionaryTransferOutcome.alreadyPresent;
       } else if (!onHost) {
         outcome = SingleDictionaryTransferOutcome.notFound;
@@ -2636,6 +2638,7 @@ class SyncOrchestrator {
           itemIndex: 0,
           itemTotal: 1,
           onImporting: onImporting,
+          restoring: local.restoringRow(name),
         );
         // 本机这份接替管理页上那条服务器行的位置与开关：在 [_pullLiveDictionary] 里
         // 做（整轮同步的拉取同一条路径）。
@@ -2643,7 +2646,7 @@ class SyncOrchestrator {
         outcome = SingleDictionaryTransferOutcome.transferred;
       }
     } else {
-      if (!installed) {
+      if (!local.canPush(name)) {
         outcome = SingleDictionaryTransferOutcome.notFound;
       } else if (onHost) {
         outcome = SingleDictionaryTransferOutcome.alreadyPresent;

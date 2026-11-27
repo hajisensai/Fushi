@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/dictionary/dictionary_file_health.dart';
 import 'package:fushi/src/models/dictionary_download_controller.dart';
 import 'package:fushi/src/sync/dictionary_transfer_service.dart';
 import 'package:fushi/src/models/dictionary_repository.dart'
@@ -1297,5 +1298,88 @@ void main() {
     );
     await _pressEnter(tester);
     expect(refreshed, 1);
+  });
+
+  // 反馈 ujt4V8GdT8：本机词典文件丢了（元数据还在），互联 host 上有同名副本——以前只能在线
+  // 重下或手选文件，host 上那份拉不回来。现在详情给「从 <host> 恢复」，横幅给一键全部恢复。
+  group('missing files with a server copy', () {
+    setUp(() {
+      DictionaryFileHealthMonitor.instance.value = const DictionaryFileHealth(
+        issues: <String, DictionaryFileIssue>{
+          'JMdict': DictionaryFileIssue.missing,
+          'Local only': DictionaryFileIssue.missing,
+        },
+      );
+    });
+    tearDown(
+      () => DictionaryFileHealthMonitor.instance.value =
+          DictionaryFileHealth.healthy,
+    );
+
+    testWidgets(
+      'detail offers Restore from the host that has it; Enter pulls',
+      (WidgetTester tester) async {
+        final _FakeAppModel model = await _pumpPage(tester);
+        Focus.of(tester.element(find.text('JMdict'))).requestFocus();
+        await tester.pump();
+        await _pressEnter(tester);
+        final Finder restore = find.byKey(
+          const ValueKey<String>('dict-file-issue-restore-h1'),
+        );
+        expect(restore, findsOneWidget);
+        expect(find.text('Restore from Box'), findsOneWidget);
+        // h2 目录上没有 JMdict：不给从 h2 恢复。
+        expect(
+          find.byKey(const ValueKey<String>('dict-file-issue-restore-h2')),
+          findsNothing,
+        );
+
+        await _focusInside(tester, restore);
+        await _pressEnter(tester);
+        await _settle(tester);
+        expect(model.transfer!.downloads, <(String, String)>[('h1', 'JMdict')]);
+        expect(model.outcomes.single.severity, ToastSeverity.success);
+      },
+    );
+
+    testWidgets('no server copy: no Restore action (re-import / delete stay)', (
+      WidgetTester tester,
+    ) async {
+      await _pumpPage(tester);
+      Focus.of(tester.element(find.text('Local only'))).requestFocus();
+      await tester.pump();
+      await _pressEnter(tester);
+      expect(
+        find.byKey(const ValueKey<String>('dict-file-issue-reimport')),
+        findsOneWidget,
+      );
+      expect(
+        find.byWidgetPredicate(
+          (Widget w) =>
+              w.key is ValueKey<String> &&
+              (w.key! as ValueKey<String>).value.startsWith(
+                'dict-file-issue-restore-',
+              ),
+        ),
+        findsNothing,
+      );
+    });
+
+    testWidgets('banner restores every restorable one in one run', (
+      WidgetTester tester,
+    ) async {
+      final _FakeAppModel model = await _pumpPage(tester);
+      final Finder all = find.byKey(
+        const ValueKey<String>('dict-file-health-restore-all'),
+      );
+      expect(all, findsOneWidget);
+      expect(find.text('Restore 1 from server'), findsOneWidget);
+
+      await _focusInside(tester, all);
+      await _pressEnter(tester);
+      await _settle(tester);
+      expect(model.transfer!.downloads, <(String, String)>[('h1', 'JMdict')]);
+      expect(model.outcomes.single.message, 'Restored 1 dictionaries');
+    });
   });
 }
