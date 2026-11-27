@@ -14,7 +14,7 @@ HttpClient noNetworkHttpClient() =>
 /// 让 [support] 下 [size] 档的 RWKV 权重看起来「已下载并校验过」（替身后端不读它，只要长度与校验标记对得上）。
 void markRwkvWeightsReady(
   Directory support, {
-  SrsRwkvModelSize size = SrsRwkvModelSize.small,
+  SrsRwkvModelSize size = SrsRwkvModelSize.fallback,
 }) {
   final Directory dir = srsRwkvModelsDir(support)..createSync(recursive: true);
   final File weights = SrsRwkvModels(dir: dir, size: size).weightsFile

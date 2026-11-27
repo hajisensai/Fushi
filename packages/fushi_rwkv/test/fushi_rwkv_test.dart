@@ -26,8 +26,8 @@ File _modelFile(String name) {
   return file;
 }
 
-/// 小模型（Instant-Only sm98）int8 权重（worker 按路径加载）。
-File _smallWeights() => _modelFile('sm98_weights.int8.bin');
+/// 小模型（Instant-Only 的 Small sm113）int8 权重（worker 按路径加载）。
+File _smallWeights() => _modelFile('sm113_weights.int8.bin');
 
 /// 确定性小历史：40 张卡（两卡一笔记）、60 天；返回回放行与「今天」的作答行。
 (RwkvRows, RwkvRows) _history() {

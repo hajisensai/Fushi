@@ -74,20 +74,20 @@ pub fn model_bytes() -> &'static [u8] {
     })
 }
 
-/// 哪个小模型：默认的 Small Instant-Only（sm98，"w64"）或省内存的 Tiny Instant-Only（sm101，"w64-c1"）。
+/// 哪个小模型：Small Instant-Only（sm113，"w64"）或默认的六层 Tiny Instant-Only（sm130io，"w64-c1-d2p1u1"）。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SmallModelId {
-    Sm98,
-    Sm101,
+    Sm113,
+    Sm130io,
 }
 
 impl SmallModelId {
-    pub const ALL: [SmallModelId; 2] = [Self::Sm98, Self::Sm101];
+    pub const ALL: [SmallModelId; 2] = [Self::Sm113, Self::Sm130io];
 
     pub fn name(self) -> &'static str {
         match self {
-            Self::Sm98 => "sm98",
-            Self::Sm101 => "sm101",
+            Self::Sm113 => "sm113",
+            Self::Sm130io => "sm130io",
         }
     }
 }
@@ -115,21 +115,21 @@ impl SmallFile {
 
     fn sha256(self, model: SmallModelId) -> &'static str {
         match (model, self) {
-            (SmallModelId::Sm98, Self::Int8Weights) => SMALL_MODEL_INT8_SHA256,
-            (SmallModelId::Sm98, Self::F32Weights) => SMALL_MODEL_F32_SHA256,
-            (SmallModelId::Sm98, Self::Architecture) => SMALL_MODEL_ARCHITECTURE_SHA256,
-            (SmallModelId::Sm98, Self::Vectors) => SMALL_MODEL_VECTORS_SHA256,
-            (SmallModelId::Sm101, Self::Int8Weights) => TINY_MODEL_INT8_SHA256,
-            (SmallModelId::Sm101, Self::F32Weights) => TINY_MODEL_F32_SHA256,
-            (SmallModelId::Sm101, Self::Architecture) => TINY_MODEL_ARCHITECTURE_SHA256,
-            (SmallModelId::Sm101, Self::Vectors) => TINY_MODEL_VECTORS_SHA256,
+            (SmallModelId::Sm113, Self::Int8Weights) => SMALL_MODEL_INT8_SHA256,
+            (SmallModelId::Sm113, Self::F32Weights) => SMALL_MODEL_F32_SHA256,
+            (SmallModelId::Sm113, Self::Architecture) => SMALL_MODEL_ARCHITECTURE_SHA256,
+            (SmallModelId::Sm113, Self::Vectors) => SMALL_MODEL_VECTORS_SHA256,
+            (SmallModelId::Sm130io, Self::Int8Weights) => TINY_MODEL_INT8_SHA256,
+            (SmallModelId::Sm130io, Self::F32Weights) => TINY_MODEL_F32_SHA256,
+            (SmallModelId::Sm130io, Self::Architecture) => TINY_MODEL_ARCHITECTURE_SHA256,
+            (SmallModelId::Sm130io, Self::Vectors) => TINY_MODEL_VECTORS_SHA256,
         }
     }
 }
 
-/// 读默认小模型（sm98）的文件，见 [small_file_of]。
+/// 读 Small 小模型（sm113）的文件，见 [small_file_of]。
 pub fn small_file(file: SmallFile) -> &'static [u8] {
-    small_file_of(SmallModelId::Sm98, file)
+    small_file_of(SmallModelId::Sm113, file)
 }
 
 /// 读小模型文件；缺失或 SHA-256 不符时失败（不跳过）。`FUSHI_RWKV_SMALL_DIR` 可指向别处的目录。

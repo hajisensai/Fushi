@@ -1,6 +1,6 @@
 // SrsRwkvModels.download：按来源顺序（镜像 → 上游）下载，每个来源都只认字节数 + SHA-256，失败换下一个；
 // 全部失败时错误信息逐个写明哪个来源、为什么失败。本地 HttpServer 充当两个来源，不碰网络。
-// 另测模型档位（Small sm98 / Tiny sm101）：钉死的权重、设置文件的读写与缺省、每档的快照目录。
+// 另测模型档位（Small sm113 / 六层 Tiny sm130io，默认 Tiny）：钉死的权重、设置文件的读写与缺省、每档的快照目录。
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
@@ -9,6 +9,7 @@ import 'package:crypto/crypto.dart';
 import 'package:fushi_asr_core/asr_core.dart' show ModelDownloadEvent;
 import 'package:fushi_engine/srs/srs_rwkv_attach.dart';
 import 'package:fushi_engine/srs/srs_rwkv_models.dart';
+import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 void main() {
@@ -214,34 +215,39 @@ void main() {
     expect(File('${m.weightsFile.path}.part').existsSync(), isFalse);
   });
 
-  test('默认权重：镜像首选、上游钉提交备用，退役清单含 sm72e25', () {
+  test('Small 档：sm113 权重，镜像首选、上游钉提交备用；退役清单含 sm72e25 / sm98 / sm101', () {
     expect(kSrsRwkvSmallWeights.urls, hasLength(2));
     expect(kSrsRwkvSmallWeights.url, startsWith(kSrsRwkvMirrorBase));
     expect(
       kSrsRwkvSmallWeights.urls.first,
       endsWith(
-        '/${kSrsRwkvSmallWeightsSha256.substring(0, 16)}-sm98-weights.int8.bin',
+        '/${kSrsRwkvSmallWeightsSha256.substring(0, 16)}-sm113-weights.int8.bin',
       ),
     );
     expect(
       kSrsRwkvSmallWeights.urls.last,
-      '$kSrsRwkvUpstreamBase/sm98/weights.int8.bin',
+      '$kSrsRwkvUpstreamBase/sm113/weights.int8.bin',
     );
+    expect(kSrsRwkvSmallWeights.fileName, 'sm113_weights.int8.bin');
+    expect(kSrsRwkvSmallWeights.expectedBytes, 436391);
     expect(kSrsRwkvRetiredWeightsNames, contains('sm72e25_weights.int8.bin'));
+    // 2026-11-27 换成 sm113 / 六层 sm130io：sm98 / sm101 的权重也要清掉。
+    expect(kSrsRwkvRetiredWeightsNames, contains('sm98_weights.int8.bin'));
+    expect(kSrsRwkvRetiredWeightsNames, contains('sm101_weights.int8.bin'));
     expect(
       kSrsRwkvRetiredWeightsNames,
       isNot(contains(kSrsRwkvSmallWeightsName)),
     );
   });
 
-  test('Tiny 档：sm101 权重，镜像首选、上游钉提交备用；与 Small 不同文件', () {
+  test('Tiny 档：六层 sm130io 权重，镜像首选、上游钉提交备用；与 Small 不同文件；是默认档', () {
     expect(SrsRwkvModelSize.small.weights, same(kSrsRwkvSmallWeights));
     expect(SrsRwkvModelSize.tiny.weights, same(kSrsRwkvTinyWeights));
-    expect(kSrsRwkvTinyWeights.fileName, 'sm101_weights.int8.bin');
-    expect(kSrsRwkvTinyWeights.expectedBytes, 409483);
+    expect(kSrsRwkvTinyWeights.fileName, 'sm130io_weights.int8.bin');
+    expect(kSrsRwkvTinyWeights.expectedBytes, 238585);
     expect(kSrsRwkvTinyWeights.urls, <String>[
-      '$kSrsRwkvMirrorBase/${kSrsRwkvTinyWeightsSha256.substring(0, 16)}-sm101-weights.int8.bin',
-      '$kSrsRwkvUpstreamBase/sm101/weights.int8.bin',
+      '$kSrsRwkvMirrorBase/${kSrsRwkvTinyWeightsSha256.substring(0, 16)}-sm130io-weights.int8.bin',
+      '$kSrsRwkvUpstreamBase/sm130io/weights.int8.bin',
     ]);
     expect(
       kSrsRwkvRetiredWeightsNames,
@@ -253,26 +259,78 @@ void main() {
     );
     expect(tiny.model, same(kSrsRwkvTinyWeights));
     expect(tiny.weightsFile.path, endsWith(kSrsRwkvTinyWeightsName));
-    expect(SrsRwkvModels(dir: dir).size, SrsRwkvModelSize.small);
+    expect(SrsRwkvModelSize.fallback, SrsRwkvModelSize.tiny);
+    expect(SrsRwkvModels(dir: dir).size, SrsRwkvModelSize.tiny);
   });
 
-  test('档位设置文件：缺失 / 认不出 → Small；写了就读回；每档一个快照目录', () async {
-    expect(readSrsRwkvModelSize(dir), SrsRwkvModelSize.small);
+  test('档位设置文件：缺失 / 认不出 → Tiny；写了就读回；每档一个快照目录', () async {
+    expect(readSrsRwkvModelSize(dir), SrsRwkvModelSize.tiny);
     await writeSrsRwkvModelSize(dir, SrsRwkvModelSize.tiny);
     expect(srsRwkvModelSizeFile(dir).readAsStringSync(), 'tiny');
     expect(readSrsRwkvModelSize(dir), SrsRwkvModelSize.tiny);
     await writeSrsRwkvModelSize(dir, SrsRwkvModelSize.small);
     expect(readSrsRwkvModelSize(dir), SrsRwkvModelSize.small);
     srsRwkvModelSizeFile(dir).writeAsStringSync('huge\n');
-    expect(readSrsRwkvModelSize(dir), SrsRwkvModelSize.small);
-    expect(SrsRwkvModelSize.fromPersisted(' tiny\n'), SrsRwkvModelSize.tiny);
+    expect(readSrsRwkvModelSize(dir), SrsRwkvModelSize.tiny);
+    expect(SrsRwkvModelSize.fromPersisted(' small\n'), SrsRwkvModelSize.small);
+    // 目录名是持久化名：Small 沿用它当默认档时的 `state`，默认档改成 Tiny 也不跟着换。
     expect(
       srsRwkvStateDir(dir).path,
-      srsRwkvStateDir(dir, SrsRwkvModelSize.small).path,
+      srsRwkvStateDir(dir, SrsRwkvModelSize.tiny).path,
     );
     expect(
-      srsRwkvStateDir(dir, SrsRwkvModelSize.tiny).path,
-      isNot(srsRwkvStateDir(dir).path),
+      p.basename(srsRwkvStateDir(dir, SrsRwkvModelSize.small).path),
+      'state',
     );
+    expect(
+      p.basename(srsRwkvStateDir(dir, SrsRwkvModelSize.tiny).path),
+      'state-tiny',
+    );
+  });
+
+  test('别的档位没有权重时它的快照目录被清掉；有权重就留着；非标准目录不动', () async {
+    final Directory models = srsRwkvModelsDir(dir);
+    final Directory small = srsRwkvStateDir(dir, SrsRwkvModelSize.small);
+    final Directory tiny = srsRwkvStateDir(dir, SrsRwkvModelSize.tiny);
+    void seed(Directory state) {
+      state.createSync(recursive: true);
+      File(p.join(state.path, 'rwkv-p-small-int4.snap')).writeAsStringSync('s');
+      File(
+        p.join(state.path, 'rwkv-p-small-int4.snap.json'),
+      ).writeAsStringSync('{}');
+    }
+
+    // 没有设置文件的老用户升级后换到 Tiny：`state/` 里是 sm98 的快照，Small 的新权重 sm113 不在 → 删。
+    seed(small);
+    seed(tiny);
+    final SrsRwkvModels tinyModels = SrsRwkvModels(
+      dir: models,
+      size: SrsRwkvModelSize.tiny,
+    );
+    await tinyModels.deleteOrphanedStates(tiny);
+    expect(small.existsSync(), isFalse);
+    expect(tiny.existsSync(), isTrue);
+
+    // 用过 Small（它的权重还在）再换到 Tiny：`state/` 留着，换回来直接恢复。
+    seed(small);
+    models.createSync(recursive: true);
+    final File smallWeights = File(
+      p.join(models.path, kSrsRwkvSmallWeightsName),
+    )..writeAsStringSync('w');
+    await tinyModels.deleteOrphanedStates(tiny);
+    expect(small.existsSync(), isTrue);
+
+    // 本档目录不是 `<support>/srs_rwkv/<本档目录名>`（测试自定的目录）：什么也不删。
+    smallWeights.deleteSync();
+    await tinyModels.deleteOrphanedStates(Directory(p.join(dir.path, 'x')));
+    expect(small.existsSync(), isTrue);
+
+    // Small 档看 Tiny：sm130io 不在 → 删 `state-tiny/`（里面是 sm101 的旧快照）。
+    await SrsRwkvModels(
+      dir: models,
+      size: SrsRwkvModelSize.small,
+    ).deleteOrphanedStates(small);
+    expect(tiny.existsSync(), isFalse);
+    expect(small.existsSync(), isTrue);
   });
 }

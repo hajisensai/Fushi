@@ -1,7 +1,7 @@
 // Copyright: Fushi contributors
 // License: GNU AGPL, version 3 or later; http://www.gnu.org/licenses/agpl.html
 //
-//! 小模型对拍，默认的 Small Instant-Only（sm98，"w64"）与省内存的 Tiny Instant-Only（sm101，"w64-c1"）
+//! 小模型对拍，Small Instant-Only（sm113，"w64"）与默认的六层 Tiny Instant-Only（sm130io，"w64-c1-d2p1u1"）
 //! 两套都跑（同一套由权重张量目录推出架构的代码）：上游 `rslib/src/rwkv/testdata/<模型>-vectors.json.gz` 里 NumPy 参考
 //! 实现的黄金值（两位用户各 500 行，无泄漏输入，show-time 查询行，f32 / int8 两种权重），逐行比对
 //! p_imm、四个评分概率、标签时刻与 6 个扫描时刻的 p_curve（曲线头没训练过，这里只当网络数值对拍），
@@ -170,12 +170,16 @@ fn weight_files_load_as_the_small_model_with_the_published_schedule() {
     }
 }
 
-/// 两套架构确实不同（层数 / 调度步），且 Tiny 的每卡状态更小：架构由权重推出，不是写死的 sm 形状。
+/// 两套架构确实不同（层数 / 调度步：Small 13 步，六层 Tiny 6 步），且 Tiny 的每卡状态更小。
 #[test]
 fn tiny_model_has_its_own_architecture_and_smaller_card_state() {
-    let small = small_model(SmallModelId::Sm98, SmallFile::Int8Weights);
-    let tiny = small_model(SmallModelId::Sm101, SmallFile::Int8Weights);
-    assert_ne!(small.layer_steps(), tiny.layer_steps());
+    let small = small_model(SmallModelId::Sm113, SmallFile::Int8Weights);
+    let tiny = small_model(SmallModelId::Sm130io, SmallFile::Int8Weights);
+    assert_eq!(small.layer_steps().len(), 13);
+    assert_eq!(
+        tiny.layer_steps(),
+        vec![(0, 0), (1, 0), (2, 0), (3, 0), (4, 0), (1, 1)]
+    );
     assert_ne!(small.fingerprint(), tiny.fingerprint());
     // 同一段复习回放进两个模型，比每张卡 / 每个笔记的状态字节数（Fushi 用的 card / note 都是 int8）。
     let per_entity = |model: &SmallModel, id: SmallModelId| {
@@ -192,11 +196,11 @@ fn tiny_model_has_its_own_architecture_and_smaller_card_state() {
         )
     };
     let ((s, small_snapshot), (t, tiny_snapshot)) = (
-        per_entity(&small, SmallModelId::Sm98),
-        per_entity(&tiny, SmallModelId::Sm101),
+        per_entity(&small, SmallModelId::Sm113),
+        per_entity(&tiny, SmallModelId::Sm130io),
     );
-    eprintln!("int8 state per card / note: sm98 {s:?} B, sm101 {t:?} B");
-    assert!(t.0 < s.0 && t.1 <= s.1, "sm98 {s:?}, sm101 {t:?}");
+    eprintln!("int8 state per card / note: sm113 {s:?} B, sm130io {t:?} B");
+    assert!(t.0 < s.0 && t.1 <= s.1, "sm113 {s:?}, sm130io {t:?}");
     // 换模型（设置里切 Small / Tiny）时旧快照按权重指纹被拒，排程内核据此全量重放；同模型照常恢复。
     for (model, own, other) in [
         (&small, &small_snapshot, &tiny_snapshot),
@@ -207,6 +211,46 @@ fn tiny_model_has_its_own_architecture_and_smaller_card_state() {
         runtime.restore_snapshot(own).unwrap();
         assert_eq!(&runtime.snapshot(), own);
     }
+}
+
+/// 层结构按权重里各流的层数认：只认 "w64"（Small）与六层 Tiny 两种 plan，对不上的拒绝加载，不拿没人训练 /
+/// 对拍过的调度去跑。改名保持名字长度，权重文件的其余字节不变。
+#[test]
+fn weights_with_an_unknown_layer_layout_are_refused() {
+    let tiny = small_file_of(SmallModelId::Sm130io, SmallFile::F32Weights);
+    let rename = |from: &str, to: &str| -> Vec<u8> {
+        assert_eq!(from.len(), to.len());
+        let (from, to) = (from.as_bytes(), to.as_bytes());
+        let mut bytes = tiny.to_vec();
+        let mut hits = 0;
+        let mut at = 0;
+        while let Some(offset) = bytes[at..].windows(from.len()).position(|w| w == from) {
+            let start = at + offset;
+            bytes[start..start + to.len()].copy_from_slice(to);
+            at = start + to.len();
+            hits += 1;
+        }
+        assert!(hits > 5, "{hits}");
+        bytes
+    };
+    let refusal = |bytes: &[u8]| match Model::from_bytes(bytes) {
+        Ok(_) => panic!("loaded a weight file with a broken layer layout"),
+        Err(error) => error.to_string(),
+    };
+    // deck 流的第 2 层挪到 preset 流：层数 [1, 1, 1, 2, 1]，不是已知 plan。
+    let moved = refusal(&rename(
+        "rwkv_modules.1.blocks.1.",
+        "rwkv_modules.3.blocks.1.",
+    ));
+    assert!(moved.contains("does not load"), "{moved}");
+    // deck 流缺第 2 层、多出第 3 层：中间断了，多出来的张量不能被静默忽略。
+    let gap = refusal(&rename(
+        "rwkv_modules.1.blocks.1.",
+        "rwkv_modules.1.blocks.2.",
+    ));
+    assert!(gap.contains("outside its layers"), "{gap}");
+    // 原样的文件照常加载。
+    assert!(Model::from_bytes(tiny).is_ok());
 }
 
 #[test]

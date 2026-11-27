@@ -1085,7 +1085,7 @@ async function loadSrs(){
     toast(T('已保存')); srsFormKey=null; loadSrs();
   });
 
-  $('#srs-rwkv').innerHTML = `<div class="form-grid"><label class="field">${esc(T('使用的模型'))}<select id="srs-rwkv-model">${[['small',T('Small（默认，准确度最好）')],['tiny',T('Tiny（每张卡省约 30% 内存，准确度略差）')]].map(([v,l])=>`<option value="${v}" ${(cfg.rwkvModel||'small')===v?'selected':''}>${esc(l)}</option>`).join('')}</select></label></div>`;
+  $('#srs-rwkv').innerHTML = `<div class="form-grid"><label class="field">${esc(T('使用的模型'))}<select id="srs-rwkv-model">${[['tiny',T('Tiny（默认，每张卡省约 30% 内存，准确度只差约 0.6%）')],['small',T('Small（准确度最好）')]].map(([v,l])=>`<option value="${v}" ${(cfg.rwkvModel||'tiny')===v?'selected':''}>${esc(l)}</option>`).join('')}</select></label></div>`;
   $('#srs-rwkv-model').onchange = guard(async()=>{ try { await put('srs', {rwkvModel: $('#srs-rwkv-model').value}); toast(T('已切换 RWKV 模型')); } finally { srsFormKey=null; loadSrs(); } });
 
   const setNote = (isSet) => isSet ? ` <span class="muted">${esc(T('(已设置，留空不改)'))}</span>` : '';

@@ -202,10 +202,8 @@ void main() {
         createClient: () => throw const SocketException('offline'),
       );
       final File weights = models.weightsFile
-        ..writeAsBytesSync(Uint8List(kSrsRwkvSmallWeightsBytes));
-      File(
-        '${weights.path}.verified',
-      ).writeAsStringSync(kSrsRwkvSmallWeightsSha256);
+        ..writeAsBytesSync(Uint8List(models.model.expectedBytes));
+      File('${weights.path}.verified').writeAsStringSync(models.model.sha256);
       final _CountingBackend backend = _CountingBackend();
       final SrsRwkvService rwkv = SrsRwkvService(
         store: store,

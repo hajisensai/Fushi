@@ -5,13 +5,15 @@ Fushi 的 **RWKV 排程**原生推理库，两个网络：
 - **大模型**（2,762,884 参数）：Anki 社区 RWKV 调度（[kuma3-anki-core](https://github.com/Pedrubik2000/kuma3-anki-core)
   的 `rslib/src/rwkv`，AGPL-3.0-or-later）的推理核心原样搬过来；来源、搬了什么 / 删了什么见
   [UPSTREAM.md](UPSTREAM.md)。
-- **小模型 sm98**（331,511 参数，d_model 64；2026-11-15 起，之前依次是 SM40、SM56、sm72e25）：**Instant-Only**
-  （只训即时头，曲线头没训练过）、按**出示时刻**的间隔训练，来自 JSchoreels/anki @ `001440b0` 的
-  `qt/aqt/rwkv_inference/sm98/`（上游 release `rwkv-family-2026-11-13` 的 Small Instant-Only，作者 Anki fork 里
-  RWKV-Instant 用的模型）。
+- **小模型**（d_model 64；2026-11-27 起，之前依次是 SM40、SM56、sm72e25、sm98 / sm101）：**Instant-Only**
+  （只训即时头，曲线头没训练过）、按**出示时刻**的间隔训练，来自 JSchoreels/anki @ `6cb16460` 的
+  `qt/aqt/rwkv_inference/`（上游 release `rwkv-family-2026-11-28` 的 Small / Tiny Instant-Only）：
+  Small **sm113**（"w64"，331,511 参数）与**默认**的六层 Tiny **sm130io**（"w64-c1-d2p1u1"，185,057 参数），见
+  「sm113 / sm130io」。
   Fushi 按 SM40（`small-model-sm40-2026-10-19`，包 sm40v2）的 INTEGRATION.md 与 NumPy 参考实现**新写**
-  （`src/rwkv/small/`，网络结构按权重文件的张量目录搭）；SM56、SM72、SM92、SM98 都是同一架构重训
-  （`architecture.json` 逐字节相同，只换权重），与上游黄金向量对拍；特征构造器与大模型共用，外加**无泄漏输入
+  （`src/rwkv/small/`，网络结构按权重文件的张量目录搭，只认已知的层数组合）；SM56、SM72、SM92、SM98、SM113 都是
+  同一 "w64" 架构重训（`architecture.json` 逐字节相同，只换权重），六层 Tiny 是同一套代码的另一种层数组合，都与上游
+  黄金向量对拍；特征构造器与大模型共用，外加**无泄漏输入
   规则**（见「sm72e25」）与回放预测的 **show-time 查询行**（见「sm98」）。
 
 外面包一层输入校验 + 作答时排程 + C ABI。权重都不入库（`fetch_model.*` 下载，见「测试」）。
@@ -129,7 +131,7 @@ RWKV 状态由同步来的复习日志在每台设备上回放出来（同一权
 
 ### 作答时排程（RWKV-Curve，库里保留，app 不用）
 
-**只对曲线头训练过的模型（大模型）可用**：Fushi 的小模型是 Instant-Only（sm98，训练时 `curve_loss_weight 0.0`，
+**只对曲线头训练过的模型（大模型）可用**：Fushi 的小模型是 Instant-Only（sm113 / sm130io，训练时 `curve_loss_weight 0.0`，
 manifest 写明 curve head "was never trained and must not schedule"），`frwkv_runtime_next_intervals` /
 `RwkvRuntime::next_intervals` / `answer_curves` 对它返回 `-6` / `RwkvError::Unsupported`（`ModelKind::has_trained_curve_head`），
 不给垃圾间隔。app 与 `fushi_server` 没有任何调用方（Dart 绑定 `RwkvNativeRuntime.nextIntervals` /
@@ -242,7 +244,7 @@ elapsed / preset）→ `scheduler/rwkv/history.rs:67` `historical_review`（card
 
 ## 两个模型与状态精度
 
-| | 大模型 | 小模型（sm98） |
+| | 大模型 | 小模型（Small sm113；六层 Tiny sm130io 见「sm113 / sm130io」） |
 |---|---|---|
 | 参数 | 2,762,884 | 331,511 |
 | 权重 | `RWKV_trained_on_5000_10000.bin`（11 MB，AGPL） | `weights.int8.bin`（436 KB，加载时反量化）或 `weights.f32.bin`；随上游 Anki fork 以 AGPL 发布 |
@@ -374,7 +376,7 @@ show-time 输入，按条加权 LogLoss，配对用户 bootstrap 95% 区间）�
   `srsRwkvReplayPredictions` 就是用它重放全部历史）：查询行是作答行的拷贝，间隔里含这条复习自己的作答用时——
   **不符合**。修在 Rust 内核唯一构造回放行的地方（`small/mod.rs` `push_replay_rows` → `show_time_query`），
   只改小模型（大模型按上游的作答间隔训练）；没有时长的行无从知道出示时刻，保持作答间隔。
-- 钉住它的测试：`tests/small_model.rs` 从 sm98 黄金向量还原回放输入，本库构造的查询行 / 更新行与训练输入逐列一致。
+- 钉住它的测试：`tests/small_model.rs` 从黄金向量还原回放输入，本库构造的查询行 / 更新行与训练输入逐列一致。
 
 **换权重的影响**：快照带权重指纹（FNV-1a），旧快照与检查点被拒，首次启动全量重放一次（`sched/machine.rs`
 `restore_snapshot` 失败即 `rebuild_all`）；状态布局（槽长）与 sm72e25 相同。旧权重文件 `sm72e25_weights.int8.bin`
@@ -384,21 +386,45 @@ show-time 输入，按条加权 LogLoss，配对用户 bootstrap 95% 区间）�
 `examples/model_compare.rs`）上没有重跑 sm98——本机没有那份数据集；作者的数字是 int8 状态、打分器自己的特征
 编码。
 
-## sm101（Tiny，设置里可选的「省内存」档）
+## sm113 / sm130io（2026-11-27 换上，默认档位改成 Tiny）
 
-同一家族的 **Tiny Instant-Only = sm101**（"w64-c1"，同一提交 `qt/aqt/rwkv_inference/sm101/`，int8 权重 409,483
-字节，哈希见 `src/lib.rs` 的 `TINY_MODEL_*_SHA256`）：card / note 流各 1 层、deck 流 4 层（deck 的第 2、3 层去掉
-channel mixer），`layer_steps` 12 步。架构由权重张量目录推出（层数、交错调度、被去掉的 channel mixer），**与 sm98
-同一套代码加载，不需要改代码**；`tests/small_model.rs` 的每个用例两套都跑。
+作者 2026-11-25 发的模型家族 release `JSchoreels/anki-rwkv` tag `rwkv-family-2026-11-28`（对应 fork main
+`6cb164606`）里的两个 **Instant-Only** 模型，钉 JSchoreels/anki 提交 `6cb164606984c14432ef5e9befdedd6cc070f539` 的
+`qt/aqt/rwkv_inference/{sm113,sm130io}/` 与 `rslib/src/rwkv/testdata/{sm113,sm130io}-vectors.json.gz`（与 release 包
+`rwkv-small-instant-only.zip` / `rwkv-tiny-instant-only.zip` 里的权重与 `architecture.json` 逐字节相同，按
+`SHA256SUMS` 校过 zip 后核对；哈希见 `src/lib.rs`）：
 
-| | sm98（Small，默认） | sm101（Tiny） |
+- **Small = sm113**（"w64"，331,511 参数，`architecture.json` 与 sm98 逐字节相同，只换权重）。
+- **Tiny = 六层 sm130io**（"w64-c1-d2p1u1"，185,057 参数）：card / deck / note / preset / user 流 1 / 2 / 1 / 1 / 1 层，
+  `layer_steps` 6 步 `(0,0)(1,0)(2,0)(3,0)(4,0)(1,1)`；带 channel mixer 的只有 card 0 / deck 0 / note 0（deck 1、
+  preset 0、user 0 去掉）。取代 "w64-c1" 的 sm101（`[1, 4, 1, 3, 3]`，12 步）。
+
+| | sm113（Small） | sm130io（Tiny，**默认**） |
 |---|---|---|
-| 即时头 LogLoss（作者打分器，722 留出用户） | 0.276191 | 0.27672 |
-| Fushi 的每卡状态（card / note 都 int4，实测槽长） | card 1,920 B + note 1,024 B = 2,944 B | card 1,024 B + note 1,024 B = 2,048 B（**约 −30%**） |
+| 即时头 LogLoss（作者打分器，722 留出用户，int8 权重 + int8 状态，show-time 输入） | 0.275933（比 sm98 −0.094%） | 0.27749（比 sm113 **+0.56%**，作者给 Tiny 的预算是 +1%） |
+| int8 权重 | 436,391 B | 238,585 B |
+| Fushi 的每卡状态（card / note 都 int8，实测槽长） | card 2,944 B + note 1,536 B = 4,480 B | card 1,536 B + note 1,536 B = 3,072 B（**约 −30%**） |
 
-（manifest 里「约 −26%」是 card int4 + note int8 的配置：3,530 → 2,622 B；Fushi 的 note 也是 int4，所以是 −30%。）
-切换 = 不同的权重指纹，旧快照被拒、全量重放一次（`tests/small_model.rs`
-`tiny_model_has_its_own_architecture_and_smaller_card_state` 钉住两边互拒、同模型照常恢复）。
+**层结构**：网络照旧由权重张量目录搭（每流的层数、哪些层有 channel mixer、层优先的交错调度），但只认两种层数
+组合（`src/rwkv/small/model.rs` 的 `LAYER_PLANS`：`[2, 4, 1, 3, 3]` 与 `[1, 2, 1, 1, 1]`，同 fork
+`engine.rs::layer_plan_for` / `architecture.rs::SMALL_LAYER_PLANS` 按权重层数选 plan）；层数对不上、或有不属于任何
+已加载层的 `rwkv_modules.*` 张量（中间断层、多余张量）一律拒绝加载，不拿没人训练 / 对拍过的调度去跑。被去掉的
+channel mixer 与第 0 层的 v-LoRA 在导出里是占位张量，加载时一并丢弃。退役的 sm101 布局不再加载（没有任何 Fushi
+下发的权重是它）。`tests/small_model.rs` 的每个用例两个模型都跑，另有改名后的布局被拒的用例。
+
+**为什么默认 Tiny**：用户拍板（2026-11-27）。准确度只差 0.56%，每卡状态小 30%、权重小一半、回放更快。
+
+**不在本次范围**：上游 SM170 的 Tiny 双模型集成（两头 sm130th + sm130io 的 logit 加权）与 answer-time 头——Fushi
+每档只跑一个 Instant-Only 模型；上游的低秩状态（T24）与 6 / 8 位因子格式也没搬，状态精度照旧（见「状态精度」）。
+
+**换模型的影响**：快照带权重指纹（FNV-1a），旧快照与检查点被拒，首次启动全量重放一次（`sched/machine.rs`
+`restore_snapshot` 失败即重建、检查点恢复失败即删）；`tests/small_model.rs`
+`tiny_model_has_its_own_architecture_and_smaller_card_state` 钉住两边互拒、同模型照常恢复。旧权重
+`sm98_weights.int8.bin` / `sm101_weights.int8.bin` 进 Dart 的退役清单；没有权重的那一档的快照目录由
+`SrsRwkvModels.deleteOrphanedStates` 清掉（没有设置文件的老用户从 Small 换到 Tiny 后，`state/` 里 sm98 的快照不再有用）。
+
+**许可**：上游 2026-11-25 起每个包带 `WEIGHTS-NOTICE.md`：权重不在 MIT 下、作者不另授许可，在应用里分发要 Anki
+许可（srs-benchmark issue #353 未决）。Fushi 镜像并分发这些权重，风险登记在拍板台（`docs/agent/decision-board.md`）。
 
 ## 跨平台逐位一致
 
@@ -521,22 +547,22 @@ cargo test --profile quick --manifest-path native/fushi_rwkv/Cargo.toml
 ```
 
 权重缺失 / SHA-256 不符时测试**失败**并提示跑 fetch_model（不跳过）；`FUSHI_RWKV_MODEL`
-可指向别处的大模型权重，`FUSHI_RWKV_SMALL_DIR` 指向放着两个小模型各四个文件（`sm98_weights.int8.bin`、
-`sm98_weights.f32.bin`、`sm98_architecture.json`、`sm98-vectors.json.gz`，sm101 同名）的目录。
+可指向别处的大模型权重，`FUSHI_RWKV_SMALL_DIR` 指向放着两个小模型各四个文件（`sm113_weights.int8.bin`、
+`sm113_weights.f32.bin`、`sm113_architecture.json`、`sm113-vectors.json.gz`，sm130io 同名）的目录。
 
 - `tests/parity.rs`：与上游对拍（夹具由 `tools/oracle` 把上游 `rslib/src/rwkv` 原样编译后产出，
   f32 / int8 各一份），上游自己测试里写死的两个数，批量回放 vs 逐条回放的状态逐位相同，
   快照中断续跑，损坏快照拒收，线程数无关，reset。
 - `tests/bitexact.rs`：跨平台逐位一致（向量 / 可移植内核摘要相同、等于 x86 黄金值；见「跨平台逐位一致」）。
 - `tests/c_abi.rs`：只走 `extern "C"` 的往返与错误路径。
-- `tests/small_model.rs`：两个小模型（sm98 / sm101）各自与上游 NumPy 参考实现的黄金向量（`<模型>-vectors.json.gz`，两位用户
-  各 500 行，无泄漏输入、show-time 查询行，f32 / int8 权重）逐行对拍 p_imm、p_rating、标签时刻与 6 个扫描时刻的
-  p_curve（曲线头没训练过，只当网络数值对拍），容差 1e-5（实测最大 7.5e-7）；**本库回放的特征构造与向量逐列一致**：
-  从向量还原回放输入，回放时每条作答构造的查询行（406 行，全部带 show-time 间隔）与更新行（593 行）的输入
+- `tests/small_model.rs`：两个小模型（sm113 / sm130io）各自与上游 NumPy 参考实现的黄金向量（`<模型>-vectors.json.gz`，两位
+  合成用户 900001 / 900002 各 500 行，无泄漏输入、show-time 查询行，f32 / int8 权重）逐行对拍 p_imm、p_rating、标签时刻与 6 个扫描时刻的
+  p_curve（曲线头没训练过，只当网络数值对拍），容差 1e-5（实测最大 7.7e-7，2026-11-27）；**本库回放的特征构造与向量逐列一致**：
+  从向量还原回放输入，回放时每条作答构造的查询行（每个模型 459 行，全部带 show-time 间隔）与更新行（539 行）的输入
   0–21、23 与训练输入相差 ≤ 1e-4（查询行改回作答间隔即红，已做变异实测）；`show_time_query` 的取整与边界；
   缺失 ID 标志（输入 13–15）置 1 时 f32 / int4 下每个输出逐位不变（去掉清零即红，已做变异实测）；块边界不改结果
-  （三种精度逐位相同）；`layer_steps` 与 `architecture.json` 一致；RWKV-Curve 对它返回 Unsupported；sm101 与 sm98
-  架构不同、每卡状态更小、快照按权重指纹互拒。
+  （三种精度逐位相同）；`layer_steps` 与 `architecture.json` 一致；RWKV-Curve 对它返回 Unsupported；sm130io 与 sm113
+  架构不同（6 步 / 13 步）、每卡状态更小、快照按权重指纹互拒；层数组合不认识或有多余流张量的权重被拒。
 - `tests/forecast.rs`：假设作答不改状态、与真的作答一致；排程读的遗忘曲线（只测大模型）随时间不增、次日 Again
   低于 Easy，天数是曲线上「当天 R ≤ 目标、前一天 > 目标」的那天；`src/curve.rs` 的单元测试用已知
   形状的曲线钉住求解器（越线点向上取整、评分顺序、上限 / 下限）。

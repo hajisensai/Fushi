@@ -137,7 +137,7 @@ class _SrsRwkvPanelState extends ConsumerState<SrsRwkvPanel> {
                         ),
                   child: Text(
                     t.srs_settings_rwkv_download(
-                      size: _downloadSize(size ?? SrsRwkvModelSize.small),
+                      size: _downloadSize(size ?? SrsRwkvModelSize.fallback),
                     ),
                   ),
                 ),

@@ -621,10 +621,8 @@ class _Fixture {
     );
     if (ready) {
       final File weights = models.weightsFile
-        ..writeAsBytesSync(Uint8List(kSrsRwkvSmallWeightsBytes));
-      File(
-        '${weights.path}.verified',
-      ).writeAsStringSync(kSrsRwkvSmallWeightsSha256);
+        ..writeAsBytesSync(Uint8List(models.model.expectedBytes));
+      File('${weights.path}.verified').writeAsStringSync(models.model.sha256);
     }
     return models;
   }
@@ -723,10 +721,15 @@ void main() {
     expect(kSrsRwkvRetiredWeightsNames, contains('sm56-package.zip'));
     // 2026-11-15 换成 Instant-Only 的 sm98：sm72e25 的权重也要清掉。
     expect(kSrsRwkvRetiredWeightsNames, contains('sm72e25_weights.int8.bin'));
-    expect(
-      kSrsRwkvRetiredWeightsNames,
-      isNot(contains(kSrsRwkvSmallWeightsName)),
-    );
+    // 2026-11-27 换成 sm113 / 六层 sm130io：sm98 / sm101 的权重也要清掉。
+    expect(kSrsRwkvRetiredWeightsNames, contains('sm98_weights.int8.bin'));
+    expect(kSrsRwkvRetiredWeightsNames, contains('sm101_weights.int8.bin'));
+    for (final SrsRwkvModelSize size in SrsRwkvModelSize.values) {
+      expect(
+        kSrsRwkvRetiredWeightsNames,
+        isNot(contains(size.weights.fileName)),
+      );
+    }
     models.weightsFile.writeAsStringSync('current');
 
     await models.deleteRetired();

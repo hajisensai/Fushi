@@ -668,12 +668,13 @@ Anki 不可达 / 开了「批量制卡」的卡进待发队列，同步时经互
 - **原生库**：复习库与 FSRS 调度都在随包的 `libfushi_fsrs` 里（正式发布包已带；按 `FUSHI_FSRS_LIB` →
   `bin/../lib/` 定位）。没找到时各份配置文件显示出错，其余功能照常。
 - **RWKV 调度**：算法是 RWKV 的牌组在服务端与在 app 上同一个出卡口径（按 RWKV 回忆率出卡），用随包的
-  `libfushi_rwkv`（`FUSHI_RWKV_LIB` → `bin/../lib/`）。第一次用到时下载权重（436 KB，走全局代理设置）到
-  `<data>/support/srs_rwkv/models/`；不能出网的机器把 `sm98_weights.int8.bin` 手动放进这个目录即可（校验通过
-  就用）。状态快照在 `<data>/support/srs_rwkv/state/`。**模型档位**在 WebUI「复习 → RWKV 模型」里选
-  （也可 `PUT /api/admin/srs {"rwkvModel":"tiny"}` 或 `fushi-server ctl srs config '{"rwkvModel":"tiny"}'`）：
-  Tiny 是省内存的 sm101（权重 `sm101_weights.int8.bin`，409 KB；每卡状态约小 30%，准确度略差；快照在
-  `state-tiny/`），默认是 Small（sm98）。选了当场生效，不用重启：首次会下载新权重，没有该档快照时全量重放一次。
+  `libfushi_rwkv`（`FUSHI_RWKV_LIB` → `bin/../lib/`）。第一次用到时下载权重（默认档 239 KB，走全局代理设置）到
+  `<data>/support/srs_rwkv/models/`；不能出网的机器把该档的权重文件（默认 `sm130io_weights.int8.bin`）手动放进
+  这个目录即可（校验通过就用）。**模型档位**在 WebUI「复习 → RWKV 模型」里选
+  （也可 `PUT /api/admin/srs {"rwkvModel":"small"}` 或 `fushi-server ctl srs config '{"rwkvModel":"small"}'`）：
+  默认是六层 Tiny（sm130io，快照在 `<data>/support/srs_rwkv/state-tiny/`）；Small 是 sm113（权重
+  `sm113_weights.int8.bin`，436 KB；准确度最好，每卡状态约大 40%；快照在 `state/`）。2026-11-27 起默认从
+  Small 改成 Tiny，没有设置文件的机器随之换到 Tiny。选了当场生效，不用重启：首次会下载新权重，没有该档快照时全量重放一次。
   档位存在整台设备的设置文件 `<data>/support/srs_rwkv/model_size`（与 app 同一个文件、同一套读法），手改这个文件
   也会在下一次对齐配置（改任何复习配置，或兜底定时器）时生效。**RWKV 没准备好（权重没下到 / 正在回放历史 /
   出错）时这些牌组不出复习卡**，远程复习页显示「准备中」或错误与「重试」，不会退回按 FSRS 的到期日出卡；WebUI

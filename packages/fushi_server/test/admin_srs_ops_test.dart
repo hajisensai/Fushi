@@ -467,15 +467,15 @@ void main() {
     }
 
     final Directory support = host.paths.support;
-    expect(await configured(), 'small');
+    expect(await configured(), 'tiny');
     final OpUndoRecord rec = await runUndoable(
       'server.srs.rwkv-model.set',
-      const <String, Object?>{'rwkvModel': 'tiny'},
+      const <String, Object?>{'rwkvModel': 'small'},
     );
-    expect(readSrsRwkvModelSize(support), SrsRwkvModelSize.tiny);
-    expect(await configured(), 'tiny');
-    expect(await revert('server.srs.rwkv-model.set', rec), OpUndoStatus.done);
     expect(readSrsRwkvModelSize(support), SrsRwkvModelSize.small);
+    expect(await configured(), 'small');
+    expect(await revert('server.srs.rwkv-model.set', rec), OpUndoStatus.done);
+    expect(readSrsRwkvModelSize(support), SrsRwkvModelSize.tiny);
 
     await expectLater(
       run('server.srs.rwkv-model.set', const <String, Object?>{
@@ -485,19 +485,19 @@ void main() {
         isA<CtlFailure>().having((CtlFailure f) => f.status, 'status', 400),
       ),
     );
-    expect(readSrsRwkvModelSize(support), SrsRwkvModelSize.small);
+    expect(readSrsRwkvModelSize(support), SrsRwkvModelSize.tiny);
 
     final OpUndoRecord second = await runUndoable(
       'server.srs.rwkv-model.set',
-      const <String, Object?>{'rwkvModel': 'tiny'},
+      const <String, Object?>{'rwkvModel': 'small'},
     );
-    // 管理员之后在 WebUI 里又改回 Small：撤销不覆盖它。
-    await adminPut(<String, Object?>{'rwkvModel': 'small'});
+    // 管理员之后在 WebUI 里又改回 Tiny：撤销不覆盖它。
+    await adminPut(<String, Object?>{'rwkvModel': 'tiny'});
     expect(
       await revert('server.srs.rwkv-model.set', second),
       OpUndoStatus.superseded,
     );
-    expect(readSrsRwkvModelSize(support), SrsRwkvModelSize.small);
+    expect(readSrsRwkvModelSize(support), SrsRwkvModelSize.tiny);
   });
 
   Future<shelf.Response> rawPut(Map<String, Object?> body) => api.handle(
@@ -522,12 +522,12 @@ void main() {
 
       final shelf.Response r = await rawPut(<String, Object?>{
         'rolloverHour': hourBefore == 7 ? 8 : 7,
-        'rwkvModel': 'tiny',
+        'rwkvModel': 'small',
       });
       expect(r.statusCode, 500, reason: await r.readAsString());
       expect(host.config.srs.rolloverHour, hourBefore);
       expect(await configFile.readAsString(), configBefore);
-      expect(readSrsRwkvModelSize(support), SrsRwkvModelSize.small);
+      expect(readSrsRwkvModelSize(support), SrsRwkvModelSize.tiny);
     },
   );
 
@@ -551,10 +551,10 @@ void main() {
 
     final shelf.Response r = await rawPut(<String, Object?>{
       'rolloverHour': hourBefore == 7 ? 8 : 7,
-      'rwkvModel': 'tiny',
+      'rwkvModel': 'small',
     });
     expect(r.statusCode, 500, reason: await r.readAsString());
-    expect(readSrsRwkvModelSize(support), SrsRwkvModelSize.small);
+    expect(readSrsRwkvModelSize(support), SrsRwkvModelSize.tiny);
     // 写盘失败 = 这次改动没落地：admin 内存里的配置（GET 读的那份）不能先换成新的。
     expect(await rolloverHourNow(), hourBefore);
   });

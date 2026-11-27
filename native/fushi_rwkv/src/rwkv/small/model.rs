@@ -1,16 +1,18 @@
 // Copyright: Fushi contributors
 // License: GNU AGPL, version 3 or later; http://www.gnu.org/licenses/agpl.html
 //
-//! Fushi: the small RWKV network ("w64" and its one-card-layer "w64-c1";
-//! default weights the Instant-Only sm98, same architecture as sm40v2, sm56
-//! and sm72e25) and its batched replay / query engine.
+//! Fushi: the small RWKV network ("w64", Small, weights the Instant-Only
+//! sm113, same architecture as sm40v2 ... sm98; and the six-layer Tiny
+//! "w64-c1-d2p1u1", weights the Instant-Only sm130io) and its batched
+//! replay / query engine.
 //!
 //! The executable spec is the package's NumPy reference
 //! (`reference/small_model_recurrent.py`, `RecurrentModel.step`) and
 //! INTEGRATION.md §7–§9; comments below name the reference's variables.
 //!
-//! Engine: rows are processed a chunk at a time, one step of the 13-step
-//! interleaved layer schedule after the other over every row of the chunk.
+//! Engine: rows are processed a chunk at a time, one step of the interleaved
+//! layer schedule (13 steps for "w64", 6 for "w64-c1-d2p1u1") after the
+//! other over every row of the chunk.
 //! Within a step all per-row maths (norms, lerps, projections) is
 //! independent across rows; only the WKV recurrence is sequential, and only
 //! per entity (card, deck, note, preset, user), so entities run in parallel.
@@ -37,7 +39,7 @@ const FC: usize = 128;
 pub(super) const STREAMS: usize = 5;
 /// `zero_features`: the card-state input (scaled revlog type) is ignored.
 const ZERO_FEATURE: usize = 22;
-/// Leak-free input rule of the SM72 and later releases (sm98, sm101): the
+/// Leak-free input rule of the SM72 and later releases (sm113, sm130io): the
 /// missing note / deck / preset flags are always 0. In the
 /// training export they marked cards deleted before the export, i.e. future
 /// information live Anki never has, and SM72 was trained and scored with them
@@ -59,6 +61,22 @@ type HeadV = [f32; K];
 /// Rows per block of the per-row maths: each weight column is streamed once
 /// per block (`Linear::apply_rows`), and a block's scratch stays in L1/L2.
 const BLOCK: usize = 32;
+
+/// The layer layouts the small engine loads, as layers per stream (card,
+/// deck, note, preset, user), told apart by the weight file's
+/// `rwkv_modules.<stream>.blocks.<layer>.` tensors, as the fork's
+/// `engine.rs::layer_plan_for` / `architecture.rs::SMALL_LAYER_PLANS` do. A
+/// file whose layer counts match none of them is refused rather than run
+/// with a schedule nobody trained or checked. Each plan's schedule is the
+/// layer-major interleave of its counts (`architecture.json` `layer_steps`).
+/// The one-card-layer "w64-c1" (`[1, 4, 1, 3, 3]`, the retired Tiny sm101)
+/// is not among them: no weights Fushi ships have it.
+const LAYER_PLANS: [(&str, [usize; STREAMS]); 2] = [
+    // Small (sm113; the earlier sm40v2 ... sm98 share it).
+    ("w64", [2, 4, 1, 3, 3]),
+    // The six-layer Tiny (sm130io), 185,057 parameters.
+    ("w64-c1-d2p1u1", [1, 2, 1, 1, 1]),
+];
 
 /// Per-task scratch of the block maths, on the heap: rayon threads run
 /// stolen tasks on top of a waiting one, so big stack frames nest and
@@ -306,6 +324,9 @@ impl TimeMixer {
             k_scale: Linear::load(w, &format!("{p}.k_scale_linear"), HEADS, D, true)?,
             v_scale: Linear::load(w, &format!("{p}.v_scale_linear"), HEADS, D, true)?,
             v_lora: if layer == 0 {
+                // `value_lora_stripped_layer0`: the export keeps unused
+                // tensors for it; drop them with the layer.
+                w.remove_prefix(&format!("{p}.v_lora_simple."));
                 None
             } else {
                 Some(lora(w, "v_lora_simple.A", "v_lora_simple.B_and_lamb")?)
@@ -519,6 +540,7 @@ impl ChannelMixer {
             .ok_or_else(|| invalid(format!("missing weight: {p}.W_k.weight")))?
             .to_vec();
         if shape == [1, 1] {
+            w.remove_prefix(&format!("{p}."));
             return Ok(None);
         }
         let hidden = shape[0];
@@ -665,12 +687,24 @@ impl SmallNet {
                     channel: ChannelMixer::load(w, &format!("{p}.channel_mixer"))?,
                 });
             }
-            if layers.is_empty() {
-                return Err(invalid(format!(
-                    "small model stream {stream} has no layers"
-                )));
-            }
             streams.push(layers);
+        }
+        // Every stream tensor must belong to a layer loaded above: a gap
+        // (`blocks.0`, `blocks.2`) or a stray tensor would otherwise be
+        // silently ignored.
+        let mut stray = w.names_with_prefix("rwkv_modules.");
+        if !stray.is_empty() {
+            stray.sort_unstable();
+            return Err(invalid(format!(
+                "small model has stream tensors outside its layers: {}",
+                stray.join(", ")
+            )));
+        }
+        let counts: Vec<usize> = streams.iter().map(Vec::len).collect();
+        if !LAYER_PLANS.iter().any(|(_, plan)| plan[..] == counts[..]) {
+            return Err(invalid(format!(
+                "small model has layers per stream {counts:?}, a layout the engine does not load (known: {LAYER_PLANS:?})"
+            )));
         }
         // The "interleaved" schedule is layer-major: every stream's layer 0,
         // then every stream's layer 1, ... (architecture.json `layer_steps`).

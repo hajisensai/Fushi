@@ -3,7 +3,7 @@
 //   FUSHI_SRS_RWKV_BENCH=<笔记数>（每条两张卡）dart test test/srs/srs_rwkv_answer_bench_test.dart
 // 对比分数表整表重查频率：再加 FUSHI_SRS_RWKV_REQUERY=<每几题重查一次>；
 // FUSHI_SRS_RWKV_THINK_MS=<毫秒> 模拟每题之间看卡的工夫。
-// 权重：native/fushi_rwkv/model/sm98_weights.int8.bin（native/fushi_rwkv/fetch_model.*）。
+// 权重：native/fushi_rwkv/model/sm113_weights.int8.bin（native/fushi_rwkv/fetch_model.*）。
 import 'dart:io';
 
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -47,7 +47,10 @@ void main() {
       final SrsDbStore store = f.store;
       final String weights = _weights();
       final Directory tmp = Directory.systemTemp.createTempSync('rwkv_bench');
-      final SrsRwkvModels models = SrsRwkvModels(dir: tmp);
+      final SrsRwkvModels models = SrsRwkvModels(
+        dir: tmp,
+        size: SrsRwkvModelSize.small,
+      );
       File(weights).copySync(models.weightsFile.path);
       File(
         '${models.weightsFile.path}.verified',
