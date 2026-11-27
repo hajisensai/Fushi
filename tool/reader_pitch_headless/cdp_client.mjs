@@ -419,6 +419,13 @@ export async function launchChromeDriver() {
     chromePath,
     [
       '--headless=new',
+      // Windows Chrome launched from an elevated (admin, UAC split-token)
+      // process relaunches itself de-elevated through the shell and the
+      // process we spawned exits 0 at once with no stderr, so the
+      // "DevTools listening" line never reaches us and the relaunched
+      // browser is orphaned (BUG-5609). This flag is what Chrome appends to
+      // its own relaunch to stop the loop; elsewhere it is a no-op.
+      '--do-not-de-elevate',
       '--disable-gpu',
       '--no-sandbox',
       '--disable-dev-shm-usage',
