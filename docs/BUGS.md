@@ -36,10 +36,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4868 条。点号进各自文件。
+> 共 4869 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5596](bugs/BUG-5596-video-volume-popover-thumb-offset.md) | ✅ | ✅ | video-volume-popover-thumb-offset |
 | [BUG-5595](bugs/BUG-5595-startup-collection-items-full-scan.md) | ✅ | ✅ | 启动后切模块掉帧：合集成员表被反复整表读进 UI isolate |
 | [BUG-5594](bugs/BUG-5594-rwkv-int4-long-card-divergence.md) | ✅ | ✅ | RWKV 小模型 int4 卡片 / 笔记状态在超长复习历史上指数发散，之后该卡预测卡死 |
 | [BUG-5590](bugs/BUG-5590-srs-donation-status-device-local-mirror.md) | ✅ | ✅ | srs-donation-status-device-local-mirror |

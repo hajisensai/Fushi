@@ -1465,6 +1465,13 @@ class _FushiAppleSliderState extends State<FushiAppleSlider> {
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
           _width = constraints.maxWidth.isFinite ? constraints.maxWidth : 144;
+          // 圆钮按**实际**高度居中：外层 SizedBox(height: m.height) 在紧约束父级里
+          // 会被撑成父级高度（视频音量浮层把滑条放进 40 高的行），轨道 CustomPaint
+          // 按实际高度画在正中，圆钮若还按 m.height 算 top 就会偏上（音量浮层把手
+          // 比轨道高出半个差值）。
+          final double height = constraints.maxHeight.isFinite
+              ? constraints.maxHeight
+              : m.height;
           final double usable = math.max(0, _width - m.thumbWidth);
           final double f = _fraction(_latest);
           final double visual = _rtl ? 1 - f : f;
@@ -1526,7 +1533,7 @@ class _FushiAppleSliderState extends State<FushiAppleSlider> {
                     ),
                     Positioned(
                       left: left,
-                      top: (m.height - m.thumbHeight) / 2,
+                      top: (height - m.thumbHeight) / 2,
                       width: m.thumbWidth,
                       height: m.thumbHeight,
                       child: _appleSliderKnob(
@@ -1877,6 +1884,8 @@ class _GlassRangeSliderState extends State<_GlassRangeSlider> {
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
           _width = constraints.maxWidth.isFinite ? constraints.maxWidth : 144;
+          // 同 [FushiAppleSlider]：紧约束父级会把外层 SizedBox 撑高，圆钮按实际高度居中。
+          if (constraints.maxHeight.isFinite) _height = constraints.maxHeight;
           final double usable = math.max(0, _width - _thumbSize);
           final double fa = _fraction(_latest.start);
           final double fb = _fraction(_latest.end);
