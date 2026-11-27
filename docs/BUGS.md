@@ -36,20 +36,19 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4864 条。点号进各自文件。
+> 共 4875 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-5591](bugs/BUG-5591-music-shuffle-always-first.md) | ✅ | ✅ | music-shuffle-always-first |
-| [BUG-5592](bugs/BUG-5592-music-nav-peek-nsfw-cover-not-blurred.md) | ✅ | ✅ | 侧栏音乐速览卡不模糊 NSFW 专辑封面 |
-| [BUG-5593](bugs/BUG-5593-tts-studio-voice-picker-no-add.md) | ✅ | ✅ | tts-studio-voice-picker-no-add |
-| [BUG-5594](bugs/BUG-5594-jellyfin-show-in-library-hides-cloud-videos.md) | ✅ | ✅ | 开了 Jellyfin「显示在视频库」后云盘远端视频全部消失 |
-> 共 4868 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-5599](bugs/BUG-5599-srs-donation-set-before-mounted.md) | 🚧 | 🚧 | srs-donation-set-before-mounted |
+| [BUG-5598](bugs/BUG-5598-apple-popup-native-material-default-tint.md) | 🚧 | 🚧 | apple-popup-native-material-default-tint |
+| [BUG-5597](bugs/BUG-5597-tts-srs-modules-in-max-import-cycle.md) | 🚧 | 🚧 | tts-srs-modules-in-max-import-cycle |
 | [BUG-5595](bugs/BUG-5595-startup-collection-items-full-scan.md) | ✅ | ✅ | 启动后切模块掉帧：合集成员表被反复整表读进 UI isolate |
 | [BUG-5594](bugs/BUG-5594-rwkv-int4-long-card-divergence.md) | ✅ | ✅ | RWKV 小模型 int4 卡片 / 笔记状态在超长复习历史上指数发散，之后该卡预测卡死 |
+| [BUG-5594](bugs/BUG-5594-jellyfin-show-in-library-hides-cloud-videos.md) | ✅ | ✅ | 开了 Jellyfin「显示在视频库」后云盘远端视频全部消失 |
+| [BUG-5593](bugs/BUG-5593-tts-studio-voice-picker-no-add.md) | ✅ | ✅ | tts-studio-voice-picker-no-add |
+| [BUG-5592](bugs/BUG-5592-music-nav-peek-nsfw-cover-not-blurred.md) | ✅ | ✅ | 侧栏音乐速览卡不模糊 NSFW 专辑封面 |
+| [BUG-5591](bugs/BUG-5591-music-shuffle-always-first.md) | ✅ | ✅ | music-shuffle-always-first |
 | [BUG-5590](bugs/BUG-5590-srs-donation-status-device-local-mirror.md) | ✅ | ✅ | srs-donation-status-device-local-mirror |
 | [BUG-5589](bugs/BUG-5589-music-mv-auto-match-stalls.md) | ✅ | ✅ | 本地 MV 自动匹配停在几首整片音轨上，CD 曲目一首没对过 |
 | [BUG-5588](bugs/BUG-5588-notarize-poll-network-blip-drops-submission.md) | ✅ | ✅ | notarize-poll-network-blip-drops-submission |
