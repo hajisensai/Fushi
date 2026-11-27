@@ -1539,6 +1539,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
               sel.text,
               occurrence: sel.occurrence,
               definitionsOnly: true,
+              speech: sel.speech,
             ),
           ),
   );

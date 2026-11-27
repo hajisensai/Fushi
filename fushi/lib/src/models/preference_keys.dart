@@ -1080,6 +1080,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 true）：评分按钮显示下次间隔（小号副标签，误按 / 排程异常一眼可见）。
   // 非凭据、跨设备。
   'srs_review_show_intervals',
+  // String（SrsReviewTts.encode() 的 JSON：{"v":1,"tags":…,"selection":…,"fill":…,
+  // "fields":[…],"autoplay":…}，默认 '' = 默认开关）：复习朗读——认模板 {{tts}}、选中文字
+  // 朗读、没有音频的字段出朗读键、自动播放也念（srs_review_tts.dart）。非凭据、跨设备。
+  'srs_review_tts',
   // double（默认 1.0，0–1）：复习卡面音频音量，点播与自动连播共用。非凭据、跨设备。
   'srs_review_volume',
   // double（默认 1.0，0.6–2.0）：复习页卡面缩放（Ctrl / ⌘ + 滚轮、Ctrl + 加减号 / 0）。

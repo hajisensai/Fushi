@@ -27,11 +27,19 @@ class SrsCardSelection {
     this.text, {
     this.occurrence,
     this.definitionsOnly = false,
+    this.speech,
   });
 
   final String text;
   final int? occurrence;
   final bool definitionsOnly;
+
+  /// 朗读用的文字（保留词间空格、去掉注音）；null = 同 [text]。WebView 卡面的 [text] 为了与字段
+  /// 比对去掉了全部空白，英文念出来会连成一个词，所以页面另报一份。
+  final String? speech;
+
+  /// 「朗读选中文字」念的内容。
+  String get speechText => (speech ?? text).replaceAll(_space, ' ').trim();
 
   /// 去掉空白后的比对键（空 = 没选中什么）。
   String get key => srsCompactText(text);

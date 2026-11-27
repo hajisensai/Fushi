@@ -194,6 +194,7 @@ import 'package:fushi/src/srs/srs_profile_stores.dart';
 import 'package:fushi/src/srs/srs_storage_host.dart';
 import 'package:fushi/src/srs/srs_review_gestures.dart';
 import 'package:fushi/src/srs/srs_review_layout.dart';
+import 'package:fushi/src/srs/srs_review_tts.dart';
 import 'package:fushi/src/models/home_dashboard_panel.dart';
 import 'package:fushi/src/models/home_widget_layout.dart';
 import 'package:fushi/src/storage/android_stray_library_merge.dart';
@@ -13510,6 +13511,11 @@ class AppModel
   bool get srsReviewInlineEdit => _prefsRepo?.srsReviewInlineEdit ?? false;
   Future<void> setSrsReviewInlineEdit(bool value) =>
       prefsRepo.setSrsReviewInlineEdit(value);
+  // 复习朗读（透传 prefsRepo）。可空读：prefs 未装配 / 值读不出 = 默认开关。
+  SrsReviewTts get srsReviewTts =>
+      SrsReviewTts.decode(_prefsRepo?.srsReviewTts ?? '');
+  Future<void> setSrsReviewTts(SrsReviewTts value) =>
+      prefsRepo.setSrsReviewTts(value.encode());
   double get srsReviewVolume => _prefsRepo?.srsReviewVolume ?? 1.0;
   Future<void> setSrsReviewVolume(double value) =>
       prefsRepo.setSrsReviewVolume(value);

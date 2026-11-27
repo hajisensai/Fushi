@@ -4459,6 +4459,15 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  // 复习朗读（SrsReviewTts.encode() 的 JSON）。默认 '' = 默认开关。
+  String get srsReviewTts =>
+      getPref('srs_review_tts', defaultValue: '') as String;
+
+  Future<void> setSrsReviewTts(String json) async {
+    await setPref('srs_review_tts', json);
+    notifyListeners();
+  }
+
   // 复习卡面音频音量（0–1，手动点播与自动连播共用）。默认 1.0。
   double get srsReviewVolume {
     final Object? v = getPref('srs_review_volume', defaultValue: 1.0);

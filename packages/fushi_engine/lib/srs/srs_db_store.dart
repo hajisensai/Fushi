@@ -21,6 +21,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:meta/meta.dart' show visibleForTesting;
 
 import 'package:fushi_engine/srs/srs_builtin.dart';
+import 'package:fushi_engine/srs/srs_card_tts.dart';
 import 'package:fushi_engine/srs/srs_collection_binding.dart';
 import 'package:fushi_engine/srs/srs_core_workers.dart';
 import 'package:fushi_engine/srs/srs_edit_undo.dart';
@@ -33,6 +34,7 @@ import 'package:fushi_engine/srs/srs_rwkv_scheduling.dart';
 import 'package:fushi_engine/srs/srs_style_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 
+export 'package:fushi_engine/srs/srs_card_tts.dart' show SrsCardTtsOptions;
 export 'package:fushi_engine/srs/srs_edit_undo.dart';
 export 'package:fushi_engine/srs/srs_entity_views.dart' show SrsEntityView;
 
@@ -5789,9 +5791,13 @@ class SrsDbStore implements SrsSync2Host {
   /// 渲染卡面（模板正文里的 fieldId 引用换回名字后交给 Anki 渲染器）。
   ///
   /// 调用方刚取过这张卡的 [cardDetail] 时传进来（[detail]），不再读第二遍（复习页出题 / 预取）。
+  ///
+  /// [tts]：朗读键（srs_card_tts.dart）——渲染前给没有音频的字段填朗读键，渲染后把 `{{tts}}` 的
+  /// 输出换成朗读键。缺省认 `{{tts}}`、不填字段。
   Future<SrsRenderedCard?> renderCard(
     String cardId, {
     SrsCardDetail? detail,
+    SrsCardTtsOptions tts = const SrsCardTtsOptions(),
   }) async {
     assert(detail == null || detail.card.id == cardId);
     final SrsCardDetail? d = detail ?? await cardDetail(cardId);
@@ -5802,9 +5808,9 @@ class SrsDbStore implements SrsSync2Host {
     final String back = templateIdsToNames(tpl.back, idToName);
     // 共享样式引用先展开回内联 `<style>`：渲染结果与去重前逐字节相同（卡面再按内容哈希
     // 只登记一次样式）。样式文件还没同步到时去掉引用行，不让 WebView 去请求相对地址。
-    final Map<String, String> fields = await expandFields(
-      _fieldsByName(d.note, d.noteType),
-      dropMissing: true,
+    final Map<String, String> fields = srsFillTtsAudioFields(
+      await expandFields(_fieldsByName(d.note, d.noteType), dropMissing: true),
+      tts.fillAudioFields,
     );
     final AnkiCardSpecialFields specials = AnkiCardSpecialFields(
       tags: d.note.tags,
@@ -5844,8 +5850,16 @@ class SrsDbStore implements SrsSync2Host {
     );
     final SrsFushiCardNative? native = probe.native;
     return SrsRenderedCard(
-      question: faces.question,
-      answer: faces.answer,
+      question: srsRenderTtsTags(
+        faces.question,
+        fields: fields,
+        enabled: tts.templateTags,
+      ),
+      answer: srsRenderTtsTags(
+        faces.answer,
+        fields: fields,
+        enabled: tts.templateTags,
+      ),
       // 原生卡面只拿样式给释义 WebView 用：冻住的历史内置样式换成当前内置样式（释义 HTML
       // 按当前模板生成），见 [SrsFushiCardNative.css]。
       css: native?.css ?? d.noteType.css,

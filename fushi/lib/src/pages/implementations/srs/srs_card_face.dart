@@ -54,6 +54,8 @@ import 'package:fushi/src/srs/srs_card_dict_style.dart';
 import 'package:fushi/src/srs/srs_card_media.dart';
 import 'package:fushi/src/srs/srs_card_remote_audio.dart';
 import 'package:fushi_engine/utils/net/app_http.dart' show createAppHttpClient;
+import 'package:fushi/src/srs/srs_card_tts_audio.dart'
+    show SrsTtsResolution, srsResolveTtsSound;
 import 'package:fushi/src/srs/srs_card_tokens.dart';
 import 'package:fushi/src/srs/srs_card_translation_blur.dart';
 import 'package:fushi_engine/srs/srs_media_store.dart';
@@ -734,16 +736,20 @@ const String kSrsEditSelectionHandler = 'onSrsEditSelection';
 /// 复习时编辑：页内选区变了（防抖 200 ms）且选中了文字时，把选中的文字与它是文档里第几处同样的文字
 /// （都去掉注音 `<rt>` / `<rp>` 与空白，与 Dart 侧 srsFieldMatchText 同口径）交给宿主。选区清空不报：
 /// 查词弹窗关掉时会清页内选区，宿主留着最后一次选中的文字。幂等：外壳重放时不重复挂。
+/// 另带一份 `speech`（保留词间空格、去掉注音）给「朗读选中文字」用。
 const String kSrsCardEditSelectionScript = r'''
 (function () {
   if (window.__fushiSrsEditSel) return;
   window.__fushiSrsEditSel = true;
   var timer = null;
-  function plain(range) {
+  function spoken(range) {
     var f = range.cloneContents();
     var hidden = f.querySelectorAll('rt,rp,script,style');
     for (var i = 0; i < hidden.length; i++) hidden[i].remove();
-    return (f.textContent || '').replace(/\s+/g, '');
+    return (f.textContent || '').replace(/\s+/g, ' ').trim();
+  }
+  function plain(range) {
+    return spoken(range).replace(/\s+/g, '');
   }
   function report() {
     timer = null;
@@ -760,7 +766,7 @@ const String kSrsCardEditSelectionScript = r'''
     for (var at = prefix.indexOf(text); at >= 0; at = prefix.indexOf(text, at + 1)) occ++;
     try {
       window.flutter_inappwebview.callHandler('onSrsEditSelection',
-        JSON.stringify({ text: text, occ: occ }));
+        JSON.stringify({ text: text, occ: occ, speech: spoken(r) }));
     } catch (e) {}
   }
   document.addEventListener('selectionchange', function () {
@@ -1833,6 +1839,18 @@ Future<void> srsPlayCardSoundFile(
   } catch (e, stack) {
     ErrorLogService.instance.log(logTag, e, stack);
   }
+  // 朗读键：用户点的，合成失败带原因提示（srs_card_tts_audio.dart 已上报），不再报「缺文件」。
+  final SrsTtsResolution tts = await srsResolveTtsSound(
+    ref.read(srsCardTtsAudioProvider),
+    store,
+    name,
+    manual: true,
+  );
+  if (tts.isTts) {
+    final File? made = tts.file;
+    if (made != null) await ref.read(srsSoundPlayerProvider)(made.path);
+    return;
+  }
   final File? file = store?.resolve(name);
   if (file == null || !await file.exists()) {
     FushiToast.show(msg: t.srs_media_missing(name: name));
@@ -2493,7 +2511,14 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
     final Object? text = json['text'];
     if (text is! String || text.trim().isEmpty) return;
     final Object? occ = json['occ'];
-    report(SrsCardSelection(text, occurrence: occ is int ? occ : null));
+    final Object? speech = json['speech'];
+    report(
+      SrsCardSelection(
+        text,
+        occurrence: occ is int ? occ : null,
+        speech: speech is String && speech.trim().isNotEmpty ? speech : null,
+      ),
+    );
   }
 
   void _onTextSelected(Object? raw) {

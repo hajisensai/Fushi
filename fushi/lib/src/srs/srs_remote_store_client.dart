@@ -764,9 +764,11 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
   Future<SrsRenderedCard?> renderCard(
     String cardId, {
     SrsCardDetail? detail,
+    SrsCardTtsOptions tts = const SrsCardTtsOptions(),
   }) async {
     final SrsRenderedCard? r = await _read('renderCard', <String, Object?>{
       'card': cardId,
+      'tts': tts.toJson(),
     }, SrsRemoteWire.renderedFrom);
     final Future<void> Function(Set<String>)? prefetch = prefetchMedia;
     if (r != null && prefetch != null) {

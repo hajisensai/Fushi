@@ -21,6 +21,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/srs/srs_card_tts_audio.dart';
 import 'package:fushi/src/srs/srs_card_video_channel.dart';
 import 'package:fushi/src/srs/srs_fushi_card_media.dart'
     show srsDedupeMediaNames;
@@ -197,6 +198,15 @@ class _DefaultSrsCardAudioOutput implements SrsCardAudioOutput {
   @override
   Future<String?> resolve(String name) async {
     final SrsMediaStore? store = await _ref.read(srsMediaStoreProvider.future);
+    // 朗读键（`{{tts}}` / 没有音频的字段，srs_card_tts.dart）：合成或取媒体库里的落盘缓存。
+    // 合成失败按自动路径上报（只记日志；系统语音同一原因提示一次），序列跳过这段接着播。
+    final SrsTtsResolution tts = await srsResolveTtsSound(
+      _ref.read(srsCardTtsAudioProvider),
+      store,
+      name,
+      manual: false,
+    );
+    if (tts.isTts) return tts.file?.path;
     final File? file = store?.resolve(name);
     if (file == null || !await file.exists()) {
       // 自动播放不弹 toast（每张卡都弹太吵）；手动点按钮时卡面自己会提示缺文件。

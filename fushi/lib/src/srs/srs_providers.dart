@@ -43,6 +43,7 @@ import 'package:fushi/src/models/preference_keys.dart'
     show kSrsLapisMigrationReminderPrefKey;
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
+import 'package:fushi/src/srs/srs_card_tts_audio.dart';
 import 'package:fushi/src/srs/srs_device_view.dart';
 import 'package:fushi/src/srs/srs_persisted_ids.dart';
 import 'package:fushi_engine/srs/srs_media_store.dart';
@@ -50,6 +51,7 @@ import 'package:fushi_engine/srs/srs_mining_target.dart';
 import 'package:fushi/src/srs/srs_profile_stores.dart';
 import 'package:fushi/src/srs/srs_review_gestures.dart';
 import 'package:fushi/src/srs/srs_review_layout.dart';
+import 'package:fushi/src/srs/srs_review_tts.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
@@ -195,6 +197,22 @@ final Provider<bool> srsReviewInlineEditProvider = Provider<bool>(
   (Ref ref) =>
       ref.watch(appProvider.select((AppModel app) => app.srsReviewInlineEdit)),
 );
+
+/// 复习朗读（按 profile 偏好，srs_review_tts.dart）：`{{tts}}`、选中朗读、没有音频的字段出朗读键。
+final Provider<SrsReviewTts> srsReviewTtsProvider = Provider<SrsReviewTts>(
+  (Ref ref) =>
+      ref.watch(appProvider.select((AppModel app) => app.srsReviewTts)),
+);
+
+/// 复习卡面朗读键的合成与落盘缓存（srs_card_tts_audio.dart），全应用一份（进行中的合成按它去重）。
+final Provider<SrsCardTtsAudio> srsCardTtsAudioProvider =
+    Provider<SrsCardTtsAudio>((Ref ref) {
+      final AppModel app = ref.read(appProvider);
+      return SrsCardTtsAudio.of(
+        prefs: app.prefsRepo,
+        dictionaryLanguages: () => app.installedDictionarySourceLanguages,
+      );
+    });
 
 /// 复习卡面音频音量（0–1，按 profile 偏好，默认 1）：卡面点播与自动连播都按它播。
 final Provider<double> srsReviewVolumeProvider = Provider<double>(

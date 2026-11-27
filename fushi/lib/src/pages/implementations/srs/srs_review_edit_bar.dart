@@ -29,6 +29,7 @@ class SrsReviewEditBar extends StatelessWidget {
     required this.onFormat,
     required this.onEditNote,
     this.onAi,
+    this.onSpeak,
   });
 
   /// 卡面上选中了文字（格式键据此可按）。
@@ -41,6 +42,9 @@ class SrsReviewEditBar extends StatelessWidget {
   /// 字段 AI 改写；null = AI 模块关着 / 没有可改写的字段（不显示这个键）。
   final VoidCallback? onAi;
   final VoidCallback onEditNote;
+
+  /// 朗读选中文字（「复习选项 › 朗读」开着时）；null = 不显示这个键。
+  final VoidCallback? onSpeak;
 
   @override
   Widget build(BuildContext context) {
@@ -116,6 +120,14 @@ class SrsReviewEditBar extends StatelessWidget {
                 ),
               ),
             ),
+            if (onSpeak != null)
+              stagger(
+                SrsReviewSpeakKey(
+                  hasSelection: hasSelection,
+                  enabled: enabled,
+                  onTap: onSpeak!,
+                ),
+              ),
             if (onAi != null)
               stagger(
                 _EditKey(
@@ -184,6 +196,33 @@ Future<String?> showSrsReviewFieldPicker(
     );
   },
 );
+
+/// 「朗读选中文字」键（拍板台 YmWT1x57XV）：与编辑键同一形态（纯图标、文字只进 tooltip 与
+/// Semantics、不取焦点，点它不清卡面选区）。开着「复习时直接编辑」时在答案面编辑键那一排里，
+/// 否则单独浮在底栏上方（复习页按有没有选区淡入淡出）。
+class SrsReviewSpeakKey extends StatelessWidget {
+  const SrsReviewSpeakKey({
+    super.key,
+    required this.hasSelection,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final bool hasSelection;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => _EditKey(
+    key: const ValueKey<String>('srs-review-speak-selection'),
+    tooltip: hasSelection
+        ? t.srs_review_tts_speak_selection
+        : t.srs_review_edit_select_hint,
+    enabled: enabled && hasSelection,
+    onTap: onTap,
+    child: const FushiIcon(FushiIcons.volumeUp, size: 22),
+  );
+}
 
 /// 一个编辑键：48dp 命中区、文字只进 tooltip 与 Semantics、不取焦点。
 class _EditKey extends StatelessWidget {
