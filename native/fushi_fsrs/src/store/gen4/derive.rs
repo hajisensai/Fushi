@@ -1123,7 +1123,7 @@ impl<'t, 'c> Index<'t, 'c> {
         class: Option<&super::class::Canon>,
     ) -> Result<Vec<i64>, String> {
         let ks: Vec<i64> = rows.iter().map(|r| r.0).collect();
-        let lines = self.edit_lines_as(&ks, &|_| true, class)?;
+        let lines = self.edit_lines_as(&ks, &|_| true, class, "")?;
         let stored: Vec<StoredEdit<'_>> = lines
             .iter()
             .map(|l| (l.json.as_str(), l.server_time, None))
@@ -1147,11 +1147,15 @@ impl<'t, 'c> Index<'t, 'c> {
     /// 全要）；Some 时按别名类拼（`class.rs` 文件头；按类判定与缓存层只要活着的，`cache.rs`）：dot 的写入者、HLC 的
     /// 写入者、旧上下文的键三处一起换成规范写入者（同一个规范 dot 的并成一次写入），实体、键换成规范形，值里嵌的 ID 归一。
     /// 不带旧戳的写入「见没见过」按规范 dot 问，闭包过同一个换名（[Index::seen]）。
+    ///
+    /// 分区键 `p` 填 [profile]：判定 / 缓存层用的行给空串（寄存器内核不看它），读命令直接给集合绑定的 profile uid，
+    /// 不再把拼好的行解开、换 `p`、再写回一遍（字段正文几十 KB 的笔记，那一遍比拼行本身还贵，BUG-5572）。
     pub(super) fn edit_lines_as(
         &mut self,
         ks: &[i64],
         emit: &dyn Fn(usize) -> bool,
         class: Option<&super::class::Canon>,
+        profile: &str,
     ) -> Result<Vec<Line>, String> {
         struct Write {
             k: i64,
@@ -1255,7 +1259,7 @@ impl<'t, 'c> Index<'t, 'c> {
                 }
             };
             let mut m = Map::new();
-            m.insert("p".into(), json!(""));
+            m.insert("p".into(), json!(profile));
             m.insert("k".into(), json!(w.ed.kind.wire()));
             m.insert("e".into(), json!(entity));
             m.insert("f".into(), json!(key));
@@ -2235,7 +2239,7 @@ pub(crate) mod tests {
                     })
                     .collect();
                 let mut fresh = Index::new(t, col);
-                fresh.edit_lines_as(&ks, &|_| true, None)?;
+                fresh.edit_lines_as(&ks, &|_| true, None, "")?;
                 assert_eq!(fresh.partial_stamps, 0);
                 // FIELD 寄存器（问 w1:n，整份含）：从检查点接着并。
                 let ks: Vec<i64> = [(0xd1, seen_at), (0xd1, n), (0xa1, 1)]
@@ -2253,7 +2257,7 @@ pub(crate) mod tests {
                     })
                     .collect();
                 let mut fresh = Index::new(t, col);
-                fresh.edit_lines_as(&ks, &|_| true, None)?;
+                fresh.edit_lines_as(&ks, &|_| true, None, "")?;
                 assert!(
                     fresh.partial_stamps > 0 && fresh.partial_stamps <= CLOSURE_STEP,
                     "{}",

@@ -240,11 +240,12 @@ pub fn run(t: &Truth<'_>, col: i64, req: &Value, files: &mut Files) -> Result<Va
             profile: profile_of(t, col)?,
         };
         Ok(match q {
-            "entities" => single_echo(files, r.entities(req)?),
+            // 成批按类读的查询（每个实体都要归一 ID、按类拼行）在一趟里跑（[Reads::read_pass]）。
+            "entities" => single_echo(files, r.read_pass(|r| r.entities(req))?),
             "entity_count" => json!({"n": r.entity_count(req)?}),
             "has_user_data" => json!({"any": r.has_user_data(req)?}),
             "edits" => {
-                let (table, canon, key_canon) = r.edits(req)?;
+                let (table, canon, key_canon) = r.read_pass(|r| r.edits(req))?;
                 let mut v = single_echo(files, (table, canon));
                 if !key_canon.is_empty() {
                     v["keyCanon"] = Value::Object(key_canon);
@@ -256,7 +257,7 @@ pub fn run(t: &Truth<'_>, col: i64, req: &Value, files: &mut Files) -> Result<Va
             "style_candidates" => single(files, r.style_candidates(req)?),
             "source_note_candidates" => single(files, r.source_note_candidates(req)?),
             "lapis_backfill" => single(files, r.lapis_backfill(req)?),
-            "logs" => single(files, r.logs(req)?),
+            "logs" => single(files, r.read_pass(|r| r.logs(req))?),
             "anki_logs_at" => single(files, r.anki_logs_at(req)?),
             "native_logs_near" => single(files, r.native_logs_near(req)?),
             "today_reviews" => r.today_reviews(req)?,
@@ -373,6 +374,18 @@ impl<'t, 'c> Reads<'t, 'c> {
     }
 
     /// 规范 ID 的定义：(种类, 数据的规范 JSON 文本 = 协议 3 的 `payload_json`)。
+    /// [f] 在一趟按类读里跑（[Index::in_read_pass]：归回的写入者表、内置规则表这一条命令只读一次）。
+    fn read_pass<T>(
+        &mut self,
+        f: impl FnOnce(&mut Self) -> Result<T, String>,
+    ) -> Result<T, String> {
+        self.ix.pass_writers = Some(std::rc::Rc::new(self.ix.writer_aliases()?));
+        let done = self.ix.pass_rules_begin().and_then(|()| f(self));
+        self.ix.pass_writers = None;
+        self.ix.pass_rules = None;
+        done
+    }
+
     fn definition(&self, c: &Ref) -> Result<Option<(EntKind, String)>, String> {
         Ok(match self.ix.definition(c)? {
             Some((k, _, d)) => Some((ent_kind(k)?, canonical(&d))),
@@ -696,14 +709,7 @@ impl<'t, 'c> Reads<'t, 'c> {
     /// 用 `class_filter` 先筛）。候选实体见 [Reads::conflict_candidates]。
     fn conflict_edits(&mut self, req: &Value) -> Result<Vec<u8>, String> {
         // 归回的写入者表与内置规则表在这一条命令里不变（同一个读快照）：每个候选实体都要，读一次（同 `browse.rs`）。
-        self.ix.pass_writers = Some(std::rc::Rc::new(self.ix.writer_aliases()?));
-        let done = self
-            .ix
-            .pass_rules_begin()
-            .and_then(|()| self.conflict_edits_with(req));
-        self.ix.pass_writers = None;
-        self.ix.pass_rules = None;
-        done
+        self.read_pass(|r| r.conflict_edits_with(req))
     }
 
     fn conflict_edits_with(&mut self, req: &Value) -> Result<Vec<u8>, String> {
@@ -738,12 +744,9 @@ impl<'t, 'c> Reads<'t, 'c> {
             // 笔记的 `tags` 寄存器不出（读命令只出那一行合成行，`super::edit_rows`；它只有一行，不会成冲突）。
             let tracks = |f: &str| !(kind == EntKind::Note && f == "tags") && rules.tracks(kind, f);
             let pre = |raw: &str| rules.may_track(kind, raw);
-            let mut rows: Vec<EditRow> = self
-                .ix
-                .class_conflict_lines(kind, &c, &pre, &tracks)?
-                .into_iter()
-                .map(|(f, j, st)| (f, with_profile(&j, &self.profile), st))
-                .collect();
+            let mut rows: Vec<EditRow> =
+                self.ix
+                    .class_conflict_lines(kind, &c, &pre, &tracks, &self.profile)?;
             rows.sort();
             let mut by_key: BTreeMap<&str, Vec<&EditRow>> = BTreeMap::new();
             for row in &rows {
@@ -895,14 +898,14 @@ impl<'t, 'c> Reads<'t, 'c> {
             }
             let line = self
                 .ix
-                .edit_lines_as(&[k], &|_| true, None)?
+                .edit_lines_as(&[k], &|_| true, None, &self.profile)?
                 .into_iter()
                 .next()
                 .ok_or("gen4 read: an edit gave no line")?;
             out.push(vec![
                 Cell::I(k),
                 Cell::S(edit_id_of(&ed.stamp, &e.id)),
-                Cell::S(with_profile(&line.json, &self.profile)),
+                Cell::S(line.json),
             ])?;
             n += 1;
         }

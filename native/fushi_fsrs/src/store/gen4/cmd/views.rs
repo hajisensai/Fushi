@@ -28,7 +28,7 @@
 //!
 //! ```text
 //! 请求 {op: "entity_views", profile, kind: 种类线名（note / notetype / deck / card …）, ids: [ID, …]}
-//! 回包 {views: [{id: 规范 ID, tag, v: 视图 JSON 文本}, …]}
+//! 回包 {}，外加一个文件 `t`：列式表（`store/bulk.rs`，与 `read` 同一种），列 `id`（规范 ID）、`tag`、`v`（视图 JSON 文本）
 //! ```
 //!
 //! - 一条命令一个读快照（分发器 `read_col` 把集合号换算与本体放进同一个快照，[entity_views] 自己的快照沿用它）。
@@ -36,13 +36,18 @@
 //!   视图一次拼完会长时间占着读连接。
 //! - `v` 是视图的规范 JSON **文本**（不是对象）：`tag` 按这串字节算，原样搬给远程复习的客户端，对端可以按同一份字节
 //!   核对，不经过任何一侧的再编码。
+//! - 视图走列式表的字符串列（原样字节），**不**套进回包 JSON：视图里的修改行本身是 JSON 字符串，字段正文里的每个 `"`
+//!   在视图里已转义一层，再当字符串放进回包要再转义一层（一个引号 7 个字节），回包比视图大几倍，宿主还要整个
+//!   `jsonDecode` 一遍、跨 isolate 拷一遍——大字段的库（Yomitan 释义 HTML 每个字段几十 KB）一批 4096 条笔记的回包
+//!   数百 MB，Dart 侧比拼视图本身慢一个数量级（BUG-5572）。
 //! - 种类不认识、`ids` 不是字符串数组一律报错，不回空结果（空结果会被当成「这些实体不存在」）。
 
 use rusqlite::types::ValueRef;
 use serde_json::{Map, Value, json};
 
 use super::identity::lookup_cap;
-use super::{canon_ids, edit_rows, profile_of, snapshot, with_profile};
+use super::{Cell, Files, Table, canon_ids, edit_rows, profile_of, snapshot, with_profile};
+use crate::store::bulk::KIND_STR;
 use crate::store::gen4::derive::{Index, Ref};
 use crate::store::gen4::schema::sql;
 use crate::store::gen4::truth::Truth;
@@ -60,8 +65,13 @@ pub struct EntityView {
     pub json: String,
 }
 
-/// `entity_views {kind, ids}` 的命令外壳（模块文件头「线上形状」）。
-pub fn entity_views_cmd(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String> {
+/// `entity_views {kind, ids}` 的命令外壳（模块文件头「线上形状」）：视图放进 [files] 的列式表 `t`，回包 JSON 是空对象。
+pub fn entity_views_cmd(
+    t: &Truth<'_>,
+    col: i64,
+    req: &Value,
+    files: &mut Files,
+) -> Result<Value, String> {
     let kind = req
         .get("kind")
         .and_then(Value::as_str)
@@ -81,13 +91,16 @@ pub fn entity_views_cmd(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, S
         })
         .collect::<Result<Vec<_>, _>>()?;
     let views = entity_views(t, col, kind, &ids)?;
-    Ok(json!({
-        "views": views
-            .into_iter()
-            .map(|v| json!({"id": v.id, "tag": v.tag, "v": v.json}))
-            .collect::<Vec<_>>(),
-    }))
+    let mut out = Table::new(&[("id", KIND_STR), ("tag", KIND_STR), ("v", KIND_STR)]);
+    for v in views {
+        out.push(vec![Cell::S(v.id), Cell::S(v.tag), Cell::S(v.json)])?;
+    }
+    files.push((VIEWS_TABLE.to_owned(), out.encode()));
+    Ok(json!({}))
 }
+
+/// [entity_views_cmd] 交出的列式表的文件名（与 `read` 的同名）。
+pub(crate) const VIEWS_TABLE: &str = "t";
 
 /// 集合 [col] 里 [kind] 种实体 [ids]（任何别名成员的号都行）的视图。在一个读快照里（[snapshot]）。一次最多
 /// `identity::LOOKUP_MAX` 条由命令外壳（[entity_views_cmd]）卡住。
@@ -105,17 +118,20 @@ pub fn entity_views(
             &Value::Array(ids.iter().cloned().map(Value::String).collect()),
         )?;
         let mut out = Vec::with_capacity(ids.len());
-        for c in ids {
-            if let Some(v) = view(t, &mut ix, col, kind, &c, &profile)? {
-                let json = canonical(&v);
-                let tag = super::hex(&blake3::hash(json.as_bytes()).as_bytes()[..16]);
-                out.push(EntityView {
-                    id: c.text(),
-                    tag,
-                    json,
-                });
+        ix.in_read_pass(|ix| {
+            for c in ids {
+                if let Some(v) = view(t, ix, col, kind, &c, &profile)? {
+                    let json = canonical(&v);
+                    let tag = super::hex(&blake3::hash(json.as_bytes()).as_bytes()[..16]);
+                    out.push(EntityView {
+                        id: c.text(),
+                        tag,
+                        json,
+                    });
+                }
             }
-        }
+            Ok(())
+        })?;
         Ok(out)
     })
 }
