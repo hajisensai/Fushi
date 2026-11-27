@@ -108,6 +108,80 @@ void main() {
     });
   });
 
+  group('bug-feedback-sync.yml', () {
+    final File sync = File('../.github/workflows/bug-feedback-sync.yml');
+    final String yaml = sync.existsSync() ? sync.readAsStringSync() : '';
+    final List<String> codeLines = yaml
+        .split('\n')
+        .where((String l) => !l.trimLeft().startsWith('#'))
+        .toList();
+    final String code = codeLines.join('\n');
+
+    test('前置：workflow 与脚本都在', () {
+      expect(sync.existsSync(), isTrue, reason: '缺 ${sync.absolute.path}');
+      expect(File('../tool/bug_feedback_sync.mjs').existsSync(), isTrue);
+    });
+
+    test('触发：只有 develop push（docs/bugs 变化）与手动，不碰 PR', () {
+      expect(code, isNot(contains('pull_request')));
+      expect(code, contains('\n  push:'));
+      expect(code, contains("branches: ['develop']"));
+      expect(code, contains("- 'docs/bugs/**'"));
+      expect(code, contains('workflow_dispatch:'));
+    });
+
+    test('run 不内联表达式；env 只许这几项', () {
+      final List<String> exprs = RegExp(
+        r'\$\{\{[^}]*\}\}',
+      ).allMatches(code).map((RegExpMatch m) => m.group(0)!).toList();
+      expect(exprs.toSet(), <String>{
+        r'${{ secrets.FEEDBACK_CI_TOKEN }}',
+        r'${{ vars.FEEDBACK_API_BASE }}',
+        r'${{ vars.BUG_FEEDBACK_MIN_NUMBER }}',
+        r"${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}",
+      });
+      final int runAt = codeLines.indexWhere(
+        (String l) => l.trimLeft().startsWith('run:'),
+      );
+      expect(runAt, isNot(-1));
+      for (final String l in codeLines.sublist(runAt)) {
+        expect(l, isNot(contains(r'${{')), reason: l);
+      }
+    });
+
+    test('权限只读、稀疏检出、不留凭据', () {
+      final RegExp perm = RegExp(
+        r'^\s*([a-z-]+):\s*(read|write|none)\s*$',
+        multiLine: true,
+      );
+      expect(
+        perm
+            .allMatches(code)
+            .map((RegExpMatch m) => '${m.group(1)}: ${m.group(2)}')
+            .toList(),
+        <String>['contents: read'],
+      );
+      expect(code, isNot(contains('ref:')));
+      expect(
+        code,
+        contains('tool/bug_feedback_sync.mjs\n            docs/bugs'),
+      );
+      expect(code, contains('sparse-checkout-cone-mode: false'));
+      expect(code, contains('persist-credentials: false'));
+    });
+
+    test('脚本的端到端测试随脚本改动跑（leaderboard-worker.yml 路径过滤）', () {
+      final String worker = File(
+        '../.github/workflows/leaderboard-worker.yml',
+      ).readAsStringSync();
+      expect(
+        RegExp(r"- 'tool/bug_feedback_sync\.mjs'").allMatches(worker).length,
+        2,
+        reason: 'pull_request 与 push 两处 paths 都要有',
+      );
+    });
+  });
+
   /// 取出名为 [name] 的步骤正文（到下一个同级 `- ` 为止）。
   String step(String yaml, String name) {
     final List<String> lines = yaml.split('\n');

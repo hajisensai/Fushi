@@ -1,0 +1,70 @@
+# 仓库 BUG → 应用内反馈对账：develop 收到 push 后，把 docs/bugs/BUG-*.md 里「① 未修复」的条目
+# 按 BUG 号幂等地同步成反馈服务（services/leaderboard）里的一条反馈，开发者处理台 / App 开发者视图
+# 里就看得到；BUG 文件勾上 ① → 那条标「已修复」（修复 commit 记本次 push 的 sha，发布回填照常跟进）；
+# 文件删掉 / 改号 / 标成 ❌ 未复现 → 结案。跑多少次结果都一样（对账，不是追加）。
+#
+# 脚本：tool/bug_feedback_sync.mjs；服务端：services/leaderboard/src/feedback_repo_bugs.js（迁移 0028）。
+# 测试：services/leaderboard/test/feedback_repo_bugs.test.js（真迁移 + 真 Worker 路由端到端跑脚本）；
+# 守卫：fushi/test/build/feedback_workflow_guard_test.dart。
+#
+# 安全：
+# * 只读本仓 docs/bugs（develop 上已合入的内容），不处理 PR / commit message 等外部文本；
+#   run 里不内联任何 `${{ }}`，只经 env 传入。
+# * 只稀疏检出脚本与 docs/bugs；不写仓库；权限 contents: read。
+# * 凭据沿用 feedback-link.yml 的 FEEDBACK_CI_TOKEN（同一组 /v1/ci/feedback/** 接口）。没配 → ::notice
+#   退出；Worker 还没部署迁移 0028 这一版（接口 404）→ ::notice 退出；其他接口错误 → 红。
+# * 不从用户设备提交：用户端既会重复提交，也会带上设备信息。
+#
+# 回填范围：仓库变量 BUG_FEEDBACK_MIN_NUMBER（只为号 ≥ 它的 BUG 新建反馈；不设 = 全部未修复的都建）。
+# 手动 workflow_dispatch 可选 dry_run，只打印计划（`PLAN {json}`）不写。
+#
+# 注意：bug-number-settle.yml 用 GITHUB_TOKEN 推的改号提交不会再触发 workflow，改号由下一次 develop
+# push 一并对账（撞号未 settle 期间该号整个跳过）。
+name: BUG feedback sync
+
+on:
+  push:
+    branches: ['develop']
+    paths:
+      - 'docs/bugs/**'
+      - 'tool/bug_feedback_sync.mjs'
+      - '.github/workflows/bug-feedback-sync.yml'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: '只打印计划，不写反馈服务'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+# 对账以最新 develop 为准：新 push 来了，旧的那轮没意义。
+concurrency:
+  group: bug-feedback-sync
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          sparse-checkout: |
+            tool/bug_feedback_sync.mjs
+            docs/bugs
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: Sync unfixed BUGs into feedback
+        env:
+          FEEDBACK_CI_TOKEN: ${{ secrets.FEEDBACK_CI_TOKEN }}
+          FEEDBACK_API_BASE: ${{ vars.FEEDBACK_API_BASE }}
+          BUG_FEEDBACK_MIN_NUMBER: ${{ vars.BUG_FEEDBACK_MIN_NUMBER }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        run: |
+          if [ "$DRY_RUN" = "true" ]; then
+            node tool/bug_feedback_sync.mjs --dry-run
+          else
+            node tool/bug_feedback_sync.mjs
+          fi
