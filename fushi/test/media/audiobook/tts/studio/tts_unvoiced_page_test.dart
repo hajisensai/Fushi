@@ -49,6 +49,7 @@ void main() {
             voiceOptions: () => const <FushiChoiceOption<String>>[
               FushiChoiceOption<String>(value: 'v1', label: 'Voice one'),
             ],
+            onAddVoice: () async => null,
             retryVoicesSummary: () => 'Retry A, Retry B',
             onEditRetryVoices: () async {},
           ),

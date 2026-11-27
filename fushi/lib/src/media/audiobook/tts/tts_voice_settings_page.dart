@@ -33,13 +33,12 @@ import 'package:just_audio/just_audio.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:fushi/src/media/audiobook/tts/gpt_sovits_local_page.dart';
-import 'package:fushi/src/media/audiobook/tts/irodori_local_page.dart';
 import 'package:fushi/src/media/audiobook/tts/system_tts_provider.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_two_pane_layout.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_ui_text.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_voice_add_flow.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_voice_list_layout.dart';
 import 'package:fushi/src/media/audiobook/tts/voicevox_local_page.dart';
 import 'package:fushi/src/settings/glass_settings_renderer.dart'
@@ -214,12 +213,6 @@ Future<void> openTtsVoiceSettingsPage(
   );
 }
 
-/// 「添加声音」里「本机一键部署」那一项的值（其余项是 [TtsProviderCategory]）。
-const String _kAddLocalGptSovits = 'local_gpt_sovits';
-
-/// 「添加声音」里「本机一键部署 Irodori-TTS」那一项的值。
-const String _kAddLocalIrodori = 'local_irodori';
-
 class TtsVoiceSettingsPage extends StatefulWidget {
   const TtsVoiceSettingsPage({
     required this.services,
@@ -277,16 +270,29 @@ class _TtsVoiceSettingsPageState extends State<TtsVoiceSettingsPage> {
     VoicevoxLocalEngine? voicevox,
   }) async {
     // 那边直接读写预设仓：先把防抖中的编辑落盘，回来重读时才不丢。
-    if (_saveDebounce?.isActive ?? false) {
-      _saveDebounce!.cancel();
-      await _store.savePresets(_presets);
-      if (!mounted) return;
-    }
-    final String? created = voicevox != null
-        ? await openVoicevoxLocalPage(context, widget.services, voicevox)
-        : irodori
-        ? await openIrodoriLocalPage(context, widget.services)
-        : await openGptSovitsLocalPage(context, widget.services);
+    await _flushPendingSave();
+    if (!mounted) return;
+    _adopt(
+      await openTtsLocalDeployPage(
+        context,
+        widget.services,
+        irodori: irodori,
+        voicevox: voicevox,
+      ),
+      wide: wide,
+    );
+  }
+
+  /// 防抖中的清单编辑立刻落盘（之后要有别处直接读写预设仓）。
+  Future<void> _flushPendingSave() async {
+    if (!(_saveDebounce?.isActive ?? false)) return;
+    _saveDebounce!.cancel();
+    await _store.savePresets(_presets);
+  }
+
+  /// 别处（添加流程 / 本机部署页）新建了声音 [created]：重读清单、定位到它；窄屏
+  /// 推进它的编辑页（双栏下右侧已经显示它）。
+  void _adopt(String? created, {required bool wide}) {
     if (created == null || !mounted) return;
     setState(() {
       _presets = _store.loadPresets();
@@ -352,97 +358,13 @@ class _TtsVoiceSettingsPageState extends State<TtsVoiceSettingsPage> {
     }
   }
 
-  /// 「添加声音」只按大类选（外部服务 / 在线服务 / 系统语音）；具体是哪个引擎在
-  /// 编辑页的「服务类型」里选，默认取该类第一个。
+  /// 「添加声音」：流程与制作侧声音选择弹窗共用（[runTtsVoiceAddFlow]）。
   Future<void> _add({required bool wide}) async {
-    final List<TtsProviderCategory> categories = <TtsProviderCategory>[
-      for (final TtsProviderCategory c in TtsProviderCategory.values)
-        if (_registry.available.any(
-          (TtsProviderDescriptor d) => d.category == c,
-        ))
-          c,
-    ];
-    final Object? choice = await showFushiChoiceDialog<Object>(
-      context: context,
-      title: t.audiobook_tts_voice_add_title,
-      icon: FushiIcons.voice,
-      options: <FushiChoiceOption<Object>>[
-        // 自己没有服务的用户最该走的一条：放最前。
-        if (widget.services.localGptSovits.isSupported)
-          FushiChoiceOption<Object>(
-            value: _kAddLocalGptSovits,
-            label: t.audiobook_tts_local_add,
-            subtitle: t.audiobook_tts_local_add_hint,
-            icon: FushiIcons.download,
-          ),
-        if (widget.services.localIrodori.isSupported)
-          FushiChoiceOption<Object>(
-            value: _kAddLocalIrodori,
-            label: t.audiobook_tts_irodori_local_add,
-            subtitle: t.audiobook_tts_irodori_local_add_hint,
-            icon: FushiIcons.download,
-          ),
-        for (final VoicevoxLocalEngine engine in <VoicevoxLocalEngine>[
-          widget.services.localVoicevox,
-          widget.services.localAivisSpeech,
-        ])
-          if (engine.isSupported)
-            FushiChoiceOption<Object>(
-              value: engine,
-              label: t.audiobook_tts_voicevox_local_add(
-                engine: voicevoxLocalEngineName(engine),
-              ),
-              subtitle: voicevoxLocalAddHint(engine),
-              icon: FushiIcons.download,
-            ),
-        for (final TtsProviderCategory c in categories)
-          FushiChoiceOption<Object>(
-            value: c,
-            label: ttsCategoryLabel(c),
-            subtitle: ttsCategoryHint(c),
-            icon: _categoryIcon(c),
-          ),
-      ],
-    );
-    if (choice == null || !mounted) return;
-    if (choice == _kAddLocalGptSovits) {
-      await _openLocalDeploy(wide: wide);
-      return;
-    }
-    if (choice == _kAddLocalIrodori) {
-      await _openLocalDeploy(wide: wide, irodori: true);
-      return;
-    }
-    if (choice is VoicevoxLocalEngine) {
-      await _openLocalDeploy(wide: wide, voicevox: choice);
-      return;
-    }
-    final TtsProviderCategory picked = choice as TtsProviderCategory;
-    final TtsProviderDescriptor descriptor = _registry.available.firstWhere(
-      (TtsProviderDescriptor d) => d.category == picked,
-    );
-    final TtsVoicePreset preset = TtsVoicePreset(
-      id: newTtsPresetId(),
-      providerId: descriptor.id,
-      name: ttsProviderLabel(descriptor.id),
-      params: ttsDefaultParams(descriptor),
-    );
-    setState(() {
-      _presets = <TtsVoicePreset>[..._presets, preset];
-      _activeId ??= preset.id;
-      _selectedId = preset.id;
-    });
-    await _store.savePresets(_presets);
-    await _store.setActivePresetId(_activeId);
-    // 双栏下新声音已经在右侧打开，不再推页。
-    if (mounted && !wide) unawaited(_openEditor(preset.id));
+    // 添加流程直接读写预设仓：先把防抖中的编辑落盘，回来重读时才不丢。
+    await _flushPendingSave();
+    if (!mounted) return;
+    _adopt(await runTtsVoiceAddFlow(context, widget.services), wide: wide);
   }
-
-  static IconData _categoryIcon(TtsProviderCategory c) => switch (c) {
-    TtsProviderCategory.external => FushiIcons.devices,
-    TtsProviderCategory.online => FushiIcons.cloud,
-    TtsProviderCategory.system => FushiIcons.voice,
-  };
 
   Future<void> _clearCache() async {
     final TtsAudioCache cache = await widget.services.cache();
@@ -522,7 +444,9 @@ class _TtsVoiceSettingsPageState extends State<TtsVoiceSettingsPage> {
           ? ttsProviderLabel(preset.providerId)
           : '${ttsCategoryLabel(descriptor.category)} · '
                 '${ttsProviderLabel(preset.providerId)}',
-      icon: _categoryIcon(descriptor?.category ?? TtsProviderCategory.external),
+      icon: ttsCategoryIcon(
+        descriptor?.category ?? TtsProviderCategory.external,
+      ),
       incomplete: !usable,
     );
   }
