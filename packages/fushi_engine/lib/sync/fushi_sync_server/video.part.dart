@@ -336,6 +336,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
         request,
         etag: etag,
         ifRangeRequired: false,
+        playback: true,
       );
     }
 
@@ -1263,6 +1264,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       request,
       etag: etag,
       ifRangeRequired: false,
+      playback: true,
     );
   }
 
@@ -1786,6 +1788,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
         request,
         etag: etag,
         ifRangeRequired: false,
+        playback: true,
       );
     }
     return _proxyDecryptedClip(lease, request);

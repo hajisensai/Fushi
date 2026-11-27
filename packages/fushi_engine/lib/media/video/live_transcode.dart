@@ -39,6 +39,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:fushi_core/fushi_core.dart' show fushiDebugPrint;
+import 'package:fushi_engine/media/media_playback_activity.dart';
 import 'package:fushi_engine/media/video/bluray/aacs_media_session.dart';
 import 'package:fushi_engine/media/video/dvd/dvd_ffmpeg_input.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
@@ -422,6 +423,9 @@ class _TranscodeWorkGroup {
   int active = 0;
 }
 
+/// 不带 key 的转码工作共用的活动窗口 key（[_runTranscodeWork]）。
+const Object _anonymousTranscodePlaybackKey = Object();
+
 final Map<String, _TranscodeWorkGroup> _workGroups =
     <String, _TranscodeWorkGroup>{};
 
@@ -467,10 +471,16 @@ Future<T> _runTranscodeWork<T>({
       : _workGroups.putIfAbsent(workKey, _TranscodeWorkGroup.new);
   group?.active++;
   final _TranscodeWork work = _TranscodeWork(group, isAlive);
+  // 转码在 host 上读源文件、给另一台设备播：跑的期间算媒体播放会话，跑完续一个活动窗口
+  // 盖住分段之间的空隙（同一条流用同一个 key）。网络卷上的整文件哈希据此让路（BUG-5598）。
+  final MediaPlaybackActivity playback = MediaPlaybackActivity.instance;
+  final void Function() endPlayback = playback.begin();
   try {
     work.throwIfAbandoned();
     return await body(work);
   } finally {
+    playback.touch(workKey ?? _anonymousTranscodePlaybackKey);
+    endPlayback();
     if (group != null && --group.active == 0) {
       // 只移除自己这一组：取消后同 key 又来的新工作会建新组，旧组不能把它挤掉。
       if (identical(_workGroups[workKey], group)) _workGroups.remove(workKey);

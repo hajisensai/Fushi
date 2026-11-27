@@ -234,5 +234,11 @@ Future<shelf.Response> handleDiscShareRequest(
     size: stat.size,
     modifiedAt: stat.modified.millisecondsSinceEpoch,
   ).etag;
-  return serveFileWithRange(file, request, etag: etag, ifRangeRequired: false);
+  return serveFileWithRange(
+    file,
+    request,
+    etag: etag,
+    ifRangeRequired: false,
+    playback: true,
+  );
 }

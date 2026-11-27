@@ -184,6 +184,7 @@ extension _MediaStreamsDomain on FushiSyncServer {
       request,
       etag: etag,
       ifRangeRequired: false,
+      playback: true,
     );
   }
 }

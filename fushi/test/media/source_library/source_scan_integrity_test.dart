@@ -30,7 +30,7 @@ import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_content_fingerprint.dart';
-import 'package:fushi_engine/media/video/video_playback_activity.dart';
+import 'package:fushi_engine/media/media_playback_activity.dart';
 import 'package:fushi_engine/media/video/video_source_fingerprint.dart'
     show VideoFingerprintCancellation, VideoFingerprintCancelledException;
 import 'package:fushi_engine/platform/media_disk_identity.dart';
@@ -1022,7 +1022,7 @@ void main() {
       await _scan(db, await _source(db, tmp.path));
       debugOverrideRemoteMediaVolume((String path) => path == remoteFile);
 
-      final VideoPlaybackActivity playback = VideoPlaybackActivity();
+      final MediaPlaybackActivity playback = MediaPlaybackActivity();
       final void Function() endSession = playback.begin();
       final List<String> hashed = <String>[];
       final Completer<void> localDone = Completer<void>();
@@ -1055,7 +1055,7 @@ void main() {
       await _scan(db, await _source(db, tmp.path));
       debugOverrideRemoteMediaVolume((String _) => true);
 
-      final VideoPlaybackActivity playback = VideoPlaybackActivity();
+      final MediaPlaybackActivity playback = MediaPlaybackActivity();
       int attempts = 0;
       final Completer<void> firstStarted = Completer<void>();
       bool firstCancelled = false;
@@ -1092,7 +1092,7 @@ void main() {
       await _scan(db, await _source(db, tmp.path));
       debugOverrideRemoteMediaVolume((String _) => true);
 
-      final VideoPlaybackActivity playback = VideoPlaybackActivity();
+      final MediaPlaybackActivity playback = MediaPlaybackActivity();
       final void Function() endSession = playback.begin();
       addTearDown(endSession);
       int attempts = 0;
@@ -1111,8 +1111,8 @@ void main() {
       expect(attempts, 0);
     });
 
-    test('VideoPlaybackActivity：会话计数、变忙 / 变闲通知', () async {
-      final VideoPlaybackActivity playback = VideoPlaybackActivity();
+    test('MediaPlaybackActivity：会话计数、变忙 / 变闲通知', () async {
+      final MediaPlaybackActivity playback = MediaPlaybackActivity();
       expect(playback.isActive, isFalse);
       await playback.whenIdle();
       int busy = 0;

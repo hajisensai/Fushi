@@ -30,7 +30,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart'
     show computeOpenSubtitlesMovieHash;
-import 'package:fushi_engine/media/video/video_playback_activity.dart';
+import 'package:fushi_engine/media/media_playback_activity.dart';
 import 'package:fushi_engine/media/video/video_source_fingerprint.dart';
 import 'package:fushi_engine/platform/media_disk_identity.dart';
 import 'package:meta/meta.dart';
@@ -289,7 +289,7 @@ Future<bool> _directoryExists(String path) async {
 ///   等当前这一个）；
 /// - 文件原地换过（大小 / 修改时刻与旧指纹不同）照样算：记下的是它现在的内容；
 /// - **网络卷**（[isRemoteMediaVolume]：SMB 共享、rclone 云盘挂载…）上的文件排在本机盘
-///   之后，且只在没有视频播放会话（[VideoPlaybackActivity]）时读：整文件哈希要把整集从
+///   之后，且只在没有视频播放会话（[MediaPlaybackActivity]）时读：整文件哈希要把整集从
 ///   网上拉一遍，和正在播的流抢带宽会让播放卡缓冲（BUG-5598）。读到一半有播放开始就
 ///   经取消信号停下，等播放结束再从头算这一个。
 ///
@@ -298,10 +298,10 @@ Future<int> upgradeVideoContentFingerprintsToFullHash(
   FushiDatabase db, {
   VideoContentFullHashOf fullHashOf = _defaultFullHashOf,
   bool Function()? isCancelled,
-  VideoPlaybackActivity? playback,
+  MediaPlaybackActivity? playback,
 }) async {
-  final VideoPlaybackActivity activity =
-      playback ?? VideoPlaybackActivity.instance;
+  final MediaPlaybackActivity activity =
+      playback ?? MediaPlaybackActivity.instance;
   final Map<String, VideoContentFingerprintRow> existing = await db
       .allVideoContentFingerprints();
   final Set<String> pending = <String>{
@@ -371,7 +371,7 @@ Future<VideoContentFingerprint?> _defaultFullHashOf(
 Future<VideoContentFingerprint?> _fullHashWhenNotPlaying(
   String path,
   VideoContentFullHashOf fullHashOf,
-  VideoPlaybackActivity playback,
+  MediaPlaybackActivity playback,
   bool Function()? isCancelled,
 ) async {
   final Completer<void> closing = Completer<void>();
@@ -445,7 +445,7 @@ class VideoContentFullHashUpgrader {
   VideoContentFullHashUpgrader(
     this._db, {
     VideoContentFullHashOf fullHashOf = _defaultFullHashOf,
-    VideoPlaybackActivity? playback,
+    MediaPlaybackActivity? playback,
   }) : _fullHashOf = fullHashOf,
        _playback = playback;
 
@@ -458,7 +458,7 @@ class VideoContentFullHashUpgrader {
 
   final FushiDatabase _db;
   final VideoContentFullHashOf _fullHashOf;
-  final VideoPlaybackActivity? _playback;
+  final MediaPlaybackActivity? _playback;
 
   Future<int>? _running;
   bool _again = false;

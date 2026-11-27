@@ -10,6 +10,7 @@ import 'package:fushi_engine/ai/ai_settings.dart';
 import 'package:fushi_engine/dictionary/dictionary_media_types.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
+import 'package:fushi_engine/media/media_playback_activity.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_remote_title.dart';
 import 'package:fushi_engine/media/video/live_transcode.dart';
 import 'package:fushi_engine/media/video/stream_video_sync.dart';
@@ -1898,6 +1899,9 @@ ByteRange? parseByteRange(String? rangeHeader, int fileLength) {
 /// `If-Range`，必须照常 206；而带了 `If-Range` 的下载续传仍按验证器精确匹配，
 /// 不匹配（host 上文件已被替换）照样 200 全量（RFC 7233 §3.2 的原本语义）。
 ///
+/// [playback]：送的是播放字节（视频 / 音轨 / 原盘 / 音乐），送的期间算媒体播放会话，见
+/// [_maybePlaybackBody]。封面、漫画页、导出包等不传。
+///
 /// [reprDigest]：整份表示（不是本次 Range 片段）的 RFC 9530 `Repr-Digest` 头值
 /// （`sha-256=:<base64>:`）。200 / 206 都带：续传的 client 把各段拼完后据它做整体
 /// 校验，判定「拼出来的就是 host 那份字节」（Sn4fYseBt4）。
@@ -1909,6 +1913,7 @@ Future<shelf.Response> serveFileWithRange(
   String? etag,
   bool ifRangeRequired = true,
   String? reprDigest,
+  bool playback = false,
 }) async {
   // 一次 async stat 同时拿存在性与长度：视频流 / 漫画页 / 导出包都经这里，源文件
   // 可能在网络盘上，同步 existsSync + lengthSync 会冻结 host 所在 isolate（BUG-3756）。
@@ -1942,7 +1947,7 @@ Future<shelf.Response> serveFileWithRange(
   // 无 Range 头：200 全量
   if (range == null) {
     return shelf.Response.ok(
-      file.openRead(),
+      _maybePlaybackBody(file.openRead(), file.path, playback),
       headers: <String, String>{
         'Content-Type': contentType,
         'Content-Length': '$fileLength',
@@ -1969,7 +1974,11 @@ Future<shelf.Response> serveFileWithRange(
   final int rangeLength = range.length;
   return shelf.Response(
     206,
-    body: file.openRead(range.start, range.end + 1),
+    body: _maybePlaybackBody(
+      file.openRead(range.start, range.end + 1),
+      file.path,
+      playback,
+    ),
     headers: <String, String>{
       'Content-Type': contentType,
       'Content-Length': '$rangeLength',
@@ -1979,6 +1988,27 @@ Future<shelf.Response> serveFileWithRange(
       if (reprDigest != null) kReprDigestHeader: reprDigest,
     },
   );
+}
+
+/// [serveFileWithRange] 的 `playback`：这是在给另一台设备送**播放**字节（视频 / 音轨 /
+/// 原盘 / 音乐），送的期间算一个媒体播放会话（[MediaPlaybackActivity]），送完再续一个
+/// 活动窗口盖住 seek / 下一个 Range 之间的空隙。客户端暂停时连接通常还挂着、body 没读完，
+/// 照样算在播。网络卷上的整文件哈希据此让路（BUG-5598）。
+Stream<List<int>> _maybePlaybackBody(
+  Stream<List<int>> body,
+  String path,
+  bool playback,
+) => playback ? _playbackBody(body, path) : body;
+
+Stream<List<int>> _playbackBody(Stream<List<int>> body, String path) async* {
+  final MediaPlaybackActivity activity = MediaPlaybackActivity.instance;
+  final void Function() end = activity.begin();
+  try {
+    yield* body;
+  } finally {
+    activity.touch(path);
+    end();
+  }
 }
 
 /// 视频源文件的强验证器（`"vid-<size>-<mtimeMs>"`），给 `/stream` 的 ETag /

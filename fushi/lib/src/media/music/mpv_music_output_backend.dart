@@ -42,6 +42,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:fushi_engine/media/media_playback_activity.dart';
 import 'package:fushi_engine/media/music/disc/music_disc_media.dart';
 import 'package:fushi_engine/media/music/server/music_server_loudness.dart'
     show MusicServerLoudness;
@@ -1157,8 +1158,13 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
     _pendingFromDuration = null;
   }
 
+  /// 媒体播放会话（BUG-5598）：在播时持有，暂停后留一个活动窗口；网络卷上的整文件哈希据此
+  /// 让路，不和正在出声的曲目抢带宽。
+  final MediaPlaybackHold _playbackHold = MediaPlaybackHold();
+
   void _onPlaying(bool playing) {
     _playing = playing;
+    _playbackHold.setPlaying(playing);
     // 暂停时设备停止消耗缓冲，越过时刻要等恢复后的下一个 audio-pts 重新算。
     if (!playing) _advanceTimer?.cancel();
     _emit(MusicBackendPlaying(playing));
@@ -1711,6 +1717,7 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
   @override
   Future<void> dispose() async {
     _disposed = true;
+    _playbackHold.dispose();
     _openGen++;
     _nextGen++;
     _cancelNextRefresh();

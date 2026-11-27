@@ -4,6 +4,7 @@ import 'dart:ui' show AppLifecycleState;
 
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
+import 'package:fushi_engine/media/media_playback_activity.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/media/audiobook/audiobook_follow_style.dart';
 import 'package:fushi/src/media/audiobook/audiobook_jump_threshold.dart';
@@ -75,6 +76,9 @@ class AudiobookPlayerController extends ChangeNotifier {
   // ── 内部状态 ──────────────────────────────────────────────────────────────
 
   final AudioPlayer _player = AudioPlayer();
+
+  /// 主播放器的媒体播放会话：在播时持有，暂停后留一个活动窗口（[MediaPlaybackHold]）。
+  final MediaPlaybackHold _playbackHold = MediaPlaybackHold();
   StreamSubscription<Duration>? _positionSub;
   StreamSubscription<bool>? _playingSub;
 
@@ -2412,7 +2416,9 @@ class AudiobookPlayerController extends ChangeNotifier {
         });
     // 订阅播放状态流：just_audio 内部状态翻转（包括焦点丢失、播完自动暂停）
     // 都会在这里得到通知，UI 即时刷新播放/暂停图标。
-    _playingSub = _player.playingStream.listen((_) {
+    _playingSub = _player.playingStream.listen((bool playing) {
+      // 媒体播放会话（BUG-5598）：网络卷上的整文件哈希据此让路。
+      _playbackHold.setPlaying(playing);
       notifyListeners();
     });
     ProcessingState lastProcessingState = _player.processingState;
@@ -3679,6 +3685,7 @@ class AudiobookPlayerController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _playbackHold.dispose();
     _pageStopTimer?.cancel();
     _pageStopTimer = null;
     _cueEdgeWatch = null;
