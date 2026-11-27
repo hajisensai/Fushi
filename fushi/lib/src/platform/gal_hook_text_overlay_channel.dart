@@ -762,6 +762,10 @@ class GalAttachedLookupHitV19 {
 /// surface itself always owns geometry as the attached provider (4, 11).
 const String galAttachedMeasuredSourceTyranoDom = 'tyrano_dom';
 
+/// OCR game mode (BUG-5299 ②): glyph boxes come from the recognizer's line /
+/// word boxes, mapped back onto the source client by the mining layer.
+const String galAttachedMeasuredSourceScreenOcr = 'screen_ocr';
+
 /// `layoutSource` values reported in attached surface snapshots.
 const String galAttachedLayoutSourceCalibrated = 'calibrated';
 const String galAttachedLayoutSourceMeasured = 'measured';

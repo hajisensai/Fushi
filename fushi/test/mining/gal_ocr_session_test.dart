@@ -3,12 +3,15 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/mining/gal_measured_text_feed.dart';
 import 'package:fushi/src/mining/gal_ocr_line_source.dart';
 import 'package:fushi/src/mining/galgame_audio_encode.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
 import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 import 'package:fushi/src/mining/galgame_play_tracker.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
+import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart'
+    show galAttachedMeasuredSourceScreenOcr;
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/src/sync/texthooker_ws_client.dart';
 
@@ -118,7 +121,11 @@ void main() {
     endpoints.dispose();
   });
 
-  Future<String> recognize(Uint8List rgba, int width, int height) async => '';
+  Future<GalOcrRecognition> recognize(
+    Uint8List rgba,
+    int width,
+    int height,
+  ) async => const GalOcrRecognition('');
 
   test('不注入；回录是设计内音源，不算降级；泵按窗口与区域启动', () async {
     await controller.startOcrCapture(
@@ -166,6 +173,29 @@ void main() {
       controller.workbenchLines.map((TexthookerLineEntry e) => e.text),
       <String>['今日はとてもいい天気ですね', '次の台詞'],
     );
+  });
+
+  test('OCR 会话把泵的逐字几何发布成查词的实测数据源；停止后撤回（BUG-5299 ②）', () async {
+    expect(controller.measuredTextFeed, isNull);
+    int notified = 0;
+    void listener() => notified++;
+    controller.addListener(listener);
+    addTearDown(() => controller.removeListener(listener));
+    await controller.startOcrCapture(
+      window,
+      region: region,
+      recognize: recognize,
+    );
+    expect(controller.measuredTextFeed, same(source.measuredFeed));
+    expect(
+      controller.measuredTextFeed!.measuredSource,
+      galAttachedMeasuredSourceScreenOcr,
+    );
+    expect(notified, greaterThan(0));
+    final GalMeasuredTextFeed feed = controller.measuredTextFeed!;
+    await controller.stopCapture();
+    expect(controller.measuredTextFeed, isNull);
+    expect(feed.isClosed, isTrue);
   });
 
   test('泵故障进状态；换区域更新状态与泵；停止监听停泵并退出 OCR 模式', () async {

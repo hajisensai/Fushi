@@ -35,8 +35,10 @@ ffc_ocrline_feed_png(tracker, png, region)   ← Rust：解码 + 裁框 + 帧签
 OCR 识别器（Windows.Media.Ocr 像素直传 / 本机模型 recognizeRgba）
         │ 行文本
         ▼
-ffc_ocrline_feed_text(tracker, text)         ← Rust：拼行规范化 + 与上一句去重 / 打字机续写判定
-        │ kind = empty | duplicate | new | extend，text
+ffc_ocrline_feed_text_geometry(tracker, text, 逐字框)  ← Rust：拼行规范化 + 与上一句去重 / 打字机续写判定；
+        │                                             逐字框对齐到显示文本、映回整张截图（第三期）
+        │ kind = empty | duplicate | new | extend，text，glyphs（截图像素）
+        ├──▶ GalOcrLineSource.measuredFeed（截图元数据 → 源客户区）→ attached surface 实测排版（游戏内嵌查词）
         ▼
 TexthookerService.appendLine(source: screenOcr)   ← 既有台词流；extend 由既有渐进折叠并进同一行
         │
@@ -113,14 +115,20 @@ Windows 自带 OCR。识别器不可用（缺语言包 / 本机模型未下载�
 - **AI 操作目录**：`game.ocr.start`（`POST /api/admin/game/ocr/start`，不可逆：替换当前会话）、
   `game.ocr.region.set`（`PUT /api/admin/game/ocr/region`，可撤销）；`game status` 的 `session.mode = ocr` 带 `session.ocr`。
 
-### 第三期（BUG-5299，未做）
+### 第三期（BUG-5299，内嵌查词已做）
 
 - **持续 WGC 会话直出区域原始像素**：现在每次取帧都新建一次 WGC 会话并编 PNG，再在 Rust 解码；
   在 runner 里加持续会话 + 只回框内 BGRA（复用 `CaptureCore` 的 Magpie / 缩放源 / 客户区裁框判据），Rust 加
   `feed_bgra`，省掉编解码与会话建立（目标 ≥4 fps、单帧 <10 ms）。必须真机验。
-- **OCR 行的游戏内嵌查词**：识别行框（在预处理后的图上，需交出放大倍数或由 Rust 映回）→ 客户区坐标 → 接入
-  `GalAttachedTextController` 的几何提供者；查词扫描面不得直接 import OCR 包（`gal_attached_no_ocr_guard_test`）。
-  在此之前台词浮窗 / 工作台里查词照常。
+- **OCR 行的游戏内嵌查词（已做，拍板台 wkU3PmrlF0 方案 b）**：识别器交出逐字框（平台词框内等分，其余行框
+  等分，送检图像素）；Rust `ffc_ocrline_feed_text_geometry` 把框跟着拼行规范化对齐到显示文本（续写 = 上一句 +
+  新尾巴、重复 = 上一句，都按第 k 个非空白字对齐；重复句字数变了不给几何），撤掉预处理放大、加回裁框原点，映回
+  整张截图；`GalOcrLineSource` 再按这次截图的 `WindowCaptureMetadata` 换成源客户区物理像素（普通截窗恒等，
+  Magpie 按源视口缩放 + 偏移；元数据缺失 / 不完整不猜），发布成 `GalMeasuredTextFeed`（mining 层中立接口，
+  TyranoScript DOM 源同样实现）。attached surface 走现成的实测排版路线（`configureMeasured('screen_ocr')` →
+  `updateMeasuredText`），点击查词不推进、输入屏蔽与 DOM 源完全相同；查词扫描面仍不 import OCR 包
+  （`gal_attached_no_ocr_guard_test`）。画面在变（settling）/ 台词框清空 / 换区域 / 会话结束都先撤掉命中框。
+  真机未验。
 - 安卓模拟器以外的平台（macOS / Linux 窗口截取）不在范围内，除非用户改平台边界。
 
 ## 7. 测试

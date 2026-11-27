@@ -41,6 +41,10 @@ typedef _FeedTextC =
       Pointer<Void>,
       Pointer<Uint8>,
       Size,
+      Pointer<Float>,
+      Size,
+      Pointer<Pointer<Uint8>>,
+      Pointer<Size>,
       Pointer<Pointer<Uint8>>,
       Pointer<Size>,
       Pointer<Uint32>,
@@ -50,6 +54,10 @@ typedef _FeedTextDart =
       Pointer<Void>,
       Pointer<Uint8>,
       int,
+      Pointer<Float>,
+      int,
+      Pointer<Pointer<Uint8>>,
+      Pointer<Size>,
       Pointer<Pointer<Uint8>>,
       Pointer<Size>,
       Pointer<Uint32>,
@@ -102,8 +110,70 @@ enum FfcOcrLineTextKind {
   extend,
 }
 
-/// 一次文本判定的结果。[text] 只在 newLine / extend 时非空。
-typedef FfcOcrLineText = ({FfcOcrLineTextKind kind, String text});
+/// 显示文本里一个字在**整张截图**（交给 [FfcOcrLineTracker.feedPng] 的那张 PNG）里的框。
+final class FfcOcrLineGlyph {
+  const FfcOcrLineGlyph({
+    required this.start,
+    required this.length,
+    required this.left,
+    required this.top,
+    required this.right,
+    required this.bottom,
+  });
+
+  /// 在 [FfcOcrLineText.text] 里的起点（UTF-16 码元）。
+  final int start;
+
+  /// UTF-16 码元数（一般 1，代理对 2）。
+  final int length;
+
+  /// 截图像素；[right] / [bottom] 不含。
+  final double left;
+  final double top;
+  final double right;
+  final double bottom;
+
+  @override
+  bool operator ==(Object other) =>
+      other is FfcOcrLineGlyph &&
+      other.start == start &&
+      other.length == length &&
+      other.left == left &&
+      other.top == top &&
+      other.right == right &&
+      other.bottom == bottom;
+
+  @override
+  int get hashCode => Object.hash(start, length, left, top, right, bottom);
+
+  @override
+  String toString() =>
+      'FfcOcrLineGlyph($start+$length, $left, $top, $right, $bottom)';
+}
+
+/// 一次文本判定的结果。
+final class FfcOcrLineText {
+  const FfcOcrLineText({
+    required this.kind,
+    required this.text,
+    this.glyphs,
+    this.imageWidth = 0,
+    this.imageHeight = 0,
+  });
+
+  final FfcOcrLineTextKind kind;
+
+  /// 画面上这一句对应的台词流文本：newLine / extend 是新文本，duplicate 是上一句，empty 为空串。
+  final String text;
+
+  /// [text] 的逐字框（ocrline.rs `feed_text_geometry`）：没交逐字框、tracker 没交出过 OCR 帧、
+  /// 重复句字数对不上或一个可用框都没有时为 null。
+  final List<FfcOcrLineGlyph>? glyphs;
+
+  /// [glyphs] 所在截图的宽高（[glyphs] 非空时有效）。
+  final int imageWidth;
+  final int imageHeight;
+}
 
 final class _OcrLineBindings {
   _OcrLineBindings(FushiCompute lib)
@@ -122,7 +192,7 @@ final class _OcrLineBindings {
         'ffc_ocrline_feed_png',
       ),
       feedText = lib.library.lookupFunction<_FeedTextC, _FeedTextDart>(
-        'ffc_ocrline_feed_text',
+        'ffc_ocrline_feed_text_geometry',
       ),
       finalizer = NativeFinalizer(
         lib.library.lookup<NativeFunction<_FreeC>>('ffc_ocrline_free').cast(),
@@ -268,34 +338,108 @@ final class FfcOcrLineTracker implements Finalizable {
   }
 
   /// 喂一次 OCR 结果（多行用 `\n` 分隔）。微秒级，可在 UI isolate 里调。
-  FfcOcrLineText feedText(String text) {
+  ///
+  /// [charBoxes] 给出时是逐字框：`text.runes` 每个一组 `[l, t, r, b]`（送检图——即
+  /// [FfcOcrLineFrame.rgba]——的像素，空框填 0），长度必须是 `4 * text.runes.length`，否则抛
+  /// [ArgumentError]。Rust 把它们跟着拼行规范化对齐到显示文本，并映回整张截图
+  /// （[FfcOcrLineText.glyphs]）。
+  FfcOcrLineText feedText(String text, {Float32List? charBoxes}) {
     _ensureOpen();
     final List<int> bytes = utf8.encode(text);
     final Pointer<Uint8> src = NativeScratch.input.reserve(bytes.length);
     src.asTypedListOutOfLine(bytes.length).setAll(0, bytes);
-    final Pointer<Pointer<Uint8>> outPtr = malloc<Pointer<Uint8>>();
-    final Pointer<Size> outLen = malloc<Size>();
-    final Pointer<Uint32> kind = malloc<Uint32>();
+    final int boxFloats = charBoxes?.length ?? 0;
+    final Pointer<Float> boxes = boxFloats == 0
+        ? nullptr
+        : malloc<Float>(boxFloats);
+    final Pointer<Pointer<Uint8>> outText = malloc<Pointer<Uint8>>();
+    final Pointer<Size> outTextLen = malloc<Size>();
+    final Pointer<Pointer<Uint8>> outGlyphs = malloc<Pointer<Uint8>>();
+    final Pointer<Size> outGlyphsLen = malloc<Size>();
+    final Pointer<Uint32> meta = malloc<Uint32>(4);
     try {
-      _check(
-        'ffc_ocrline_feed_text',
-        _b.feedText(_handle, src, bytes.length, outPtr, outLen, kind),
+      if (boxFloats != 0) boxes.asTypedList(boxFloats).setAll(0, charBoxes!);
+      final int status = _b.feedText(
+        _handle,
+        src,
+        bytes.length,
+        boxes,
+        boxFloats,
+        outText,
+        outTextLen,
+        outGlyphs,
+        outGlyphsLen,
+        meta,
       );
-      final FfcOcrLineTextKind k = FfcOcrLineTextKind.values[kind.value];
-      final Pointer<Uint8> data = outPtr.value;
-      final int n = outLen.value;
-      if (data == nullptr || n == 0) return (kind: k, text: '');
-      try {
-        return (kind: k, text: utf8.decode(data.asTypedListOutOfLine(n)));
-      } finally {
-        _b.lib.freeBytes(data, n);
+      if (status == FfcStatus.invalidArgument) {
+        throw ArgumentError(
+          'charBoxes must hold 4 floats per rune of the OCR text',
+        );
       }
+      _check('ffc_ocrline_feed_text_geometry', status);
+      final FfcOcrLineTextKind k = FfcOcrLineTextKind.values[meta[0]];
+      final String line = _takeUtf8(outText.value, outTextLen.value);
+      final List<FfcOcrLineGlyph>? glyphs = _takeGlyphs(
+        outGlyphs.value,
+        outGlyphsLen.value,
+        meta[1],
+      );
+      return FfcOcrLineText(
+        kind: k,
+        text: line,
+        glyphs: glyphs,
+        imageWidth: glyphs == null ? 0 : meta[2],
+        imageHeight: glyphs == null ? 0 : meta[3],
+      );
     } finally {
-      malloc.free(outPtr);
-      malloc.free(outLen);
-      malloc.free(kind);
+      if (boxFloats != 0) malloc.free(boxes);
+      malloc.free(outText);
+      malloc.free(outTextLen);
+      malloc.free(outGlyphs);
+      malloc.free(outGlyphsLen);
+      malloc.free(meta);
     }
   }
+
+  String _takeUtf8(Pointer<Uint8> data, int n) {
+    if (data == nullptr || n == 0) return '';
+    try {
+      return utf8.decode(data.asTypedListOutOfLine(n));
+    } finally {
+      _b.lib.freeBytes(data, n);
+    }
+  }
+
+  /// 字形缓冲区：小端 f32，每个 6 个（UTF-16 起点、长度、`l t r b`）。
+  List<FfcOcrLineGlyph>? _takeGlyphs(Pointer<Uint8> data, int n, int count) {
+    if (data == nullptr || n == 0) return null;
+    try {
+      final ByteData view = ByteData.sublistView(
+        Uint8List.fromList(data.asTypedListOutOfLine(n)),
+      );
+      if (count <= 0 || view.lengthInBytes != count * _kGlyphWords * 4) {
+        return null;
+      }
+      double word(int glyph, int index) =>
+          view.getFloat32((glyph * _kGlyphWords + index) * 4, Endian.little);
+      return List<FfcOcrLineGlyph>.unmodifiable(<FfcOcrLineGlyph>[
+        for (int g = 0; g < count; g++)
+          FfcOcrLineGlyph(
+            start: word(g, 0).toInt(),
+            length: word(g, 1).toInt(),
+            left: word(g, 2),
+            top: word(g, 3),
+            right: word(g, 4),
+            bottom: word(g, 5),
+          ),
+      ]);
+    } finally {
+      _b.lib.freeBytes(data, n);
+    }
+  }
+
+  /// ocrline.rs `GLYPH_WORDS`。
+  static const int _kGlyphWords = 6;
 
   /// 忘掉全部帧状态与上一句（换识别区域时）。
   void reset() {

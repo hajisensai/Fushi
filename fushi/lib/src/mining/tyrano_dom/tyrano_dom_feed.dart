@@ -6,10 +6,13 @@
 
 import 'dart:async';
 
+import 'package:fushi/src/mining/gal_measured_text_feed.dart';
 import 'package:fushi/src/mining/tyrano_dom/tyrano_dom_frame.dart';
+import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart'
+    show galAttachedMeasuredSourceTyranoDom;
 
 /// 一个已连上的 DOM 数据源的帧广播。
-class TyranoDomFeed {
+class TyranoDomFeed implements GalMeasuredTextFeed {
   /// 创建 feed。[port] / [gamePid] 只用于诊断。
   TyranoDomFeed({required this.port, this.gamePid});
 
@@ -23,13 +26,22 @@ class TyranoDomFeed {
       StreamController<TyranoDomFrame>.broadcast();
   TyranoDomFrame? _latest;
 
+  @override
+  String get measuredSource => galAttachedMeasuredSourceTyranoDom;
+
+  @override
+  String get diagnosticLabel => 'tyrano_dom port=$port';
+
   /// 帧广播；feed 关闭时结束。
+  @override
   Stream<TyranoDomFrame> get frames => _frames.stream;
 
   /// 最近一帧（重发 / 刚订阅时用）。
+  @override
   TyranoDomFrame? get latest => _latest;
 
   /// feed 是否已关闭。
+  @override
   bool get isClosed => _frames.isClosed;
 
   /// 发布一帧。

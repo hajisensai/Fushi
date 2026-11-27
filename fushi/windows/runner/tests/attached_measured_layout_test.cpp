@@ -213,6 +213,7 @@ void TestBuildClustersRejections() {
 
 void TestSourceAllowList() {
   assert(measured::IsSupportedSource("tyrano_dom"));
+  assert(measured::IsSupportedSource("screen_ocr"));
   assert(!measured::IsSupportedSource(""));
   assert(!measured::IsSupportedSource("TyranoDom"));
   assert(!measured::IsSupportedSource("dom"));

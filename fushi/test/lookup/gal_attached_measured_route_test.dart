@@ -14,6 +14,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/lookup/gal_attached_measured_frame.dart';
 import 'package:fushi/src/lookup/gal_attached_text_controller.dart';
 import 'package:fushi/src/lookup/gal_lookup_surface_profile.dart';
+import 'package:fushi/src/mining/gal_measured_text_feed.dart';
+import 'package:fushi/src/mining/gal_ocr_line_source.dart';
 import 'package:fushi/src/mining/tyrano_dom/tyrano_dom_feed.dart';
 import 'package:fushi/src/mining/tyrano_dom/tyrano_dom_frame.dart';
 import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart';
@@ -271,7 +273,7 @@ void main() {
       final GalAttachedMeasuredPayload payload =
           galAttachedMeasuredPayloadForFrame(_frame('\u3000ab '));
       expect(payload.sourceText, 'ab');
-      expect(tyranoDomTexthookerText('\u3000ab '), payload.sourceText);
+      expect(galMeasuredTexthookerText('\u3000ab '), payload.sourceText);
       expect(payload.glyphs.map((GalAttachedMeasuredGlyph g) => g.start), <int>[
         0,
         1,
@@ -358,7 +360,7 @@ void main() {
     });
 
     Future<void> sync({
-      TyranoDomFeed? measuredFeed,
+      GalMeasuredTextFeed? measuredFeed,
       bool inspectOnly = false,
       String? text,
     }) => controller.syncSession(
@@ -597,6 +599,77 @@ void main() {
       expect(port.calls.last, 'detach');
       expect(controller.target, isNull);
       expect(controller.status, GalAttachedTextStatus.disabled);
+    });
+
+    test('OCR 游戏模式的 feed 走同一条实测路线，数据源身份是 screen_ocr（BUG-5299 ②）', () async {
+      final GalOcrMeasuredFeed ocr = GalOcrMeasuredFeed(hwnd: 77);
+      addTearDown(ocr.close);
+      await sync(measuredFeed: ocr, inspectOnly: true);
+      await sync(measuredFeed: ocr);
+      await controller.measuredPushIdle;
+      expect(controller.measuredLayoutActive, isTrue);
+      expect(port.calls, <String>[
+        'inspect',
+        'configureMeasured:$galAttachedMeasuredSourceScreenOcr',
+      ]);
+      expect(handoffs.single.forceAttached, isTrue);
+
+      ocr.add(
+        const GalOcrMeasuredFrame(
+          text: 'あいう',
+          glyphs: <GalOcrMeasuredGlyph>[
+            GalOcrMeasuredGlyph(
+              textStart: 0,
+              textLength: 1,
+              rect: Rectangle<double>(100.4, 600.2, 30.2, 40.1),
+            ),
+            GalOcrMeasuredGlyph(
+              textStart: 2,
+              textLength: 1,
+              rect: Rectangle<double>(160, 600, 30, 40),
+            ),
+          ],
+          clientWidth: 1280,
+          clientHeight: 720,
+        ),
+      );
+      await pumpEventQueue();
+      await controller.measuredPushIdle;
+      final _MeasuredCall call = port.measured.single;
+      expect(call.text, 'あいう');
+      expect((call.width, call.height, call.tolerance), (1280, 720, 0));
+      expect(call.glyphs, const <GalAttachedMeasuredGlyph>[
+        GalAttachedMeasuredGlyph(
+          start: 0,
+          length: 1,
+          left: 100,
+          top: 600,
+          right: 131,
+          bottom: 641,
+        ),
+        GalAttachedMeasuredGlyph(
+          start: 2,
+          length: 1,
+          left: 160,
+          top: 600,
+          right: 190,
+          bottom: 640,
+        ),
+      ]);
+      expect(controller.status, GalAttachedTextStatus.activeAttached);
+
+      // 画面在变 / 台词框清空：撤掉命中框。
+      ocr.clear();
+      await pumpEventQueue();
+      await controller.measuredPushIdle;
+      expect(port.measured.last.text, '');
+      expect(port.measured.last.glyphs, isEmpty);
+
+      // OCR 会话结束：feed 关闭 → attachedDetach。
+      await ocr.close();
+      await pumpEventQueue();
+      expect(port.calls.last, 'detach');
+      expect(controller.target, isNull);
     });
 
     test('没有 feed（非 Tyrano 游戏）照旧走校准路线', () async {

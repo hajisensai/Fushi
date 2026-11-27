@@ -23,6 +23,7 @@ import 'package:fushi/src/mining/galgame_play_tracker.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/mining/gal_hook_tick_clock.dart';
 import 'package:fushi/src/mining/gal_mining_settings.dart';
+import 'package:fushi/src/mining/gal_measured_text_feed.dart';
 import 'package:fushi/src/mining/gal_ocr_line_source.dart';
 import 'package:fushi/src/mining/knife_text_websocket.dart';
 import 'package:fushi/src/mining/gal_voice_resource_name.dart';
@@ -1688,6 +1689,12 @@ class GalHookSessionController extends ChangeNotifier {
   /// 当前已连上的 DOM 源（查词几何的实测排版路线消费）；未连接为 null。
   TyranoDomFeed? get tyranoDomFeed => _tyranoDomFeed;
 
+  /// 查词几何「实测排版路线」的数据源：TyranoScript DOM 源在线时是它；OCR 游戏模式下是 OCR 泵的
+  /// 逐字几何（BUG-5299 ②，游戏画面内嵌查词）；都没有为 null（走校准 profile）。两者不会同时
+  /// 存在：OCR 会话不注入、不连 DOM，任何新会话都先经 [_stopSourcesInternal] 收掉另一个。
+  GalMeasuredTextFeed? get measuredTextFeed =>
+      _tyranoDomFeed ?? _ocrSource?.measuredFeed;
+
   /// 正文来源仲裁：DOM 源已连上，**且**本次连接已经产出过一句完成的正文。
   ///
   /// 为真时 LunaHook 引擎文本道的行不再作为正文进 texthooker（线程目录照常观测）。
@@ -2563,6 +2570,8 @@ class GalHookSessionController extends ChangeNotifier {
     );
     _ocrSource = source;
     source.start();
+    // 查词几何的实测数据源出现了（[measuredTextFeed]）：central overlay sync 据此切到实测路线。
+    notifyListeners();
   }
 
   /// 会话中换识别区域（「调整识别区域」）。不是 OCR 模式时无动作。
@@ -6781,6 +6790,9 @@ class GalHookSessionController extends ChangeNotifier {
     // 只看泵会把「OCR 模式」留给下一局附着 / 启动。
     final GalOcrLineSource? ocr = _ocrSource;
     _ocrSource = null;
+    // 先把实测数据源换成 null 再通知（同 [_releaseTyranoDomConnection]）：central sync 看到
+    // 「没有 feed」就撤掉查词几何；泵停下时 feed 关闭，attached 控制器也会自行 detach。
+    if (ocr != null) notifyListeners();
     if (ocr != null) await ocr.stop();
     if (_state.isOcrMode) {
       _setState(_state.copyWith(clearOcrRegion: true));

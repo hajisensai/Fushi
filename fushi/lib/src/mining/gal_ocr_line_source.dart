@@ -4,6 +4,11 @@
 /// 间隔截窗 → 把整窗 PNG 交给 Rust 判（后台 isolate）→ Rust 说要 OCR 才调识别器 → 把识别
 /// 文本交给 Rust 去重 → Rust 判出的新句 / 续写经 [GalOcrLineSource.onLine] 送出。这里不存
 /// 「上一句」「上一帧」之类的镜像状态。
+///
+/// 游戏画面内嵌查词（BUG-5299 ②）：识别器连文本交来逐字框，Rust 把它们对齐到这一句的显示文本、
+/// 映回整张截图；本类再按这次截图的元数据（Magpie 时是呈现窗 → 源窗口客户区）换成游戏客户区
+/// 物理像素，发布到 [GalOcrLineSource.measuredFeed]——查词扫描面只认这个中立数据面
+/// （`gal_measured_text_feed.dart`），不碰 OCR 包。
 library;
 
 import 'dart:async';
@@ -12,8 +17,11 @@ import 'dart:isolate';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
+import 'package:fushi/src/mining/gal_measured_text_feed.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/ocr/system_ocr_channel.dart';
+import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart'
+    show galAttachedMeasuredSourceScreenOcr;
 import 'package:fushi_compute/fushi_compute.dart';
 
 /// 台词框在游戏窗口**客户区**里的位置，归一化到 0～1（窗口缩放 / 换分辨率后仍对得上）。
@@ -119,10 +127,244 @@ class GalOcrRegion {
   String toString() => 'GalOcrRegion($left, $top, $width, $height)';
 }
 
-/// 识别一块 RGBA（`width * height * 4`），返回按阅读顺序、行间 `\n` 的全文。
-/// 识别器不可用（缺语言包 / 模型）抛 [SystemOcrUnavailableException]。
+/// 一次识别的结果：按阅读顺序、行间 `\n` 的全文，以及可选的逐字框。
+@immutable
+class GalOcrRecognition {
+  const GalOcrRecognition(this.text, {this.charBoxes});
+
+  final String text;
+
+  /// `text.runes` 每个字一组 `[l, t, r, b]`（送检图像素，行间 `\n` 等填 0）；null = 识别器没给
+  /// 几何（这一句不能在游戏画面里点）。
+  final Float32List? charBoxes;
+}
+
+/// 识别一块 RGBA（`width * height * 4`）。识别器不可用（缺语言包 / 模型）抛
+/// [SystemOcrUnavailableException]。
 typedef GalOcrRecognize =
-    Future<String> Function(Uint8List rgba, int width, int height);
+    Future<GalOcrRecognition> Function(Uint8List rgba, int width, int height);
+
+/// 截图像素 → 游戏源窗口客户区物理像素的换算（[galOcrClientMapping]）。
+typedef GalOcrClientMapping = ({
+  double scaleX,
+  double scaleY,
+  double offsetX,
+  double offsetY,
+  int clientWidth,
+  int clientHeight,
+});
+
+/// 这次截图的像素怎么落到游戏源窗口客户区（attached surface 实测排版的坐标契约）。
+///
+/// 普通截窗：截图就是完整客户区（[WindowCaptureMetadata.isCompleteClient]），恒等换算。
+/// Magpie 超分时截的是呈现窗里的目标视口（[WindowCaptureMetadata.hasSourceClientMapping]）：
+/// 截图对应源客户区里的源视口，按视口比例缩放再加上视口在源客户区里的偏移——与校准截图的投影
+/// （`gal_lookup_calibration_projection.dart`）同一套换算。元数据缺失（老 runner）、截图尺寸
+/// 与元数据不符、裁框不完整时返回 null：不猜坐标，这一句就不给游戏内命中框。
+GalOcrClientMapping? galOcrClientMapping(
+  WindowCaptureMetadata? metadata, {
+  required int imageWidth,
+  required int imageHeight,
+}) {
+  if (metadata == null || imageWidth <= 0 || imageHeight <= 0) return null;
+  if (metadata.imageWidthPx != imageWidth ||
+      metadata.imageHeightPx != imageHeight) {
+    return null;
+  }
+  if (!metadata.usedPresentationCapture) {
+    if (!metadata.isCompleteClient) return null;
+    return (
+      scaleX: 1,
+      scaleY: 1,
+      offsetX: 0,
+      offsetY: 0,
+      clientWidth: metadata.clientWidthPx,
+      clientHeight: metadata.clientHeightPx,
+    );
+  }
+  if (!metadata.hasSourceClientMapping) return null;
+  return (
+    scaleX: metadata.sourceViewportWidthPx / imageWidth,
+    scaleY: metadata.sourceViewportHeightPx / imageHeight,
+    offsetX: (metadata.sourceViewportLeftPx - metadata.sourceClientLeftPx)
+        .toDouble(),
+    offsetY: (metadata.sourceViewportTopPx - metadata.sourceClientTopPx)
+        .toDouble(),
+    clientWidth: metadata.sourceClientWidthPx,
+    clientHeight: metadata.sourceClientHeightPx,
+  );
+}
+
+/// OCR 行的一个字形（客户区物理像素；OCR 只在画面稳定后识别，所以都是已显示的字）。
+@immutable
+class GalOcrMeasuredGlyph implements GalMeasuredTextGlyph {
+  const GalOcrMeasuredGlyph({
+    required this.textStart,
+    required this.textLength,
+    required this.rect,
+  });
+
+  @override
+  final int textStart;
+
+  @override
+  final int textLength;
+
+  @override
+  final math.Rectangle<double> rect;
+
+  @override
+  bool get shown => true;
+
+  @override
+  bool operator ==(Object other) =>
+      other is GalOcrMeasuredGlyph &&
+      other.textStart == textStart &&
+      other.textLength == textLength &&
+      other.rect == rect;
+
+  @override
+  int get hashCode => Object.hash(textStart, textLength, rect);
+}
+
+/// OCR 游戏模式发布给查词几何的一帧。空文本 = 撤掉命中框（画面在变 / 台词框清空 / 换区域）。
+@immutable
+class GalOcrMeasuredFrame implements GalMeasuredTextFrame {
+  const GalOcrMeasuredFrame({
+    required this.text,
+    required this.glyphs,
+    required this.clientWidth,
+    required this.clientHeight,
+  });
+
+  /// 撤掉命中框。
+  const GalOcrMeasuredFrame.clear()
+    : text = '',
+      glyphs = const <GalOcrMeasuredGlyph>[],
+      clientWidth = 0,
+      clientHeight = 0;
+
+  @override
+  final String text;
+
+  @override
+  final List<GalOcrMeasuredGlyph> glyphs;
+
+  @override
+  final int clientWidth;
+
+  @override
+  final int clientHeight;
+
+  /// OCR 只在画面稳定后才识别：发布出来的都是显示完的句子。
+  @override
+  bool get complete => true;
+
+  /// 坐标直接是物理像素（不是 CSS 像素换算出来的），测量尺寸与真实客户区逐像素相等。
+  @override
+  double get devicePixelRatio => 1;
+
+  bool get isClear => text.isEmpty;
+}
+
+/// OCR 游戏模式的实测排版数据源：一个 [GalOcrLineSource] 一个，[GalOcrLineSource.stop] 时关闭。
+class GalOcrMeasuredFeed implements GalMeasuredTextFeed {
+  GalOcrMeasuredFeed({required this.hwnd});
+
+  /// 被识别的游戏窗口（只用于诊断）。
+  final int hwnd;
+
+  final StreamController<GalOcrMeasuredFrame> _frames =
+      StreamController<GalOcrMeasuredFrame>.broadcast();
+  GalOcrMeasuredFrame? _latest;
+
+  @override
+  String get measuredSource => galAttachedMeasuredSourceScreenOcr;
+
+  @override
+  String get diagnosticLabel => 'screen_ocr hwnd=$hwnd';
+
+  @override
+  Stream<GalOcrMeasuredFrame> get frames => _frames.stream;
+
+  @override
+  GalOcrMeasuredFrame? get latest => _latest;
+
+  @override
+  bool get isClosed => _frames.isClosed;
+
+  /// 发布一帧；与上一帧相同（含连续两次清空）时不重发。
+  void add(GalOcrMeasuredFrame frame) {
+    if (_frames.isClosed) return;
+    final GalOcrMeasuredFrame? previous = _latest;
+    if (previous != null &&
+        previous.text == frame.text &&
+        previous.clientWidth == frame.clientWidth &&
+        previous.clientHeight == frame.clientHeight &&
+        listEquals(previous.glyphs, frame.glyphs)) {
+      return;
+    }
+    _latest = frame;
+    _frames.add(frame);
+  }
+
+  /// 撤掉命中框（还没发布过任何几何时不发）。
+  void clear() {
+    if (_latest == null) return;
+    add(const GalOcrMeasuredFrame.clear());
+  }
+
+  Future<void> close() => _frames.close();
+}
+
+/// 把 Rust 交回的整图字形换成客户区实测帧；换算不可用或一个字都落不进客户区时返回 null。
+GalOcrMeasuredFrame? galOcrMeasuredFrameOf(
+  FfcOcrLineText result,
+  WindowCaptureMetadata? metadata,
+) {
+  final List<FfcOcrLineGlyph>? glyphs = result.glyphs;
+  if (glyphs == null || glyphs.isEmpty || result.text.isEmpty) return null;
+  final GalOcrClientMapping? mapping = galOcrClientMapping(
+    metadata,
+    imageWidth: result.imageWidth,
+    imageHeight: result.imageHeight,
+  );
+  if (mapping == null) return null;
+  final double width = mapping.clientWidth.toDouble();
+  final double height = mapping.clientHeight.toDouble();
+  final List<GalOcrMeasuredGlyph> out = <GalOcrMeasuredGlyph>[];
+  for (final FfcOcrLineGlyph glyph in glyphs) {
+    final double left = (mapping.offsetX + glyph.left * mapping.scaleX).clamp(
+      0.0,
+      width,
+    );
+    final double top = (mapping.offsetY + glyph.top * mapping.scaleY).clamp(
+      0.0,
+      height,
+    );
+    final double right = (mapping.offsetX + glyph.right * mapping.scaleX).clamp(
+      0.0,
+      width,
+    );
+    final double bottom = (mapping.offsetY + glyph.bottom * mapping.scaleY)
+        .clamp(0.0, height);
+    if (right <= left || bottom <= top) continue;
+    out.add(
+      GalOcrMeasuredGlyph(
+        textStart: glyph.start,
+        textLength: glyph.length,
+        rect: math.Rectangle<double>(left, top, right - left, bottom - top),
+      ),
+    );
+  }
+  if (out.isEmpty) return null;
+  return GalOcrMeasuredFrame(
+    text: result.text,
+    glyphs: List<GalOcrMeasuredGlyph>.unmodifiable(out),
+    clientWidth: mapping.clientWidth,
+    clientHeight: mapping.clientHeight,
+  );
+}
 
 /// 截一帧窗口（默认 [WindowCaptureChannel.captureWindow]）。
 typedef GalOcrWindowCapture = Future<WindowCaptureResult> Function(int hwnd);
@@ -170,10 +412,14 @@ class GalOcrLineSource {
        _onIssue = onIssue,
        _capture = capture ?? WindowCaptureChannel.captureWindow,
        _feedFrame = feedFrame ?? _feedInBackground,
-       _trackerFactory = trackerFactory ?? FfcOcrLineTracker.new;
+       _trackerFactory = trackerFactory ?? FfcOcrLineTracker.new,
+       measuredFeed = GalOcrMeasuredFeed(hwnd: hwnd);
 
   /// 截取的游戏窗口。
   final int hwnd;
+
+  /// 当前画面上这一句的逐字客户区几何（游戏画面内嵌查词消费）；[stop] 时关闭。
+  final GalOcrMeasuredFeed measuredFeed;
 
   /// 两次取帧之间的目标间隔（从一次取帧开始算；一轮比它慢就紧接着下一轮）。
   final Duration interval;
@@ -222,6 +468,8 @@ class GalOcrLineSource {
     if (region == _region) return;
     _region = region;
     _regionGeneration++;
+    // 旧区域那一句的命中框不再对应新区域的画面。
+    measuredFeed.clear();
     _wake();
   }
 
@@ -236,13 +484,17 @@ class GalOcrLineSource {
   Future<void> stop() async {
     _stopped = true;
     final Future<void>? loop = _loop;
-    if (loop == null) return;
+    if (loop == null) {
+      await measuredFeed.close();
+      return;
+    }
     _loop = null;
     _running = false;
     _wake();
     await loop;
     _tracker?.close();
     _tracker = null;
+    await measuredFeed.close();
   }
 
   void _wake() {
@@ -308,11 +560,17 @@ class GalOcrLineSource {
     final Uint8List? rgba = frame.rgba;
     if (frame.action != FfcOcrLineFrameAction.ocr || rgba == null) {
       _report(GalOcrSourceIssue.none, null);
+      // 画面在变（换句 / 打字机）或台词框清空：旧句的命中框不能留着——点击的本意是推进
+      // 游戏或跳过打字，而且点到的已不是画面上的字。
+      if (frame.action == FfcOcrLineFrameAction.settling ||
+          frame.action == FfcOcrLineFrameAction.cleared) {
+        measuredFeed.clear();
+      }
       return;
     }
-    final String text;
+    final GalOcrRecognition recognition;
     try {
-      text = await _recognize(rgba, frame.width, frame.height);
+      recognition = await _recognize(rgba, frame.width, frame.height);
     } on SystemOcrUnavailableException catch (error) {
       _report(GalOcrSourceIssue.recognizerUnavailable, error.reason);
       _running = false;
@@ -325,11 +583,32 @@ class GalOcrLineSource {
     }
     if (stale()) return;
     _report(GalOcrSourceIssue.none, null);
-    final FfcOcrLineText result = tracker.feedText(text);
-    if (result.kind == FfcOcrLineTextKind.newLine ||
-        result.kind == FfcOcrLineTextKind.extend) {
-      _onLine(result.text);
+    final FfcOcrLineText result = tracker.feedText(
+      recognition.text,
+      charBoxes: _validCharBoxes(recognition),
+    );
+    final bool emitted =
+        result.kind == FfcOcrLineTextKind.newLine ||
+        result.kind == FfcOcrLineTextKind.extend;
+    if (emitted) _onLine(result.text);
+    final GalOcrMeasuredFrame? measured = galOcrMeasuredFrameOf(
+      result,
+      shot.metadata,
+    );
+    if (measured != null) {
+      measuredFeed.add(measured);
+    } else if (result.kind != FfcOcrLineTextKind.duplicate) {
+      // 新句 / 续写 / 空：画面上的字变了，没有能用的几何就撤掉旧框。重复句对不齐时旧框
+      // 仍对应同一句，保留。
+      measuredFeed.clear();
     }
+  }
+
+  /// 识别器给的逐字框与文本字数对不上（识别器实现有误）时当作没给，不让 Rust 拒收整次识别。
+  static Float32List? _validCharBoxes(GalOcrRecognition recognition) {
+    final Float32List? boxes = recognition.charBoxes;
+    if (boxes == null) return null;
+    return boxes.length == recognition.text.runes.length * 4 ? boxes : null;
   }
 
   void _report(GalOcrSourceIssue issue, Object? detail) {

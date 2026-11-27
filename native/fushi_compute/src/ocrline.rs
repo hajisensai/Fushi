@@ -2,7 +2,7 @@
 //!
 //! 连续 OCR 的**全部判定状态**都在这里：上一帧签名、稳定计数、上次送 OCR 的帧签名、空白态、上一句文本。
 //! Dart 侧（`GalOcrLineSource`）只是泵：按间隔截窗 → [ffc_ocrline_feed_png] → 按 action 决定是否调 OCR →
-//! [ffc_ocrline_feed_text] → 把 new / extend 送进台词流。Dart 不存任何镜像状态。
+//! [ffc_ocrline_feed_text_geometry] → 把 new / extend 送进台词流。Dart 不存任何镜像状态。
 //!
 //! 两步判定：
 //! - 帧（`feed_png`）：解码 PNG、按客户区归一化坐标裁出台词框、降成 96×24 灰度网格签名；
@@ -10,6 +10,12 @@
 //!   打字机逐字出现期间帧一直在变，不会 OCR 半句；框里没字（几乎没有文字边缘）回 `cleared`。
 //! - 文本（`feed_text`）：拼行规范化（CJK 之间去空白）→ 与上一句去重（编辑距离 ≤ 10%）/
 //!   打字机续写（输出上一句 + 新尾巴，保证是严格前缀扩展，台词流的渐进折叠能并成一行）。
+//!
+//! 第三期（BUG-5299 ②，游戏画面内嵌查词）：调用方连同识别文本交来**逐字框**（送检图像素，
+//! 每个 Unicode 标量一个 `[l, t, r, b]`）时，这里把框跟着拼行规范化走、对齐到这一句的**显示文本**
+//! （续写 = 上一句 + 新尾巴，按非空白字序号对齐；重复 = 上一句），并撤掉预处理放大、加回裁框原点，
+//! 映回整张截图的像素坐标交出去（[ffc_ocrline_feed_text_geometry]）。放大倍数与裁框原点只有这里
+//! 知道，所以映射必须在这里做，Dart 不另存一份。
 //!
 //! 第二期（BUG-5141）补的两件判定细节也在这里：
 //! - **易变格掩码**：台词框里循环播放的小动画（「点击继续」图标、光标）若与取帧间隔错相，
@@ -83,13 +89,13 @@ pub mod action {
     pub const IDLE: u32 = 0;
     /// 画面在变（打字机 / 转场），等它稳定。
     pub const SETTLING: u32 = 1;
-    /// 稳定的新画面：RGBA 已交出，调用方 OCR 后调 [super::ffc_ocrline_feed_text]。
+    /// 稳定的新画面：RGBA 已交出，调用方 OCR 后调 [super::ffc_ocrline_feed_text_geometry]。
     pub const OCR: u32 = 2;
     /// 框里没字了（上一句已清，下一句即使相同也算新句）。
     pub const CLEARED: u32 = 3;
 }
 
-/// [ffc_ocrline_feed_text] 的 kind。
+/// [ffc_ocrline_feed_text_geometry] 的 kind。
 pub mod kind {
     /// 识别结果为空（同时清掉上一句）。
     pub const EMPTY: u32 = 0;
@@ -125,6 +131,41 @@ pub enum TextEvent {
     Extend(String),
 }
 
+/// 这一句显示文本里一个字在整张截图里的框（[OcrLineTracker::feed_text_geometry]）。
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TextGlyph {
+    /// 在显示文本里的起点（UTF-16 码元）。
+    pub start: u32,
+    /// UTF-16 码元数（一般 1，代理对 2）。
+    pub len: u32,
+    /// 整张截图像素 `[left, top, right, bottom]`（right / bottom 不含）。
+    pub rect: [f32; 4],
+}
+
+/// 文本判定 + 几何（[OcrLineTracker::feed_text_geometry]）。
+#[derive(Debug, PartialEq)]
+pub struct TextOutcome {
+    pub event: TextEvent,
+    /// 画面上这一句对应的台词流文本：new / extend 是新文本，duplicate 是上一句，empty 为 None。
+    pub display: Option<String>,
+    /// [Self::display] 的逐字框；调用方没给框、对不齐（重复句字数变了）或没有可用框时为 None。
+    pub glyphs: Option<Vec<TextGlyph>>,
+    /// 框所在截图的宽高（与 [Self::glyphs] 同时有效）。
+    pub image: (u32, u32),
+}
+
+/// 最近一次交出的 OCR 帧怎么映回整张截图：裁框原点 + 预处理放大倍数。
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct OcrGeom {
+    origin_x: usize,
+    origin_y: usize,
+    crop_w: usize,
+    crop_h: usize,
+    scale: usize,
+    image_w: usize,
+    image_h: usize,
+}
+
 /// 送 OCR 前的预处理选项（[ffc_ocrline_configure]）。小字放大总是开着，不是选项。
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Preprocess {
@@ -143,6 +184,8 @@ pub struct OcrLineTracker {
     /// 上一句（显示文本）。
     last_text: Option<String>,
     preprocess: Preprocess,
+    /// 最近一次交出的 OCR 帧的映射（下一次 [Self::feed_text_geometry] 用）。
+    ocr_geom: Option<OcrGeom>,
 }
 
 impl OcrLineTracker {
@@ -171,8 +214,20 @@ impl OcrLineTracker {
         self.ocr_sig = None;
     }
 
-    /// 喂一帧已裁好的 RGBA（`width * height * 4`，行紧排）。
+    /// 喂一帧已裁好的 RGBA（`width * height * 4`，行紧排）。框坐标以这块 RGBA 为整张图。
     pub fn feed_rgba(&mut self, rgba: &[u8], width: usize, height: usize) -> FrameAction {
+        self.feed_crop(rgba, width, height, (0, 0), (width, height))
+    }
+
+    /// 喂一块裁好的台词框：`origin` 是它在整张图（`image` 宽高）里的左上角。
+    fn feed_crop(
+        &mut self,
+        rgba: &[u8],
+        width: usize,
+        height: usize,
+        origin: (usize, usize),
+        image: (usize, usize),
+    ) -> FrameAction {
         let luma = to_luma(rgba, width, height);
         if is_blank(&luma, width, height) {
             self.prev_sig = None;
@@ -205,11 +260,21 @@ impl OcrLineTracker {
             return FrameAction::Settling;
         }
         self.ocr_sig = Some(sig);
-        let (rgba, width, height) = prepare_for_ocr(rgba, &luma, width, height, self.preprocess);
+        let (rgba, out_w, out_h, scale) =
+            prepare_for_ocr(rgba, &luma, width, height, self.preprocess);
+        self.ocr_geom = Some(OcrGeom {
+            origin_x: origin.0,
+            origin_y: origin.1,
+            crop_w: width,
+            crop_h: height,
+            scale,
+            image_w: image.0,
+            image_h: image.1,
+        });
         FrameAction::Ocr {
             rgba,
-            width: width as u32,
-            height: height as u32,
+            width: out_w as u32,
+            height: out_h as u32,
         }
     }
 
@@ -226,12 +291,54 @@ impl OcrLineTracker {
             let start = (y * w + x0) * 4;
             crop.extend_from_slice(&src[start..start + cw * 4]);
         }
-        Ok(self.feed_rgba(&crop, cw, ch))
+        Ok(self.feed_crop(&crop, cw, ch, (x0, y0), (w, h)))
     }
 
-    /// 喂一次 OCR 结果（行间用 `\n` 分隔）。
+    /// 喂一次 OCR 结果（行间用 `\n` 分隔），不带几何。
     pub fn feed_text(&mut self, raw: &str) -> TextEvent {
-        let text = normalize_lines(raw);
+        self.decide(normalize_lines(raw))
+    }
+
+    /// 喂一次 OCR 结果 + 逐字框（`boxes` 与 `raw.chars()` 一一对应，送检图像素 `[l, t, r, b]`；
+    /// 行间的 `\n` 等也占一个框，填 0 即可）。框数与字数不符返回 [status::INVALID_ARGUMENT]。
+    ///
+    /// 对齐规则：规范化只删空白、不改字，所以按「第 k 个非空白字」对齐。新句的显示文本就是规范化
+    /// 后的识别文本；续写是「上一句 + 新尾巴」，非空白字数与本次识别相同（尾巴按上一句的字数切），
+    /// 第 k 个字就落在本次识别第 k 个字的框上；重复句的显示文本是上一句，字数相同才对齐，不同（识别
+    /// 抖动多 / 少了字）就不给几何——宁可这一帧不能点，也不让点到的字错位。
+    pub fn feed_text_geometry(
+        &mut self,
+        raw: &str,
+        boxes: Option<&[[f32; 4]]>,
+    ) -> Result<TextOutcome, i32> {
+        if let Some(b) = boxes {
+            if b.len() != raw.chars().count() {
+                return Err(status::INVALID_ARGUMENT);
+            }
+        }
+        let (text, source) = normalize_lines_indexed(raw);
+        let event = self.decide(text);
+        let display = match &event {
+            TextEvent::Empty => None,
+            TextEvent::Duplicate => self.last_text.clone(),
+            TextEvent::New(s) | TextEvent::Extend(s) => Some(s.clone()),
+        };
+        let geom = self.ocr_geom;
+        let glyphs = match (&display, boxes, geom) {
+            (Some(d), Some(b), Some(g)) => align_glyphs(d, &source, b, g),
+            _ => None,
+        };
+        let image = geom.map_or((0, 0), |g| (g.image_w as u32, g.image_h as u32));
+        Ok(TextOutcome {
+            event,
+            display,
+            glyphs,
+            image,
+        })
+    }
+
+    /// 文本判定本体（`text` 已规范化）。
+    fn decide(&mut self, text: String) -> TextEvent {
         let key = fold_key(&text);
         if key.is_empty() {
             self.last_text = None;
@@ -465,15 +572,15 @@ fn binarize_rgba(rgba: &[u8], width: usize, height: usize) -> Vec<u8> {
     out
 }
 
-/// 送 OCR 前的预处理：小字放大（总是开）→ 可选二值化。返回 `(rgba, width, height)`。
+/// 送 OCR 前的预处理：小字放大（总是开）→ 可选二值化。返回 `(rgba, width, height, 放大倍数)`。
 fn prepare_for_ocr(
     rgba: &[u8],
     luma: &[u8],
     width: usize,
     height: usize,
     preprocess: Preprocess,
-) -> (Vec<u8>, usize, usize) {
-    let factor = upscale_factor(estimate_text_height(luma, width, height), width, height);
+) -> (Vec<u8>, usize, usize, usize) {
+    let mut factor = upscale_factor(estimate_text_height(luma, width, height), width, height);
     let (mut px, w, h) = if factor > 1 {
         let (nw, nh) = (width * factor, height * factor);
         match image::RgbaImage::from_raw(width as u32, height as u32, rgba.to_vec()) {
@@ -486,7 +593,10 @@ fn prepare_for_ocr(
                 );
                 (up.into_raw(), nw, nh)
             }
-            None => (rgba.to_vec(), width, height),
+            None => {
+                factor = 1;
+                (rgba.to_vec(), width, height)
+            }
         }
     } else {
         (rgba.to_vec(), width, height)
@@ -494,7 +604,7 @@ fn prepare_for_ocr(
     if preprocess.binarize {
         px = binarize_rgba(&px, w, h);
     }
-    (px, w, h)
+    (px, w, h, factor.max(1))
 }
 
 /// 假名 / 汉字 / CJK 标点 / 全角字符：这些字之间的空白是 OCR 插进来的，不是原文的。
@@ -512,9 +622,16 @@ fn is_cjk(c: char) -> bool {
 
 /// 拼行规范化：逐行 trim；CJK 与 CJK 之间（行内或跨行）的空白去掉，其余空白折成一个空格。
 pub fn normalize_lines(raw: &str) -> String {
+    normalize_lines_indexed(raw).0
+}
+
+/// [normalize_lines] + 输出里每个**非空白**字来自 `raw.chars()` 的第几个（按输出顺序；插进来的
+/// 空格不占位）。
+fn normalize_lines_indexed(raw: &str) -> (String, Vec<usize>) {
     let mut out = String::new();
+    let mut source = Vec::new();
     let mut pending_space = false;
-    for c in raw.chars() {
+    for (i, c) in raw.chars().enumerate() {
         if c.is_whitespace() {
             if !out.is_empty() {
                 pending_space = true;
@@ -529,8 +646,63 @@ pub fn normalize_lines(raw: &str) -> String {
             pending_space = false;
         }
         out.push(c);
+        source.push(i);
     }
-    out
+    (out, source)
+}
+
+/// 送检图像素框 → 整张截图像素框（撤掉放大、加回裁框原点，夹进裁框）；空框 / 非有限值为 None。
+fn map_box(b: [f32; 4], g: OcrGeom) -> Option<[f32; 4]> {
+    if b.iter().any(|v| !v.is_finite()) || b[2] <= b[0] || b[3] <= b[1] {
+        return None;
+    }
+    let s = g.scale as f32;
+    let (ox, oy) = (g.origin_x as f32, g.origin_y as f32);
+    let (cw, ch) = (g.crop_w as f32, g.crop_h as f32);
+    let l = (b[0] / s).clamp(0.0, cw) + ox;
+    let t = (b[1] / s).clamp(0.0, ch) + oy;
+    let r = (b[2] / s).clamp(0.0, cw) + ox;
+    let bt = (b[3] / s).clamp(0.0, ch) + oy;
+    if r <= l || bt <= t {
+        return None;
+    }
+    Some([l, t, r, bt])
+}
+
+/// 把本次识别（非空白字来源 `source`、逐字框 `boxes`）的框对齐到显示文本 `display`
+/// （见 [OcrLineTracker::feed_text_geometry]）。对不齐或一个框都没有时为 None。
+fn align_glyphs(
+    display: &str,
+    source: &[usize],
+    boxes: &[[f32; 4]],
+    g: OcrGeom,
+) -> Option<Vec<TextGlyph>> {
+    let wanted = display.chars().filter(|c| !c.is_whitespace()).count();
+    if wanted != source.len() {
+        return None;
+    }
+    let mut glyphs = Vec::new();
+    let mut utf16 = 0u32;
+    let mut k = 0usize;
+    for c in display.chars() {
+        let len = c.len_utf16() as u32;
+        if !c.is_whitespace() {
+            if let Some(rect) = map_box(boxes[source[k]], g) {
+                glyphs.push(TextGlyph {
+                    start: utf16,
+                    len,
+                    rect,
+                });
+            }
+            k += 1;
+        }
+        utf16 += len;
+    }
+    if glyphs.is_empty() {
+        None
+    } else {
+        Some(glyphs)
+    }
 }
 
 /// 去重键：去掉全部空白后的字符序列。
@@ -734,27 +906,51 @@ pub unsafe extern "C" fn ffc_ocrline_feed_png(
     })
 }
 
-/// 喂一次 OCR 结果（UTF-8，行间 `\n`）。`*out_kind` 写 [kind] 之一；NEW / EXTEND 时这一句的显示文本
-/// （UTF-8）经 `out_ptr` / `out_len` 交出（用 `ffc_free_bytes` 释放），否则二者写 null / 0。
-/// 不是合法 UTF-8 返回 [status::BAD_INPUT]。
+/// [ffc_ocrline_feed_text_geometry] 每个字形的 f32 个数：`[start, len, left, top, right, bottom]`。
+pub const GLYPH_WORDS: usize = 6;
+
+/// 喂一次 OCR 结果（UTF-8，行间 `\n`）+ 可选逐字框。
+///
+/// `boxes` 是 `box_floats` 个 f32：0 个 = 不带几何；否则必须是 `4 * 字数`（`raw.chars()`，含行间
+/// `\n`），每个字 `[l, t, r, b]`（送检图像素，空框填 0）。`out_meta` 写 4 个 u32：
+/// `[kind, 字形数, 截图宽, 截图高]`。显示文本（new / extend 是新文本，duplicate 是上一句）经
+/// `out_text` / `out_text_len` 交出；字形经 `out_glyphs` / `out_glyphs_len` 交出（小端 f32，
+/// 每个 [GLYPH_WORDS] 个：UTF-16 起点、长度、整张截图像素 `l t r b`），字形数为 0 时写 null / 0。
+/// 两块缓冲区都用 `ffc_free_bytes` 释放。不是合法 UTF-8 返回 [status::BAD_INPUT]；框数不符返回
+/// [status::INVALID_ARGUMENT]。
 ///
 /// # Safety
-/// `handle` 有效；`text` 按 `len` 可读（`len == 0` 时可为空指针）；输出指针可写。
+/// `handle` 有效；`text` 按 `len` 可读（`len == 0` 时可为空指针）；`boxes` 按 `box_floats` 可读
+/// （为 0 时可为空指针）；输出指针可写，`out_meta` 可写 4 个 u32。
 #[no_mangle]
-pub unsafe extern "C" fn ffc_ocrline_feed_text(
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn ffc_ocrline_feed_text_geometry(
     handle: *mut std::ffi::c_void,
     text: *const u8,
     len: usize,
-    out_ptr: *mut *mut u8,
-    out_len: *mut usize,
-    out_kind: *mut u32,
+    boxes: *const f32,
+    box_floats: usize,
+    out_text: *mut *mut u8,
+    out_text_len: *mut usize,
+    out_glyphs: *mut *mut u8,
+    out_glyphs_len: *mut usize,
+    out_meta: *mut u32,
 ) -> i32 {
     guard(|| {
-        if handle.is_null() || out_ptr.is_null() || out_len.is_null() || out_kind.is_null() {
+        if handle.is_null()
+            || out_text.is_null()
+            || out_text_len.is_null()
+            || out_glyphs.is_null()
+            || out_glyphs_len.is_null()
+            || out_meta.is_null()
+        {
             return status::NULL_ARGUMENT;
         }
-        if text.is_null() && len != 0 {
+        if (text.is_null() && len != 0) || (boxes.is_null() && box_floats != 0) {
             return status::NULL_ARGUMENT;
+        }
+        if box_floats % 4 != 0 {
+            return status::INVALID_ARGUMENT;
         }
         let bytes = if len == 0 {
             &[][..]
@@ -764,18 +960,47 @@ pub unsafe extern "C" fn ffc_ocrline_feed_text(
         let Ok(raw) = std::str::from_utf8(bytes) else {
             return status::BAD_INPUT;
         };
-        let event = with_tracker(handle, |t| t.feed_text(raw));
-        *out_ptr = std::ptr::null_mut();
-        *out_len = 0;
-        let (k, line) = match event {
-            TextEvent::Empty => (kind::EMPTY, None),
-            TextEvent::Duplicate => (kind::DUPLICATE, None),
-            TextEvent::New(s) => (kind::NEW, Some(s)),
-            TextEvent::Extend(s) => (kind::EXTEND, Some(s)),
+        let rects: Option<Vec<[f32; 4]>> = (box_floats != 0).then(|| {
+            std::slice::from_raw_parts(boxes, box_floats)
+                .chunks_exact(4)
+                .map(|c| [c[0], c[1], c[2], c[3]])
+                .collect()
+        });
+        *out_text = std::ptr::null_mut();
+        *out_text_len = 0;
+        *out_glyphs = std::ptr::null_mut();
+        *out_glyphs_len = 0;
+        let outcome = match with_tracker(handle, |t| t.feed_text_geometry(raw, rects.as_deref())) {
+            Ok(o) => o,
+            Err(code) => return code,
         };
-        *out_kind = k;
-        if let Some(s) = line {
-            hand_over_bytes(s.into_bytes(), out_ptr, out_len);
+        let k = match outcome.event {
+            TextEvent::Empty => kind::EMPTY,
+            TextEvent::Duplicate => kind::DUPLICATE,
+            TextEvent::New(_) => kind::NEW,
+            TextEvent::Extend(_) => kind::EXTEND,
+        };
+        let glyphs = outcome.glyphs.unwrap_or_default();
+        let meta = std::slice::from_raw_parts_mut(out_meta, 4);
+        meta.copy_from_slice(&[k, glyphs.len() as u32, outcome.image.0, outcome.image.1]);
+        if let Some(s) = outcome.display {
+            hand_over_bytes(s.into_bytes(), out_text, out_text_len);
+        }
+        if !glyphs.is_empty() {
+            let mut buf = Vec::with_capacity(glyphs.len() * GLYPH_WORDS * 4);
+            for g in &glyphs {
+                for v in [
+                    g.start as f32,
+                    g.len as f32,
+                    g.rect[0],
+                    g.rect[1],
+                    g.rect[2],
+                    g.rect[3],
+                ] {
+                    buf.extend_from_slice(&v.to_le_bytes());
+                }
+            }
+            hand_over_bytes(buf, out_glyphs, out_glyphs_len);
         }
         status::OK
     })
@@ -1220,33 +1445,256 @@ mod tests {
         assert_eq!(t.feed_text("もう一度"), TextEvent::New("もう一度".into()));
     }
 
+    /// 每个字一个框：第 i 个字 `[5 i, 0, 5 i + 5, 20]`（送检图像素）。
+    fn boxes_for(raw: &str) -> Vec<[f32; 4]> {
+        raw.chars()
+            .enumerate()
+            .map(|(i, c)| {
+                if c.is_whitespace() {
+                    [0.0; 4]
+                } else {
+                    let x = (i * 5) as f32;
+                    [x, 0.0, x + 5.0, 20.0]
+                }
+            })
+            .collect()
+    }
+
+    /// 让 tracker 交出一帧 OCR（整张图就是这块 RGBA，不放大）；相邻两次用不同的 [bars]。
+    fn offer_frame(t: &mut OcrLineTracker, bars: usize) {
+        t.feed_rgba(&frame(bars), W, H);
+        assert!(is_ocr(&t.feed_rgba(&frame(bars), W, H)));
+    }
+
+    #[test]
+    fn geometry_follows_normalization_and_utf16_offsets() {
+        let mut t = OcrLineTracker::new();
+        offer_frame(&mut t, 5);
+        // 行间换行与 CJK 间空格被删；𠮷 是代理对（UTF-16 两个码元）。
+        let raw = "こ ん\n𠮷だ";
+        let out = t.feed_text_geometry(raw, Some(&boxes_for(raw))).unwrap();
+        assert_eq!(out.event, TextEvent::New("こん𠮷だ".into()));
+        assert_eq!(out.display.as_deref(), Some("こん𠮷だ"));
+        assert_eq!(out.image, (W as u32, H as u32));
+        let glyphs = out.glyphs.unwrap();
+        let spans: Vec<(u32, u32, f32)> =
+            glyphs.iter().map(|g| (g.start, g.len, g.rect[0])).collect();
+        // raw 下标：こ 0、ん 2、𠮷 4、だ 5。
+        assert_eq!(
+            spans,
+            vec![(0, 1, 0.0), (1, 1, 10.0), (2, 2, 20.0), (4, 1, 25.0)]
+        );
+    }
+
+    #[test]
+    fn geometry_box_count_must_match_chars() {
+        let mut t = OcrLineTracker::new();
+        assert_eq!(
+            t.feed_text_geometry("あい", Some(&[[0.0; 4]])),
+            Err(status::INVALID_ARGUMENT)
+        );
+    }
+
+    #[test]
+    fn geometry_without_offered_frame_is_none() {
+        let mut t = OcrLineTracker::new();
+        let raw = "今日は";
+        let out = t.feed_text_geometry(raw, Some(&boxes_for(raw))).unwrap();
+        assert_eq!(out.event, TextEvent::New(raw.into()));
+        assert_eq!(out.glyphs, None);
+    }
+
+    #[test]
+    fn geometry_undoes_upscale_and_adds_crop_origin() {
+        let (w, h) = (300usize, 40usize);
+        let px = small_text(w, h, 8);
+        // 整张图 300×80，台词框是下半（原点 y = 40）。
+        let mut full = vec![255u8; w * 80 * 4];
+        full[w * 40 * 4..].copy_from_slice(&px);
+        let img = image::RgbaImage::from_raw(w as u32, 80, full).unwrap();
+        let mut png = Vec::new();
+        img.write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+            .unwrap();
+        let mut t = OcrLineTracker::new();
+        t.feed_png(&png, [0.0, 0.5, 1.0, 0.5]).unwrap();
+        match t.feed_png(&png, [0.0, 0.5, 1.0, 0.5]).unwrap() {
+            // 字高 8 → 放 3 倍。
+            FrameAction::Ocr { width, height, .. } => assert_eq!((width, height), (900, 120)),
+            other => panic!("expected OCR, got {other:?}"),
+        }
+        let out = t
+            .feed_text_geometry(
+                "あい",
+                Some(&[[30.0, 30.0, 60.0, 90.0], [60.0, 30.0, 90.0, 90.0]]),
+            )
+            .unwrap();
+        assert_eq!(out.image, (300, 80));
+        let glyphs = out.glyphs.unwrap();
+        assert_eq!(glyphs[0].rect, [10.0, 50.0, 20.0, 70.0]);
+        assert_eq!(glyphs[1].rect, [20.0, 50.0, 30.0, 70.0]);
+    }
+
+    #[test]
+    fn extend_geometry_aligns_by_non_whitespace_index() {
+        let mut t = OcrLineTracker::new();
+        offer_frame(&mut t, 5);
+        let base = "今日はとてもいい天気ですね";
+        t.feed_text_geometry(base, Some(&boxes_for(base))).unwrap();
+        offer_frame(&mut t, 6);
+        // 前缀里一个字认得不同：显示文本仍以上一句为前缀，框按字序号落在本次识别上。
+        let raw = "今日はとてもいい天気でずね、散歩";
+        let out = t.feed_text_geometry(raw, Some(&boxes_for(raw))).unwrap();
+        assert_eq!(
+            out.event,
+            TextEvent::Extend("今日はとてもいい天気ですね、散歩".into())
+        );
+        let glyphs = out.glyphs.unwrap();
+        assert_eq!(glyphs.len(), 16);
+        assert_eq!((glyphs[11].start, glyphs[11].rect[0]), (11, 55.0));
+        assert_eq!((glyphs[15].start, glyphs[15].rect[0]), (15, 75.0));
+    }
+
+    #[test]
+    fn duplicate_geometry_maps_onto_previous_line_only_when_lengths_match() {
+        let mut t = OcrLineTracker::new();
+        offer_frame(&mut t, 5);
+        let line = "今日はとてもいい天気ですね、散歩に行きましょう";
+        t.feed_text_geometry(line, Some(&boxes_for(line))).unwrap();
+        // 一个字认错、字数相同：重复句，显示文本是上一句，带几何。
+        let jitter = "今日はとてもいい天気ですね、散歩に行さましょう";
+        let out = t
+            .feed_text_geometry(jitter, Some(&boxes_for(jitter)))
+            .unwrap();
+        assert_eq!(out.event, TextEvent::Duplicate);
+        assert_eq!(out.display.as_deref(), Some(line));
+        assert_eq!(out.glyphs.map(|g| g.len()), Some(line.chars().count()));
+        // 少认了一个字：仍是重复句，但对不齐，不给几何。
+        let short = "今日はとてもいい天気ですね散歩に行きましょう";
+        let out = t
+            .feed_text_geometry(short, Some(&boxes_for(short)))
+            .unwrap();
+        assert_eq!(out.event, TextEvent::Duplicate);
+        assert_eq!(out.glyphs, None);
+    }
+
+    #[test]
+    fn empty_and_degenerate_boxes_are_dropped() {
+        let mut t = OcrLineTracker::new();
+        offer_frame(&mut t, 5);
+        let out = t
+            .feed_text_geometry(
+                "あい",
+                Some(&[[5.0, 5.0, 5.0, 9.0], [f32::NAN, 0.0, 1.0, 1.0]]),
+            )
+            .unwrap();
+        assert_eq!(out.event, TextEvent::New("あい".into()));
+        assert_eq!(out.glyphs, None);
+        let out = t.feed_text_geometry(" ", Some(&[[0.0; 4]])).unwrap();
+        assert_eq!(
+            (out.event, out.display, out.glyphs),
+            (TextEvent::Empty, None, None)
+        );
+    }
+
+    unsafe fn feed_geometry(
+        h: *mut std::ffi::c_void,
+        s: &str,
+        boxes: &[f32],
+    ) -> (i32, [u32; 4], Option<String>, Vec<f32>) {
+        let mut text_ptr = std::ptr::null_mut();
+        let mut text_len = 0usize;
+        let mut glyph_ptr = std::ptr::null_mut();
+        let mut glyph_len = 0usize;
+        let mut meta = [99u32; 4];
+        let code = ffc_ocrline_feed_text_geometry(
+            h,
+            s.as_ptr(),
+            s.len(),
+            if boxes.is_empty() {
+                std::ptr::null()
+            } else {
+                boxes.as_ptr()
+            },
+            boxes.len(),
+            &mut text_ptr,
+            &mut text_len,
+            &mut glyph_ptr,
+            &mut glyph_len,
+            meta.as_mut_ptr(),
+        );
+        let text = (!text_ptr.is_null()).then(|| {
+            let t = std::str::from_utf8(std::slice::from_raw_parts(text_ptr, text_len))
+                .unwrap()
+                .to_string();
+            crate::ffc_free_bytes(text_ptr, text_len);
+            t
+        });
+        let glyphs = if glyph_ptr.is_null() {
+            assert_eq!(glyph_len, 0);
+            Vec::new()
+        } else {
+            let g: Vec<f32> = std::slice::from_raw_parts(glyph_ptr, glyph_len)
+                .chunks_exact(4)
+                .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                .collect();
+            crate::ffc_free_bytes(glyph_ptr, glyph_len);
+            g
+        };
+        (code, meta, text, glyphs)
+    }
+
     #[test]
     fn ffi_roundtrip() {
         unsafe {
             let mut h = std::ptr::null_mut();
             assert_eq!(ffc_ocrline_new(&mut h), status::OK);
-            let s = "ゲ ー ム";
-            let mut ptr = std::ptr::null_mut();
-            let mut len = 0usize;
-            let mut k = 99u32;
-            assert_eq!(
-                ffc_ocrline_feed_text(h, s.as_ptr(), s.len(), &mut ptr, &mut len, &mut k),
-                status::OK
-            );
-            assert_eq!(k, kind::NEW);
-            assert_eq!(
-                std::str::from_utf8(std::slice::from_raw_parts(ptr, len)).unwrap(),
-                "ゲーム"
-            );
-            crate::ffc_free_bytes(ptr, len);
-            assert_eq!(
-                ffc_ocrline_feed_text(h, s.as_ptr(), s.len(), &mut ptr, &mut len, &mut k),
-                status::OK
-            );
-            assert_eq!((k, ptr.is_null(), len), (kind::DUPLICATE, true, 0));
+            let (code, meta, text, glyphs) = feed_geometry(h, "ゲ ー ム", &[]);
+            assert_eq!(code, status::OK);
+            assert_eq!(meta, [kind::NEW, 0, 0, 0]);
+            assert_eq!(text.as_deref(), Some("ゲーム"));
+            assert!(glyphs.is_empty());
+            // 重复句交出上一句的显示文本。
+            let (code, meta, text, _) = feed_geometry(h, "ゲ ー ム", &[]);
+            assert_eq!((code, meta[0]), (status::OK, kind::DUPLICATE));
+            assert_eq!(text.as_deref(), Some("ゲーム"));
+            // 带框：先让 tracker 交出一帧（W×H 整图，不放大）。
+            let f = frame(5);
+            let mut px = std::ptr::null_mut();
+            let mut px_len = 0usize;
+            {
+                let tracker = &*(h as *const Handle);
+                let mut t = tracker.lock().unwrap();
+                t.feed_rgba(&f, W, H);
+                assert!(is_ocr(&t.feed_rgba(&f, W, H)));
+            }
+            let boxes = [1.0f32, 2.0, 11.0, 22.0, 0.0, 0.0, 0.0, 0.0];
+            let (code, meta, text, glyphs) = feed_geometry(h, "あ\n", &boxes);
+            assert_eq!(code, status::OK);
+            assert_eq!(meta, [kind::NEW, 1, W as u32, H as u32]);
+            assert_eq!(text.as_deref(), Some("あ"));
+            assert_eq!(glyphs, vec![0.0, 1.0, 1.0, 2.0, 11.0, 22.0]);
+            // 框数不对 / 不是 4 的倍数。
+            let (code, ..) = feed_geometry(h, "あい", &boxes[..4]);
+            assert_eq!(code, status::INVALID_ARGUMENT);
+            let (code, ..) = feed_geometry(h, "あ", &boxes[..3]);
+            assert_eq!(code, status::INVALID_ARGUMENT);
             let bad = [0xffu8, 0xfe];
+            let mut meta = [0u32; 4];
+            let mut gp = std::ptr::null_mut();
+            let mut gl = 0usize;
             assert_eq!(
-                ffc_ocrline_feed_text(h, bad.as_ptr(), 2, &mut ptr, &mut len, &mut k),
+                ffc_ocrline_feed_text_geometry(
+                    h,
+                    bad.as_ptr(),
+                    2,
+                    std::ptr::null(),
+                    0,
+                    &mut px,
+                    &mut px_len,
+                    &mut gp,
+                    &mut gl,
+                    meta.as_mut_ptr()
+                ),
                 status::BAD_INPUT
             );
             assert_eq!(ffc_ocrline_reset(h), status::OK);
@@ -1265,8 +1713,8 @@ mod tests {
                     b"x".as_ptr(),
                     1,
                     region.as_ptr(),
-                    &mut ptr,
-                    &mut len,
+                    &mut px,
+                    &mut px_len,
                     meta.as_mut_ptr()
                 ),
                 status::BAD_INPUT

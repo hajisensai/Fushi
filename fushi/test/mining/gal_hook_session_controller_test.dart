@@ -2858,7 +2858,8 @@ void main() {
     await controller.startOcrCapture(
       const ExternalWindowInfo(hwnd: 8, pid: 909, title: '窗口标题'),
       region: GalOcrRegion.defaultDialogue,
-      recognize: (Uint8List rgba, int width, int height) async => '',
+      recognize: (Uint8List rgba, int width, int height) async =>
+          const GalOcrRecognition(''),
     );
     emitLine('今日はとても'); // 6 字
     emitLine('今日はとてもいい天気ですね'); // 整句 13 字
