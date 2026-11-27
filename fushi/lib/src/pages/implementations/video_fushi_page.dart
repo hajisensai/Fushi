@@ -54,7 +54,6 @@ import 'package:share_plus/share_plus.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/utils/misc/collection_exporter.dart';
 import 'package:fushi/src/utils/own_route_exit.dart';
-import 'package:fushi/src/utils/opaque_window_content_claim.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -14220,28 +14219,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             controller,
             _buildVideoBody(controller, videoController),
           );
-    // BUG-5591：画面挂上后本地视频页整窗都是播放器黑底（全屏路由同样），声明给
-    // Windows runner，主窗表面在 Mica 下也按不透明合成，全屏进出不再露出纯色材质。
-    // 网页档（底下是 WebView2）、回看横幅、加载 / 失败态可能有半透明像素，不认领。
-    final bool opaqueVideoSurface =
-        !_webMode &&
-        !_failed &&
-        !_missingResource &&
-        controller != null &&
-        videoController != null &&
-        _videoReadyToShow &&
-        !(_sourceReviewSession?.isReview ?? false);
-    return OpaqueWindowContentClaim(
-      enabled: opaqueVideoSurface,
-      child: _buildScaffoldBody(controller, cs, body),
-    );
-  }
-
-  Widget _buildScaffoldBody(
-    VideoPlayerController? controller,
-    ColorScheme cs,
-    Widget body,
-  ) {
     return Scaffold(
       // 网页档（底层合成）：站点画面是垫在 Flutter 下面的 WebView2 子窗口，从透明像素处
       // 透出来——页底不能有任何不透明底色（加载 / 失败态自己垫底）。

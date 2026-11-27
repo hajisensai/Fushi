@@ -110,4 +110,25 @@ void main() {
     await tester.pump();
     expect(sent, <bool>[true, false, true, false]);
   });
+
+  testWidgets('outside any route it claims once a frame is drawn', (
+    WidgetTester tester,
+  ) async {
+    final ValueNotifier<bool> enabled = ValueNotifier<bool>(true);
+    await tester.pumpWidget(
+      ValueListenableBuilder<bool>(
+        valueListenable: enabled,
+        builder: (BuildContext _, bool on, Widget? _) =>
+            OpaqueWindowContentClaim(enabled: on, child: const SizedBox()),
+      ),
+    );
+    await tester.pump();
+    expect(WindowCaptionChannel.debugOpaqueContentClaims, 1);
+    enabled.value = false;
+    await tester.pump();
+    expect(WindowCaptionChannel.debugOpaqueContentClaims, 0);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+    expect(sent, <bool>[true, false]);
+  });
 }

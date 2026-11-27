@@ -53,6 +53,9 @@ void main() {
     try {
       await db.setPrefTyped<bool>('first_time_setup', false);
       await db.setPrefTyped<bool>('onboarding_completed', true);
+      // Glass design: the runner is asked for Mica, so the surface would be
+      // see-through without the root frame's opaque-content claim.
+      await db.setPrefTyped<String>('design_system', 'glass');
     } finally {
       await db.close();
     }
@@ -136,6 +139,24 @@ void main() {
     expect(_windowSizes(exit), <_Size>[
       before.window.size,
     ], reason: 'leaving passed through another window size');
+
+    // BUG-5591: with Mica requested, the opaque root frame keeps the surface
+    // opaque, so the transition snapshot stays under the view (released as
+    // "opaque surface"), never cleared to the bare material.
+    debugPrint(
+      '[fs-trace] systemBackdropActive='
+      '${WindowCaptionChannel.systemBackdropActive.value}',
+    );
+    for (final _Event e in <_Event>[...enter, ...exit]) {
+      if (e.kind != _Kind.snapshotReleased) continue;
+      expect(
+        e.a,
+        0,
+        reason:
+            'snapshot release reason ${e.a}: the surface was see-through '
+            '(0 = kOpaqueSurface)',
+      );
+    }
 
     // The view followed each jump with a frame at the new size.
     if (!clientValid) return;

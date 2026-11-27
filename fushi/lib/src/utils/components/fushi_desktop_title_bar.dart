@@ -18,6 +18,7 @@ import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/fushi_color_roles.dart';
+import 'package:fushi/src/utils/opaque_window_content_claim.dart';
 import 'package:fushi/src/utils/window_caption_channel.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -542,11 +543,22 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
         // 开着时必须让开，否则垫在 Flutter 下面的 WebView2 子窗口透不出来。
         final Widget frame = ValueListenableBuilder<bool>(
           valueListenable: underlayCompositionActive,
-          builder: (BuildContext context, bool underlay, Widget? navigator) =>
-              ColoredBox(
-                color: underlay ? Colors.transparent : colors.surface,
-                child: navigator,
-              ),
+          builder: (BuildContext context, bool underlay, Widget? navigator) {
+            final Color frameColor = underlay
+                ? Colors.transparent
+                : colors.surface;
+            // BUG-5591：这层底色决定窗口内容是否整窗不透明——它盖在每个路由下面，
+            // 不透明时任何页面（含首页 0.6 的外壳底色）都透不到主窗表面。告诉
+            // Windows runner，主窗表面在 Mica 下也按不透明合成，全屏跳变的过渡
+            // 快照才能留在视图底下，不露出纯色材质。底层合成时这里让开，但页面
+            // 只在 WebView2 宿主窗上方让开（underlay_composition.dart 的契约），
+            // 整窗仍被 Flutter 或 WebView2 盖满。哪天这层为了透出 Mica 改成半透明，
+            // 认领随颜色自动撤掉，表面回到透底。
+            return OpaqueWindowContentClaim(
+              enabled: underlay || frameColor.a >= 1.0,
+              child: ColoredBox(color: frameColor, child: navigator),
+            );
+          },
           // 叠放而不是竖排（2026-10-06「app 顶栏和主要界面没有融为一体」）：
           // 曾经是 Column[标题行, Expanded(页面)]——页面从 y = 32 才开始画，
           // 标题行是一条独立的带子，详情页的 fanart / 模糊背景在它下沿被一刀

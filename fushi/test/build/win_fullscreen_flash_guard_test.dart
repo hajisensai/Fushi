@@ -418,27 +418,34 @@ void main() {
         isTrue,
         reason: 'claimed only once the route covers the window',
       );
-      final String page = maskComments(
+      // The single declarer is the opaque frame under every route: the
+      // claim follows that frame's colour, so making the frame translucent
+      // (to let Mica through) drops the claim automatically.
+      final String titleBar = maskComments(
         File(
-          'lib/src/pages/implementations/video_fushi_page.dart',
+          'lib/src/utils/components/fushi_desktop_title_bar.dart',
         ).readAsStringSync(),
       );
-      final int claimAt = page.indexOf('OpaqueWindowContentClaim(');
-      expect(claimAt, isNonNegative, reason: 'the local video page claims');
-      final int enabledAt = page.lastIndexOf(
-        'final bool opaqueVideoSurface =',
+      final int claimAt = titleBar.indexOf('OpaqueWindowContentClaim(');
+      expect(claimAt, isNonNegative, reason: 'the root frame declares');
+      final String claimCall = titleBar.substring(
         claimAt,
+        titleBar.indexOf(');', claimAt),
       );
-      expect(enabledAt, isNonNegative);
-      final String enabled = page.substring(enabledAt, claimAt);
-      for (final String condition in <String>[
-        '!_webMode',
-        '_videoReadyToShow',
-        '!_failed',
-        'isReview',
-      ]) {
-        expect(enabled.contains(condition), isTrue, reason: condition);
-      }
+      expect(
+        claimCall.contains('enabled: underlay || frameColor.a >= 1.0'),
+        isTrue,
+      );
+      expect(
+        claimCall.contains('ColoredBox(color: frameColor'),
+        isTrue,
+        reason: 'the claim wraps the very box whose colour it reports',
+      );
+      expect(
+        claim.contains('_routeAnimation == null ||'),
+        isTrue,
+        reason: 'outside any route (the root frame) the claim is settled',
+      );
     });
 
     test('BUG-5591: every transition is traced for the geometry itest', () {
