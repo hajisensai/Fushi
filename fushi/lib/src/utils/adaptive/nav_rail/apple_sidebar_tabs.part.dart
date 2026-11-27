@@ -10,8 +10,8 @@ class AppleSidebarSection {
   final List<int> indices;
 }
 
-/// 宽窗口时 Apple 设计系统侧栏是否收成顶部标签栏：只在 expanded 尺寸档、
-/// 用户用侧栏右上的按钮切过（[userExpanded] == false，与 MD3 rail 的展开 /
+/// 宽窗口时 Apple 设计系统侧栏是否收成顶部标签栏：只在窗口给侧栏（
+/// [adaptiveNavSidebarByWindow]，横屏手机不给）、用户用侧栏右上的按钮切过（[userExpanded] == false，与 MD3 rail 的展开 /
 /// 收起记忆同一个偏好）时成立。首页外壳与桌面标题栏的缩进都经这里。
 bool adaptiveAppleTabBarMode(
   BuildContext context, {
@@ -19,7 +19,7 @@ bool adaptiveAppleTabBarMode(
   bool? userExpanded,
 }) =>
     isGlassDesign(context) &&
-    sizeClass == WindowSizeClass.expanded &&
+    adaptiveNavSidebarByWindow(context, sizeClass: sizeClass) &&
     userExpanded == false;
 
 /// 贴边侧栏的内容内边距（行离侧栏左右缘 / 上下缘的距离）。

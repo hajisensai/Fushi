@@ -2,12 +2,15 @@
 // 按竖屏规则留一大圈空白——竖向留白收到 8、屏高比例封顶取消、宽度上限放宽到 720；
 // 竖屏 / 桌面尺寸行为不变；iOS 纯文字 alert 宽度固定不放宽。
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_compact_landscape.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_page_title_metrics.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:material_ui/material_ui.dart';
 
 /// 横屏手机（Xiaomi 2311DRK48C 横放，反馈设备 407x904 转 90°）。
@@ -248,6 +251,58 @@ void main() {
       final Size size = tester.getSize(panel);
       expect(size.width, 720);
       expect(size.height, _phoneLandscape.height - 16);
+    });
+  });
+
+  // 横屏巡检 2026-11-26：横屏手机宽 ~900 落进 expanded 档，外壳按宽取档就给了
+  // 桌面的 84 号页名和展开侧栏，页头吃掉三分之一高、侧栏吃掉四分之一宽。
+  group('shell chrome on a landscape phone', () {
+    testWidgets('MD3 page title takes the phone tier', (
+      WidgetTester tester,
+    ) async {
+      BuildContext context = await _pumpHost(tester, size: _phoneLandscape);
+      expect(isFushiCompactLandscapeWindow(context), isTrue);
+      expect(FushiPageTitleMetrics.isCompact(context), isTrue);
+
+      context = await _pumpHost(tester, size: const Size(1280, 800));
+      expect(isFushiCompactLandscapeWindow(context), isFalse);
+      expect(FushiPageTitleMetrics.isCompact(context), isFalse);
+    });
+
+    testWidgets('Apple keeps its single-row inline title', (
+      WidgetTester tester,
+    ) async {
+      // Apple 的手机档是「导航行 + 大标题行」两行；iPhone 横屏本就是内联标题。
+      final BuildContext context = await _pumpHost(
+        tester,
+        size: _phoneLandscape,
+        apple: true,
+      );
+      expect(FushiPageTitleMetrics.isCompact(context), isFalse);
+    });
+
+    testWidgets('nav rail defaults to collapsed, user choice still wins', (
+      WidgetTester tester,
+    ) async {
+      BuildContext context = await _pumpHost(tester, size: _phoneLandscape);
+      expect(
+        adaptiveNavRailExtended(context, sizeClass: WindowSizeClass.expanded),
+        isFalse,
+      );
+      expect(
+        adaptiveNavRailExtended(
+          context,
+          sizeClass: WindowSizeClass.expanded,
+          userExpanded: true,
+        ),
+        isTrue,
+      );
+
+      context = await _pumpHost(tester, size: const Size(1280, 800));
+      expect(
+        adaptiveNavRailExtended(context, sizeClass: WindowSizeClass.expanded),
+        isTrue,
+      );
     });
   });
 }

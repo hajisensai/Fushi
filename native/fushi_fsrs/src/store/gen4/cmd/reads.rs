@@ -6,7 +6,7 @@
 //! | `cards` `notes` `note_type_counts` `pending_notes` `media_refs` `term_status` `dup_groups` | 两张缓存表 | `cards` / `notes`（列相同） |
 //! | `today_reviews` `review_grid` | `srs_stat_reviews` | `stats`（列 = `history::StatRow`） |
 //! | `entities` `entity_count` | `srs_entities` | `ent_ix` → 每个别名类的定义（`cache.rs` `definition`） |
-//! | `edits` `conflict_edits` `lapis_backfill` | `srs_field_edits` | `reg_ix` → 按类判定活着的写入（`class.rs` `class_lines`） |
+//! | `edits` `note_views` `conflict_edits` `lapis_backfill` | `srs_field_edits` | `reg_ix` → 按类判定活着的写入（`class.rs` `class_lines`） |
 //! | `successors` `source_note_candidates` `style_candidates` | `srs_field_edits` | `reg_ix` + 操作体 |
 //! | `logs` `anki_logs_at` `native_logs_near` | `srs_review_logs` | `log_ix` → 每个规范日志 ID 的代表（`cache.rs` `card_logs`），`res` 按血统重放写回（`replayed_card_logs`） |
 //! | `server_times` `events` `events_present` `has_user_data` | 四张事件表 + `srs_event_local` | 上面几张索引 + 操作体 |
@@ -82,6 +82,12 @@ type Candidate = (i64, (u8, Vec<u8>), Ref);
 
 /// 单表结果在 `files` 里的名字（同协议 3）。
 const TABLE: &str = "t";
+
+/// `note_views` 的第二张表（全部笔记的修改行，[Reads::note_views]）在 `files` 里的名字。
+const NOTE_EDITS_TABLE: &str = "e";
+
+/// `note_views` 的第三张表（全部笔记的字段正文，[Reads::note_views]）在 `files` 里的名字。
+const NOTE_FIELDS_TABLE: &str = "f";
 
 fn opt_str<'a>(req: &'a Value, k: &str) -> Option<&'a str> {
     req.get(k).and_then(Value::as_str)
@@ -202,14 +208,21 @@ fn like_contains(hay: &str, needle: &str) -> bool {
     h.windows(n.len()).any(|w| w.eq_ignore_ascii_case(n))
 }
 
-/// 一条行 JSON（修改 / 日志）：分区键填上 profile，顺手取出 [field]（字符串，没有 = 空串）。
+/// 一条行 JSON（修改 / 日志）：分区键填上 profile（同 [with_profile]），顺手取出 [field]（字符串，没有 = 空串）。只解析
+/// 一遍（以前换 profile 解一遍、取字段再解一遍）。
 fn row_json(json: &str, profile: &str, field: &str) -> (String, String) {
-    let out = with_profile(json, profile);
-    let f = serde_json::from_str::<Value>(&out)
-        .ok()
-        .and_then(|v| v.get(field).and_then(Value::as_str).map(str::to_owned))
-        .unwrap_or_default();
-    (out, f)
+    match serde_json::from_str::<Value>(json) {
+        Ok(Value::Object(mut m)) => {
+            let f = m
+                .get(field)
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+                .unwrap_or_default();
+            m.insert("p".to_owned(), Value::String(profile.to_owned()));
+            (canonical(&Value::Object(m)), f)
+        }
+        _ => (json.to_owned(), String::new()),
+    }
 }
 
 /// 修改记录 ID（协议 3 `registers::edit_id`）：带旧戳的按旧写入者与旧 seq，不带的按 (设备, seq)。
@@ -252,6 +265,7 @@ pub fn run(t: &Truth<'_>, col: i64, req: &Value, files: &mut Files) -> Result<Va
                 }
                 v
             }
+            "note_views" => r.read_pass(|r| r.note_views(req, files))?,
             "successors" => single(files, r.successors()?),
             "conflict_edits" => single(files, r.conflict_edits(req)?),
             "style_candidates" => single(files, r.style_candidates(req)?),
@@ -379,10 +393,8 @@ impl<'t, 'c> Reads<'t, 'c> {
         &mut self,
         f: impl FnOnce(&mut Self) -> Result<T, String>,
     ) -> Result<T, String> {
-        self.ix.pass_writers = Some(std::rc::Rc::new(self.ix.writer_aliases()?));
-        let done = self.ix.pass_rules_begin().and_then(|()| f(self));
-        self.ix.pass_writers = None;
-        self.ix.pass_rules = None;
+        let done = self.ix.read_pass_begin().and_then(|()| f(self));
+        self.ix.read_pass_end();
         done
     }
 
@@ -660,6 +672,78 @@ impl<'t, 'c> Reads<'t, 'c> {
             }
         }
         Ok((out.encode(), canon, key_canon))
+    }
+
+    /// `note_views {ids}`：一组笔记（每个别名类一份，按 ID 的 SQLite 序）的物化，寄存器与视图在内核里就地算好——读出来的
+    /// 修改行对象直接交给寄存器内核（`registers::note_entity_of_objects`），宿主不再把 `edits` 的行送回内核
+    /// `ffsrs_materialize` 一遍（行 JSON 出内核、回内核、再解析一遍，每条笔记几十 KB 的字段正文多走三遍，BUG-5572）。
+    ///
+    /// - 表 `t`：`id` 规范笔记 ID、`v` = `materialize` 的 `note` 组那一项（`r` 寄存器 / `d` / `x` / `v` 视图）的 JSON，
+    ///   只是视图里没有字段 `f`；`n` 这条笔记的修改行数、`nf` 字段数。
+    /// - 表 `f`（[NOTE_FIELDS_TABLE]）：视图的字段 `f` 原样搬出来（`k` 字段 ID、`s` 正文，按 `f` 的顺序），全部笔记按 `t`
+    ///   的顺序首尾相接、每条 `nf` 行：字段正文（释义 HTML 每个几十 KB）不进 JSON，两边都不转义 / 解析它。
+    /// - 表 `e`（[NOTE_EDITS_TABLE]）：全部笔记的修改行按 `t` 的顺序首尾相接，每条笔记 `n` 行（`j` 行 JSON、`st` 服务器
+    ///   时刻）；与 `edits {kind: note, ids}` 交出的逐行相同（含合成 `tags` 行），`v` 里寄存器的下标指向这条笔记自己那一段。
+    /// - 没有身份记录、或身份记录不是笔记的 ID 不出行。JSON 带 `canon`（同 `edits`）。
+    fn note_views(&mut self, req: &Value, files: &mut Files) -> Result<Value, String> {
+        let (mut ids, canon) = canon_ids_echo(&self.ix, need_list(req, "ids")?)?;
+        ids.sort_by(|a, b| sql_order(a).cmp(&sql_order(b)));
+        let mut notes = Table::new(&[
+            ("id", KIND_STR),
+            ("v", KIND_STR),
+            ("n", KIND_I64),
+            ("nf", KIND_I64),
+        ]);
+        let mut edits = Table::new(&[("j", KIND_STR), ("st", KIND_OPT_I64)]);
+        let mut fields = Table::new(&[("k", KIND_STR), ("s", KIND_STR)]);
+        for c in ids {
+            let payload = match self.ix.definition(&c)? {
+                Some((k, _, d)) if k == EntKind::Note as i64 => d,
+                _ => continue,
+            };
+            let rows = super::note_edit_rows_objects(self.t, &mut self.ix, &c, &self.profile)?;
+            let n = rows.len() as i64;
+            let mut objects = Vec::with_capacity(rows.len());
+            for (_, j, st, obj) in rows {
+                edits.push(vec![Cell::S(j), Cell::OptI(st)])?;
+                objects.push((obj, st));
+            }
+            let mut v = crate::registers::note_entity_of_objects(&payload, objects)?;
+            // 字段正文不进 `v`：原样进表 `f` 的字符串列，两边都不按 JSON 转义 / 解析它（几十 KB 的释义 HTML）。
+            let fs = match v
+                .get_mut("v")
+                .and_then(Value::as_object_mut)
+                .and_then(|m| m.remove("f"))
+            {
+                Some(Value::Array(fs)) => fs,
+                _ => return Err("note_views: view has no fields".to_owned()),
+            };
+            let nf = fs.len() as i64;
+            for f in fs {
+                let Value::Array(mut kv) = f else {
+                    return Err("note_views: bad field".to_owned());
+                };
+                let (Some(Value::String(text)), Some(Value::String(key))) = (kv.pop(), kv.pop())
+                else {
+                    return Err("note_views: bad field".to_owned());
+                };
+                fields.push(vec![Cell::S(key), Cell::S(text)])?;
+            }
+            notes.push(vec![
+                Cell::S(c.text()),
+                Cell::S(canonical(&v)),
+                Cell::I(n),
+                Cell::I(nf),
+            ])?;
+        }
+        files.push((TABLE.to_owned(), notes.encode()));
+        files.push((NOTE_EDITS_TABLE.to_owned(), edits.encode()));
+        files.push((NOTE_FIELDS_TABLE.to_owned(), fields.encode()));
+        Ok(if canon.is_empty() {
+            json!({})
+        } else {
+            json!({ "canon": canon })
+        })
     }
 
     /// `successors`：全部「前身卡 → 后继卡」链接（`entity_id` 规范后继卡, `field_key` = `historyFrom/<规范前身卡>`），
@@ -1088,9 +1172,14 @@ impl<'t, 'c> Reads<'t, 'c> {
     /// 日志 ID 一条代表（`cache.rs` `card_logs`）。卡按 ID 序，卡内按 (发生时刻, 操作主键)。`oid` = 别名归一前的原值日志 ID
     /// （与 `id` 相同时为空，`cache.rs` `LogIn::order_id`）：同一事件的几份副本按它排序、选代表（BUG-5476），Dart 的
     /// `SrsCardHistory` 把它交给列模式选取（history.rs `select_columns`），与内核的排程、统计选同一份。
+    ///
+    /// 整批卡所在的 historyFrom 连通分量一起重放一遍（`cache.rs` `replayed_logs`），不逐卡各重建一遍：同一个历史族的卡
+    /// 以前每张都把整个族的 `card_logs` 重读、重放一次（真库 4096 张卡调 6104 次 `card_logs`、56690 次 `log_at`，交回的
+    /// 只有 39971 条，BUG-5572）。每个连通分量的重放与只给它一张卡时逐字相同（分量之间没有链接，链尾按分量各自重放）。
     fn logs(&mut self, req: &Value) -> Result<Vec<u8>, String> {
         let mut cards = canon_ids(&self.ix, need_list(req, "cards")?)?;
         cards.sort_by(|a, b| sql_order(a).cmp(&sql_order(b)));
+        let mut by_card = self.ix.replayed_logs(&cards.iter().cloned().collect())?;
         let mut out = Table::new(&[
             ("id", KIND_STR),
             ("card_id", KIND_STR),
@@ -1099,7 +1188,8 @@ impl<'t, 'c> Reads<'t, 'c> {
             ("oid", KIND_OPT_STR),
         ]);
         for c in cards {
-            for l in self.ix.replayed_card_logs(&c)? {
+            // `canon_ids` 已去重：每张卡只取一次。
+            for l in by_card.remove(&c.text()).unwrap_or_default() {
                 let (json, id) = row_json(&l.json, &self.profile, "id");
                 out.push(vec![
                     Cell::S(id),

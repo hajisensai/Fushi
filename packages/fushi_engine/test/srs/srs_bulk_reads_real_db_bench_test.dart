@@ -20,7 +20,7 @@ import 'apkg/apkg_test_support.dart' show FakeFsrsEngine;
 import 'support/srs_test_storage.dart';
 
 /// 跑 [f]，交回 (毫秒, 结果)，并打印这段时间里各条内核命令的次数 / 用时 / 交回字节（[SrsOpLedger]）：与总用时的差就是
-/// Dart 侧（解码、物化输入、物化内核）的。
+/// Dart 侧（列解码、视图 JSON 解码、建 [SrsNoteView] / [SrsCardHistory]）的。
 Future<(int, T)> _timed<T>(Future<T> Function() f) async {
   SrsOpLedger.reset();
   final Stopwatch sw = Stopwatch()..start();
@@ -97,55 +97,6 @@ void main() {
           'read logs(4096 cards) ${one.elapsedMilliseconds}ms',
         );
       }
-      // `notes` 的分段（同 SrsDbStore.notes：每块 500 条读身份记录与修改记录，再一次物化）：内核读 / Dart 拼物化输入 /
-      // 物化内核（含回包解码）各多少。
-      int readUs = 0, glueUs = 0, matUs = 0;
-      for (int at = 0; at < noteIds.length; at += 500) {
-        final List<String> chunk = noteIds.sublist(
-          at,
-          at + 500 > noteIds.length ? noteIds.length : at + 500,
-        );
-        final Stopwatch sw = Stopwatch()..start();
-        final SrsReadResult ents = await srsRead(
-          srs.core,
-          uid,
-          'entities',
-          <String, Object?>{'ids': chunk},
-        );
-        final SrsReadResult eds = await srsRead(
-          srs.core,
-          uid,
-          'edits',
-          <String, Object?>{'kind': 'note', 'ids': chunk},
-        );
-        readUs += sw.elapsedMicroseconds;
-        sw.reset();
-        final Map<String, List<SrsEditItem>> byId =
-            <String, List<SrsEditItem>>{};
-        final SrsColumns ec = eds.table;
-        for (int i = 0; i < ec.rows; i++) {
-          (byId[ec.strings('e')[i]] ??= <SrsEditItem>[]).add(
-            SrsEditItem.stored(ec.strings('j').bytes(i), ec.ints('st').at(i)),
-          );
-        }
-        final SrsColumns nc = ents.table;
-        final List<SrsEntitySource> src = <SrsEntitySource>[
-          for (int i = 0; i < nc.rows; i++)
-            SrsEntitySource(
-              nc.strings('id')[i],
-              nc.strings('payload_json')[i],
-              byId[nc.strings('id')[i]] ?? <SrsEditItem>[],
-            ),
-        ];
-        glueUs += sw.elapsedMicroseconds;
-        sw.reset();
-        srsMaterializeNotes(src);
-        matUs += sw.elapsedMicroseconds;
-      }
-      stdout.writeln(
-        'BENCH notes split: kernel reads ${readUs ~/ 1000}ms, '
-        'glue ${glueUs ~/ 1000}ms, materialize ${matUs ~/ 1000}ms',
-      );
       for (int round = 0; round < 2; round++) {
         final (int nMs, Map<String, SrsNoteView?> notes) = await _timed(
           () => store.notes(noteIds),

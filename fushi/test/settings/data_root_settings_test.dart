@@ -284,17 +284,20 @@ void main() {
       },
     );
 
-    test(
-      'migration view renders a failure phase with reason + suggestions',
-      () {
-        final String src = readSource(
-          'lib/src/storage/data_root_migration_view.dart',
-        ).readAsStringSync();
-        expect(src.contains('final String? failure'), isTrue);
-        expect(src.contains('data_storage_migrate_failed_title'), isTrue);
-        expect(src.contains('data_storage_migrate_failed_suggestions'), isTrue);
-      },
-    );
+    test('migration view renders a failure phase with reason + suggestions', () {
+      final String src = readSource(
+        'lib/src/storage/data_root_migration_view.dart',
+      ).readAsStringSync();
+      expect(src.contains('final String? failure'), isTrue);
+      expect(src.contains('data_storage_migrate_failed_title'), isTrue);
+      // The suggestions line is picked by the caller (only for a custom folder
+      // whose failure reason does not already say what to do) and passed in.
+      expect(src.contains('final String? failureHint'), isTrue);
+      final String part = readSource(
+        'lib/src/sync/sync_settings_schema/data_root.part.dart',
+      ).readAsStringSync();
+      expect(part.contains('data_storage_migrate_failed_suggestions'), isTrue);
+    });
 
     test('data-root entry has one home in storage and remains expanded', () {
       final SettingsDestination storage = buildStorageDestination();

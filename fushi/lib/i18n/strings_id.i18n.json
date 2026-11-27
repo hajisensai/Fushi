@@ -2510,6 +2510,7 @@
   "data_storage_migrate_failed_restart": "Mulai ulang",
   "data_storage_migrate_failed_suggestions": "Silakan coba lagi dengan folder kosong yang berbeda. Jangan pilih folder instalasi aplikasi, dan pastikan tidak ada file di lokasi tersebut yang sedang digunakan.",
   "data_storage_migrate_failed_title": "Migrasi data gagal",
+  "data_storage_migrate_name_collision": "The destination folder does not tell upper and lower case apart, so ${file} and ${other} would become the same file and one would be lost. Rename or remove one of them, then try again. Nothing was moved.",
   "data_storage_migrate_overlay_progress": "Menyalin file: $copied / $total",
   "data_storage_migrate_overlay_title": "Memindahkan data Anda",
   "data_storage_migrate_overlay_warning": "Harap biarkan aplikasi tetap terbuka. Jangan tutup atau matikan komputer sampai selesai.",

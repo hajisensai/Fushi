@@ -340,6 +340,10 @@
             android:configChanges="orientation|keyboardHidden|keyboard|navigation|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"/>
         <service android:name=".SecondScreenRelayService"
             android:exported="false"/>
+        <!-- 复习写入转交（BUG-5542，拍板 D10）：:popup / :second_screen 只读打开复习库，
+             制卡等写入经这个绑定服务交给主进程执行；主进程不在时绑定会把它拉起来。不导出。 -->
+        <service android:name=".SrsWriteRelayService"
+            android:exported="false"/>
         <service android:name=".DownloadKeepAliveService"
             android:exported="false"
             android:foregroundServiceType="dataSync"/>

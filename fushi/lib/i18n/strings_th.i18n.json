@@ -2510,6 +2510,7 @@
   "data_storage_migrate_failed_restart": "รีสตาร์ท",
   "data_storage_migrate_failed_suggestions": "กรุณาลองอีกครั้งด้วยโฟลเดอร์เปล่าอื่น อย่าเลือกโฟลเดอร์ติดตั้งของแอป และตรวจสอบว่าไม่มีไฟล์ในตำแหน่งนั้นกำลังถูกใช้งาน",
   "data_storage_migrate_failed_title": "การย้ายข้อมูลล้มเหลว",
+  "data_storage_migrate_name_collision": "The destination folder does not tell upper and lower case apart, so ${file} and ${other} would become the same file and one would be lost. Rename or remove one of them, then try again. Nothing was moved.",
   "data_storage_migrate_overlay_progress": "กำลังคัดลอกไฟล์: $copied / $total",
   "data_storage_migrate_overlay_title": "กำลังย้ายข้อมูลของคุณ",
   "data_storage_migrate_overlay_warning": "กรุณาเปิดแอปไว้ อย่าปิดหรือปิดเครื่องคอมพิวเตอร์จนกว่าจะเสร็จ",

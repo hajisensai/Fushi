@@ -276,6 +276,16 @@ Future<DataRootMigrationRunOutcome> runDataRootMigration({
       // 跨盘复制进度回灌到遮罩进度条（同盘 rename 不触发，遮罩显示不确定进度）。
       onProgress: (int copied, int total) =>
           appModel.updateDataRootMigrationProgress(copied, total),
+      // 成功时的取证摘要（怎么搬的、复制了多少）：用户报「迁移后书库空了」时靠它分清
+      // 「没复制到」和「复制完之后被别的东西删了」。迁移完马上重启，只记内存诊断日志
+      // 会随进程一起丢，所以记进跨运行保留的数据位置取证环（BUG-5490）并等它落盘。
+      onDiagnostic: (String summary) async {
+        ErrorLogService.instance.logDataLocation(
+          'DataRootMigration.last',
+          summary,
+        );
+        await ErrorLogService.instance.flush();
+      },
       // TODO-1182：引擎据此二次拒绝安装目录/exe 目录，回滚也绝不删含运行 exe 的根。
       resolvedExecutablePath: Platform.resolvedExecutable,
       // TODO-1226：默认根 = 共享用户 Documents → 只搬 Fushi 自有顶层项白名单，
@@ -296,7 +306,8 @@ Future<DataRootMigrationRunOutcome> runDataRootMigration({
     ErrorLogService.instance.logFatal('DataRootMigration.migrate', e, stack);
     _recoverAfterFailedMigration(
       appModel,
-      t.data_storage_migrate_failed(message: e.message),
+      dataRootMigrationFailureMessage(e),
+      hint: dataRootMigrationFailureHint(e, target),
     );
     return DataRootMigrationRunOutcome.failed;
   } catch (e, stack) {
@@ -304,6 +315,7 @@ Future<DataRootMigrationRunOutcome> runDataRootMigration({
     _recoverAfterFailedMigration(
       appModel,
       t.data_storage_migrate_failed(message: e.toString()),
+      hint: dataRootMigrationFailureHint(e, target),
     );
     return DataRootMigrationRunOutcome.failed;
   }
@@ -327,6 +339,30 @@ Future<DataRootMigrationRunOutcome> runDataRootMigration({
   return restartFailed
       ? DataRootMigrationRunOutcome.restartFailed
       : DataRootMigrationRunOutcome.restarting;
+}
+
+/// 迁移失败时给用户看的一句话。目标不区分大小写、源里有只差大小写的两个文件时讲清是
+/// 哪两个，用户才知道该改什么；其余失败沿用引擎的原因。
+String dataRootMigrationFailureMessage(DataRootMigrationException e) {
+  if (e is DataRootNameCollisionException) {
+    return t.data_storage_migrate_name_collision(
+      file: e.relativePath,
+      other: e.collidesWith,
+    );
+  }
+  return t.data_storage_migrate_failed(message: e.message);
+}
+
+/// 失败遮罩原因下面那行灰字建议。「换一个空文件夹、别选安装目录、别让文件被占用」只对
+/// 用户自己挑了目标文件夹的迁移有意义：Android 内部 / 外部互迁的目标是固定的，用户没
+/// 文件夹可换；撞名的原因文案已经说清该改哪两个文件，再配这句只会把人往错的方向带。
+String? dataRootMigrationFailureHint(
+  Object error,
+  DataRootMigrationTarget target,
+) {
+  if (error is DataRootNameCollisionException) return null;
+  if (target.androidDocumentsLocation != null) return null;
+  return t.data_storage_migrate_failed_suggestions;
 }
 
 /// Android：书库根在内部 / 外部之间迁移的计划（数据库不动）。
@@ -461,8 +497,12 @@ Future<void> startAndroidDocumentsMigration({
 /// 换成迁移遮罩，设置页 State 已 unmount，snackbar 从不触发。closeResources 已在搬移前
 /// 关 DB，本进程无法原地恢复 → 保持遮罩激活（撤了会落到裸 loading），由用户在失败视图点
 /// 「重启」回到未改变的旧根重新初始化（数据已由引擎完整回滚保留、pref 未写）。
-void _recoverAfterFailedMigration(AppModel appModel, String failureMessage) {
-  appModel.failDataRootMigration(failureMessage);
+void _recoverAfterFailedMigration(
+  AppModel appModel,
+  String failureMessage, {
+  required String? hint,
+}) {
+  appModel.failDataRootMigration(failureMessage, hint: hint);
 }
 
 /// 设置行：显示当前数据根 + 更改位置按钮。仅桌面构造（section 已门控）。

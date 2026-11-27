@@ -2510,6 +2510,7 @@
   "data_storage_migrate_failed_restart": "重启",
   "data_storage_migrate_failed_suggestions": "请改选一个空目录后重试。不要选择应用安装目录，并确保目标位置没有文件正在被占用。",
   "data_storage_migrate_failed_title": "数据迁移失败",
+  "data_storage_migrate_name_collision": "目标文件夹不区分大小写，${file} 和 ${other} 会变成同一个文件，其中一个会丢失。请重命名或删除其中一个后再试，数据没有移动。",
   "data_storage_migrate_overlay_progress": "正在复制文件：$copied / $total",
   "data_storage_migrate_overlay_title": "正在迁移数据",
   "data_storage_migrate_overlay_warning": "正在迁移数据，请勿关闭应用或电脑，迁移完成后会自动重启。",

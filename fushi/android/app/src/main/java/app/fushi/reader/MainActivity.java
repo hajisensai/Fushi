@@ -287,6 +287,7 @@ public class MainActivity extends AudioServiceActivity {
     @Override
     protected void onDestroy() {
         CrossAppAudioChannel.unregisterMain();
+        SrsWriteRelay.detachMain(getFlutterEngine());
         if (ttsChannelHandler != null) {
             ttsChannelHandler.destroy();
         }
@@ -649,6 +650,9 @@ public class MainActivity extends AudioServiceActivity {
         StartupTrace.mark("plugins-registered");
         StartupTrace.registerWith(flutterEngine.getDartExecutor().getBinaryMessenger());
         FloatingDictService.initEngineGroup(getApplicationContext());
+        // BUG-5542：辅助进程（:popup / :second_screen）转交来的复习写入交给本引擎执行；本引擎开主库前
+        // 先让替它执行写入的无界面引擎（若有）交出主库。
+        SrsWriteRelay.attachMain(flutterEngine, getApplicationContext());
         // 反馈回复后台检查的排程：纯原生 Worker，不起 Flutter 引擎（反馈 yjn-3h8B-7）。
         app.fushi.reader.feedback.FeedbackReplyWorkChannel.registerWith(
                 flutterEngine, getApplicationContext());

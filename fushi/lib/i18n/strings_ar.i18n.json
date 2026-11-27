@@ -2510,6 +2510,7 @@
   "data_storage_migrate_failed_restart": "إعادة التشغيل",
   "data_storage_migrate_failed_suggestions": "يرجى المحاولة مجدداً باختيار مجلد فارغ مختلف. لا تختر مجلد تثبيت التطبيق، وتأكد من عدم استخدام أي ملفات في ذلك الموقع.",
   "data_storage_migrate_failed_title": "فشل نقل البيانات",
+  "data_storage_migrate_name_collision": "The destination folder does not tell upper and lower case apart, so ${file} and ${other} would become the same file and one would be lost. Rename or remove one of them, then try again. Nothing was moved.",
   "data_storage_migrate_overlay_progress": "نسخ الملفات: $copied / $total",
   "data_storage_migrate_overlay_title": "جارٍ نقل بياناتك",
   "data_storage_migrate_overlay_warning": "يرجى إبقاء التطبيق مفتوحاً. لا تغلق أو توقف جهازك حتى ينتهي.",

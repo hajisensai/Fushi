@@ -1,3 +1,4 @@
+import 'package:fushi/src/utils/components/fushi_compact_landscape.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'dart:math' as math;
 import 'dart:ui' show lerpDouble;
@@ -1855,13 +1856,16 @@ class _SettingsKitScaffoldState extends State<SettingsKitScaffold> {
     bool form = false,
   }) {
     // grouped form（macOS 27 系统设置的详情窗格）没有大标题行：标题常驻工具栏。
-    final double band = form ? 0 : fushiAppleLargeTitleBand(context);
+    // 横屏手机同理：iOS 在竖向紧凑尺寸类（iPhone 横屏）下不出大标题、标题直接
+    // 常驻导航栏，这里只有 ~400dp 高，大标题行再吃 52 就只剩一半给正文。
+    final bool inlineTitleOnly = form || isFushiCompactLandscapeWindow(context);
+    final double band = inlineTitleOnly ? 0 : fushiAppleLargeTitleBand(context);
     final bool consumes = widget.bodyConsumesTopPadding;
     double offset() =>
         _controller.hasClients ? _controller.positions.first.pixels : 0;
     // 大标题已收走的那段（0…band）；不随内容滚的正文恒为 0。
     double slide() => consumes ? offset().clamp(0.0, band) : 0;
-    double progress() => form
+    double progress() => inlineTitleOnly
         ? 1.0
         : consumes
         ? (offset() / band).clamp(0.0, 1.0)
@@ -1999,7 +2003,7 @@ class _SettingsKitScaffoldState extends State<SettingsKitScaffold> {
                         },
                       ),
                     ),
-                    if (!form)
+                    if (!inlineTitleOnly)
                       ListenableBuilder(
                         listenable: _controller,
                         child: largeTitle,

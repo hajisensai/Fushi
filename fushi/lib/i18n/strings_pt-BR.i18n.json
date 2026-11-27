@@ -2510,6 +2510,7 @@
   "data_storage_migrate_failed_restart": "Reiniciar",
   "data_storage_migrate_failed_suggestions": "Tente novamente com uma pasta diferente e vazia. Não escolha a pasta de instalação do app e certifique-se de que nenhum arquivo nesse local esteja em uso.",
   "data_storage_migrate_failed_title": "Migração de dados falhou",
+  "data_storage_migrate_name_collision": "The destination folder does not tell upper and lower case apart, so ${file} and ${other} would become the same file and one would be lost. Rename or remove one of them, then try again. Nothing was moved.",
   "data_storage_migrate_overlay_progress": "Copiando arquivos: $copied / $total",
   "data_storage_migrate_overlay_title": "Movendo seus dados",
   "data_storage_migrate_overlay_warning": "Mantenha o app aberto. Não feche nem desligue o computador até terminar.",

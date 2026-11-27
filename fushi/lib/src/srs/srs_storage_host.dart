@@ -8,6 +8,8 @@
 ///   [acquire] 抛 [SrsStoreOpenBlocked] 的子类，由页面给迁移页 / 恢复页（srs_generation_view.dart）。迁移提交后
 ///   [reopen] 再开。非主进程在主进程还没建库时（`ready`）按「没有 SRS 数据」处理（[acquire] 返回 null）。
 /// - 生命周期跟 app 走：关主库前先关它（[close]）。
+/// - 同一进程里同一时刻只有一个 Primary（BUG-5542）：Android 主进程里除了主界面的引擎，还可能有替辅助进程执行写入的
+///   无界面引擎（`srs_write_relay.dart`）。主界面的持有者带 `beforePrimaryOpen`，开主库之前先让那个引擎交出主库。
 library;
 
 import 'dart:io';
@@ -50,15 +52,20 @@ class SrsStorageHost {
     required bool isMainProcess,
     required FushiDatabase Function() legacyDatabase,
     SrsStorageOpener opener = _defaultOpener,
+    Future<void> Function()? beforePrimaryOpen,
   }) : _directory = dbDirectory,
        _isMainProcess = isMainProcess,
        _legacyDatabase = legacyDatabase,
-       _opener = opener;
+       _opener = opener,
+       _beforePrimaryOpen = beforePrimaryOpen;
 
   final String _directory;
   final bool _isMainProcess;
   final FushiDatabase Function() _legacyDatabase;
   final SrsStorageOpener _opener;
+
+  /// 主进程每次按 Primary 打开之前等它（见文件头最后一条）；失败则这次打开失败（不缓存，下次再试）。
+  final Future<void> Function()? _beforePrimaryOpen;
 
   Future<SrsStorage?>? _opening;
   bool _closed = false;
@@ -112,6 +119,7 @@ class SrsStorageHost {
 
   Future<SrsStorage?> _open() async {
     if (_isMainProcess) {
+      await _beforePrimaryOpen?.call();
       return _opener(
         directory: _directory,
         mode: SrsOpenMode.primary,

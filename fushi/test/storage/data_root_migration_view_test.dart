@@ -95,6 +95,7 @@ void main() {
             ),
             home: DataRootMigrationView(
               failure: 'boom: 有文件被占用',
+              failureHint: t.data_storage_migrate_failed_suggestions,
               onRestart: () => restarts++,
             ),
           ),
@@ -116,6 +117,30 @@ void main() {
       await tester.tap(find.text(t.data_storage_migrate_failed_restart));
       await tester.pump();
       expect(restarts, equals(1));
+    });
+
+    testWidgets('失败态没有建议时只显示原因（撞名 / Android 固定目标）', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        TranslationProvider(
+          child: MaterialApp(
+            theme: ThemeData(
+              useMaterial3: true,
+              colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+            ),
+            home: const DataRootMigrationView(failure: 'two files collide'),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('two files collide'), findsOneWidget);
+      expect(
+        find.text(t.data_storage_migrate_failed_suggestions),
+        findsNothing,
+      );
+      expect(find.text(t.data_storage_migrate_failed_restart), findsOneWidget);
     });
   });
 

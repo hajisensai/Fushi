@@ -267,7 +267,39 @@ fn parse_edit<'a>(
         Some(_) => None,
         None => col(None, "id", |c| &c.id),
     };
-    let kind = match k.as_deref() {
+    edit_of_parts(
+        k.as_deref(),
+        e,
+        f,
+        wr,
+        seq,
+        given_id.as_deref(),
+        w.ctx.as_ref(),
+        w.v,
+        &w.hlc,
+        w.m == Some(Value::Bool(true)),
+        server_time,
+        ns,
+    )
+}
+
+/// [parse_edit] 与 [edit_of_object] 共同的后一半：种类、HLC、ID 与 dot 相符的校验。
+#[allow(clippy::too_many_arguments)]
+fn edit_of_parts<'a>(
+    k: Option<&str>,
+    entity: Cow<'a, str>,
+    key: Cow<'a, str>,
+    writer: Cow<'a, str>,
+    seq: i64,
+    given_id: Option<&str>,
+    ctx: Option<&Value>,
+    value: Option<Value>,
+    hlc: &str,
+    machine: bool,
+    server_time: Option<i64>,
+    ns: &[u8; 16],
+) -> Result<Edit<'a>, String> {
+    let kind = match k {
         Some(k) => KINDS
             .iter()
             .copied()
@@ -276,10 +308,10 @@ fn parse_edit<'a>(
         None => return Err("unknown entity kind null".to_owned()),
     };
     let (physical, counter, hlc_writer) = {
-        let (p, c, wr) = parse_hlc(&w.hlc)?;
+        let (p, c, wr) = parse_hlc(hlc)?;
         (p, c, wr.to_owned())
     };
-    let id = uuid_v5(ns, &format!("edit/{wr}/{seq}"));
+    let id = uuid_v5(ns, &format!("edit/{writer}/{seq}"));
     if let Some(given) = given_id {
         if given != id {
             return Err(format!("field edit id mismatch: {given} vs {id}"));
@@ -288,18 +320,71 @@ fn parse_edit<'a>(
     Ok(Edit {
         id,
         kind,
-        entity: e,
-        key: f,
-        writer: wr,
+        entity,
+        key,
+        writer,
         seq,
-        ctx: Ctx::parse(w.ctx.as_ref()),
-        value: w.v.unwrap_or(Value::Null),
+        ctx: Ctx::parse(ctx),
+        value: value.unwrap_or(Value::Null),
         physical,
         counter,
         hlc_writer,
         server_time,
-        machine: w.m == Some(Value::Bool(true)),
+        machine,
     })
+}
+
+/// 一条修改行的**对象**（内核读命令拼行时手里那份、还没写成文本的 JSON 对象，`store/gen4/derive.rs`
+/// `edit_lines_with`）直接当修改记录：与 [parse_edit] 解它写成的文本得到的逐字段相同（测试
+/// `object_edits_are_the_parsed_lines`），只是不把几十 KB 的字段正文再解析一遍（BUG-5572）。键的类型不对与解析文本
+/// 时一样报坏数据。
+fn edit_of_object(
+    mut m: Map<String, Value>,
+    server_time: Option<i64>,
+    ns: &[u8; 16],
+) -> Result<Edit<'static>, String> {
+    let mut text = |k: &str| -> Result<Option<String>, String> {
+        match m.remove(k) {
+            None | Some(Value::Null) => Ok(None),
+            Some(Value::String(s)) => Ok(Some(s)),
+            Some(_) => Err(format!("bad field edit: `{k}` is not a string")),
+        }
+    };
+    let need = |v: Option<String>, key: &str| {
+        v.map(Cow::Owned)
+            .ok_or_else(|| format!("bad field edit: missing field `{key}`"))
+    };
+    need(text("p")?, "p")?;
+    let k = text("k")?;
+    let e = need(text("e")?, "e")?;
+    let f = need(text("f")?, "f")?;
+    let wr = need(text("w")?, "w")?;
+    let hlc = text("hlc")?.ok_or("bad field edit: missing field `hlc`")?;
+    // 解析文本时 `id` 不是字符串就不核对（[parse_edit] 同）。
+    let given_id = match m.remove("id") {
+        Some(Value::String(s)) => Some(s),
+        _ => None,
+    };
+    let seq = match m.remove("s") {
+        None | Some(Value::Null) => return Err("bad field edit: missing field `s`".to_owned()),
+        Some(v) => v.as_i64().ok_or("bad field edit: `s` is not an integer")?,
+    };
+    let machine = m.get("m") == Some(&Value::Bool(true));
+    let ctx = m.remove("ctx");
+    edit_of_parts(
+        k.as_deref(),
+        e,
+        f,
+        wr,
+        seq,
+        given_id.as_deref(),
+        ctx.as_ref(),
+        m.remove("v"),
+        &hlc,
+        machine,
+        server_time,
+        ns,
+    )
 }
 
 // ---------------------------------------------------------------- 「值相同」
@@ -1263,14 +1348,7 @@ pub fn materialize(
                 let edits = take(*n)?;
                 entity_json(&Entity::build(&edits), None)
             }
-            Group::Note { n, rec } => {
-                let edits = take(*n)?;
-                let ent = Entity::build(&edits);
-                let payload = rec;
-                let concurrent = ent.concurrent_with_delete();
-                let view = note_view(&ent, &payload, &concurrent)?;
-                entity_json(&ent, Some(view))
-            }
+            Group::Note { n, rec } => note_entity(&take(*n)?, rec)?,
             Group::NoteType { n, rec, b } => {
                 let edits = take(*n)?;
                 let ent = Entity::build(&edits);
@@ -1383,6 +1461,29 @@ pub(crate) fn note_view_of(payload: &Value, edits: &[StoredEdit<'_>]) -> Result<
     let ent = Entity::build(&parsed);
     let concurrent = ent.concurrent_with_delete();
     note_view(&ent, payload, &concurrent)
+}
+
+/// 一条笔记的寄存器与物化视图：`materialize` 的 `note` 组交出的那一项（[entity_json]，视图在 `v`）。
+fn note_entity(edits: &[Edit<'_>], payload: &Value) -> Result<Value, String> {
+    let ent = Entity::build(edits);
+    let concurrent = ent.concurrent_with_delete();
+    let view = note_view(&ent, payload, &concurrent)?;
+    Ok(entity_json(&ent, Some(view)))
+}
+
+/// 内核读命令 `read note_views`（`store/gen4/cmd/reads.rs`）的物化：[edits] 是这条笔记的修改行**对象**与服务器时刻，
+/// 按读命令交出的行序（寄存器里的下标指向它）。结果与把这些行写成文本、经 `materialize` 的 `note` 组物化逐字节相同
+/// （[edit_of_object]），行不出内核再回来、不再解析第二遍（BUG-5572）。
+pub(crate) fn note_entity_of_objects(
+    payload: &Value,
+    edits: Vec<(Map<String, Value>, Option<i64>)>,
+) -> Result<Value, String> {
+    let ns = uuid_bytes(SRS_NAMESPACE);
+    let parsed = edits
+        .into_iter()
+        .map(|(m, st)| edit_of_object(m, st, &ns))
+        .collect::<Result<Vec<_>, _>>()?;
+    note_entity(&parsed, payload)
 }
 
 /// 笔记类型的物化视图（与 `materialize` 的 `notetype` 组同一份，键见 [note_type_view]）；[builtin] 是内置
@@ -1977,5 +2078,101 @@ mod tests {
         assert!(!same_value(&v("-0.0"), &v("0.0")));
         assert!(same_value(&v(r#"{"a":1,"b":2}"#), &v(r#"{"b":2,"a":1}"#)));
         assert!(same_value(&v("0.1"), &v("0.10")));
+    }
+
+    /// [edit_of_object] 与 [parse_edit] 解同一行写成的文本逐字段相同（BUG-5572：`read note_views` 不再把行写成文本
+    /// 再解析）：好行的每个字段与物化结果一致；缺键、类型不对、ID 与 dot 不符两边都报坏数据；`id` 不是字符串两边都不核对。
+    #[test]
+    fn object_edits_are_the_parsed_lines() {
+        let ns = uuid_bytes(SRS_NAMESPACE);
+        let base = || {
+            json!({
+                "p": "p", "k": "note", "e": "N1", "f": "field/a", "w": "dev", "s": 3,
+                "v": "表", "hlc": "1700000000003:2:dev",
+            })
+        };
+        let with = |k: &str, v: Value| {
+            let mut o = base();
+            o[k] = v;
+            o
+        };
+        let without = |k: &str| {
+            let mut o = base();
+            o.as_object_mut().unwrap().remove(k);
+            o
+        };
+        let good = [
+            base(),
+            with("id", json!(edit_id("dev", 3))),
+            with("id", json!(7)),
+            with("m", json!(true)),
+            with("m", json!("true")),
+            with("ctx", Value::Null),
+            with("v", Value::Null),
+            with("v", json!({"html": "<b>x</b>", "n": [1, 2.5]})),
+            without("v"),
+        ];
+        let bad = [
+            without("p"),
+            without("k"),
+            without("e"),
+            without("f"),
+            without("w"),
+            without("s"),
+            without("hlc"),
+            with("e", json!(1)),
+            with("s", json!("3")),
+            with("s", Value::Null),
+            with("hlc", Value::Null),
+            with("id", json!(edit_id("dev", 4))),
+        ];
+        for (st, o) in good.iter().flat_map(|o| [(None, o), (Some(42i64), o)]) {
+            let text = o.to_string();
+            let a = parse_edit(&text, st, None, &ns).unwrap_or_else(|e| panic!("{o}: {e}"));
+            let b = edit_of_object(o.as_object().unwrap().clone(), st, &ns)
+                .unwrap_or_else(|e| panic!("{o}: {e}"));
+            assert_eq!(
+                (&a.id, a.kind, &*a.entity, &*a.key, &*a.writer, a.seq),
+                (&b.id, b.kind, &*b.entity, &*b.key, &*b.writer, b.seq),
+                "{o}"
+            );
+            assert_eq!(
+                (
+                    a.physical,
+                    a.counter,
+                    &a.hlc_writer,
+                    a.server_time,
+                    a.machine
+                ),
+                (
+                    b.physical,
+                    b.counter,
+                    &b.hlc_writer,
+                    b.server_time,
+                    b.machine
+                ),
+                "{o}"
+            );
+            assert_eq!(a.value, b.value, "{o}");
+            assert_eq!(format!("{:?}", a.ctx), format!("{:?}", b.ctx), "{o}");
+            let payload = json!({"noteTypeId": "NT", "guid": "g1", "createdAt": 5});
+            assert_eq!(
+                note_entity(&[a], &payload).unwrap(),
+                note_entity_of_objects(&payload, vec![(o.as_object().unwrap().clone(), st)])
+                    .unwrap(),
+                "{o}"
+            );
+        }
+        for o in &bad {
+            let text = o.to_string();
+            assert!(
+                parse_edit(&text, None, None, &ns).is_err(),
+                "parse_edit 接受了 {o}"
+            );
+            assert!(
+                edit_of_object(o.as_object().unwrap().clone(), None, &ns).is_err(),
+                "edit_of_object 接受了 {o}"
+            );
+        }
     }
 }
