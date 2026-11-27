@@ -7,6 +7,8 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/models/audio_source_config.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
+import 'package:fushi_engine/media/video/video_subtitle_inherit.dart'
+    show RemoteSubtitleChoiceDescriptor;
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/stats/study_goal_record.dart';
@@ -1309,6 +1311,51 @@ void main() {
       await repo.setRemoteSubtitleSource('bk', 0, null);
       expect(repo.remoteSubtitleSource('bk'), isNull);
       expect(repo.remoteSubtitleSource('bk', episodeIndex: 1), '/b.srt');
+    });
+
+    // BUG-5464：选择值冻结格式不变，轨描述另记一个键，同样按 remoteSubtitleKey。
+    test('轨描述另记 video_remote_subtitle_descriptor，跨实例记住、null 删除', () async {
+      final RemoteSubtitleChoiceDescriptor full =
+          RemoteSubtitleChoiceDescriptor.embedded((
+            streamIndex: 2,
+            codec: 'subrip',
+            language: 'jpn',
+            title: 'Full',
+            graphic: false,
+          ));
+      final RemoteSubtitleChoiceDescriptor sidecar =
+          RemoteSubtitleChoiceDescriptor.hostSidecar(
+            fileName: 'Show - 01.ja.srt',
+            suffix: '.ja.srt',
+          );
+      await repo.setRemoteSubtitleSource('ep1', 0, 'embedded:2');
+      await repo.setRemoteSubtitleDescriptor('ep1', 0, full);
+      await repo.setRemoteSubtitleDescriptor('bk', 3, sidecar);
+      expect(repo.remoteSubtitleSource('ep1'), 'embedded:2');
+      expect(repo.getPref('video_remote_subtitle'), '{"ep1":"embedded:2"}');
+
+      final PreferencesRepository repo2 = PreferencesRepository(db);
+      await repo2.loadFromDb();
+      addTearDown(repo2.dispose);
+      expect(repo2.remoteSubtitleDescriptors, <String, Object>{
+        'ep1': full,
+        'bk#ep3': sidecar,
+      });
+
+      await repo.setRemoteSubtitleDescriptor('ep1', 0, null);
+      expect(repo.remoteSubtitleDescriptors.keys, <String>['bk#ep3']);
+    });
+
+    test('轨描述：坏掉的单条 / 整份当没有', () async {
+      await repo.setPref(
+        'video_remote_subtitle_descriptor',
+        '{"ok":{"source":"off:","kind":"off"},'
+            '"good":{"source":"embedded:1","kind":"embedded","codec":"ass",'
+            '"graphic":false}}',
+      );
+      expect(repo.remoteSubtitleDescriptors.keys, <String>['good']);
+      await repo.setPref('video_remote_subtitle_descriptor', 'not json');
+      expect(repo.remoteSubtitleDescriptors, isEmpty);
     });
   });
 }

@@ -5766,6 +5766,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         subUid,
         episodeIndex: subEp,
       );
+      // BUG-5464：远端合集里这一成员自己没选过字幕时，按描述沿用兄弟成员最近一次的选择
+      // （[_inheritedRemoteSubtitleSource]）——优先级：本成员自己的选择 > 沿用 > 下面的
+      // 语言偏好 / 服务器默认。沿用来的编码与重放走同一条路径，但和起播默认挑选一样
+      // **不持久化**（persistedSub 仍为 null，libmpv 回落 / 图形轨都按它判不记）。
+      final String? inheritedSub = persistedSub == null && _isRemoteCollection
+          ? await _inheritedRemoteSubtitleSource(info)
+          : null;
+      if (seq != _episodeLoadSeq || !mounted) return;
       // 反馈 wCQIR4Pvz9：这一集没有持久化选择时，按「app 主字幕语言偏好 > 服务器默认
       // 标记（Jellyfin / Emby `IsDefault`）」挑一条轨起播；都不命中才落回下方后端默认
       // 外挂字幕。挑中的轨编码成 `embedded:<n>`，走下面与手选 / 重放同一条路径（服务器
@@ -5784,6 +5792,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           : null;
       final String? startupSub =
           persistedSub ??
+          inheritedSub ??
           (startupTrack == null
               ? null
               : '${SubtitleSource.embeddedPrefix}${startupTrack.streamIndex}');
@@ -6082,6 +6091,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                   playerRenderedTrack,
                   source: _remoteEmbeddedSubtitleSource(playerRenderedTrack),
                   label: _remoteEmbeddedSubtitleLabel(playerRenderedTrack),
+                  // 沿用兄弟成员来的图形轨（BUG-5464）不写回本成员。
+                  remember: persistedSub != null,
                 ),
         );
       }
@@ -6309,16 +6320,89 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// 记住用户为远端集选的主字幕（`off:` 哨兵 = 显式关闭）。卡片片段回看中暂存，
   /// 继续观看时补存（BUG-3490）。
+  ///
+  /// 同时按**这一刻**本集的轨表记下这条选择的轨描述（BUG-5464，
+  /// [describeRemoteSubtitleChoice]）：远端合集里没选过字幕的兄弟成员靠它按语言 + 标题
+  /// 沿用（[_inheritedRemoteSubtitleSource]）。描述不了的选择（关闭、本机档、后端默认）
+  /// 删掉旧描述。选择值本身的格式不变。
   void _rememberRemoteSubtitleSource(
     String uid,
     int episodeIndex,
     String? source,
   ) {
+    final RemoteSubtitleChoiceDescriptor? descriptor = source == null
+        ? null
+        : describeRemoteSubtitleChoice(
+            source: source,
+            embeddedTracks: _remoteEmbeddedSubtitleTracks,
+            videoFileName: _remoteCurrentVideoFileName,
+          );
     unawaited(
-      _saveReviewableChoice(
-        _ReviewChoiceKind.primarySubtitle,
-        () => appModel.setRemoteSubtitleSource(uid, episodeIndex, source),
-      ),
+      _saveReviewableChoice(_ReviewChoiceKind.primarySubtitle, () async {
+        await appModel.prefsRepo.setRemoteSubtitleDescriptor(
+          uid,
+          episodeIndex,
+          descriptor,
+        );
+        await appModel.setRemoteSubtitleSource(uid, episodeIndex, source);
+      }),
+    );
+  }
+
+  /// 当前远端集的视频文件名（host 外挂字幕的尾巴按它切，BUG-5464）：合集成员 / 单视频
+  /// 取 [RemoteVideoInfo.fileName]；host-playlist（一个 info 多集）的文件名不是这一集的，
+  /// 不给。
+  String? get _remoteCurrentVideoFileName {
+    if (_isRemoteCollection) return _activeRemoteMember?.fileName;
+    final RemoteVideoInfo? info = _effectiveRemoteInfo;
+    if (info == null || info.isPlaylist || _streamBookEpisodes) return null;
+    return info.fileName;
+  }
+
+  /// 远端合集里本成员（[member]）自己没有字幕选择时，沿用兄弟成员最近一次的选择
+  /// （BUG-5464）：返回本成员自己的选择编码（`off:` / `embedded:<n>` /
+  /// `hostsidecar:<文件名>`），沿用不了返回 null。
+  ///
+  /// 兄弟成员的选择与描述读 prefs（`video_remote_subtitle` / `_descriptor`），播放时刻读
+  /// 库里的 `video_remote_position_at_<成员 id>`（与开播断点判定同一真相源，
+  /// [readLocalRemoteVideoPosition]）；挑选与落轨都是纯函数
+  /// （[pickLatestRemoteSiblingSubtitleChoice] / [resolveRemoteInheritedSubtitleSource]）。
+  /// 不为读兄弟成员的轨表去 host 开取流会话：没有描述的旧选择不沿用。
+  Future<String?> _inheritedRemoteSubtitleSource(RemoteVideoInfo member) async {
+    final Map<String, String> sources =
+        appModel.prefsRepo.remoteSubtitleSources;
+    final Map<String, RemoteSubtitleChoiceDescriptor> descriptors =
+        appModel.prefsRepo.remoteSubtitleDescriptors;
+    final List<RemoteMemberSubtitleMemory> memories =
+        <RemoteMemberSubtitleMemory>[];
+    for (final RemoteVideoInfo m in _remoteMembers) {
+      if (m.id == member.id) continue;
+      final String key = PreferencesRepository.remoteSubtitleKey(m.id, 0);
+      final String? source = sources[key];
+      final RemoteSubtitleChoiceDescriptor? descriptor = descriptors[key];
+      if (!isInheritableRemoteSubtitleChoice(source, descriptor)) continue;
+      final PlaybackPosition played = await readLocalRemoteVideoPosition(
+        appModel.database,
+        m.id,
+      );
+      memories.add((
+        memberId: m.id,
+        subtitleSource: source,
+        descriptor: descriptor,
+        playedAt: played.updatedAtMs,
+      ));
+    }
+    final RemoteSiblingSubtitleChoice? choice =
+        pickLatestRemoteSiblingSubtitleChoice(
+          memories,
+          currentMemberId: member.id,
+        );
+    if (choice == null) return null;
+    return resolveRemoteInheritedSubtitleSource(
+      choice: choice,
+      embeddedTracks: _remoteEmbeddedSubtitleTracks,
+      sidecars: _remoteSidecarSubtitles,
+      videoFileName: member.fileName,
     );
   }
 

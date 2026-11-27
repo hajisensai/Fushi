@@ -19,6 +19,8 @@ import 'package:fushi_engine/sync/remote_mining_target.dart'
 import 'package:fushi_engine/profile/profile_document.dart'
     show kProfileSettingCategoryPref;
 import 'package:fushi_engine/media/video/acquisition/video_acquisition_prefs.dart';
+import 'package:fushi_engine/media/video/video_subtitle_inherit.dart'
+    show RemoteSubtitleChoiceDescriptor;
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart'
     show kLookupChineseScriptVariantsPrefKey;
 import 'package:fushi_engine/ai/ai_feature.dart';
@@ -4111,6 +4113,65 @@ class PreferencesRepository extends ChangeNotifier
       map[key] = source;
     }
     await setPref('video_remote_subtitle', jsonEncode(map));
+    notifyListeners();
+  }
+
+  /// BUG-5464 远端合集：[remoteSubtitleSources] 里每条选择附带的轨描述，同样按
+  /// [remoteSubtitleKey] 记：`{ "<key>": <RemoteSubtitleChoiceDescriptor.toJson> }`。
+  ///
+  /// 选择本身的值是冻结格式（旧版本 / 同步对端照样读写），描述只能另起一个键：兄弟成员
+  /// 没有自己的选择时，视频页按描述把最近那一集的选择落到本成员的轨表上（语言 + 标题，
+  /// 不按序号照搬）。描述带着它描述的选择值，对不上（别处改了选择没改描述）即作废。
+  /// 解析失败的整份 / 单条一律当没有（与 [remoteSubtitleSources] 同款容错）。
+  Map<String, RemoteSubtitleChoiceDescriptor> get remoteSubtitleDescriptors {
+    final String raw =
+        getPref('video_remote_subtitle_descriptor', defaultValue: '') as String;
+    if (raw.isEmpty) return <String, RemoteSubtitleChoiceDescriptor>{};
+    try {
+      final dynamic decoded = jsonDecode(raw);
+      if (decoded is Map) {
+        return <String, RemoteSubtitleChoiceDescriptor>{
+          for (final MapEntry<dynamic, dynamic> e in decoded.entries)
+            if (RemoteSubtitleChoiceDescriptor.fromJson(e.value)
+                case final RemoteSubtitleChoiceDescriptor d)
+              e.key.toString(): d,
+        };
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance.log(
+        'PreferencesRepository.remoteSubtitleDescriptors.decode',
+        e,
+        stack,
+      );
+    }
+    return <String, RemoteSubtitleChoiceDescriptor>{};
+  }
+
+  /// 记住 / 清除某远端集（[bookUid] + [episodeIndex]）字幕选择的轨描述；[descriptor]
+  /// 为 null 时删除该 key。
+  Future<void> setRemoteSubtitleDescriptor(
+    String bookUid,
+    int episodeIndex,
+    RemoteSubtitleChoiceDescriptor? descriptor,
+  ) async {
+    final Map<String, RemoteSubtitleChoiceDescriptor> map =
+        remoteSubtitleDescriptors;
+    final String key = remoteSubtitleKey(bookUid, episodeIndex);
+    if (descriptor == null) {
+      if (!map.containsKey(key)) return;
+      map.remove(key);
+    } else {
+      if (map[key] == descriptor) return;
+      map[key] = descriptor;
+    }
+    await setPref(
+      'video_remote_subtitle_descriptor',
+      jsonEncode(<String, Object?>{
+        for (final MapEntry<String, RemoteSubtitleChoiceDescriptor> e
+            in map.entries)
+          e.key: e.value.toJson(),
+      }),
+    );
     notifyListeners();
   }
 
