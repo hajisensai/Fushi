@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -5,12 +7,16 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/srs/donation/srs_donation_banner.dart';
 import 'package:fushi/src/srs/donation/srs_donation_eligibility.dart';
+import 'package:fushi/src/srs/donation/srs_donation_page.dart';
 import 'package:fushi/src/srs/donation/srs_donation_providers.dart';
 import 'package:fushi/src/srs/donation/srs_donation_words_page.dart';
 import 'package:fushi/src/srs/srs_home_stats.dart';
+import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi_engine/srs/apkg/srs_donation_export.dart';
+import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../helpers/test_platform_services.dart';
@@ -119,6 +125,52 @@ void main() {
         expect(find.text(t.srs_donation_later), findsOneWidget);
         expect(find.text(t.srs_donation_never), findsOneWidget);
       }
+    });
+
+    // BUG-5566：预览要读全库（大库上二十多秒），页面不许等它——说明卡、同意文案与捐赠卡进页即显示，
+    // 统计行显示「正在统计」，捐赠按钮在预览到之前禁用。
+    testWidgets('[$ds] 捐赠页：库 / 预览没到时照常显示内容，不整页转圈', (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1400, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final Completer<SrsDbStore?> never = Completer<SrsDbStore?>();
+      await tester.pumpWidget(
+        _app(
+          apple: apple,
+          overrides: <Override>[
+            srsStoreProvider.overrideWith((Ref ref) => never.future),
+            srsDonationPrefsProvider.overrideWithValue(
+              const SrsDonationPrefsState(),
+            ),
+          ],
+          home: const SrsDonationPage(),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      for (final String key in <String>[
+        'srs-donation-about',
+        'srs-donation-consent',
+        'srs-donation-card',
+        'srs-donation-include-words',
+        'srs-donation-submit',
+      ]) {
+        expect(find.byKey(ValueKey<String>(key)), findsOneWidget, reason: key);
+      }
+      expect(find.text(t.srs_donation_stats_counting), findsOneWidget);
+      expect(
+        tester
+            .widget<FushiFilledButton>(
+              find.byKey(const ValueKey<String>('srs-donation-submit')),
+            )
+            .onPressed,
+        isNull,
+      );
+      // 预览没到不知道够不够门槛：不提前说「不够」。
+      expect(
+        find.byKey(const ValueKey<String>('srs-donation-below-threshold')),
+        findsNothing,
+      );
     });
 
     testWidgets('[$ds] 词表页：搜索过滤、逐词排除回调', (WidgetTester tester) async {

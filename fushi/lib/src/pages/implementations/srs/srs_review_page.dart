@@ -121,6 +121,8 @@ import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/srs/srs_navigation.dart';
 import 'package:fushi/src/srs/srs_review_freshness.dart';
 import 'package:fushi/src/srs/srs_action_error_text.dart';
+import 'package:fushi/src/reader/illustration_zoom_viewer.dart'
+    show showImageZoomViewer;
 
 /// 评分按钮上的间隔文案：按界面语言给单位（文案照 Anki 答题按钮：英文 m / h / d /
 /// mo / y，中文 分钟 / 小时 / 天 / 个月 / 年），不再让「1m」与「11.1mo」混着读。
@@ -271,6 +273,11 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   /// 队列空了之后，库在本页之外变了（同步拉入新卡、别处取消暂停 / 改期）又排得出卡：「复习完」页给一个回到复习的
   /// 入口（[_recheckFinished]），不自动把卡塞到用户眼前。只在 [_finished] 时有意义，出卡 / 再次排空时清掉。
   bool _moreDue = false;
+
+  /// 「复习完」时等下一张卡自己到点（[SrsStudyState.wakeIn]：RWKV 间隔守卫只差时间的卡解除、学习卡进入提前窗口）
+  /// 的计时器：到点按库重排一次（[_recheckFinished]），排得出就亮出「继续」（[_moreDue]），排程不变。应用内反馈
+  /// LAk5vHGWUe：以前「复习完」只在库变化时重查，几十秒后到期的卡要退出再进才看得到。
+  Timer? _wakeTimer;
 
   /// 队列空了是因为 RWKV 还没准备好（[SrsStudyState.rwkvPending]）：RWKV 牌组的复习卡不退回按 FSRS-7 的到期日
   /// 出，这里显示 RWKV 的准备 / 失败状态，就绪后自动重新排队（[_onRwkvStatus]）。
@@ -478,6 +485,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
 
   @override
   void dispose() {
+    _wakeTimer?.cancel();
     _companion.dispose();
     unawaited(_rwkvSubscription?.cancel());
     _activeSessions.value--;
@@ -723,6 +731,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
           _preview = null;
         });
         srsRunLogged('SrsReviewPage.stopAudio', _audio.cancel);
+        _armWake(plan?.wakeIn);
         // 「就绪」可能在这次排队等结果时就已经来过：那时 [_finished] 还是 false，[_onRwkvStatus] 不重排，
         // 之后也不会再有就绪事件——页面会一直停在「等 RWKV」。所以 pending 落定后当场看一次服务：已就绪就
         // 重排。不会空转：服务就绪时打分失败会转「出错」（RWKV 排程内核，native/fushi_rwkv 的 sched），store 也不会
@@ -806,6 +815,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   }) {
     _shownGeneration++;
     _stamp = stamp;
+    _armWake(null);
     SrsReviewPage.debugPhase?.call('show');
     // 换卡：上一张卡上查的词弹窗收起。
     _lookup.closeAll();
@@ -1693,6 +1703,20 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       }
       _moreDue = plan?.next != null;
     });
+    // 排不出就按这次排队重新定下一次到点；排得出（入口已亮）就不用再等。
+    _armWake(plan?.next == null ? plan?.wakeIn : null);
+  }
+
+  /// 「复习完」页按 [wakeIn] 定时重排（[_wakeTimer]）；null 或已离开「复习完」= 只取消旧的。等 RWKV 时不定：
+  /// 那边由就绪事件重排（[_onRwkvStatus]）。
+  void _armWake(Duration? wakeIn) {
+    _wakeTimer?.cancel();
+    _wakeTimer = null;
+    if (wakeIn == null || !_finished || _rwkvPending) return;
+    _wakeTimer = Timer(wakeIn, () {
+      _wakeTimer = null;
+      if (mounted && _finished) unawaited(_syncWithStore());
+    });
   }
 
   /// 「复习完」页的入口：重新排队出卡（与加载同一条路径 [_loadNext]）。
@@ -1759,18 +1783,28 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       ref.read(appProvider).shortcutRegistry;
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
-    // 查词弹窗开着：Esc 关一层，翻面 / 评分键吞掉。
-    final KeyEventResult? lookup = _lookup.guardKey(event);
+    final Set<ModifierKey> modifiers = <ModifierKey>{
+      if (HardwareKeyboard.instance.isControlPressed) ModifierKey.ctrl,
+      if (HardwareKeyboard.instance.isShiftPressed) ModifierKey.shift,
+      if (HardwareKeyboard.instance.isAltPressed) ModifierKey.alt,
+      if (HardwareKeyboard.instance.isMetaPressed) ModifierKey.meta,
+    };
+    // 查词弹窗开着：Esc 与绑在「关闭词典」/「返回上一级」上的键关一层，翻面 / 评分键吞掉。
+    final KeyEventResult? lookup = _lookup.guardKey(
+      event,
+      dismiss:
+          _lookup.isOpen &&
+          _dismissesLookup(
+            event.logicalKey,
+            modifiers,
+            physicalKey: event.physicalKey,
+          ),
+    );
     if (lookup != null) return lookup;
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
     final ShortcutAction? action = _shortcuts.resolveKeyboard(
       event.logicalKey,
-      modifiers: <ModifierKey>{
-        if (HardwareKeyboard.instance.isControlPressed) ModifierKey.ctrl,
-        if (HardwareKeyboard.instance.isShiftPressed) ModifierKey.shift,
-        if (HardwareKeyboard.instance.isAltPressed) ModifierKey.alt,
-        if (HardwareKeyboard.instance.isMetaPressed) ModifierKey.meta,
-      },
+      modifiers: modifiers,
       scope: ShortcutScope.srsReview,
       physicalKey: event.physicalKey,
     );
@@ -1791,10 +1825,45 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       scope: ShortcutScope.srsReview,
     );
     if (action == null) return false;
+    if (action == ShortcutAction.srsReviewDismissDict) {
+      // 只关词典：弹窗没开时不消费（交回兜底，绝不做别的）。
+      return _lookup.isOpen && _lookup.closeTop();
+    }
     // 查词弹窗开着时翻面 / 评分键让给弹窗的手柄兜底（与键盘一侧 guardKey 吞键同义：
     // 不翻面、不评分）。
     if (_lookup.isOpen && _flipsOrRates(action)) return false;
     return _executeShortcut(action);
+  }
+
+  /// 这个键在注册表里是不是「关闭词典」（[ShortcutAction.srsReviewDismissDict]）或 universal 的
+  /// 「返回上一级」（[ShortcutAction.globalBack]）：查词弹窗开着时它们只关一层，不退出复习页
+  /// （反馈 wJmcCQBVn1：此前只认写死的 Esc，用户改过 / 自绑的键在复习页关不掉弹窗）。
+  bool _dismissesLookup(
+    LogicalKeyboardKey key,
+    Set<ModifierKey> modifiers, {
+    PhysicalKeyboardKey? physicalKey,
+  }) =>
+      _shortcuts.resolveKeyboard(
+            key,
+            modifiers: modifiers,
+            scope: ShortcutScope.srsReview,
+            physicalKey: physicalKey,
+          ) ==
+          ShortcutAction.srsReviewDismissDict ||
+      _shortcuts.resolveKeyboard(
+            key,
+            modifiers: modifiers,
+            scope: ShortcutScope.universal,
+            physicalKey: physicalKey,
+          ) ==
+          ShortcutAction.globalBack;
+
+  /// 页面级返回（[PopScope]）：查词弹窗开着时先关一层、不退出复习页。根上「返回上一级」的
+  /// 键盘 / 手柄 / 鼠标兜底与 Android 系统返回都经 [Navigator.maybePop] 到这里，与其他模块的
+  /// 逐级退出一致（反馈 wJmcCQBVn1）。
+  void _onPopInvoked(bool didPop, Object? result) {
+    if (didPop) return;
+    _lookup.closeTop();
   }
 
   /// 会翻面 / 评分（换卡）的动作：查词弹窗开着时一律不执行。
@@ -1839,6 +1908,10 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       case ShortcutAction.srsReviewZoomReset:
         _setZoom(1);
         return true;
+      case ShortcutAction.srsReviewDismissDict:
+        // 弹窗开着时已在键盘闸（guardKey）/ 桥闸（guardBridgeToken）/ 手柄入口关掉；走到这里
+        // 说明弹窗没开：不消费。
+        return false;
       default:
         return false;
     }
@@ -1883,8 +1956,16 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   /// `resolveKeyboard`；本页没中的再按 universal 解析「返回上一级」（桥已
   /// preventDefault 掐掉了这次按键，不自己兜底它就被吞了）。
   void _onBridgeKey(String token) {
-    if (_lookup.guardBridgeToken(token)) return;
     final InputBinding? binding = InputBinding.fromBridgeToken(token);
+    if (_lookup.guardBridgeToken(
+      token,
+      dismiss:
+          _lookup.isOpen &&
+          binding != null &&
+          _dismissesLookup(binding.key, binding.modifiers),
+    )) {
+      return;
+    }
     if (binding == null) return;
     final ShortcutAction? action = _shortcuts.resolveKeyboard(
       binding.key,
@@ -1935,7 +2016,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       );
       if (picture == null || !mounted) return;
       _lookup.closeAll();
-      await showSrsCardImageViewer(context, picture);
+      await showImageZoomViewer(context, picture);
       if (mounted) _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
     });
   }
@@ -2354,69 +2435,82 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     // primaryFocus 往上派发 GamepadButtonIntent。
     // 复习答题页单独取背景（拍板台 xxbbL0j15l）：默认继承复习模块（牌组总览），
     // 可在「外观 › 页面背景 › 复习」里单独换图或关掉。
-    return FushiBackdropPage(
-      page: PageBackdropPage.srsReview,
-      child: Actions(
-        actions: <Type, Action<Intent>>{
-          GamepadButtonIntent: CallbackAction<GamepadButtonIntent>(
-            onInvoke: (GamepadButtonIntent intent) =>
-                _handleGamepadButton(intent.button),
-          ),
-        },
-        child: Focus(
-          focusNode: _focusNode,
-          autofocus: true,
-          onKeyEvent: _onKey,
-          child: FushiPageScaffold(
-            title: _title,
-            masthead: false,
-            header: floating
-                ? const SizedBox.shrink()
-                : (apple ? null : _buildTopBar(context)),
-            actions: apple && !floating
-                ? _buildAppleActions()
-                : const <Widget>[],
-            headerBottom:
-                apple &&
-                    !floating &&
-                    !_finished &&
-                    ref.watch(srsReviewShowCountsProvider)
-                ? SrsCountTriple(
-                    newCount: _newCount,
-                    learnCount: _learnCount,
-                    reviewCount: _reviewCount,
-                    reviewMinutesLeft: _reviewMinutesLeft,
-                    dense: true,
-                  )
-                : null,
-            body: Builder(
-              builder: (BuildContext context) => _withFloatingChrome(
-                context,
-                floating: floating,
-                child: Padding(
-                  // 正文从浮动页头底下开始：整面 WebView 的卡面滚不到页头下面，整体让位。
-                  // 原生 Fushi 卡面例外：铺到页头底下、把让位高度当滚动内边距（见
-                  // [SrsFushiCardView.topInset]），往下翻页头收起后不留一条空带。
-                  padding: EdgeInsets.only(
-                    top: _cardScrollsUnderHeader
-                        ? 0
-                        : MediaQuery.paddingOf(context).top,
-                  ),
-                  child: AnimatedSwitcher(
-                    duration: fushiMotionDuration(context, FushiMotion.medium),
-                    switchInCurve: FushiMotion.enter,
-                    switchOutCurve: FushiMotion.exit,
-                    child: KeyedSubtree(
-                      // 读首张卡期间与出卡后同一棵子树（'review'）：卡面平台视图在读库的同时
-                      // 就开始创建，不在数据到了之后才冷建（见 [_buildBody]）。
-                      key: ValueKey<String>(
-                        _error != null
-                            ? 'error'
-                            : _finished
-                            ? 'finished'
-                            : 'review',
+    // 查词弹窗开着时页面级返回先关一层（[_onPopInvoked]）：弹窗挂在根 Overlay、不是路由，
+    // 不拦的话根上的「返回上一级」/ 系统返回会连页带弹窗一起退出复习（反馈 wJmcCQBVn1）。
+    return ListenableBuilder(
+      listenable: _lookup,
+      builder: (BuildContext context, Widget? child) => PopScope<Object?>(
+        canPop: !_lookup.isOpen,
+        onPopInvokedWithResult: _onPopInvoked,
+        child: child!,
+      ),
+      child: FushiBackdropPage(
+        page: PageBackdropPage.srsReview,
+        child: Actions(
+          actions: <Type, Action<Intent>>{
+            GamepadButtonIntent: CallbackAction<GamepadButtonIntent>(
+              onInvoke: (GamepadButtonIntent intent) =>
+                  _handleGamepadButton(intent.button),
+            ),
+          },
+          child: Focus(
+            focusNode: _focusNode,
+            autofocus: true,
+            onKeyEvent: _onKey,
+            child: FushiPageScaffold(
+              title: _title,
+              masthead: false,
+              header: floating
+                  ? const SizedBox.shrink()
+                  : (apple ? null : _buildTopBar(context)),
+              actions: apple && !floating
+                  ? _buildAppleActions()
+                  : const <Widget>[],
+              headerBottom:
+                  apple &&
+                      !floating &&
+                      !_finished &&
+                      ref.watch(srsReviewShowCountsProvider)
+                  ? SrsCountTriple(
+                      newCount: _newCount,
+                      learnCount: _learnCount,
+                      reviewCount: _reviewCount,
+                      reviewMinutesLeft: _reviewMinutesLeft,
+                      dense: true,
+                    )
+                  : null,
+              body: Builder(
+                builder: (BuildContext context) => _withFloatingChrome(
+                  context,
+                  floating: floating,
+                  child: Padding(
+                    // 正文从浮动页头底下开始：整面 WebView 的卡面滚不到页头下面，整体让位。
+                    // 原生 Fushi 卡面例外：铺到页头底下、把让位高度当滚动内边距（见
+                    // [SrsFushiCardView.topInset]），往下翻页头收起后不留一条空带。
+                    padding: EdgeInsets.only(
+                      top: _cardScrollsUnderHeader
+                          ? 0
+                          : MediaQuery.paddingOf(context).top,
+                    ),
+                    child: AnimatedSwitcher(
+                      duration: fushiMotionDuration(
+                        context,
+                        FushiMotion.medium,
                       ),
-                      child: _buildBody(context),
+                      switchInCurve: FushiMotion.enter,
+                      switchOutCurve: FushiMotion.exit,
+                      child: KeyedSubtree(
+                        // 读首张卡期间与出卡后同一棵子树（'review'）：卡面平台视图在读库的同时
+                        // 就开始创建，不在数据到了之后才冷建（见 [_buildBody]）。
+                        key: ValueKey<String>(
+                          _error != null
+                              ? 'error'
+                              : _finished
+                              ? 'finished'
+                              : 'review',
+                        ),
+                        child: _buildBody(context),
+                      ),
                     ),
                   ),
                 ),

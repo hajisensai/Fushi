@@ -571,9 +571,9 @@ void main() {
         return r;
       }
 
-      void write(Map<String, dynamic> json) =>
-          File('${repo.path}/s.i18n.json')
-              .writeAsStringSync(encodeI18nJson(json));
+      void write(Map<String, dynamic> json) => File(
+        '${repo.path}/s.i18n.json',
+      ).writeAsStringSync(encodeI18nJson(json));
 
       expect(git(<String>['init', '-q', '-b', 'main']).exitCode, 0);
       git(<String>['config', 'core.autocrlf', 'false']);
@@ -582,8 +582,9 @@ void main() {
         'merge.fushi-i18n-json.driver',
         'dart "${driver.replaceAll('\\', '/')}" %O %A %B',
       ]);
-      File('${repo.path}/.gitattributes')
-          .writeAsStringSync('*.i18n.json merge=fushi-i18n-json\n');
+      File(
+        '${repo.path}/.gitattributes',
+      ).writeAsStringSync('*.i18n.json merge=fushi-i18n-json\n');
       write(<String, dynamic>{'a': '1', 'b': '2'});
       git(<String>['add', '.']);
       git(<String>['commit', '-q', '-m', 'base']);
@@ -609,9 +610,9 @@ void main() {
             '相邻 key 按行合并必冲突，驱动没生效才会到这里：'
             '${merge.stdout}${merge.stderr}',
       );
-      final Map<String, dynamic> merged = jsonDecode(
-        File('${repo.path}/s.i18n.json').readAsStringSync(),
-      ) as Map<String, dynamic>;
+      final Map<String, dynamic> merged =
+          jsonDecode(File('${repo.path}/s.i18n.json').readAsStringSync())
+              as Map<String, dynamic>;
       expect(merged.keys.toList(), <String>['a', 'a_x', 'a_y', 'b']);
     }, timeout: const Timeout(Duration(minutes: 2)));
 
@@ -631,8 +632,9 @@ void main() {
       // .dart_tool/package_config.json，入口脚本退回 PATH 上的 dart。
       Directory('$root/layout/tool/git_hooks').createSync(recursive: true);
       Directory('$root/layout/fushi/tool').createSync(recursive: true);
-      File('../tool/git_hooks/i18n_merge_driver.sh')
-          .copySync('$root/layout/tool/git_hooks/i18n_merge_driver.sh');
+      File(
+        '../tool/git_hooks/i18n_merge_driver.sh',
+      ).copySync('$root/layout/tool/git_hooks/i18n_merge_driver.sh');
       final String probe = '$root/layout/fushi/tool/i18n_merge_driver.dart';
       File(probe).writeAsStringSync('''
 import 'dart:io';

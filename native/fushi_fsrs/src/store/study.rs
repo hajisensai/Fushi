@@ -22,8 +22,9 @@
 //!
 //! 请求 `{"deck"?: 根牌组, "now", "utcOff", "rollover", "exclude"?: [卡], "pick"?: bool,
 //!        "rwkv"?: {"decks": {牌组: [目标保留率, 每天最少, 间隔次数, 间隔秒数]}, "cands": [[卡, 牌组, 上次作答|null, R]]}}`；
-//! 结果 `{"counts": {牌组: [新, 学习, 到期, 总数, 新卡上限, 新卡配额, 复习预算, 调整原因|null]}, "next", "after", "eligible"}`
-//! （调整原因 = Dart `SrsNewCardBudgetReason` 的名字：reduced / paused / increased）。
+//! 结果 `{"counts": {牌组: [新, 学习, 到期, 总数, 新卡上限, 新卡配额, 复习预算, 调整原因|null]}, "next", "after", "eligible", "wakeIn"}`
+//! （调整原因 = Dart `SrsNewCardBudgetReason` 的名字：reduced / paused / increased；`wakeIn` = 出卡排空时
+//! 距最早又排得出卡还有多少毫秒，null = 没有不靠写入就会到来的时刻，见 [Picker::wake]）。
 //! 牌组设置里影响计数的「新卡计划」（`newPlan`）与 RWKV 的「忽略每日复习上限」（`rwkvQueue.ignoreLimit`）都从牌组树读
 //! （[NewCardPlan::of] / `DeckTree::ignores_review_limit`）；按 RWKV 排程的牌组（`DeckTree::uses_rwkv`，看参数归属
 //! 祖先的算法）新卡计划不生效，复习预算为 0、调整原因为 null。
@@ -926,12 +927,16 @@ impl SqlSource<'_> {
 ///   列表上显示到期、复习页一张都不出（应用内反馈 ys9tMVHj3S）；
 /// - 每天最少复习数：共用一套设置（同一个参数归属牌组）的牌组今天已用的量（按归属牌组的 [LimitUnit]）加上合格卡
 ///   仍不到这个数时，从只因 R 高于目标被挡的卡里按 R 升序补足。
+///
+/// 第二项 = 只差间隔守卫的时间那一半的卡（卡, 牌组, 守卫解除时刻）：作答次数那一半已满足、R 也不挡（不高于目标，或
+/// 牌组开了「每天最少复习数」可能补上）。它们不靠任何写入、到点就合格——复习页排空后据此定时重排（[Picker::wake]）。
+/// 只差作答次数的不算：那要别的卡被答过，等多久都不会自己解除。
 fn instant_eligible(
     ctx: &Ctx<'_>,
     decks: &HashMap<String, InstantDeck>,
     cands: &[(String, String, Option<i64>, f64)],
     answered_deck: &HashMap<String, (String, bool)>,
-) -> Vec<(String, String, f64)> {
+) -> (Vec<(String, String, f64)>, Vec<(String, String, i64)>) {
     let day_start = ctx.day_start(ctx.today);
     // 参数归属牌组（设置所在的 own 祖先）：间隔守卫数作答、「每天最少」记配额都按它分组。
     // 不在牌组树里的牌组按默认牌组算（`DeckTree::effective`），与 Dart `_minimumTopUp` 分组同一口径。
@@ -956,33 +961,43 @@ fn instant_eligible(
                 .map(|(d, _)| (c, at, owner_of(d.as_str())))
         })
         .collect();
-    let spaced = |id: &str, group: &str, last: Option<i64>, q: &InstantDeck| -> bool {
+    let spaced = |id: &str, group: &str, last: Option<i64>, q: &InstantDeck| -> Spacing {
         let Some(last) = last.filter(|l| *l >= day_start) else {
-            return true;
+            return Spacing::Ready;
         };
-        if ctx.now < last + q.repeat_seconds * 1000 {
-            return false;
-        }
-        if q.repeat_reviews <= 0 {
-            return true;
-        }
-        let mut others = 0;
-        for (other, at, o) in &answers {
-            if *at > last && other.as_str() != id && o == group {
-                others += 1;
-                if others >= q.repeat_reviews {
-                    return true;
+        let reviews_ok = q.repeat_reviews <= 0 || {
+            let mut others = 0;
+            answers.iter().any(|(other, at, o)| {
+                if *at > last && other.as_str() != id && o == group {
+                    others += 1;
                 }
-            }
+                others >= q.repeat_reviews
+            })
+        };
+        let release = last + q.repeat_seconds * 1000;
+        match (reviews_ok, ctx.now < release) {
+            (false, _) => Spacing::Blocked,
+            (true, true) => Spacing::Until(release),
+            (true, false) => Spacing::Ready,
         }
-        false
     };
     let mut eligible: Vec<(String, String, f64)> = Vec::new();
     let mut above: Vec<(String, String, f64)> = Vec::new();
+    let mut held: Vec<(String, String, i64)> = Vec::new();
     for (id, deck, last, r) in cands {
         let Some(q) = decks.get(deck) else { continue };
-        if !r.is_finite() || !spaced(id, &owner_of(deck), *last, q) {
+        if !r.is_finite() {
             continue;
+        }
+        match spaced(id, &owner_of(deck), *last, q) {
+            Spacing::Ready => {}
+            Spacing::Until(at) => {
+                if *r <= q.target || q.min_reviews > 0 {
+                    held.push((id.clone(), deck.clone(), at));
+                }
+                continue;
+            }
+            Spacing::Blocked => continue,
         }
         if *r > q.target {
             &mut above
@@ -1051,7 +1066,17 @@ fn instant_eligible(
         }
     }
     eligible.sort_by(by_r);
-    eligible
+    (eligible, held)
+}
+
+/// RWKV 同日间隔守卫对一张卡的判定（[instant_eligible]）。
+enum Spacing {
+    /// 不受守卫限制（今天没答过，或两半都已满足）。
+    Ready,
+    /// 作答次数已够，只差时间：到这个时刻（毫秒）解除。
+    Until(i64),
+    /// 之后别的卡的作答次数不够：要等别的卡被答过，不会自己解除。
+    Blocked,
 }
 
 /// 牌组树计数（对齐 Anki v3 的 limit tree，rslib scheduler/queue/limits.rs）：每个牌组的今日剩余上限 = 自己的
@@ -1305,6 +1330,39 @@ impl Picker<'_> {
             }
         }
         Ok(learning.map(|(id, _)| (id, Kind::Learning)))
+    }
+
+    /// [Picker::next] 一张都排不出时，最早哪一刻（毫秒）不靠任何写入就又排得出——复习页「复习完」据此定时重排、
+    /// 亮出「继续」，排程本身不变（应用内反馈 LAk5vHGWUe：RWKV 间隔守卫暂缓的卡几十秒后合格，页面却一直停在
+    /// 「复习完」，退出后牌组又显示有卡）。只看随时间自己变化的两样：
+    /// - 学习卡：最早的那张进入 [LEARN_AHEAD_MS] 提前窗口的时刻（到期时刻 − 窗口）；
+    /// - RWKV：只差间隔守卫时间那一半、所在路径还有复习额度的卡的解除时刻（[instant_eligible] 的第二项）。
+    ///
+    /// FSRS 复习卡按天到期、新卡按天放额度，都只在跨日时变（跨日整份重排，不在这里）。只给晚于此刻的时刻：到点重排
+    /// 若因别的原因（例如「每天最少」的配额已满）仍排不出，那一项不会再被报出来，不会空转。
+    fn wake(
+        &self,
+        exclude: &[&str],
+        held: &[(String, String, i64)],
+    ) -> Result<Option<i64>, String> {
+        let sub: Vec<&str> = self.sub.iter().map(String::as_str).collect();
+        let learning = self
+            .src
+            .first_learning(&sub, i64::MAX, exclude)?
+            .map(|(_, due)| due.unwrap_or(0) - LEARN_AHEAD_MS);
+        let ex: HashSet<&str> = exclude.iter().copied().collect();
+        let instant = held
+            .iter()
+            .filter(|(id, deck, _)| {
+                !ex.contains(id.as_str()) && self.path_has_room(deck, |c| c.review_remaining)
+            })
+            .map(|(_, _, at)| *at)
+            .min();
+        Ok([learning, instant]
+            .into_iter()
+            .flatten()
+            .filter(|at| *at > self.ctx.now)
+            .min())
     }
 }
 
@@ -1786,10 +1844,10 @@ fn run(src: &mut dyn Source, tree: DeckTree, req: &Value) -> Result<Value, Strin
         lookup.extend(ctx.logs.answers().map(|(id, _)| id.clone()));
     }
     let found = src.decks_of(&lookup)?;
-    let eligible = if rwkv.is_some() {
+    let (eligible, held) = if rwkv.is_some() {
         instant_eligible(&ctx, &instant, &cands, &found)
     } else {
-        Vec::new()
+        (Vec::new(), Vec::new())
     };
     if rwkv.is_some() {
         for d in instant.keys() {
@@ -1847,6 +1905,8 @@ fn run(src: &mut dyn Source, tree: DeckTree, req: &Value) -> Result<Value, Strin
     }
     let counts = count_tree(&ctx, &t, &ids, root);
     let (mut next, mut after) = (None, None);
+    // 出卡排空时，最早什么时候不靠任何写入就又排得出（距 [now] 的毫秒数；[Picker::wake]）。
+    let mut wake_in: Option<i64> = None;
     let mut custom_out = Value::Null;
     let custom = match req.get("custom").filter(|v| v.is_object()) {
         Some(v) => Some(CustomStudy::of(v)?),
@@ -1907,6 +1967,8 @@ fn run(src: &mut dyn Source, tree: DeckTree, req: &Value) -> Result<Value, Strin
                 Kind::Learning => (0, 0),
             };
             after = picker.next(&ex, v)?.map(|(id, _)| id);
+        } else {
+            wake_in = picker.wake(&ex, &held)?.map(|at| at - now);
         }
         next = first.map(|(id, _)| id);
     }
@@ -1933,6 +1995,7 @@ fn run(src: &mut dyn Source, tree: DeckTree, req: &Value) -> Result<Value, Strin
         "after": after,
         "eligible": eligible.iter().map(|(id, _, _)| id.clone()).collect::<Vec<_>>(),
         "custom": custom_out,
+        "wakeIn": wake_in,
     }))
 }
 
@@ -4579,6 +4642,77 @@ mod tests {
         assert_eq!(listed["counts"]["RW"][2], json!(1), "{listed}");
         assert_eq!(picked["counts"]["RWA"][2], json!(1), "{picked}");
         assert_eq!(picked["next"], json!("r1"), "{picked}");
+        lab.close();
+    }
+
+    /// 应用内反馈 LAk5vHGWUe：RWKV 间隔守卫只差时间那一半时，排空的结果要带上「多久之后又排得出」（`wakeIn`），
+    /// 复习页据此定时重排、亮出「继续」；到点同一次排队就出这张。只差作答次数的（等多久都不会自己解除）不报。
+    #[test]
+    fn study_reports_when_a_time_held_rwkv_card_comes_back() {
+        let mut lab = OrderLab::new("rwkv_wake");
+        lab.deck("RW", None, "rwkv", true);
+        lab.review("r1", "RW", -1, 1, Some(5.0), 3, 1.0);
+        for i in 1..=5 {
+            lab.review(&format!("b{i}"), "RW", -1, 1, Some(5.0), 3, 1.0);
+        }
+        let t0 = lab.now;
+        lab.answer("r1");
+        lab.now += 1_000;
+        for i in 1..=4 {
+            lab.answer(&format!("b{i}"));
+        }
+        let rwkv = json!({
+            "decks": {"RW": [0.9, 0, 5, 30]},
+            "cands": [["r1", "RW", t0, 0.3]],
+        });
+        // 之后别的卡只答了 4 张：作答次数那一半不够，到点也不会自己合格。
+        lab.now = t0 + 10_000;
+        let got = lab.pick("RW", &[], Some(&rwkv));
+        assert_eq!(got["next"], Value::Null, "{got}");
+        assert_eq!(got["wakeIn"], Value::Null, "{got}");
+        // 第 5 张答完：只差时间，30 秒守卫在 t0 + 30 s 解除。
+        lab.answer("b5");
+        lab.now = t0 + 12_000;
+        let got = lab.pick("RW", &[], Some(&rwkv));
+        assert_eq!(got["next"], Value::Null, "{got}");
+        assert_eq!(got["wakeIn"], json!(18_000), "{got}");
+        // 被排除的卡不算。
+        let got = lab.pick("RW", &["r1".to_owned()], Some(&rwkv));
+        assert_eq!(got["wakeIn"], Value::Null, "{got}");
+        // R 高于目标、也没有「每天最少」可补：到点也不出，不报。
+        let above = json!({"decks": {"RW": [0.9, 0, 5, 30]}, "cands": [["r1", "RW", t0, 0.95]]});
+        assert_eq!(lab.pick("RW", &[], Some(&above))["wakeIn"], Value::Null);
+        // 到点：同一次排队就出它。
+        lab.now = t0 + 30_000;
+        let got = lab.pick("RW", &[], Some(&rwkv));
+        assert_eq!(got["next"], json!("r1"), "{got}");
+        assert_eq!(got["wakeIn"], Value::Null, "{got}");
+        lab.close();
+    }
+
+    /// 同上，FSRS 学习卡：排空时最早那张学习卡进入 20 分钟提前窗口的时刻；窗口内的照常直接出。
+    #[test]
+    fn study_reports_when_a_learning_card_enters_the_learn_ahead_window() {
+        let mut lab = OrderLab::new("learning_wake");
+        lab.deck("F", None, "fsrs6", true);
+        lab.review("l1", "F", 0, 1, Some(5.0), 0, 1.0);
+        lab.review("l2", "F", 0, 1, Some(5.0), 0, 1.0);
+        let learn = |lab: &OrderLab, id: &str, due_at: i64| {
+            exec(
+                &lab.core,
+                "UPDATE srs_cards_cache SET queue = 'learning', due_day = NULL, due_at = ? WHERE id = srs_id(?)",
+                vec![Sql::Integer(due_at), Sql::Text(id.into())],
+            );
+        };
+        learn(&lab, "l1", lab.now + 50 * 60_000);
+        learn(&lab, "l2", lab.now + 40 * 60_000);
+        let got = lab.pick("F", &[], None);
+        assert_eq!(got["next"], Value::Null, "{got}");
+        assert_eq!(got["wakeIn"], json!(20 * 60_000), "{got}");
+        lab.now += 20 * 60_000;
+        let got = lab.pick("F", &[], None);
+        assert_eq!(got["next"], json!("l2"), "{got}");
+        assert_eq!(got["wakeIn"], Value::Null, "{got}");
         lab.close();
     }
 }

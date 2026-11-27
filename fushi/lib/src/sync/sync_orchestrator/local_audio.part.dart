@@ -117,7 +117,7 @@ extension _SyncOrchestratorLocalAudio on SyncOrchestrator {
           report.localAudioImported++;
         }
       } catch (e) {
-        report.noteError('live pull local audio "$name"', e);
+        _noteDimensionError(report, 'live pull local audio "$name"', e);
       } finally {
         _safeDelete(tmp);
         _safeDelete(stagingDb);
@@ -169,7 +169,7 @@ extension _SyncOrchestratorLocalAudio on SyncOrchestrator {
         );
         report.localAudioExported++;
       } catch (e) {
-        report.noteError('live push local audio "$name"', e);
+        _noteDimensionError(report, 'live push local audio "$name"', e);
       } finally {
         _safeDelete(tmp);
       }

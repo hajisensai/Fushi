@@ -195,14 +195,9 @@ impl Source for G4<'_, '_> {
             }
         };
         let mut ix = self.ix.borrow_mut();
-        // 归回的写入者表在这一条命令里不变（同一个读快照）：按类拼行每条笔记都要它，读一次（同 `cache.rs` 的
+        // 归回的写入者表与规则表在这一条命令里不变（同一个读快照）：按类拼行每条笔记都要它，读一次（同 `cache.rs` 的
         // `cache_pass`），不让每条笔记各读一遍整张表。
-        ix.pass_writers = Some(std::rc::Rc::new(ix.writer_aliases()?));
-        ix.pass_rules_begin()?;
-        let done = edits_with(self.t, &mut ix, notes, keys, sink);
-        ix.pass_writers = None;
-        ix.pass_rules = None;
-        done
+        ix.in_read_pass(|ix| edits_with(self.t, ix, notes, keys, sink))
     }
 
     fn rated(&self, since: i64, rating: Option<i64>) -> Result<Vec<String>, String> {

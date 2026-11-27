@@ -164,6 +164,8 @@ class DictionaryManagerDetail extends StatelessWidget {
     this.transferSection,
     this.fileIssue,
     this.onReimport,
+    this.restoreHosts = const <String, String>{},
+    this.onRestore,
     super.key,
   });
 
@@ -174,6 +176,13 @@ class DictionaryManagerDetail extends StatelessWidget {
 
   /// 文件不在时的「重新导入」（在线来源强制重下，本地导入选文件覆盖）。
   final VoidCallback? onReimport;
+
+  /// 文件不在时可以从哪些 host 拉回来（hostId → 展示名，按配对顺序）：这些 host 的目录
+  /// 上有同名副本（反馈 ujt4V8GdT8）。空 = 不给「从 <host> 恢复」。
+  final Map<String, String> restoreHosts;
+
+  /// 「从 <host> 恢复」（参数是 hostId）。
+  final ValueChanged<String>? onRestore;
   final bool enabled;
   final DictionaryCollapseState collapseState;
   final String typeLabel;
@@ -232,6 +241,8 @@ class DictionaryManagerDetail extends StatelessWidget {
             key: ValueKey<String>('dict-detail-file-issue-${dictionary.name}'),
             issue: issue,
             onReimport: onReimport,
+            restoreHosts: restoreHosts,
+            onRestore: onRestore,
             onDelete: onDelete,
           ),
           SizedBox(height: gap),
@@ -447,13 +458,16 @@ class DictionaryFileIssueTag extends StatelessWidget {
   };
 }
 
-/// BUG-5489：详情顶部的文件状态说明。文件不在 → 给「重新导入 / 删除」两条出路；暂时
-/// 读不到 → 只说明、不给删除（没删任何东西，等文件能读到就自动恢复）。
+/// BUG-5489：详情顶部的文件状态说明。文件不在 → 给「从 <host> 恢复 / 重新导入 / 删除」
+/// 几条出路（互联 host 上有同名副本时恢复排最前，反馈 ujt4V8GdT8）；暂时读不到 → 只说明、
+/// 不给删除（没删任何东西，等文件能读到就自动恢复）。
 class DictionaryFileIssueNotice extends StatelessWidget {
   const DictionaryFileIssueNotice({
     required this.issue,
     required this.onDelete,
     this.onReimport,
+    this.restoreHosts = const <String, String>{},
+    this.onRestore,
     super.key,
   });
 
@@ -461,9 +475,14 @@ class DictionaryFileIssueNotice extends StatelessWidget {
   final VoidCallback? onReimport;
   final VoidCallback onDelete;
 
+  /// 有同名副本的 host（hostId → 展示名）。
+  final Map<String, String> restoreHosts;
+  final ValueChanged<String>? onRestore;
+
   @override
   Widget build(BuildContext context) {
     final VoidCallback? reimport = onReimport;
+    final ValueChanged<String>? restore = onRestore;
     return FushiStaggeredEntrance(
       index: 0,
       child: switch (issue) {
@@ -473,6 +492,15 @@ class DictionaryFileIssueNotice extends StatelessWidget {
           title: t.dictionary_files_missing_tag,
           message: t.dictionary_files_missing_detail,
           actions: <Widget>[
+            if (restore != null)
+              for (final MapEntry<String, String> host in restoreHosts.entries)
+                FushiTextButton(
+                  key: ValueKey<String>('dict-file-issue-restore-${host.key}'),
+                  onPressed: () => restore(host.key),
+                  child: Text(
+                    t.dictionary_files_restore_from_host(host: host.value),
+                  ),
+                ),
             if (reimport != null)
               FushiTextButton(
                 key: const ValueKey<String>('dict-file-issue-reimport'),

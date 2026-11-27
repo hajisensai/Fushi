@@ -62,7 +62,7 @@ class AndroidLibraryDbWitness {
     Directory supportRoot, {
     Duration timeout = const Duration(seconds: 5),
   }) async {
-    final String? path = await _databasePath(supportRoot);
+    final String? path = await databasePathIn(supportRoot);
     if (path == null) return null;
     try {
       return await Isolate.run<List<String>?>(
@@ -73,8 +73,9 @@ class AndroidLibraryDbWitness {
     }
   }
 
-  /// [supportRoot] 下现存的主库文件（兼看旧名）；都不存在返回 null。
-  static Future<String?> _databasePath(Directory supportRoot) async {
+  /// [supportRoot] 下现存的主库文件（兼看旧名）；都不存在返回 null。书库内容对账
+  /// （`LibraryContentAudit`）也用它找主库。
+  static Future<String?> databasePathIn(Directory supportRoot) async {
     for (final String name in <String>[
       fushiDatabaseFileName,
       legacyHibikiDatabaseFileName,
@@ -203,7 +204,7 @@ class AndroidLibraryDbWitness {
     required List<Directory> roots,
     Duration timeout = const Duration(seconds: 5),
   }) async {
-    final String? path = await _databasePath(supportRoot);
+    final String? path = await databasePathIn(supportRoot);
     if (path == null) return null;
     final List<String> rootPaths = <String>[
       for (final Directory d in roots) d.path,
@@ -238,7 +239,7 @@ class AndroidLibraryDbWitness {
     required Directory otherRoot,
     Duration timeout = const Duration(seconds: 5),
   }) async {
-    final String? path = await _databasePath(supportRoot);
+    final String? path = await databasePathIn(supportRoot);
     if (path == null) return null;
     final String anchored = anchoredRoot.path;
     final String other = otherRoot.path;

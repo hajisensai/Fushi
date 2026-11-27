@@ -3809,6 +3809,44 @@ String _mangaGestureJs({
       b.callHandler('onMangaTurn', dir > 0 ? 'next' : 'prev');
     }, {passive: false});
   }
+  // ── webtoon 触控板 / 高精度滚轮：页内 1:1 同步滚动（反馈 AmYIZcxlKr，BUG-5555）──
+  // 条漫靠文档原生竖向滚动。Windows 上触控板两指滑动由 WebView 宿主换算成一串**碎的
+  // 普通滚轮**（每帧几像素，WebView2 没有精确滚动的输入口），Chromium 对每个普通滚轮都
+  // 起一段平滑滚动动画、后一个不断改前一个的目标：跟手性全没了，慢、顿、方向乱。鼠标
+  // 一格是单个大 delta，动画正是想要的，所以只有触控板坏。查词弹窗（popup.js BUG-870 /
+  // BUG-2834）与正文连续模式早就是同一做法：像素模式下的小 delta 判为细粒度设备、本次
+  // 手势锁定，preventDefault 后同步 1:1 滚过去（亚像素余量跨帧累计）；粗滚轮（大 delta /
+  // 行 / 页模式）仍交给原生平滑滚动。
+  if (IS_WEBTOON) {
+    var WEBTOON_FINE_WHEEL_PX = 60;
+    var WEBTOON_FINE_IDLE_MS = 200;
+    var _webtoonWheelFine = false;
+    var _webtoonWheelAt = -Infinity;
+    var _webtoonWheelResidual = 0;
+    document.addEventListener('wheel', function(e){
+      if (e.ctrlKey || e.metaKey) return;
+      var now = performance.now();
+      if (now - _webtoonWheelAt > WEBTOON_FINE_IDLE_MS) {
+        _webtoonWheelFine = false;
+        _webtoonWheelResidual = 0;
+      }
+      _webtoonWheelAt = now;
+      if (e.deltaMode !== 0) return;
+      var dy = e.deltaY || 0;
+      var dx = e.deltaX || 0;
+      if (dy === 0 && dx === 0) return;
+      if (Math.abs(dy) < WEBTOON_FINE_WHEEL_PX) _webtoonWheelFine = true;
+      if (!_webtoonWheelFine) return;
+      e.preventDefault();
+      _stopFlick();
+      _webtoonWheelResidual += dy;
+      var step = Math.trunc(_webtoonWheelResidual);
+      _webtoonWheelResidual -= step;
+      if (step) window.scrollBy(0, step);
+      // 放大态的横向平移照旧走 _panBy（钳制只住在它里面）；不放大时条漫没有横向可滚。
+      if (dx && ZOOM > 1) _panBy(-dx, 0);
+    }, {passive: false});
+  }
   // ── 抑制原生拖拽残影（BUG-051「秃瓢」）──
   // 即使 user-select/user-drag 已禁，部分 WebView 仍会在拖动时发 dragstart 拉出
   // 残影；显式 preventDefault 兜底，让鼠标拖动只走 swipe 手势路径。

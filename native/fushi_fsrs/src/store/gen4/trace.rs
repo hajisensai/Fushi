@@ -166,14 +166,20 @@ fn new_rows(
         }
         Ok::<_, String>(out)
     };
-    let (card_note, stat_card) = (at(CARD_COLS, "note_id"), at(STAT_COLS, "card"));
-    let mut stats = Vec::new();
+    let (card_note, stat_card, stat_log) = (
+        at(CARD_COLS, "note_id"),
+        at(STAT_COLS, "card"),
+        at(STAT_COLS, "log"),
+    );
+    // 按日志 ID 去重：一张卡和它名下的日志都在 [ids] 里时，同一统计行会被查到好几次（反馈 QW3kL_jEQF 的报告把卡
+    // 0c867d79 名下的 5 条报成了 40 条）。
+    let mut stats: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let mut cards: BTreeSet<String> = BTreeSet::new();
     for id in ids {
         cards.insert(id.clone());
         for r in rows("stats", STAT_COLS, "log = ?2 OR card = ?2", id)? {
             cards.insert(r[stat_card].clone());
-            stats.push(r);
+            stats.insert(r[stat_log].clone(), r);
         }
         if let Some(o) = old {
             if let Some(r) = o.stats.get(id.as_str()) {
@@ -203,7 +209,11 @@ fn new_rows(
             card_rows.insert(r[0].clone(), r);
         }
     }
-    Ok((note_rows, card_rows.into_values().collect(), stats))
+    Ok((
+        note_rows,
+        card_rows.into_values().collect(),
+        stats.into_values().collect(),
+    ))
 }
 
 /// 与 [id] 同一别名类的成员（含 [id] 与规范 ID 本身）。

@@ -1666,6 +1666,21 @@ fn a_disk_full_midway_through_staging_leaves_the_library_as_it_was() {
     for f in [GEN4_FILE, GEN4_TEMP, PREPARE_COPY] {
         assert!(!dir.0.join(f).exists(), "{f} left behind");
     }
+    // 出错也留报告（反馈 QW3kL_jEQF：只有对拍不过才有报告，出错时开发者拿不到出在哪一步、库是什么样）：错误原文、
+    // 出错时的步骤、旧库的身份与环境、每个 profile 各表的行数。它不是中止报告：状态照旧是「要迁移」，可以直接重试。
+    let r = report_file(&dir.0);
+    assert_eq!(r["verdict"], "error", "{r:#}");
+    assert_eq!(r["startedAtMs"], NOW, "{r:#}");
+    assert_eq!(r["error"], json!(err), "{r:#}");
+    assert_eq!(r["step"]["step"], "translate", "{r:#}");
+    assert_eq!(r["environment"]["sqlite"], rusqlite::version(), "{r:#}");
+    assert!(r["legacyIdentity"].is_string(), "{r:#}");
+    let counts = &r["profiles"][0];
+    assert_eq!(counts["profile"], P, "{r:#}");
+    assert!(
+        counts["tableCounts"]["srs_field_edits"].as_i64() >= Some(40),
+        "{r:#}"
+    );
     assert_eq!(status(&dir.0), Ok(GenState::NeedsMigration));
     assert_eq!(migrate(&dir.0).verdict(), "committed");
 }
@@ -3125,6 +3140,116 @@ fn duplicate_log_whose_swapped_field_was_tampered_still_fails() {
     let p = &report["profiles"][0];
     assert_eq!(p["verdict"], "fail", "{p:#}");
     assert_eq!(p["oldSideStaleResults"]["swaps"], 0, "{p:#}");
+}
+
+/// 对拍不过的报告要带齐定位根因的诊断（反馈 QW3kL_jEQF / hX_SnLpapZ：统计归属两侧不同、合成库复现不出）：库与运行
+/// 环境（SQLite 版本、`user_version`、每张表的 DDL 与行数）、本 profile 各表行数，以及统计行差异逐条摊开的
+/// `statsTrace`——协议 3 的日志行、现成与冻结重建的统计行、冻结规则下的归属组与组里每条日志的选取 / 投影去向、新代一侧
+/// 的日志索引与统计行。夹具同 [duplicate_log_whose_swapped_field_was_tampered_still_fails]（协议 3 落库的时长被改坏）。
+#[test]
+fn a_failed_parity_report_explains_the_stats_difference() {
+    let (card1, _) = dup_cards();
+    let cfg_b = dup_config(0.85);
+    let l2 = |dur: i64| {
+        dup_copy("L2", &card1, |v| {
+            v[crate::sync2::replay::SNAPSHOT_KEY] = cfg_b.clone();
+            v["dur"] = json!(dur);
+        })
+    };
+    let (_d_small, d_large, _, _) =
+        build_dup_device_pair("g7-diag-stats", &l2(3000), None, &l2(5000), None, false);
+    let dir_large = close_device(d_large);
+    {
+        let c = raw(&dir_large.0);
+        let json: String = c
+            .query_row(
+                "SELECT json FROM srs_review_logs WHERE id = srs_id('L2')",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let mut row: Value = serde_json::from_str(&json).unwrap();
+        row["dur"] = json!(7000);
+        c.execute(
+            "UPDATE srs_review_logs SET duration_ms = 7000, jslim = srs_log_pack(?2, id, profile_uid, card_id, kind,              rating, occurred_at, review_type, origin, 7000) WHERE id = srs_id(?1)",
+            params!["L2", row.to_string()],
+        )
+        .unwrap();
+    }
+    let out = migrate_with(&dir_large.0, &caches(), &Stop::new(), &mut Vec::new());
+    let Outcome::Aborted { report, .. } = &out else {
+        panic!("expected Aborted, got {out:?}");
+    };
+    // 写到盘上的就是这一份（反馈页附的是文件）。
+    assert_eq!(&report_file(&dir_large.0), report);
+    let env = &report["environment"];
+    assert_eq!(env["sqlite"], rusqlite::version(), "{env:#}");
+    assert!(env["pragmas"]["user_version"].is_i64(), "{env:#}");
+    assert!(env["pragmas"]["page_count"].as_i64() > Some(0), "{env:#}");
+    assert_eq!(
+        env["srsMeta"]["schema"],
+        crate::store::schema::SCHEMA_VERSION.to_string(),
+        "{env:#}"
+    );
+    let logs_table = env["schema"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|o| o["type"] == "table" && o["name"] == "srs_review_logs")
+        .unwrap_or_else(|| panic!("{env:#}"));
+    assert!(logs_table["rows"].as_i64() >= Some(1), "{logs_table:#}");
+    assert!(
+        logs_table["sql"]
+            .as_str()
+            .unwrap()
+            .starts_with("CREATE TABLE"),
+        "{logs_table:#}"
+    );
+    let p = &report["profiles"][0];
+    assert_eq!(p["verdict"], "fail", "{p:#}");
+    assert!(
+        p["tableCounts"]["srs_review_logs"].as_i64() >= Some(1),
+        "{p:#}"
+    );
+    let st = &p["statsTrace"];
+    let item = st["ids"]
+        .as_array()
+        .unwrap_or_else(|| panic!("{p:#}"))
+        .iter()
+        .find(|i| i["id"] == "L2")
+        .unwrap_or_else(|| panic!("{st:#}"));
+    let log = item["p3"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|l| l["log"] == "L2")
+        .unwrap_or_else(|| panic!("{item:#}"));
+    assert_eq!(log["card"], json!(card1), "{log:#}");
+    assert_eq!(log["profile"], "self", "{log:#}");
+    assert_eq!(log["durationMs"], 7000, "{log:#}");
+    assert_eq!(log["existingStat"]["card"], json!(card1), "{log:#}");
+    assert_eq!(log["rebuiltStat"]["card"], json!(card1), "{log:#}");
+    assert_eq!(item["gen4"]["stat"]["card"], json!(card1), "{item:#}");
+    // 冻结规则下的归属组：L2 所在的组、它在选取里是有效的、投影出了统计行。
+    let groups = st["frozenGroups"]["groups"]
+        .as_array()
+        .unwrap_or_else(|| panic!("{st:#}"));
+    let fate = groups
+        .iter()
+        .flat_map(|g| g["logs"].as_array().unwrap())
+        .find(|f| f["id"] == "L2")
+        .unwrap_or_else(|| panic!("{st:#}"));
+    assert_eq!(fate["produced"], true, "{fate:#}");
+    assert_eq!(fate["status"], json!(["effective"]), "{fate:#}");
+    assert!(
+        groups.iter().any(|g| g["owner"] == json!(card1)
+            && g["cards"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|c| c["card"] == json!(card1))),
+        "{st:#}"
+    );
 }
 
 /// 三台设备各包了一份（最小设备的不带 `sc`、中间的带配置 A、最大的带配置 B 且时长不同）：中间与最大两台的协议 3

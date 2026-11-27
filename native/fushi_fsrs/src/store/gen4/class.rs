@@ -414,7 +414,7 @@ impl<'t, 'c> Index<'t, 'c> {
             key: canon_key.to_owned(),
             keys: None,
         };
-        let lines = self.edit_lines_as(&j.rows, &|i| j.want[i] >= R_LIVE, Some(&c))?;
+        let lines = self.edit_lines_as(&j.rows, &|i| j.want[i] >= R_LIVE, Some(&c), "")?;
         let stored: Vec<crate::registers::StoredEdit<'_>> = lines
             .iter()
             .map(|l| (l.json.as_str(), l.server_time, None))
@@ -540,6 +540,35 @@ impl<'t, 'c> Index<'t, 'c> {
         self.pass_rules = None;
         self.pass_rules = Some(self.rule_canon()?);
         Ok(())
+    }
+
+    /// 在一个读快照里按类读一大批实体（读命令 `read` 的 `entities` / `edits` / `logs`、`entity_views`、浏览、同步冲突）：
+    /// 归回的写入者表（[Index::pass_writers]）与内置规则表（[Index::pass_rules]）在快照里不变，先各读一次，[f] 跑完清掉。
+    /// 不这样做时每个实体按类拼行都重读一遍 `alias_writer_ix`，每个嵌着 ID 的修改键、值归一时都重读一遍绑定
+    /// （`collections` 那一行与盐集合，[Index::rule_canon]）——一批几千条笔记、每条二三十个字段键就是十几万次多余的查询
+    /// （BUG-5572）。
+    pub(super) fn in_read_pass<T>(
+        &mut self,
+        f: impl FnOnce(&mut Self) -> Result<T, String>,
+    ) -> Result<T, String> {
+        let done = self.read_pass_begin().and_then(|()| f(self));
+        self.read_pass_end();
+        done
+    }
+
+    /// 一趟只读的按类读开始：写入者表、内置规则表各读一次，别名表的查询记进 [Index::pass_memo]（读快照里都不变）。
+    /// 只用在读命令的快照里（写命令与缓存层会改别名表），结束时 [Index::read_pass_end] 清掉。
+    pub(super) fn read_pass_begin(&mut self) -> Result<(), String> {
+        self.pass_writers = Some(Rc::new(self.writer_aliases()?));
+        self.pass_memo = Some(RefCell::default());
+        self.pass_rules_begin()
+    }
+
+    /// [Index::read_pass_begin] 记下的都清掉。
+    pub(super) fn read_pass_end(&mut self) {
+        self.pass_writers = None;
+        self.pass_rules = None;
+        self.pass_memo = None;
     }
 
     /// 旧并入改名、已归回的写入者（`alias_writer_ix`）：原名 → 规范名，与各原名证据撑得住的范围（`derive_cfg` 的
@@ -685,7 +714,7 @@ impl<'t, 'c> Index<'t, 'c> {
         kind: EntKind,
         canon: &Ref,
     ) -> Result<(Vec<(String, Option<i64>)>, i64), String> {
-        let (lines, top) = self.class_lines_keyed(kind, canon)?;
+        let (lines, top) = self.class_lines_keyed(kind, canon, "")?;
         Ok((lines.into_iter().map(|(_, j, st)| (j, st)).collect(), top))
     }
 
@@ -694,8 +723,9 @@ impl<'t, 'c> Index<'t, 'c> {
         &mut self,
         kind: EntKind,
         canon: &Ref,
+        profile: &str,
     ) -> Result<(Vec<ClassLine>, i64), String> {
-        self.class_lines_by(kind, canon, &Pick::All, true)
+        self.class_lines_by(kind, canon, &Pick::All, true, profile)
     }
 
     /// 同步冲突（`cmd/reads.rs` 的 `conflict_edits`）要的：别名类 [canon] 里 [tracks] 圈定的规范键上**可能有值不同的
@@ -713,9 +743,10 @@ impl<'t, 'c> Index<'t, 'c> {
         canon: &Ref,
         pre: &dyn Fn(&str) -> bool,
         tracks: &dyn Fn(&str) -> bool,
+        profile: &str,
     ) -> Result<Vec<ClassLine>, String> {
         Ok(self
-            .class_lines_by(kind, canon, &Pick::Conflicts { pre, tracks }, true)?
+            .class_lines_by(kind, canon, &Pick::Conflicts { pre, tracks }, true, profile)?
             .0)
     }
 
@@ -727,7 +758,38 @@ impl<'t, 'c> Index<'t, 'c> {
         canon: &Ref,
         pick: &Pick<'_>,
         shortcut: bool,
+        profile: &str,
     ) -> Result<(Vec<ClassLine>, i64), String> {
+        let (lines, top) = self.class_lines_full(kind, canon, pick, shortcut, profile, false)?;
+        Ok((lines.into_iter().map(|(l, _)| l).collect(), top))
+    }
+
+    /// [Index::class_lines_keyed]，每行另带写成文本前的行对象（`derive.rs` [super::derive::Line] 的 `obj`）：读命令
+    /// `read note_views` 拿它直接物化，不再解析一遍行 JSON（BUG-5572）。
+    pub(super) fn class_lines_objects(
+        &mut self,
+        kind: EntKind,
+        canon: &Ref,
+        profile: &str,
+    ) -> Result<Vec<(ClassLine, Map<String, Value>)>, String> {
+        let (lines, _) = self.class_lines_full(kind, canon, &Pick::All, true, profile, true)?;
+        lines
+            .into_iter()
+            .map(|(l, obj)| Ok((l, obj.ok_or("gen4 index: kept line has no object")?)))
+            .collect()
+    }
+
+    /// [Index::class_lines_by] 的实现；[keep] = true 时每行带着它的行对象。
+    #[allow(clippy::type_complexity)]
+    fn class_lines_full(
+        &mut self,
+        kind: EntKind,
+        canon: &Ref,
+        pick: &Pick<'_>,
+        shortcut: bool,
+        profile: &str,
+        keep: bool,
+    ) -> Result<(Vec<(ClassLine, Option<Map<String, Value>>)>, i64), String> {
         self.aliases_settled()?;
         let entity = self.canonical(canon)?.text();
         let members = self.members(canon)?;
@@ -812,9 +874,13 @@ impl<'t, 'c> Index<'t, 'c> {
             keys: Some(&keys),
         };
         let (mut out, mut top) = (Vec::new(), 0i64);
-        for l in self.edit_lines_as(&ks, &|i| emit[i], Some(&c))? {
+        let lines = self.edit_lines_with(&ks, &|i| emit[i], Some(&c), profile, keep)?;
+        for l in lines {
             top = top.max(l.physical);
-            out.push((c.key_of(ks[l.rep]).to_owned(), l.json, l.server_time));
+            out.push((
+                (c.key_of(ks[l.rep]).to_owned(), l.json, l.server_time),
+                l.obj,
+            ));
         }
         Ok((out, top))
     }
@@ -1762,9 +1828,11 @@ mod tests {
                     assert!(ix.members(&r(w.c_note))?.len() > 1, "{name}");
                     for id in [w.note[0], w.c_note] {
                         let before = ix.class_judged;
-                        let fast = ix.class_lines_by(EntKind::Note, &r(id), &Pick::All, true)?;
+                        let fast =
+                            ix.class_lines_by(EntKind::Note, &r(id), &Pick::All, true, "")?;
                         assert_eq!(ix.class_judged - before, u64::from(rejudged), "{name}");
-                        let slow = ix.class_lines_by(EntKind::Note, &r(id), &Pick::All, false)?;
+                        let slow =
+                            ix.class_lines_by(EntKind::Note, &r(id), &Pick::All, false, "")?;
                         assert_eq!(fast, slow, "{name}");
                         assert_eq!(fast.0.len(), 2, "{name}: both writes live");
                         assert!(fast.0.iter().all(|l| l.0 == fkey(w.c_field)), "{name}");
@@ -1807,17 +1875,20 @@ mod tests {
                     ix.settle()?;
                     let all = |_: &str| true;
                     let slow = ix
-                        .class_lines_by(EntKind::Note, &r(w.c_note), &Pick::All, false)?
+                        .class_lines_by(EntKind::Note, &r(w.c_note), &Pick::All, false, "")?
                         .0;
                     assert_eq!(slow.iter().filter(|l| l.0 == "deck").count(), n, "{name}");
                     let want: Vec<ClassLine> = slow.into_iter().filter(|l| l.0 != "deck").collect();
                     for id in [w.note[0], w.c_note] {
-                        let got = ix.class_conflict_lines(EntKind::Note, &r(id), &all, &all)?;
+                        let got = ix.class_conflict_lines(EntKind::Note, &r(id), &all, &all, "")?;
                         assert_eq!(got, want, "{name}");
-                        let got =
-                            ix.class_conflict_lines(EntKind::Note, &r(id), &all, &|k: &str| {
-                                k == "deck"
-                            })?;
+                        let got = ix.class_conflict_lines(
+                            EntKind::Note,
+                            &r(id),
+                            &all,
+                            &|k: &str| k == "deck",
+                            "",
+                        )?;
                         assert!(got.is_empty(), "{name}: untracked or not conflicted");
                     }
                     Ok(())
@@ -2115,7 +2186,7 @@ mod tests {
                     unreachable!()
                 };
                 let canon = r(note);
-                let (lines, _) = ix.class_lines_keyed(EntKind::Note, &canon)?;
+                let (lines, _) = ix.class_lines_keyed(EntKind::Note, &canon, "")?;
                 let key = lines[0].0.clone();
                 let stored: Vec<crate::registers::StoredEdit<'_>> = lines
                     .iter()

@@ -1372,5 +1372,44 @@ void main() {
       ]);
       expect(await members(otherCid), <String>['srt:志乃と恋 3']);
     });
+
+    test('存量滞留 bookKey 行与双行重复成员在 groupAll 后收敛成单条 uid，不再翻倍', () async {
+      final String uid1 = await addEpub('夏目漱石電子全集１');
+      final String uid2 = await addEpub('夏目漱石電子全集２');
+      final int cid = await db.createMediaCollection(
+        '夏目漱石電子全集',
+        collectionType: 'playlist',
+      );
+      // 模拟升级前存量脏态：第 1 卷滞留 bookKey，第 2 卷既有 bookKey 又有 uid。
+      await db.addToCollection(
+        cid,
+        MediaKind.epub,
+        '夏目漱石電子全集１',
+        userIntent: false,
+      );
+      await db.addToCollection(
+        cid,
+        MediaKind.epub,
+        '夏目漱石電子全集２',
+        userIntent: false,
+      );
+      await db.addToCollection(cid, MediaKind.epub, uid2, userIntent: false);
+
+      final BookSeriesGroupSummary summary = await grouper.groupAll();
+      expect(summary.createdCollectionIds, isEmpty);
+
+      final List<MediaCollectionItemRow> rawItems = await db.getCollectionItems(
+        cid,
+      );
+      expect(rawItems, hasLength(2));
+      expect(
+        rawItems.map((MediaCollectionItemRow m) => m.entryKey).toList(),
+        <String>[uid1, uid2],
+      );
+
+      final BookSeriesGroupSummary again = await grouper.groupAll();
+      expect(again.createdCollectionIds, isEmpty);
+      expect(again.updatedCollectionIds, isEmpty);
+    });
   });
 }

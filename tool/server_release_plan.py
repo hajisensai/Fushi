@@ -12,7 +12,10 @@ app repo instead and follows its three channels:
   with the same tag yet;
 * debug:  `develop` moved past the commit the server's rolling `debug-rolling`
   release was built from (recorded as `source-sha: <sha>` in its body), and the
-  change is not docs-only.
+  change is not docs-only. Skipped while the debug channel is paused
+  (`FUSHI_PAUSE_DEBUG_RELEASE` = 'true', the switch release.yml /
+  release-desktop.yml use for the app's push-triggered debug builds); formal and
+  beta keep flowing.
 
 An app release whose commit does not contain SERVER_BUILD_FLOOR is never a
 candidate: its source predates what this workflow builds (no server bundle
@@ -124,6 +127,7 @@ def plan_auto(
     source_repo: str,
     caller_repo: str,
     warn: Callable[[str], None],
+    pause_debug: bool = False,
 ) -> Plan:
     def has_server_release(tag: str) -> bool:
         return fetch(f"repos/{caller_repo}/releases/tags/{tag}") is not None
@@ -166,6 +170,9 @@ def plan_auto(
         plan = candidate("beta", beta)
         if plan is not None:
             return plan
+
+    if pause_debug:
+        return Plan("", reason="debug channel paused (FUSHI_PAUSE_DEBUG_RELEASE=true)")
 
     head_commit = fetch(f"repos/{source_repo}/commits/develop")
     head = head_commit.get("sha") if isinstance(head_commit, dict) else None
@@ -224,6 +231,14 @@ def gh_fetch(endpoint: str) -> Optional[object]:
     raise RuntimeError(f"gh api {endpoint}: {proc.stderr.strip()}")
 
 
+def debug_paused(value: str) -> bool:
+    """Same rule as the app workflows' job-level `vars.FUSHI_PAUSE_DEBUG_RELEASE == 'true'`.
+
+    GitHub expression `==` compares strings case-insensitively and does not trim.
+    """
+    return value.lower() == "true"
+
+
 def write_outputs(plan: Plan) -> None:
     lines: List[str] = [
         f"channel={plan.channel}",
@@ -254,6 +269,7 @@ def main() -> int:
     plan = plan_auto(
         gh_fetch, failures, source_repo, caller_repo,
         lambda msg: print(f"::warning title=Server auto release::{msg}"),
+        pause_debug=debug_paused(os.environ.get("PAUSE_DEBUG_RELEASE", "")),
     )
     write_outputs(plan)
     if plan.channel:

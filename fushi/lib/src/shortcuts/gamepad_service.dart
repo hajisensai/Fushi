@@ -341,6 +341,13 @@ class GamepadService {
   /// that don't exercise scrolling.
   final FushiShortcutRegistry? registry;
 
+  /// app 根「直接做一件事」的 global 动作（窗口全屏、呼出 AI 助手、打开待发卡片）的执行面，
+  /// 返回是否认领。桌面轮询的手柄按钮只经页面 Actions（[GamepadButtonIntent]）派发，
+  /// 不是 Flutter 键事件，到不了 app 根 `wrapWithGlobalNavigation` 的键事件处理器——
+  /// 没有这一层，这些动作绑在手柄上在桌面按了没反应（Android 的手柄是键事件，走根处理器）。
+  /// main.dart 装上 `runGlobalCommandAction`；null（测试、没装）时跳过。
+  bool Function(ShortcutAction action)? runGlobalCommand;
+
   _PluginGamepadPoller? _poller;
 
   // Whether the global pointer route + key handler were installed by [start]
@@ -519,6 +526,10 @@ class GamepadService {
     _dispatchButtonCore(button);
   }
 
+  /// 测试入口：把 [button] 当成桌面轮询器的一次按下派发（与 `onButton` 同一条路）。
+  @visibleForTesting
+  void debugDispatchButton(GamepadButton button) => _dispatchButton(button);
+
   /// The normal (non-lookup-mode) press path; also replays a tapped L1 / R1.
   void _dispatchButtonCore(GamepadButton button) {
     // TODO-1066：app 外全局查词的手柄触发。
@@ -556,6 +567,19 @@ class GamepadService {
     // scroll view. This is the only path that scrolls a pure-display page
     // (statistics/logs) which has no focus geometry for D-pad edge takeover.
     if (_tryScrollPage(ctx, button)) return;
+
+    // 页面没消费、也不是滚页的按钮：绑到 global scope「直接做一件事」的动作（全屏 / AI 助手 /
+    // 待发卡片）时交给 app 根的执行面，与键盘 / Android 手柄键事件同一个
+    // `runGlobalCommandAction`。排在「返回上一级」之前，与键盘 wrapper 的顺序无关紧要
+    // （两者绑同一键属于用户自设冲突），这里取 global 先于 universal，与首页阶梯同序。
+    final ShortcutAction? globalAction = registry?.resolveGamepad(
+      button,
+      scope: ShortcutScope.global,
+    );
+    if (globalAction != null &&
+        (runGlobalCommand?.call(globalAction) ?? false)) {
+      return;
+    }
 
     // TODO-700 T1：不再裸判 B 键。按钮由注册表解析成全局 ShortcutAction.globalBack
     // 时才返回（默认绑 B），用户把「返回」改绑到别的键也照样生效（约束3/5）。页面自己的

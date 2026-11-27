@@ -76,7 +76,11 @@ import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
 import 'srs_test_support.dart'
-    show SrsTestAppModel, openSrsTestStorage, srsSettle;
+    show
+        SrsTestAppModel,
+        openSrsTestStorage,
+        srsSettle,
+        srsTestDonationOverrides;
 import 'support/srs_write_settle.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/srs/srs_rwkv_scheduling.dart';
@@ -325,6 +329,7 @@ Future<void> _pumpPage(
     ProviderScope(
       overrides: <Override>[
         appProvider.overrideWith((Ref ref) => appModel),
+        ...srsTestDonationOverrides,
         srsStoreProvider.overrideWith((Ref ref) async => store),
         // 复习页先等 RWKV 服务装配到 store 上：测试不起真服务（会去下载权重），要用 RWKV 的用例自己给
         // `store.rwkv` 装替身。

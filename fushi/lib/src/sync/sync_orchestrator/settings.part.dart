@@ -34,12 +34,17 @@ extension _SyncOrchestratorSettings on SyncOrchestrator {
         } catch (err) {
           if (e.name == ownName) {
             // 自己那份坏了：照常合并，最后用本机重写覆盖它（自愈）。
-            report.noteError(
+            _noteDimensionError(
+              report,
               'own settings snapshot unreadable; rewriting',
               err,
             );
           } else {
-            report.noteError('peer settings snapshot "${e.name}" skipped', err);
+            _noteDimensionError(
+              report,
+              'peer settings snapshot "${e.name}" skipped',
+              err,
+            );
           }
         }
       }
@@ -68,7 +73,7 @@ extension _SyncOrchestratorSettings on SyncOrchestrator {
         );
       }
     } catch (e) {
-      report.noteError('settings sync', e);
+      _noteDimensionError(report, 'settings sync', e);
     }
   }
 }

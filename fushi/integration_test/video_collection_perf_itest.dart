@@ -10,11 +10,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/baked_surface.dart';
 import 'package:fushi/src/utils/system_transparency.dart';
+import 'package:fushi/src/diagnostics/ui_activity_probe.dart';
 import 'package:fushi/src/diagnostics/windows_memory_probe.dart';
 import 'package:fushi/src/utils/components/prebaked_blur_image.dart';
 import 'package:fushi/src/media/video/video_specs_service.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/models/home_tab.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/pages/implementations/video_work_detail_page.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
@@ -26,7 +26,6 @@ import 'package:vm_service/vm_service.dart' as vm;
 import 'helpers/library_fixture.dart';
 import 'helpers/ui_cpu_profile.dart';
 import 'support/test_app_launcher.dart';
-import 'test_helpers.dart';
 
 /// 视频库 / 视频合集详情页滚动与打开耗时探针（本地测速用，profile 构建跑）。
 ///
@@ -50,7 +49,9 @@ void main() {
 
   testWidgets('video collection scroll timing', (WidgetTester tester) async {
     await launchFushiTestApp();
-    expect(await waitForHome(tester), isTrue);
+    // 不用 waitForHome：它只认 Material / Cupertino 的导航根，真实库若是 glass
+    // 设计系统就永远等不到；测速只需要首页挂载。
+    expect(await _waitForHomePage(tester), isTrue);
     final AppModel appModel = await readyAppModel(tester);
     binding.framePolicy = LiveTestWidgetsFlutterBindingFramePolicy.fullyLive;
     await _wait(3000);
@@ -114,7 +115,12 @@ void main() {
       }
     }
 
-    // 2) 合集详情：打开 + 滚动。
+    // 2) 合集详情：打开 + 滚动。与用户同一条路径：从视频库页推进来（转场途中
+    // 下层是视频库页，BUG-5582）。
+    homeShellTabNotifier.value = HomeTab.video;
+    await _wait(6000);
+    UiActivityProbe.install();
+    await _idleProbe('library');
     final NavigatorState nav = tester.state<NavigatorState>(
       find.byType(Navigator).first,
     );
@@ -163,6 +169,7 @@ void main() {
         await _wait(1200);
       }, trace: false);
     }
+    await _idleProbe('library-after');
     debugPrint('[coll-perf] done');
   });
 }
@@ -252,6 +259,34 @@ void _dumpLayerEffects() {
 }
 
 Future<void> _wait(int ms) => Future<void>.delayed(Duration(milliseconds: ms));
+
+/// 等首页（[HomePage]）挂载，与设计系统无关。
+Future<bool> _waitForHomePage(WidgetTester tester) async {
+  for (int i = 0; i < 180; i++) {
+    await tester.pump(const Duration(milliseconds: 500));
+    if (find.byType(HomePage).evaluate().isNotEmpty) {
+      await tester.pump(const Duration(seconds: 1));
+      return true;
+    }
+  }
+  return false;
+}
+
+/// 静止 1 秒：出了几帧、谁在要帧（[UiActivityProbe]：重建来源、ticker、层数）。
+/// 页面不动时理应几乎不出帧。
+Future<void> _idleProbe(String where) async {
+  UiActivityProbe.probe();
+  int frames = 0;
+  void count(List<FrameTiming> batch) => frames += batch.length;
+  SchedulerBinding.instance.addTimingsCallback(count);
+  await _wait(1000);
+  SchedulerBinding.instance.removeTimingsCallback(count);
+  debugPrint(
+    '[coll-perf] idle $where frames/s=$frames '
+    'transient=${SchedulerBinding.instance.transientCallbackCount} '
+    '${UiActivityProbe.probe()}',
+  );
+}
 
 Future<void> _wheel(
   WidgetTester tester,
@@ -348,10 +383,48 @@ Future<void> _measure(
   await _wait(1000);
   SchedulerBinding.instance.removeTimingsCallback(collect);
   _printFrames(label, timings, stalls);
+  _printSlowFrames(label, timings);
   if (timeline != null) _printLongEvents(label, timeline);
 }
 
 String _f(num v) => v.toStringAsFixed(1);
+
+/// 转场窗口（前 600 ms）的帧均值与超预算帧数（165 Hz 屏每帧约 6 ms），再逐帧列出
+/// 慢帧（build / raster 超 8 ms 或帧间空档超 30 ms），时间相对第一帧。
+void _printSlowFrames(String label, List<FrameTiming> timings) {
+  if (timings.isEmpty) return;
+  final int origin = timings.first.timestampInMicroseconds(
+    FramePhase.buildStart,
+  );
+  final List<FrameTiming> window = <FrameTiming>[
+    for (final FrameTiming t in timings)
+      if (t.timestampInMicroseconds(FramePhase.buildStart) - origin < 600000) t,
+  ];
+  double mean(Iterable<double> v) =>
+      v.isEmpty ? 0 : v.reduce((double a, double b) => a + b) / v.length;
+  double ms(Duration d) => d.inMicroseconds / 1000;
+  debugPrint(
+    '[coll-perf] $label window600 n=${window.length} '
+    'build mean=${_f(mean(window.map((FrameTiming t) => ms(t.buildDuration))))} '
+    'raster mean=${_f(mean(window.map((FrameTiming t) => ms(t.rasterDuration))))} '
+    'over6=${window.where((FrameTiming t) => ms(t.buildDuration) > 6 || ms(t.rasterDuration) > 6).length}',
+  );
+  final StringBuffer out = StringBuffer();
+  int? prevEnd;
+  for (final FrameTiming t in timings) {
+    final int start = t.timestampInMicroseconds(FramePhase.buildStart);
+    final double gap = prevEnd == null ? 0 : (start - prevEnd) / 1000;
+    prevEnd = t.timestampInMicroseconds(FramePhase.rasterFinish);
+    final double build = ms(t.buildDuration);
+    final double raster = ms(t.rasterDuration);
+    if (build > 8 || raster > 8 || gap > 30) {
+      out.write(
+        ' @${_f((start - origin) / 1000)}[b${_f(build)} r${_f(raster)} g${_f(gap)}]',
+      );
+    }
+  }
+  debugPrint('[coll-perf] $label slow:$out');
+}
 
 void _printFrames(String label, List<FrameTiming> timings, List<int> stalls) {
   if (timings.isEmpty) {

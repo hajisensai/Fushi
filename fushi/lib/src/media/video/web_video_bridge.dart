@@ -575,20 +575,27 @@ String? parseWebVideoTrackFailedKey(Object? raw) {
 ///    显示名「日本語」不算——只认码）；
 /// 4. 其次任意非 live 整轨（整集精确时间轴 > DOM 采样）；
 /// 5. 最后 live 轨；一条都没有 → null。
+/// 3～5 的自动结果跳过 [exclude]（宿主页选作副字幕的那条），1 不受影响。
 String? chooseWebVideoTrackKey({
   required Iterable<WebVideoTrack> tracks,
   required String videoKey,
   String? preferredLanguage,
   String? pinned,
+  String? exclude,
 }) {
-  final List<WebVideoTrack> mine = <WebVideoTrack>[
+  final List<WebVideoTrack> all = <WebVideoTrack>[
     for (final WebVideoTrack t in tracks)
       if (t.videoKey == videoKey && t.cues.isNotEmpty) t,
   ];
-  if (mine.isEmpty) return null;
-  if (pinned != null && mine.any((WebVideoTrack t) => t.key == pinned)) {
+  if (pinned != null && all.any((WebVideoTrack t) => t.key == pinned)) {
     return pinned;
   }
+  // 自动挑选不选 [exclude]（选作副字幕的那条）：钉住的照旧优先（用户亲手把它也选成主字幕）。
+  final List<WebVideoTrack> mine = <WebVideoTrack>[
+    for (final WebVideoTrack t in all)
+      if (t.key != exclude) t,
+  ];
+  if (mine.isEmpty) return null;
   final String? pref = preferredLanguage?.toLowerCase();
   if (pref != null && pref.isNotEmpty) {
     for (final WebVideoTrack t in mine) {

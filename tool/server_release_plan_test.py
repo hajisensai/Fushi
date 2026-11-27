@@ -19,6 +19,7 @@ from server_release_plan import (  # noqa: E402
     Plan,
     count_failures,
     debug_change_is_relevant,
+    debug_paused,
     plan_auto,
     target_key,
     workflow_file_of,
@@ -72,9 +73,14 @@ def _routes(**overrides: object) -> Dict[str, object]:
     return routes
 
 
-def _plan(routes: Dict[str, object], failures: Optional[Dict[str, int]] = None) -> Plan:
+def _plan(
+    routes: Dict[str, object],
+    failures: Optional[Dict[str, int]] = None,
+    pause_debug: bool = False,
+) -> Plan:
     warnings: List[str] = []
-    return plan_auto(FakeApi(routes), failures or {}, SRC, SRV, warnings.append)
+    return plan_auto(FakeApi(routes), failures or {}, SRC, SRV, warnings.append,
+                     pause_debug=pause_debug)
 
 
 class PlanAutoTest(unittest.TestCase):
@@ -102,6 +108,21 @@ class PlanAutoTest(unittest.TestCase):
     def test_debug_when_develop_moved(self) -> None:
         p = _plan(_routes())
         self.assertEqual((p.channel, p.source_ref, p.tag_name), ("debug", HEAD, ""))
+
+    def test_paused_debug_is_not_planned(self) -> None:
+        api = FakeApi(_routes())
+        p = plan_auto(api, {}, SRC, SRV, [].append, pause_debug=True)
+        self.assertEqual(p.channel, "")
+        self.assertIn("paused", p.reason)
+        self.assertNotIn(f"repos/{SRC}/commits/develop", api.calls)
+
+    def test_pause_does_not_hold_back_formal_or_beta(self) -> None:
+        routes = _routes()
+        del routes[f"repos/{SRV}/releases/tags/v3.3.0"]
+        self.assertEqual(_plan(routes, pause_debug=True).channel, "formal")
+        routes = _routes()
+        del routes[f"repos/{SRV}/releases/tags/v2.7.0-beta.14929"]
+        self.assertEqual(_plan(routes, pause_debug=True).channel, "beta")
 
     def test_debug_first_build_without_rolling_release(self) -> None:
         routes = _routes()
@@ -174,6 +195,12 @@ class HelpersTest(unittest.TestCase):
             {"status": "ahead", "files": [{"filename": "docs/a.md"}] * 300}))
         self.assertFalse(debug_change_is_relevant(
             {"status": "ahead", "files": [{"filename": "fushi/lib/x.dart"}]}))
+
+    def test_debug_paused_only_on_exact_true(self) -> None:
+        self.assertTrue(debug_paused("true"))
+        self.assertTrue(debug_paused("TRUE"))  # expression == ignores case
+        for value in ("", "false", " true", "1", "yes"):
+            self.assertFalse(debug_paused(value), value)
 
     def test_workflow_file_of(self) -> None:
         self.assertEqual(workflow_file_of(

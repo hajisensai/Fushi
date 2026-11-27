@@ -110,6 +110,7 @@ class VideoSourceMetadataIndexer {
             workId: existing.id,
             root: _workRoot(work.members, scopeRoot),
             memberPaths: _memberPaths(work),
+            episodic: work.isEpisodic,
           );
           continue;
         }
@@ -148,6 +149,7 @@ class VideoSourceMetadataIndexer {
         workId: workId,
         root: _workRoot(work.members, scopeRoot),
         memberPaths: _memberPaths(work),
+        episodic: work.isEpisodic,
       );
     }
 
@@ -162,9 +164,9 @@ class VideoSourceMetadataIndexer {
         book.videoPath,
       );
       final String? discMain = discExtras[normalizeVideoPath(book.videoPath)];
-      final List<_IndexedWorkRoot> candidates;
+      final _IndexedWorkRoot? owner;
       if (match != null) {
-        candidates = _candidatesByDirectory(indexed.values, book.videoPath);
+        owner = _ownerByDirectory(indexed.values, book.videoPath);
       } else if (discMain != null) {
         if (await _dropStaleDiscExtraEpisode(book)) changed = true;
         // 蓝光特典挂在同盘父标题的作品下：同一个 PLAYLIST 目录里可能并排着几条
@@ -172,18 +174,15 @@ class VideoSourceMetadataIndexer {
         // 正片不在库时父标题是顶上来的最长特典，它自己进了计划、有作品
         // （[discMemberExtras]）。
         final String main = normalizeVideoPath(discMain);
-        candidates = <_IndexedWorkRoot>[
+        final List<_IndexedWorkRoot> candidates = <_IndexedWorkRoot>[
           for (final _IndexedWorkRoot value in indexed.values)
             if (value.memberPaths.contains(main)) value,
         ];
+        owner = candidates.length == 1 ? candidates.single : null;
       } else {
         continue;
       }
-      if (candidates.isEmpty ||
-          (candidates.length > 1 &&
-              candidates[0].root.length == candidates[1].root.length)) {
-        continue;
-      }
+      if (owner == null) continue;
       // 旧版本把 NCOP/NCED 当独立电影建立过 book-owned work。现在已能唯一绑定
       // 父作品时原地清掉这份错误规范实体；VideoBook 本身不删，仍留在“全部视频”。
       final int removed = await (database.delete(
@@ -197,7 +196,7 @@ class VideoSourceMetadataIndexer {
           .getVideoMetadataExtraByBook(book.bookUid);
       if (current != null &&
           current.extraKey == 'local:${book.bookUid}' &&
-          current.workId == candidates.first.workId &&
+          current.workId == owner.workId &&
           current.kind == kind &&
           current.sourceKind == 'local' &&
           current.title == book.title &&
@@ -211,7 +210,7 @@ class VideoSourceMetadataIndexer {
       await database.upsertVideoMetadataExtra(
         VideoMetadataExtrasCompanion.insert(
           extraKey: 'local:${book.bookUid}',
-          workId: candidates.first.workId,
+          workId: owner.workId,
           bookUid: Value<String?>(book.bookUid),
           kind: kind,
           sourceKind: 'local',
@@ -342,23 +341,40 @@ class VideoSourceMetadataIndexer {
       normalizeVideoPath(member.videoPath),
   };
 
-  /// 路径型特典（NCOP / 预告 / Kodi extras 目录）的父作品：目录最近、且唯一。
-  static List<_IndexedWorkRoot> _candidatesByDirectory(
+  /// 路径型特典（NCOP / 预告 / Kodi extras 目录）的父作品：根目录离它最近的那一层
+  /// 作品里唯一的一部；那一层有好几部时，其中**唯一的剧集作品**（多集合集）认领。
+  ///
+  /// 反馈 yMd0aT-fLN：BD 发布目录里正片 26 集旁并排着 `[OVA01]`～`[OVA06]`。OVA 解不出
+  /// 集号，计划器把它们各自立成单部作品（它们在资料源上本就常是独立条目），作品根与
+  /// 正片相同；修前同根即判二义、一个都不绑，`SPs\` 里的 NCOP / NCED / Menu 于是在系列
+  /// 墙上各自成卡。发布目录的特典属于那部剧集：同一层只有一部剧集作品时由它认领；
+  /// 有两部以上剧集作品（或一部都没有、只有几部单片）仍判二义不绑，不随便挑一个。
+  static _IndexedWorkRoot? _ownerByDirectory(
     Iterable<_IndexedWorkRoot> indexed,
     String videoPath,
   ) {
     final String directory = p.dirname(p.normalize(p.absolute(videoPath)));
-    return indexed
+    final List<_IndexedWorkRoot> enclosing = indexed
         .where(
           (_IndexedWorkRoot value) =>
               p.equals(value.root, directory) ||
               p.isWithin(value.root, directory),
         )
-        .toList()
-      ..sort(
-        (_IndexedWorkRoot a, _IndexedWorkRoot b) =>
-            b.root.length.compareTo(a.root.length),
-      );
+        .toList(growable: false);
+    if (enclosing.isEmpty) return null;
+    final int nearest = enclosing
+        .map((_IndexedWorkRoot value) => value.root.length)
+        .reduce((int a, int b) => a > b ? a : b);
+    final List<_IndexedWorkRoot> tier = <_IndexedWorkRoot>[
+      for (final _IndexedWorkRoot value in enclosing)
+        if (value.root.length == nearest) value,
+    ];
+    if (tier.length == 1) return tier.single;
+    final List<_IndexedWorkRoot> series = <_IndexedWorkRoot>[
+      for (final _IndexedWorkRoot value in tier)
+        if (value.episodic) value,
+    ];
+    return series.length == 1 ? series.single : null;
   }
 
   static String _workRoot(List<VideoBookRow> members, String sourceRoot) {
@@ -400,9 +416,14 @@ class _IndexedWorkRoot {
     required this.workId,
     required this.root,
     required this.memberPaths,
+    required this.episodic,
   });
   final int workId;
   final String root;
+
+  /// 剧集作品（多集合集，[VideoSourceScrapeWork.isEpisodic]）。同一层根目录上并排
+  /// 几部作品时，路径型特典归其中唯一的剧集作品（[VideoSourceMetadataIndexer._ownerByDirectory]）。
+  final bool episodic;
 
   /// 作品成员的归一路径（蓝光特典按「含同盘正片」认父作品）。
   final Set<String> memberPaths;

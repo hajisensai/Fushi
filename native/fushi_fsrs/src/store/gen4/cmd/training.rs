@@ -452,7 +452,7 @@ pub fn rwkv_log_tail(
 /// `card_logs` 同一份「按类取代表」）。同一个原值日志 ID 的别的份（`win = 0`）不是代表。
 fn is_rep(ix: &Index<'_, '_>, canon: &Ref, k: i64) -> Result<bool, String> {
     Ok(ix
-        .log_class_rep(&ix.class_of(canon)?)?
+        .log_class_rep(&ix.canonical(canon)?)?
         .is_some_and(|(x, _, _)| x == k))
 }
 

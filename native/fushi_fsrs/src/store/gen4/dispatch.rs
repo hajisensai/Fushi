@@ -532,7 +532,7 @@ fn run(
             })?
         }
         "entity_views" => read_col(c, profile, |t, col| {
-            cmd::views::entity_views_cmd(t, col, req)
+            cmd::views::entity_views_cmd(t, col, req, files)
         })?,
         "conflicts" => read_col(c, profile, cmd::center::conflicts)?,
         "checkpoints" => read_col(c, profile, cmd::center::checkpoints)?,

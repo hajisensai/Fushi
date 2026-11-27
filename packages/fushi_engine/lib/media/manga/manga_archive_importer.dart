@@ -500,6 +500,7 @@ abstract final class MangaArchiveImporter {
     int? sourceId,
     MangaSevenZipExtractor? sevenZipExtractor,
     MangaArchiveExtractionLimits limits = const MangaArchiveExtractionLimits(),
+    MangaRebuildTarget? rebuildInto,
   }) async {
     final String extension = p.extension(archivePath).toLowerCase();
     // 入库标题在任何解压之前就定得下来（调用方给的标题，缺省为文件名）；mokuro 与
@@ -511,7 +512,8 @@ abstract final class MangaArchiveImporter {
             .trim();
     // 跳过策略先判重再解压（manga-10）：重导一个大半已入库的文件夹时，已有的卷
     // 不再整包解压、读完每页才被跳过。
-    if (volumeTitle.isNotEmpty) {
+    // 就地重建（[rebuildInto]，BUG-5569）不判重：标题本来就是库里那一行的。
+    if (rebuildInto == null && volumeTitle.isNotEmpty) {
       await MangaImporter.precheckSkippedDuplicate(
         db: db,
         proposedTitle: volumeTitle,
@@ -615,6 +617,7 @@ abstract final class MangaArchiveImporter {
             sourceId: sourceId,
             // staging 是本函数自己建、finally 里整个删掉的目录。
             pageSource: MangaPageSource.disposable,
+            rebuildInto: rebuildInto,
           );
         }
 
@@ -664,6 +667,7 @@ abstract final class MangaArchiveImporter {
         sourceId: sourceId,
         sourceMetadata: epubSeriesMetadata,
         pageSource: MangaPageSource.disposable,
+        rebuildInto: rebuildInto,
       );
     } finally {
       // 先关源包句柄（中途抛出时正在写的页文件句柄已在
@@ -717,7 +721,7 @@ abstract final class MangaArchiveImporter {
       extraction = EpubParser.openStagedFromPath(
         archivePath,
         extractionPath,
-        includeSvgSpineDocuments: true,
+        includeImageSpineItems: true,
         cap: cap,
         deferEntry: _isPageImageEntry,
         onEntryExtracted: onEntryExtracted,
@@ -1214,7 +1218,7 @@ abstract final class MangaArchiveImporter {
       final EpubBook book = EpubParser.parseSyncFromPath(
         archivePath,
         extractionPath,
-        includeSvgSpineDocuments: true,
+        includeImageSpineItems: true,
         extractEntry: _isNotPageImageEntry,
       );
       return _pureImageEpubRejection(book);

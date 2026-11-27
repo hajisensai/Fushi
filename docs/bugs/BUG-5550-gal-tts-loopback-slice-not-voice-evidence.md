@@ -1,0 +1,11 @@
+## BUG-5550 · galgame 自动朗读「仅无原声的句子」在系统 loopback 会话里一句都不读
+- **报告**：2026-11-16（应用内反馈 T3n0B8tO7F：开了自动读不跟随 galgame 文本朗读；补充：「全部句子」有用、「仅无原声的句子」没用；游戏有角色语音，没读的是无配音旁白，配音状态显示「已降级」）
+- **真实性**：✅ 真 bug。「已降级」= `TexthookerLineAudioStatus.fallback`。系统 loopback 兜底给每一句截一段整机混音，锁定时一律写死 `fallbackReason: 'engine_utterance_unavailable'`（`fushi/lib/src/mining/gal_hook_session_controller.dart` `_cacheLoopbackForLine`）；朗读裁决 `galLineVoiceEvidenceOf`（`fushi/lib/src/lookup/gal_line_tts.dart`）把除 `line_has_no_voice` 以外的 fallback 全判 `voiced`，于是 `decideGalLineTts` 在 `unvoicedOnly` 档恒走 `GalLineTtsSkip('game_voice')`。前提错了：loopback 切片只证明「电脑在出声」，旁白句截到的是 BGM / 环境音，不证明这句有配音。
+- **[x] ① 已修复** —
+  - 新增 `fushi/lib/src/mining/gal_loopback_voice_detector.dart`：切片转 16 kHz 单声道（后台 isolate），用 silero-vad（有声书转写同一份 `silero_vad.onnx`，先借用已下的语音识别包里那份，没有才下到 `asr_models/silero_vad/`；混音素材只能用它，能量门限在 BGM 下会全判成语音）判有没有人声；只落在开头预卷（上一句尾巴）里的人声不算。判不出（ONNX 不可用 / 模型下不来 / 位深不认识）返回 null。
+  - 控制器锁定 loopback 切片时先标 `kGalLoopbackVoiceCheckingReason`，检测在串行音频队列外跑，落定后写 `kGalLoopbackVoiceDetectedReason` / `kGalLineNoVoiceReason` / `kGalLoopbackVoiceUnverifiedReason`；检测期间切片被续张 / 资源原件 / 用户裁决换掉的结论作废。会话单例接 silero 检测器，构造参数不给就不检测（单测不碰 ONNX / 下载）。
+  - 裁决：fallback + 检测中 = pending（等），无人声 / 判不出 = unvoiced（读），其余（检测到人声、补录、选轨…）= voiced。
+  - 台词列表：fallback + 无人声也显示「无配音」灰标（切片照旧留着可入卡）。
+  - 反馈日志白名单加 `galtts:`（只含行 id / 跳过原因 / 配对状态名 / 错误码），跳过日志带上 `audio=<状态>/<reason>`，以后这类反馈附日志就能直接看到裁决依据。
+- **[x] ② 已加自动化测试** — `fushi/test/lookup/gal_line_tts_test.dart`（loopback 各 reason → 证据）；`fushi/test/mining/gal_hook_session_controller_test.dart`（loopback 会话锁定切片 → 检测中 → 三种检测结果各落对应 reason；没接检测器 → 未核实）；`fushi/test/mining/gal_loopback_voice_detector_test.dart`（转码长度 / 声道平均 / 未知位深，预卷里的人声不算、预卷后的算，打分器拿不到 → null）。
+- **备注**：未在 Windows 真机 galgame 上复测（silero 对带人声 BGM 可能误判为有人声，那种句子按「有配音」跳过朗读）。判不出时按无配音朗读：没有证据就不替游戏宣布「有配音」，代价是检测不可用时「仅无原声」退化成接近「全部句子」。

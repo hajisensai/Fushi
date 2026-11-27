@@ -429,12 +429,31 @@ fn read_lofty<R: Read + Seek>(
         .options(ParseOptions::new())
         .guess_file_type()
         .map_err(|e| e.to_string())?;
-    let Some(file_type) = probe.file_type() else {
-        return Ok((meta_from_extension(ext), None));
+    let (file_type, tagged) = match probe.file_type() {
+        // 内容嗅探认出了类型：解析失败（坏文件 / 截断 / 伪装扩展名）如实报错——扫描器记一条
+        // 错误记录、不入库，不把读不出来的东西当成「无标签的歌」塞进曲库。
+        Some(file_type) => (file_type, probe.read().map_err(|e| e.to_string())?),
+        None => {
+            drop(probe);
+            let Some(hint) = FileType::from_ext(ext) else {
+                return Ok((meta_from_extension(ext), None));
+            };
+            // 嗅探认不出时按扩展名的类型再读一次（BUG-5540）：ID3v2 标签后跟着超过
+            // `max_junk_bytes`（1 KiB）填充的 MP3 找不到帧同步，只靠嗅探整首歌退成字段全空
+            // （艺人 / 专辑 / 码率 / 列表封面都丢，「继续收听」走 embedded_cover 却有封面）。
+            // 这一次读不出来（0 字节 / 并非该格式）照旧退回扩展名推断，与只靠嗅探时同语义：
+            // 嗅探都认不出的文件不升级成扫描错误。
+            reader.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;
+            match Probe::new(&mut *reader)
+                .options(ParseOptions::new())
+                .set_file_type(hint)
+                .read()
+            {
+                Ok(tagged) => (hint, tagged),
+                Err(_) => return Ok((meta_from_extension(ext), None)),
+            }
+        }
     };
-    // 解析失败（坏文件 / 截断 / 伪装扩展名）如实报错：扫描器记一条错误记录、不入库，
-    // 不把读不出来的东西当成「无标签的歌」塞进曲库。
-    let tagged = probe.read().map_err(|e| e.to_string())?;
 
     let (mut codec, mut lossless) = codec_of(file_type);
     let mut mp4_chapters: Vec<Mp4Chapter> = Vec::new();
@@ -737,6 +756,55 @@ mod tests {
         let fields = crate::tag_write::read_fields(&p).unwrap();
         assert!(fields.contains(&("title".to_owned(), "act.2 夜に駆ける".to_owned())));
         assert!(fields.contains(&("artist".to_owned(), "ヨルシカ".to_owned())));
+    }
+
+    /// EMjx7gJftH（GitHub #3352《鬼ごっこ》）：ID3v2 标签之后、首个 MPEG 帧之前有 2 KiB 零填充
+    /// （超出标签头声明的长度，lofty 嗅探只看 1 KiB 就找不到帧同步）。read_lofty 要按扩展名兜底，
+    /// 照样读出标签、码率与内嵌封面，不退成字段全空。
+    #[test]
+    fn mp3_with_junk_after_id3v2_beyond_sniff_window_still_reads_tags() {
+        let mut apic = b"APIC".to_vec();
+        let body: Vec<u8> = [&[0u8][..], b"image/png\0", &[3u8], b"\0", b"\x89PNGfake"].concat();
+        apic.extend_from_slice(&(body.len() as u32).to_be_bytes());
+        apic.extend_from_slice(&[0, 0]);
+        apic.extend(body);
+        let mut file = id3v23(&[
+            latin1_frame(b"TIT2", b"Onigokko"),
+            latin1_frame(b"TPE1", b"Haruno"),
+            latin1_frame(b"TALB", b"Tag Album"),
+            apic,
+        ]);
+        file.extend(vec![0u8; 2048]);
+        file.extend(bare_mpeg_frames());
+
+        // 前提：纯内容嗅探确实认不出（否则这条用例测不到扩展名兜底）。
+        let sniffed = Probe::new(std::io::Cursor::new(file.clone()))
+            .guess_file_type()
+            .unwrap();
+        assert_eq!(sniffed.file_type(), None);
+
+        let p = write_temp("junk_after_id3.mp3", &file);
+        let meta = read_file_meta(&p).unwrap();
+        assert_eq!(meta.codec.as_deref(), Some("mp3"));
+        assert_eq!(meta.title.as_deref(), Some("Onigokko"));
+        assert_eq!(meta.artists, vec!["Haruno".to_owned()]);
+        assert_eq!(meta.album.as_deref(), Some("Tag Album"));
+        assert!(meta.bitrate_kbps.is_some_and(|b| b > 0));
+        assert!(meta.has_embedded_cover);
+        // 远程曲目走读取器版本，同一判据。
+        let (_, cover) = read_meta_from(&mut std::io::Cursor::new(file), "mp3", true).unwrap();
+        assert_eq!(cover.as_deref(), Some(&b"\x89PNGfake"[..]));
+    }
+
+    /// 嗅探认不出、按扩展名再读也读不出的文件（0 字节的 `.flac` / `.mp3`，视频特典夹具就是
+    /// `touch` 出来的）维持修前语义：退回扩展名推断、不报扫描错误。
+    #[test]
+    fn empty_audio_file_falls_back_to_extension_meta() {
+        for (name, ext) in [("empty.flac", "flac"), ("empty.mp3", "mp3")] {
+            let p = write_temp(name, &[]);
+            let meta = read_file_meta(&p).expect(name);
+            assert_eq!(meta.codec, meta_from_extension(ext).codec, "{name}");
+        }
     }
 
     #[test]

@@ -220,4 +220,162 @@ void main() {
           '插 uid 行，归属收敛（透传行不残留）',
     );
   });
+
+  test('合集先到书后到：insertEpubBook 立即把透传 bookKey 与 cover_source 升格为 uid', () async {
+    final FushiDatabase db = memDb();
+    const CollectionManifestEntry initial = CollectionManifestEntry(
+      name: '川端康成',
+      collectionType: 'collection',
+      members: <CollectionManifestMember>[
+        CollectionManifestMember(
+          mediaType: 'epub',
+          entryKey: '雪国',
+          sortIndex: 0,
+          pinned: true,
+        ),
+        CollectionManifestMember(
+          mediaType: 'epub',
+          entryKey: '古都',
+          sortIndex: 1,
+          pinned: false,
+        ),
+      ],
+    );
+    await applyCollectionLocalChanges(
+      db,
+      const CollectionLocalChanges(<CollectionManifestEntry>[initial]),
+    );
+    final int cid = (await db.getMediaCollectionByNaturalKey(
+      '川端康成',
+      'collection',
+    ))!.id;
+    await db.updateMediaCollectionCover(cid, 'epub|雪国');
+
+    // 书籍后到：不再触发下一轮合集变更，仅插入书。
+    final String uidYukiguni = await insertBook(db, '雪国');
+    final String uidKoto = await insertBook(db, '古都');
+
+    final List<MediaCollectionItemRow> items = await db.getCollectionItems(cid);
+    expect(
+      items.map((MediaCollectionItemRow m) => m.entryKey).toList(),
+      <String>[uidYukiguni, uidKoto],
+    );
+    expect(
+      items.map((MediaCollectionItemRow m) => m.pinnedByUser).toList(),
+      <bool>[true, false],
+    );
+    expect(
+      (await db.getMediaCollectionById(cid))!.coverSource,
+      'epub|$uidYukiguni',
+    );
+
+    final Map<String, int> primary = await db.getPrimaryCollectionIdByEntry();
+    expect(primary['epub|$uidYukiguni'], cid);
+    expect(primary['epub|$uidKoto'], cid);
+
+    final CollectionManifest manifest = await loadLocalCollectionManifest(db);
+    final CollectionManifestEntry exported = manifest.collections.singleWhere(
+      (CollectionManifestEntry e) => e.name == '川端康成',
+    );
+    expect(
+      exported.members.map((CollectionManifestMember m) => m.entryKey).toList(),
+      <String>['雪国', '古都'],
+    );
+    expect(
+      exported.members.map((CollectionManifestMember m) => m.pinned).toList(),
+      <bool>[true, false],
+    );
+  });
+
+  test('reconcileEpubCollectionMemberKeys 收敛存量滞留透传行与双行重复并保持幂等', () async {
+    final FushiDatabase db = memDb();
+    final String uid1 = await insertBook(db, '巻１');
+    final String uid2 = await insertBook(db, '巻２');
+    final int cid = await db.createMediaCollection(
+      '全集',
+      collectionType: 'playlist',
+    );
+    // 刻意构造升级前存量脏态：巻１ 同时有 uid 与 bookKey（且 pinned 在旧行上），
+    // 巻２ 只有滞留 bookKey，另含本机不存在的远端透传行。
+    await db.addToCollection(cid, MediaKind.epub, uid1, userIntent: false);
+    await db.addToCollection(cid, MediaKind.epub, '巻１', userIntent: true);
+    await db.addToCollection(cid, MediaKind.epub, '巻２', userIntent: false);
+    await db.addToCollection(
+      cid,
+      MediaKind.epub,
+      'remote-only-key',
+      userIntent: false,
+    );
+    await db.updateMediaCollectionCover(cid, 'epub|巻２');
+
+    final int repaired = await db.reconcileEpubCollectionMemberKeys();
+    expect(repaired, 2);
+
+    final List<MediaCollectionItemRow> items = await db.getCollectionItems(cid);
+    expect(
+      items.map((MediaCollectionItemRow m) => m.entryKey).toSet(),
+      <String>{uid1, uid2, 'remote-only-key'},
+    );
+    expect(items, hasLength(3));
+    expect(
+      items
+          .firstWhere((MediaCollectionItemRow m) => m.entryKey == uid1)
+          .pinnedByUser,
+      isTrue,
+    );
+    expect((await db.getMediaCollectionById(cid))!.coverSource, 'epub|$uid2');
+
+    // 稳态幂等：再跑返回 0。
+    expect(await db.reconcileEpubCollectionMemberKeys(), 0);
+  });
+
+  test('addToCollection 用 uid 加书时吸收同合集内的旧 bookKey 透传行，不产生重复', () async {
+    final FushiDatabase db = memDb();
+    final String uid = await insertBook(db, '特典');
+    final int cid = await db.createMediaCollection(
+      'あそびのかんけい',
+      collectionType: 'collection',
+    );
+    await db.addToCollection(cid, MediaKind.epub, '特典', userIntent: true);
+
+    await db.addToCollection(cid, MediaKind.epub, uid, userIntent: false);
+
+    final List<MediaCollectionItemRow> items = await db.getCollectionItems(cid);
+    expect(
+      items.map((MediaCollectionItemRow m) => m.entryKey).toList(),
+      <String>[uid],
+    );
+    expect(items.single.pinnedByUser, isTrue);
+  });
+
+  test('setCollectionBookAlias 落地远端键别名时立即升格合集内对应透传行', () async {
+    final FushiDatabase db = memDb();
+    const CollectionManifestEntry entry = CollectionManifestEntry(
+      name: 'C',
+      collectionType: 'collection',
+      members: <CollectionManifestMember>[
+        CollectionManifestMember(
+          mediaType: 'epub',
+          entryKey: 'RemoteKey(2)',
+          sortIndex: 0,
+          pinned: true,
+        ),
+      ],
+    );
+    await applyCollectionLocalChanges(
+      db,
+      const CollectionLocalChanges(<CollectionManifestEntry>[entry]),
+    );
+    final String uid = await insertBook(db, 'RemoteKey');
+    await db.setCollectionBookAlias(uid, 'RemoteKey(2)');
+
+    final List<MediaCollectionItemRow> items = await db.getCollectionItems(
+      (await db.getMediaCollectionByNaturalKey('C', 'collection'))!.id,
+    );
+    expect(
+      items.map((MediaCollectionItemRow m) => m.entryKey).toList(),
+      <String>[uid],
+    );
+    expect(items.single.pinnedByUser, isTrue);
+  });
 }

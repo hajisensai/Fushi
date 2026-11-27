@@ -175,6 +175,33 @@ void main() {
     expect(kb(r, LogicalKeyboardKey.digit3), isNull);
   });
 
+  // 反馈 wJmcCQBVn1：复习页的「关闭词典」与阅读器 / 漫画 / 视频的同名动作同形——默认空绑定，
+  // 只给用户自绑的键 / 手柄键一个没有副作用的落点。
+  test('「关闭词典」默认无绑定（各平台），绑了键后进桥表', () {
+    for (final TargetPlatform platform in TargetPlatform.values) {
+      final ShortcutBindingSet set = registryFor(
+        platform,
+      ).bindingsFor(ShortcutAction.srsReviewDismissDict);
+      expect(set.keyboardBindings, isEmpty, reason: '$platform');
+      expect(set.gamepadBindings, isEmpty, reason: '$platform');
+    }
+    expect(
+      ShortcutAction.actionsForScope(ShortcutScope.srsReview),
+      contains(ShortcutAction.srsReviewDismissDict),
+    );
+    final FushiShortcutRegistry r = registryFor(TargetPlatform.windows)
+      ..updateBinding(
+        ShortcutAction.srsReviewDismissDict,
+        const ShortcutBindingSet(
+          keyboardBindings: <InputBinding>[
+            InputBinding(key: LogicalKeyboardKey.keyQ),
+          ],
+        ),
+      );
+    expect(srsReviewBridgeTokens(r), contains('KeyQ'));
+    expect(kb(r, LogicalKeyboardKey.keyQ), ShortcutAction.srsReviewDismissDict);
+  });
+
   test('快捷键设置页的「SRS 复习」卡片跟着复习模块开关走', () {
     expect(moduleOfShortcutScope(ShortcutScope.srsReview), ModuleId.srs);
     expect(ShortcutScope.srsReview.channels, <ShortcutChannel>{

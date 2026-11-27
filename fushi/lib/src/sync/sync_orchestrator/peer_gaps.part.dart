@@ -51,7 +51,11 @@ extension _SyncOrchestratorPeerGaps on SyncOrchestrator {
         key,
       );
     } catch (e) {
-      report.noteError('${dimension.label}: peer capabilities unreadable', e);
+      _noteDimensionError(
+        report,
+        '${dimension.label}: peer capabilities unreadable',
+        e,
+      );
       return;
     }
     _notePeerGapFromState(report, dimension, state);

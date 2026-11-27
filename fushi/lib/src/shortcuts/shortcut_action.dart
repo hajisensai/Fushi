@@ -502,6 +502,12 @@ enum ShortcutAction {
   // 漫画 / 视频 / 首页都不认领它，解析到也交回 app 根（与 F11 同一条路）。默认桌面
   // Ctrl+J（macOS ⌘J），手柄留空。
   globalOpenAiAssistant(ShortcutScope.global, 'global_open_ai_assistant'),
+  // 打开「待发卡片」列表（应用内反馈 OElRvCndxk，用户拍板：进注册表、默认不绑键，
+  // 不在播放器 / 阅读器工具栏常驻按钮）。批量制卡时在视频 / 小说里直接看攒下的卡，
+  // 不必退到 设置 → 制卡 → 待发卡片。执行体与「呼出 AI 助手」同一条路（app 根
+  // wrapWithGlobalNavigation 的键盘 / Android 手柄键事件 / 鼠标，桌面手柄经
+  // GamepadService 的 global 兜底），都交给 [runGlobalCommandAction]。三平台默认空绑定。
+  globalOpenPendingCards(ShortcutScope.global, 'global_open_pending_cards'),
 
   // 「唤出上下文菜单（右键菜单）」的**按钮归属声明**。它不进任何执行回调表——菜单的
   // 执行体分散在各卡片 / 各媒体表面自己的 `showMenu`，本动作只回答一件事：这次按下的
@@ -855,6 +861,10 @@ enum ShortcutAction {
   srsReviewZoomIn(ShortcutScope.srsReview, 'srs_review_zoom_in'),
   srsReviewZoomOut(ShortcutScope.srsReview, 'srs_review_zoom_out'),
   srsReviewZoomReset(ShortcutScope.srsReview, 'srs_review_zoom_reset'),
+  // 「只关词典、绝不做别的」的可选专用动作（**默认无绑定**，与 [readerDismissDict] /
+  // [mangaDismissDict] / [videoDismissDict] 同形，反馈 wJmcCQBVn1）：查词弹窗开着时关一层，
+  // 没开时不消费。退出复习仍走 universal 的 [globalBack]（弹窗开着先关一层，否则退出）。
+  srsReviewDismissDict(ShortcutScope.srsReview, 'srs_review_dismiss_dict'),
 
   // Gamepad（TODO-700 T6）：dpad 四向作为可绑触发键。默认各绑对应 dpad 键，执行体
   // = 通用方向焦点移动（与摇杆同效果，但摇杆固定走 onStickMove 通道、不经注册表，

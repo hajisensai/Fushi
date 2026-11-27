@@ -20,6 +20,7 @@ const String kSrsMediaDirName = 'srs_media';
 
 final RegExp _extensionPattern = RegExp(r'^[a-z0-9]{1,10}$');
 final RegExp _drivePrefix = RegExp(r'^[A-Za-z]:');
+final RegExp _contentNamePattern = RegExp(r'^[0-9a-f]{40}(\.[a-z0-9]{1,10})?$');
 
 /// 一个 profile 的 SRS 媒体目录。
 class SrsMediaStore {
@@ -45,6 +46,18 @@ class SrsMediaStore {
     final String digest = sha1.convert(bytes).toString();
     final String ext = extensionOf(originalName);
     return ext.isEmpty ? digest : '$digest.$ext';
+  }
+
+  /// [name] 是不是内容寻址名（[contentName] 的形状：40 位小写十六进制 sha1，可带扩展名）。
+  static bool isContentName(String name) => _contentNamePattern.hasMatch(name);
+
+  /// [stored] 能不能是 [originalName] 这个文件存进来后的名字：内容寻址名、扩展名与 [contentName] 对
+  /// [originalName] 给出的一致。只看形状，不知道内容是不是同一份。
+  static bool isContentNameFor(String stored, String originalName) {
+    if (!isContentName(stored)) return false;
+    final String ext = extensionOf(originalName);
+    final int dot = stored.indexOf('.');
+    return ext.isEmpty ? dot < 0 : stored.substring(dot + 1) == ext;
   }
 
   /// [name] 的扩展名（小写、不含点；只认 1–10 位字母数字，否则为空串）。

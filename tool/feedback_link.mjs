@@ -42,6 +42,11 @@ const LINE_RE = /^[ \t]*feedback(-noapp)?[ \t]*:(.*)$/i;
 const LINKED_BRANCHES = new Set(['develop', 'main']);
 const MAX_IDS_PER_REQUEST = 50;
 const MAX_PR_LOOKUPS = 200;
+// push 事件 payload 里 commits 数组的上限（GitHub 文档：最多 20 个）。
+const PUSH_EVENT_COMMIT_CAP = 20;
+// compare API 单页上限 100、最多返回 250 个提交。
+const COMPARE_PAGE_SIZE = 100;
+const COMPARE_MAX_PAGES = 3;
 const DEFAULT_API_BASE = 'https://rank.fushi.moe';
 const DEFAULT_GITHUB_API = 'https://api.github.com';
 
@@ -86,6 +91,24 @@ export function pushCommits(eventName, event) {
     .filter((c) => branch !== 'main' || c.distinct !== false)
     .map((c) => ({ sha: c.id, message: typeof c.message === 'string' ? c.message : '' }));
   return { branch, commits };
+}
+
+/**
+ * GitHub 的 push 事件 `commits` 最多带 20 个（多出的直接截掉，文档要求改用 compare API 取全）。
+ * develop 上一次批量合并常推几十个提交，只读事件会漏登记前面的 Feedback 行（2026-11-27：
+ * 一次推 76 个，漏了 4 条）。返回需要经 compare 补全时的 {before, after}，否则 null。
+ * main 不补全：main 的 push 是正式版同步，compare 会带出 develop 上早已登记过的全部提交，
+ * 而 compare 结果没有 distinct 字段可滤。
+ * @returns {{before: string, after: string} | null}
+ */
+export function compareRange(branch, event) {
+  if (branch !== 'develop' || !event) return null;
+  const n = Array.isArray(event.commits) ? event.commits.length : 0;
+  if (n < PUSH_EVENT_COMMIT_CAP) return null;
+  const before = typeof event.before === 'string' ? event.before : '';
+  const after = typeof event.after === 'string' ? event.after : '';
+  if (!SHA_RE.test(before) || !SHA_RE.test(after) || /^0+$/.test(before)) return null;
+  return { before, after };
 }
 
 /**
@@ -185,6 +208,49 @@ async function mergedPrsFor(sha, branch) {
   }
 }
 
+/**
+ * compare API 取 before...after 的全部提交（旧→新，与 event.commits 同序）。失败返回 null，
+ * 调用方退回事件里的（可能被截断的）列表。
+ * @returns {Promise<{sha: string, message: string}[] | null>}
+ */
+async function compareCommits(range) {
+  const api = (process.env.GITHUB_API_URL || DEFAULT_GITHUB_API).replace(/\/+$/, '');
+  const repo = process.env.GITHUB_REPOSITORY || '';
+  const token = process.env.GITHUB_TOKEN || '';
+  if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) return null;
+  const headers = {
+    Accept: 'application/vnd.github+json',
+    'X-GitHub-Api-Version': '2022-11-28',
+  };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const out = [];
+  try {
+    for (let page = 1; page <= COMPARE_MAX_PAGES; page++) {
+      const url =
+        `${api}/repos/${repo}/compare/${range.before}...${range.after}` +
+        `?per_page=${COMPARE_PAGE_SIZE}&page=${page}`;
+      const res = await fetch(url, { headers, signal: AbortSignal.timeout(20000) });
+      if (!res.ok) {
+        warn(`compare ${range.before.slice(0, 7)}...${range.after.slice(0, 7)} returned HTTP ${res.status}.`);
+        return null;
+      }
+      const body = await res.json();
+      const list = body && Array.isArray(body.commits) ? body.commits : [];
+      for (const c of list) {
+        if (!c || typeof c.sha !== 'string' || !SHA_RE.test(c.sha)) continue;
+        const message = c.commit && typeof c.commit.message === 'string' ? c.commit.message : '';
+        out.push({ sha: c.sha, message });
+      }
+      const total = body && Number.isInteger(body.total_commits) ? body.total_commits : out.length;
+      if (list.length < COMPARE_PAGE_SIZE || out.length >= total) break;
+    }
+  } catch (e) {
+    warn(`compare failed: ${safe(e && e.name)}`);
+    return null;
+  }
+  return out;
+}
+
 async function postFixed(apiBase, token, plan) {
   try {
     const res = await fetch(`${apiBase}/v1/ci/feedback/fixed`, {
@@ -239,6 +305,16 @@ async function main(argv) {
   if (!dryRun && !token) {
     notice('FEEDBACK_CI_TOKEN is not configured; skipping.');
     return;
+  }
+  const range = compareRange(push.branch, event);
+  if (range) {
+    const full = await compareCommits(range);
+    if (full && full.length > push.commits.length) {
+      console.log(`push event listed ${push.commits.length} commits; compare API returned ${full.length}.`);
+      push.commits = full;
+    } else if (!full) {
+      warn(`push event lists only ${push.commits.length} commits and compare failed; earlier commits may be missed.`);
+    }
   }
 
   const prsBySha = new Map();

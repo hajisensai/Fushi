@@ -24,6 +24,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
 import 'package:fushi/src/utils/components/fushi_loading_view.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
@@ -36,11 +37,12 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
-import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_engine/feedback/feedback_models.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/reader/illustration_zoom_viewer.dart'
+    show showImageZoomViewer;
 
 /// 列表筛选：未结案 / 各状态 / 全部（wire 值；null = 全部）。
 const List<String?> _kFilters = <String?>[
@@ -124,6 +126,9 @@ class _FeedbackDevPageState extends ConsumerState<FeedbackDevPage> {
   /// 每次重拉第一页 +1：换筛选 / 搜索时，比它旧的在途请求结果直接丢掉。
   int _generation = 0;
 
+  /// 列表滚动位置：底部「回到顶部」用（反馈 vh4K5khfVr）。
+  final ScrollController _scroll = ScrollController();
+
   @override
   void initState() {
     super.initState();
@@ -135,6 +140,7 @@ class _FeedbackDevPageState extends ConsumerState<FeedbackDevPage> {
     _searchDebounce?.cancel();
     _search.dispose();
     _searchFocus.dispose();
+    _scroll.dispose();
     super.dispose();
   }
 
@@ -212,6 +218,52 @@ class _FeedbackDevPageState extends ConsumerState<FeedbackDevPage> {
     if (mounted) unawaited(_load(reset: true));
   }
 
+  /// 列表底部：「已加载 N 条」+「加载更多」（还有下一批时）+「回到顶部」。
+  /// 已加载的条目一直留在列表里，不做页码 / 上一页（反馈 vh4K5khfVr 拍板）。
+  Widget _listFooter(FushiDesignTokens tokens) {
+    return Padding(
+      key: const ValueKey<String>('feedback-dev-list-footer'),
+      padding: EdgeInsets.only(top: tokens.spacing.gap),
+      child: Wrap(
+        alignment: WrapAlignment.center,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: tokens.spacing.gap,
+        runSpacing: tokens.spacing.gap,
+        children: <Widget>[
+          Text(
+            t.feedback_dev_loaded_count(n: _items.length),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+          if (_next != null)
+            FushiTextButton(
+              onPressed: _loading ? null : () => unawaited(_load(reset: false)),
+              child: Text(t.feedback_dev_load_more),
+            ),
+          FushiTextButton.icon(
+            key: const ValueKey<String>('feedback-dev-back-to-top'),
+            onPressed: _scrollToTop,
+            icon: const FushiIcon(FushiIcons.arrowUp),
+            label: Text(t.feedback_dev_back_to_top),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _scrollToTop() {
+    if (!_scroll.hasClients) return;
+    final Duration duration = fushiMotionDuration(context, FushiMotion.long);
+    if (duration == Duration.zero) {
+      _scroll.jumpTo(0);
+      return;
+    }
+    unawaited(
+      _scroll.animateTo(0, duration: duration, curve: FushiMotion.standard),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -245,6 +297,7 @@ class _FeedbackDevPageState extends ConsumerState<FeedbackDevPage> {
                 replayKey: _filter,
                 enabled: _loaded,
                 child: ListView(
+                  controller: _scroll,
                   physics: const AlwaysScrollableScrollPhysics(),
                   padding: withBottomSafeInset(
                     context,
@@ -311,15 +364,7 @@ class _FeedbackDevPageState extends ConsumerState<FeedbackDevPage> {
                                 unawaited(_open(_items[i], split: split)),
                           ),
                         ),
-                      if (_next != null)
-                        Center(
-                          child: FushiTextButton(
-                            onPressed: _loading
-                                ? null
-                                : () => unawaited(_load(reset: false)),
-                            child: Text(t.feedback_dev_load_more),
-                          ),
-                        ),
+                      _listFooter(tokens),
                     ],
                   ],
                 ),
@@ -571,19 +616,17 @@ class _FeedbackDevDetailPageState extends ConsumerState<FeedbackDevDetailPage> {
     ),
   );
 
+  /// 全屏看截图：共用的缩放查看（右上角 ×、点图 / 遮罩 / Esc / 返回关闭，反馈 vh4K5khfVr）。
   void _viewImage(String slot) => unawaited(
-    showAppDialog<void>(
-      context: context,
-      builder: (BuildContext ctx) => FushiDialog(
-        child: InteractiveViewer(
-          child: FutureBuilder<Uint8List>(
-            future: _image(slot),
-            builder: (BuildContext _, AsyncSnapshot<Uint8List> snap) =>
-                snap.hasData
-                ? Image.memory(snap.data!, cacheWidth: 2400)
-                : const FushiLoadingView(),
-          ),
-        ),
+    showImageZoomViewer(
+      context,
+      FutureBuilder<Uint8List>(
+        future: _image(slot),
+        builder: (BuildContext _, AsyncSnapshot<Uint8List> snap) => snap.hasData
+            ? Image.memory(snap.data!, cacheWidth: 2400)
+            : snap.hasError
+            ? const FushiIcon(FushiIcons.brokenImage, size: 64)
+            : const FushiLoadingView(),
       ),
     ),
   );

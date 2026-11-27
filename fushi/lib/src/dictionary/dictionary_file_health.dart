@@ -71,6 +71,38 @@ Future<bool> dictionaryResourceRootReadable(Directory root) async {
   }
 }
 
+/// 本机登记的词典按磁盘文件分出的两组（[localDictionaryFileStates]）。
+typedef LocalDictionaryFileStates = ({
+  /// 装载必需的文件齐全：本机真有这本（可以打包推给别人，别人的同名副本不必再拉）。
+  Set<String> complete,
+
+  /// 资源根可读、但这本的文件不在 / 不全（与 [DictionaryFileIssue.missing] 同口径）：本机
+  /// 只剩元数据，别处有同名副本时应当拉回来恢复，绝不能拿它打包推出去（推出去的是空包）。
+  Set<String> restorable,
+});
+
+/// 「本机到底有没有这本词典」的唯一判据（同步的词典阶段、按 host 的单本传输共用）：只看
+/// 元数据会把文件丢了的词典当成「已装」——既拉不回来、还会把空目录打成包推给别人
+/// （反馈 ujt4V8GdT8）。资源根读不到时两组都是空的：读不到不等于没了，既不推也不拉。
+Future<LocalDictionaryFileStates> localDictionaryFileStates(
+  Directory root,
+  Iterable<String> names,
+) async {
+  final Set<String> complete = <String>{};
+  final Set<String> restorable = <String>{};
+  if (!await dictionaryResourceRootReadable(root)) {
+    return (complete: complete, restorable: restorable);
+  }
+  for (final String name in names) {
+    if (await dictionaryFilesComplete(path.join(root.path, name))) {
+      complete.add(name);
+    } else {
+      restorable.add(name);
+    }
+  }
+  return (complete: complete, restorable: restorable);
+}
+
 /// 单本词典的判定（纯函数）。[probeError] 是物化探测（`DictResourceAvailability`）这一轮
 /// 对这本目录报的错；[filesComplete] 只在目录存在且探测没报错时有意义。
 DictionaryFileIssue? classifyDictionaryFiles({

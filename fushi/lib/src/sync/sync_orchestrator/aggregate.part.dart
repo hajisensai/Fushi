@@ -33,7 +33,7 @@ extension _SyncOrchestratorAggregate on SyncOrchestrator {
         shareWebHistory: syncWebHistory,
       );
     } catch (e) {
-      report.noteError('aggregate sync', e);
+      _noteDimensionError(report, 'aggregate sync', e);
     }
   }
 
@@ -70,7 +70,7 @@ extension _SyncOrchestratorAggregate on SyncOrchestrator {
           );
       }
     } catch (e) {
-      report.noteError('service config live sync', e);
+      _noteDimensionError(report, 'service config live sync', e);
     }
   }
 
@@ -93,10 +93,10 @@ extension _SyncOrchestratorAggregate on SyncOrchestrator {
       report.sourcesShared += result.changed;
       report.sourceShareSignerChanged.addAll(result.signerChanged);
       for (final String error in result.errors) {
-        report.noteError('source share', error);
+        _noteDimensionError(report, 'source share', error);
       }
     } catch (e) {
-      report.noteError('source share live sync', e);
+      _noteDimensionError(report, 'source share live sync', e);
     }
   }
 
@@ -127,7 +127,7 @@ extension _SyncOrchestratorAggregate on SyncOrchestrator {
         shareWebHistory: syncWebHistory,
       );
     } catch (e) {
-      report.noteError('aggregate live sync', e);
+      _noteDimensionError(report, 'aggregate live sync', e);
     }
   }
 }

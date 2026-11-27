@@ -163,6 +163,7 @@ mixin _LocalLibraryHostSyncState
   ) async {
     late CollectionManifest merged;
     await _runSyncStateExclusive(() async {
+      await _db.reconcileEpubCollectionMemberKeys();
       final CollectionManifest local = await loadLocalCollectionManifest(_db);
       // BUG-1579：host 收 POST 走**自己那本账**（[SyncChannelScope.host]）。它与
       // 本机作为 client 跑的云/互联通道是三条独立的因果轴：共用一个键时，client

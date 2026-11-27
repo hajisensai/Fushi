@@ -1,0 +1,8 @@
+## BUG-5552 · sync-peer-unreachable-mid-run-raw-errors
+- **报告**：2026-11-27（用户：应用内反馈 L60rttoC0U，Android，后台任务「全量同步 7 项失败」，7 行都是 `<维度> live sync: SyncBackendError: No reachable Fushi server address`）
+- **真实性**：✅ 真 bug。两层根因：
+  1. 互联对端在一轮中途探不到时，`SyncPeerUnreachableError` 被各维度的 catch-all 逐个吞成报告行（`fushi/lib/src/sync/sync_orchestrator/aggregate.part.dart` 等各 `_sync*Live` 的 `catch (e) { report.noteError(...) }`）。后面每个维度再把全部候选串行探一遍、各记一条一模一样的失败；`run()` 正常返回，通道层（`sync_auto_trigger.dart` 自动 sweep 的 `if (e is SyncPeerUnreachableError)` → peerOffline，BUG-5368）根本见不到这个异常，于是「对端离线不算失败」的契约被绕过，任务表留下 N 条失败。
+  2. 任务面板拿到的只有日志字符串：`SyncRunReport.noteError` 拼 `'$label: $error'`（`sync_orchestrator.dart` noteError），`onError` 回调只传这串字，`SyncTaskError` 只存 `message`，面板（`background_tasks_indicator.dart` `syncTaskToBackgroundTask`）除「对端缺能力」原句外原样上屏。BUG-5368 只把**通道级**失败换成了本地化文案。
+- **[x] ① 已修复** — ① 编排器所有维度 / 条目的记错改走 `_noteDimensionError`：`SyncPeerUnreachableError` 原样抛出本轮，交给通道层（自动 sweep 记 peerOffline 并推进退避，手动同步报一条本地化的通道级失败，单本词典传输归类为 unreachable）。② 失败改成结构化值 `SyncFailure`（`fushi/lib/src/sync/sync_failure.dart`：标签 + 原因对象 / 对端缺能力），`SyncRunReport.failures` 与 `errors` 同序同长，`mergeFrom` 保留结构，`onError` / `SyncTaskHandle.fail` / `SyncTaskError.failure` 一路带到面板；面板经 `syncFailureLines`（`sync_failure_ui.dart`）渲染：原因走 `friendlySyncErrorDetail`，互联维度名本地化，同因多条合成一行「原因（N 项）」，「N 项失败」仍按项计（`BackgroundTask.failureCount`）。日志行一字不变。
+- **[x] ② 已加自动化测试** — `fushi/test/sync/sync_peer_unreachable_mid_run_test.dart`：7 个互联维度在对端探不到时都抛出本轮、不吞成报告行（修前红）；报告结构随回调 / failures / mergeFrom 保留；面板 7 条同因 → 一行本地化带条数、单条本地化维度名。
+- **备注**：标题后半「下载不过来词典」是另一个问题（ujt4V8GdT8），不在本修复范围。

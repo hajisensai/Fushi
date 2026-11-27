@@ -45,6 +45,7 @@ import 'package:fushi/src/srs/srs_directory_key.dart';
 import 'package:fushi/src/srs/srs_interconnect_watch.dart';
 import 'package:fushi_engine/srs/srs_remote_store.dart';
 import 'package:fushi_engine/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_note_conflict_resolve.dart';
 import 'package:fushi_engine/srs/srs_optimization_scheduler.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_sync_scheduler.dart';
@@ -114,6 +115,8 @@ srsAppRuntimeProvider = Provider<SrsAppRuntime?>((Ref ref) {
       SrsOpLedger.mark('rev:pulled');
       // 别的设备可能改了复习翻日时刻：本机统计日界跟上（单向，不写回复习）。
       unawaited(runtime.adoptSyncedDayRollover());
+      // 拉进来的修改 / 媒体可能刚好凑齐了消解伪冲突的条件（BUG-5551）。
+      runtime.reconcileMediaRefConflicts();
     },
     // 同步前的 profile 关联（铁律 E）：采用目录里已有的 uid 后按新身份重开 store。
     profileLinker: SrsDbProfileLinker(
@@ -435,6 +438,44 @@ class SrsAppRuntime {
   /// AnkiConnect 兼容端点的本实例 id（防自环）。
   final String instanceId = srsAnkiConnectNewInstanceId();
 
+  /// 媒体引用伪冲突的自动消解（BUG-5551，见 srs_note_conflict_resolve.dart）：同一时刻只跑一趟，跑的期间又来的请求
+  /// 合成一趟，跑完接着补。
+  Future<void>? _mediaRefReconcile;
+  bool _mediaRefReconcileAgain = false;
+
+  /// 消解「同一份 Anki 数据两台设备各导入一次、一台没读到媒体」造成的字段伪冲突：运行时装上时一次（已有的伪冲突），
+  /// 之后每次同步拉进了别的设备的修改 / 媒体再一次。写下了消解记录就当本机写入（界面重读、推给别的设备）。
+  void reconcileMediaRefConflicts() {
+    if (_mediaRefReconcile != null) {
+      _mediaRefReconcileAgain = true;
+      return;
+    }
+    _mediaRefReconcile = _runMediaRefReconcile().whenComplete(
+      () => _mediaRefReconcile = null,
+    );
+  }
+
+  Future<void> _runMediaRefReconcile() async {
+    do {
+      _mediaRefReconcileAgain = false;
+      try {
+        final SrsDbStore? store = await _readStore();
+        final SrsMediaStore? media = await _readMedia();
+        if (store == null || media == null) return;
+        if (await srsReconcileMediaRefConflicts(store, media) > 0) {
+          _bumpRevision();
+        }
+      } catch (e, stack) {
+        ErrorLogService.instance.log(
+          'SrsAppRuntime.reconcileMediaRefConflicts',
+          e,
+          stack,
+        );
+        return;
+      }
+    } while (_mediaRefReconcileAgain && _installed);
+  }
+
   void install() {
     if (_installed) return;
     _installed = true;
@@ -474,6 +515,8 @@ class SrsAppRuntime {
         ErrorLogService.instance.log('SrsAppRuntime.forgetPending', e, stack);
       }),
     );
+    // 升级前就攒下的媒体引用伪冲突（BUG-5551）：装上就消解一次，不等下一次同步。
+    reconcileMediaRefConflicts();
     // 旧版定时备份已由同步 v2 的时间线 / 归档 / 手动导出取代：本机旧备份文件（仍可经「导入」恢复）从升级后
     // 第一次看到起留 30 天再清（起算时刻持久化在目录里的标记文件，见 srs_legacy_backup_cleanup.dart）。
     unawaited(

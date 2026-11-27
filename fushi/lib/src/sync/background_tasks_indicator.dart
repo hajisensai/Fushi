@@ -7,7 +7,8 @@ import 'package:fushi/src/srs/srs_sync_progress_ui.dart';
 import 'package:fushi/src/sync/manual_sync_ui.dart';
 import 'package:fushi/src/sync/sync_activity.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
-import 'package:fushi/src/sync/sync_peer_gap_ui.dart';
+import 'package:fushi/src/sync/sync_failure.dart';
+import 'package:fushi/src/sync/sync_failure_ui.dart';
 import 'package:fushi/src/sync/sync_progress.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
@@ -117,11 +118,12 @@ BackgroundTask syncTaskToBackgroundTask(SyncTask task) {
     fraction: p?.fraction,
     detail: syncTaskDetailLine(task),
     stageSince: task.isActive ? task.stageSince : null,
-    // 对端缺能力的原句（英文、进日志）在面板里换成本地化说明，其余原样。
-    errors: <String>[
-      for (final SyncTaskError e in task.errors)
-        localizedSyncTaskError(e.message),
-    ],
+    // 失败按结构渲染（反馈 L60rttoC0U）：原因本地化、同因合并成一行；日志行原文
+    // 只进日志。条数仍按失败项计。
+    errors: syncFailureLines(<SyncFailure>[
+      for (final SyncTaskError e in task.errors) e.failure,
+    ]),
+    failureCount: task.errors.length,
     finished: !task.isActive,
   );
 }
@@ -450,7 +452,7 @@ class _BackgroundTaskRowState extends State<_BackgroundTaskRow> {
   Widget _buildErrors(BuildContext context, BackgroundTask task) {
     final ThemeData theme = Theme.of(context);
     final FushiMotionScheme motion = context.fushiMotion;
-    final String label = t.sync_task_errors_count(count: task.errors.length);
+    final String label = t.sync_task_errors_count(count: task.failureCount);
     return FushiAnimatedSize(
       duration: fushiMotionDuration(context, FushiMotion.medium),
       curve: motion.spatialDefault.curve,

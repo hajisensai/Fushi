@@ -1,0 +1,6 @@
+## BUG-5540 · music-tags-ext-hint
+- **报告**：2026-11-26（用户：反馈 EMjx7gJftH / GitHub #3352 问题 2：部分 MP3 显示「未知艺人」、无格式码率、无专辑、列表无封面，只有「继续收听」有封面）
+- **真实性**：✅ 真 bug。用反馈人附的《鬼ごっこ》MP3 复现：ID3v2.3 标签（声明长度 419779）之后到首个 MPEG 帧前还有 2048 字节零填充，超过 lofty `Probe::guess_file_type` 的 `max_junk_bytes`（默认 1024），嗅探返回 `None`。根因 `native/fushi_music/src/tags.rs:422`（`read_lofty`）只用 `Probe::new(reader).guess_file_type()` 纯内容嗅探、不带扩展名提示，`file_type()` 为 `None` 时直接退到 `meta_from_extension`（字段全空、无封面）；而 `embedded_cover`（`tags.rs:578`）用 `Probe::open(path)` 先按扩展名定类型，同一文件「继续收听」能取到封面。
+- **[x] ① 已修复** — `read_lofty` 先 `set_file_type(FileType::from_ext(ext))` 再 `guess_file_type()`（lofty 语义：嗅探结果优先，嗅探不出保留扩展名类型），与 `embedded_cover` 同一口径；lofty 的 `MpegFile` 读取本身按 `find_next_frame` 扫帧同步、不受 1 KiB 限制，标签 / 码率 / 封面都能读出。`native/fushi_music/src/scan.rs` 的 `PARSER_REVISION` 1→2，Dart 扫描器（`music_library_scanner.dart` 按来源记录的修订号不符即不传已知文件清单）对存量来源整源重新解析，之前入库成空字段的曲目随之重写。
+- **[x] ② 已加自动化测试** — `native/fushi_music/src/tags.rs` 单测 `mp3_with_junk_after_id3v2_beyond_sniff_window_still_reads_tags`：构造「ID3v2（TIT2/TPE1/TALB/APIC）+ 2 KiB 零填充 + MPEG 帧」，先断言纯嗅探确实认不出，再断言 `read_file_meta` 读出 codec=mp3、标题 / 艺人 / 专辑、码率、`has_embedded_cover`，且 `read_meta_from(want_cover)` 交回封面字节。真实样本本地已验证读出 `鬼ごっこ` / `春野, 洛天依` / 192 kbps / 有封面（样本不入库）。
+- **备注**：问题 1（歌词页 / 播放条不读内嵌封面）已由 BUG-5504（cb5365ea4a）修复，不在本条。

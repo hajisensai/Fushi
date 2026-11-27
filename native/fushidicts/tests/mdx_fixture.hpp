@@ -60,6 +60,11 @@ struct ContainerShape {
   const char* root_element = "Dictionary";
   const char* encoding_attr = "UTF-8";
   bool utf16_keys = false;
+  // MDict engine generation. 2 = v2.x (64-bit numbers, zlib key block info,
+  // NUL-terminated first/last keys in it). 1 = v1.x ("1.2"): 32-bit numbers,
+  // uncompressed key block info, 8-bit first/last key lengths and NO terminator
+  // after those inline copies.
+  int version_major = 2;
 };
 
 // ASCII-only headwords widen to UTF-16LE by interleaving zero bytes, which is
@@ -109,10 +114,19 @@ inline std::vector<uint8_t> build_container_shaped(
     offsets.resize(entries.size(), 0);
   }
 
-  // Key block: (be64 record_offset + headword + terminator) per entry.
+  const bool v2 = shape.version_major >= 2;
+  auto put_num = [v2](std::vector<uint8_t>& v, uint64_t x) {
+    if (v2) {
+      put_be64(v, x);
+    } else {
+      put_be32(v, uint32_t(x));
+    }
+  };
+
+  // Key block: (number record_offset + headword + terminator) per entry.
   std::vector<uint8_t> key_entries;
   for (size_t i = 0; i < entries.size(); i++) {
-    put_be64(key_entries, offsets[i]);
+    put_num(key_entries, offsets[i]);
     append_key_bytes(key_entries, entries[i].first, shape.utf16_keys);
     append_key_terminator(key_entries, shape.utf16_keys);
   }
@@ -121,19 +135,23 @@ inline std::vector<uint8_t> build_container_shaped(
   // Key block info (one block meta): plaintext then zlib (comp_type=2), no crypto.
   // first/last headword lengths are CHARACTER counts (the reader multiplies by
   // 2 for UTF-16), and the inline copies use the same width as the keys.
+  // v1: 8-bit lengths, bare inline keys (no terminator), stored uncompressed.
   std::vector<uint8_t> kbi_plain;
-  put_be64(kbi_plain, entries.size());  // num entries in this key block
+  put_num(kbi_plain, entries.size());  // num entries in this key block
   const std::string& first = entries.front().first;
   const std::string& last = entries.back().first;
-  put_be16(kbi_plain, uint16_t(first.size()));
-  append_key_bytes(kbi_plain, first, shape.utf16_keys);
-  append_key_terminator(kbi_plain, shape.utf16_keys);
-  put_be16(kbi_plain, uint16_t(last.size()));
-  append_key_bytes(kbi_plain, last, shape.utf16_keys);
-  append_key_terminator(kbi_plain, shape.utf16_keys);
-  put_be64(kbi_plain, key_block.size());    // compressed size of the key block
-  put_be64(kbi_plain, key_entries.size());  // decompressed size of the key block
-  std::vector<uint8_t> kbi = make_zlib_block(kbi_plain);
+  for (const std::string* edge : {&first, &last}) {
+    if (v2) {
+      put_be16(kbi_plain, uint16_t(edge->size()));
+    } else {
+      kbi_plain.push_back(uint8_t(edge->size()));
+    }
+    append_key_bytes(kbi_plain, *edge, shape.utf16_keys);
+    if (v2) append_key_terminator(kbi_plain, shape.utf16_keys);
+  }
+  put_num(kbi_plain, key_block.size());    // compressed size of the key block
+  put_num(kbi_plain, key_entries.size());  // decompressed size of the key block
+  std::vector<uint8_t> kbi = v2 ? make_zlib_block(kbi_plain) : kbi_plain;
 
   // Cut the record stream at the requested offsets and zlib each piece. With no
   // split points this yields exactly one block covering the whole stream.
@@ -155,32 +173,33 @@ inline std::vector<uint8_t> build_container_shaped(
   std::vector<uint8_t> record_block_info;
   uint64_t record_blocks_total = 0;
   for (size_t i = 0; i < record_blocks.size(); i++) {
-    put_be64(record_block_info, record_blocks[i].size());
-    put_be64(record_block_info, decompressed_sizes[i]);
+    put_num(record_block_info, record_blocks[i].size());
+    put_num(record_block_info, decompressed_sizes[i]);
     record_blocks_total += record_blocks[i].size();
   }
 
   std::vector<uint8_t> file;
   std::string header = std::string("<") + shape.root_element +
-                       " GeneratedByEngineVersion=\"2.0\" Encrypted=\"0\" Encoding=\"" +
+                       " GeneratedByEngineVersion=\"" + (v2 ? "2.0" : "1.2") +
+                       "\" Encrypted=\"0\" Encoding=\"" +
                        shape.encoding_attr + "\" Title=\"" + title + "\"/>";
   put_be32(file, uint32_t(header.size()));
   file.insert(file.end(), header.begin(), header.end());
   put_be32(file, 0);  // header adler (ignored)
 
-  put_be64(file, 1);                 // num key blocks
-  put_be64(file, entries.size());    // num entries
-  put_be64(file, kbi_plain.size());  // key_block_info_decomp_size
-  put_be64(file, kbi.size());        // key_block_info_size
-  put_be64(file, key_block.size());  // key_blocks_size
-  put_be32(file, 0);                 // key block info adler (ignored)
+  put_num(file, 1);                   // num key blocks
+  put_num(file, entries.size());      // num entries
+  if (v2) put_be64(file, kbi_plain.size());  // key_block_info_decomp_size (v2 only)
+  put_num(file, kbi.size());          // key_block_info_size
+  put_num(file, key_block.size());    // key_blocks_size
+  if (v2) put_be32(file, 0);          // key block info adler (v2 only, ignored)
   file.insert(file.end(), kbi.begin(), kbi.end());
   file.insert(file.end(), key_block.begin(), key_block.end());
 
-  put_be64(file, record_blocks.size());      // num record blocks
-  put_be64(file, entries.size());            // num entries (ignored)
-  put_be64(file, record_block_info.size());
-  put_be64(file, record_blocks_total);       // record_blocks_total_size
+  put_num(file, record_blocks.size());      // num record blocks
+  put_num(file, entries.size());            // num entries (ignored)
+  put_num(file, record_block_info.size());
+  put_num(file, record_blocks_total);       // record_blocks_total_size
   file.insert(file.end(), record_block_info.begin(), record_block_info.end());
   for (const auto& block : record_blocks) {
     file.insert(file.end(), block.begin(), block.end());
@@ -274,6 +293,16 @@ inline std::vector<uint8_t> build_mdd_utf16_library_data(
   shape.encoding_attr = "";
   shape.utf16_keys = true;
   return build_container_shaped(title, entries, /*null_terminate=*/false, shape);
+}
+
+// MDX written by an MDict 1.2-era engine (`GeneratedByEngineVersion="1.2"`):
+// 32-bit numbers, uncompressed key block info whose inline first/last keys
+// carry no terminator. UTF-8 keys and NUL-terminated text records.
+inline std::vector<uint8_t> build_mdx_v1(
+    const std::string& title, const std::vector<std::pair<std::string, std::string>>& entries) {
+  ContainerShape shape;
+  shape.version_major = 1;
+  return build_container_shaped(title, entries, /*null_terminate=*/true, shape);
 }
 
 }  // namespace mdx_fixture

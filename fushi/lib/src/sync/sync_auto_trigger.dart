@@ -58,14 +58,22 @@ final _bookKeyPattern = RegExp(r'fushi://book/(.+)');
 /// toString（`SyncBackendError: No reachable Fushi server address`）连同调试用的
 /// 前缀原样上屏，绕过了 BUG-1693 的 [friendlySyncErrorDetail]。任务表是用户看的，
 /// 不是日志：原始异常照旧进 `developer.log`。
-String _channelTaskError(SyncChannel channel, Object error, {String? title}) {
+SyncFailure _channelTaskError(
+  SyncChannel channel,
+  Object error, {
+  String? title,
+}) {
   final String channelLabel = channel.isInterconnect
       ? t.sync_task_channel_interconnect
       : t.sync_task_channel_cloud;
   final String where = title == null ? channelLabel : '$channelLabel · $title';
   // 鉴权失败在通道层被包成 [SyncChannelAuthError]（BUG-1578），拆开才能按类型分派。
   final Object cause = error is SyncChannelAuthError ? error.error : error;
-  return '$where: ${friendlySyncErrorDetail(cause)}';
+  return SyncFailure.presented(
+    message: '$where: ${friendlySyncErrorDetail(cause)}',
+    label: where,
+    cause: cause,
+  );
 }
 
 // [syncInProgress] / [syncProgress] / [syncActivity] 的定义在 `sync_task_board.dart`：
@@ -556,7 +564,7 @@ Future<SyncRunReport?> _runSyncChannel({
   required Future<void> Function(LocalAudioPackageContents)
   onLocalAudioImported,
   required void Function(SyncProgress) onProgress,
-  required void Function(String error) onError,
+  required void Function(SyncFailure failure) onError,
   required SyncCancellation cancellation,
 }) async {
   try {
@@ -592,7 +600,7 @@ Future<SyncRunReport?> _runSyncChannelInner({
   required Future<void> Function(LocalAudioPackageContents)
   onLocalAudioImported,
   required void Function(SyncProgress) onProgress,
-  required void Function(String error) onError,
+  required void Function(SyncFailure failure) onError,
   required SyncCancellation cancellation,
 }) async {
   final SyncBackend backend = channel.backend;
@@ -887,7 +895,7 @@ Future<void> _runAutoSyncAll({
               // 进任务表（由它派生全局 [syncProgress]），设置页「立即同步」那行在
               // 开机 sweep 期间也显示实时进度条。
               onProgress: task.progress,
-              onError: task.error,
+              onError: task.fail,
               cancellation: task.cancellation,
             ),
           );
@@ -911,7 +919,7 @@ Future<void> _runAutoSyncAll({
           // 记账不吞事实：这条通道失败了，其余通道继续跑，最终 reason 也据此如实
           // 报「失败」而不是伪装成 completed。
           anyChannelFailed = true;
-          task.error(_channelTaskError(channel, e));
+          task.fail(_channelTaskError(channel, e));
           developer.log(
             'Sync channel failed (interconnect=${channel.isInterconnect})',
             error: e,
@@ -1080,7 +1088,7 @@ Future<ManualSyncResult> runManualFullSync({
                 task.progress(p);
                 onProgress?.call(p);
               },
-              onError: task.error,
+              onError: task.fail,
               cancellation: task.cancellation,
             ),
           );
@@ -1102,7 +1110,7 @@ Future<ManualSyncResult> runManualFullSync({
             'sync channel (interconnect=${channel.isInterconnect})',
             e,
           );
-          task.error(_channelTaskError(channel, e));
+          task.fail(_channelTaskError(channel, e));
           developer.log(
             'Manual sync channel failed '
             '(interconnect=${channel.isInterconnect})',
@@ -1281,7 +1289,7 @@ Future<ManualSyncResult> runManualAssetTransfer({
                 task.progress(p);
                 onProgress?.call(p);
               },
-              onError: task.error,
+              onError: task.fail,
               cancellation: task.cancellation,
             ),
           );
@@ -1300,7 +1308,7 @@ Future<ManualSyncResult> runManualAssetTransfer({
             'asset transfer channel (interconnect=${channel.isInterconnect})',
             e,
           );
-          task.error(_channelTaskError(channel, e));
+          task.fail(_channelTaskError(channel, e));
           developer.log(
             'Manual asset transfer channel failed '
             '(interconnect=${channel.isInterconnect})',
@@ -1364,7 +1372,7 @@ Future<SyncRunReport?> _runAssetTransferChannel({
   onLocalAudioImported,
   required FontSyncLocal? fontSync,
   required void Function(SyncProgress) onProgress,
-  required void Function(String error) onError,
+  required void Function(SyncFailure failure) onError,
   required SyncCancellation cancellation,
 }) async {
   try {
@@ -1481,7 +1489,7 @@ Future<HostDictionaryTransferResult?> runHostDictionaryTransfer({
             reason = SyncOutcomeReason.noChannels;
             throw HostDictionaryTransferNotPaired(hostId);
           }
-          final SyncRunReport report = SyncRunReport(onError: task.error);
+          final SyncRunReport report = SyncRunReport(onError: task.fail);
           final SyncOrchestrator orchestrator = SyncOrchestrator(
             db: db,
             backend: backend,
@@ -1502,7 +1510,7 @@ Future<HostDictionaryTransferResult?> runHostDictionaryTransfer({
               task.progress(p);
               onProgress?.call(p);
             },
-            onError: task.error,
+            onError: task.fail,
           );
           final SingleDictionaryTransferOutcome outcome = await orchestrator
               .runSingleDictionaryTransfer(
@@ -1656,7 +1664,7 @@ Future<void> _runCollectionsSync({required FushiDatabase db}) async {
               final SyncOrchestrator orchestrator = SyncOrchestrator(
                 db: db,
                 backend: backend,
-                onError: task.error,
+                onError: task.fail,
                 // 合集维度不触碰词典/音频/临时目录；systemTemp 仅为满足构造器形参，
                 // runCollectionsOnly 保证不落任何文件。
                 dictionaryResourceRoot: Directory.systemTemp,
@@ -1690,7 +1698,7 @@ Future<void> _runCollectionsSync({required FushiDatabase db}) async {
             continue;
           }
           anyChannelFailed = true;
-          task.error(_channelTaskError(channel, e));
+          task.fail(_channelTaskError(channel, e));
           developer.log(
             'Collections sync channel failed '
             '(interconnect=${channel.isInterconnect})',
@@ -1956,7 +1964,7 @@ Future<_ExitChannelResult> _syncExitedBookChannelOnce({
   } catch (e, stack) {
     // BUG-5368：对端离线是预期状态（BUG-5262），跳过而不记失败。
     if (e is SyncPeerUnreachableError) return _ExitChannelResult.peerOffline;
-    task.error(_channelTaskError(channel, e, title: title));
+    task.fail(_channelTaskError(channel, e, title: title));
     developer.log(
       'Book-exit sync channel failed '
       '(interconnect=${channel.isInterconnect})',
