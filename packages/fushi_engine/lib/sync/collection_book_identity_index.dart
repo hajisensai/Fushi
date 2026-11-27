@@ -27,7 +27,14 @@ class CollectionBookIdentityIndex {
 
   final GameIdentityIndex games;
 
-  static Future<CollectionBookIdentityIndex> load(FushiDatabase db) async {
+  /// [withGames] = false 时不读 `galgames`（[games] 恒为空）：合集成员只做书键换算
+  /// （见类注释），合集清单 / 卷序这些只用 [localKey] / [wireKey] 的调用方不必为
+  /// 游戏身份多读一张表——互联 host 的合集清单缓存也就不必因 `galgames` 的写入
+  /// 作废（`collectionManifestSourceTables`）。
+  static Future<CollectionBookIdentityIndex> load(
+    FushiDatabase db, {
+    bool withGames = true,
+  }) async {
     final List<EpubBookRow> books = await db.getAllEpubBooks();
     final Map<String, String> aliases = await db.getCollectionBookAliases();
     final Map<String, String> remoteByUid = <String, String>{
@@ -60,7 +67,9 @@ class CollectionBookIdentityIndex {
       uidByKey,
       wireKeyByKey,
       bookKeyByUid: bookKeyByUid,
-      games: await GameIdentityIndex.load(db),
+      games: withGames
+          ? await GameIdentityIndex.load(db)
+          : GameIdentityIndex.empty,
     );
   }
 

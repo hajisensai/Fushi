@@ -1286,21 +1286,40 @@ String? resolveEpubCoverFilePath({
   required String extractDir,
   required String? coverPath,
 }) {
-  bool exists(String path) {
+  for (final String candidate in _epubCoverCandidates(extractDir, coverPath)) {
     try {
-      return File(path).existsSync();
+      if (File(candidate).existsSync()) return candidate;
     } catch (_) {
-      return false;
+      // 探测失败按不存在处理（与旧实现同口径）。
     }
   }
+  return null;
+}
 
-  // 已是存在的绝对路径（视频封面就是绝对路径，故视频侧本就正常）：直接用。
-  if (coverPath != null && coverPath.isNotEmpty && exists(coverPath)) {
-    return coverPath;
+/// [resolveEpubCoverFilePath] 的异步形态（同一候选序）：互联 host 的单书封面端点
+/// 跑在 host 所在 isolate 上（app 里即 UI isolate），不做同步 stat。
+Future<String?> resolveEpubCoverFilePathAsync({
+  required String extractDir,
+  required String? coverPath,
+}) async {
+  for (final String candidate in _epubCoverCandidates(extractDir, coverPath)) {
+    try {
+      if (await File(candidate).exists()) return candidate;
+    } catch (_) {
+      // 探测失败按不存在处理（与同步形态同口径）。
+    }
   }
-  if (extractDir.isEmpty) return null;
+  return null;
+}
 
-  final List<String> candidates = <String>[];
+/// 封面探测候选（按序取首个存在者）：已是绝对路径的 [coverPath] 原样（视频封面就是
+/// 绝对路径），再 [extractDir] + 声明的相对 href（去掉前导 `/`），再约定名
+/// `cover.jpg/jpeg/png`。
+List<String> _epubCoverCandidates(String extractDir, String? coverPath) {
+  final List<String> candidates = <String>[
+    if (coverPath != null && coverPath.isNotEmpty) coverPath,
+  ];
+  if (extractDir.isEmpty) return candidates;
   if (coverPath != null && coverPath.isNotEmpty) {
     String rel = coverPath;
     if (rel.startsWith('/')) rel = rel.substring(1);
@@ -1313,10 +1332,7 @@ String? resolveEpubCoverFilePath({
   ]) {
     candidates.add(p.join(extractDir, name));
   }
-  for (final String candidate in candidates) {
-    if (exists(candidate)) return candidate;
-  }
-  return null;
+  return candidates;
 }
 
 /// host 端某本书的阅读进度（TODO-767 跨设备书籍进度同步）。

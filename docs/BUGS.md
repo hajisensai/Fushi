@@ -43,6 +43,7 @@
 | [BUG-5607](bugs/BUG-5607-torrent-dht-test-default-timeout.md) | ✅ | ✅ | torrent-dht-test-default-timeout |
 | [BUG-5605](bugs/BUG-5605-video-network-mount-sync-stat-freeze.md) | ✅ | ✅ | video-network-mount-sync-stat-freeze |
 | [BUG-5603](bugs/BUG-5603-interconnect-client-sync-too-often.md) | ✅ | ✅ | 互联 client 同步过频：切模块 / 每分钟 / 退后台都对 host 跑一轮，电脑 host 持续卡 |
+| [BUG-5606](bugs/BUG-5606-host-isolate-offload.md) | ✅ | ✅ | 电脑当互联 host，iPhone 连过来同步时电脑界面一卡一卡 |
 | [BUG-5600](bugs/BUG-5600-jellyfin-show-in-library-hides-cloud-videos.md) | ✅ | ✅ | 开了 Jellyfin「显示在视频库」后云盘远端视频全部消失 |
 | [BUG-5599](bugs/BUG-5599-srs-donation-set-before-mounted.md) | 🚧 | 🚧 | srs-donation-set-before-mounted |
 | [BUG-5598](bugs/BUG-5598-apple-popup-native-material-default-tint.md) | 🚧 | 🚧 | apple-popup-native-material-default-tint |

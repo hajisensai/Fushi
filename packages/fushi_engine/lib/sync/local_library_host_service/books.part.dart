@@ -77,92 +77,121 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
     };
     // 上锁的书（含在上锁合集里的）标 locked：对端未解锁时不出占位卡 / 「继续」。
     final MediaLockSnapshot locks = await MediaLockSnapshot.load(_db);
-    return rows.map((EpubBookRow r) {
-      // EPUB 行的 coverPath 是 EPUB 内部相对 href，必须拼 extractDir 才是磁盘真
-      // 路径；直接 _existingFilePath(相对href) 恒 false → 远端书卡没封面（#4）。
-      final String? coverPath = resolveEpubCoverFilePath(
-        extractDir: r.extractDir,
-        coverPath: r.coverPath,
-      );
-      final BookFormat format = BookFormat.parseOrEpub(r.format);
-      return RemoteBookInfo(
-        title: r.title,
-        // BUG-1488：只在真改过名时非 null（toJson 亦只在与 title 不同时写键）。
-        displayTitle: overrideTitles[r.bookKey]?.title,
-        // BUG-1502：改名时刻随行，让 client 端做 LWW 而不是 insert-if-absent。
-        displayTitleAt: overrideTitles[r.bookKey]?.updatedAt ?? 0,
-        bookKey: r.bookKey,
-        // hasContent（EPUB 内容树可导出）按 format 门控（互联完整支持批次）：由
-        // EPUB 转化来的漫画行 extractDir 里仍留着 EPUB 解压树，旧判据会把它当可
-        // 下载 EPUB 打包——把整套页图 + manga.json 塞进 zip，client 落地成一本
-        // 夹带全部页图的「文字书」、漫画身份静默丢失（坏包）。漫画内容走
-        // hasMangaContent + 漫画包通道。
-        // 在线小说占位书（LNReader）不算可下载内容：对端收到的会是一本补不全的
-        // 书（见 isLnReaderOnlineBookMetadata）。
-        hasContent:
-            format == BookFormat.epub &&
-            !isLnReaderOnlineBookMetadata(r.sourceMetadata) &&
-            resolveExtractedEpubRoot(r.extractDir) != null,
-        format: format.dbValue,
-        hasMangaContent:
-            format == BookFormat.manga &&
-            hasExportableMangaContent(r.extractDir),
-        // 反馈 Jq1_ujHa4t：PDF 此前在这里没有任何内容位（hasContent 是 EPUB 判据、
-        // 恒 false），对端书架按内容位过滤 → host 上的 PDF 在对端整本隐形，同步还报
-        // 「无新增」。PDF 原件在盘上即可下载（包 = 原件，见 pdf_sync_package.dart）。
-        hasPdfContent: hasExportablePdfContent(r),
-        // BUG-2474：在线书架条目（Mihon / Aidoku）根目录只有占位 manga.json，
-        // hasMangaContent 恒 false，但它按章下载的页图就在 <extractDir>/chapters/
-        // 下——标 hasMangaChapters，对端以多章在线作品收下、逐章从这里拉。清单级
-        // 只做一次目录列举（廉价判据），逐章完整性在按章端点上把关。
-        // 本机运行时能按需取页的在线条目（[OnlineMangaHostReader]）章章可读，
-        // 一章没下也要出现在对端——iPhone 没有在线源宿主，互联是它读这些漫画的
-        // 唯一途径。
-        hasMangaChapters:
-            format == BookFormat.manga &&
-            ((r.extractDir.isNotEmpty && hasAnyChapterDirSync(r.extractDir)) ||
-                _servesOnlineMangaChapters(_onlineMangaReader, r)),
-        mangaReadingMode: r.mangaReadingMode,
-        mangaReaderOverrides: _readerOverrideMap(readerOverridesByUid[r.uid]),
-        mangaReaderOverrideUpdatedAt:
-            readerOverridesByUid[r.uid]?.updatedAt ?? 0,
-        mangaReaderOverrideDeleted:
-            readerOverridesByUid[r.uid]?.deleted ?? false,
-        hasEmbeddedCover: coverPath != null,
-        coverPath: coverPath,
-        hasAudiobook: audiobookKeys.contains(r.bookKey),
-        isSubtitleBookBody: subtitleBodyKeys.contains(r.bookKey),
-        tags: tagsByBookKey[r.bookKey] ?? const <String>[],
-        tagsAddedAt: tagAddedAtByKey[r.bookKey] ?? const <String, int>{},
-        tagTombstones: tagTombByKey[r.bookKey] ?? const <String, int>{},
-        // 合集成员键（v83）：epub 成员行 entryKey = 本机 epub_books.uid，书侧组键
-        // 用 r.uid（§2.3 任务5.1 的 wire 面貌仍是 bookKey，与本地键域无关）。
-        // epub|bookKey 兜底：sync 落地的透传行（书当时还没下载）在下一轮 apply
-        // 收敛前仍以对端 bookKey 为键，窗口期内按 bookKey 也查一把，归属不闪断。
-        // srt-backed 有声书兜底：该书以 srt|uid 入合集时，epub 两键都 miss，
-        // 回退查 srt|uid（BUG-812）。散卡（三键都无）= null。
-        collection:
-            membership[MediaKind.epub.compositeKey(r.uid)] ??
-            membership[MediaKind.epub.compositeKey(r.bookKey)] ??
-            (srtUidByBookKey[r.bookKey] != null
-                ? membership[MediaKind.srt.compositeKey(
-                    srtUidByBookKey[r.bookKey]!,
-                  )]
-                : null),
-        progressPercent: progressByKey[r.bookKey]?.percent ?? 0,
-        progressUpdatedAtMs: progressByKey[r.bookKey]?.updatedAtMs ?? 0,
-        // client 书架排序要与本地条目同一把尺子：不下发入库时刻，对端只能给远端
-        // 占位卡造负数假戳，「导入时间」/「最近阅读」两档下远端书恒沉底。
-        importedAt: r.importedAt,
-        // BUG-1119：EpubBooks 行都是可下载 EPUB，显式标 epub（srt-backed 有声书
-        // 的 EPUB 卡语义仍是 epub——与本地 _bookMediaKind 按 hoshi://book/ 身份判
-        // epub 一致，勿标成 srt 造成两端同书异 kind）。standalone SRT 书（身份
-        // hoshi://srtbook/<uid>，无 EpubBooks 行）今天不在本清单，进清单是独立
-        // follow-up。
-        kind: MediaKind.epub,
-        locked: locks.isBookLocked(r.bookKey),
-      );
-    }).toList();
+    // 逐书的文件探测（封面 / EPUB 根 / 漫画页表 / PDF 原件 / 章目录）整批在后台
+    // isolate 里做：app 当 host 时本 isolate 就是 UI isolate（host_background_io.dart）。
+    final List<HostBookProbe> probes = await probeHostBooks(
+      <HostBookProbeInput>[
+        for (final EpubBookRow r in rows) HostBookProbeInput.fromRow(r),
+      ],
+    );
+    return <RemoteBookInfo>[
+      for (int i = 0; i < rows.length; i++)
+        _bookInfo(
+          rows[i],
+          probes[i],
+          overrideTitles: overrideTitles,
+          readerOverridesByUid: readerOverridesByUid,
+          audiobookKeys: audiobookKeys,
+          subtitleBodyKeys: subtitleBodyKeys,
+          tagsByBookKey: tagsByBookKey,
+          tagAddedAtByKey: tagAddedAtByKey,
+          tagTombByKey: tagTombByKey,
+          membership: membership,
+          srtUidByBookKey: srtUidByBookKey,
+          progressByKey: progressByKey,
+          locks: locks,
+        ),
+    ];
+  }
+
+  /// [listBooks] 的一行：DB 批查结果 + 这本书的文件探测结果 [probe] → 清单条目。
+  RemoteBookInfo _bookInfo(
+    EpubBookRow r,
+    HostBookProbe probe, {
+    required Map<String, OverrideTitleEntry> overrideTitles,
+    required Map<String, MangaReaderOverrideRow> readerOverridesByUid,
+    required Set<String> audiobookKeys,
+    required Set<String> subtitleBodyKeys,
+    required Map<String, List<String>> tagsByBookKey,
+    required Map<String, Map<String, int>> tagAddedAtByKey,
+    required Map<String, Map<String, int>> tagTombByKey,
+    required Map<String, RemoteCollectionMembership> membership,
+    required Map<String, String> srtUidByBookKey,
+    required Map<String, ({int percent, int updatedAtMs})> progressByKey,
+    required MediaLockSnapshot locks,
+  }) {
+    final String? coverPath = probe.coverPath;
+    final BookFormat format = BookFormat.parseOrEpub(r.format);
+    return RemoteBookInfo(
+      title: r.title,
+      // BUG-1488：只在真改过名时非 null（toJson 亦只在与 title 不同时写键）。
+      displayTitle: overrideTitles[r.bookKey]?.title,
+      // BUG-1502：改名时刻随行，让 client 端做 LWW 而不是 insert-if-absent。
+      displayTitleAt: overrideTitles[r.bookKey]?.updatedAt ?? 0,
+      bookKey: r.bookKey,
+      // hasContent（EPUB 内容树可导出）按 format 门控（互联完整支持批次）：由
+      // EPUB 转化来的漫画行 extractDir 里仍留着 EPUB 解压树，旧判据会把它当可
+      // 下载 EPUB 打包——把整套页图 + manga.json 塞进 zip，client 落地成一本
+      // 夹带全部页图的「文字书」、漫画身份静默丢失（坏包）。漫画内容走
+      // hasMangaContent + 漫画包通道。
+      // 在线小说占位书（LNReader）不算可下载内容：对端收到的会是一本补不全的
+      // 书（见 isLnReaderOnlineBookMetadata）。
+      hasContent: probe.hasContent,
+      format: format.dbValue,
+      hasMangaContent: probe.hasMangaContent,
+      // 反馈 Jq1_ujHa4t：PDF 此前在这里没有任何内容位（hasContent 是 EPUB 判据、
+      // 恒 false），对端书架按内容位过滤 → host 上的 PDF 在对端整本隐形，同步还报
+      // 「无新增」。PDF 原件在盘上即可下载（包 = 原件，见 pdf_sync_package.dart）。
+      hasPdfContent: probe.hasPdfContent,
+      // BUG-2474：在线书架条目（Mihon / Aidoku）根目录只有占位 manga.json，
+      // hasMangaContent 恒 false，但它按章下载的页图就在 <extractDir>/chapters/
+      // 下——标 hasMangaChapters，对端以多章在线作品收下、逐章从这里拉。清单级
+      // 只做一次目录列举（廉价判据），逐章完整性在按章端点上把关。
+      // 本机运行时能按需取页的在线条目（[OnlineMangaHostReader]）章章可读，
+      // 一章没下也要出现在对端——iPhone 没有在线源宿主，互联是它读这些漫画的
+      // 唯一途径。
+      hasMangaChapters:
+          format == BookFormat.manga &&
+          (probe.hasMangaChapterDirs ||
+              _servesOnlineMangaChapters(_onlineMangaReader, r)),
+      mangaReadingMode: r.mangaReadingMode,
+      mangaReaderOverrides: _readerOverrideMap(readerOverridesByUid[r.uid]),
+      mangaReaderOverrideUpdatedAt: readerOverridesByUid[r.uid]?.updatedAt ?? 0,
+      mangaReaderOverrideDeleted: readerOverridesByUid[r.uid]?.deleted ?? false,
+      hasEmbeddedCover: coverPath != null,
+      coverPath: coverPath,
+      hasAudiobook: audiobookKeys.contains(r.bookKey),
+      isSubtitleBookBody: subtitleBodyKeys.contains(r.bookKey),
+      tags: tagsByBookKey[r.bookKey] ?? const <String>[],
+      tagsAddedAt: tagAddedAtByKey[r.bookKey] ?? const <String, int>{},
+      tagTombstones: tagTombByKey[r.bookKey] ?? const <String, int>{},
+      // 合集成员键（v83）：epub 成员行 entryKey = 本机 epub_books.uid，书侧组键
+      // 用 r.uid（§2.3 任务5.1 的 wire 面貌仍是 bookKey，与本地键域无关）。
+      // epub|bookKey 兜底：sync 落地的透传行（书当时还没下载）在下一轮 apply
+      // 收敛前仍以对端 bookKey 为键，窗口期内按 bookKey 也查一把，归属不闪断。
+      // srt-backed 有声书兜底：该书以 srt|uid 入合集时，epub 两键都 miss，
+      // 回退查 srt|uid（BUG-812）。散卡（三键都无）= null。
+      collection:
+          membership[MediaKind.epub.compositeKey(r.uid)] ??
+          membership[MediaKind.epub.compositeKey(r.bookKey)] ??
+          (srtUidByBookKey[r.bookKey] != null
+              ? membership[MediaKind.srt.compositeKey(
+                  srtUidByBookKey[r.bookKey]!,
+                )]
+              : null),
+      progressPercent: progressByKey[r.bookKey]?.percent ?? 0,
+      progressUpdatedAtMs: progressByKey[r.bookKey]?.updatedAtMs ?? 0,
+      // client 书架排序要与本地条目同一把尺子：不下发入库时刻，对端只能给远端
+      // 占位卡造负数假戳，「导入时间」/「最近阅读」两档下远端书恒沉底。
+      importedAt: r.importedAt,
+      // BUG-1119：EpubBooks 行都是可下载 EPUB，显式标 epub（srt-backed 有声书
+      // 的 EPUB 卡语义仍是 epub——与本地 _bookMediaKind 按 hoshi://book/ 身份判
+      // epub 一致，勿标成 srt 造成两端同书异 kind）。standalone SRT 书（身份
+      // hoshi://srtbook/<uid>，无 EpubBooks 行）今天不在本清单，进清单是独立
+      // follow-up。
+      kind: MediaKind.epub,
+      locked: locks.isBookLocked(r.bookKey),
+    );
   }
 
   Map<String, Object?> _readerOverrideMap(MangaReaderOverrideRow? row) {
@@ -256,6 +285,7 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
       final File out = File(p.join(tmpDir.path, '${row.bookKey}.epub'));
       final bool ok = await repackageMangaBook(row.extractDir, out.path);
       if (!ok) {
+        await _deleteTempDir(tmpDir);
         throw StateError('manga book has no exportable content: $title');
       }
       return out;
@@ -265,7 +295,7 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
     // 返回的文件，不能把书目录里的原件直接交出去。扩展名用 `.pdf`，端点按扩展名给
     // Content-Type；接收方按内容嗅探分流，不看扩展名。
     if (format == BookFormat.pdf) {
-      if (!hasExportablePdfContent(row)) {
+      if (!await hasExportablePdfContentAsync(row)) {
         throw StateError('pdf book has no file on disk: $title');
       }
       final Directory tmpDir = await Directory.systemTemp.createTemp(
@@ -276,9 +306,8 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
       return out;
     }
     if (format != BookFormat.epub ||
-        isLnReaderOnlineBookMetadata(row.sourceMetadata) ||
-        resolveExtractedEpubRoot(row.extractDir) == null) {
-      // EPUB 树缺失：与旧行为一致抛 StateError → 404。
+        isLnReaderOnlineBookMetadata(row.sourceMetadata)) {
+      // 不是 EPUB / 在线小说占位书：与旧行为一致抛 StateError → 404。
       throw StateError('book has no exportable EPUB root: $title');
     }
 
@@ -288,9 +317,12 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
     // 文件名用 title 但扩展名用 .epub，保证重导入时 fileName 是合法 epub 名。
     final String safeBasename = '${row.bookKey}.epub';
     final File out = File(p.join(tmpDir.path, safeBasename));
+    // EPUB 根目录的判定与打包在同一个后台 isolate 里（repackageExtractedEpub）：
+    // 找不到根 = 没有可导出的 EPUB 树，与旧行为一致抛 StateError → 404。
     final bool ok = await repackageExtractedEpub(row.extractDir, out.path);
     if (!ok) {
-      throw StateError('repackage produced no output for book: $title');
+      await _deleteTempDir(tmpDir);
+      throw StateError('book has no exportable EPUB root: $title');
     }
     return out;
   }
@@ -577,10 +609,19 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
     EpubBookRow? row = await _db.getEpubBook(id);
     row ??= _findBookByTitleOrKey(await _db.getAllEpubBooks(), id);
     if (row == null) return null;
-    return resolveEpubCoverFilePath(
+    return resolveEpubCoverFilePathAsync(
       extractDir: row.extractDir,
       coverPath: row.coverPath,
     );
+  }
+
+  /// 导出失败时清掉刚建的临时目录（best-effort）。
+  Future<void> _deleteTempDir(Directory dir) async {
+    try {
+      await dir.delete(recursive: true);
+    } on FileSystemException {
+      // 随系统临时目录策略清理。
+    }
   }
 }
 

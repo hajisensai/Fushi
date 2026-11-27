@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:isolate';
 import 'package:archive/archive_io.dart';
 import 'package:fushi_engine/media/manga/manga_importer.dart';
 import 'package:fushi_engine/utils/archive/native_zip.dart';
@@ -48,7 +49,16 @@ MokuroPayload? readExportableMangaPayload(String extractDir) {
 /// [extractDir] 含完整漫画内容时打整树 zip 到 [outputPath]，
 /// 返回 true；空合集 / 缺页 / 无效元数据不写文件返回 false——与
 /// `repackageExtractedEpub` 的「false = 无可打包内容」语义对称。
-Future<bool> repackageMangaBook(String extractDir, String outputPath) async {
+///
+/// 判据（整份 `manga.json` 解析 + 逐页核对）与整树打包都在一次性后台 isolate 里做，
+/// 理由同 `repackageExtractedEpub`。
+Future<bool> repackageMangaBook(String extractDir, String outputPath) =>
+    Isolate.run(
+      () => _repackageMangaBookSync(extractDir, outputPath),
+      debugName: 'repackage-manga',
+    );
+
+bool _repackageMangaBookSync(String extractDir, String outputPath) {
   if (!hasExportableMangaContent(extractDir)) return false;
   final Directory dir = Directory(extractDir);
   final ZipFileEncoder encoder = ZipFileEncoder();
