@@ -117,6 +117,14 @@ extension _VideoPortrait on _VideoFushiPageState {
         onLookup: _handleSubtitleListLookup,
         onTapCue: _handleSubtitleJumpTap,
         emptyHint: t.video_portrait_no_cue,
+        // 副字幕小字（拍板台 jJt0PSb1LO）：同一时刻可能有多条活动副字幕，按行拼。
+        secondaryText: () => controller.secondaryActiveCues
+            .map((AudioCue c) => c.text.trim())
+            .where((String text) => text.isNotEmpty)
+            .join('\n'),
+        secondaryObscureMode: appModel.videoSecondarySubtitleObscureMode,
+        secondaryRevealOnInteraction:
+            appModel.videoSecondarySubtitleObscureReveal,
         fontFamily: appModel.subtitleFontFamily,
         fontSize: 22 * _videoUiScale,
       ),
@@ -221,7 +229,12 @@ extension _VideoPortrait on _VideoFushiPageState {
     );
   }
 
-  /// 底部纯图标浮动工具栏：上一句 / 播放 / 下一句 / 循环本句 / 收藏本句。
+  /// 底部纯图标浮动工具栏（拍板台 jJt0PSb1LO 设计图 A）：常驻 上一句 / 播放 / 下一句 /
+  /// 循环本句 / 切字幕轨 / 转横屏；收藏本句、播放设置、字幕工作台、副字幕选择按这个
+  /// 优先级排，宽度够就平铺，放不下的收进「⋯」（360dp 手机恰好 6 颗 +「⋯」）。
+  ///
+  /// 转横屏常驻在这里，不再只藏在点视频才出来的控件栏里（视频条宽 < 480 时控件栏是
+  /// mini 档、没有按钮行，用户根本找不到它），也不依赖系统「自动旋转」。
   Widget _portraitToolbar(VideoPlayerController controller) {
     return ListenableBuilder(
       listenable: Listenable.merge(<Listenable>[
@@ -262,11 +275,52 @@ extension _VideoPortrait on _VideoFushiPageState {
               onPressed: _toggleLoopCurrentCue,
             ),
             FushiToolbarItem(
+              key: const ValueKey<String>('video-portrait-subtitle-track'),
+              icon: FushiIcons.subtitles,
+              label: t.video_control_subtitle_track,
+              // 与控制条「字幕轨」按钮同一入口：开「字幕」面板（手机竖屏是贴底面板）。
+              onPressed: () => unawaited(_showSubtitleSourceMenu(controller)),
+            ),
+            FushiToolbarItem(
+              key: const ValueKey<String>('video-portrait-rotate'),
+              icon: FushiIcons.screenRotation,
+              label: t.video_control_rotate_landscape,
+              // 与控制条转屏槽位同一实现：锁横屏，开着「记住每部作品的方向」时落库。
+              onPressed: _toggleVideoScreenOrientation,
+            ),
+          ],
+          foldable: <FushiToolbarItem>[
+            FushiToolbarItem(
               key: const ValueKey<String>('video-portrait-favorite'),
               icon: FushiIcons.star,
               label: ShortcutAction.videoToggleFavoriteSentence.label,
               selected: favorited,
               onPressed: () => unawaited(_toggleFavoriteCurrentCue()),
+            ),
+            FushiToolbarItem(
+              key: const ValueKey<String>('video-portrait-settings'),
+              icon: FushiIcons.settings,
+              label: t.video_control_settings,
+              onPressed: _showPlayerSettings,
+            ),
+            if (_subtitleStudioAvailable(controller))
+              FushiToolbarItem(
+                key: const ValueKey<String>('video-portrait-subtitle-studio'),
+                icon: FushiIcons.transcribe,
+                label: t.video_subtitle_studio_title,
+                onPressed: _subtitleLoadingShown
+                    ? null
+                    : () => unawaited(_openSubtitleStudio(controller)),
+              ),
+            FushiToolbarItem(
+              key: const ValueKey<String>('video-portrait-secondary-subtitle'),
+              icon: FushiIcons.language,
+              label: t.video_secondary_subtitle_sources,
+              // 开「字幕」面板并把「副字幕」可展开区直接展开。
+              onPressed: () => _showPlayerSettings(
+                initialCategory: 'subtitle',
+                expandSecondarySubtitles: true,
+              ),
             ),
           ],
         );

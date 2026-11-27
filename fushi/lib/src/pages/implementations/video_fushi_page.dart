@@ -2669,6 +2669,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 「音频轨」「字幕轨」按钮把轨切换收进设置面板对应 tab，靠它把面板直接开在目标分类。
   String? _settingsInitialCategory;
 
+  /// 下次构建「字幕」面板时是否把「副字幕」可展开区直接展开（竖屏工具栏「⋯」里的
+  /// 「副字幕」入口用，拍板台 jJt0PSb1LO）。每次开面板都由 [_showPlayerSettings] 重写。
+  bool _expandSecondarySubtitlesOnOpen = false;
+
   final ValueNotifier<_VideoControlPopoverKind?> _videoControlPopover =
       ValueNotifier<_VideoControlPopoverKind?>(null);
   final Map<String, LayerLink> _controlPopoverItemLinks = <String, LayerLink>{};
@@ -14017,6 +14021,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   void _showPlayerSettings({
     VideoControlSlot? sourceSlot,
     String? initialCategory,
+    bool expandSecondarySubtitles = false,
   }) {
     // TODO-1351：记住目标分类（音频轨/字幕轨按钮传 'audio'/'subtitle'，设置按钮传 null），
     // 供 _buildVideoQuickSettingsSheet 读；面板 didUpdateWidget 据其变化跳分类。
@@ -14027,6 +14032,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _ => _VideoSidePanelKind.settings,
     };
     _settingsInitialCategory = initialCategory;
+    _expandSecondarySubtitlesOnOpen = expandSecondarySubtitles;
     _showVideoSidePanel(kind, sourceSlot: sourceSlot);
   }
 
