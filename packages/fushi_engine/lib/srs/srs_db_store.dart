@@ -2833,44 +2833,73 @@ class SrsDbStore implements SrsSync2Host {
   }
 
   Future<SrsNoteView?> note(String id) async =>
-      (await _materializeNotes(<String>[id]))[id];
+      (await _noteViews(<String>[id]))[id];
 
-  /// 一组笔记的物化（身份记录 / 修改记录先查预读）：整组一次 FFI 调用（字段寄存器内核）。
-  /// 不存在的 ID 映射到 null。
-  Future<Map<String, SrsNoteView?>> _materializeNotes(List<String> ids) async {
-    final Map<String, SrsNoteView?> out = <String, SrsNoteView?>{};
-    final List<SrsEntitySource> src = <SrsEntitySource>[];
-    for (final String id in ids) {
-      out[id] = null;
-      final _EntityRow? row = await _entityRow(id);
-      if (row == null) continue;
-      src.add(
-        SrsEntitySource(
-          id,
-          row.payloadJson,
-          await _editItems(SrsEntityKind.note, id),
-        ),
-      );
+  /// 一组笔记的物化（内核 `read note_views`，native/fushi_fsrs/src/store/gen4/cmd/reads.rs）：寄存器与视图在内核里就地
+  /// 算好，修改行原文按笔记首尾相接跟着带回来（[SrsNoteView.edits] 要；Dart 侧不解析，用到时才解）。以前是 `read
+  /// entities` + `read edits` 读出来、再整块送回内核 `ffsrs_materialize` 物化——每条笔记几十 KB 的修改行出内核、回内核、
+  /// 再解析一遍（BUG-5572）。不存在 / 不是笔记的 ID 映射到 null；别名成员经回包的 `canon` 对回请求里的 ID。
+  Future<Map<String, SrsNoteView?>> _noteViews(List<String> ids) async {
+    final Map<String, SrsNoteView?> out = <String, SrsNoteView?>{
+      for (final String id in ids) id: null,
+    };
+    final SrsReadResult res = await _read('note_views', <String, Object?>{
+      'ids': ids,
+    });
+    final SrsColumns t = res.table;
+    final SrsColumns? e = res.tables['e'];
+    final SrsColumns? f = res.tables['f'];
+    if (e == null || f == null) {
+      throw StateError('note_views: reply has no edit / field table');
     }
-    final List<SrsNoteView> views = srsMaterializeNotes(src);
-    for (int i = 0; i < src.length; i++) {
-      out[src[i].id] = views[i];
+    final SrsStringColumn id = t.strings('id');
+    final SrsStringColumn v = t.strings('v');
+    final SrsIntColumn n = t.ints('n');
+    final SrsIntColumn nf = t.ints('nf');
+    final SrsStringColumn j = e.strings('j');
+    final SrsIntColumn st = e.ints('st');
+    final SrsStringColumn fk = f.strings('k');
+    final SrsStringColumn fs = f.strings('s');
+    final Map<String, _KernelNote> byId = <String, _KernelNote>{};
+    int at = 0;
+    int fAt = 0;
+    for (int i = 0; i < t.rows; i++) {
+      final int end = at + n[i];
+      final int fEnd = fAt + nf[i];
+      byId[id[i]] = (
+        edits: <SrsEditItem>[
+          for (int k = at; k < end; k++)
+            SrsEditItem.stored(j.bytes(k), st.at(k)),
+        ],
+        fields: <String, String>{for (int k = fAt; k < fEnd; k++) fk[k]: fs[k]},
+        v: v.bytes(i),
+      );
+      at = end;
+      fAt = fEnd;
+    }
+    for (final MapEntry<String, _KernelNote> r in srsRowsByRequest(
+      byId,
+      ids,
+      res.json,
+    ).entries) {
+      out[r.key] = srsNoteViewOfKernel(
+        r.key,
+        r.value.edits,
+        (_utf8Json.convert(r.value.v)! as Map).cast<String, Object?>(),
+        fields: r.value.fields,
+      );
     }
     return out;
   }
 
-  /// 一组笔记的物化视图（含已删除的；不存在的 ID 映射到 null；按输入顺序去重）。按 ID 分块
-  /// 预读身份记录 / 修改记录 / 服务器时刻，每块几次往返——批量读笔记的地方（导出、改标签、
-  /// 更改笔记类型、旧 Lapis 迁移）不再每条笔记各查三次（BUG-3543）。
+  /// 一组笔记的物化视图（含已删除的；不存在的 ID 映射到 null；按输入顺序去重）。按 ID 分块，每块一条内核读命令
+  /// （[_noteViews]）——批量读笔记的地方（导出、改标签、更改笔记类型、旧 Lapis 迁移）不再每条笔记各查几次（BUG-3543）。
   Future<Map<String, SrsNoteView?>> notes(Iterable<String> ids) async {
     final Map<String, SrsNoteView?> out = <String, SrsNoteView?>{};
     final Set<String> wanted = ids.toSet();
     srsDebugMaxNotesPerRead = max(srsDebugMaxNotesPerRead, wanted.length);
     for (final List<String> chunk in _chunks(wanted)) {
-      final _RefreshPrefetch pre = _RefreshPrefetch();
-      await _prefetchEntities(pre, chunk);
-      await _prefetchEdits(pre, SrsEntityKind.note, chunk);
-      out.addAll(await _readWith(pre, () => _materializeNotes(chunk)));
+      out.addAll(await _noteViews(chunk));
     }
     return out;
   }
@@ -6585,6 +6614,16 @@ typedef _PreviewRaw = ({
 
 /// 一条身份记录（`read` 的 `entities`）。
 typedef _EntityRow = ({String id, String kind, String payloadJson});
+
+/// `read note_views` 的一条笔记（[SrsDbStore._noteViews]）：修改行、字段正文、视图 JSON（不含字段）的原文。
+typedef _KernelNote = ({
+  List<SrsEditItem> edits,
+  Map<String, String> fields,
+  Uint8List v,
+});
+
+/// UTF-8 字节直接解成 JSON（不先建 Dart 字符串；[SrsDbStore._noteViews] 解内核算好的笔记视图）。
+final Converter<List<int>, Object?> _utf8Json = utf8.decoder.fuse(json.decoder);
 
 /// 一次批量读的预读（见 [SrsDbStore._readWith]）：只在那次读的 Zone 里可见。
 /// 各 Map 里「有键」= 已预读（值可能为空 / null）；没键的照常查库。
