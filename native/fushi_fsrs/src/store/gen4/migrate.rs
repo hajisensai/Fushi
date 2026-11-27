@@ -67,6 +67,7 @@ use std::time::Instant;
 use rusqlite::{Connection, ErrorCode, OpenFlags, OptionalExtension};
 use serde_json::{Map, Value, json};
 
+use super::diag;
 use super::dryrun::{
     self, CANCELLED, DEFAULT_EXAMPLES, Mode, SPACE_MARGIN, Stop, file_len, mb, now_ms, overall,
     peak_mem_mb, profile_blockers, profile_stages, secs, write_json_atomically,
@@ -820,7 +821,7 @@ pub(crate) fn carry_library_meta(src: &Connection, dst: &Connection) -> Result<u
 }
 
 /// 拿着换代锁、还没有新代库：第 2 步后半起。
-fn migrate_locked(dir: &Path, mut opts: Options<'_>) -> Result<Outcome, String> {
+fn migrate_locked(dir: &Path, opts: Options<'_>) -> Result<Outcome, String> {
     let legacy = dir.join(LEGACY_FILE);
     let tmp = dir.join(GEN4_TEMP);
     let version = match probe_schema(&legacy) {
@@ -873,12 +874,35 @@ fn migrate_locked(dir: &Path, mut opts: Options<'_>) -> Result<Outcome, String> 
         return Ok(blocked(BlockCode::Busy, BLOCKED_BUSY));
     };
     let copy = dir.join(PREPARE_COPY);
-    let out = prepare_and_stage(dir, &held, version, &mut opts);
+    // 最近一次报出的进度：出错时写进错误报告（哪一步、第几个 profile）。
+    let last: Cell<Option<(Step, u64, u64)>> = Cell::new(None);
+    let out = {
+        let progress = &mut *opts.progress;
+        let mut tracked = |s: Step, done: u64, total: u64| {
+            last.set(Some((s, done, total)));
+            progress(s, done, total);
+        };
+        let mut tracked_opts = Options {
+            caches: opts.caches,
+            batch: opts.batch,
+            now_ms: opts.now_ms,
+            stop: opts.stop,
+            progress: &mut tracked,
+            new_device: opts.new_device,
+        };
+        prepare_and_stage(dir, &held, version, &mut tracked_opts)
+    };
     if !held.is_autocommit() {
         // 没走到封存（中止、拦下、出错、叫停）：放开写锁，什么都没写。
         let _ = held.execute_batch("ROLLBACK");
     }
     drop(held);
+    // 出错（不是中止、拦下、叫停）：诊断写进报告（[write_error_report]），用户在出错页上照样能把它发给开发者。
+    if let Err(e) = &out {
+        if e != CANCELLED && !opts.stop.stopped() {
+            write_error_report(dir, opts.now_ms, last.get(), e);
+        }
+    }
     // 补完副本不论结论都删（提交了的已经封存原件、记的是原件的指纹；没提交的下次从原件重拷）。
     let _ = seal::remove_sqlite_files(&copy);
     // 没提交的一律删临时文件（中止、拦下、叫停、出错）：诊断全在报告里，临时文件是旧库内容的派生副本，留着既占空间
@@ -1027,6 +1051,8 @@ fn with_snapshot(
     // 空库（一个 profile 都没有）与全过才提交；`blocked` 在前提里已经拦过，这里出现只能是前提与阶段判得不一样（bug）。
     if verdict != "pass" && verdict != "empty" {
         drop(staged.dst);
+        // 库与运行环境（SQLite / 内核版本、user_version、每张表的 DDL 与行数）：定位根因要它，合成库复现不出时尤其。
+        report.insert("environment".into(), diag::environment(&src));
         finish(src, opts.stop);
         let (peak1, _) = peak_mem_mb();
         report.insert("peakMb".into(), json!(mb(peak1)));
@@ -1108,6 +1134,52 @@ fn with_snapshot(
 struct Staged {
     dst: Connection,
     profiles_json: Vec<Value>,
+}
+
+/// 迁移出错（IO、SQL 报错……，不是对拍不过）时的报告：`verdict = "error"`，带错误原文、出错时的步骤与进度、旧库的
+/// 身份与环境（[diag::environment]）、每个 profile 在各表里的行数。它不是「中止」报告（[status] 只认 `aborted`）：
+/// 出错照旧按「要迁移」报、可以直接重试；报告只是让出错页能把诊断发给开发者。写不出来不影响结论（报错原文还在
+/// 返回值与日志里）。
+fn write_error_report(dir: &Path, started_ms: i64, step: Option<(Step, u64, u64)>, error: &str) {
+    let mut report = Map::new();
+    report.insert("version".into(), json!(REPORT_VERSION));
+    report.insert("verdict".into(), json!("error"));
+    report.insert("startedAtMs".into(), json!(started_ms));
+    report.insert("error".into(), json!(error));
+    report.insert(
+        "step".into(),
+        step.map_or(
+            Value::Null,
+            |(s, done, total)| json!({"step": s.wire(), "done": done, "total": total}),
+        ),
+    );
+    report.insert("oldBytes".into(), json!(file_len(&dir.join(LEGACY_FILE))));
+    match dryrun::open_legacy(&dir.join(LEGACY_FILE)) {
+        Ok(c) => {
+            report.insert(
+                "legacyIdentity".into(),
+                seal::legacy_identity(&c).map_or_else(|e| json!({ "error": e }), |i| json!(i)),
+            );
+            report.insert("environment".into(), diag::environment(&c));
+            report.insert(
+                "profiles".into(),
+                match legacy::profiles(&c) {
+                    Ok(ps) => Value::Array(
+                        ps.iter()
+                            .map(|p| json!({"profile": p, "tableCounts": diag::profile_counts(&c, p)}))
+                            .collect(),
+                    ),
+                    Err(e) => json!({ "error": e }),
+                },
+            );
+            let _ = c.execute_batch("ROLLBACK");
+        }
+        Err(e) => {
+            report.insert("environment".into(), json!({ "error": e }));
+        }
+    }
+    report.insert("finishedAtMs".into(), json!(now_ms()));
+    let _ = write_json_atomically(&dir.join(REPORT_FILE), &Value::Object(report));
 }
 
 /// 逐 profile 跑 `dryrun::profile_stages`（[Mode::Migration]），把阶段名换成 [Step] 报进度。某个 profile 出错（不是

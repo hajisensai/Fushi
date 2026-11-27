@@ -270,7 +270,10 @@ class _MigrationPanel extends StatelessWidget {
         reason.isNotEmpty;
     // 不能开始（主库正在关，或启动还没初始化完）：按钮置灰；只有真的在关才说「正在关闭数据库」。
     final bool blockedStart = !running && !controller.canStart;
-    final String? report = controller.failureFor(previousFailure)?.reportPath;
+    // 中止的报告（内核判定），或这次出错时内核写下的错误报告：两种都给「发给开发者」。
+    final String? report =
+        controller.failureFor(previousFailure)?.reportPath ??
+        controller.errorReportPath;
     final List<String> details = <String>[
       if (!running && showReason) reason,
       if (!running && error != null) '$error',

@@ -52,6 +52,7 @@ use super::compare::{
     Pair, STAT_COLS, Skip, rows_of, texts,
 };
 use super::derive::{Index, R_CONFLICT, R_WINNER, Ref, Settled, body_of};
+use super::diag;
 use super::import::{Imported, import_legacy_checked};
 use super::ingest::{Settle, ingest_settle};
 use super::legacy;
@@ -64,6 +65,7 @@ use crate::gen4::heritage::fingerprint;
 use crate::gen4::op::Body4;
 use crate::gen4::stamp::{HeritageStamp, StampHlc};
 use crate::registers::{StoredEdit, judge_register};
+use crate::store::caches::StatsProbe;
 use crate::store::sync2::collection_of;
 use crate::store::sync2::config::default_deck_id;
 use crate::sync2::dvv::Dvv;
@@ -86,7 +88,9 @@ use crate::sync2::vv::OpId;
 ///   再没改回来的日志结果，基准改回后重建，逐条佐证、不计入判定（反馈 RhMpA6bn8v）。
 /// - 6：`oldSideStaleResults` 也收协议 3 停在非代表副本上的重复日志（换成新代的最小操作号代表，PR #4245），多一项
 ///   `swaps`（其中换代表的条数），这类例子写成「日志 卡 op: M -> W keys: [换了的键] … res: …」。
-pub const REPORT_VERSION: i64 = 6;
+/// - 7：对拍不过的 profile 报告加 `statsTrace`（统计行差异逐条摊开，`diag.rs`）与 `tableCounts`（本 profile 各表行数）；
+///   `idTrace` 也摊开 `existingCachesVsRebuilt` 的例子，统计行按日志去重（反馈 QW3kL_jEQF）。
+pub const REPORT_VERSION: i64 = 7;
 
 /// `knownDifferences.entries` 最多列几条（只有 ID；超出的只计数，`truncated` 为真）。
 pub const KNOWN_ENTRIES: usize = 5_000;
@@ -653,12 +657,16 @@ pub(crate) fn profile_stages(
     let mut mark = |what: &str| {
         peaks.insert(what.into(), json!(mb(peak_mem_mb().0)));
     };
+    // 冻结重建里 Anki 副本去重的落选者（只是诊断：对拍不过时 `statsTrace` 用，不改任何结果）。
+    let mut probe = StatsProbe::default();
     let (diff, baseline, collided, known) = compare::against_protocol_3(
         src,
         profile,
         t,
         col,
-        &mut |src: &Connection, profile: &str, cfg: &str| old_caches(src, profile, cfg, &stale),
+        &mut |src: &Connection, profile: &str, cfg: &str| {
+            old_caches(src, profile, cfg, &stale, &mut probe)
+        },
         &skip,
     )?;
     mark("parity");
@@ -675,9 +683,13 @@ pub(crate) fn profile_stages(
             CacheBaseline::Unavailable(e) => json!({ "unavailable": e }),
         },
     );
+    let mut existing_diff: Diff = Diff::new();
     if let Some(rebuilt) = baseline.rows() {
-        let stale = existing_vs_rebuilt(src, profile, rebuilt, &skip)?;
-        out.insert("existingCachesVsRebuilt".into(), diff_json(&stale, opts));
+        existing_diff = existing_vs_rebuilt(src, profile, rebuilt, &skip)?;
+        out.insert(
+            "existingCachesVsRebuilt".into(),
+            diff_json(&existing_diff, opts),
+        );
     }
     mark("existingCaches");
     out.insert("compareS".into(), json!(secs(started)));
@@ -762,7 +774,8 @@ pub(crate) fn profile_stages(
             Err(e) => json!({ "error": e }),
         };
     }
-    let mut trace_ids = example_ids(&[&diff, &canonical_diff], opts.examples);
+    // 旧库现成缓存对冻结重建的差异（协议 3 ID）也摊开：现成的有、重建的没有的行，`p3` 里看得到它们的日志行与归属。
+    let mut trace_ids = example_ids(&[&diff, &canonical_diff, &existing_diff], opts.examples);
     trace_ids.extend(unverified.unwrap_or_default());
     out.insert(
         "idTrace".into(),
@@ -773,9 +786,29 @@ pub(crate) fn profile_stages(
             })
             .unwrap_or_else(|e| json!({ "error": e })),
     );
-    drop(baseline);
     mark("idTrace");
     let failing = failing || !canonical_diff.is_empty();
+    // 统计行差异逐条摊开（反馈 QW3kL_jEQF / hX_SnLpapZ：两侧统计归属不同、合成库复现不出时，靠它带回冻结规则下的归属组
+    // 与每条日志的去向）。只在不过时做：要多读旧库与按冻结规则重新分组。
+    if failing {
+        out.insert(
+            "statsTrace".into(),
+            diag::stats_trace(
+                src,
+                profile,
+                t,
+                col,
+                &canon,
+                baseline.rows(),
+                &probe,
+                &[&diff, &canonical_diff, &existing_diff],
+                opts.examples,
+            ),
+        );
+        out.insert("tableCounts".into(), diag::profile_counts(src, profile));
+    }
+    drop(baseline);
+    mark("statsTrace");
     out.insert("canonical".into(), diff_json(&canonical_diff, opts));
     out.insert(
         "canonicalCounts".into(),
@@ -1056,6 +1089,7 @@ fn old_caches(
     profile: &str,
     cfg: &str,
     stale: &[Stale],
+    probe: &mut StatsProbe,
 ) -> Result<CacheRows, OldCachesError> {
     old_caches_with(
         src,
@@ -1063,7 +1097,7 @@ fn old_caches(
         cfg,
         stale,
         &mut |src: &Connection, profile: &str, cfg| {
-            crate::store::caches::rebuild(src, profile, cfg).map(|_| ())
+            crate::store::caches::rebuild_probed(src, profile, cfg, Some(&mut *probe)).map(|_| ())
         },
     )
 }
@@ -2046,7 +2080,7 @@ pub(crate) mod tests {
         );
         // 单设备、无改名写入者：没有按类判定的差异，报告里照样有这一节（版本 3）。
         let k = &p["knownDifferences"];
-        assert_eq!(r["version"], 6);
+        assert_eq!(r["version"], 7);
         assert_eq!(
             (&k["total"], &k["unproven"]),
             (&json!(0), &json!(0)),
@@ -2338,7 +2372,8 @@ pub(crate) mod tests {
             .unwrap()
         };
         let n = count(&c);
-        let (notes, cards, stats) = old_caches(&c, P, &cfg(), &[]).unwrap();
+        let (notes, cards, stats) =
+            old_caches(&c, P, &cfg(), &[], &mut StatsProbe::default()).unwrap();
         assert_eq!((notes.len(), cards.len(), stats.len()), (2, 4, 2));
         assert_eq!(count(&c), n);
         let temps: i64 = c
