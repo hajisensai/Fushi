@@ -53,12 +53,17 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_dropdown.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart'
+    show AdaptiveSettingsSection;
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart'
+    show FushiAppleColors, appleColorsOf;
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
@@ -2022,86 +2027,110 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
         ),
       ],
     );
-    // ③ 状态块：阶段轨 + 状态行 + 覆盖率 + 进度条，色块随阶段换（见
-    // [_statusColors]）。
+    // ③ 状态块：阶段轨 + 状态行 + 覆盖率 + 进度条。MD3 是随阶段换色的色块（见
+    // [_statusColors]）；Apple 与上面两组一样是 inset grouped 分组卡，不画块色，
+    // 文字取系统标签色，只有状态图标按阶段着色（失败红 / 完成绿 / 其余强调色）。
+    final bool glass = isGlassDesign(context);
     final FushiCoverBlockColors statusColors = _statusColors(context);
-    final Widget statusCard = FushiStaggeredEntrance(
-      index: 2,
-      child: AnimatedContainer(
-        key: const ValueKey<String>('asr-transcribe-status-card'),
-        duration: fushiMotionDuration(context, FushiMotion.medium),
-        curve: FushiMotion.standard,
-        decoration: ShapeDecoration(
-          color: statusColors.container,
-          shape: fushiCoverBlockShape(context, FushiCoverBlockSize.half),
+    final Color? statusForeground = glass ? null : statusColors.onContainer;
+    final Color statusIconColor;
+    if (glass) {
+      final FushiAppleColors apple = appleColorsOf(context);
+      statusIconColor = switch (_phase) {
+        _Phase.error => apple.destructive,
+        _Phase.finished => apple.success,
+        _ => apple.accent,
+      };
+    } else {
+      statusIconColor = statusColors.onContainer;
+    }
+    final Widget statusContent = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        AsrPipelineStageRail(
+          states: _pipelineStates(),
+          foreground: statusForeground,
         ),
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+        const SizedBox(height: 12),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            AsrPipelineStageRail(
-              states: _pipelineStates(),
-              foreground: statusColors.onContainer,
-            ),
-            const SizedBox(height: 12),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                FushiIcon(
-                  _statusIcon(),
-                  size: 20,
-                  color: statusColors.onContainer,
+            FushiIcon(_statusIcon(), size: 20, color: statusIconColor),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                _statusLine(),
+                key: const ValueKey<String>('asr-transcribe-status'),
+                // 色块上的字跟块配对前景（fushiType 自带页面前景，
+                // HBK-AUDIT-022）。
+                style: context.fushiType.bodyMedium.tabular.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: statusForeground,
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    _statusLine(),
-                    key: const ValueKey<String>('asr-transcribe-status'),
-                    // 色块上的字跟块配对前景（fushiType 自带页面前景，
-                    // HBK-AUDIT-022）。
-                    style: context.fushiType.bodyMedium.tabular.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: statusColors.onContainer,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            FushiAnimatedSize(
-              duration: motion.spatialDefault.duration,
-              curve: motion.spatialDefault.curve,
-              alignment: Alignment.topCenter,
-              child: _phase == _Phase.finished && _lastCoverage != null
-                  ? Padding(
-                      padding: const EdgeInsets.only(top: 8, left: 32),
-                      child: AsrCoverageSummary(
-                        coverage: _lastCoverage!,
-                        caption: t.audiobook_transcribe_coverage_last,
-                        foreground: statusColors.onContainer,
-                      ),
-                    )
-                  : const SizedBox(width: double.infinity),
-            ),
-            AnimatedSize(
-              duration: motion.spatialDefault.duration,
-              curve: motion.spatialDefault.curve,
-              alignment: Alignment.topCenter,
-              child: showProgressBar
-                  ? Padding(
-                      padding: const EdgeInsets.only(top: 12),
-                      // 百分比与补间都在 AsrSmoothedProgressBar 里：数值原样取引擎
-                      // （下载字节 / 已转录时长 / 远端回报），不定态不显示百分比。
-                      child: AsrSmoothedProgressBar(
-                        value: _progressValue(),
-                        foreground: statusColors.onContainer,
-                      ),
-                    )
-                  : const SizedBox(width: double.infinity),
+              ),
             ),
           ],
         ),
-      ),
+        FushiAnimatedSize(
+          duration: motion.spatialDefault.duration,
+          curve: motion.spatialDefault.curve,
+          alignment: Alignment.topCenter,
+          child: _phase == _Phase.finished && _lastCoverage != null
+              ? Padding(
+                  padding: const EdgeInsets.only(top: 8, left: 32),
+                  child: AsrCoverageSummary(
+                    coverage: _lastCoverage!,
+                    caption: t.audiobook_transcribe_coverage_last,
+                    foreground: statusForeground,
+                  ),
+                )
+              : const SizedBox(width: double.infinity),
+        ),
+        AnimatedSize(
+          duration: motion.spatialDefault.duration,
+          curve: motion.spatialDefault.curve,
+          alignment: Alignment.topCenter,
+          child: showProgressBar
+              ? Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  // 百分比与补间都在 AsrSmoothedProgressBar 里：数值原样取引擎
+                  // （下载字节 / 已转录时长 / 远端回报），不定态不显示百分比。
+                  child: AsrSmoothedProgressBar(
+                    value: _progressValue(),
+                    foreground: statusForeground,
+                  ),
+                )
+              : const SizedBox(width: double.infinity),
+        ),
+      ],
+    );
+    final Widget statusCard = FushiStaggeredEntrance(
+      index: 2,
+      child: glass
+          ? AdaptiveSettingsSection(
+              key: const ValueKey<String>('asr-transcribe-status-card'),
+              children: <Widget>[
+                Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: FushiAppleMetrics.of(context).rowHorizontal,
+                    vertical: FushiAppleMetrics.of(context).rowHorizontal,
+                  ),
+                  child: statusContent,
+                ),
+              ],
+            )
+          : AnimatedContainer(
+              key: const ValueKey<String>('asr-transcribe-status-card'),
+              duration: fushiMotionDuration(context, FushiMotion.medium),
+              curve: FushiMotion.standard,
+              decoration: ShapeDecoration(
+                color: statusColors.container,
+                shape: fushiCoverBlockShape(context, FushiCoverBlockSize.half),
+              ),
+              padding: const EdgeInsets.all(14),
+              child: statusContent,
+            ),
     );
     // 屏幕够高时状态块钉在底栏、不随正文滚动：选项多时正文区要滚，状态块曾被
     // 滚动区截掉一半、看着像压在按钮下面（10-16）。矮屏（手机横屏、小窗）
@@ -2213,7 +2242,8 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
                 value: _downloadTotal <= 0
                     ? null
                     : (_downloadReceived / _downloadTotal).clamp(0.0, 1.0),
-                foreground: colors.onContainer,
+                // Apple 分组卡里没有块色，百分比取系统标签色。
+                foreground: isGlassDesign(context) ? null : colors.onContainer,
               ),
             ],
           ],
