@@ -45,27 +45,25 @@ inline RECT FullscreenWindowRect(const RECT& monitor,
               monitor.right + insets.right, monitor.bottom + insets.bottom};
 }
 
-// WM_NCCALCSIZE answer while fullscreen: the client area is the monitor,
-// clipped to the proposed window rectangle. Decided here rather than left to
-// window_manager's hidden-title-bar reshaping: the insets were measured in
-// whatever state the window was in before entering (a zoomed window's frame
-// differs from a normal one's, and entering un-zooms it), so only pinning the
-// client makes it cover the monitor exactly in every case.
+// WM_NCCALCSIZE answer while fullscreen: the proposed window rectangle minus
+// the insets measured before entering. For the fullscreen rectangle
+// (FullscreenWindowRect with the same insets) that is exactly the monitor.
+// Decided here rather than left to window_manager's hidden-title-bar
+// reshaping: the insets were measured in whatever state the window was in
+// before entering (a zoomed window's frame differs from a normal one's, and
+// entering un-zooms it), so only pinning the client makes it cover the
+// monitor exactly in every case. Relative to the proposed rectangle, not
+// clipped to the monitor, so a window parked elsewhere (the off-screen
+// integration-test runner) keeps a monitor-sized client.
 inline RECT FullscreenClientRect(const RECT& proposed_window,
-                                 const RECT& monitor) {
-  RECT client{};
-  client.left = proposed_window.left > monitor.left ? proposed_window.left
-                                                    : monitor.left;
-  client.top =
-      proposed_window.top > monitor.top ? proposed_window.top : monitor.top;
-  client.right = proposed_window.right < monitor.right ? proposed_window.right
-                                                       : monitor.right;
-  client.bottom = proposed_window.bottom < monitor.bottom
-                      ? proposed_window.bottom
-                      : monitor.bottom;
+                                 const FrameInsets& insets) {
+  RECT client{proposed_window.left + insets.left,
+              proposed_window.top + insets.top,
+              proposed_window.right - insets.right,
+              proposed_window.bottom - insets.bottom};
   if (client.right <= client.left || client.bottom <= client.top) {
-    // No overlap (e.g. the parked rectangle of a minimized window): an empty
-    // client at the window origin, never one outside the window.
+    // Smaller than the frame (e.g. the caption-sized rectangle of a minimized
+    // window): an empty client at the window origin, never an inverted one.
     return RECT{proposed_window.left, proposed_window.top,
                 proposed_window.left, proposed_window.top};
   }

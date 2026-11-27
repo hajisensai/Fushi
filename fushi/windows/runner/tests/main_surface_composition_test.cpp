@@ -31,8 +31,10 @@ bool SameMargins(const MARGINS& a, int left, int right, int top, int bottom) {
 int main() {
   bool ok = true;
 
-  const MainSurfaceState plain{false};
-  const MainSurfaceState mica{true};
+  const MainSurfaceState plain{false, false};
+  const MainSurfaceState mica{true, false};
+  const MainSurfaceState mica_opaque_content{true, true};
+  const MainSurfaceState plain_opaque_content{false, true};
 
   // Plain window keeps window_manager's hidden-title-bar shadow (1 px top).
   ok &= Expect(SameMargins(MainFrameMargins(plain), 0, 0, 1, 0),
@@ -44,6 +46,17 @@ int main() {
   ok &= Expect(SameMargins(MainFrameMargins(mica), -1, -1, -1, -1),
                "Mica extends the frame over the whole client area");
   ok &= Expect(MainSurfaceSeeThrough(mica), "Mica surface is see-through");
+
+  // BUG-5591: opaque content (video page) composes the surface opaque even
+  // with Mica requested, so fullscreen jumps keep the snapshot under the view.
+  ok &= Expect(!MainSurfaceSeeThrough(mica_opaque_content),
+               "Mica under opaque content is not see-through");
+  ok &= Expect(SameMargins(MainFrameMargins(mica_opaque_content), 0, 0, 1, 0),
+               "Mica under opaque content uses the plain margins");
+  ok &= Expect(!MainSurfaceSeeThrough(plain_opaque_content) &&
+                   SameMargins(MainFrameMargins(plain_opaque_content), 0, 0,
+                               1, 0),
+               "opaque content does not change a plain window");
 
   if (!ok) {
     return 1;

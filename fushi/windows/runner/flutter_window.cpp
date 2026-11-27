@@ -626,6 +626,57 @@ bool FlutterWindow::OnCreate() {
           result->Success();
         } else if (call.method_name() == "isFullscreen") {
           result->Success(flutter::EncodableValue(IsFullscreen()));
+        } else if (call.method_name() == "setContentOpaque") {
+          // BUG-5591: Dart's OpaqueWindowContentClaim. Opaque content
+          // composes the surface opaque even with Mica requested
+          // (main_surface_composition.h); the margins follow the new state.
+          const auto* opaque_args =
+              std::get_if<flutter::EncodableMap>(call.arguments());
+          bool opaque = false;
+          if (opaque_args != nullptr) {
+            const auto it =
+                opaque_args->find(flutter::EncodableValue("opaque"));
+            if (it != opaque_args->end()) {
+              const bool* value = std::get_if<bool>(&it->second);
+              opaque = value != nullptr && *value;
+            }
+          }
+          SetContentOpaque(opaque);
+          ApplyMainSurfaceComposition();
+          result->Success();
+        } else if (call.method_name() == "fullscreenTrace") {
+          // BUG-5591: the latest fullscreen transition's timeline
+          // (fullscreen_trace.h), for win_fullscreen_geometry_itest.dart.
+          flutter::EncodableList list;
+          for (const fushi::FullscreenTraceEvent& e : FullscreenTraceEvents()) {
+            list.emplace_back(flutter::EncodableMap{
+                {flutter::EncodableValue("kind"),
+                 flutter::EncodableValue(static_cast<int32_t>(e.kind))},
+                {flutter::EncodableValue("tUs"),
+                 flutter::EncodableValue(static_cast<int64_t>(e.t_us))},
+                {flutter::EncodableValue("left"),
+                 flutter::EncodableValue(static_cast<int32_t>(e.window.left))},
+                {flutter::EncodableValue("top"),
+                 flutter::EncodableValue(static_cast<int32_t>(e.window.top))},
+                {flutter::EncodableValue("right"),
+                 flutter::EncodableValue(static_cast<int32_t>(e.window.right))},
+                {flutter::EncodableValue("bottom"),
+                 flutter::EncodableValue(
+                     static_cast<int32_t>(e.window.bottom))},
+                {flutter::EncodableValue("clientWidth"),
+                 flutter::EncodableValue(static_cast<int32_t>(e.client.cx))},
+                {flutter::EncodableValue("clientHeight"),
+                 flutter::EncodableValue(static_cast<int32_t>(e.client.cy))},
+                {flutter::EncodableValue("zoomed"),
+                 flutter::EncodableValue(e.zoomed)},
+                {flutter::EncodableValue("iconic"),
+                 flutter::EncodableValue(e.iconic)},
+                {flutter::EncodableValue("a"), flutter::EncodableValue(e.a)},
+                {flutter::EncodableValue("b"), flutter::EncodableValue(e.b)},
+                {flutter::EncodableValue("c"), flutter::EncodableValue(e.c)},
+            });
+          }
+          result->Success(flutter::EncodableValue(list));
         } else if (call.method_name() == "dartHeartbeat") {
           // Dart 存活心跳（hang_watchdog.h：Dart 失联检测）。每秒一次、无参数。
           ::fushi::NoteDartHeartbeat();

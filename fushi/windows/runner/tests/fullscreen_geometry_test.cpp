@@ -3,6 +3,7 @@
 #undef NDEBUG
 
 #include "../fullscreen_geometry.h"
+#include "../fullscreen_trace.h"
 
 #include <iostream>
 #include <string>
@@ -55,17 +56,24 @@ int main() {
   // in another show state (zoomed before entering, normal while fullscreen).
   ok &= Expect(SameRect(FullscreenClientRect(FullscreenWindowRect(monitor,
                                                                   zoomed),
-                                             monitor),
+                                             zoomed),
                         0, 0, 3840, 2160),
                "fullscreen client covers the monitor exactly");
-  ok &= Expect(SameRect(FullscreenClientRect(RECT{100, 100, 900, 700}, monitor),
-                        100, 100, 900, 700),
-               "a proposed rect inside the monitor is left as is");
+  ok &= Expect(SameRect(FullscreenClientRect(FullscreenWindowRect(second,
+                                                                  normal),
+                                             normal),
+                        3840, -200, 5760, 880),
+               "secondary monitor: client is that monitor");
   ok &= Expect(
-      SameRect(FullscreenClientRect(RECT{-32000, -32000, -31840, -31972},
-                                    monitor),
+      SameRect(FullscreenClientRect(RECT{-32008, -32001, -28152, -29832},
+                                    normal),
+               -32000, -32000, -28160, -29840),
+      "a window parked off-screen keeps a monitor-sized client");
+  ok &= Expect(
+      SameRect(FullscreenClientRect(RECT{-32000, -32000, -31990, -31995},
+                                    normal),
                -32000, -32000, -32000, -32000),
-      "a parked (minimized) rect collapses instead of inverting");
+      "a caption-sized (minimized) rect collapses instead of inverting");
 
   // rcNormalPosition is in workspace coordinates.
   const RECT target = FullscreenWindowRect(monitor, normal);
@@ -120,6 +128,49 @@ int main() {
   ok &= Expect(PlanFullscreenExit(false, true, false) ==
                    FullscreenExitStep::kRestorePlacement,
                "maximized while fullscreen: placement restore");
+
+  // BUG-5591: the transition trace. Sizes seen between kBegin and kEnd,
+  // consecutive repeats collapsed; events after kEnd do not count.
+  {
+    using fushi::FullscreenTrace;
+    using fushi::FullscreenTraceEvent;
+    using fushi::FullscreenTraceKind;
+    FullscreenTrace trace;
+    FullscreenTraceEvent ignored;
+    ignored.kind = FullscreenTraceKind::kWindowPos;
+    trace.Record(ignored, 5);
+    ok &= Expect(trace.Events().empty(), "nothing is recorded before Begin");
+    auto pos = [](LONG l, LONG t, LONG r, LONG b) {
+      FullscreenTraceEvent e;
+      e.kind = FullscreenTraceKind::kWindowPos;
+      e.window = RECT{l, t, r, b};
+      return e;
+    };
+    FullscreenTraceEvent begin;
+    begin.kind = FullscreenTraceKind::kBegin;
+    FullscreenTraceEvent end;
+    end.kind = FullscreenTraceKind::kEnd;
+    trace.Begin(1000);
+    trace.Record(begin, 1000);
+    trace.Record(pos(-8, -1, 3848, 2168), 1200);
+    trace.Record(pos(-8, -1, 3848, 2168), 1300);
+    trace.Record(end, 1500);
+    trace.Record(pos(0, 0, 1200, 800), 9000);
+    const auto events = trace.Events();
+    ok &= Expect(events.size() == 5 && events[1].t_us == 200,
+                 "events are stamped relative to Begin");
+    const auto one = fushi::WindowSizesDuringTransition(events);
+    ok &= Expect(one.size() == 1 && one[0].cx == 3856 && one[0].cy == 2169,
+                 "a single-step transition has one window size");
+    trace.Begin(0);
+    trace.Record(begin, 0);
+    trace.Record(pos(1200, 400, 2400, 1700), 1);
+    trace.Record(pos(-13, -13, 3853, 2077), 2);
+    trace.Record(end, 3);
+    const auto two = fushi::WindowSizesDuringTransition(trace.Events());
+    ok &= Expect(two.size() == 2 && two[0].cx == 1200,
+                 "a detour through the normal rectangle is visible");
+  }
 
   if (!ok) {
     return 1;

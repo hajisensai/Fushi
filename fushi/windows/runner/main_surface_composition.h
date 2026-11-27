@@ -21,17 +21,28 @@ namespace fushi {
 // colour: a theme-coloured fill is *added* to whatever shows through (measured
 // blue fill over a red host = magenta). A see-through surface must therefore
 // be filled with black, the only colour that is transparent at alpha 0.
+//
+// BUG-5591: see-through only while something can show through. When Dart
+// declares that the view covers the client area with opaque pixels (the video
+// page and its fullscreen route), the surface is composed opaque even with
+// Mica requested: nothing of the material is visible then anyway, and an
+// opaque surface keeps the fullscreen transition snapshot under the view
+// (BUG-1933). A see-through surface has to drop it back to the material after
+// each jump — before DWM has composed the view's first frame at the new size,
+// which the runner cannot observe — and the bare material showed for 1-3
+// frames per transition (measured).
 struct MainSurfaceState {
   bool system_backdrop = false;
+  bool content_opaque = false;
 };
 
 inline bool MainSurfaceSeeThrough(const MainSurfaceState& state) {
-  return state.system_backdrop;
+  return state.system_backdrop && !state.content_opaque;
 }
 
 // DwmExtendFrameIntoClientArea margins for |state|.
 inline MARGINS MainFrameMargins(const MainSurfaceState& state) {
-  if (state.system_backdrop) {
+  if (MainSurfaceSeeThrough(state)) {
     return MARGINS{-1, -1, -1, -1};
   }
   // window_manager's hidden-title-bar shadow: 1 px at the top. Zero would drop

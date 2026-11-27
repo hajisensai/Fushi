@@ -231,7 +231,9 @@ void main() {
         cpp.indexOf('\n}', rasterAt),
       );
       final int matchAt = raster.indexOf('snapshot_release_size_.cx');
-      final int releaseAt = raster.indexOf('ReleaseTransitionSnapshot();');
+      final int releaseAt = raster.indexOf(
+        'DropTransitionSnapshot(fushi::SnapshotReleaseReason::kRasterized);',
+      );
       final int fillAt = raster.indexOf('FillSurfaceBackdrop();');
       expect(matchAt, isNonNegative);
       expect(releaseAt, greaterThan(matchAt));
@@ -370,6 +372,114 @@ void main() {
       final String body = cpp.substring(fnAt, cpp.indexOf('\n}', fnAt));
       expect(body.contains('if (!fullscreen_'), isTrue);
       expect(body.contains('ptMaxTrackSize'), isTrue);
+    });
+
+    test('BUG-5591: opaque video content composes the Mica surface opaque', () {
+      // A see-through surface has to drop the transition snapshot back to the
+      // material before DWM has composed the view's first frame at the new
+      // size (the runner cannot observe that): 1-3 frames of bare Mica per
+      // jump, measured. Opaque content keeps the surface opaque instead.
+      final String surface = maskComments(
+        File('windows/runner/main_surface_composition.h').readAsStringSync(),
+      );
+      expect(
+        surface.contains(
+          'return state.system_backdrop && !state.content_opaque;',
+        ),
+        isTrue,
+      );
+      expect(
+        surface.contains('if (MainSurfaceSeeThrough(state)) {'),
+        isTrue,
+        reason: 'the DWM margins follow the same single policy',
+      );
+      expect(
+        flutterWindow.contains('call.method_name() == "setContentOpaque"'),
+        isTrue,
+      );
+      final int setAt = flutterWindow.indexOf('SetContentOpaque(opaque);');
+      expect(setAt, isNonNegative);
+      expect(
+        flutterWindow.indexOf('ApplyMainSurfaceComposition();', setAt),
+        greaterThan(setAt),
+        reason: 'margins re-derived after the state changed',
+      );
+      expect(
+        channelDart.contains("invokeMethod<void>('setContentOpaque'"),
+        isTrue,
+      );
+      final String claim = maskComments(
+        File(
+          'lib/src/utils/opaque_window_content_claim.dart',
+        ).readAsStringSync(),
+      );
+      expect(
+        claim.contains('AnimationStatus.completed'),
+        isTrue,
+        reason: 'claimed only once the route covers the window',
+      );
+      final String page = maskComments(
+        File(
+          'lib/src/pages/implementations/video_fushi_page.dart',
+        ).readAsStringSync(),
+      );
+      final int claimAt = page.indexOf('OpaqueWindowContentClaim(');
+      expect(claimAt, isNonNegative, reason: 'the local video page claims');
+      final int enabledAt = page.lastIndexOf(
+        'final bool opaqueVideoSurface =',
+        claimAt,
+      );
+      expect(enabledAt, isNonNegative);
+      final String enabled = page.substring(enabledAt, claimAt);
+      for (final String condition in <String>[
+        '!_webMode',
+        '_videoReadyToShow',
+        '!_failed',
+        'isReview',
+      ]) {
+        expect(enabled.contains(condition), isTrue, reason: condition);
+      }
+    });
+
+    test('BUG-5591: every transition is traced for the geometry itest', () {
+      final int procAt = cpp.indexOf('Win32Window::WndProc(');
+      final String proc = cpp.substring(procAt, cpp.indexOf('\n}', procAt));
+      expect(proc.contains('message == WM_WINDOWPOSCHANGED'), isTrue);
+      expect(
+        proc.contains('FullscreenTraceKind::kWindowPos'),
+        isTrue,
+        reason: 'every geometry change, including system-inserted ones',
+      );
+      final int fnAt = cpp.indexOf('void Win32Window::SetFullscreen(');
+      final String body = cpp.substring(fnAt, cpp.indexOf('\n}', fnAt));
+      expect(body.contains('fullscreen_trace_.Begin('), isTrue);
+      expect(body.contains('FullscreenTraceKind::kEnd'), isTrue);
+      final int deliverAt = cpp.indexOf('void Win32Window::DeliverChildSize(');
+      expect(
+        cpp
+            .substring(deliverAt, cpp.indexOf('\n}', deliverAt))
+            .contains('FullscreenTraceKind::kChildDelivered'),
+        isTrue,
+      );
+      final int rasterAt = cpp.indexOf(
+        'void Win32Window::OnChildFrameRasterized(',
+      );
+      expect(
+        cpp
+            .substring(rasterAt, cpp.indexOf('\n}', rasterAt))
+            .contains('FullscreenTraceKind::kRasterized'),
+        isTrue,
+      );
+      expect(
+        flutterWindow.contains('call.method_name() == "fullscreenTrace"'),
+        isTrue,
+      );
+      expect(
+        File(
+          'integration_test/win_fullscreen_geometry_itest.dart',
+        ).existsSync(),
+        isTrue,
+      );
     });
 
     test('the window channel exposes setFullscreen/isFullscreen', () {

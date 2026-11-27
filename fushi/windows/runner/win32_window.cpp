@@ -340,10 +340,13 @@ LRESULT CALLBACK Win32Window::WndProc(HWND const window,
     // show state. Answered here, before any plugin: window_manager's
     // hidden-title-bar WM_NCCALCSIZE would pin a zoomed window's client to
     // the work-area origin (see FullscreenClientRect).
+    if (message == WM_WINDOWPOSCHANGED) {
+      that->RecordFullscreenTrace(fushi::FullscreenTraceKind::kWindowPos);
+    }
     if (message == WM_NCCALCSIZE && wparam != 0 && that->fullscreen_) {
       auto* params = reinterpret_cast<NCCALCSIZE_PARAMS*>(lparam);
       params->rgrc[0] = fushi::FullscreenClientRect(params->rgrc[0],
-                                                    that->fullscreen_monitor_);
+                                                    that->fullscreen_insets_);
       return 0;
     }
     return that->MessageHandler(window, message, wparam, lparam);
@@ -393,7 +396,7 @@ Win32Window::MessageHandler(HWND hwnd,
       // frame is stale once the window is resized again outside a fullscreen
       // transition (e.g. the user drags an edge): back to the brush.
       if (transition_snapshot_ != nullptr && !fullscreen_transition_) {
-        ReleaseTransitionSnapshot();
+        DropTransitionSnapshot(fushi::SnapshotReleaseReason::kResizedAgain);
       }
       // BUG-1916: the surface just changed size; its new area is uninitialised
       // (black) and its old area may carry an older fill. Paint it whole,
@@ -574,17 +577,24 @@ void Win32Window::DeliverChildSize(ChildSize size) {
     const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                              std::chrono::steady_clock::now() - start)
                              .count();
+    RecordFullscreenTrace(fushi::FullscreenTraceKind::kChildDelivered,
+                          next->width, next->height,
+                          static_cast<int32_t>(elapsed));
     next = child_resize_gate_.DeliveryFinished(elapsed);
   }
 }
 
 void Win32Window::OnChildFrameRasterized(int32_t width, int32_t height) {
-  // BUG-5591: the view now presents at the post-fullscreen-jump size; the
-  // transition snapshot under a see-through surface has done its job.
+  RecordFullscreenTrace(fushi::FullscreenTraceKind::kRasterized, width, height);
+  // BUG-5591: the view now rasterized the post-fullscreen-jump size; the
+  // transition snapshot under a see-through surface goes back to the
+  // material. (DWM may compose that frame a little later than this report,
+  // which is why opaque content keeps the surface opaque, see
+  // main_surface_composition.h.)
   if (transition_snapshot_ != nullptr && !fullscreen_transition_ &&
       width == snapshot_release_size_.cx &&
       height == snapshot_release_size_.cy) {
-    ReleaseTransitionSnapshot();
+    DropTransitionSnapshot(fushi::SnapshotReleaseReason::kRasterized);
     FillSurfaceBackdrop();
   }
   if (startup_window_preparation_) {
@@ -850,6 +860,8 @@ void Win32Window::SetFullscreen(bool fullscreen) {
   // BUG-5591: one geometry step each way, straight to the final rectangle,
   // with no DWM animation. See fullscreen_geometry.h.
   const ScopedNoDwmTransitions no_transitions(hwnd);
+  fullscreen_trace_.Begin(TraceNowUs());
+  RecordFullscreenTrace(fushi::FullscreenTraceKind::kBegin, fullscreen ? 1 : 0);
   fullscreen_transition_ = true;
   if (fullscreen) {
     MONITORINFO monitor{};
@@ -857,6 +869,7 @@ void Win32Window::SetFullscreen(bool fullscreen) {
     if (!GetMonitorInfo(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST),
                         &monitor)) {
       fullscreen_transition_ = false;
+      RecordFullscreenTrace(fushi::FullscreenTraceKind::kEnd);
       return;
     }
     placement_before_fullscreen_.length = sizeof(WINDOWPLACEMENT);
@@ -886,9 +899,8 @@ void Win32Window::SetFullscreen(bool fullscreen) {
     fullscreen_insets_.bottom = (window_rect.bottom - window_rect.top) -
                                 (client_rect.bottom - client_rect.top) -
                                 fullscreen_insets_.top;
-    fullscreen_monitor_ = monitor.rcMonitor;
     const RECT target =
-        fushi::FullscreenWindowRect(fullscreen_monitor_, fullscreen_insets_);
+        fushi::FullscreenWindowRect(monitor.rcMonitor, fullscreen_insets_);
     fullscreen_ = true;
     // Before the jump, so the compositor never paints the border/rounded
     // corners over a client area that already covers the monitor (BUG-2006).
@@ -956,14 +968,17 @@ void Win32Window::SetFullscreen(bool fullscreen) {
     // already screen-sized before fullscreen keeps the chrome suppressed).
     UpdateFrameChrome();
   }
-  // What is under the view after the jump. An opaque surface keeps the
-  // snapshot pixels (BUG-1933 behaviour): the view covers them, and a late
-  // first frame at the new size then still shows the previous content.
-  // A see-through (Mica) surface must get its transparent backdrop back —
-  // a leftover opaque snapshot would show through translucent Flutter pixels
-  // (the home shell) — but not before the view has rasterized a frame at the
-  // new client size (OnChildFrameRasterized): clearing on return from the
-  // child resize left the bare material on screen for 2 frames (measured).
+  // What is under the view after the jump. An opaque surface (plain, or Mica
+  // under opaque content, see main_surface_composition.h) keeps the snapshot
+  // pixels (BUG-1933 behaviour): the view covers them, and until DWM
+  // composes the view's first frame at the new size the previous content
+  // shows, never a solid colour.
+  // A see-through surface (translucent content over Mica) must get its
+  // transparent backdrop back, since a leftover opaque snapshot would show
+  // through the translucent Flutter pixels, but not before the view has
+  // rasterized a frame at the new client size (OnChildFrameRasterized):
+  // clearing on return from the child resize left the bare material on
+  // screen for 2 frames (measured).
   const RECT client = GetClientArea();
   snapshot_release_size_ = SIZE{client.right - client.left,
                                 client.bottom - client.top};
@@ -971,13 +986,75 @@ void Win32Window::SetFullscreen(bool fullscreen) {
       snapshot_release_size_.cx == transition_snapshot_size_.cx &&
       snapshot_release_size_.cy == transition_snapshot_size_.cy;
   if (!fushi::MainSurfaceSeeThrough(main_surface_state())) {
-    ReleaseTransitionSnapshot();
+    DropTransitionSnapshot(fushi::SnapshotReleaseReason::kOpaqueSurface);
   } else if (same_size) {
     // No new frame size will be reported, and nothing was exposed.
-    ReleaseTransitionSnapshot();
+    DropTransitionSnapshot(fushi::SnapshotReleaseReason::kSameClientSize);
     FillSurfaceBackdrop();
   }
   fullscreen_transition_ = false;
+  RecordFullscreenTrace(fushi::FullscreenTraceKind::kEnd);
+}
+
+void Win32Window::SetContentOpaque(bool opaque) {
+  if (content_opaque_ == opaque) {
+    return;
+  }
+  content_opaque_ = opaque;
+  // Dart flips this only while the view is fully opaque and not resizing
+  // (OpaqueWindowContentClaim), so repainting the surface here is never
+  // visible. Turning see-through again also drops a snapshot an earlier
+  // fullscreen jump left under the view: the translucent content about to be
+  // revealed must show the material, not the old frame.
+  if (fushi::MainSurfaceSeeThrough(main_surface_state())) {
+    DropTransitionSnapshot(fushi::SnapshotReleaseReason::kSurfaceChanged);
+  }
+  FillSurfaceBackdrop();
+}
+
+std::vector<fushi::FullscreenTraceEvent> Win32Window::FullscreenTraceEvents()
+    const {
+  return fullscreen_trace_.Events();
+}
+
+// static
+int64_t Win32Window::TraceNowUs() {
+  LARGE_INTEGER frequency{};
+  LARGE_INTEGER counter{};
+  QueryPerformanceFrequency(&frequency);
+  QueryPerformanceCounter(&counter);
+  return static_cast<int64_t>(counter.QuadPart / frequency.QuadPart * 1000000 +
+                              counter.QuadPart % frequency.QuadPart *
+                                  1000000 / frequency.QuadPart);
+}
+
+void Win32Window::RecordFullscreenTrace(fushi::FullscreenTraceKind kind,
+                                        int32_t a,
+                                        int32_t b,
+                                        int32_t c) {
+  if (!fullscreen_trace_.armed() || window_handle_ == nullptr) {
+    return;
+  }
+  fushi::FullscreenTraceEvent event;
+  event.kind = kind;
+  GetWindowRect(window_handle_, &event.window);
+  const RECT client = GetClientArea();
+  event.client = SIZE{client.right - client.left, client.bottom - client.top};
+  event.zoomed = IsZoomed(window_handle_) != 0;
+  event.iconic = IsIconic(window_handle_) != 0;
+  event.a = a;
+  event.b = b;
+  event.c = c;
+  fullscreen_trace_.Record(event, TraceNowUs());
+}
+
+void Win32Window::DropTransitionSnapshot(fushi::SnapshotReleaseReason reason) {
+  if (transition_snapshot_ == nullptr) {
+    return;
+  }
+  ReleaseTransitionSnapshot();
+  RecordFullscreenTrace(fushi::FullscreenTraceKind::kSnapshotReleased,
+                        static_cast<int32_t>(reason));
 }
 
 bool Win32Window::ApplyFullscreenMinMaxInfo(MINMAXINFO* info) const {

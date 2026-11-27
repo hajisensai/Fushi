@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -182,6 +183,70 @@ class WindowCaptionChannel {
       // 旧 runner 不实现该方法时静默忽略（调用方各有回退语义）。
     } on MissingPluginException {
       // 通道未注册（widget 测试 / 非 window runner 宿主）时静默忽略。
+    }
+  }
+
+  /// BUG-5591：当前是否有画面声明「整个窗口客户区都是不透明像素」（引用计数，
+  /// 见 [OpaqueWindowContentClaim]）。0→1 / 1→0 时才下发 runner。
+  static int _opaqueContentClaims = 0;
+
+  /// 测试钩子：widget 测试在非 Windows 主机上也走 Windows 分支。
+  @visibleForTesting
+  static bool? debugWindowsOverride;
+
+  static bool get _isWindows => debugWindowsOverride ?? Platform.isWindows;
+
+  @visibleForTesting
+  static int get debugOpaqueContentClaims => _opaqueContentClaims;
+
+  /// BUG-5591：一块画面开始 / 停止把整个客户区盖成不透明（本地视频页路由落定后）。
+  ///
+  /// runner 据此把主窗表面在 Mica 下也按不透明合成（`main_surface_composition.h`）：
+  /// 内容不透明时本来就看不到材质，而不透明表面能让全屏跳变的过渡快照留在视图底下
+  /// ——透底表面只能在视图新尺寸首帧光栅化后把快照撤回材质，DWM 真正合成那一帧
+  /// 还要晚 1–3 帧（runner 观测不到），中间露出整窗纯色材质。
+  ///
+  /// 只能在画面确实盖满、且不在缩放过程中时切换（[OpaqueWindowContentClaim] 只在
+  /// 路由入场动画完成后认领、退场动画开始时放手），runner 侧的重绘因此不可见。
+  static void acquireOpaqueContent() {
+    if (!_isWindows) return;
+    _opaqueContentClaims++;
+    if (_opaqueContentClaims == 1) unawaited(_sendContentOpaque(true));
+  }
+
+  static void releaseOpaqueContent() {
+    if (!_isWindows || _opaqueContentClaims == 0) return;
+    _opaqueContentClaims--;
+    if (_opaqueContentClaims == 0) unawaited(_sendContentOpaque(false));
+  }
+
+  static Future<void> _sendContentOpaque(bool opaque) async {
+    try {
+      await _channel.invokeMethod<void>('setContentOpaque', <String, bool>{
+        'opaque': opaque,
+      });
+    } on PlatformException {
+      // 旧 runner：表面保持原合成方式。
+    } on MissingPluginException {
+      // widget 测试 / 非 window runner 宿主。
+    }
+  }
+
+  /// BUG-5591：runner 记录的最近一次全屏切换时间线（`fullscreen_trace.h`），供
+  /// `integration_test/win_fullscreen_geometry_itest.dart` 断言几何序列。非 Windows
+  /// 或通道未注册时为空表。
+  static Future<List<Map<Object?, Object?>>> fullscreenTrace() async {
+    if (!_isWindows) return const <Map<Object?, Object?>>[];
+    try {
+      final List<Object?>? raw = await _channel.invokeMethod<List<Object?>>(
+        'fullscreenTrace',
+      );
+      return <Map<Object?, Object?>>[
+        for (final Object? e in raw ?? const <Object?>[])
+          if (e is Map<Object?, Object?>) e,
+      ];
+    } on MissingPluginException {
+      return const <Map<Object?, Object?>>[];
     }
   }
 

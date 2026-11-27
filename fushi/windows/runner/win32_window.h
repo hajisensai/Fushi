@@ -5,12 +5,14 @@
 
 #include "child_resize_gate.h"
 #include "fullscreen_geometry.h"
+#include "fullscreen_trace.h"
 #include "main_surface_composition.h"
 
 #include <functional>
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 // A class abstraction for a high DPI-aware Win32 Window. Intended to be
 // inherited from by classes that wish to specialize with custom
@@ -96,8 +98,16 @@ class Win32Window {
   // backdrop show through. Does not touch DWM itself; FlutterWindow owns that.
   void SetSystemBackdrop(bool enabled);
 
+  // BUG-5591: Dart declares whether the view currently covers the whole
+  // client area with opaque pixels (OpaqueWindowContentClaim: the local video
+  // page once its route has settled). Opaque content composes the surface
+  // opaque even with Mica requested (main_surface_composition.h), so the
+  // fullscreen transition snapshot stays under the view. FlutterWindow
+  // re-applies the DWM margins after calling this.
+  void SetContentOpaque(bool opaque);
+
   fushi::MainSurfaceState main_surface_state() const {
-    return fushi::MainSurfaceState{system_backdrop_};
+    return fushi::MainSurfaceState{system_backdrop_, content_opaque_};
   }
 
   // BUG-1933: flash-free fullscreen, owned by the runner. window_manager's
@@ -125,6 +135,9 @@ class Win32Window {
   // deliberately larger than the monitor (BUG-1933). Returns false (|info|
   // untouched) when not fullscreen.
   bool ApplyFullscreenMinMaxInfo(MINMAXINFO* info) const;
+
+  // BUG-5591: the latest fullscreen transition's timeline (fullscreen_trace.h).
+  std::vector<fushi::FullscreenTraceEvent> FullscreenTraceEvents() const;
 
  protected:
   // Processes and route salient window messages for mouse handling,
@@ -224,6 +237,13 @@ class Win32Window {
   // True while FlutterWindow has a DWM system backdrop applied; see
   // SetSystemBackdrop.
   bool system_backdrop_ = false;
+  // BUG-5591: Dart's declaration that the view currently covers the whole
+  // client area with opaque pixels (see SetContentOpaque).
+  bool content_opaque_ = false;
+  // BUG-5591: geometry / child-resize / raster timeline of the latest
+  // fullscreen transition (fullscreen_trace.h), read by the integration test
+  // through the window channel.
+  fushi::FullscreenTrace fullscreen_trace_;
 
   // BUG-1933: captures the window's current on-screen client pixels into
   // |transition_snapshot_| (screen BitBlt; fails soft to no snapshot). While a
@@ -236,6 +256,13 @@ class Win32Window {
   // cheap brush fill (BUG-1917 cadence unaffected).
   void CaptureTransitionSnapshot();
   void ReleaseTransitionSnapshot();
+  // Releases a held snapshot and records why (fullscreen trace).
+  void DropTransitionSnapshot(fushi::SnapshotReleaseReason reason);
+  void RecordFullscreenTrace(fushi::FullscreenTraceKind kind,
+                             int32_t a = 0,
+                             int32_t b = 0,
+                             int32_t c = 0);
+  static int64_t TraceNowUs();
 
   // BUG-2006: Windows 11 paints the thin window border and rounds the corners
   // in the compositor, ON TOP of the client area — neither belongs to the
@@ -259,11 +286,10 @@ class Win32Window {
   bool frame_chrome_suppressed_ = false;
   WINDOWPLACEMENT placement_before_fullscreen_ = {};
   // BUG-5591: the exact window rectangle and zoom state before entering, for
-  // the single-step SetWindowPos exit; the monitor and frame insets the
-  // fullscreen geometry was computed from (WM_NCCALCSIZE / WM_GETMINMAXINFO).
+  // the single-step SetWindowPos exit; the frame insets the fullscreen
+  // geometry was computed from (the WM_NCCALCSIZE answer while fullscreen).
   RECT rect_before_fullscreen_ = {};
   bool zoomed_before_fullscreen_ = false;
-  RECT fullscreen_monitor_ = {};
   fushi::FrameInsets fullscreen_insets_ = {};
   HBITMAP transition_snapshot_ = nullptr;
   SIZE transition_snapshot_size_ = {};
