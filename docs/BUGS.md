@@ -33,19 +33,17 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4859 条。点号进各自文件。
+> 共 4862 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-5584](bugs/BUG-5584-feedback-link-push-commits-truncated.md) | ✅ | ✅ | feedback-link-push-commits-truncated |
-| [BUG-5583](bugs/BUG-5583-idle-page-continuous-frames.md) | 🚧 | 🚧 | 页面静止时仍以接近屏幕刷新率持续出帧（视频库页 / 视频合集页） |
-| [BUG-5582](bugs/BUG-5582-route-transition-covered-page-full-replay.md) | ✅ | ✅ | 打开 / 返回二级页（视频合集等）转场掉帧：被盖住的那一页每帧整页重放绘制 |
 | [BUG-5581](bugs/BUG-5581-import-cycle-626-donation-subtitle-fill.md) | 🚧 | 🚧 | import-cycle-626-donation-subtitle-fill |
 | [BUG-5580](bugs/BUG-5580-manga-epub-raster-spine.md) | ✅ | ✅ | spine 直接引用位图的漫画 EPUB 打不开、导不进（no readable chapters） |
 | [BUG-5579](bugs/BUG-5579-debug-manifest-release-page-404.md) | ✅ | ✅ | 调试通道「打开发布页」落到 404：清单发布页按版本印记拼，包其实挂在滚动 release 上 |
 | [BUG-5578](bugs/BUG-5578-mdx-v1-key-info-terminator-drift.md) | ✅ | ✅ | MDict 1.2 版 .mdx 导入一律报 `record block info overflow` |
 | [BUG-5576](bugs/BUG-5576-flutter-logs-wipes-android-files-root.md) | ✅ | ✅ | flutter_logs 每 3 天冷启动整树删 Android 外部 files 根（外部书库、词典、有声书全没） |
-| [BUG-5572](bugs/BUG-5572-srs-kernel-bulk-reads-slow.md) | 🚧 | ✅ | SRS 内核批量读慢：笔记 / 实体视图 / 卡历史每条约 3 ms |
+| [BUG-5572](bugs/BUG-5572-srs-kernel-bulk-reads-slow.md) | ✅ | ✅ | SRS 内核批量读慢：笔记 / 实体视图 / 卡历史每条约 3 ms |
 | [BUG-5571](bugs/BUG-5571-diag-log-trim-on-every-append-freezes-ui.md) | ✅ | ✅ | diag-log-trim-on-every-append-freezes-ui |
 | [BUG-5570](bugs/BUG-5570-library-partial-content-loss-undetected.md) | ✅ | ✅ | 书库内容部分丢失（哨兵还在）启动期毫无告警 |
 | [BUG-5569](bugs/BUG-5569-scan-skips-missing-managed-content.md) | ✅ | ✅ | 来源扫描遇到已入库的书不检查受管内容，丢失的解包书目录与有声书音频字幕永远不会从原件重建 |
@@ -66,20 +64,15 @@
 | [BUG-5553](bugs/BUG-5553-review-finished-wake.md) | ✅ | ✅ | 复习做完后几十秒到期的卡不自己出来：完成页只在库变化时重查 |
 | [BUG-5552](bugs/BUG-5552-sync-peer-unreachable-mid-run-raw-errors.md) | ✅ | ✅ | sync-peer-unreachable-mid-run-raw-errors |
 | [BUG-5551](bugs/BUG-5551-srs-import-media-pseudo-conflict.md) | ✅ | ✅ | srs-import-media-pseudo-conflict |
+| [BUG-5550](bugs/BUG-5550-landscape-phone-detail-hero.md) | ✅ | ✅ | 横屏手机：详情页背景带占七成高度，标题与主按钮被挤出首屏 |
 | [BUG-5550](bugs/BUG-5550-gal-tts-loopback-slice-not-voice-evidence.md) | ✅ | ✅ | galgame 自动朗读「仅无原声的句子」在系统 loopback 会话里一句都不读 |
 | [BUG-5549](bugs/BUG-5549-leaderboard-deeplink.md) | ✅ | ✅ | leaderboard-deeplink |
-> 共 4824 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5550](bugs/BUG-5550-landscape-phone-detail-hero.md) | ✅ | ✅ | 横屏手机：详情页背景带占七成高度，标题与主按钮被挤出首屏 |
 | [BUG-5548](bugs/BUG-5548-apple-sidebar-scope-rebuilds-hidden-library-pages.md) | ✅ | ✅ | Apple 宽窗侧栏外壳切 tab 后紧跟一帧：所有访问过的保活库页（含藏起的）整页重建 |
 | [BUG-5547](bugs/BUG-5547-srs-rules7-full-rebuild-killed-loop.md) | ✅ | ✅ | 升级到缓存口径 7 后复习一直在加载：开库整层重建几分钟、切后台被杀就回滚重来 |
 | [BUG-5546](bugs/BUG-5546-curator-auto-retries-ai-failures.md) | ✅ | ✅ | AI 库管家默认开、书架每次重载就跑一趟，额度用完还逐个单元问 AI、下一趟再问一遍 |
 | [BUG-5545](bugs/BUG-5545-curator-orphan-video-works.md) | ✅ | ✅ | 库管家每趟报 `libraryCurate.works.relations` 外键失败：视频作品 / 刮削快照的 owner 视频已不在库里 |
 | [BUG-5544](bugs/BUG-5544-masthead-tabs-hittest.md) | ✅ | ✅ | 页头大字收缩后嵌套标签行 / 工具行点不动 |
 | [BUG-5543](bugs/BUG-5543-web-video-subtitles.md) | ✅ | ✅ | web-video-subtitles |
-| [BUG-5542](bugs/BUG-5542-popup-srs-mining-read-only.md) | 🚧 | 🚧 | Android 应用外查词卡（:popup）制卡到 Fushi 复习报 SrsCoreReadOnlyException |
 | [BUG-5542](bugs/BUG-5542-popup-srs-mining-read-only.md) | ✅ | ✅ | Android 应用外查词卡（:popup）制卡到 Fushi 复习报 SrsCoreReadOnlyException |
 | [BUG-5541](bugs/BUG-5541-popup-favorite-unwired.md) | ✅ | ✅ | Android 应用外查词卡（:popup）点 ☆ 收藏没反应 |
 | [BUG-5540](bugs/BUG-5540-music-tags-ext-hint.md) | ✅ | ✅ | music-tags-ext-hint |
@@ -131,12 +124,8 @@
 | [BUG-5494](bugs/BUG-5494-android-screen-ocr-dart-engine-no-block.md) | ✅ | ✅ | Android 应用外截屏识字走本机模型 / Google Lens 时查词不跨 OCR 折行 |
 | [BUG-5493](bugs/BUG-5493-devconsole-sample-file-404.md) | ✅ | ✅ | 网页处理台样本文件下载 404 |
 | [BUG-5492](bugs/BUG-5492-android-external-library-wiped.md) | ✅ | ✅ | Android 外部书库被整树删掉，书与词典全没了 |
-| [BUG-5491](bugs/BUG-5491-rwkv-armv7-portable-fma-slow.md) | 🚧 | 🚧 | armeabi-v7a 与无 FMA 的老 x86 上 RWKV 回放走软件 FMA，比向量路径慢约 4–5 倍 |
-> 共 4770 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
 | [BUG-5492](bugs/BUG-5492-landscape-phone-chrome.md) | ✅ | ✅ | 横屏手机：外壳按宽取档给了桌面页头 / 展开侧栏，快捷键页工具区挤没列表 |
+| [BUG-5491](bugs/BUG-5491-rwkv-armv7-portable-fma-slow.md) | 🚧 | 🚧 | armeabi-v7a 与无 FMA 的老 x86 上 RWKV 回放走软件 FMA，比向量路径慢约 4–5 倍 |
 | [BUG-5490](bugs/BUG-5490-data-location-diag-not-retained.md) | ✅ | ✅ | 数据位置诊断只在内存且被普通诊断挤掉 |
 | [BUG-5489](bugs/BUG-5489-dict-files-missing-silent.md) | ✅ | ✅ | 词典文件缺失时界面静默只显示无释义 |
 | [BUG-5488](bugs/BUG-5488-rwkv-cross-platform-nondeterminism.md) | ✅ | ✅ | RWKV 同一复习日志在电脑与手机上回放出的 R 不同，到期数差一张（73 vs 72） |
@@ -161,23 +150,18 @@
 | [BUG-5469](bugs/BUG-5469-tts-cast-reasoning-output-limit.md) | ✅ | ✅ | tts-cast-reasoning-output-limit |
 | [BUG-5468](bugs/BUG-5468-ai-reasoning-effort-unsupported-model.md) | ✅ | ✅ | ai-reasoning-effort-unsupported-model |
 | [BUG-5467](bugs/BUG-5467-tts-cast-local-model-timeout.md) | ✅ | ✅ | tts-cast-local-model-timeout |
+| [BUG-5467](bugs/BUG-5467-android-migrate-case-collision.md) | ✅ | ✅ | Android 书库移到外部：只差大小写的文件在目标上互相覆盖，校验照过、删源后永久丢失 |
 | [BUG-5466](bugs/BUG-5466-tts-cast-unclosed-json-array.md) | ✅ | ✅ | tts-cast-unclosed-json-array |
 | [BUG-5465](bugs/BUG-5465-video-subtitle-autoload-hardcoded-ja.md) | ✅ | ✅ | 视频打开时自动挑字幕写死日语：sidecar 只认日语后缀，内封轨不看语言取第一条文本轨，繁 / 简中文不分 |
 | [BUG-5464](bugs/BUG-5464-video-subtitle-episode-inherit.md) | ✅ | ✅ | 合集里上一集选的字幕（内封轨 / sidecar / 关闭）下一集不继承，每集都得重选 |
 | [BUG-5463](bugs/BUG-5463-same-work-remote-collection-empty.md) | ✅ | ✅ | 「同一作品」打开只在 Jellyfin 上有集的动画合集显示「合集为空」 |
 | [BUG-5462](bugs/BUG-5462-deleted-collection-links-dangling.md) | ✅ | ✅ | 删掉的视频合集在作品图谱里留下「不在库中」的死连接 |
 | [BUG-5461](bugs/BUG-5461-organize-undo-collection-identity.md) | ✅ | ✅ | 撤销整理器移空 / 合并掉的合集后，合集换了新 id，挂在旧 id 上的作品图谱连接、标签、刮削资料全丢 |
-> 共 4736 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5467](bugs/BUG-5467-android-migrate-case-collision.md) | ✅ | ✅ | Android 书库移到外部：只差大小写的文件在目标上互相覆盖，校验照过、删源后永久丢失 |
 | [BUG-5460](bugs/BUG-5460-sync-missing-book-content.md) | ✅ | ✅ | 书目还在而正文丢失时同步无法补回原书 |
 | [BUG-5459](bugs/BUG-5459-srs-upgrade-anki-destination-unconfirmed.md) | 🚧 | 🚧 | 更新后网页制卡写到 Anki，制卡去向疑似改变 |
 | [BUG-5458](bugs/BUG-5458-srs-sync-already-bound-collection-candidate.md) | ✅ | ✅ | 复习同步冲突把本机其他资料库已绑定的集合列为可采用 |
 | [BUG-5457](bugs/BUG-5457-media-link-dangling-collection.md) | ✅ | ✅ | 删合集 / 游戏后「同一作品」留下标题是一串 id 的未入库死卡，灰卡背后还垫着一块灰板 |
 | [BUG-5456](bugs/BUG-5456-android-migrate-target-content-conflict.md) | ✅ | ✅ | Android 移动书库：目标里同路径不同内容的文件被当成中断残留整树删掉 |
-| [BUG-5455](bugs/BUG-5455-srs-gen4-migration-event-order.md) | ✅ | ✅ | 复习库升级后 Anki 复习副本选取改变到期日、间隔与统计，导致核对撤回 |
 | [BUG-5455](bugs/BUG-5455-opensubtitles-moviehash-negative-http400.md) | ✅ | ✅ | 字幕面板「字幕搜索失败（HTTP 400）」：OpenSubtitles movie hash 拼出负号，日志里没有任何线索 |
 | [BUG-5454](bugs/BUG-5454-stats-overview-srs-not-migrated.md) | ✅ | ✅ | stats-overview-srs-not-migrated |
 | [BUG-5453](bugs/BUG-5453-tracking-backoff-overflow-hot-loop.md) | ✅ | ✅ | tracking-backoff-overflow-hot-loop |
