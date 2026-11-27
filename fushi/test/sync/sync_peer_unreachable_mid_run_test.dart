@@ -57,6 +57,9 @@ void main() {
         dictionaryResourceRoot: work,
         audioDatabaseRoot: work,
         tempDir: work,
+        // 在线源条目同步没有 deviceId 时整段跳过（`_syncOnlineLibraryLive`），真实
+        // 互联轮次总带本机 deviceId，这里给上才走得到对端探测。
+        deviceId: 'device-a',
         syncStats: true,
         syncAudioBookPosition: false,
         syncContent: false,
