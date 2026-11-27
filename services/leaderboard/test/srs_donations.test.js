@@ -1,8 +1,9 @@
-// SRS 复习历史捐赠（src/srs_donations.js，迁移 0027）：上传 / 覆盖 / 查询 / 撤回、限流与配额、批次下载、公开统计。
+// SRS 复习历史捐赠（src/srs_donations.js，迁移 0027）：上传 / 覆盖 / 查询 / 撤回、限流与配额、长期 feed 下载（迁移 0029）、公开统计。
 import { describe, expect, it } from 'vitest';
 import { call, makeEnv, nextIp } from './harness.js';
 import { SRS_DONATION_LIMITS, donationKey, donorKeyHash } from '../src/srs_donations.js';
 import { poolQuota } from '../src/budget.js';
+import { parseArgs, requestOf } from '../scripts/srs_donation_feed.mjs';
 
 const NOW = Date.UTC(2026, 10, 26, 12);
 const HOUR = 3600 * 1000;
@@ -50,13 +51,13 @@ const otherPools = (env) => env.DB.raw.prepare('SELECT bytes, video_bytes FROM m
 const row = (env, id) => env.DB.raw.prepare('SELECT * FROM srs_donations WHERE donor_id = ?').get(id);
 const withdrawal = (env, id) => env.DB.raw.prepare('SELECT * FROM srs_donation_withdrawals WHERE donor_id = ?').get(id);
 
-async function batch(env, now = NOW) {
-  const r = await call(env, 'POST', '/v1/admin/srs-donations/batch', { headers: basic, now });
+async function feed(env, label = 'anki-rwkv', now = NOW) {
+  const r = await call(env, 'POST', '/v1/admin/srs-donations/feeds', { body: { label }, headers: basic, now });
   expect(r.status).toBe(200);
   return r.data;
 }
 
-/** 批次链接 → 站内路径。 */
+/** feed 链接 → 站内路径。 */
 const pathOf = (url) => new URL(url).pathname;
 
 describe('上传', () => {
@@ -235,11 +236,11 @@ describe('查询与撤回', () => {
     expect(env.MEDIA.store.has(donationKey(d.id))).toBe(false);
     expect(row(env, d.id)).toBeUndefined();
     expect(donationBytes(env)).toBe(0);
-    expect(withdrawal(env, d.id)).toMatchObject({ withdrawn_at: NOW + 5, reported_batch: null });
+    expect(withdrawal(env, d.id)).toEqual({ donor_id: d.id, withdrawn_at: NOW + 5 });
     expect((await withKey(env, 'DELETE', d)).status).toBe(200);
   });
 
-  it('撤回后重新捐赠：未报告的撤回删掉；已报告的保留', async () => {
+  it('撤回后重新捐赠：撤回记录删掉（新文件在 feed 里取代它）；再撤一次重新记上', async () => {
     const env = makeEnv();
     const a = donor(22);
     const b = donor(23);
@@ -247,30 +248,42 @@ describe('查询与撤回', () => {
     await put(env, b, apkg());
     await withKey(env, 'DELETE', a);
     await withKey(env, 'DELETE', b);
-    const bt = await batch(env); // 两条撤回都在这一批里报告
-    expect(withdrawal(env, a.id).reported_batch).toBe(bt.token);
+    expect(withdrawal(env, a.id)).toMatchObject({ withdrawn_at: NOW });
     await put(env, a, apkg(), { now: NOW + 2 * HOUR });
-    expect(withdrawal(env, a.id)).toMatchObject({ reported_batch: bt.token });
-    // 再撤一次：重新变成未报告，进下一批。
-    await withKey(env, 'DELETE', a, { now: NOW + 3 * HOUR });
-    expect(withdrawal(env, a.id)).toMatchObject({ withdrawn_at: NOW + 3 * HOUR, reported_batch: null });
-    // 未报告状态下重新捐赠 → 撤回记录删掉。
-    await put(env, a, apkg(), { now: NOW + 4 * HOUR });
     expect(withdrawal(env, a.id)).toBeUndefined();
-    expect(withdrawal(env, b.id).reported_batch).toBe(bt.token);
+    await withKey(env, 'DELETE', a, { now: NOW + 3 * HOUR });
+    expect(withdrawal(env, a.id)).toMatchObject({ withdrawn_at: NOW + 3 * HOUR });
+    expect(withdrawal(env, b.id)).toMatchObject({ withdrawn_at: NOW });
   });
 });
 
-describe('批次', () => {
+describe('feed', () => {
   it('管理接口要 Basic Auth', async () => {
     const env = makeEnv();
-    expect((await call(env, 'POST', '/v1/admin/srs-donations/batch', { now: NOW })).status).toBe(401);
-    expect((await call(env, 'GET', '/v1/admin/srs-donations', { now: NOW })).status).toBe(401);
     const bad = { Authorization: `Basic ${btoa('admin:nope')}` };
-    expect((await call(env, 'POST', '/v1/admin/srs-donations/batch', { headers: bad, now: NOW })).status).toBe(401);
+    expect((await call(env, 'POST', '/v1/admin/srs-donations/feeds', { body: { label: 'x' }, now: NOW })).status).toBe(401);
+    expect((await call(env, 'POST', '/v1/admin/srs-donations/feeds', { body: { label: 'x' }, headers: bad, now: NOW })).status)
+      .toBe(401);
+    expect((await call(env, 'DELETE', '/v1/admin/srs-donations/feeds/1', { now: NOW })).status).toBe(401);
+    expect((await call(env, 'GET', '/v1/admin/srs-donations', { now: NOW })).status).toBe(401);
   });
 
-  it('生成批次：清单 / 文件下载 / 撤回清单；快照后撤回的 404、快照后新捐的不在内、过期 404', async () => {
+  it('签发：token 64 位 hex、库里只存哈希；标签校验', async () => {
+    const env = makeEnv();
+    const f = await feed(env, 'anki-rwkv');
+    expect(f).toMatchObject({ id: 1, label: 'anki-rwkv', createdAt: NOW });
+    expect(f.token).toMatch(/^[0-9a-f]{64}$/);
+    expect(f.url).toBe(`https://rank.example.com/d/srs-donations/${f.token}/`);
+    const stored = env.DB.raw.prepare('SELECT * FROM srs_donation_feeds').get();
+    expect(stored.token_hash).not.toBe(f.token);
+    expect(stored.token_hash).toMatch(/^[0-9a-f]{64}$/);
+    for (const label of [undefined, '', 'x'.repeat(65), 'a\nb', 42]) {
+      const r = await call(env, 'POST', '/v1/admin/srs-donations/feeds', { body: { label }, headers: basic, now: NOW });
+      expect(r.status).toBe(400);
+    }
+  });
+
+  it('清单实时：新捐的立刻出现、重传换新 updatedAt、撤回立刻从 files 移到 withdrawn', async () => {
     const env = makeEnv();
     const a = donor(30);
     const b = donor(31);
@@ -278,48 +291,91 @@ describe('批次', () => {
     await put(env, a, apkg(40, 1), { reviews: '1500' });
     await put(env, b, apkg(50, 2), { reviews: '2500' });
     await put(env, gone, apkg(10, 3));
-    await withKey(env, 'DELETE', gone);
+    await withKey(env, 'DELETE', gone, { now: NOW + 1 });
+    const f = await feed(env);
 
-    const bt = await batch(env);
-    expect(bt).toMatchObject({ donors: 2, reviews: 4000, withdrawn: 1, expiresAt: NOW + 30 * DAY });
-    expect(bt.token).toMatch(/^[0-9a-f]{64}$/);
-    expect(bt.url).toBe(`https://rank.example.com/d/srs-donations/${bt.token}/`);
+    const m1 = await call(env, 'GET', pathOf(f.url), { now: NOW + 2 });
+    expect(m1.status).toBe(200);
+    expect(m1.res.headers.get('Cache-Control')).toBe('no-store');
+    expect(m1.data).toMatchObject({ format: 'fushi-srs-donation-feed', version: 1, withdrawnUrl: `${f.url}withdrawn.txt` });
+    expect(m1.data.files.map((x) => x.donorId)).toEqual([a.id, b.id]);
+    expect(m1.data.files[0]).toEqual({
+      donorId: a.id, reviews: 1500, cards: 200, bytes: 40, updatedAt: NOW, etag: `"${NOW}-40"`, url: `${f.url}${a.id}.apkg`,
+    });
+    expect(m1.data.withdrawn).toEqual([{ donorId: gone.id, withdrawnAt: NOW + 1 }]);
 
+    // 签发之后的变化照样出现在同一个链接里（不是快照）。
     const late = donor(33);
-    await put(env, late, apkg(), { now: NOW + 1 });
+    await put(env, late, apkg(), { now: NOW + 3 });
+    await put(env, a, apkg(44, 9), { now: NOW + 2 * HOUR, reviews: '1600' });
+    await withKey(env, 'DELETE', b, { now: NOW + 2 * HOUR + 1 });
+    const m2 = await call(env, 'GET', pathOf(f.url), { now: NOW + 3 * HOUR });
+    expect(m2.data.files.map((x) => x.donorId)).toEqual([a.id, late.id]);
+    expect(m2.data.files[0]).toMatchObject({ reviews: 1600, bytes: 44, updatedAt: NOW + 2 * HOUR });
+    expect(m2.data.withdrawn.map((x) => x.donorId)).toEqual([b.id, gone.id]);
 
-    const manifest = await call(env, 'GET', pathOf(bt.url), { now: NOW + 1 });
-    expect(manifest.status).toBe(200);
-    expect(manifest.res.headers.get('Cache-Control')).toBe('no-store');
-    expect(manifest.data.files.map((f) => f.donorId)).toEqual([a.id, b.id]);
-    expect(manifest.data.files[0]).toMatchObject({ reviews: 1500, bytes: 40, url: `${bt.url}${a.id}.apkg` });
-    expect(manifest.data.withdrawn).toEqual([gone.id]);
+    const txt = await call(env, 'GET', pathOf(`${f.url}withdrawn.txt`), { now: NOW + 3 * HOUR });
+    expect(txt.res.headers.get('Content-Type')).toMatch(/^text\/plain/);
+    expect(txt.data).toBe(`${[b.id, gone.id].join('\n')}\n`);
+  });
 
-    const file = await call(env, 'GET', pathOf(`${bt.url}${a.id}.apkg`), { now: NOW + 1 });
+  it('ETag：清单没变 304、变了换 ETag；文件按 updatedAt-大小 304', async () => {
+    const env = makeEnv();
+    const a = donor(34);
+    await put(env, a, apkg(40, 1));
+    const f = await feed(env);
+    const m1 = await call(env, 'GET', pathOf(f.url), { now: NOW + 1 });
+    const etag = m1.res.headers.get('ETag');
+    expect(etag).toMatch(/^"[0-9a-f]{32}"$/);
+    const same = await call(env, 'GET', pathOf(f.url), { headers: { 'If-None-Match': etag }, now: NOW + 2 });
+    expect(same.status).toBe(304);
+    expect(same.res.headers.get('ETag')).toBe(etag);
+    await put(env, donor(35), apkg(), { now: NOW + 3 });
+    const changed = await call(env, 'GET', pathOf(f.url), { headers: { 'If-None-Match': etag }, now: NOW + 4 });
+    expect(changed.status).toBe(200);
+    expect(changed.res.headers.get('ETag')).not.toBe(etag);
+
+    const file = await call(env, 'GET', pathOf(`${f.url}${a.id}.apkg`), { now: NOW + 5 });
     expect(file.status).toBe(200);
     expect(file.res.headers.get('Content-Type')).toBe('application/octet-stream');
     expect(file.res.headers.get('Content-Disposition')).toBe(`attachment; filename="${a.id}.apkg"`);
+    expect(file.res.headers.get('ETag')).toBe(`"${NOW}-40"`);
     expect(new TextEncoder().encode(file.data)[0]).toBe(0x50);
+    const fileSame = await call(env, 'GET', pathOf(`${f.url}${a.id}.apkg`), {
+      headers: { 'If-None-Match': `W/"${NOW}-40"` }, now: NOW + 6,
+    });
+    expect(fileSame.status).toBe(304);
+    await put(env, a, apkg(40, 2), { now: NOW + 2 * HOUR });
+    const fileNew = await call(env, 'GET', pathOf(`${f.url}${a.id}.apkg`), {
+      headers: { 'If-None-Match': `"${NOW}-40"` }, now: NOW + 2 * HOUR + 1,
+    });
+    expect(fileNew.status).toBe(200);
+    expect(fileNew.res.headers.get('ETag')).toBe(`"${NOW + 2 * HOUR}-40"`);
+  });
 
-    const txt = await call(env, 'GET', pathOf(`${bt.url}withdrawn.txt`), { now: NOW + 1 });
-    expect(txt.res.headers.get('Content-Type')).toMatch(/^text\/plain/);
-    expect(txt.data).toBe(`${gone.id}\n`);
+  it('已撤回 / 不存在的文件 404；吊销后整个链接 404；乱写的 token 404', async () => {
+    const env = makeEnv();
+    const a = donor(36);
+    const gone = donor(37);
+    await put(env, a, apkg());
+    await put(env, gone, apkg());
+    await withKey(env, 'DELETE', gone);
+    const f = await feed(env);
+    const other = await feed(env, 'other');
+    expect((await call(env, 'GET', pathOf(`${f.url}${gone.id}.apkg`), { now: NOW + 1 })).status).toBe(404);
+    expect((await call(env, 'GET', pathOf(`${f.url}${donor(99).id}.apkg`), { now: NOW + 1 })).status).toBe(404);
+    expect((await call(env, 'GET', pathOf(`${f.url}nope.txt`), { now: NOW + 1 })).status).toBe(404);
 
-    expect((await call(env, 'GET', pathOf(`${bt.url}${late.id}.apkg`), { now: NOW + 1 })).status).toBe(404);
-    expect((await call(env, 'GET', pathOf(`${bt.url}${gone.id}.apkg`), { now: NOW + 1 })).status).toBe(404);
+    const r = await call(env, 'DELETE', `/v1/admin/srs-donations/feeds/${f.id}`, { headers: basic, now: NOW + 2 });
+    expect(r.data).toEqual({ id: f.id, revokedAt: NOW + 2 });
+    expect((await call(env, 'DELETE', `/v1/admin/srs-donations/feeds/${f.id}`, { headers: basic, now: NOW + 3 })).data)
+      .toEqual({ id: f.id, revokedAt: NOW + 2 });
+    expect((await call(env, 'DELETE', '/v1/admin/srs-donations/feeds/999', { headers: basic, now: NOW })).status).toBe(404);
+    expect((await call(env, 'GET', pathOf(f.url), { now: NOW + 3 })).status).toBe(404);
+    expect((await call(env, 'GET', pathOf(`${f.url}${a.id}.apkg`), { now: NOW + 3 })).status).toBe(404);
+    // 吊销一个不影响另一个；而且长期有效（一年后照样能用）。
+    expect((await call(env, 'GET', pathOf(other.url), { now: NOW + 365 * DAY })).status).toBe(200);
 
-    // 快照之后撤回：文件 404，清单里也不再列。
-    await withKey(env, 'DELETE', b, { now: NOW + 2 });
-    expect((await call(env, 'GET', pathOf(`${bt.url}${b.id}.apkg`), { now: NOW + 3 })).status).toBe(404);
-    expect((await call(env, 'GET', pathOf(bt.url), { now: NOW + 3 })).data.files.map((f) => f.donorId)).toEqual([a.id]);
-
-    // 下一批只带尚未报告的撤回（b），gone 已报告过。
-    const next = await batch(env, NOW + 4);
-    expect(next).toMatchObject({ donors: 2, withdrawn: 1 });
-    expect((await call(env, 'GET', pathOf(`${next.url}withdrawn.txt`), { now: NOW + 4 })).data).toBe(`${b.id}\n`);
-
-    // 过期 / 乱写的 token。
-    expect((await call(env, 'GET', pathOf(bt.url), { now: NOW + 30 * DAY })).status).toBe(404);
     expect((await call(env, 'GET', `/d/srs-donations/${'0'.repeat(64)}/`, { now: NOW })).status).toBe(404);
     expect((await call(env, 'GET', '/d/srs-donations/nope/', { now: NOW })).status).toBe(404);
   });
@@ -329,12 +385,31 @@ describe('批次', () => {
     await put(env, donor(40), apkg(40), { reviews: '1000', cards: '10' });
     await put(env, donor(41), apkg(60), { reviews: '3000', cards: '20' });
     await withKey(env, 'DELETE', donor(41));
-    const bt = await batch(env);
-    const r = await call(env, 'GET', '/v1/admin/srs-donations', { headers: basic, now: NOW + 1 });
+    const f = await feed(env);
+    await call(env, 'DELETE', `/v1/admin/srs-donations/feeds/${f.id}`, { headers: basic, now: NOW + 1 });
+    const r = await call(env, 'GET', '/v1/admin/srs-donations', { headers: basic, now: NOW + 2 });
     expect(r.status).toBe(200);
-    expect(r.data).toMatchObject({ donors: 1, reviews: 1000, cards: 10, bytes: 40, pendingWithdrawals: 0 });
+    expect(r.data).toMatchObject({ donors: 1, reviews: 1000, cards: 10, bytes: 40, withdrawals: 1 });
     expect(r.data.pool).toEqual({ usedBytes: 40, quotaBytes: poolQuota(env, 'donation') });
-    expect(r.data.batches).toEqual([{ createdAt: NOW, expiresAt: NOW + 30 * DAY, donors: 1, withdrawn: 1, url: bt.url }]);
+    expect(r.data.feeds).toEqual([{ id: f.id, label: 'anki-rwkv', createdAt: NOW, revokedAt: NOW + 1 }]);
+  });
+});
+
+describe('scripts/srs_donation_feed.mjs', () => {
+  it('parseArgs / requestOf', () => {
+    expect(parseArgs([])).toMatchObject({ cmd: 'stats', arg: null });
+    expect(parseArgs(['create', 'anki-rwkv', '--base', 'https://x.test/'])).toEqual({
+      cmd: 'create', arg: 'anki-rwkv', base: 'https://x.test',
+    });
+    expect(() => parseArgs(['revoke', 'abc'])).toThrow(/usage/);
+    expect(() => parseArgs(['create'])).toThrow(/usage/);
+    expect(() => parseArgs(['--nope'])).toThrow(/unknown/);
+    expect(requestOf({ cmd: 'revoke', arg: '3', base: 'https://x.test' })).toEqual({
+      url: 'https://x.test/v1/admin/srs-donations/feeds/3', init: { method: 'DELETE' },
+    });
+    expect(requestOf({ cmd: 'create', arg: 'a', base: 'https://x.test' }).init).toMatchObject({
+      method: 'POST', body: '{"label":"a"}',
+    });
   });
 });
 

@@ -41,7 +41,7 @@
 //   GET  /v1/musickit/token                                Apple Music API developer token（musickit.js；没配 MUSICKIT_* 则 503）
 //   GET  /musickit/  /musickit/bridge.js                   MusicKit JS 托管页 + 桥接脚本（musickit_page.js；Windows/Android 网页桥）
 //   PUT/GET/DELETE /v1/srs-donations/:donorId  [Bearer donorKey] SRS 复习历史捐赠（srs_donations.js 文件头）；
-//   /v1/admin/srs-donations[/batch] [Basic] 统计 / 生成私有批次；GET /d/srs-donations/<token>/… 批次下载（token 即凭据）
+//   /v1/admin/srs-donations[/feeds[/:id]] [Basic] 统计 / 签发 / 吊销长期 feed；GET /d/srs-donations/<token>/… feed 下载（token 即凭据）
 //
 // 开发者网页处理台（HTML，会话 Cookie；devconsole.js）：/dev/**
 // 拍板台附件公开分享（无需登录，只读；decisions.js sharedFileResponse）：GET /share/f/<token>，撤销后 404
@@ -245,8 +245,8 @@ async function route(request, env, now, ctx) {
     return routeDecisionsApi(request, env, url, now);
   }
 
-  // ---- SRS 复习历史捐赠（srs_donations.js）：Bearer donorKey / 管理 Basic / 批次 token；写入口按 IP 过 AUTH_LIMITER，
-  //      读（含批次下载）过 READ_LIMITER；一律不进边缘缓存 ----
+  // ---- SRS 复习历史捐赠（srs_donations.js）：Bearer donorKey / 管理 Basic / feed token；写入口按 IP 过 AUTH_LIMITER，
+  //      读（含 feed 下载）过 READ_LIMITER；一律不进边缘缓存 ----
   if (isSrsDonationPath(path)) {
     await bindingLimit(method === 'GET' ? env.READ_LIMITER : env.AUTH_LIMITER, request);
     const res = await routeSrsDonations(request, env, url, now, clientIp(request));

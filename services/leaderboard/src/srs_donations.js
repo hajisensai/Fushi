@@ -1,4 +1,4 @@
-// SRS 复习历史捐赠（给 anki-rwkv 训练调度模型；设计 docs/specs/2026-11-26-srs-review-donation.md，迁移 0027）。
+// SRS 复习历史捐赠（给 anki-rwkv 训练调度模型；设计 docs/specs/2026-11-26-srs-review-donation.md，迁移 0027 / 0029）。
 //
 // 身份：客户端由 profileUid 派生 donorId（32 位小写 hex）与 donorKey（64 位 hex，Bearer 凭据）。
 // 服务端只存 key_hash = hex(sha256(donorKey 的小写形式按 UTF-8))；第一次上传的 key 认领该 donorId，
@@ -13,24 +13,27 @@
 //          按声明长度计，传失败不退）；全局扣 media 日预算 1 次 + write_rows；字节占 budget.js 的捐赠专用池
 //          （'donation'，media_usage.donation_bytes，DONATION_QUOTA_BYTES 默认 2 GiB，满了 507 donation_quota；
 //          捐赠包永不过期，所以不与 30 天过期的反馈视频共池）。重传只预占比旧文件多出的字节，成功后归还
-//          变小的差额；撤回归还整份。曾撤回、撤回尚未报告给作者的，删掉那条撤回记录。
+//          变小的差额；撤回归还整份。曾撤回的，删掉那条撤回记录（新文件在 feed 里取代它）。
 //   GET    /v1/srs-donations/:donorId   [Bearer donorKey] → 200 {donated, reviews, cards, updatedAt}；无记录 {donated: false}
 //   DELETE /v1/srs-donations/:donorId   [Bearer donorKey] → 删 R2 + 行、写撤回记录 → 200 {donated: false}；无记录也 200（不写撤回）
 //   GET    /v1/srs-donations/stats      公开、无需鉴权 → 200 {donors, reviews}（捐赠者数 / 复习条数合计，无记录各为 0）；
 //          其他方法 405。「捐赠者到 30 人提醒所有者」由所有者本地的 kaguya bot 轮询此接口完成，服务端不发通知。
 //
 // 管理（HTTP Basic，ADMIN_USER / ADMIN_PASS，admin.js checkBasicAuth）：
-//   POST   /v1/admin/srs-donations/batch → 快照当前全部捐赠 + 尚未报告的撤回 ID，签发随机 32 字节 token（30 天有效）
-//          → 200 {url, token, expiresAt, donors, reviews, withdrawn}。CLI：node scripts/srs_donation_batch.mjs
-//   GET    /v1/admin/srs-donations       → 统计 {donors, reviews, cards, bytes, pool: {usedBytes, quotaBytes},
-//                                            pendingWithdrawals, batches}
+//   POST   /v1/admin/srs-donations/feeds      body {label} → 签发长期 feed 凭据（随机 32 字节 token，库里只存 sha256）
+//          → 200 {id, label, createdAt, url, token}（token 明文只给这一次）。CLI：node scripts/srs_donation_feed.mjs create <label>
+//   DELETE /v1/admin/srs-donations/feeds/:id  吊销（幂等）→ 200 {id, revokedAt}；不存在 404
+//   GET    /v1/admin/srs-donations            → 统计 {donors, reviews, cards, bytes, pool: {usedBytes, quotaBytes},
+//                                               withdrawals, feeds:[{id, label, createdAt, revokedAt}]}
 //
-// 批次下载（链接里的 token 即凭据，无其他认证；过期 404）：
-//   GET /d/srs-donations/<token>/                 JSON 清单 {createdAt, expiresAt, files:[{donorId, reviews, cards, bytes,
-//                                                 updatedAt, url}], withdrawn:[donorId], withdrawnUrl}
-//                                                 （files 只列快照里、此刻仍未撤回的；值取当前行——快照后重传的给新文件）
-//   GET /d/srs-donations/<token>/<donorId>.apkg   attachment / application/octet-stream；不在快照里或快照后已撤回 → 404
-//   GET /d/srs-donations/<token>/withdrawn.txt    撤回 ID，一行一个
+// feed 下载（链接里的 token 即凭据，无其他认证；长期有效，吊销后 404；清单实时，不是快照）：
+//   GET /d/srs-donations/<token>/                 JSON 清单 {format: 'fushi-srs-donation-feed', version: 1,
+//                                                 files:[{donorId, reviews, cards, bytes, updatedAt, etag, url}],
+//                                                 withdrawn:[{donorId, withdrawnAt}], withdrawnUrl}；带 ETag，
+//                                                 If-None-Match 命中 304（定时轮询什么都没变时不传体）
+//   GET /d/srs-donations/<token>/<donorId>.apkg   attachment / application/octet-stream，ETag = 清单里的 etag
+//                                                 （If-None-Match 命中 304）；已撤回 / 不存在 → 404
+//   GET /d/srs-donations/<token>/withdrawn.txt    全部撤回 ID，一行一个（带 ETag）
 //
 // 已知取舍：同一 donorId 两把不同 key 并发「首次上传」时，后到的那次在写行时才发现冲突（409 conflict），
 // 但 R2 对象已被它覆盖；donorId 由 profileUid 派生，能撞上的人本就能拿到 donorKey，按 spec 接受。
@@ -50,7 +53,6 @@ export const SRS_DONATION_LIMITS = {
   uploadsPerDonorHour: 2,
   /** 每 IP 每 UTC 日上传字节（两次满额）。 */
   bytesPerIpDay: 128 * 1024 * 1024,
-  batchTtlMs: 30 * DAY,
   maxCount: 1e9,
 };
 
@@ -62,7 +64,9 @@ const ZIP_MAGIC = [0x50, 0x4b, 0x03, 0x04];
 
 export const DONOR_ID_RE = /^[0-9a-f]{32}$/;
 const DONOR_KEY_RE = /^[0-9a-fA-F]{64}$/;
-const BATCH_TOKEN_RE = /^[0-9a-f]{64}$/;
+const FEED_TOKEN_RE = /^[0-9a-f]{64}$/;
+/** feed 标签（发给了谁）：1–64 个可见字符。 */
+const FEED_LABEL_RE = /^[^\u0000-\u001f\u007f]{1,64}$/;
 const APP_VERSION_RE = /^[A-Za-z0-9.+_-]{1,64}$/;
 
 const NO_STORE = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer' };
@@ -221,8 +225,8 @@ async function putDonation(env, request, donorId, now, ip) {
       throw new HttpError(409, 'conflict');
     }
     if (oldBytes > length) await releaseMediaBytes(env, oldBytes - length, POOL);
-    await env.DB.prepare('DELETE FROM srs_donation_withdrawals WHERE donor_id = ?1 AND reported_batch IS NULL')
-      .bind(donorId).run();
+    // 新文件在 feed 清单里取代撤回记录（消费方按 updatedAt 换新）。
+    await env.DB.prepare('DELETE FROM srs_donation_withdrawals WHERE donor_id = ?1').bind(donorId).run();
     return json(donationStatus({ reviews, cards, updated_at: now }), 200, NO_STORE);
   } catch (e) {
     await reader.cancel().catch(() => {});
@@ -261,126 +265,149 @@ async function deleteDonation(env, request, donorId, now) {
   await env.DB.batch([
     env.DB.prepare('DELETE FROM srs_donations WHERE donor_id = ?1').bind(donorId),
     env.DB.prepare(
-      `INSERT INTO srs_donation_withdrawals (donor_id, withdrawn_at, reported_batch) VALUES (?1, ?2, NULL)
-       ON CONFLICT (donor_id) DO UPDATE SET withdrawn_at = excluded.withdrawn_at, reported_batch = NULL`,
+      `INSERT INTO srs_donation_withdrawals (donor_id, withdrawn_at) VALUES (?1, ?2)
+       ON CONFLICT (donor_id) DO UPDATE SET withdrawn_at = excluded.withdrawn_at`,
     ).bind(donorId, now),
   ]);
   return json({ donated: false }, 200, NO_STORE);
 }
 
-function batchUrl(origin, token) {
+function feedUrl(origin, token) {
   return `${origin}${SRS_DONATION_DOWNLOAD_PATH}${token}/`;
 }
 
+/** 管理请求体（JSON，≤ 4 KiB）。 */
+async function adminJson(request) {
+  const text = await request.text();
+  if (text.length > 4096) throw new HttpError(413, 'body_too_large');
+  if (!text) return {};
+  try {
+    const v = JSON.parse(text);
+    return v && typeof v === 'object' ? v : {};
+  } catch {
+    throw new HttpError(400, 'bad_json');
+  }
+}
+
 /**
- * 生成批次：快照与「把未报告的撤回标成本批」在同一个 batch 里原子完成。
- * @returns {Promise<{url: string, token: string, expiresAt: number, donors: number, reviews: number, withdrawn: number}>}
+ * 签发一个 feed 凭据：随机 32 字节 token，库里只存它的 sha256；明文只在这次响应里给。
+ * @returns {Promise<{id: number, label: string, createdAt: number, url: string, token: string}>}
  */
-export async function createDonationBatch(env, origin, now) {
+export async function createDonationFeed(env, origin, label, now) {
+  if (typeof label !== 'string' || !FEED_LABEL_RE.test(label)) throw new HttpError(400, 'bad_label');
   const bytes = new Uint8Array(32);
   crypto.getRandomValues(bytes);
   const token = hex(bytes);
-  const expiresAt = now + SRS_DONATION_LIMITS.batchTtlMs;
-  await env.DB.batch([
-    env.DB.prepare(
-      `INSERT INTO srs_donation_batches (token, created_at, expires_at, donors_json, withdrawn_json)
-       VALUES (?1, ?2, ?3,
-         (SELECT json_group_array(json_object('donorId', donor_id, 'reviews', reviews, 'cards', cards, 'bytes', bytes,
-            'updatedAt', updated_at)) FROM (SELECT * FROM srs_donations ORDER BY donor_id)),
-         (SELECT json_group_array(donor_id) FROM
-            (SELECT donor_id FROM srs_donation_withdrawals WHERE reported_batch IS NULL ORDER BY donor_id)))`,
-    ).bind(token, now, expiresAt),
-    env.DB.prepare('UPDATE srs_donation_withdrawals SET reported_batch = ?1 WHERE reported_batch IS NULL').bind(token),
-  ]);
-  const row = await env.DB.prepare('SELECT donors_json, withdrawn_json FROM srs_donation_batches WHERE token = ?1')
-    .bind(token).first();
-  const donors = JSON.parse(row.donors_json);
-  return {
-    url: batchUrl(origin, token),
-    token,
-    expiresAt,
-    donors: donors.length,
-    reviews: donors.reduce((s, d) => s + (d.reviews || 0), 0),
-    withdrawn: JSON.parse(row.withdrawn_json).length,
-  };
+  const tokenHash = hex(await sha256(new TextEncoder().encode(token)));
+  const row = await env.DB.prepare(
+    'INSERT INTO srs_donation_feeds (label, token_hash, created_at) VALUES (?1, ?2, ?3) RETURNING id',
+  ).bind(label, tokenHash, now).first();
+  return { id: row.id, label, createdAt: now, url: feedUrl(origin, token), token };
 }
 
-async function donationStats(env, origin, now) {
+/** 吊销 feed（幂等；不存在 404）。 */
+async function revokeDonationFeed(env, id, now) {
+  const row = await env.DB.prepare('SELECT id, revoked_at FROM srs_donation_feeds WHERE id = ?1').bind(id).first();
+  if (!row) throw new HttpError(404, 'not_found');
+  if (row.revoked_at === null) {
+    await env.DB.prepare('UPDATE srs_donation_feeds SET revoked_at = ?2 WHERE id = ?1').bind(id, now).run();
+    return { id, revokedAt: now };
+  }
+  return { id, revokedAt: row.revoked_at };
+}
+
+async function donationStats(env) {
   const s = await env.DB.prepare(
     `SELECT COUNT(*) AS donors, COALESCE(SUM(reviews), 0) AS reviews, COALESCE(SUM(cards), 0) AS cards,
        COALESCE(SUM(bytes), 0) AS bytes FROM srs_donations`,
   ).first();
-  const w = await env.DB.prepare('SELECT COUNT(*) AS n FROM srs_donation_withdrawals WHERE reported_batch IS NULL').first();
-  const batches = (await env.DB.prepare(
-    `SELECT token, created_at, expires_at, json_array_length(donors_json) AS donors,
-       json_array_length(withdrawn_json) AS withdrawn FROM srs_donation_batches ORDER BY created_at DESC LIMIT 24`,
-  ).all()).results.map((b) => ({
-    createdAt: b.created_at,
-    expiresAt: b.expires_at,
-    donors: b.donors,
-    withdrawn: b.withdrawn,
-    url: b.expires_at > now ? batchUrl(origin, b.token) : null,
-  }));
+  const w = await env.DB.prepare('SELECT COUNT(*) AS n FROM srs_donation_withdrawals').first();
+  const feeds = (await env.DB.prepare(
+    'SELECT id, label, created_at, revoked_at FROM srs_donation_feeds ORDER BY id',
+  ).all()).results.map((f) => ({ id: f.id, label: f.label, createdAt: f.created_at, revokedAt: f.revoked_at }));
   const pool = await poolUsage(env, POOL);
-  return {
-    donors: s.donors, reviews: s.reviews, cards: s.cards, bytes: s.bytes, pool, pendingWithdrawals: w.n, batches,
-  };
+  return { donors: s.donors, reviews: s.reviews, cards: s.cards, bytes: s.bytes, pool, withdrawals: w.n, feeds };
 }
 
-async function liveBatch(env, token, now) {
-  if (!BATCH_TOKEN_RE.test(token)) throw new HttpError(404, 'not_found');
-  const b = await env.DB.prepare('SELECT * FROM srs_donation_batches WHERE token = ?1').bind(token).first();
-  if (!b || b.expires_at <= now) throw new HttpError(404, 'not_found');
-  return b;
+/** token → 有效（未吊销）的 feed；格式不对 / 不存在 / 已吊销一律 404（不区分，免得探测）。 */
+async function liveFeed(env, token) {
+  if (!FEED_TOKEN_RE.test(token)) throw new HttpError(404, 'not_found');
+  const tokenHash = hex(await sha256(new TextEncoder().encode(token)));
+  const f = await env.DB.prepare('SELECT id FROM srs_donation_feeds WHERE token_hash = ?1 AND revoked_at IS NULL')
+    .bind(tokenHash).first();
+  if (!f) throw new HttpError(404, 'not_found');
+  return f;
 }
 
-/** 快照里、此刻仍在库（未撤回）的捐赠行。 */
-async function batchDonors(env, b) {
-  return (await env.DB.prepare(
-    `SELECT donor_id, reviews, cards, bytes, updated_at FROM srs_donations
-     WHERE donor_id IN (SELECT json_extract(value, '$.donorId') FROM json_each(?1)) ORDER BY donor_id`,
-  ).bind(b.donors_json).all()).results;
+/** 弱比较 If-None-Match（逗号分隔 / `*`）。 */
+function etagMatches(request, etag) {
+  const inm = request.headers.get('If-None-Match');
+  if (!inm) return false;
+  return inm.split(',').some((t) => {
+    const v = t.trim().replace(/^W\//, '');
+    return v === '*' || v === etag;
+  });
 }
 
-async function downloadRoute(env, url, now) {
+const FEED_HEADERS = { 'X-Robots-Tag': 'noindex, nofollow', ...NO_STORE };
+
+/** 带 ETag 的文本响应；If-None-Match 命中回 304。ETag = sha256(body) 前 32 位。 */
+async function conditionalText(request, text, contentType) {
+  const etag = `"${hex(await sha256(new TextEncoder().encode(text))).slice(0, 32)}"`;
+  if (etagMatches(request, etag)) return new Response(null, { status: 304, headers: { ETag: etag, ...FEED_HEADERS } });
+  return new Response(text, { headers: { 'Content-Type': contentType, ETag: etag, ...FEED_HEADERS } });
+}
+
+/** 文件 ETag：由捐赠行的 updated_at 与大小决定（每次重传 updated_at 都变），304 不必读 R2。 */
+function fileEtag(d) {
+  return `"${d.updated_at}-${d.bytes}"`;
+}
+
+/**
+ * feed 清单：此刻的全部捐赠与全部撤回（实时，不是快照）。消费方定时拉（ETag 不变 = 什么都没变），
+ * 按 donorId 比 updatedAt 只下变了的文件；`withdrawn` 里的、以及本地有而 `files` 里没有的，删掉。
+ */
+async function feedManifest(env, base) {
+  const files = (await env.DB.prepare(
+    'SELECT donor_id, reviews, cards, bytes, updated_at FROM srs_donations ORDER BY donor_id',
+  ).all()).results.map((d) => ({
+    donorId: d.donor_id,
+    reviews: d.reviews,
+    cards: d.cards,
+    bytes: d.bytes,
+    updatedAt: d.updated_at,
+    etag: fileEtag(d),
+    url: `${base}${d.donor_id}.apkg`,
+  }));
+  const withdrawn = (await env.DB.prepare(
+    'SELECT donor_id, withdrawn_at FROM srs_donation_withdrawals ORDER BY donor_id',
+  ).all()).results.map((w) => ({ donorId: w.donor_id, withdrawnAt: w.withdrawn_at }));
+  return { format: 'fushi-srs-donation-feed', version: 1, files, withdrawn, withdrawnUrl: `${base}withdrawn.txt` };
+}
+
+async function downloadRoute(env, request, url) {
   const rest = url.pathname.slice(SRS_DONATION_DOWNLOAD_PATH.length);
   const m = /^([^/]+)(?:\/(.*))?$/.exec(rest);
   if (!m) throw new HttpError(404, 'not_found');
-  const b = await liveBatch(env, m[1], now);
+  await liveFeed(env, m[1]);
   const file = m[2] || '';
-  const base = batchUrl(url.origin, m[1]);
+  const base = feedUrl(url.origin, m[1]);
   if (file === '') {
-    const files = (await batchDonors(env, b)).map((d) => ({
-      donorId: d.donor_id,
-      reviews: d.reviews,
-      cards: d.cards,
-      bytes: d.bytes,
-      updatedAt: d.updated_at,
-      url: `${base}${d.donor_id}.apkg`,
-    }));
-    const body = {
-      format: 'fushi-srs-donation-batch',
-      createdAt: b.created_at,
-      expiresAt: b.expires_at,
-      files,
-      withdrawn: JSON.parse(b.withdrawn_json),
-      withdrawnUrl: `${base}withdrawn.txt`,
-    };
-    return new Response(`${JSON.stringify(body, null, 2)}\n`, {
-      headers: { 'Content-Type': 'application/json; charset=utf-8', 'X-Robots-Tag': 'noindex, nofollow', ...NO_STORE },
-    });
+    const body = await feedManifest(env, base);
+    return conditionalText(request, `${JSON.stringify(body, null, 2)}\n`, 'application/json; charset=utf-8');
   }
   if (file === 'withdrawn.txt') {
-    const ids = JSON.parse(b.withdrawn_json);
-    return new Response(ids.length ? `${ids.join('\n')}\n` : '', {
-      headers: { 'Content-Type': 'text/plain; charset=utf-8', 'X-Robots-Tag': 'noindex, nofollow', ...NO_STORE },
-    });
+    const ids = (await env.DB.prepare('SELECT donor_id FROM srs_donation_withdrawals ORDER BY donor_id').all())
+      .results.map((w) => w.donor_id);
+    return conditionalText(request, ids.length ? `${ids.join('\n')}\n` : '', 'text/plain; charset=utf-8');
   }
   const f = /^([0-9a-f]{32})\.apkg$/.exec(file);
   if (!f) throw new HttpError(404, 'not_found');
   const donorId = f[1];
-  const inSnapshot = JSON.parse(b.donors_json).some((d) => d.donorId === donorId);
-  if (!inSnapshot || !(await donorRow(env, donorId))) throw new HttpError(404, 'not_found');
+  const d = await donorRow(env, donorId);
+  if (!d) throw new HttpError(404, 'not_found');
+  const etag = fileEtag(d);
+  if (etagMatches(request, etag)) return new Response(null, { status: 304, headers: { ETag: etag, ...FEED_HEADERS } });
   const obj = await env.MEDIA.get(donationKey(donorId));
   if (!obj) throw new HttpError(404, 'not_found');
   return new Response(obj.body, {
@@ -388,8 +415,9 @@ async function downloadRoute(env, url, now) {
       'Content-Type': 'application/octet-stream',
       'Content-Length': String(obj.size),
       'Content-Disposition': `attachment; filename="${donorId}.apkg"`,
-      'X-Robots-Tag': 'noindex, nofollow',
-      ...NO_STORE,
+      ETag: etag,
+      'Last-Modified': new Date(d.updated_at).toUTCString(),
+      ...FEED_HEADERS,
     },
   });
 }
@@ -406,15 +434,21 @@ async function downloadRoute(env, url, now) {
 export async function routeSrsDonations(request, env, url, now, ip) {
   const path = url.pathname;
   const method = request.method;
-  if (path === `${SRS_DONATION_ADMIN_PATH}/batch` && method === 'POST') {
+  if (path === `${SRS_DONATION_ADMIN_PATH}/feeds` && method === 'POST') {
     checkBasicAuth(request, env);
-    return json(await createDonationBatch(env, url.origin, now), 200, NO_STORE);
+    const body = await adminJson(request);
+    return json(await createDonationFeed(env, url.origin, body.label, now), 200, NO_STORE);
+  }
+  const feedId = /^\/v1\/admin\/srs-donations\/feeds\/(\d{1,12})$/.exec(path);
+  if (feedId && method === 'DELETE') {
+    checkBasicAuth(request, env);
+    return json(await revokeDonationFeed(env, Number(feedId[1]), now), 200, NO_STORE);
   }
   if (path === SRS_DONATION_ADMIN_PATH && method === 'GET') {
     checkBasicAuth(request, env);
-    return json(await donationStats(env, url.origin, now), 200, NO_STORE);
+    return json(await donationStats(env), 200, NO_STORE);
   }
-  if (path.startsWith(SRS_DONATION_DOWNLOAD_PATH) && method === 'GET') return downloadRoute(env, url, now);
+  if (path.startsWith(SRS_DONATION_DOWNLOAD_PATH) && method === 'GET') return downloadRoute(env, request, url);
   if (path === `${SRS_DONATION_PATH}stats`) {
     if (method !== 'GET') throw new HttpError(405, 'method_not_allowed');
     return json(await publicStats(env), 200, NO_STORE);
