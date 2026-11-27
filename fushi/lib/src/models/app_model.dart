@@ -34,6 +34,7 @@ import 'package:fushi/src/updates/usage_heartbeat.dart';
 import 'package:fushi_engine/media/metadata/books/rakuten_books.dart'
     show RakutenBooksCredentials;
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi/src/models/popup_header_buttons.dart';
 import 'package:fushi/src/models/preference_keys.dart';
 import 'package:fushi_engine/srs/srs_miner.dart';
 import 'package:fushi_engine/media/video/media_server_video_path.dart'
@@ -13812,6 +13813,12 @@ class AppModel
       : 1;
   Future<void> setPopupAutoExpandDictionaries(int count) =>
       prefsRepo.setPopupAutoExpandDictionaries(count);
+
+  /// 查词弹窗词条头按钮的排布（顺序 / 隐藏 / 额外制卡按钮），拍板台 b1JDe8McbS。
+  PopupHeaderButtonsConfig get popupHeaderButtons =>
+      prefsRepo.popupHeaderButtons;
+  Future<void> setPopupHeaderButtons(PopupHeaderButtonsConfig config) =>
+      prefsRepo.setPopupHeaderButtons(config);
 
   // TODO-1046: daily/weekly reading goals (characters). 0 = unset/off; the
   // statistics page hides the goal card. Delegated to prefsRepo.

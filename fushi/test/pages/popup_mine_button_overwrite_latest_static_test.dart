@@ -42,7 +42,7 @@ void main() {
       greaterThanOrEqualTo(0),
       reason: 'mine button onclick handler not found',
     );
-    final int end = source.indexOf('buttonsContainer.appendChild(mineButton)');
+    final int end = source.indexOf("addHeaderSlot('mine', mineButton)");
     expect(end, greaterThan(onclickIdx));
     onclickBody = source.substring(onclickIdx, end);
   });

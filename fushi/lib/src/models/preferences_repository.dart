@@ -33,6 +33,7 @@ import 'package:fushi_engine/ai/web_knowledge.dart'
         kLegacyWebKnowledgeSiteIds,
         parseWebKnowledgeCustomSites,
         parseWebKnowledgeEnabledIds;
+import 'package:fushi/src/models/popup_header_buttons.dart';
 import 'package:fushi/src/models/preference_keys.dart'
     show
         kAiAgentWebSearchAllow,
@@ -1829,6 +1830,32 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setPopupAutoExpandDictionaries(int count) async {
     await setPref('popup_auto_expand_dictionaries', count.clamp(0, 6));
+    notifyListeners();
+  }
+
+  /// 查词弹窗词条头按钮的排布与额外制卡按钮（拍板台 b1JDe8McbS）。按原始串 memo 解析
+  /// 结果：每次查词注入都要读它，不能每次都 jsonDecode。
+  PopupHeaderButtonsConfig get popupHeaderButtons {
+    final Object? raw = getPref(kPopupHeaderButtonsPrefKey, defaultValue: '');
+    final String text = raw is String ? raw : '';
+    final ({String raw, PopupHeaderButtonsConfig config})? memo =
+        _popupHeaderButtonsMemo;
+    if (memo != null && memo.raw == text) return memo.config;
+    final PopupHeaderButtonsConfig config = PopupHeaderButtonsConfig.parse(
+      text,
+    );
+    _popupHeaderButtonsMemo = (raw: text, config: config);
+    return config;
+  }
+
+  ({String raw, PopupHeaderButtonsConfig config})? _popupHeaderButtonsMemo;
+
+  Future<void> setPopupHeaderButtons(PopupHeaderButtonsConfig config) async {
+    final PopupHeaderButtonsConfig normalized = config.normalized();
+    await setPref(
+      kPopupHeaderButtonsPrefKey,
+      normalized.isDefault ? '' : normalized.encode(),
+    );
     notifyListeners();
   }
 

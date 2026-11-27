@@ -199,6 +199,7 @@ class MiningRequestOverrides {
     this.crop,
     this.mosaic = const <MiningMosaicRegion>[],
     this.fieldValues = const <String, String>{},
+    this.fieldTemplates = const <String, String>{},
   });
 
   /// fields map 里的键名。
@@ -249,6 +250,15 @@ class MiningRequestOverrides {
   /// （`AnkiNoteComposer.buildMinedFields`），不在映射里的字段名不会凭空多写一个字段。
   final Map<String, String> fieldValues;
 
+  /// 这一张卡改用的**字段模板**（Anki 字段名 → 占位符模板，如 `{reading}`），拍板台
+  /// b1JDe8McbS「查词弹窗多个制卡按钮」：每颗制卡按钮绑一套制卡方案，方案只记它和
+  /// 字段映射不一样的那几个字段（「假名」按钮把 Expression 换成 `{reading}`），其余继承。
+  ///
+  /// 与 [fieldValues] 的区别：这里是**模板**，照常走 handlebar 渲染；[fieldValues] 是
+  /// 已渲染好的手写值。两者都有时手写值优先。空串模板 = 这张卡该字段留空。只对映射里
+  /// 已有的字段生效（`AnkiNoteComposer.buildMinedFields`），不会凭空多写一个字段。
+  final Map<String, String> fieldTemplates;
+
   bool get hasMosaic => mosaic.isNotEmpty;
 
   bool get hasAudioDelta => audioStartDeltaMs != 0 || audioEndDeltaMs != 0;
@@ -264,7 +274,8 @@ class MiningRequestOverrides {
       coverFrameAtMs == null &&
       crop == null &&
       mosaic.isEmpty &&
-      fieldValues.isEmpty;
+      fieldValues.isEmpty &&
+      fieldTemplates.isEmpty;
 
   MiningRequestOverrides copyWith({
     String? deckName,
@@ -283,6 +294,7 @@ class MiningRequestOverrides {
     bool clearCrop = false,
     List<MiningMosaicRegion>? mosaic,
     Map<String, String>? fieldValues,
+    Map<String, String>? fieldTemplates,
   }) => MiningRequestOverrides(
     deckName: clearDeckName ? null : (deckName ?? this.deckName),
     omitAudio: omitAudio ?? this.omitAudio,
@@ -299,6 +311,7 @@ class MiningRequestOverrides {
     crop: clearCrop ? null : (crop ?? this.crop),
     mosaic: mosaic ?? this.mosaic,
     fieldValues: fieldValues ?? this.fieldValues,
+    fieldTemplates: fieldTemplates ?? this.fieldTemplates,
   );
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -316,6 +329,7 @@ class MiningRequestOverrides {
         for (final MiningMosaicRegion region in mosaic) region.toJson(),
       ],
     if (fieldValues.isNotEmpty) 'fields': fieldValues,
+    if (fieldTemplates.isNotEmpty) 'fieldTemplates': fieldTemplates,
   };
 
   /// 解析 `fields`：只留「非空字符串键 → 非空白字符串值」，坏项逐个丢弃。
@@ -327,6 +341,21 @@ class MiningRequestOverrides {
             when name.isNotEmpty &&
                 e.value is String &&
                 (e.value! as String).trim().isNotEmpty)
+          name: e.value! as String,
+    };
+    return out.isEmpty
+        ? const <String, String>{}
+        : Map<String, String>.unmodifiable(out);
+  }
+
+  /// 解析 `fieldTemplates`：只留「非空字符串键 → 字符串值」（空串值保留：它的意思是
+  /// 「这张卡该字段留空」），坏项逐个丢弃。
+  static Map<String, String> _fieldTemplatesFromJson(Object? raw) {
+    if (raw is! Map) return const <String, String>{};
+    final Map<String, String> out = <String, String>{
+      for (final MapEntry<Object?, Object?> e in raw.entries)
+        if (e.key case final String name
+            when name.isNotEmpty && e.value is String)
           name: e.value! as String,
     };
     return out.isEmpty
@@ -353,6 +382,7 @@ class MiningRequestOverrides {
       crop: MiningImageCrop.fromJson(json['crop']),
       mosaic: MiningMosaicRegion.listFromJson(json['mosaic']),
       fieldValues: _fieldValuesFromJson(json['fields']),
+      fieldTemplates: _fieldTemplatesFromJson(json['fieldTemplates']),
     );
   }
 

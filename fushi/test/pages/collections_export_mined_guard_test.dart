@@ -12,7 +12,7 @@ void main() {
     final String js = File('assets/popup/popup.js').readAsStringSync();
     expect(js, contains('createFavoriteButton'));
     expect(js, contains("'favoriteEntry'"));
-    expect(js, contains('buttonsContainer.appendChild(createFavoriteButton('));
+    expect(js, contains("addHeaderSlot('favorite', createFavoriteButton("));
   });
 
   test('② collection_exporter 提供制卡句导出管线 buildMinedExport', () {
