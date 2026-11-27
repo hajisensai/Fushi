@@ -1717,6 +1717,40 @@ Map<String, dynamic> buildStableReleaseFromTag(
   };
 }
 
+/// **纯函数**：镜像清单 [tag] 这一版的包实际挂在哪个 GitHub release 上（BUG-5579）。
+///
+/// 清单顶层 `tag` 是**版本印记**（`v3.4.0-debug.32865+8e2fbbf`），不一定是 release 的
+/// git tag：调试版全挂在滚动 release `fushi-debug-rolling` 上，按版本印记拼出的
+/// `releases/tag/<印记>` 是 404（iOS 侧载 / 不能自装的平台「打开发布页」就落在这里）。
+/// 包的 `browser_download_url`（`…/releases/download/<release tag>/<name>`）才是包的
+/// 真实所在，发布页 tag 从它取：优先与顶层 [tag] 同版的包，没有再看任意一个包；
+/// 一个都解析不出（非 GitHub 下载地址）才退回 [tag] 本身。
+@visibleForTesting
+String manifestReleasePageTag(String tag, List<Map<String, dynamic>> assets) {
+  String? releaseTagOf(Map<String, dynamic> asset) {
+    final Object? url = asset['browser_download_url'];
+    if (url is! String) return null;
+    final RegExpMatch? match = _kReleaseDownloadTagPattern.firstMatch(url);
+    final String? releaseTag = match?.group(1);
+    return releaseTag == null || releaseTag.isEmpty ? null : releaseTag;
+  }
+
+  for (final Map<String, dynamic> asset in assets) {
+    if (asset['tag'] != tag) continue;
+    final String? releaseTag = releaseTagOf(asset);
+    if (releaseTag != null) return releaseTag;
+  }
+  for (final Map<String, dynamic> asset in assets) {
+    final String? releaseTag = releaseTagOf(asset);
+    if (releaseTag != null) return releaseTag;
+  }
+  return tag;
+}
+
+final RegExp _kReleaseDownloadTagPattern = RegExp(
+  r'/releases/download/([^/?#]+)/',
+);
+
 /// stable release 网页基址（`tag/<tag>` 拼其后，作为 fallback「打开发布页」目标）。
 const String _kStableReleasesHtmlUrl =
     'https://github.com/$kGitHubRepo/releases';
@@ -1894,7 +1928,9 @@ Map<String, dynamic>? buildReleaseFromManifest(
     'prerelease': prerelease,
     'draft': false,
     'body': body0,
-    'html_url': '${stableReleasesHtmlUrlForRepo(repo)}/tag/$tag',
+    'html_url':
+        '${stableReleasesHtmlUrlForRepo(repo)}/tag/'
+        '${manifestReleasePageTag(tag, assets)}',
     if (topReleaseSeq is int) 'releaseSequence': topReleaseSeq,
     'assets': assets,
   };
