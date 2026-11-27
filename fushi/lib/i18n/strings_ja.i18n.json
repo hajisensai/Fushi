@@ -4120,6 +4120,7 @@
   "game_hook_fallback_window_not_found": "音声キャプチャは実行中ですが、ゲームウィンドウがまだ表示されていないため、スクリーンショットは利用できません。ウィンドウが表示されると自動的にバインドされます。",
   "game_hook_line_unavailable": "このキャプチャ行はもう利用できません。",
   "game_hook_mining_no_session_lines": "キャプチャされた行がまだないため、このカードに紐付けるものがありません。ワークベンチで別のテキストスレッドを選択してください。",
+  "game_hook_overlay_mine_failed": "“${term}” wasn't added to Anki: ${reason}",
   "game_hook_reason_access_denied": "ゲームがより高い権限で実行されています。Fushi を管理者として起動してから再試行してください。",
   "game_hook_reason_bitness_mismatch": "ヘルパーのアーキテクチャがゲームと一致しません（32ビット vs 64ビット）。ヘルパーを再インストールしてください。",
   "game_hook_reason_capability_probe_failed": "キャプチャコンポーネントが機能チェックに応答しませんでした。ディスク上に見つかりましたが、実行できないか時間内に応答しませんでした。ウイルス対策ソフトがブロックしている、Fushiに起動権限がない、または古いヘルパープロセスが残っている可能性があります。すべてのゲームを閉じ、ウイルス対策の隔離を確認してから再試行してください。",

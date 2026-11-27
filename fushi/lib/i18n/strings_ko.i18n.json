@@ -4120,6 +4120,7 @@
   "game_hook_fallback_window_not_found": "오디오 캡처가 실행 중이지만, 게임 창이 아직 나타나지 않아 스크린샷을 사용할 수 없습니다. 창이 나타나면 자동으로 연결됩니다.",
   "game_hook_line_unavailable": "이 캡처된 대사는 더 이상 사용할 수 없습니다.",
   "game_hook_mining_no_session_lines": "아직 캡처된 텍스트가 없어 이 카드에 연결할 내용이 없습니다. 워크벤치에서 다른 텍스트 스레드를 선택하세요.",
+  "game_hook_overlay_mine_failed": "“${term}” wasn't added to Anki: ${reason}",
   "game_hook_reason_access_denied": "게임이 더 높은 권한으로 실행됩니다. Fushi를 관리자 권한으로 시작한 후 다시 시도하세요.",
   "game_hook_reason_bitness_mismatch": "헬퍼 아키텍처가 게임과 맞지 않습니다(32비트 vs 64비트). 헬퍼를 다시 설치하세요.",
   "game_hook_reason_capability_probe_failed": "캡처 구성 요소가 기능 확인에 응답하지 않았습니다. 디스크에서 발견되었지만 실행할 수 없거나 시간 내에 응답하지 않았습니다 - 바이러스 백신이 차단하고 있거나, Fushi에 실행 권한이 없거나, 남아 있는 헬퍼 프로세스가 멈춰 있을 수 있습니다. 모든 게임을 닫고, 바이러스 백신 격리 목록을 확인한 다음 다시 시도하세요.",

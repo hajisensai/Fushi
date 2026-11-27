@@ -3380,6 +3380,17 @@ void FlutterWindow::RegisterGalHookTextChannel() {
               BoolFromValue(args, "speaking", false),
               BoolFromValue(args, "autoSpeak", false));
           result->Success();
+        } else if (method == "flashNotice") {
+          // 拍板台 pr4413-mine-fail-closed-card：查词卡已关时后台写卡失败，在台词
+          // 浮窗上闪一条（颜色 / 时长由 Dart 按主题与动效 token 算好）。
+          gal_hook_text_window_->FlashNotice(
+              WideFromValue(args, "text", L""),
+              ArgbFromValue(args, "bgColor", 0xFFB3261E),
+              ArgbFromValue(args, "textColor", 0xFFFFFFFF),
+              IntFromValue(args, "enterMs", 0),
+              IntFromValue(args, "holdMs", 0),
+              IntFromValue(args, "exitMs", 0));
+          result->Success();
         } else {
           result->NotImplemented();
         }

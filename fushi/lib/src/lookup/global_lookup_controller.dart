@@ -1586,7 +1586,13 @@ class GlobalLookupController {
   /// 查词 route；真正关窗（[_onOverlayHidden]）与下一次查词（[_activateRoute]）都会
   /// 作废它，所以「仍是当前 route 且有效」就是这张卡还在屏上。
   MineOriginOnScreen _mineOriginProbe(GlobalLookupRoute origin) =>
-      () => origin == _activeRoute && GlobalLookupChannel.isRouteValid(origin);
+      () => mineOriginOnScreen(origin);
+
+  /// [origin]（某次制卡派发时捕获的查词 route）那张卡此刻还在不在屏上，判据同
+  /// [_mineOriginProbe]。后台写卡落地时用（pr4413-mine-fail-closed-card）：卡已关
+  /// 就把失败提示改报到别处（gal 台词浮窗），而不是推进一张没人看的卡。
+  bool mineOriginOnScreen(GlobalLookupRoute origin) =>
+      origin == _activeRoute && GlobalLookupChannel.isRouteValid(origin);
 
   void _notifyRevealed(
     int width,

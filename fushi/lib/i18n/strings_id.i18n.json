@@ -4120,6 +4120,7 @@
   "game_hook_fallback_window_not_found": "Tangkapan audio berjalan, tetapi jendela game belum muncul, jadi tangkapan layar tidak tersedia. Akan terikat secara otomatis setelah jendela muncul.",
   "game_hook_line_unavailable": "Baris yang ditangkap ini tidak lagi tersedia.",
   "game_hook_mining_no_session_lines": "Belum ada baris yang ditangkap, jadi tidak ada yang bisa dilampirkan ke kartu ini. Pilih thread teks yang berbeda di ruang kerja.",
+  "game_hook_overlay_mine_failed": "“${term}” wasn't added to Anki: ${reason}",
   "game_hook_reason_access_denied": "Game berjalan dengan hak istimewa lebih tinggi; jalankan Fushi sebagai administrator dan coba lagi.",
   "game_hook_reason_bitness_mismatch": "Arsitektur helper tidak cocok dengan game (32-bit vs 64-bit); instal ulang helper.",
   "game_hook_reason_capability_probe_failed": "Komponen tangkapan tidak menjawab pemeriksaan kapabilitas. Ditemukan di disk tetapi tidak bisa dijalankan atau tidak merespons tepat waktu - antivirus mungkin memblokirnya, Fushi mungkin tidak memiliki izin untuk meluncurkannya, atau proses helper yang tersisa mungkin macet. Tutup semua game, periksa karantina antivirus Anda, lalu coba lagi.",

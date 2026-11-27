@@ -4120,6 +4120,7 @@
   "game_hook_fallback_window_not_found": "音頻採集正常，但遊戲視窗還沒出現，暫時無法截圖。視窗出現後會自動綁定。",
   "game_hook_line_unavailable": "這條捕獲台詞已不可用，未使用其他台詞替代。",
   "game_hook_mining_no_session_lines": "本局還沒有捕獲到任何台詞，卡片無處掛靠。請在工作台換一條文本線程。",
+  "game_hook_overlay_mine_failed": "“${term}” wasn't added to Anki: ${reason}",
   "game_hook_reason_access_denied": "遊戲以更高權限運行，請以管理員身份啟動 Fushi 後重試。",
   "game_hook_reason_bitness_mismatch": "鉤子組件位數與遊戲不匹配（32 位 / 64 位），請重新安裝組件。",
   "game_hook_reason_capability_probe_failed": "捕獲組件沒有回應能力探測：檔案在，但跑不起來或沒在時限內回應。多為殺毒軟體攔截、權限不足，或上一局殘留的 helper 進程掛住了。請關閉所有遊戲、檢查殺軟隔離區後重試。",

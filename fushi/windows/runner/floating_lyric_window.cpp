@@ -66,6 +66,19 @@ constexpr UINT kToolbarRevealPollMs = 120;
 // 正是「顶条还在、文字没了」。800ms 取自 BUG-1479 的同一权衡。
 constexpr UINT_PTR kTopmostGuardTimerId = 3;
 constexpr UINT kTopmostGuardIntervalMs = 800;
+// 提示胶囊（FlashNotice）的重绘表：淡入 / 淡出段逐帧（~60 fps），停留段一次跳到
+// 淡出开始，不在停留期间空转重绘。胶囊走完即停表。
+constexpr UINT_PTR kNoticeTimerId = 4;
+constexpr UINT kNoticeFrameMs = 16;
+// 胶囊几何（96-DPI 逻辑 px）：贴正文窗底部居中，左右让出 resize 角。
+constexpr float kNoticeMarginDip = 10.0f;
+constexpr float kNoticeSideInsetDip = 24.0f;
+constexpr float kNoticePadHDip = 14.0f;
+constexpr float kNoticePadVDip = 7.0f;
+constexpr float kNoticeFontDip = 14.0f;
+constexpr float kNoticeMaxLines = 2.0f;
+// 淡入时自下而上移入的距离（M3E 浮层进场：短位移 + 淡入）。
+constexpr float kNoticeRiseDip = 8.0f;
 // 揭示区在正文窗 ∪ 工具条矩形之外再放宽这么多，避免指针刚离开边缘一像素就消失，
 // 以及「从工具条移向正文」的途中出现空档。
 constexpr float kToolbarRevealMarginDip = 24.0f;
@@ -595,6 +608,8 @@ void FloatingLyricWindow::Hide() {
   StopHoverLookupPolling();
   StopToolbarRevealPolling();
   StopTopmostGuard();
+  // 隐藏期间提示没人看得见，下次显示时也不该冒出一条过期的失败。
+  ClearNotice();
   toolbar_revealed_ = false;
   ResetHoverLookupAnchor();
   // BUG-951: hand clicks back unconditionally and take the toolbar down with
@@ -728,6 +743,174 @@ void FloatingLyricWindow::SetVoiceState(bool replaying, bool recapturing,
   speaking_ = speaking;
   auto_speak_ = auto_speak;
   RequestRender();
+}
+
+void FloatingLyricWindow::FlashNotice(const std::wstring& text,
+                                      uint32_t bg_color, uint32_t text_color,
+                                      int enter_ms, int hold_ms, int exit_ms) {
+  if (text.empty() || hwnd_ == nullptr || !visible_) {
+    return;
+  }
+  const ULONGLONG now = GetTickCount64();
+  notice_text_ = text;
+  notice_bg_color_ = bg_color;
+  notice_text_color_ = text_color;
+  notice_enter_ms_ = std::max(0, enter_ms);
+  notice_exit_ms_ = std::max(0, exit_ms);
+  notice_start_ms_ = now;
+  notice_exit_at_ms_ = now + static_cast<ULONGLONG>(notice_enter_ms_) +
+                       static_cast<ULONGLONG>(std::max(0, hold_ms));
+  notice_rect_valid_ = false;
+  ScheduleNoticeTick(now);
+  RequestRender();
+}
+
+float FloatingLyricWindow::NoticeProgress(ULONGLONG now) const {
+  if (notice_text_.empty()) {
+    return -1.0f;
+  }
+  if (now < notice_exit_at_ms_) {
+    const ULONGLONG entered = now - notice_start_ms_;
+    if (notice_enter_ms_ <= 0 ||
+        entered >= static_cast<ULONGLONG>(notice_enter_ms_)) {
+      return 1.0f;
+    }
+    // 进场：减速曲线（快起步、柔落点，不过冲——同 FushiMotion.enter 的形状）。
+    const float x = static_cast<float>(entered) / notice_enter_ms_;
+    const float inv = 1.0f - x;
+    return 1.0f - inv * inv * inv;
+  }
+  const ULONGLONG leaving = now - notice_exit_at_ms_;
+  if (notice_exit_ms_ <= 0 ||
+      leaving >= static_cast<ULONGLONG>(notice_exit_ms_)) {
+    return -1.0f;
+  }
+  // 离场线性淡出：DismissNotice 据此从当前不透明度无跳变地接上。
+  return 1.0f - static_cast<float>(leaving) / notice_exit_ms_;
+}
+
+void FloatingLyricWindow::ScheduleNoticeTick(ULONGLONG now) {
+  if (hwnd_ == nullptr) {
+    return;
+  }
+  if (NoticeProgress(now) < 0.0f) {
+    KillTimer(hwnd_, kNoticeTimerId);
+    return;
+  }
+  UINT delay = kNoticeFrameMs;
+  const ULONGLONG enter_end =
+      notice_start_ms_ + static_cast<ULONGLONG>(notice_enter_ms_);
+  if (now >= enter_end && now < notice_exit_at_ms_) {
+    // 停留段：一次跳到淡出开始。
+    delay = static_cast<UINT>(std::max<ULONGLONG>(
+        kNoticeFrameMs, notice_exit_at_ms_ - now));
+  }
+  SetTimer(hwnd_, kNoticeTimerId, delay, nullptr);
+}
+
+void FloatingLyricWindow::ClearNotice() {
+  const bool had_notice = !notice_text_.empty();
+  notice_text_.clear();
+  notice_rect_valid_ = false;
+  if (hwnd_ != nullptr) {
+    KillTimer(hwnd_, kNoticeTimerId);
+  }
+  if (had_notice) {
+    RequestRender();
+  }
+}
+
+void FloatingLyricWindow::DismissNotice() {
+  const ULONGLONG now = GetTickCount64();
+  const float progress = NoticeProgress(now);
+  if (progress < 0.0f || notice_exit_ms_ <= 0) {
+    ClearNotice();
+    return;
+  }
+  if (now < notice_exit_at_ms_) {
+    // 从当前不透明度接着淡出：令 1 - (now - exit_at) / exit == progress。
+    notice_exit_at_ms_ =
+        now - static_cast<ULONGLONG>((1.0f - progress) * notice_exit_ms_);
+    // 已经在淡入中途被点掉：不再走进场曲线。
+    notice_start_ms_ = std::min(notice_start_ms_, notice_exit_at_ms_);
+  }
+  ScheduleNoticeTick(now);
+  RequestRender();
+}
+
+void FloatingLyricWindow::DrawNotice(float width, float height) {
+  notice_rect_valid_ = false;
+  const float progress = NoticeProgress(GetTickCount64());
+  if (progress <= 0.0f || dwrite_factory_ == nullptr ||
+      render_target_ == nullptr) {
+    return;
+  }
+  const float margin = ScaleForDpi(kNoticeMarginDip);
+  const float pad_h = ScaleForDpi(kNoticePadHDip);
+  const float pad_v = ScaleForDpi(kNoticePadVDip);
+  const float font_px = ScaleForDpi(kNoticeFontDip);
+  const float max_pill_w = width - 2.0f * ScaleForDpi(kNoticeSideInsetDip);
+  const float max_text_w = max_pill_w - 2.0f * pad_h;
+  if (max_text_w <= font_px) {
+    return;
+  }
+  Microsoft::WRL::ComPtr<IDWriteTextFormat> format;
+  // 界面提示用界面字体（不是台词字族：用户给台词选的书法 / 衬线体不适合报错）。
+  if (FAILED(dwrite_factory_->CreateTextFormat(
+          L"Yu Gothic UI", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD,
+          DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, font_px, L"",
+          format.GetAddressOf()))) {
+    return;
+  }
+  format->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP);
+  format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+  // 最多两行，再长就省略号收尾（完整原因主窗 toast 里有）。
+  Microsoft::WRL::ComPtr<IDWriteInlineObject> ellipsis;
+  dwrite_factory_->CreateEllipsisTrimmingSign(format.Get(),
+                                              ellipsis.GetAddressOf());
+  DWRITE_TRIMMING trimming = {DWRITE_TRIMMING_GRANULARITY_CHARACTER, 0, 0};
+  format->SetTrimming(&trimming, ellipsis.Get());
+  const float max_text_h = font_px * 1.4f * kNoticeMaxLines;
+  Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
+  if (FAILED(dwrite_factory_->CreateTextLayout(
+          notice_text_.c_str(), static_cast<UINT32>(notice_text_.size()),
+          format.Get(), max_text_w, max_text_h, layout.GetAddressOf()))) {
+    return;
+  }
+  DWRITE_TEXT_METRICS metrics = {};
+  if (FAILED(layout->GetMetrics(&metrics))) {
+    return;
+  }
+  const float text_w = std::min(max_text_w, metrics.width);
+  const float text_h = std::min(max_text_h, metrics.height);
+  // 收窄 layout 到实际文字宽，居中对齐才落在胶囊中间。
+  layout->SetMaxWidth(std::max(text_w, 1.0f));
+  const float pill_w = text_w + 2.0f * pad_h;
+  const float pill_h = text_h + 2.0f * pad_v;
+  const float rise = (1.0f - progress) * ScaleForDpi(kNoticeRiseDip);
+  const float left = (width - pill_w) / 2.0f;
+  const float top = std::max(0.0f, height - margin - pill_h) + rise;
+  const D2D1_RECT_F rect = D2D1::RectF(left, top, left + pill_w, top + pill_h);
+  // 单行是全圆角胶囊；两行时圆角封顶，免得成一颗椭圆。
+  const float radius = std::min(pill_h / 2.0f, ScaleForDpi(16.0f));
+  Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> bg;
+  Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> fg;
+  render_target_->CreateSolidColorBrush(ColorFromArgb(notice_bg_color_),
+                                        bg.GetAddressOf());
+  render_target_->CreateSolidColorBrush(ColorFromArgb(notice_text_color_),
+                                        fg.GetAddressOf());
+  if (bg == nullptr || fg == nullptr) {
+    return;
+  }
+  bg->SetOpacity(progress);
+  fg->SetOpacity(progress);
+  render_target_->FillRoundedRectangle(D2D1::RoundedRect(rect, radius, radius),
+                                       bg.Get());
+  render_target_->DrawTextLayout(D2D1::Point2F(left + pad_h, top + pad_v),
+                                 layout.Get(), fg.Get(),
+                                 D2D1_DRAW_TEXT_OPTIONS_CLIP);
+  notice_rect_ = rect;
+  notice_rect_valid_ = true;
 }
 
 void FloatingLyricWindow::SetClickLookupEnabled(bool enabled) {
@@ -1479,6 +1662,16 @@ LRESULT FloatingLyricWindow::HandleMessage(HWND hwnd, UINT message,
         ReassertTopmost();
         return 0;
       }
+      if (wparam == kNoticeTimerId) {
+        const ULONGLONG now = GetTickCount64();
+        if (NoticeProgress(now) < 0.0f) {
+          ClearNotice();
+        } else {
+          ScheduleNoticeTick(now);
+          RequestRender();
+        }
+        return 0;
+      }
       if (wparam == kToolbarRevealTimerId) {
         UpdateToolbarReveal();
         return 0;
@@ -1521,6 +1714,14 @@ LRESULT FloatingLyricWindow::HandleMessage(HWND hwnd, UINT message,
       slot_tooltip_.Hide();
       const float x = static_cast<float>(GET_X_LPARAM(lparam));
       const float y = static_cast<float>(GET_Y_LPARAM(lparam));
+
+      // 0. 提示胶囊盖在最上层：点它只是把它收起，不查词、不拖窗、不触发按钮。
+      if (notice_rect_valid_ && x >= notice_rect_.left &&
+          x <= notice_rect_.right && y >= notice_rect_.top &&
+          y <= notice_rect_.bottom) {
+        DismissNotice();
+        return 0;
+      }
 
       // 1. Control buttons (prev / play-pause / next / lock / close) win first.
       const std::string action = ControlActionAt(x, y);
@@ -2668,6 +2869,9 @@ void FloatingLyricWindow::Render() {
   // 模式 + kAudiobook 槽表之后，命中（ControlActionAt）已经只认槽表，绘制若还留着
   // 就会画出一排点不动的按钮 —— 比缺按钮更难查。所以两处一起删，非 text-only 模式
   // 现在不画任何控件（也没有任何实例再跑那个模式）。
+
+  // 提示胶囊最后画，盖在正文与工具条之上。
+  DrawNotice(static_cast<float>(width), static_cast<float>(height));
 
   HRESULT hr = render_target_->EndDraw();
   if (hr == D2DERR_RECREATE_TARGET) {

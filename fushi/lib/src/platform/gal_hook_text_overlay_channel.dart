@@ -1690,6 +1690,32 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
         });
   }
 
+  /// 在台词浮窗上闪一条提示（拍板台 pr4413-mine-fail-closed-card 选 b）：游戏全屏时
+  /// 主窗 toast 看不见、发起制卡的查词卡又已关掉，台词浮窗是屏上唯一还在的 Fushi 表面。
+  ///
+  /// native 在正文窗底部画一枚胶囊：[enterMs] 淡入并上移、停 [holdMs]、[exitMs] 淡出
+  /// （时长由 Dart 按动效 token 与「减弱动态」算好，0 = 瞬间到位）；点它即收起。浮窗
+  /// 没显示时 native 不存这条（这一刻看不见的提示，过后再冒出来只会误导）。新的一条
+  /// 直接顶掉还在显示的旧一条。颜色是 ARGB。
+  static Future<void> flashNotice({
+    required String text,
+    required int backgroundColor,
+    required int textColor,
+    required int enterMs,
+    required int holdMs,
+    required int exitMs,
+  }) async {
+    if (!_instance.isSupported || text.isEmpty) return;
+    await _instance.channel.invokeMethod<void>('flashNotice', <String, Object?>{
+      'text': text,
+      'bgColor': backgroundColor,
+      'textColor': textColor,
+      'enterMs': enterMs,
+      'holdMs': holdMs,
+      'exitMs': exitMs,
+    });
+  }
+
   /// 「悬停即查词」live 下发（设置项 `hover_auto_lookup`）：开着浮窗时改设置立刻生效，
   /// 不必等下一局游戏。关掉时浮窗退回「按住 Shift 悬停才查词」。
   static Future<void> setHoverAutoLookup(bool enabled) async {

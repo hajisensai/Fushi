@@ -4120,6 +4120,7 @@
   "game_hook_fallback_window_not_found": "Ses yakalama çalışıyor, ancak oyun penceresi henüz görünmedi, bu yüzden ekran görüntüleri kullanılamıyor. Pencere göründüğünde otomatik olarak bağlanacaktır.",
   "game_hook_line_unavailable": "Bu yakalanan satır artık mevcut değil.",
   "game_hook_mining_no_session_lines": "Henüz yakalanan satır yok, bu yüzden bu kartı eklenecek bir şey yok. Çalışma alanında farklı bir metin kanalı seçin.",
+  "game_hook_overlay_mine_failed": "“${term}” wasn't added to Anki: ${reason}",
   "game_hook_reason_access_denied": "Oyun daha yüksek ayrıcalıklarla çalışıyor; Fushi'yi yönetici olarak başlatın ve tekrar deneyin.",
   "game_hook_reason_bitness_mismatch": "Yardımcı mimarisi oyunla eşleşmiyor (32-bit ve 64-bit); yardımcıyı yeniden yükleyin.",
   "game_hook_reason_capability_probe_failed": "Yakalama bileşeni yetenek kontrolüne yanıt vermedi. Diskte bulundu ancak çalışamadı veya zamanında yanıt vermedi - antivirüs engelliyor olabilir, Fushi'nin başlatma izni olmayabilir veya artık bir yardımcı işlem takılmış olabilir. Tüm oyunları kapatın, antivirüs karantinasını kontrol edin ve tekrar deneyin.",
