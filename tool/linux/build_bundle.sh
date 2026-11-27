@@ -42,7 +42,11 @@ fi
 step "bootstrap (pub get, pub-cache patches, vendored binaries, required Rust libs)"
 # FUSHI_RELEASE_NATIVE=1: build fushi_fsrs without its test-only raw SQL channel
 # (cargo feature raw_sql, which bootstrap.sh adds for dev / test libraries).
-FUSHI_RELEASE_NATIVE=1 bash tool/bootstrap.sh
+# FUSHI_VENDORED_GROUPS=mihon: the bundle reads no other vendored binary (the jogamp jars
+# feed the Mihon build below). Without it bootstrap fetched every group, ~150 MB of iOS /
+# Android / Windows binaries this build never opens, and on 2026-11-27 an HTTP 500 on one
+# of those (the iOS libdvdread framework) failed the Linux release build.
+FUSHI_VENDORED_GROUPS="${FUSHI_VENDORED_GROUPS:-mihon}" FUSHI_RELEASE_NATIVE=1 bash tool/bootstrap.sh
 bash native/fushi_fsrs/verify_raw_sql.sh native/fushi_fsrs/prebuilt/linux-x64/libfushi_fsrs.so absent
 
 step "flutter build linux --release"
@@ -59,7 +63,18 @@ FUSHI_SOURCE_COMMIT="${FUSHI_SOURCE_COMMIT:-unknown}" \
   bash native/fushi_anki_sync/build.sh --install-dir "$BUNDLE"
 
 step "mihon_bridge runtime into bundle"
-bash tool/mihon/build_desktop_runtime.sh "$BUNDLE/mihon_bridge" /root/.cache/fushi/mihon-downloads
+# FUSHI_MIHON_RUNTIME_DIR (release-desktop.yml linux job): a directory the host restored from
+# the native artifact store. A complete runtime there is used as is; otherwise it is built into
+# that directory (offline, third_party/mihon_build) so the host can save it for later runs.
+if [[ -n "${FUSHI_MIHON_RUNTIME_DIR:-}" ]]; then
+  if [[ ! -f "$FUSHI_MIHON_RUNTIME_DIR/m-extension-server.jar" ]]; then
+    bash tool/mihon/build_desktop_runtime.sh "$FUSHI_MIHON_RUNTIME_DIR"
+  fi
+  rm -rf -- "$BUNDLE/mihon_bridge"
+  cp -a "$FUSHI_MIHON_RUNTIME_DIR" "$BUNDLE/mihon_bridge"
+else
+  bash tool/mihon/build_desktop_runtime.sh "$BUNDLE/mihon_bridge"
+fi
 
 step "fushi_cli into bundle"
 # Same as release-desktop.yml for Windows: the desktop CLI ships next to the app

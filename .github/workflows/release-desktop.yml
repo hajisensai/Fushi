@@ -180,6 +180,7 @@ jobs:
         uses: ./.github/actions/fetch-vendored-binaries
         with:
           groups: windows galgame mihon
+          durable: 'true'
       # 调试版流水线（debug pulse，docs/specs/2026-11-10-debug-pulse.md）：发布 run 一开始就刷新一次
       # update-manifest 的 debug-pulse-fushi.json——此刻本 run 在构建中、被顶掉的旧 run 已 cancelled、
       # develop 新合的 PR 显示为「还没进包」。只对 develop push（debug 通道）；不建 release / tag、不碰
@@ -788,14 +789,20 @@ jobs:
           mode: restore
           name: ${{ steps.native_store.outputs.mihon }}
           path: ${{ runner.temp }}\mihon-runtime
+      # 未命中才构建：离线构建包（third_party/mihon_build/README.md）从 vendored 取，Gradle
+      # --offline，构建期不连 Maven Central / Gradle / JDK 下载站。
+      - name: Fetch Mihon offline build kit
+        if: steps.mihon_runtime_store.outputs.hit != 'true'
+        uses: ./.github/actions/fetch-vendored-binaries
+        with:
+          groups: mihon-build mihon-jdk-windows-x64
+          durable: 'true'
       - name: Bundle pinned Mihon desktop runtime
         shell: pwsh
         run: |
           $built = "$env:RUNNER_TEMP\mihon-runtime"
           if ('${{ steps.mihon_runtime_store.outputs.hit }}' -ne 'true') {
-            .\tool\mihon\build_desktop_runtime.ps1 `
-              -OutputDirectory $built `
-              -DownloadCache "$env:RUNNER_TEMP\fushi-mihon-downloads"
+            .\tool\mihon\build_desktop_runtime.ps1 -OutputDirectory $built
             if ($LASTEXITCODE -ne 0) { throw "Mihon desktop runtime build failed ($LASTEXITCODE)" }
           }
           $runtime = "fushi\build\windows\x64\runner\Release\mihon_bridge"
@@ -1429,6 +1436,7 @@ jobs:
         uses: ./.github/actions/fetch-vendored-binaries
         with:
           groups: macos mihon
+          durable: 'true'
       # 原生产物持久库名字（唯一算法 .github/actions/native-store-names/names.sh）。p2p
       # arm64 dylib 与 build-multiplatform.yml macos job 同名：这里（develop push）存的件
       # 就是 PR 门首跑命中的那一份。
@@ -2051,22 +2059,31 @@ jobs:
           mode: save
           name: ${{ steps.native_store.outputs.torrent }}
           path: native/fushi_torrent/prebuilt/macos
-      # 缓存理由与 key 契约见 build-multiplatform.yml macos job 同名步骤（key 逐字一致）。
-      # 缓存里是未签名原始输出；ad-hoc / Developer ID 签名都只作用于拷进 .app 的副本。
+      # 持久库理由与名字契约见 build-multiplatform.yml macos job 同名步骤（名字逐字一致）。
+      # 库里是未签名原始输出；ad-hoc / Developer ID 签名都只作用于拷进 .app 的副本。
       - name: Restore pinned Mihon desktop runtimes
-        id: mihon_runtime_cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        id: mihon_runtime_store
+        uses: ./.github/actions/native-artifact-store
         with:
+          mode: restore
+          name: ${{ steps.native_store.outputs.mihon }}
           path: ${{ runner.temp }}/mihon-runtime
-          key: ${{ runner.os }}-${{ runner.arch }}-mihon-runtime-v1-${{ hashFiles('third_party/m_extension_server/**', 'third_party/jogamp/**', 'tool/mihon/**') }}
+      # 未命中才构建：离线构建包（third_party/mihon_build/README.md）从 vendored 取，Gradle
+      # --offline，构建期不连 Maven Central / Gradle / JDK 下载站。
+      - name: Fetch Mihon offline build kit
+        if: steps.mihon_runtime_store.outputs.hit != 'true'
+        uses: ./.github/actions/fetch-vendored-binaries
+        with:
+          groups: mihon-build mihon-jdk-macos-arm64
+          durable: 'true'
       - name: Bundle and sign pinned Mihon desktop runtimes
         shell: bash
         run: |
           set -euo pipefail
           built="$RUNNER_TEMP/mihon-runtime"
-          if [[ "${{ steps.mihon_runtime_cache.outputs.cache-hit }}" != "true" ]]; then
+          if [[ "${{ steps.mihon_runtime_store.outputs.hit }}" != "true" ]]; then
             chmod +x tool/mihon/build_desktop_runtime.sh
-            tool/mihon/build_desktop_runtime.sh "$built" "$RUNNER_TEMP/fushi-mihon-downloads"
+            tool/mihon/build_desktop_runtime.sh "$built"
           fi
           app_dir="fushi/build/macos/Build/Products/Release/fushi.app"
           runtime_dir="$app_dir/Contents/Resources/mihon_bridge"
@@ -2081,6 +2098,14 @@ jobs:
           tool/mihon/verify_desktop_runtime.sh "$runtime_dir" "$app_dir/Contents/MacOS/fushi"
           codesign --force --deep --sign - --timestamp=none "$app_dir"
           codesign --verify --deep --strict --verbose=2 "$app_dir"
+      - name: Save Mihon desktop runtime to native artifact store
+        if: steps.mihon_runtime_store.outputs.hit != 'true'
+        continue-on-error: true
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: save
+          name: ${{ steps.native_store.outputs.mihon }}
+          path: ${{ runner.temp }}/mihon-runtime
       # BUG-1421: the macOS bundle never shipped ffmpeg at all. Only the Windows
       # job had an install step, so fushi.app/Contents/MacOS/ held just the main
       # executable and _bundledExecutablePath() (ffmpeg_backend.dart) always
@@ -2648,6 +2673,14 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
+      # Prebuilt third-party binaries are not in git (tool/vendored_binaries.json). The bundle
+      # container reads only the jogamp jars (`mihon`); tool/linux/build_bundle.sh passes the same
+      # group to bootstrap, which then finds them in place and downloads nothing.
+      - name: Fetch vendored binaries
+        uses: ./.github/actions/fetch-vendored-binaries
+        with:
+          groups: mihon
+          durable: 'true'
       - name: Resolve desktop release channel
         id: channel
         shell: bash
@@ -2867,6 +2900,24 @@ jobs:
         run: |
           echo "::error title=Flatpak BaseApp missing::the flatpak-baseapp job saved $BASEAPP but it cannot be restored here."
           exit 1
+      # Mihon runtime：与 Windows / macOS 一样按输入哈希存进原生产物持久库（名字在 names.sh 的
+      # flatpak 分支）。
+      # 原先每次都在容器里现编，Gradle 现场去 Maven Central 解析依赖，2026-11-27 被 429 打红。
+      - name: Restore Mihon desktop runtime
+        id: mihon_runtime_store
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: restore
+          name: ${{ steps.native_store.outputs.mihon }}
+          path: build/mihon-runtime
+      # 未命中才构建：离线构建包（third_party/mihon_build/README.md）从 vendored 取，Gradle
+      # --offline，构建期不连 Maven Central / Gradle / JDK 下载站。
+      - name: Fetch Mihon offline build kit
+        if: steps.mihon_runtime_store.outputs.hit != 'true'
+        uses: ./.github/actions/fetch-vendored-binaries
+        with:
+          groups: mihon-build mihon-jdk-linux-x64
+          durable: 'true'
       - name: Free disk space for the Linux build
         shell: bash
         run: |
@@ -2885,10 +2936,19 @@ jobs:
           # unlike build_in_docker.sh), so the baked secret stubs above are included.
           docker run --rm -v "$PWD:/src" -v "$PWD/build/linux-dist:/out" \
             -e FUSHI_SOURCE_COMMIT="$GITHUB_SHA" -e FUSHI_BUILD_NAME -e FUSHI_BUILD_NUMBER \
+            -e FUSHI_MIHON_RUNTIME_DIR=/src/build/mihon-runtime \
             -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0='*' \
             fushi-linux-build bash /src/tool/linux/build_bundle.sh
           sudo chown -R "$(id -u):$(id -g)" .
           ls -lh build/linux-dist
+      - name: Save Mihon desktop runtime to native artifact store
+        if: steps.mihon_runtime_store.outputs.hit != 'true'
+        continue-on-error: true
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: save
+          name: ${{ steps.native_store.outputs.mihon }}
+          path: build/mihon-runtime
       - name: Resolve Flatpak branch and signing
         id: flatpak
         shell: bash
@@ -3002,6 +3062,7 @@ jobs:
         uses: ./.github/actions/fetch-vendored-binaries
         with:
           groups: ios
+          durable: 'true'
       # 原生产物持久库名字（唯一算法 .github/actions/native-store-names/names.sh）。与
       # build-multiplatform.yml ios job 同名：同一个 device staticlib。
       - name: Resolve native artifact store names

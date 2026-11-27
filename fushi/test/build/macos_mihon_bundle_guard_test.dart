@@ -21,13 +21,15 @@ void main() {
     },
   );
 
-  test('macOS Mihon JDK downloads are pinned and checksum verified', () {
+  test('macOS Mihon JDK archives are pinned and checksum verified', () {
     final String script = File(
       '../tool/mihon/build_desktop_runtime.sh',
     ).readAsStringSync();
 
     expect(script, contains('corretto_version="21.0.12.8.1"'));
-    expect(script, contains('corretto.aws/downloads/resources'));
+    // JDK 来自 vendored 离线构建包（third_party/mihon_build），不再现场下载；
+    // 离线构建的整体契约见 mihon_offline_build_guard_test.dart。
+    expect(script, contains(r'local archive_path="$offline_kit/jdk/$archive"'));
     expect(script, contains('arm64_archive_sha256='));
     expect(
       script,
@@ -38,7 +40,6 @@ void main() {
     expect(script, contains('Darwin) sha256_tool=(shasum -a 256)'));
     expect(script, contains(r'"${sha256_tool[@]}" --check'));
     expect(script, isNot(contains('--check --status')));
-    expect(script, contains('--continue-at -'));
   });
 
   test('macOS 只出 arm64 的 Mihon runtime（不再支持 Intel Mac）', () {

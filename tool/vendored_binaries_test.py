@@ -129,6 +129,70 @@ class IdentityTest(unittest.TestCase):
         self.assertTrue(result.stdout.endswith(b"\n"))
 
 
+class GroupSelectionTest(unittest.TestCase):
+    """--group wins, then $FUSHI_VENDORED_GROUPS, then every group."""
+
+    _MANIFEST: dict = {
+        "files": [
+            {"path": "a/one", "group": "mihon", "sha256": "1" * 64},
+            {"path": "b/two", "group": "ios", "sha256": "2" * 64},
+            {"path": "c/three", "group": "android", "sha256": "3" * 64},
+        ]
+    }
+
+    def _select(self, groups: Optional[list[str]], env: Optional[str]) -> list[str]:
+        saved = os.environ.pop("FUSHI_VENDORED_GROUPS", None)
+        try:
+            if env is not None:
+                os.environ["FUSHI_VENDORED_GROUPS"] = env
+            return [entry["path"] for entry in vb.select(self._MANIFEST, groups)]
+        finally:
+            os.environ.pop("FUSHI_VENDORED_GROUPS", None)
+            if saved is not None:
+                os.environ["FUSHI_VENDORED_GROUPS"] = saved
+
+    def test_env_limits_the_default_selection(self) -> None:
+        # The Linux bundle container: bootstrap must not pull the iOS binaries.
+        self.assertEqual(self._select(None, "mihon"), ["a/one"])
+        self.assertEqual(self._select(None, " mihon  android "), ["a/one", "c/three"])
+
+    def test_explicit_group_beats_env(self) -> None:
+        self.assertEqual(self._select(["ios"], "mihon"), ["b/two"])
+
+    def test_no_env_means_all(self) -> None:
+        self.assertEqual(self._select(None, None), ["a/one", "b/two", "c/three"])
+        self.assertEqual(self._select(None, "  "), ["a/one", "b/two", "c/three"])
+
+    def test_unknown_env_group_fails_loudly(self) -> None:
+        with self.assertRaises(vb.VendoredError):
+            self._select(None, "nope")
+
+
+class DigestTest(unittest.TestCase):
+    def _digest(self, *groups: str) -> bytes:
+        args = [arg for group in groups for arg in ("--group", group)]
+        env = {k: v for k, v in os.environ.items() if k != "FUSHI_VENDORED_GROUPS"}
+        return subprocess.run(
+            [sys.executable, str(HERE / "vendored_binaries.py"), "digest", *args],
+            capture_output=True,
+            check=True,
+            env=env,
+        ).stdout
+
+    def test_digest_is_one_lf_terminated_sha256_independent_of_group_order(self) -> None:
+        out = self._digest("mihon", "ios")
+        self.assertRegex(out.decode("ascii"), r"^[0-9a-f]{64}\n$")
+        self.assertEqual(out, self._digest("ios", "mihon"))
+
+    def test_digest_covers_the_pinned_bytes(self) -> None:
+        manifest = json.loads((HERE / "vendored_binaries.json").read_text(encoding="utf-8"))
+        entries = sorted((e for e in manifest["files"] if e["group"] == "mihon"), key=lambda e: e["path"])
+        listing = "".join(f"{e['path']} {e['sha256']}\n" for e in entries)
+        expected = hashlib.sha256(listing.encode("utf-8")).hexdigest()
+        self.assertEqual(self._digest("mihon").decode("ascii").strip(), expected)
+        self.assertNotEqual(self._digest("mihon"), self._digest("ios"))
+
+
 class DownloadRetryTest(unittest.TestCase):
     def setUp(self) -> None:
         self._backoff = vb.RETRY_BACKOFF_SECONDS

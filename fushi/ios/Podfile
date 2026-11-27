@@ -39,6 +39,11 @@ target 'Runner' do
   pod 'onnxruntime-c', :podspec => File.join(ort_pods, 'onnxruntime-c.podspec.json')
   pod 'onnxruntime-objc', :podspec => File.join(ort_pods, 'onnxruntime-objc.podspec.json')
 
+  # UniversalDetector2（flutter_charset_detector_ios 的依赖）在 trunk 上按 git + 子模块取源码，
+  # 子模块在 gitlab.freedesktop.org，2026-11-27 发版时 503 把 iOS 构建弄红。源码已原样收进
+  # third_party/universal_detector2_pod（出处与升级方法见该目录 README.md），本地路径构建不联网。
+  pod 'UniversalDetector2', :path => File.join(File.dirname(File.realpath(__FILE__)), '..', '..', 'third_party', 'universal_detector2_pod')
+
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
 end
 

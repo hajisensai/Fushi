@@ -708,12 +708,16 @@ gitignore，消费方（Windows CMake 的 MD5 校验、Gradle、podspec / Makefi
 - **清单** `tool/vendored_binaries.json`：每项 `path / group / size / sha256 / url`。资产名按内容寻址
   `<sha256 前 16 位>-<basename>`，同一路径的每个版本各占一个资产，旧提交照样取到自己那份字节。
   group：`windows`（mpv-dev 7z、ANGLE.7z、libplacebo DLL）、`galgame`（LunaHook/LunaHost DLL）、
-  `mihon`（jogamp 离线 Maven 的两个 jar）、`android`（ffmpeg-kit-next.aar、bluray-menu jar）、
+  `mihon`（jogamp 离线 Maven 的两个 jar）、`mihon-build` + `mihon-jdk-{linux-x64,linux-arm64,macos-arm64,windows-x64}`
+  （Mihon runtime 离线构建包：Gradle 发行包、Gradle 只读依赖缓存、JDK 归档，见下文「发版构建不现场联网」）、`android`（ffmpeg-kit-next.aar、bluray-menu jar）、
   `ios`（iOS libmpv tar.gz、FFmpegKit xcframework 里的 22 个 Mach-O）、`macos`（两个 tar.gz）。
 - **取回** `python3 tool/vendored_binaries.py fetch [--group G ...]`（纯标准库，Windows 入口
   `tool/vendored_binaries.ps1`）：已对上的文件只算一遍 sha256；缺的 / 不一致的先查本机缓存
   （`FUSHI_VENDORED_CACHE`，默认 `%LOCALAPPDATA%\fushi\vendored-binaries` / `~/.cache/fushi/vendored-binaries`，
   所有 worktree 共用），再经 `HTTPS_PROXY` 下载；大小或 sha256 不符直接失败，不落盘。只校验不写用 `check`。
+  不带 `--group` 时取 `FUSHI_VENDORED_GROUPS`（空格分隔）里的组，没设才取全部：Linux bundle 容器
+  （`tool/linux/build_bundle.sh`）设成 `mihon`，否则 bootstrap 会把它用不到的 ~150 MB iOS / Android /
+  Windows 件全拉一遍（2026-11-27 正是其中一个 iOS framework 的 HTTP 500 打红了 Linux 发版）。
   - **网络重试（外部 CDN，允许的有界例外）**：只重试传输层失败——连不上 / 超时 / body 比自己的
     `Content-Length` 短（断流）/ HTTP 5xx，共 `DOWNLOAD_ATTEMPTS = 3` 次、退避 2 s × 次数，**每次失败都打一行**
     `<path>: download attempt N/3 failed (...); retrying in Ns`，用完报错退出。HTTP 4xx 与「完整收到但 size /
@@ -730,8 +734,13 @@ gitignore，消费方（Windows CMake 的 MD5 校验、Gradle、podspec / Makefi
   `fushi/tool/dist_test/worker_prepare.sh`；CI 用 composite action `.github/actions/fetch-vendored-binaries`
   （`groups:` 输入），紧跟 checkout：`main.yml` build / unit-tests、`release.yml` build / tests、
   `build-multiplatform.yml` android / macos / ios / windows、`release-desktop.yml` windows / macos / ios、
-  `ci-config-gate.yml` guards、`native-galgame-gate.yml` guards。新 job 读这些文件就照抄这一步。
-  不挂 `actions/cache`：同机房下载几秒，按 group 缓存每版要吃约 0.5 GB 缓存配额（见上节）。
+  `ci-config-gate.yml` guards、`native-galgame-gate.yml` guards、`release-desktop.yml` linux（`mihon`）。
+  新 job 读这些文件就照抄这一步。不挂 `actions/cache`：配额约一小时换一轮（见上节）。
+  **发版 job 加 `durable: 'true'`**（`release-desktop.yml` windows / macos / ios / linux、`release.yml` build，
+  守卫钉住）：同一份字节再按内容地址 `vendored-<组>-<digest>`（`vendored_binaries.py digest`）存进原生产物
+  持久库，restore 命中就把下载缓存填满、fetch 一个字节都不下；未命中且在 develop / main 上才 save。release 资产
+  的 CDN 与 workflow artifact 是 GitHub 的两套后端，一边抖（2026-11-27 release CDN 连续 HTTP 500）另一边还在。
+  fetch 仍逐个对清单校验，库里的件喂不进清单没钉的字节。要 `actions: read`。
   native artifact store 的 Mihon / galgame 名字经 `names.sh` 的 `vendored_identity` 折入清单 sha256
   （`git ls-tree` 已看不到这些字节）。
 - **从旧分支切回来**：切到仍跟踪这些文件的旧提交再切回，git 会删掉它们，重跑 `fetch` 即可（走缓存，秒级）。
@@ -751,6 +760,22 @@ gitignore，消费方（Windows CMake 的 MD5 校验、Gradle、podspec / Makefi
    `fushi/test/build/vendored_binaries_manifest_guard_test.dart` 会把清单与各消费方钉值逐一对账、要求每条路径
    被 `.gitignore` 精确排除且不被跟踪、`third_party/` 与 `native/**/third_party/` 下不得再跟踪 >1 MiB 的文件
    （白名单只有 `m_extension_server/upstream_src` 的上游字体），并钉住上面每个 CI job 的取回步骤。
+
+### 发版构建不现场联网（2026-11-27）
+
+发版构建只依赖 GitHub（跑构建的平台本身）与 Apple（签名 / 公证 / TestFlight），其余第三方服务器不在构建路径上：
+
+- **Mihon runtime**：三端都先按输入哈希从原生产物持久库取（`names.sh` windows / macos / flatpak 分支的
+  `mihon` 键；输入含 `third_party/mihon_build`），命中连 JDK 都不碰；未命中才 `fetch-vendored-binaries`
+  `mihon-build mihon-jdk-<平台>`（durable）再由 `tool/mihon/build_desktop_runtime.{sh,ps1}` 离线构建：
+  解开 vendored Gradle 发行包直接跑（不走 `gradlew`）、vendored 依赖缓存作 `GRADLE_RO_DEP_CACHE`、全新
+  `GRADLE_USER_HOME`、`--offline`，缺坐标当场红。依赖变了按 `third_party/mihon_build/README.md` 重新打包。
+  守卫 `fushi/test/build/mihon_offline_build_guard_test.dart`。
+- **iOS pod**：trunk pod 只允许从 GitHub 取源码、且不带指向别处的子模块；`onnxruntime-*`（`third_party/onnxruntime_pods`）
+  与 `UniversalDetector2`（源码收在 `third_party/universal_detector2_pod`，原先子模块在 gitlab.freedesktop.org）
+  已本地化。新增 trunk pod 先审 podspec `source`，守卫 `fushi/test/build/apple_pods_offline_guard_test.dart`。
+  仍在路径上的第三方：CocoaPods 的 spec CDN（cdn.cocoapods.org → jsDelivr），只在 Pods 缓存未命中时解析 spec 用。
+- **vendored 二进制**：release 资产 + 持久库两个来源（见上）。
 
 ## 依赖补丁
 

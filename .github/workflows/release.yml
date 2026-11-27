@@ -173,6 +173,7 @@ jobs:
       uses: ./.github/actions/fetch-vendored-binaries
       with:
         groups: android
+        durable: 'true'
     # 调试版流水线（debug pulse，docs/specs/2026-11-10-debug-pulse.md）：发布 run 一开始就刷新一次
     # update-manifest 的 debug-pulse-fushi.json——此刻本 run 在构建中、被顶掉的旧 run 已 cancelled、
     # develop 新合的 PR 显示为「还没进包」。只对 develop push（debug 通道）；不建 release / tag、不碰

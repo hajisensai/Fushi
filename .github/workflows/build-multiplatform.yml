@@ -166,9 +166,9 @@ jobs:
 
           app_common='^(pubspec\.(yaml|lock)$|ci/|third_party/[^/]+/pubspec\.yaml$|native/(fushidicts|fushi_p2p|fushi_aacs|fushi_fsrs|fushi_compute|fushi_web_core|fushi_rwkv|fushi_music|fushi_corpus)/|packages/(fushi_p2p|fushi_srs|fushi_compute|fushi_web_core|fushi_rwkv|fushi_music|fushi_corpus)/|tool/vendored_binaries\.(json|py)$|fushi/tool/gen_i18n\.dart$|\.github/workflows/build-multiplatform\.yml$|\.github/actions/(fetch-vendored-binaries|provide-baked-secrets|gen-i18n|native-artifact-store|native-store-names|pdfium-hook-cache|setup-fushi-compute|setup-fushi-rwkv|setup-fushi-music|setup-fushi-corpus)/)'
           smoke='^fushi/(integration_test/(app_smoke_test\.dart$|test_helpers\.dart$|support/|helpers/)|tool/(comprehensive_test_runner\.dart$|generate_test_fixtures\.dart$|test_flow/))'
-          windows_only='^(fushi/windows/|packages/(flutter_inappwebview_windows|gamepads_windows)/|packages/[^/]+/windows/|native/(fushi_torrent|galgame_hook|fushi_anki_sync)/|packages/fushi_torrent/|third_party/([^/]+/windows/|[^/]*windows[^/]*/|libplacebo-win/|m_extension_server/|jogamp/)|tool/mihon/|tool/engine_overlay\.ps1$|tools/(build_magpie_slim|bundle_7za)\.ps1$|\.github/actions/(setup-fushi-anki-sync|flutter-engine-overlay)/)'
-          macos_only='^(fushi/(macos|apple)/|packages/[^/]+/(macos|darwin)/|native/(fushi_anki_sync|fushi_torrent)/|packages/fushi_torrent/|\.github/scripts/verify_torrent_abi\.sh$|third_party/([^/]+/(macos|darwin)/|[^/]*macos[^/]*/|m_extension_server/|jogamp/)|tool/mihon/|\.github/actions/setup-fushi-anki-sync/)'
-          ios_only='^(fushi/(ios|apple)/|native/fushi_ios_umbrella/|packages/[^/]+/(ios|darwin)/|third_party/([^/]+/(ios|darwin)/|[^/]*ios[^/]*/))'
+          windows_only='^(fushi/windows/|packages/(flutter_inappwebview_windows|gamepads_windows)/|packages/[^/]+/windows/|native/(fushi_torrent|galgame_hook|fushi_anki_sync)/|packages/fushi_torrent/|third_party/([^/]+/windows/|[^/]*windows[^/]*/|libplacebo-win/|m_extension_server/|jogamp/|mihon_build/)|tool/mihon/|tool/engine_overlay\.ps1$|tools/(build_magpie_slim|bundle_7za)\.ps1$|\.github/actions/(setup-fushi-anki-sync|flutter-engine-overlay)/)'
+          macos_only='^(fushi/(macos|apple)/|packages/[^/]+/(macos|darwin)/|native/(fushi_anki_sync|fushi_torrent)/|packages/fushi_torrent/|\.github/scripts/verify_torrent_abi\.sh$|third_party/([^/]+/(macos|darwin)/|[^/]*macos[^/]*/|m_extension_server/|jogamp/|mihon_build/)|tool/mihon/|\.github/actions/setup-fushi-anki-sync/)'
+          ios_only='^(fushi/(ios|apple)/|native/fushi_ios_umbrella/|packages/[^/]+/(ios|darwin)/|third_party/([^/]+/(ios|darwin)/|[^/]*ios[^/]*/|universal_detector2_pod/))'
           server_only='^(pubspec\.(yaml|lock)$|ci/|packages/(fushi_server|fushi_engine|fushi_core|fushi_anki|fushi_audio|fushi_dictionary|fushi_platform|fushi_torrent|fushi_p2p|fushi_srs|fushi_compute|fushi_rwkv)/|native/(fushi_torrent|fushi_p2p|fushi_fsrs|fushi_compute|fushi_rwkv|fushi_anki_sync|fushidicts)/|fushi/assets/transforms/|\.github/workflows/build-multiplatform\.yml$|\.github/actions/(native-artifact-store|native-store-names|pdfium-hook-cache|setup-fushi-anki-sync)/|\.github/scripts/verify_torrent_abi\.sh$|\.github/scripts/check_glibc_baseline\.sh$|\.github/scripts/fetch_onnxruntime_nuget\.py$)'
 
           # route <output> <正则变量名...>：清单里任一路径命中这些正则之一即开。
@@ -1172,23 +1172,33 @@ jobs:
         working-directory: fushi
         run: >-
           flutter build macos --debug
-      # 缓存理由同 windows job 的 Mihon 步骤。缓存里是未签名的原始输出，ad-hoc 签名
+      # 持久库理由同 windows job 的 Mihon 步骤（原先用 actions/cache：10 GB 配额约一小时就换一轮，
+      # 常常读之前就被挤掉，每次未命中都联网现编）。库里是未签名的原始输出，ad-hoc 签名
       # 只作用于拷进 .app 的副本；ditto 原样保留 jlink 镜像里的符号链接与权限位。
-      # key 与 release-desktop.yml macos job 逐字一致。
+      # 名字由 names.sh macos 分支的 mihon 键算，与 release-desktop.yml macos job 共用同一份。
       - name: Restore pinned Mihon desktop runtimes
-        id: mihon_runtime_cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        id: mihon_runtime_store
+        uses: ./.github/actions/native-artifact-store
         with:
+          mode: restore
+          name: ${{ steps.native_store.outputs.mihon }}
           path: ${{ runner.temp }}/mihon-runtime
-          key: ${{ runner.os }}-${{ runner.arch }}-mihon-runtime-v1-${{ hashFiles('third_party/m_extension_server/**', 'third_party/jogamp/**', 'tool/mihon/**') }}
+      # 未命中才构建：离线构建包（third_party/mihon_build/README.md）从 vendored 取，Gradle
+      # --offline，构建期不连 Maven Central / Gradle / JDK 下载站。
+      - name: Fetch Mihon offline build kit
+        if: steps.mihon_runtime_store.outputs.hit != 'true'
+        uses: ./.github/actions/fetch-vendored-binaries
+        with:
+          groups: mihon-build mihon-jdk-macos-arm64
+          durable: 'true'
       - name: Bundle and verify pinned Mihon desktop runtimes
         shell: bash
         run: |
           set -euo pipefail
           built="$RUNNER_TEMP/mihon-runtime"
-          if [[ "${{ steps.mihon_runtime_cache.outputs.cache-hit }}" != "true" ]]; then
+          if [[ "${{ steps.mihon_runtime_store.outputs.hit }}" != "true" ]]; then
             chmod +x tool/mihon/build_desktop_runtime.sh
-            tool/mihon/build_desktop_runtime.sh "$built" "$RUNNER_TEMP/fushi-mihon-downloads"
+            tool/mihon/build_desktop_runtime.sh "$built"
           fi
           app_dir="fushi/build/macos/Build/Products/Debug/fushi.app"
           runtime_dir="$app_dir/Contents/Resources/mihon_bridge"
@@ -1203,6 +1213,14 @@ jobs:
           tool/mihon/verify_desktop_runtime.sh "$runtime_dir" "$app_dir/Contents/MacOS/fushi"
           codesign --force --deep --sign - --timestamp=none "$app_dir"
           codesign --verify --deep --strict --verbose=2 "$app_dir"
+      - name: Save Mihon desktop runtime to native artifact store
+        if: steps.mihon_runtime_store.outputs.hit != 'true'
+        continue-on-error: true
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: save
+          name: ${{ steps.native_store.outputs.mihon }}
+          path: ${{ runner.temp }}/mihon-runtime
       # fushi-anki-sync：PR 门只编本机架构（arm64）debug 抓编译断裂；release 由
       # release-desktop.yml 的发布构建负责。放置与签名同发布包。
       # 持久库命中只跳工具链与 cargo；安装、SOURCE.txt、version 冒烟与签名校验照跑。
@@ -2186,14 +2204,20 @@ jobs:
           mode: restore
           name: ${{ steps.native_store.outputs.mihon }}
           path: ${{ runner.temp }}\mihon-runtime
+      # 未命中才构建：离线构建包（third_party/mihon_build/README.md）从 vendored 取，Gradle
+      # --offline，构建期不连 Maven Central / Gradle / JDK 下载站。
+      - name: Fetch Mihon offline build kit
+        if: steps.mihon_runtime_store.outputs.hit != 'true'
+        uses: ./.github/actions/fetch-vendored-binaries
+        with:
+          groups: mihon-build mihon-jdk-windows-x64
+          durable: 'true'
       - name: Bundle and verify pinned Mihon desktop runtime
         shell: pwsh
         run: |
           $built = "$env:RUNNER_TEMP\mihon-runtime"
           if ('${{ steps.mihon_runtime_store.outputs.hit }}' -ne 'true') {
-            .\tool\mihon\build_desktop_runtime.ps1 `
-              -OutputDirectory $built `
-              -DownloadCache "$env:RUNNER_TEMP\fushi-mihon-downloads"
+            .\tool\mihon\build_desktop_runtime.ps1 -OutputDirectory $built
             if ($LASTEXITCODE -ne 0) { throw "Mihon desktop runtime build failed ($LASTEXITCODE)" }
           }
           $runtime = "fushi\build\windows\x64\runner\Debug\mihon_bridge"
