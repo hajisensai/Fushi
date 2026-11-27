@@ -28,6 +28,36 @@
       "dbSchemaVersion": 182
     },
     {
+      "name": "fushi-3.4.0-beta.32958-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.4.0-beta.32958/fushi-3.4.0-beta.32958-ios.ipa",
+      "releaseSequence": 32961,
+      "tag": "v3.4.0-beta.32958",
+      "version": "3.4.0-beta.32958",
+      "size": 98883511,
+      "sha256": "3aca9403ffcd931ceba345d4ee0f396d10a6aa7c64635070ba38beb206d19b85",
+      "dbSchemaVersion": 182
+    },
+    {
+      "name": "fushi-3.4.0-beta.32958-macos-arm64.dmg",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.4.0-beta.32958/fushi-3.4.0-beta.32958-macos-arm64.dmg",
+      "releaseSequence": 32961,
+      "tag": "v3.4.0-beta.32958",
+      "version": "3.4.0-beta.32958",
+      "size": 297223629,
+      "sha256": "d0d274df22fb7d3a9a1216e3e6d144cb04070bc855fd7fef55006d460bb30eb9",
+      "dbSchemaVersion": 182
+    },
+    {
+      "name": "fushi-3.4.0-beta.32958-macos-arm64.zip",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.4.0-beta.32958/fushi-3.4.0-beta.32958-macos-arm64.zip",
+      "releaseSequence": 32961,
+      "tag": "v3.4.0-beta.32958",
+      "version": "3.4.0-beta.32958",
+      "size": 281770707,
+      "sha256": "4a3fe57df8baaba4d70ac55cf3f2ba6c400538876b842fc06e46f8f0e160a009",
+      "dbSchemaVersion": 182
+    },
+    {
       "name": "fushi-3.4.0-beta.32958-windows-setup.exe",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.4.0-beta.32958/fushi-3.4.0-beta.32958-windows-setup.exe",
       "releaseSequence": 32961,

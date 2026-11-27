@@ -8,13 +8,14 @@
   "notes": "Manual Apple beta/test build from develop @ 8082046. Beta/test releases are prerelease and never Latest.",
   "assets": [
     {
-      "name": "fushi-2.7.0-beta.14929-macos.zip",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.7.0-beta.14929/fushi-2.7.0-beta.14929-macos.zip",
-      "releaseSequence": 14929,
-      "tag": "v2.7.0-beta.14929",
-      "version": "2.7.0-beta.14929",
-      "size": 337469684,
-      "sha256": "4dfbc9169be952319f9866e179eecc77af9ebd5b1cf22000aabf3b4a74154793"
+      "name": "fushi-3.4.0-beta.32958-macos-arm64.zip",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.4.0-beta.32958/fushi-3.4.0-beta.32958-macos-arm64.zip",
+      "releaseSequence": 32961,
+      "tag": "v3.4.0-beta.32958",
+      "version": "3.4.0-beta.32958",
+      "size": 281770707,
+      "sha256": "4a3fe57df8baaba4d70ac55cf3f2ba6c400538876b842fc06e46f8f0e160a009",
+      "dbSchemaVersion": 182
     },
     {
       "name": "fushi-3.4.0-beta.32958-windows-setup.exe",
