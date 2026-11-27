@@ -354,15 +354,23 @@ Future<void> _deleteCollection({
   );
   final CollectionOwnedSubscriptions subscriptions =
       await CollectionOwnedSubscriptions.load(db, <int>[collection.id]);
+  // 成员只在其它设备上（本机一条都没有，BUG-5597）：删掉它会经合集同步一并删掉
+  // 其它设备上的这个合集，确认框要写明；本机也没有可连带删的成员本体。
+  final bool remoteOnly = (await db.getCollectionsWithoutLocalMembers(
+    collectionIds: <int>[collection.id],
+  )).containsKey(collection.id);
   if (!context.mounted) return;
   final bool canDeleteMembers =
-      onDeleteMembersMedia != null && members.isNotEmpty;
+      onDeleteMembersMedia != null && members.isNotEmpty && !remoteOnly;
   final FushiDestructiveConfirmResult? result =
       await showAppDialog<FushiDestructiveConfirmResult>(
         context: context,
         builder: (_) => FushiDestructiveConfirmDialog(
           title: t.delete_collection,
-          message: t.delete_collection_confirm,
+          message: remoteOnly
+              ? '${t.delete_collection_confirm}\n\n'
+                    '${t.delete_collection_remote_only_warning}'
+              : t.delete_collection_confirm,
           confirmLabel: t.delete_collection,
           checkboxLabel: canDeleteMembers ? deleteMembersCheckboxLabel : null,
           localFilesSubtitle: canDeleteMembers

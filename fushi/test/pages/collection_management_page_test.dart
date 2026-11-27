@@ -7,6 +7,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/collections/collection_grouping.dart';
 import 'package:fushi/src/pages/implementations/collection_management_page.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 「管理合集」页（与「管理标签」对等）：只列本库页域的合集，点按打开详情，
@@ -14,9 +15,26 @@ import 'package:fushi_core/fushi_core.dart';
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.zhCn));
 
+  /// 本机书架上有这本书（epub_books 行，成员键 = bookKey）。
+  Future<void> localBook(FushiDatabase db, String bookKey) => db
+      .into(db.epubBooks)
+      .insert(
+        EpubBooksCompanion.insert(
+          bookKey: bookKey,
+          title: bookKey,
+          epubPath: '/tmp/$bookKey.epub',
+          extractDir: '/tmp/$bookKey',
+          chapterCount: 1,
+          chaptersJson: '[]',
+          importedAt: 1000,
+        ),
+      );
+
   Future<FushiDatabase> seed() async {
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
+    await localBook(db, 'b1');
+    await localBook(db, 'b2');
     final int books = await db.createMediaCollection('书合集');
     await db.addToCollection(books, MediaKind.epub, 'b1');
     await db.addToCollection(books, MediaKind.epub, 'b2');
@@ -31,6 +49,7 @@ void main() {
     List<String>? opened,
     List<Offset?>? menuAnchors,
     ValueListenable<Map<int, int>>? counts,
+    bool apple = false,
   }) async {
     final ValueListenable<Map<int, int>> displayCounts =
         counts ??
@@ -47,6 +66,11 @@ void main() {
     await tester.pumpWidget(
       TranslationProvider(
         child: MaterialApp(
+          theme: ThemeData(
+            extensions: <ThemeExtension<dynamic>>[
+              FushiGlassTheme(FushiGlassMaterial.off, glassDesign: apple),
+            ],
+          ),
           home: CollectionManagementPage(
             database: db,
             domain: CollectionShelfDomain.books,
@@ -125,6 +149,7 @@ void main() {
     await tester.runAsync(() async {
       series = await db.createMediaCollection('七つの魔剣が支配する');
       for (int i = 1; i <= 5; i++) {
+        await localBook(db, 'epub$i');
         await db.addToCollection(series, MediaKind.srt, 'srt$i');
         await db.addToCollection(series, MediaKind.epub, 'epub$i');
       }
@@ -143,6 +168,63 @@ void main() {
     await tester.pump();
     expect(find.text(t.collection_detail_member_count(n: 0)), findsOneWidget);
   });
+
+  // BUG-5597：合集同步对本机没有的书照抄透传成员行；书架上画不出卡，管理页却和
+  // 本机的合集混在一起显示「共 0 项」。这类合集单独一组，写明本机没有。
+  for (final bool apple in <bool>[false, true]) {
+    testWidgets('本机一个成员都没有的合集单列「仅在其它设备上」（apple=$apple）', (
+      WidgetTester tester,
+    ) async {
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
+      addTearDown(db.close);
+      await tester.runAsync(() async {
+        await localBook(db, 'here-1');
+        final int shown = await db.createMediaCollection('本机合集');
+        await db.addToCollection(shown, MediaKind.epub, 'here-1');
+        // 成员在本机、但库页没有它的卡（被标签筛掉 / 上锁 / 全折进别的合集）：
+        // 仍是本机合集，不进「仅在其它设备上」。
+        final int folded = await db.createMediaCollection('折走的合集');
+        await db.addToCollection(folded, MediaKind.epub, 'here-1');
+        final int ghost = await db.createMediaCollection('薬屋のひとりごと');
+        for (int i = 1; i <= 3; i++) {
+          await db.addToCollection(ghost, MediaKind.epub, '薬屋のひとりごと $i');
+        }
+      });
+      final ValueNotifier<Map<int, int>> counts = ValueNotifier<Map<int, int>>(
+        <int, int>{},
+      );
+      addTearDown(counts.dispose);
+      await pumpPage(tester, db, counts: counts, apple: apple);
+
+      final Finder header = find.text(t.collection_manage_remote_only_section);
+      expect(header, findsOneWidget);
+      expect(
+        find.text(t.collection_manage_remote_only_subtitle(n: 3)),
+        findsOneWidget,
+      );
+      // 分组顺序：本机的两个在组标题之上，只在其它设备上的在它之下。
+      final double headerY = tester.getTopLeft(header).dy;
+      expect(tester.getTopLeft(find.text('本机合集')).dy, lessThan(headerY));
+      expect(tester.getTopLeft(find.text('折走的合集')).dy, lessThan(headerY));
+      expect(tester.getTopLeft(find.text('薬屋のひとりごと')).dy, greaterThan(headerY));
+      expect(
+        find.text(t.collection_detail_member_count(n: 0)),
+        findsNWidgets(2),
+        reason: '本机合集仍按库页折叠结果显示成员数',
+      );
+
+      // 书落到本机（下载 / 导入；落地时会改写透传成员行，合集表随之变更）→ 合集
+      // 回到本机一组，组标题消失。
+      await tester.runAsync(() async {
+        await localBook(db, '薬屋のひとりごと 1');
+        await db.createMediaCollection('触发重载');
+      });
+      await tester.pumpAndSettle();
+      expect(header, findsNothing);
+    });
+  }
 
   test('collectionDisplayCountsOf 只数合集组的成员、散卡不计', () {
     final MediaCollectionRow c = MediaCollectionRow(

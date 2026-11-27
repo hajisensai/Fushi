@@ -18,6 +18,8 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart'
+    show SettingsSectionHeader;
 import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 「管理合集」页：与「管理标签」对等，一处列出本库页域（书架 / 漫画 / 视频 /
@@ -33,6 +35,12 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 /// EPUB 各一行（库页只显示一张卡）、已删条目的悬空行、以及折叠归属被更小 id 合集
 /// 抢走的成员——照原始行数会和库页合集卡的「N 卷 / N 项」对不上。本页只读库页
 /// 折叠结果发布的 [displayCounts]（与卡片同一份 [groupByCollections] 输出）。
+///
+/// 本机一个成员都没有的合集（成员只在别的设备上，合集同步照抄透传落的行，
+/// [FushiDatabase.getCollectionsWithoutLocalMembers]）单独列在「仅在其它设备上」
+/// 一组，副标题写明本机没有、其它设备上有几项（BUG-5597）。判据只看本机条目表，
+/// 与库页的标签筛选、上锁、折叠归属无关——被筛掉 / 上锁 / 成员全被别的合集折走的
+/// 合集仍在上面一组。
 class CollectionManagementPage extends StatefulWidget {
   const CollectionManagementPage({
     required this.database,
@@ -67,6 +75,9 @@ class CollectionManagementPage extends StatefulWidget {
 
 class _CollectionManagementPageState extends State<CollectionManagementPage> {
   List<MediaCollectionRow> _collections = const <MediaCollectionRow>[];
+
+  /// 本机一个成员都没有的合集 → 成员行数（只在其它设备上）。
+  Map<int, int> _remoteOnly = const <int, int>{};
   final TextEditingController _search = TextEditingController();
   final FocusNode _searchFocus = FocusNode();
   StreamSubscription<void>? _changes;
@@ -93,9 +104,15 @@ class _CollectionManagementPageState extends State<CollectionManagementPage> {
     final FushiDatabase db = widget.database;
     final List<MediaCollectionRow> collections = await db
         .getMediaCollectionsInDomain(widget.domain);
+    final Map<int, int> remoteOnly = await db.getCollectionsWithoutLocalMembers(
+      collectionIds: <int>[
+        for (final MediaCollectionRow c in collections) c.id,
+      ],
+    );
     if (!mounted) return;
     setState(() {
       _collections = collections;
+      _remoteOnly = remoteOnly;
       _loaded = true;
     });
   }
@@ -125,7 +142,17 @@ class _CollectionManagementPageState extends State<CollectionManagementPage> {
       (MediaCollectionRow c) => <String>[c.name],
     );
 
+    final List<MediaCollectionRow> local = <MediaCollectionRow>[
+      for (final MediaCollectionRow c in visible)
+        if (!_remoteOnly.containsKey(c.id)) c,
+    ];
+    final List<MediaCollectionRow> remoteOnly = <MediaCollectionRow>[
+      for (final MediaCollectionRow c in visible)
+        if (_remoteOnly.containsKey(c.id)) c,
+    ];
+
     Widget row(MediaCollectionRow collection, int index, int count) {
+      final int? remoteMembers = _remoteOnly[collection.id];
       return FushiGroupedListItem(
         key: ValueKey<String>('collection-manage-row-${collection.id}'),
         index: index,
@@ -169,15 +196,22 @@ class _CollectionManagementPageState extends State<CollectionManagementPage> {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
-              subtitle: ValueListenableBuilder<Map<int, int>>(
-                valueListenable: widget.displayCounts,
-                builder: (BuildContext context, Map<int, int> counts, _) =>
-                    Text(
-                      t.collection_detail_member_count(
-                        n: counts[collection.id] ?? 0,
+              subtitle: remoteMembers != null
+                  ? Text(
+                      t.collection_manage_remote_only_subtitle(
+                        n: remoteMembers,
                       ),
+                    )
+                  : ValueListenableBuilder<Map<int, int>>(
+                      valueListenable: widget.displayCounts,
+                      builder:
+                          (BuildContext context, Map<int, int> counts, _) =>
+                              Text(
+                                t.collection_detail_member_count(
+                                  n: counts[collection.id] ?? 0,
+                                ),
+                              ),
                     ),
-              ),
               trailing: FushiIconButtonControl(
                 tooltip: t.shelf_toolbar_more,
                 icon: const FushiIcon(FushiIcons.more),
@@ -235,6 +269,19 @@ class _CollectionManagementPageState extends State<CollectionManagementPage> {
           ),
         );
       }
+      // 列表项：本机有的合集一组；只在其它设备上的另起一组（组标题 + 各自的
+      // 分组圆角 / 分隔线序号），两组同一条错峰入场序列。
+      final List<Widget Function()> entries = <Widget Function()>[
+        for (int k = 0; k < local.length; k++)
+          () => row(local[k], k, local.length),
+        if (remoteOnly.isNotEmpty)
+          () => SettingsSectionHeader(
+            t.collection_manage_remote_only_section,
+            key: const ValueKey<String>('collection-manage-remote-only-header'),
+          ),
+        for (int k = 0; k < remoteOnly.length; k++)
+          () => row(remoteOnly[k], k, remoteOnly.length),
+      ];
       return FushiEntranceScope(
         child: ListView.builder(
           padding: EdgeInsets.fromLTRB(
@@ -243,12 +290,12 @@ class _CollectionManagementPageState extends State<CollectionManagementPage> {
             tokens.spacing.page,
             tokens.spacing.gap + MediaQuery.paddingOf(context).bottom,
           ),
-          itemCount: visible.length + 1,
+          itemCount: entries.length + 1,
           itemBuilder: (BuildContext context, int i) {
             if (i == 0) return header;
             return FushiStaggeredEntrance(
               index: i - 1,
-              child: row(visible[i - 1], i - 1, visible.length),
+              child: entries[i - 1](),
             );
           },
         ),

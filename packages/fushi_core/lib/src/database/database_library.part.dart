@@ -829,6 +829,73 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
     ];
   }
 
+  /// 本机一个成员都没有的合集（BUG-5597）：合集 id → 成员行数。
+  ///
+  /// 「本机有」按成员种类查本机条目表：epub = `epub_books`（uid，或下载落地后尚未
+  /// 收敛成 uid 的透传 bookKey）、srt = `srt_books.uid`、video =
+  /// `video_books.book_uid`、game = `galgames.id`。成员行存在但一条都查不上 = 这些
+  /// 条目只在别的设备上（合集同步对本机没有的条目照抄透传，见
+  /// `applyCollectionLocalChanges`）。只看本机条目表，与库页的标签筛选、上锁、折叠
+  /// 归属（成员被更小 id 的合集折走）都无关。含本机不认识的成员种类（对端新版本的
+  /// 种类）的合集不算：判不了它在不在本机，宁可不报。
+  ///
+  /// [collectionIds] 非空时只查这些合集（删除确认按单个合集问）。
+  Future<Map<int, int>> getCollectionsWithoutLocalMembers({
+    Iterable<int>? collectionIds,
+  }) async {
+    final List<int>? ids = collectionIds?.toSet().toList(growable: false);
+    if (ids != null && ids.isEmpty) return const <int, int>{};
+    final String known = <String>[
+      for (final MediaKind k in MediaKind.values) "'${k.dbValue}'",
+    ].join(',');
+    final Map<int, int> out = <int, int>{};
+    Future<void> run(List<int>? chunk) async {
+      final List<QueryRow> rows = await customSelect(
+        'SELECT i.collection_id AS cid, COUNT(*) AS n FROM media_collection_items i '
+        '${chunk == null ? '' : 'WHERE i.collection_id IN (${List<String>.filled(chunk.length, '?').join(',')}) '}'
+        'GROUP BY i.collection_id '
+        'HAVING SUM(CASE '
+        'WHEN i.media_type NOT IN ($known) THEN 1 '
+        "WHEN i.media_type = 'epub' AND (EXISTS (SELECT 1 FROM epub_books b "
+        'WHERE b.uid = i.entry_key) OR EXISTS (SELECT 1 FROM epub_books b '
+        'WHERE b.book_key = i.entry_key)) THEN 1 '
+        "WHEN i.media_type = 'srt' AND EXISTS (SELECT 1 FROM srt_books s "
+        'WHERE s.uid = i.entry_key) THEN 1 '
+        "WHEN i.media_type = 'video' AND EXISTS (SELECT 1 FROM video_books v "
+        'WHERE v.book_uid = i.entry_key) THEN 1 '
+        "WHEN i.media_type = 'game' AND EXISTS (SELECT 1 FROM galgames g "
+        'WHERE g.id = i.entry_key) THEN 1 '
+        'ELSE 0 END) = 0',
+        variables: <Variable<Object>>[
+          if (chunk != null)
+            for (final int id in chunk) Variable<int>(id),
+        ],
+        readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
+          mediaCollectionItems,
+          epubBooks,
+          srtBooks,
+          videoBooks,
+          galgames,
+        },
+      ).get();
+      for (final QueryRow r in rows) {
+        out[r.read<int>('cid')] = r.read<int>('n');
+      }
+    }
+
+    if (ids == null) {
+      await run(null);
+    } else {
+      for (final List<int> chunk in _chunkForSqlVariables<int>(
+        ids,
+        _kVideoDeleteChunkSize,
+      )) {
+        await run(chunk);
+      }
+    }
+    return out;
+  }
+
   /// 漫画格式 epub 行的成员键（uid 与旧 bookKey 都收），供按域分书 / 漫画。
   Future<Set<String>> _mangaEntryKeys() async {
     final Set<String> mangaKeys = <String>{};

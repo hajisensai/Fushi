@@ -32,6 +32,21 @@ void main() {
     addTearDown(db.close);
     final int id = await db.createMediaCollection('collection-a');
     if (withMembers) {
+      for (final String key in <String>['book-1', 'book-2']) {
+        await db
+            .into(db.epubBooks)
+            .insert(
+              EpubBooksCompanion.insert(
+                bookKey: key,
+                title: key,
+                epubPath: '/tmp/$key.epub',
+                extractDir: '/tmp/$key',
+                chapterCount: 1,
+                chaptersJson: '[]',
+                importedAt: 1000,
+              ),
+            );
+      }
       await db.addToCollection(id, MediaKind.epub, 'book-1');
       await db.addToCollection(id, MediaKind.epub, 'book-2');
     }
@@ -147,6 +162,54 @@ void main() {
     expect(probe.deletedMembers, isNull, reason: '不勾选绝不能删成员媒体本体。');
     expect(await db.getAllMediaCollections(), isEmpty);
     expect(probe.changedCount, 1);
+  });
+
+  // BUG-5597：成员只在其它设备上的合集（合集同步透传落的行），删掉它会经同步把
+  // 其它设备上的这个合集一并删掉——确认框必须写明；本机也没有成员本体可连带删。
+  testWidgets('本机一个成员都没有的合集：确认框写明会同步删除其它设备上的合集，无连带删勾选', (
+    WidgetTester tester,
+  ) async {
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final int id = await db.createMediaCollection('remote-only');
+    await db.addToCollection(id, MediaKind.epub, 'not-here-1');
+    await db.addToCollection(id, MediaKind.epub, 'not-here-2');
+    final MediaCollectionRow collection = (await db.getMediaCollectionById(
+      id,
+    ))!;
+    final _Probe probe = await pumpAndOpen(
+      tester,
+      db: db,
+      collection: collection,
+      injectDeleteMembers: true,
+    );
+
+    await tapDeleteAction(tester);
+    expect(
+      find.textContaining(t.delete_collection_remote_only_warning),
+      findsOneWidget,
+    );
+    expect(find.text(t.delete_collection_also_books), findsNothing);
+
+    await tapConfirm(tester);
+    expect(probe.deletedMembers, isNull);
+    expect(await db.getAllMediaCollections(), isEmpty);
+  });
+
+  testWidgets('成员在本机的合集：确认框不出「同步删除其它设备」提示', (WidgetTester tester) async {
+    final (FushiDatabase db, MediaCollectionRow collection) =
+        await buildCollection();
+    await pumpAndOpen(
+      tester,
+      db: db,
+      collection: collection,
+      injectDeleteMembers: true,
+    );
+    await tapDeleteAction(tester);
+    expect(
+      find.textContaining(t.delete_collection_remote_only_warning),
+      findsNothing,
+    );
   });
 
   testWidgets('删合集勾选「连同成员一起删」：先删成员本体再解散容器', (WidgetTester tester) async {
