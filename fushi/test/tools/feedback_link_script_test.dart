@@ -122,11 +122,15 @@ void main() {
       String token = 'ci-token',
       String? feedbackBase,
       String eventName = 'push',
+      String? before,
+      String? after,
     }) async {
       final File f = File(p.join(tmp.path, 'event.json'))
         ..writeAsStringSync(
           jsonEncode(<String, Object?>{
             'ref': 'refs/heads/$branch',
+            'before': ?before,
+            'after': ?after,
             'commits': commits,
           }),
         );
@@ -298,6 +302,85 @@ void main() {
       );
     });
 
+    group('push 事件只带 20 个提交时经 compare API 补全', () {
+      final String before = 'e' * 40;
+      final String after = 'f' * 40;
+      String sha(int i) => i.toRadixString(16).padLeft(40, '0');
+      List<Map<String, Object?>> tail20() =>
+          List<Map<String, Object?>>.generate(
+            20,
+            (int i) => commit(sha(i + 3), 'noise $i'),
+          );
+
+      test('develop：compare 里前面被截掉的提交的 Feedback 行照样登记', () async {
+        apis.compareCommits = <Map<String, Object?>>[
+          <String, Object?>{
+            'sha': sha(1),
+            'commit': <String, Object?>{'message': 'fix\n\nFeedback: early001'},
+          },
+          <String, Object?>{
+            'sha': sha(2),
+            'commit': <String, Object?>{'message': 'chore'},
+          },
+          for (int i = 0; i < 20; i++)
+            <String, Object?>{
+              'sha': sha(i + 3),
+              'commit': <String, Object?>{'message': 'noise $i'},
+            },
+        ];
+        final ProcessResult r = await runPush(
+          'develop',
+          tail20(),
+          before: before,
+          after: after,
+        );
+        expect(r.exitCode, 0, reason: '${r.stdout}${r.stderr}');
+        expect(apis.compareRanges, <String>['$before...$after']);
+        expect(plans(r), <Map<String, Object>>[
+          <String, Object>{
+            'sha': sha(1),
+            'scope': 'app',
+            'ids': <String>['early001'],
+          },
+        ]);
+        // 补全后的每个提交都查了关联 PR。
+        expect(apis.githubShas, hasLength(22));
+      });
+
+      test('不足 20 个、main 分支、新建分支（before 全 0）都不调 compare', () async {
+        await runPush(
+          'develop',
+          <Map<String, Object?>>[commit(a, 'x')],
+          before: before,
+          after: after,
+        );
+        await runPush('main', tail20(), before: before, after: after);
+        await runPush('develop', tail20(), before: '0' * 40, after: after);
+        expect(apis.compareRanges, isEmpty);
+      });
+
+      test('compare 失败：warning 后退回事件里的提交照常登记', () async {
+        apis.compareStatus = 500;
+        final List<Map<String, Object?>> commits = tail20()
+          ..add(commit(a, 'Feedback: last0001'));
+        final ProcessResult r = await runPush(
+          'develop',
+          commits,
+          before: before,
+          after: after,
+        );
+        expect(r.exitCode, 0);
+        expect(r.stdout, contains('compare'));
+        expect(plans(r), <Map<String, Object>>[
+          <String, Object>{
+            'sha': a,
+            'scope': 'app',
+            'ids': <String>['last0001'],
+          },
+        ]);
+      });
+    });
+
     test('GitHub API 失败只 warning，commit message 里的 id 照常登记', () async {
       apis.githubStatus = 500;
       final ProcessResult r = await runPush('develop', <Map<String, Object?>>[
@@ -380,6 +463,9 @@ class _FakeApis {
   final List<Map<String, dynamic>> fixed = <Map<String, dynamic>>[];
   final List<String?> fixedAuth = <String?>[];
   int githubStatus = 200;
+  int compareStatus = 200;
+  List<Map<String, Object?>> compareCommits = <Map<String, Object?>>[];
+  final List<String> compareRanges = <String>[];
   int fixedStatus = 200;
 
   String get baseUrl => 'http://127.0.0.1:${_server.port}';
@@ -391,11 +477,27 @@ class _FakeApis {
     r'^/repos/owner/repo/commits/([0-9a-f]{40})/pulls$',
   );
 
+  static final RegExp _compare = RegExp(
+    r'^/repos/owner/repo/compare/([0-9a-f]{40}\.\.\.[0-9a-f]{40})$',
+  );
+
   Future<void> _handle(HttpRequest req) async {
     final String body = await utf8.decoder.bind(req).join();
     final HttpResponse res = req.response;
     final RegExpMatch? m = _pulls.firstMatch(req.uri.path);
-    if (req.method == 'GET' && m != null) {
+    final RegExpMatch? cmp = _compare.firstMatch(req.uri.path);
+    if (req.method == 'GET' && cmp != null) {
+      compareRanges.add(cmp.group(1)!);
+      res.statusCode = compareStatus;
+      final int page = int.parse(req.uri.queryParameters['page'] ?? '1');
+      final int per = int.parse(req.uri.queryParameters['per_page'] ?? '100');
+      res.write(
+        jsonEncode(<String, Object?>{
+          'total_commits': compareCommits.length,
+          'commits': compareCommits.skip((page - 1) * per).take(per).toList(),
+        }),
+      );
+    } else if (req.method == 'GET' && m != null) {
       githubShas.add(m.group(1)!);
       githubAuth.add(req.headers.value(HttpHeaders.authorizationHeader));
       res.statusCode = githubStatus;
