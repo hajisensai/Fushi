@@ -4524,6 +4524,28 @@ class AppModel
 
   /// 见 [migrateAudioOnlyVideoBooksToMusic]。失败（原生库缺失、视频库正在清理刮削
   /// 资料）只记错误日志：数据原样保留，下次启动按同一判据重来。
+  Future<void> _healRemoteSeriesCollections() async {
+    final FushiDatabase db = _database;
+    try {
+      final int pruned = await db.runBackgroundWork<int>(
+        'collections.healRemoteSeries',
+        (DatabaseWorkToken _) => db.healRemoteSeriesCollections(),
+      );
+      if (pruned > 0) {
+        debugPrint(
+          '[Fushi] pruned $pruned unused media-server series collections',
+        );
+      }
+    } catch (e, stack) {
+      // 换库 / 关库取消的由 ErrorLogService 记进诊断段，不算错误；下次同步 / 开库再跑。
+      ErrorLogService.instance.log(
+        'AppModel.healRemoteSeriesCollections',
+        e,
+        stack,
+      );
+    }
+  }
+
   Future<void> _migrateLegacyDiscStreamRows() async {
     try {
       final LegacyDiscStreamMigrationReport report =
@@ -6481,6 +6503,9 @@ class AppModel
       // 遗留）。Android 就地重建拷贝回退期间被杀时，这一步把 bak 还原成完整的书。
       // 每进程只跑一次、失败只记日志；导入入口等的是同一个 Future。
       unawaited(EpubImporter.ensureImportResidueSwept(_database));
+      // 媒体服务器剧名合集的存量清理（BUG-5601）：没配同步的设备也清一次。认领 + 清理，
+      // 按数据幂等，稳态两次只读探测；失败只记日志，下次同步 / 启动再来。
+      unawaited(_healRemoteSeriesCollections());
       // 启动关键路径上的查询都发完了：这时才读查词历史整表（见
       // DictionaryRepository.loadFromDb 的 deferHistory）。
       dictRepo.startDeferredHistoryLoad();

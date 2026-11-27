@@ -164,6 +164,9 @@ mixin _LocalLibraryHostSyncState
     late CollectionManifest merged;
     await _runSyncStateExclusive(() async {
       await _db.reconcileEpubCollectionMemberKeys();
+      // BUG-5601：认领本机看过 / 下过的媒体服务器剧（钉住成员），再清掉没人动过的
+      // 剧名合集；产生的 pinned 与删除哨兵同一轮发出去。稳态两次只读探测。
+      await _db.healRemoteSeriesCollections();
       final CollectionManifest local = await loadLocalCollectionManifest(_db);
       // BUG-1579：host 收 POST 走**自己那本账**（[SyncChannelScope.host]）。它与
       // 本机作为 client 跑的云/互联通道是三条独立的因果轴：共用一个键时，client

@@ -2339,7 +2339,8 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
   ///
   /// [userIntent] 为真（改名、打标签、排序等用户动作）：先清该自然键的合集级删除墓碑，
   /// 成员全被成员墓碑挡下或没有成员时也照样建出（空）合集，动作有合集可落。为假（下载
-  /// 落地）：用户删过这部剧的合集就让路，返回 null。返回合集 id（重名取最小 id）。
+  /// 落地）：用户删过这部剧的合集就让路，返回 null；存量清理删的（v183 `auto_pruned`）
+  /// 不算用户删过，清掉哨兵照样物化。返回合集 id（重名取最小 id）。
   Future<int?> materializeRemoteCollection({
     required String name,
     required String collectionType,
@@ -2349,7 +2350,12 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
     if (userIntent) {
       await _clearCollectionDeletionTombstone(name, collectionType);
     } else if (await hasCollectionDeletionTombstone(name, collectionType)) {
-      return null;
+      // v183：存量清理删的（`auto_pruned`）不是用户的表态，被动落地照样物化并清掉它；
+      // 用户删过的照旧让路。
+      if (!await _isAutoPrunedCollectionDeletion(name, collectionType)) {
+        return null;
+      }
+      await _clearCollectionDeletionTombstone(name, collectionType);
     }
     for (final RemoteCollectionMemberAdoption m in members) {
       await _adoptRemoteCollectionMemberInTransaction(m);
@@ -3074,6 +3080,26 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
           .getSingleOrNull() !=
       null;
 
+  /// 该自然键的合集级删除哨兵是存量清理写的（v183 `auto_pruned`，BUG-5601）。
+  Future<bool> _isAutoPrunedCollectionDeletion(
+    String name,
+    String collectionType,
+  ) async =>
+      await (select(collectionMemberTombstones)
+            ..where(
+              (t) =>
+                  t.collectionName.equals(name) &
+                  t.collectionType.equals(collectionType) &
+                  t.mediaType.equals(
+                    FushiDatabase.collectionTombstoneSentinel,
+                  ) &
+                  t.entryKey.equals(FushiDatabase.collectionTombstoneSentinel) &
+                  t.autoPruned.equals(true),
+            )
+            ..limit(1))
+          .getSingleOrNull() !=
+      null;
+
   /// 删掉该自然键的**合集级**删除墓碑（空哨兵行）＝撤销「用户删了这个合集」。
   /// 只供用户显式重建 / 显式加入的入口用（[createMediaCollection]、
   /// [adoptRemoteCollectionMember] 的 `userIntent`）；成员墓碑不动。
@@ -3099,6 +3125,7 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
     required int deletedAt,
     String? organizeKey,
     bool organizeMerged = false,
+    bool autoPruned = false,
   }) => into(collectionMemberTombstones).insertOnConflictUpdate(
     CollectionMemberTombstonesCompanion.insert(
       collectionName: collectionName,
@@ -3111,6 +3138,9 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
       publishedAt: const Value<int?>(null),
       organizeKey: Value(organizeKey),
       organizeMerged: Value(organizeMerged),
+      // v183：显式写——撞上同键旧哨兵时不沿用它的「自动清理」标记（本机写的删除都是
+      // 用户 / 整理器的，自动清理走 pruneUnusedRemoteSeriesCollections 自己写）。
+      autoPruned: Value(autoPruned),
     ),
   );
 

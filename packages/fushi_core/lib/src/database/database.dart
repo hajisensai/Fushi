@@ -53,6 +53,7 @@ part 'database_video_domain.part.dart';
 part 'database_video_scrape_journal.part.dart';
 part 'database_library.part.dart';
 part 'database_collection_identity.part.dart';
+part 'database_remote_series_prune.part.dart';
 part 'database_statistics.part.dart';
 part 'database_content_misc.part.dart';
 part 'database_tags_sync.part.dart';
@@ -1251,6 +1252,7 @@ class FushiDatabase extends _$FushiDatabase
         _FushiDbMediaLinks,
         _FushiDbLibrary,
         _FushiDbCollectionIdentity,
+        _FushiDbRemoteSeriesPrune,
         _FushiDbPrefsMedia,
         _FushiDbContentMisc,
         _FushiDbStatistics,
@@ -3893,6 +3895,22 @@ class FushiDatabase extends _$FushiDatabase
             await _tableExists('media_images') &&
             await _tableExists('video_scrape_meta')) {
           await purgeDanglingVideoBookRefs();
+        }
+      }
+      if (from < 183) {
+        // v183：collection_member_tombstones.auto_pruned——合集级删除哨兵是存量清理删的
+        // 「没人动过的媒体服务器剧名合集」（BUG-5601），视频库临时分组不被它挡下。纯加
+        // 列、存量 0（全是用户 / 整理器删的）；按列存在性守卫，重跑幂等。清理本身不在
+        // 迁移里做（要读多张表、写同步墓碑，见 pruneUnusedRemoteSeriesCollections）。
+        if (await _tableExists('collection_member_tombstones') &&
+            !await _columnExists(
+              'collection_member_tombstones',
+              'auto_pruned',
+            )) {
+          await m.addColumn(
+            collectionMemberTombstones,
+            collectionMemberTombstones.autoPruned,
+          );
         }
       }
       // 阶梯之后（列已齐）补统计分区索引：v105 后新装的库 onCreate 曾漏建

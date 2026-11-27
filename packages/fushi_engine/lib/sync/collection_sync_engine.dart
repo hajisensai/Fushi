@@ -203,6 +203,7 @@ class CollectionSyncEngine {
       organizeKey: e.organizeKey,
       organizeAliases: e.organizeAliases,
       organizeMerged: e.organizeMerged,
+      autoPruned: e.autoPruned,
     );
   }
 
@@ -234,6 +235,10 @@ class CollectionSyncEngine {
         _minPublished(l.deletedPublishedAt, r.deletedPublishedAt),
         organizeKey: _minKey(l.organizeKey, r.organizeKey),
         organizeMerged: l.organizeMerged && r.organizeMerged,
+        // v183：较新的那次删除说了算；平手取或（旧客户端转发丢字段、deletedAt 原样）。
+        autoPruned: lDead == rDead
+            ? l.autoPruned || r.autoPruned
+            : (lDead > rDead ? l.autoPruned : r.autoPruned),
       );
     }
     if (rDead != null) {
@@ -241,6 +246,9 @@ class CollectionSyncEngine {
       // 用户在这边改它，那边的整理器还按旧状态把它当整理器合集并掉了）。用户的合集
       // 永不当败方（AI 整理库 spec §8）。
       if (r.organizeMerged && _isUserOwned(l)) return _prune(l.toEntry());
+      // v183（BUG-5601）：对侧是存量清理删的、本端有成员被钉住（用户认领过）⇒ 活胜。
+      // 清理只按「本机没人动过」判，看不到别的设备上的「加入媒体库」/ 下载。
+      if (r.autoPruned && _hasPinnedMember(l)) return _prune(l.toEntry());
       // 本端活 / 对侧死：删除是新闻 ⇒ 生效；旧闻且本端活着 ⇒ 本端重建 ⇒ 活胜。
       return _deleteIsNews(
             rDead,
@@ -254,11 +262,13 @@ class CollectionSyncEngine {
               r.deletedPublishedAt,
               organizeKey: r.organizeKey ?? l.organizeKey,
               organizeMerged: r.organizeMerged,
+              autoPruned: r.autoPruned,
             )
           : _prune(l.toEntry());
     }
     if (lDead != null) {
       if (l.organizeMerged && _isUserOwned(r)) return _prune(r.toEntry());
+      if (l.autoPruned && _hasPinnedMember(r)) return _prune(r.toEntry());
       // 本端死 / 对侧活：本端删除未发布(新闻) ⇒ 死胜；已发布过 ⇒ 对侧重建 ⇒ 活胜。
       return _deleteIsNews(
             lDead,
@@ -272,6 +282,7 @@ class CollectionSyncEngine {
               l.deletedPublishedAt,
               organizeKey: l.organizeKey ?? r.organizeKey,
               organizeMerged: l.organizeMerged,
+              autoPruned: l.autoPruned,
             )
           : _prune(r.toEntry());
     }
@@ -511,6 +522,7 @@ class CollectionSyncEngine {
     int? publishedAt, {
     String? organizeKey,
     bool organizeMerged = false,
+    bool autoPruned = false,
   }) => CollectionManifestEntry(
     name: key.name,
     collectionType: key.collectionType,
@@ -518,7 +530,13 @@ class CollectionSyncEngine {
     deletedPublishedAt: publishedAt,
     organizeKey: organizeKey,
     organizeMerged: organizeMerged,
+    autoPruned: autoPruned,
   );
+
+  /// 活条目里有成员被钉住（`pinned`：用户亲手放进来 / 认领过）。
+  static bool _hasPinnedMember(_NormalizedEntry e) =>
+      e.deletedAt == null &&
+      e.membersByKey.values.any((CollectionManifestMember m) => m.pinned);
 
   /// 活条目明确说了「归用户」（旧对端没说 = 未知，不算）。
   static bool _isUserOwned(_NormalizedEntry e) =>
@@ -547,7 +565,8 @@ class CollectionSyncEngine {
           l.membersByKey.isEmpty &&
           l.tombstones.isEmpty &&
           (m.organizeKey == null || l.organizeKey == m.organizeKey) &&
-          l.organizeMerged == m.organizeMerged;
+          l.organizeMerged == m.organizeMerged &&
+          l.autoPruned == m.autoPruned;
     }
     if (l.deletedAt != null) return false;
     // 成员序列一致？
@@ -645,6 +664,7 @@ class CollectionSyncEngine {
           tagNames: const <String>{}, // 死合集不带标签。
           organizeKey: e.organizeKey,
           organizeMerged: e.organizeMerged,
+          autoPruned: e.autoPruned,
         );
         continue;
       }
@@ -809,6 +829,7 @@ Future<CollectionManifest> loadLocalCollectionManifest(FushiDatabase db) async {
   final Map<String, int> deletedPubByKey = <String, int>{};
   final Map<String, String> deletedKeyByKey = <String, String>{};
   final Set<String> deletedMergedKeys = <String>{};
+  final Set<String> deletedAutoPrunedKeys = <String>{};
   String nk(String name, String type) => '$name\u0000$type';
   for (final CollectionMemberTombstoneRow t in tombRows) {
     final String key = nk(t.collectionName, t.collectionType);
@@ -820,6 +841,7 @@ Future<CollectionManifest> loadLocalCollectionManifest(FushiDatabase db) async {
       if (t.publishedAt != null) deletedPubByKey[key] = t.publishedAt!;
       if (t.organizeKey != null) deletedKeyByKey[key] = t.organizeKey!;
       if (t.organizeMerged) deletedMergedKeys.add(key);
+      if (t.autoPruned) deletedAutoPrunedKeys.add(key);
     } else {
       (memberTombsByKey[key] ??= <CollectionMemberTombstoneRow>[]).add(t);
     }
@@ -913,6 +935,7 @@ Future<CollectionManifest> loadLocalCollectionManifest(FushiDatabase db) async {
         deletedPublishedAt: deadAt != null ? deletedPubByKey[key] : null,
         organizeKey: deadAt != null ? deletedKeyByKey[key] : null,
         organizeMerged: deadAt != null && deletedMergedKeys.contains(key),
+        autoPruned: deadAt != null && deletedAutoPrunedKeys.contains(key),
         memberTombstones: deadAt != null
             ? const <CollectionMemberTombstone>[]
             : <CollectionMemberTombstone>[
@@ -1054,6 +1077,8 @@ Future<int> applyCollectionLocalChanges(
               // v124：镜像被删合集的分组键与「是否并掉」。
               organizeKey: Value<String?>(e.organizeKey),
               organizeMerged: Value<bool>(e.organizeMerged),
+              // v183：镜像「存量清理删的」。
+              autoPruned: Value<bool>(e.autoPruned),
             ),
           ],
         );
@@ -1206,6 +1231,7 @@ class _NormalizedEntry {
     this.organizeKey,
     this.organizeAliases = const <String>{},
     this.organizeMerged = false,
+    this.autoPruned = false,
   });
 
   final String name;
@@ -1216,6 +1242,9 @@ class _NormalizedEntry {
   final String? organizeKey;
   final Set<String> organizeAliases;
   final bool organizeMerged;
+
+  /// 见 [CollectionManifestEntry.autoPruned]（活条目恒 false）。
+  final bool autoPruned;
 
   /// 见 [CollectionManifestEntry.episodeOrdered]（死条目恒 false）。
   final bool episodeOrdered;
@@ -1269,6 +1298,7 @@ class _NormalizedEntry {
     organizeKey: organizeKey,
     organizeAliases: organizeAliases.toList()..sort(),
     organizeMerged: organizeMerged,
+    autoPruned: autoPruned,
   );
 }
 
@@ -1288,6 +1318,7 @@ class _FoldGroup {
 
   // ── 合集级删除聚合 ──
   bool _sawDelete = false;
+  bool _sawDeleteAt = false; // 已记下过一次 deletedAt（区分「最大值 0」与「还没有」）。
   int _deleteRemovedMax = 0; // 删除胜时落盘的 deletedAt（取最新移除墙钟）。
   int? _deletePubMin; // 删除胜时落盘的 deletedPublishedAt（首发戳，取最早非空）。
   int _deletePubMaxDecision = -1; // 决策用：最新删除发布戳（回退 deletedAt）。
@@ -1315,6 +1346,8 @@ class _FoldGroup {
   final Set<String> _organizeAliases = <String>{};
   String? _deadOrganizeKey;
   bool _deadOrganizeMerged = true; // 取与：任一份说「用户删的」就是用户删的。
+  // v183：最新那次删除（deletedAt 最大）是不是存量清理删的；平手取或。
+  bool _deadAutoPruned = false;
   // 标了集号序（BUG-2941）的活文件中最新 lastWrittenAt；-1 = 没有。
   int _episodeOrderedFileTimeMax = -1;
 
@@ -1322,7 +1355,13 @@ class _FoldGroup {
     if (e.deletedAt != null) {
       _sawDelete = true;
       final int d = e.deletedAt!;
-      if (d > _deleteRemovedMax) _deleteRemovedMax = d;
+      if (!_sawDeleteAt || d > _deleteRemovedMax) {
+        _deleteRemovedMax = d;
+        _deadAutoPruned = e.autoPruned;
+      } else if (d == _deleteRemovedMax) {
+        _deadAutoPruned = _deadAutoPruned || e.autoPruned;
+      }
+      _sawDeleteAt = true;
       final int pubDecision = e.deletedPublishedAt ?? d;
       if (pubDecision > _deletePubMaxDecision) {
         _deletePubMaxDecision = pubDecision;
@@ -1396,8 +1435,11 @@ class _FoldGroup {
         _deadOrganizeMerged &&
         _origin != null &&
         CollectionOrigin.parse(_origin) == CollectionOrigin.user;
+    // v183：存量清理删的压不过成员被钉住的活合集（用户在别的设备上认领过，同 _mergeOne）。
+    final bool pinnedKeeps = _deadAutoPruned && _pinned.isNotEmpty;
     if (_sawDelete &&
         !userKeeps &&
+        !pinnedKeeps &&
         !(_aliveFileTimeMax > _deletePubMaxDecision)) {
       return CollectionManifestEntry(
         name: name,
@@ -1406,6 +1448,7 @@ class _FoldGroup {
         deletedPublishedAt: _deletePubMin,
         organizeKey: _deadOrganizeKey ?? _organizeKey,
         organizeMerged: _deadOrganizeMerged,
+        autoPruned: _deadAutoPruned,
       );
     }
 

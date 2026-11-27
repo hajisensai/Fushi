@@ -19938,6 +19938,21 @@ class $CollectionMemberTombstonesTable extends CollectionMemberTombstones
     type: DriftSqlType.int,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _autoPrunedMeta = const VerificationMeta(
+    'autoPruned',
+  );
+  @override
+  late final GeneratedColumn<bool> autoPruned = GeneratedColumn<bool>(
+    'auto_pruned',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("auto_pruned" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     collectionName,
@@ -19948,6 +19963,7 @@ class $CollectionMemberTombstonesTable extends CollectionMemberTombstones
     organizeKey,
     organizeMerged,
     publishedAt,
+    autoPruned,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -20034,6 +20050,12 @@ class $CollectionMemberTombstonesTable extends CollectionMemberTombstones
         ),
       );
     }
+    if (data.containsKey('auto_pruned')) {
+      context.handle(
+        _autoPrunedMeta,
+        autoPruned.isAcceptableOrUnknown(data['auto_pruned']!, _autoPrunedMeta),
+      );
+    }
     return context;
   }
 
@@ -20083,6 +20105,10 @@ class $CollectionMemberTombstonesTable extends CollectionMemberTombstones
         DriftSqlType.int,
         data['${effectivePrefix}published_at'],
       ),
+      autoPruned: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}auto_pruned'],
+      )!,
     );
   }
 
@@ -20128,6 +20154,13 @@ class CollectionMemberTombstoneRow extends DataClass
   /// 保留、一经确定不刷新。NULL = 本机用户亲手移出 / 删除（进库时刻就是 [deletedAt]，
   /// 对端回退它判）或升级前的存量行。本机自己同步时不读它（本端侧按 [deletedAt] 裁决）。
   final int? publishedAt;
+
+  /// 合集级删除哨兵行：这次删除是存量清理（`pruneUnusedRemoteSeriesCollections`）删的
+  /// 「没人动过的媒体服务器剧名合集」（true），不是用户删的（false，默认）。schema
+  /// v183（BUG-5601）。视频库的剧名临时分组只被用户删除挡下，自动清理的不挡——清理
+  /// 不改变显示；合集同步里它输给成员带 pinned 的活合集（别的设备上用户认领过）。成员
+  /// 墓碑行恒 false。
+  final bool autoPruned;
   const CollectionMemberTombstoneRow({
     required this.collectionName,
     required this.collectionType,
@@ -20137,6 +20170,7 @@ class CollectionMemberTombstoneRow extends DataClass
     this.organizeKey,
     required this.organizeMerged,
     this.publishedAt,
+    required this.autoPruned,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -20153,6 +20187,7 @@ class CollectionMemberTombstoneRow extends DataClass
     if (!nullToAbsent || publishedAt != null) {
       map['published_at'] = Variable<int>(publishedAt);
     }
+    map['auto_pruned'] = Variable<bool>(autoPruned);
     return map;
   }
 
@@ -20170,6 +20205,7 @@ class CollectionMemberTombstoneRow extends DataClass
       publishedAt: publishedAt == null && nullToAbsent
           ? const Value.absent()
           : Value(publishedAt),
+      autoPruned: Value(autoPruned),
     );
   }
 
@@ -20187,6 +20223,7 @@ class CollectionMemberTombstoneRow extends DataClass
       organizeKey: serializer.fromJson<String?>(json['organizeKey']),
       organizeMerged: serializer.fromJson<bool>(json['organizeMerged']),
       publishedAt: serializer.fromJson<int?>(json['publishedAt']),
+      autoPruned: serializer.fromJson<bool>(json['autoPruned']),
     );
   }
   @override
@@ -20201,6 +20238,7 @@ class CollectionMemberTombstoneRow extends DataClass
       'organizeKey': serializer.toJson<String?>(organizeKey),
       'organizeMerged': serializer.toJson<bool>(organizeMerged),
       'publishedAt': serializer.toJson<int?>(publishedAt),
+      'autoPruned': serializer.toJson<bool>(autoPruned),
     };
   }
 
@@ -20213,6 +20251,7 @@ class CollectionMemberTombstoneRow extends DataClass
     Value<String?> organizeKey = const Value.absent(),
     bool? organizeMerged,
     Value<int?> publishedAt = const Value.absent(),
+    bool? autoPruned,
   }) => CollectionMemberTombstoneRow(
     collectionName: collectionName ?? this.collectionName,
     collectionType: collectionType ?? this.collectionType,
@@ -20222,6 +20261,7 @@ class CollectionMemberTombstoneRow extends DataClass
     organizeKey: organizeKey.present ? organizeKey.value : this.organizeKey,
     organizeMerged: organizeMerged ?? this.organizeMerged,
     publishedAt: publishedAt.present ? publishedAt.value : this.publishedAt,
+    autoPruned: autoPruned ?? this.autoPruned,
   );
   CollectionMemberTombstoneRow copyWithCompanion(
     CollectionMemberTombstonesCompanion data,
@@ -20245,6 +20285,9 @@ class CollectionMemberTombstoneRow extends DataClass
       publishedAt: data.publishedAt.present
           ? data.publishedAt.value
           : this.publishedAt,
+      autoPruned: data.autoPruned.present
+          ? data.autoPruned.value
+          : this.autoPruned,
     );
   }
 
@@ -20258,7 +20301,8 @@ class CollectionMemberTombstoneRow extends DataClass
           ..write('deletedAt: $deletedAt, ')
           ..write('organizeKey: $organizeKey, ')
           ..write('organizeMerged: $organizeMerged, ')
-          ..write('publishedAt: $publishedAt')
+          ..write('publishedAt: $publishedAt, ')
+          ..write('autoPruned: $autoPruned')
           ..write(')'))
         .toString();
   }
@@ -20273,6 +20317,7 @@ class CollectionMemberTombstoneRow extends DataClass
     organizeKey,
     organizeMerged,
     publishedAt,
+    autoPruned,
   );
   @override
   bool operator ==(Object other) =>
@@ -20285,7 +20330,8 @@ class CollectionMemberTombstoneRow extends DataClass
           other.deletedAt == this.deletedAt &&
           other.organizeKey == this.organizeKey &&
           other.organizeMerged == this.organizeMerged &&
-          other.publishedAt == this.publishedAt);
+          other.publishedAt == this.publishedAt &&
+          other.autoPruned == this.autoPruned);
 }
 
 class CollectionMemberTombstonesCompanion
@@ -20298,6 +20344,7 @@ class CollectionMemberTombstonesCompanion
   final Value<String?> organizeKey;
   final Value<bool> organizeMerged;
   final Value<int?> publishedAt;
+  final Value<bool> autoPruned;
   final Value<int> rowid;
   const CollectionMemberTombstonesCompanion({
     this.collectionName = const Value.absent(),
@@ -20308,6 +20355,7 @@ class CollectionMemberTombstonesCompanion
     this.organizeKey = const Value.absent(),
     this.organizeMerged = const Value.absent(),
     this.publishedAt = const Value.absent(),
+    this.autoPruned = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   CollectionMemberTombstonesCompanion.insert({
@@ -20319,6 +20367,7 @@ class CollectionMemberTombstonesCompanion
     this.organizeKey = const Value.absent(),
     this.organizeMerged = const Value.absent(),
     this.publishedAt = const Value.absent(),
+    this.autoPruned = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : collectionName = Value(collectionName),
        collectionType = Value(collectionType),
@@ -20334,6 +20383,7 @@ class CollectionMemberTombstonesCompanion
     Expression<String>? organizeKey,
     Expression<bool>? organizeMerged,
     Expression<int>? publishedAt,
+    Expression<bool>? autoPruned,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -20345,6 +20395,7 @@ class CollectionMemberTombstonesCompanion
       if (organizeKey != null) 'organize_key': organizeKey,
       if (organizeMerged != null) 'organize_merged': organizeMerged,
       if (publishedAt != null) 'published_at': publishedAt,
+      if (autoPruned != null) 'auto_pruned': autoPruned,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -20358,6 +20409,7 @@ class CollectionMemberTombstonesCompanion
     Value<String?>? organizeKey,
     Value<bool>? organizeMerged,
     Value<int?>? publishedAt,
+    Value<bool>? autoPruned,
     Value<int>? rowid,
   }) {
     return CollectionMemberTombstonesCompanion(
@@ -20369,6 +20421,7 @@ class CollectionMemberTombstonesCompanion
       organizeKey: organizeKey ?? this.organizeKey,
       organizeMerged: organizeMerged ?? this.organizeMerged,
       publishedAt: publishedAt ?? this.publishedAt,
+      autoPruned: autoPruned ?? this.autoPruned,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -20400,6 +20453,9 @@ class CollectionMemberTombstonesCompanion
     if (publishedAt.present) {
       map['published_at'] = Variable<int>(publishedAt.value);
     }
+    if (autoPruned.present) {
+      map['auto_pruned'] = Variable<bool>(autoPruned.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -20417,6 +20473,7 @@ class CollectionMemberTombstonesCompanion
           ..write('organizeKey: $organizeKey, ')
           ..write('organizeMerged: $organizeMerged, ')
           ..write('publishedAt: $publishedAt, ')
+          ..write('autoPruned: $autoPruned, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -104257,6 +104314,7 @@ typedef $$CollectionMemberTombstonesTableCreateCompanionBuilder =
       Value<String?> organizeKey,
       Value<bool> organizeMerged,
       Value<int?> publishedAt,
+      Value<bool> autoPruned,
       Value<int> rowid,
     });
 typedef $$CollectionMemberTombstonesTableUpdateCompanionBuilder =
@@ -104269,6 +104327,7 @@ typedef $$CollectionMemberTombstonesTableUpdateCompanionBuilder =
       Value<String?> organizeKey,
       Value<bool> organizeMerged,
       Value<int?> publishedAt,
+      Value<bool> autoPruned,
       Value<int> rowid,
     });
 
@@ -104318,6 +104377,11 @@ class $$CollectionMemberTombstonesTableFilterComposer
 
   ColumnFilters<int> get publishedAt => $composableBuilder(
     column: $table.publishedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get autoPruned => $composableBuilder(
+    column: $table.autoPruned,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -104370,6 +104434,11 @@ class $$CollectionMemberTombstonesTableOrderingComposer
     column: $table.publishedAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<bool> get autoPruned => $composableBuilder(
+    column: $table.autoPruned,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$CollectionMemberTombstonesTableAnnotationComposer
@@ -104412,6 +104481,11 @@ class $$CollectionMemberTombstonesTableAnnotationComposer
 
   GeneratedColumn<int> get publishedAt => $composableBuilder(
     column: $table.publishedAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get autoPruned => $composableBuilder(
+    column: $table.autoPruned,
     builder: (column) => column,
   );
 }
@@ -104470,6 +104544,7 @@ class $$CollectionMemberTombstonesTableTableManager
                 Value<String?> organizeKey = const Value.absent(),
                 Value<bool> organizeMerged = const Value.absent(),
                 Value<int?> publishedAt = const Value.absent(),
+                Value<bool> autoPruned = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => CollectionMemberTombstonesCompanion(
                 collectionName: collectionName,
@@ -104480,6 +104555,7 @@ class $$CollectionMemberTombstonesTableTableManager
                 organizeKey: organizeKey,
                 organizeMerged: organizeMerged,
                 publishedAt: publishedAt,
+                autoPruned: autoPruned,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -104492,6 +104568,7 @@ class $$CollectionMemberTombstonesTableTableManager
                 Value<String?> organizeKey = const Value.absent(),
                 Value<bool> organizeMerged = const Value.absent(),
                 Value<int?> publishedAt = const Value.absent(),
+                Value<bool> autoPruned = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => CollectionMemberTombstonesCompanion.insert(
                 collectionName: collectionName,
@@ -104502,6 +104579,7 @@ class $$CollectionMemberTombstonesTableTableManager
                 organizeKey: organizeKey,
                 organizeMerged: organizeMerged,
                 publishedAt: publishedAt,
+                autoPruned: autoPruned,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

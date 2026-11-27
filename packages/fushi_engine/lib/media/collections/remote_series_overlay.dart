@@ -9,7 +9,8 @@
 ///
 /// 叠加规则与收养规则（`FushiDatabase._adoptRemoteCollectionMemberInTransaction`）逐条
 /// 对齐，同一份目录叠加出来的折叠归属与组内序和「收养落库再读归属」一致：
-/// 1. 自然键上有合集级删除哨兵 → 不分组；
+/// 1. 自然键上有用户删除的合集级哨兵 → 不分组（存量清理写的不挡，
+///    [remoteSeriesSentinelBlocksGrouping]）；
 /// 2. 成员墓碑 → 这一集不进组；
 /// 3. 已有同自然键真合集（重名取最小 id）→ 挂到它上面；它手排过时未落库的集按目录序
 ///    接在已有成员之后；
@@ -149,7 +150,8 @@ final class RemoteSeriesTombstones {
   /// 视频成员墓碑：`自然键 NUL 条目键`。
   final Set<String> removedMembers;
 
-  /// 从墓碑表行构造。[blocksGrouping] 决定一条合集级哨兵挡不挡临时分组（缺省全挡）。
+  /// 从墓碑表行构造。[blocksGrouping] 决定一条合集级哨兵挡不挡临时分组（缺省
+  /// [remoteSeriesSentinelBlocksGrouping]：用户删的挡、存量清理删的不挡）。
   factory RemoteSeriesTombstones.fromRows(
     Iterable<CollectionMemberTombstoneRow> rows, {
     bool Function(CollectionMemberTombstoneRow sentinel)? blocksGrouping,
@@ -163,7 +165,9 @@ final class RemoteSeriesTombstones {
       );
       if (t.mediaType == FushiDatabase.collectionTombstoneSentinel &&
           t.entryKey == FushiDatabase.collectionTombstoneSentinel) {
-        if (blocksGrouping == null || blocksGrouping(t)) deleted.add(nk);
+        if ((blocksGrouping ?? remoteSeriesSentinelBlocksGrouping)(t)) {
+          deleted.add(nk);
+        }
       } else if (t.mediaType == MediaKind.video.dbValue) {
         removed.add('$nk\u0000${t.entryKey}');
       }
@@ -174,6 +178,13 @@ final class RemoteSeriesTombstones {
     );
   }
 }
+
+/// 合集级删除哨兵挡不挡剧名临时分组：用户删的挡（那部剧的集散着，同收养让路），存量
+/// 清理删的（v183 `auto_pruned`，[FushiDatabase.pruneUnusedRemoteSeriesCollections]）
+/// 不挡——清理只是不再把派生分组落库，显示不变。
+bool remoteSeriesSentinelBlocksGrouping(
+  CollectionMemberTombstoneRow sentinel,
+) => !sentinel.autoPruned;
 
 /// 一次叠加的结果：[primary] / [memberSortIndex] 是**并好**的完整映射（库里读出的
 /// 归属 + 叠加新增的键，已有键不动）。

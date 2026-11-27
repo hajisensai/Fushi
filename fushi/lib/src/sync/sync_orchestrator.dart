@@ -1772,6 +1772,9 @@ class SyncOrchestrator {
       late final CollectionSyncOutcome outcome;
       await runExclusiveWithSyncStateApply(() async {
         await _db.reconcileEpubCollectionMemberKeys();
+        // BUG-5601：认领本机看过 / 下过的媒体服务器剧（钉住成员），再清掉没人动过的
+        // 剧名合集；产生的 pinned 与删除哨兵同一轮发出去。稳态两次只读探测。
+        await _db.healRemoteSeriesCollections();
         final CollectionManifest local = await loadLocalCollectionManifest(_db);
         outcome = CollectionSyncEngine.merge(
           local: local,
