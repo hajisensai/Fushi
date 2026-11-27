@@ -140,6 +140,33 @@ Set<String> srsMediaRefsIn(String html, {bool includeStatic = false}) {
   return out;
 }
 
+/// [html] 的媒体引用「骨架」：每处本地媒体引用（字段写法，同 [srsMediaRefsIn] 不含静态文件）的名字原文换成
+/// `\u0000`，[refs] 按替换顺序列出这些引用反转义后的名字（与 [srsRewriteMediaRefs] 同一遍历顺序：先标签属性，
+/// 再 `[sound:]`）。两段 HTML 骨架相同 = 除了引用的文件名之外一字不差，`refs` 按下标一一对应。
+({String skeleton, List<String> refs}) srsMediaRefSkeleton(String html) {
+  final List<String> refs = <String>[];
+  if (!html.contains('<') && !html.contains('[sound:')) {
+    return (skeleton: html, refs: refs);
+  }
+  String mark(RegExpMatch m, int group) {
+    final String whole = m.group(0)!;
+    final String? raw = m.group(group);
+    if (raw == null || raw.isEmpty || _isRemote(raw)) return whole;
+    refs.add(_unescape(raw));
+    final int at = whole.lastIndexOf(raw);
+    return '${whole.substring(0, at)}\u0000'
+        '${whole.substring(at + raw.length)}';
+  }
+
+  String out = html.replaceAllMapped(_htmlMediaRef, (Match mm) {
+    final RegExpMatch m = mm as RegExpMatch;
+    final int g = m.group(1) != null ? 1 : (m.group(2) != null ? 2 : 3);
+    return mark(m, g);
+  });
+  out = out.replaceAllMapped(_soundRef, (Match m) => mark(m as RegExpMatch, 1));
+  return (skeleton: out, refs: refs);
+}
+
 /// 把 [html] 里的媒体引用按 [renames]（原名 → 新名）改写；没改名的原样保留。
 String srsRewriteMediaRefs(String html, Map<String, String> renames) {
   if (renames.isEmpty) return html;

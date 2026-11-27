@@ -8,7 +8,9 @@
 /// 每一边都显示是哪台设备（「<名称>（Fushi X.Y）」，srs/srs_device_view.dart）、什么时候改的；文本值画出差异；
 /// 每条给默认推荐并写明理由（设置类：修改时间更晚的一边；扣住的删除：保留——另一边还有复习 / 修改，保留不丢数据），
 /// 同类冲突（同一种实体的同一项 / 同一种删除冲突）可以一次都按这个选；顶栏「批量处理」再把被替换的设置、
-/// 扣住的删除、可能重复的笔记各自一次处理完（待确认的设备与等你决定的笔记仍逐条处理）。
+/// 扣住的删除、可能重复的笔记各自一次处理完，等你决定的笔记可以整批采用某一台设备的版本（反馈 mvf7Wfz8Q-：
+/// 同一份 Anki 数据两台设备各导入一次会一下子出来上万条；其中只差媒体引用断没断的伪冲突由运行时自动消解，
+/// BUG-5551、srs_note_conflict_resolve.dart）。待确认的设备仍逐条处理（信任是安全决定）。
 library;
 
 import 'dart:async';
@@ -18,6 +20,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart' show SrsNoteCacheRow;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_duplicate_notes.dart';
+import 'package:fushi_engine/srs/srs_note_conflict_resolve.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
@@ -96,12 +99,20 @@ enum _BulkAction {
   duplicatesMerge,
 
   /// 可能重复的笔记：都标为不是重复。
-  duplicatesDismiss;
+  duplicatesDismiss,
 
-  /// 删除 / 合并不好撤回：执行前再确认一次。
+  /// 等你决定的笔记：每个冲突字段都采用某一台设备（[_BulkChoice] 的 `writer`）的值。
+  pendingAdopt;
+
+  /// 删除 / 合并 / 整批采用一台设备不好撤回：执行前再确认一次。
   bool get irreversible =>
-      this == _BulkAction.heldDelete || this == _BulkAction.duplicatesMerge;
+      this == _BulkAction.heldDelete ||
+      this == _BulkAction.duplicatesMerge ||
+      this == _BulkAction.pendingAdopt;
 }
+
+/// 「批量处理」里选中的一项：`writer` 只有 [_BulkAction.pendingAdopt] 用（采用哪台设备的版本），`n` 是它涉及的条数。
+typedef _BulkChoice = ({_BulkAction action, String? writer, int n});
 
 /// 冲突页的一条（标志 / 设置类）。
 class _Conflict {
@@ -449,10 +460,10 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
     return true;
   }
 
-  /// 批量处理：每一节一次按同一个选择处理全部条目（#IBjxAjty39）。只覆盖有明确选项、
-  /// 不需要看内容的三节——被替换的设置、扣住的删除、可能重复的笔记；待确认的设备
-  /// （信任是安全决定）和等你决定的笔记（要在编辑页看字段内容）仍逐条处理。
-  Future<bool> _bulkResolve(_BulkAction action) async {
+  /// 批量处理：每一节一次按同一个选择处理全部条目（#IBjxAjty39）。覆盖被替换的设置、扣住的删除、可能重复的笔记，
+  /// 以及等你决定的笔记（整批采用某一台设备的版本，反馈 mvf7Wfz8Q-）；待确认的设备（信任是安全决定）仍逐条处理。
+  Future<bool> _bulkResolve(_BulkChoice choice) async {
+    final _BulkAction action = choice.action;
     final SrsDbStore? store = await readSrsStore(ref);
     if (store == null) return false;
     final List<_Conflict> conflicts = _conflicts;
@@ -502,6 +513,10 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
           done++;
         }
         _dropResolved(duplicates: duplicates.toSet());
+      case _BulkAction.pendingAdopt:
+        done = await srsAdoptNoteConflictSide(store, <String>[
+          for (final SrsNoteCacheRow r in _pending) r.id,
+        ], choice.writer!);
     }
     FushiToast.show(
       msg: t.srs_conflict_resolved_many(n: done),
@@ -510,65 +525,86 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
     return true;
   }
 
-  /// 「批量处理」：列出当前有条目的几节各自的批量选项；删除 / 合并这两种不好撤回的再确认一次。
+  /// 「批量处理」：列出当前有条目的几节各自的批量选项；删除 / 合并 / 整批采用一台设备这几种不好撤回的再确认一次。
   Future<bool> _openBulk() async {
-    final List<FushiChoiceOption<_BulkAction>>
-    options = <FushiChoiceOption<_BulkAction>>[
-      if (_conflicts.isNotEmpty) ...<FushiChoiceOption<_BulkAction>>[
-        FushiChoiceOption<_BulkAction>(
-          value: _BulkAction.settingsRecommended,
+    _BulkChoice of(_BulkAction action, int n, {String? writer}) =>
+        (action: action, writer: writer, n: n);
+    // 等你决定的笔记：有哪些设备参与了冲突、各涉及几条（按条数从多到少）。点开批量处理时才读（上万条时要读一会儿，
+    // 不拖慢整页载入）。
+    final SrsDbStore? store = _pending.isEmpty ? null : await readSrsStore(ref);
+    final Map<String, int> writers = store == null
+        ? const <String, int>{}
+        : await srsNoteConflictWriters(store, <String>[
+            for (final SrsNoteCacheRow r in _pending) r.id,
+          ]);
+    if (!mounted) return false;
+    final List<FushiChoiceOption<_BulkChoice>>
+    options = <FushiChoiceOption<_BulkChoice>>[
+      if (_conflicts.isNotEmpty) ...<FushiChoiceOption<_BulkChoice>>[
+        FushiChoiceOption<_BulkChoice>(
+          value: of(_BulkAction.settingsRecommended, _conflicts.length),
           label: t.srs_conflicts_bulk_settings_recommended(
             n: _conflicts.length,
           ),
           icon: FushiIcons.lightbulb,
         ),
-        FushiChoiceOption<_BulkAction>(
-          value: _BulkAction.settingsCurrent,
+        FushiChoiceOption<_BulkChoice>(
+          value: of(_BulkAction.settingsCurrent, _conflicts.length),
           label: t.srs_conflicts_bulk_settings_current(n: _conflicts.length),
           icon: FushiIcons.check,
         ),
       ],
-      if (_held.isNotEmpty) ...<FushiChoiceOption<_BulkAction>>[
-        FushiChoiceOption<_BulkAction>(
-          value: _BulkAction.heldKeep,
+      if (_held.isNotEmpty) ...<FushiChoiceOption<_BulkChoice>>[
+        FushiChoiceOption<_BulkChoice>(
+          value: of(_BulkAction.heldKeep, _held.length),
           label: t.srs_conflicts_bulk_held_keep(n: _held.length),
           icon: FushiIcons.restoreBackup,
         ),
-        FushiChoiceOption<_BulkAction>(
-          value: _BulkAction.heldDelete,
+        FushiChoiceOption<_BulkChoice>(
+          value: of(_BulkAction.heldDelete, _held.length),
           label: t.srs_conflicts_bulk_held_delete(n: _held.length),
           icon: FushiIcons.delete,
         ),
       ],
-      if (_duplicates.isNotEmpty) ...<FushiChoiceOption<_BulkAction>>[
-        FushiChoiceOption<_BulkAction>(
-          value: _BulkAction.duplicatesMerge,
+      if (_duplicates.isNotEmpty) ...<FushiChoiceOption<_BulkChoice>>[
+        FushiChoiceOption<_BulkChoice>(
+          value: of(_BulkAction.duplicatesMerge, _duplicates.length),
           label: t.srs_conflicts_bulk_duplicates_merge(n: _duplicates.length),
           icon: FushiIcons.check,
         ),
-        FushiChoiceOption<_BulkAction>(
-          value: _BulkAction.duplicatesDismiss,
+        FushiChoiceOption<_BulkChoice>(
+          value: of(_BulkAction.duplicatesDismiss, _duplicates.length),
           label: t.srs_conflicts_bulk_duplicates_dismiss(n: _duplicates.length),
           icon: FushiIcons.close,
         ),
       ],
+      for (final MapEntry<String, int> w in writers.entries)
+        FushiChoiceOption<_BulkChoice>(
+          value: of(_BulkAction.pendingAdopt, w.value, writer: w.key),
+          label: t.srs_conflicts_bulk_pending_adopt(
+            device: _who(w.key),
+            n: w.value,
+          ),
+          icon: FushiIcons.checklist,
+        ),
     ];
     if (options.isEmpty) return false;
-    final _BulkAction? action = await showFushiChoiceDialog<_BulkAction>(
+    final _BulkChoice? choice = await showFushiChoiceDialog<_BulkChoice>(
       context: context,
       title: t.srs_conflicts_bulk,
-      message: t.srs_conflicts_bulk_hint,
+      message: t.srs_conflicts_bulk_scope_hint,
       icon: FushiIcons.checklist,
       options: options,
     );
-    if (action == null || !mounted) return false;
+    if (choice == null || !mounted) return false;
+    final _BulkAction action = choice.action;
     if (action.irreversible) {
       final String label = options
-          .firstWhere((FushiChoiceOption<_BulkAction> o) => o.value == action)
+          .firstWhere((FushiChoiceOption<_BulkChoice> o) => o.value == choice)
           .label;
       final bool ok = await showFushiConfirmDialog(
         context: context,
-        title: t.srs_conflicts_bulk_confirm_title(n: _bulkCount(action)),
+        title: t.srs_conflicts_bulk_confirm_title(n: choice.n),
         message: label,
         icon: action == _BulkAction.heldDelete
             ? FushiIcons.delete
@@ -577,27 +613,22 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
       );
       if (!ok || !mounted) return false;
     }
-    return _bulkResolve(action);
+    return _bulkResolve(choice);
   }
-
-  int _bulkCount(_BulkAction action) => switch (action) {
-    _BulkAction.settingsRecommended ||
-    _BulkAction.settingsCurrent => _conflicts.length,
-    _BulkAction.heldKeep || _BulkAction.heldDelete => _held.length,
-    _BulkAction.duplicatesMerge ||
-    _BulkAction.duplicatesDismiss => _duplicates.length,
-  };
 
   Future<void> _openNote(SrsNoteCacheRow row) async {
     await srsPushPage<void>(context, (_) => SrsNoteEditorPage(noteId: row.id));
     if (mounted) await _reload();
   }
 
-  /// 「批量处理」：被替换的设置 / 扣住的删除 / 可能重复的笔记任一节有条目就画（#IBjxAjty39：
+  /// 「批量处理」：被替换的设置 / 扣住的删除 / 可能重复的笔记 / 等你决定的笔记任一节有条目就画（#IBjxAjty39：
   /// 早先它只会「全部确认」字段冲突，页上只剩重复笔记时是一颗灰掉的按钮；正确做法是让批量
-  /// 覆盖这几节，而不是把按钮删掉）。三节都空时页上只剩逐条处理的项，不画。
+  /// 覆盖这几节，而不是把按钮删掉）。四节都空时页上只剩逐条处理的项（待确认的设备），不画。
   FushiToolbarItem? get _bulkItem =>
-      _conflicts.isEmpty && _held.isEmpty && _duplicates.isEmpty
+      _conflicts.isEmpty &&
+          _held.isEmpty &&
+          _duplicates.isEmpty &&
+          _pending.isEmpty
       ? null
       : FushiToolbarItem(
           key: const ValueKey<String>('srs_conflicts_bulk'),
