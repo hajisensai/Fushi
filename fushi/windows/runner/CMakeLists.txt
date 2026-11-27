@@ -76,6 +76,8 @@ target_compile_definitions(${BINARY_NAME} PRIVATE
 target_link_libraries(${BINARY_NAME} PRIVATE flutter flutter_wrapper_app)
 # dwmapi: DWM caption/text color theming for the native title bar.
 target_link_libraries(${BINARY_NAME} PRIVATE dwmapi)
+# msimg32: AlphaBlend for the opaque fullscreen transition snapshot (BUG-5591).
+target_link_libraries(${BINARY_NAME} PRIVATE msimg32)
 # ole32 / shell32: IShellLink + IPersistFile + SHGetKnownFolderPath /
 # SHChangeNotify for TODO-901 (rewriting desktop/Start-menu .lnk icons on app
 # icon change).
@@ -295,6 +297,23 @@ add_custom_target(fushi_windows_main_surface_composition_gate
   VERBATIM
 )
 add_dependencies(${BINARY_NAME} fushi_windows_main_surface_composition_gate)
+
+# BUG-5591: runner-owned fullscreen geometry. Entering / leaving must be one
+# SetWindowPos that keeps the show state (no DWM restore / maximize
+# animation); the client is pinned to the monitor and the exit plan only falls
+# back to WINDOWPLACEMENT when the state really changed while fullscreen.
+add_executable(fushi_windows_fullscreen_geometry_test
+  "tests/fullscreen_geometry_test.cpp"
+)
+apply_standard_settings(fushi_windows_fullscreen_geometry_test)
+target_compile_definitions(fushi_windows_fullscreen_geometry_test PRIVATE
+  "NOMINMAX")
+add_custom_target(fushi_windows_fullscreen_geometry_gate
+  COMMAND "$<TARGET_FILE:fushi_windows_fullscreen_geometry_test>"
+  DEPENDS fushi_windows_fullscreen_geometry_test
+  VERBATIM
+)
+add_dependencies(${BINARY_NAME} fushi_windows_fullscreen_geometry_gate)
 
 # Capture suppression is authorized by an exact epoch/token, while text may
 # advance behind the hidden surface. Keep that release contract executable so

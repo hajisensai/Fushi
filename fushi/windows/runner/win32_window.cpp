@@ -8,6 +8,7 @@
 #include <flutter_windows.h>
 
 #include <chrono>
+#include <cstdint>
 
 #include "resource.h"
 
@@ -335,6 +336,16 @@ LRESULT CALLBACK Win32Window::WndProc(HWND const window,
       PinWindowPosSize(reinterpret_cast<WINDOWPOS*>(lparam),
                        that->test_size_pin_, IsIconic(window) != 0);
     }
+    // BUG-5591: while fullscreen the client area is the monitor, whatever the
+    // show state. Answered here, before any plugin: window_manager's
+    // hidden-title-bar WM_NCCALCSIZE would pin a zoomed window's client to
+    // the work-area origin (see FullscreenClientRect).
+    if (message == WM_NCCALCSIZE && wparam != 0 && that->fullscreen_) {
+      auto* params = reinterpret_cast<NCCALCSIZE_PARAMS*>(lparam);
+      params->rgrc[0] = fushi::FullscreenClientRect(params->rgrc[0],
+                                                    that->fullscreen_monitor_);
+      return 0;
+    }
     return that->MessageHandler(window, message, wparam, lparam);
   }
 
@@ -378,6 +389,12 @@ Win32Window::MessageHandler(HWND hwnd,
       // (see UpdateFrameChrome), so a drag-resize costs one comparison per
       // WM_SIZE, not a DwmSetWindowAttribute round trip.
       UpdateFrameChrome();
+      // BUG-5591: a snapshot still waiting for the view's post-fullscreen
+      // frame is stale once the window is resized again outside a fullscreen
+      // transition (e.g. the user drags an edge): back to the brush.
+      if (transition_snapshot_ != nullptr && !fullscreen_transition_) {
+        ReleaseTransitionSnapshot();
+      }
       // BUG-1916: the surface just changed size; its new area is uninitialised
       // (black) and its old area may carry an older fill. Paint it whole,
       // under the view too, before the view is resized — the child MoveWindow
@@ -562,6 +579,14 @@ void Win32Window::DeliverChildSize(ChildSize size) {
 }
 
 void Win32Window::OnChildFrameRasterized(int32_t width, int32_t height) {
+  // BUG-5591: the view now presents at the post-fullscreen-jump size; the
+  // transition snapshot under a see-through surface has done its job.
+  if (transition_snapshot_ != nullptr && !fullscreen_transition_ &&
+      width == snapshot_release_size_.cx &&
+      height == snapshot_release_size_.cy) {
+    ReleaseTransitionSnapshot();
+    FillSurfaceBackdrop();
+  }
   if (startup_window_preparation_) {
     return;
   }
@@ -667,20 +692,26 @@ void Win32Window::FillSurfaceBackdrop() {
   // over the solid brush — a raced composition then shows stretched app
   // content instead of a colour flash. Everything else (interactive resize,
   // theme pushes) has no snapshot and keeps the cheap brush fill.
-  // BUG-2964: never on a see-through surface — GDI writes alpha 0, so the
-  // snapshot would be added onto the Mica material as a ghost frame.
+  // BUG-5591: on a see-through (Mica) surface too. Plain GDI blits write
+  // alpha 0, which DWM composes additively — the ghost frame BUG-2964 kept
+  // the snapshot off Mica for, which in turn left the bare material (RGB 243
+  // in a light theme) showing for 1-3 frames of every jump. The snapshot
+  // carries alpha 255 (CaptureTransitionSnapshot) and goes down through
+  // AlphaBlend, which writes it: opaque on any surface. SetFullscreen puts
+  // the plain backdrop back once the view has presented its new size, so the
+  // snapshot never lingers under translucent Flutter pixels.
   bool painted = false;
-  if (transition_snapshot_ != nullptr &&
-      !fushi::MainSurfaceSeeThrough(main_surface_state())) {
+  if (transition_snapshot_ != nullptr) {
     RECT rect = GetClientArea();
     HDC mem = CreateCompatibleDC(dc);
     if (mem != nullptr) {
       HGDIOBJ old = SelectObject(mem, transition_snapshot_);
       SetStretchBltMode(dc, COLORONCOLOR);
-      painted = StretchBlt(dc, 0, 0, rect.right - rect.left,
+      const BLENDFUNCTION opaque{AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
+      painted = AlphaBlend(dc, 0, 0, rect.right - rect.left,
                            rect.bottom - rect.top, mem, 0, 0,
                            transition_snapshot_size_.cx,
-                           transition_snapshot_size_.cy, SRCCOPY) != 0;
+                           transition_snapshot_size_.cy, opaque) != 0;
       SelectObject(mem, old);
       DeleteDC(mem);
     }
@@ -789,93 +820,177 @@ void Win32Window::UpdateFrameChrome() {
   ApplyFrameChrome(hwnd, suppress);
 }
 
+namespace {
+
+// BUG-5591: DWM's restore / maximize animation shows the window surface, not
+// the Flutter view. The fullscreen show-state changes are one-step jumps to
+// their final rectangle, so they must not animate at all.
+class ScopedNoDwmTransitions {
+ public:
+  explicit ScopedNoDwmTransitions(HWND hwnd) : hwnd_(hwnd) { Set(TRUE); }
+  ~ScopedNoDwmTransitions() { Set(FALSE); }
+  ScopedNoDwmTransitions(const ScopedNoDwmTransitions&) = delete;
+  ScopedNoDwmTransitions& operator=(const ScopedNoDwmTransitions&) = delete;
+
+ private:
+  void Set(BOOL disabled) {
+    DwmSetWindowAttribute(hwnd_, DWMWA_TRANSITIONS_FORCEDISABLED, &disabled,
+                          sizeof(disabled));
+  }
+  HWND hwnd_;
+};
+
+}  // namespace
+
 void Win32Window::SetFullscreen(bool fullscreen) {
   HWND hwnd = window_handle_;
   if (hwnd == nullptr || fullscreen == fullscreen_) {
     return;
   }
+  // BUG-5591: one geometry step each way, straight to the final rectangle,
+  // with no DWM animation. See fullscreen_geometry.h.
+  const ScopedNoDwmTransitions no_transitions(hwnd);
+  fullscreen_transition_ = true;
   if (fullscreen) {
     MONITORINFO monitor{};
     monitor.cbSize = sizeof(MONITORINFO);
     if (!GetMonitorInfo(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST),
                         &monitor)) {
+      fullscreen_transition_ = false;
       return;
     }
     placement_before_fullscreen_.length = sizeof(WINDOWPLACEMENT);
     if (!GetWindowPlacement(hwnd, &placement_before_fullscreen_)) {
       placement_before_fullscreen_ = {};
     }
+    GetWindowRect(hwnd, &rect_before_fullscreen_);
+    zoomed_before_fullscreen_ = IsZoomed(hwnd) != 0;
     CaptureTransitionSnapshot();
-    // A zoomed window ignores SetWindowPos sizes (the maximize geometry is
-    // enforced), so leave the maximized state first — straight onto the
-    // monitor rect, no intermediate small window. The saved placement above
-    // still records SW_SHOWMAXIMIZED, so exiting restores the maximized state.
-    if (IsZoomed(hwnd)) {
-      WINDOWPLACEMENT unzoom = placement_before_fullscreen_;
-      unzoom.length = sizeof(WINDOWPLACEMENT);
-      unzoom.showCmd = SW_SHOWNORMAL;
-      unzoom.rcNormalPosition = monitor.rcMonitor;
-      SetWindowPlacement(hwnd, &unzoom);
-    }
-    // Oversize by exactly the current frame so the CLIENT area covers the
-    // monitor and the frame hangs off-screen. The frame is MEASURED (window
-    // rect vs. client origin/size), not derived from the style bits:
-    // window_manager's hidden-title-bar mode reshapes the client area in
-    // WM_NCCALCSIZE (top border 0, sides/bottom trimmed), which
-    // AdjustWindowRectExForDpi knows nothing about. Styles are deliberately
-    // untouched (see the header comment).
-    RECT window_rect{};
-    GetWindowRect(hwnd, &window_rect);
+    // Oversize by the current frame so it hangs off-screen. The frame is
+    // MEASURED (window rect vs. client origin/size), not derived from the
+    // style bits: window_manager's hidden-title-bar mode reshapes the client
+    // area in WM_NCCALCSIZE, which AdjustWindowRectExForDpi knows nothing
+    // about. Styles are deliberately untouched (see the header comment).
+    // While fullscreen the client is pinned to the monitor in WM_NCCALCSIZE,
+    // so a zoomed window's insets (it is un-zoomed below) still give a client
+    // that covers the monitor exactly.
     RECT client_rect = GetClientArea();
     POINT client_origin{0, 0};
     ClientToScreen(hwnd, &client_origin);
-    const int border_left = client_origin.x - window_rect.left;
-    const int border_top = client_origin.y - window_rect.top;
-    const int border_right = (window_rect.right - window_rect.left) -
-                             (client_rect.right - client_rect.left) -
-                             border_left;
-    const int border_bottom = (window_rect.bottom - window_rect.top) -
-                              (client_rect.bottom - client_rect.top) -
-                              border_top;
+    const RECT& window_rect = rect_before_fullscreen_;
+    fullscreen_insets_.left = client_origin.x - window_rect.left;
+    fullscreen_insets_.top = client_origin.y - window_rect.top;
+    fullscreen_insets_.right = (window_rect.right - window_rect.left) -
+                               (client_rect.right - client_rect.left) -
+                               fullscreen_insets_.left;
+    fullscreen_insets_.bottom = (window_rect.bottom - window_rect.top) -
+                                (client_rect.bottom - client_rect.top) -
+                                fullscreen_insets_.top;
+    fullscreen_monitor_ = monitor.rcMonitor;
+    const RECT target =
+        fushi::FullscreenWindowRect(fullscreen_monitor_, fullscreen_insets_);
     fullscreen_ = true;
     // Before the jump, so the compositor never paints the border/rounded
     // corners over a client area that already covers the monitor (BUG-2006).
     UpdateFrameChrome();
-    SetWindowPos(hwnd, HWND_TOPMOST, monitor.rcMonitor.left - border_left,
-                 monitor.rcMonitor.top - border_top,
-                 (monitor.rcMonitor.right - monitor.rcMonitor.left) +
-                     border_left + border_right,
-                 (monitor.rcMonitor.bottom - monitor.rcMonitor.top) +
-                     border_top + border_bottom,
-                 SWP_NOACTIVATE);
-    ReleaseTransitionSnapshot();
+    if (zoomed_before_fullscreen_) {
+      // A zoomed window keeps its maximized rectangle against SetWindowPos
+      // (measured), so un-zoom — directly onto the fullscreen rectangle, in
+      // the same call. The saved placement still records SW_SHOWMAXIMIZED
+      // and the original normal rectangle for the exit.
+      const WINDOWPLACEMENT unzoom = fushi::FullscreenUnzoomPlacement(
+          placement_before_fullscreen_, target, monitor.rcMonitor,
+          monitor.rcWork);
+      SetWindowPlacement(hwnd, &unzoom);
+    }
+    RECT landed{};
+    GetWindowRect(hwnd, &landed);
+    const bool on_target = EqualRect(&landed, &target) != 0;
+    // Z-order always (topmost covers the taskbar); geometry only if the
+    // window is not there yet (a normal window, or an appbar layout the
+    // workspace conversion did not foresee).
+    SetWindowPos(hwnd, HWND_TOPMOST, target.left, target.top,
+                 target.right - target.left, target.bottom - target.top,
+                 SWP_NOACTIVATE | (on_target ? (SWP_NOMOVE | SWP_NOSIZE) : 0));
   } else {
     CaptureTransitionSnapshot();
     fullscreen_ = false;
-    if (placement_before_fullscreen_.length == sizeof(WINDOWPLACEMENT)) {
-      const bool was_maximized =
-          placement_before_fullscreen_.showCmd == SW_SHOWMAXIMIZED;
-      WINDOWPLACEMENT restore = placement_before_fullscreen_;
-      if (was_maximized) {
-        // The zoomed flag survives the fullscreen SetWindowPos, so restoring a
-        // SW_SHOWMAXIMIZED placement onto an already-"maximized" window is a
-        // geometry no-op (the window would stay at the oversized fullscreen
-        // rect). Drop to the normal placement first, then re-maximize.
-        restore.showCmd = SW_SHOWNORMAL;
+    const fushi::FullscreenExitStep step = fushi::PlanFullscreenExit(
+        zoomed_before_fullscreen_, IsZoomed(hwnd) != 0, IsIconic(hwnd) != 0);
+    if (step == fushi::FullscreenExitStep::kRestoreRect) {
+      const RECT& rect = rect_before_fullscreen_;
+      SetWindowPos(hwnd, HWND_NOTOPMOST, rect.left, rect.top,
+                   rect.right - rect.left, rect.bottom - rect.top,
+                   SWP_NOACTIVATE);
+    } else {
+      if (placement_before_fullscreen_.length == sizeof(WINDOWPLACEMENT)) {
+        WINDOWPLACEMENT restore = placement_before_fullscreen_;
+        if (IsIconic(hwnd)) {
+          // Minimized while fullscreen: stay minimized, restore later to
+          // what the window was before fullscreen.
+          restore.showCmd = SW_SHOWMINNOACTIVE;
+          if (zoomed_before_fullscreen_) {
+            restore.flags |= WPF_RESTORETOMAXIMIZED;
+          }
+          SetWindowPlacement(hwnd, &restore);
+        } else if (restore.showCmd == SW_SHOWMAXIMIZED) {
+          // Maximized before fullscreen. SetWindowPlacement would first move
+          // the window to rcNormalPosition and only then maximize — the
+          // small window in the middle of the screen (measured). Maximize
+          // straight from the fullscreen rectangle instead (a no-op if the
+          // user re-maximized meanwhile), then hand the saved placement to
+          // the now-zoomed window: for a zoomed window that only records the
+          // normal rectangle for a later restore, geometry stays put.
+          ShowWindow(hwnd, SW_MAXIMIZE);
+          SetWindowPlacement(hwnd, &restore);
+        } else {
+          // Normal before, maximized by the user / shell while fullscreen.
+          SetWindowPlacement(hwnd, &restore);
+        }
       }
-      SetWindowPlacement(hwnd, &restore);
-      if (was_maximized) {
-        ShowWindow(hwnd, SW_MAXIMIZE);
-      }
+      SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
+                   SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
     }
-    SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
-                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
     // After the geometry is back, so the policy is evaluated against the
     // restored window instead of the still-oversized one (a window that was
     // already screen-sized before fullscreen keeps the chrome suppressed).
     UpdateFrameChrome();
-    ReleaseTransitionSnapshot();
   }
+  // What is under the view after the jump. An opaque surface keeps the
+  // snapshot pixels (BUG-1933 behaviour): the view covers them, and a late
+  // first frame at the new size then still shows the previous content.
+  // A see-through (Mica) surface must get its transparent backdrop back —
+  // a leftover opaque snapshot would show through translucent Flutter pixels
+  // (the home shell) — but not before the view has rasterized a frame at the
+  // new client size (OnChildFrameRasterized): clearing on return from the
+  // child resize left the bare material on screen for 2 frames (measured).
+  const RECT client = GetClientArea();
+  snapshot_release_size_ = SIZE{client.right - client.left,
+                                client.bottom - client.top};
+  const bool same_size =
+      snapshot_release_size_.cx == transition_snapshot_size_.cx &&
+      snapshot_release_size_.cy == transition_snapshot_size_.cy;
+  if (!fushi::MainSurfaceSeeThrough(main_surface_state())) {
+    ReleaseTransitionSnapshot();
+  } else if (same_size) {
+    // No new frame size will be reported, and nothing was exposed.
+    ReleaseTransitionSnapshot();
+    FillSurfaceBackdrop();
+  }
+  fullscreen_transition_ = false;
+}
+
+bool Win32Window::ApplyFullscreenMinMaxInfo(MINMAXINFO* info) const {
+  if (!fullscreen_ || info == nullptr) {
+    return false;
+  }
+  // Fullscreen deliberately sizes the window LARGER than the monitor (frame
+  // off-screen). The default ptMaxTrackSize (SM_C*MAXTRACK) silently clamps
+  // that and leaves a strip of desktop/taskbar exposed at the bottom
+  // (BUG-1933). Generous fixed headroom over any real monitor.
+  info->ptMaxTrackSize.x = GetSystemMetrics(SM_CXVIRTUALSCREEN) + 256;
+  info->ptMaxTrackSize.y = GetSystemMetrics(SM_CYVIRTUALSCREEN) + 256;
+  return true;
 }
 
 void Win32Window::CaptureTransitionSnapshot() {
@@ -900,14 +1015,33 @@ void Win32Window::CaptureTransitionSnapshot() {
   if (screen == nullptr) {
     return;
   }
+  // A 32 bpp top-down DIB so the alpha byte can be set: FillSurfaceBackdrop
+  // AlphaBlends the snapshot, and on a see-through (Mica) surface only alpha
+  // 255 is opaque (BUG-5591; a screen BitBlt leaves the alpha byte 0).
+  BITMAPINFO info{};
+  info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+  info.bmiHeader.biWidth = width;
+  info.bmiHeader.biHeight = -height;
+  info.bmiHeader.biPlanes = 1;
+  info.bmiHeader.biBitCount = 32;
+  info.bmiHeader.biCompression = BI_RGB;
+  void* bits = nullptr;
   HDC mem = CreateCompatibleDC(screen);
-  HBITMAP bitmap = CreateCompatibleBitmap(screen, width, height);
-  if (mem != nullptr && bitmap != nullptr) {
+  HBITMAP bitmap =
+      CreateDIBSection(screen, &info, DIB_RGB_COLORS, &bits, nullptr, 0);
+  if (mem != nullptr && bitmap != nullptr && bits != nullptr) {
     HGDIOBJ old = SelectObject(mem, bitmap);
     const bool copied = BitBlt(mem, 0, 0, width, height, screen, origin.x,
                                origin.y, SRCCOPY) != 0;
     SelectObject(mem, old);
     if (copied) {
+      GdiFlush();
+      auto* pixel = static_cast<uint32_t*>(bits);
+      const size_t count =
+          static_cast<size_t>(width) * static_cast<size_t>(height);
+      for (size_t i = 0; i < count; ++i) {
+        pixel[i] |= 0xFF000000u;
+      }
       transition_snapshot_ = bitmap;
       transition_snapshot_size_ = {width, height};
       bitmap = nullptr;

@@ -104,36 +104,229 @@ void main() {
       expect(body.contains('CaptureTransitionSnapshot();'), isTrue);
     });
 
-    test('exiting from a maximized entry re-maximizes via SW_SHOWNORMAL', () {
-      // The zoomed flag survives the fullscreen SetWindowPos; restoring a
-      // SW_SHOWMAXIMIZED placement onto an already-"maximized" window is a
-      // geometry no-op and the window stays at the oversized rect (measured).
+    test('BUG-5591: one geometry step each way, no DWM animation', () {
+      // The old entry un-maximized onto the monitor (SetWindowPlacement
+      // SW_SHOWNORMAL) and then oversized; the old exit restored the
+      // pre-maximize normal rectangle and then re-maximized (ShowWindow
+      // SW_MAXIMIZE). Each show-state change played DWM's restore / maximize
+      // animation, which animates the window surface without the Flutter
+      // view: ~15 frames of bare Mica (RGB 243) on entry, a ~330 ms detour
+      // through the small normal rectangle on exit (60 fps capture).
       final int fnAt = cpp.indexOf('void Win32Window::SetFullscreen(');
       final int fnEnd = cpp.indexOf('\n}', fnAt);
       final String body = cpp.substring(fnAt, fnEnd);
-      expect(body.contains('restore.showCmd = SW_SHOWNORMAL;'), isTrue);
-      expect(body.contains('ShowWindow(hwnd, SW_MAXIMIZE);'), isTrue);
-      expect(body.contains('HWND_NOTOPMOST'), isTrue);
+
+      final int guardAt = body.indexOf(
+        'const ScopedNoDwmTransitions no_transitions(hwnd);',
+      );
+      final int firstPlacementAt = body.indexOf('SetWindowPlacement(');
+      final int firstPosAt = body.indexOf('SetWindowPos(');
+      expect(guardAt, isNonNegative);
+      expect(firstPlacementAt, greaterThan(guardAt));
+      expect(firstPosAt, greaterThan(guardAt));
+      final int scopeAt = cpp.indexOf('class ScopedNoDwmTransitions');
+      expect(scopeAt, isNonNegative);
+      expect(
+        cpp
+            .substring(scopeAt, cpp.indexOf('};', scopeAt))
+            .contains('DWMWA_TRANSITIONS_FORCEDISABLED'),
+        isTrue,
+      );
+
+      final int exitAt = body.indexOf('} else {');
+      expect(exitAt, isNonNegative);
+      final String enter = body.substring(0, exitAt);
+      expect(
+        enter.contains('ShowWindow('),
+        isFalse,
+        reason: 'entering never re-shows / re-maximizes the window.',
+      );
+      expect(
+        enter.contains('fushi::FullscreenUnzoomPlacement('),
+        isTrue,
+        reason:
+            'a zoomed window ignores SetWindowPos sizes (measured), so it is '
+            'un-zoomed — straight onto the fullscreen rectangle '
+            '(fullscreen_geometry_test pins rcNormalPosition = target).',
+      );
+      expect(
+        RegExp(r'SetWindowPlacement\(').allMatches(enter).length,
+        1,
+        reason: 'exactly one show-state change on entry.',
+      );
+
+      final String exit = body.substring(exitAt);
+      expect(
+        exit.contains('restore.showCmd = SW_SHOWNORMAL'),
+        isFalse,
+        reason: 'no restore-to-normal step before re-maximizing.',
+      );
+      final int rectStepAt = exit.indexOf(
+        'SetWindowPos(hwnd, HWND_NOTOPMOST, rect.left, rect.top',
+      );
+      expect(
+        rectStepAt,
+        isNonNegative,
+        reason: 'a normal window goes back with one SetWindowPos.',
+      );
+      final int maxBranchAt = exit.indexOf(
+        'restore.showCmd == SW_SHOWMAXIMIZED',
+      );
+      final int maximizeAt = exit.indexOf(
+        'ShowWindow(hwnd, SW_MAXIMIZE);',
+        maxBranchAt,
+      );
+      final int bookkeepingAt = exit.indexOf(
+        'SetWindowPlacement(hwnd, &restore);',
+        maximizeAt,
+      );
+      expect(maxBranchAt, isNonNegative);
+      expect(
+        maximizeAt,
+        greaterThan(maxBranchAt),
+        reason:
+            'SetWindowPlacement(SW_SHOWMAXIMIZED) on a normal window first '
+            'moves it to rcNormalPosition — the small window (measured); '
+            'maximize straight from the fullscreen rectangle instead.',
+      );
+      expect(
+        bookkeepingAt,
+        greaterThan(maximizeAt),
+        reason:
+            'the saved placement is applied to the already-zoomed window, '
+            'which only records the normal rectangle for a later restore.',
+      );
+      expect(
+        body.contains('GetWindowRect(hwnd, &rect_before_fullscreen_)'),
+        isTrue,
+      );
+      expect(
+        body.contains('zoomed_before_fullscreen_ = IsZoomed(hwnd)'),
+        isTrue,
+      );
     });
 
-    test('FillSurfaceBackdrop prefers the transition snapshot', () {
+    test('BUG-5591: a Mica surface gets its backdrop back only after the '
+        'view rasterized the new size', () {
+      final int fnAt = cpp.indexOf('void Win32Window::SetFullscreen(');
+      final int fnEnd = cpp.indexOf('\n}', fnAt);
+      final String body = cpp.substring(fnAt, fnEnd);
+      final int seeThroughAt = body.lastIndexOf(
+        '!fushi::MainSurfaceSeeThrough(main_surface_state())',
+      );
+      expect(
+        seeThroughAt,
+        isNonNegative,
+        reason:
+            'an opaque surface keeps the snapshot pixels under the view '
+            '(BUG-1933); only a see-through one must be cleared.',
+      );
+      expect(body.contains('snapshot_release_size_ = SIZE{'), isTrue);
+
+      final int rasterAt = cpp.indexOf(
+        'void Win32Window::OnChildFrameRasterized(',
+      );
+      final String raster = cpp.substring(
+        rasterAt,
+        cpp.indexOf('\n}', rasterAt),
+      );
+      final int matchAt = raster.indexOf('snapshot_release_size_.cx');
+      final int releaseAt = raster.indexOf('ReleaseTransitionSnapshot();');
+      final int fillAt = raster.indexOf('FillSurfaceBackdrop();');
+      expect(matchAt, isNonNegative);
+      expect(releaseAt, greaterThan(matchAt));
+      expect(
+        fillAt,
+        greaterThan(releaseAt),
+        reason:
+            'clearing as soon as the child resize returned left 2 frames of '
+            'bare Mica after every jump (measured): the view is not on '
+            'screen yet at that point.',
+      );
+
+      final int sizeAt = cpp.indexOf('case WM_SIZE:');
+      final String size = cpp.substring(
+        sizeAt,
+        cpp.indexOf('case WM_ERASEBKGND', sizeAt),
+      );
+      final int staleAt = size.indexOf('!fullscreen_transition_');
+      final int sizeFillAt = size.indexOf('FillSurfaceBackdrop();');
+      expect(staleAt, isNonNegative);
+      expect(
+        sizeFillAt,
+        greaterThan(staleAt),
+        reason:
+            'a resize outside a fullscreen transition drops a still-held '
+            'snapshot before the brush fill (no stretched stale frame).',
+      );
+    });
+
+    test('BUG-5591: the fullscreen client is pinned before any plugin', () {
+      // window_manager answers WM_NCCALCSIZE for a zoomed window by pinning
+      // the client to the work-area origin; a zoomed fullscreen window needs
+      // the monitor. Must run in the static WndProc, ahead of
+      // FlutterWindow::MessageHandler's plugin dispatch.
+      final int wndProcAt = cpp.indexOf(
+        'LRESULT CALLBACK Win32Window::WndProc(',
+      );
+      expect(wndProcAt, isNonNegative);
+      final int dispatchAt = cpp.indexOf(
+        'return that->MessageHandler(window, message, wparam, lparam);',
+        wndProcAt,
+      );
+      final int ncAt = cpp.indexOf(
+        'message == WM_NCCALCSIZE && wparam != 0 && that->fullscreen_',
+        wndProcAt,
+      );
+      expect(ncAt, isNonNegative);
+      expect(dispatchAt, greaterThan(ncAt));
+      expect(
+        cpp.substring(ncAt, dispatchAt).contains('FullscreenClientRect('),
+        isTrue,
+      );
+    });
+
+    test('the transition snapshot is opaque on every surface', () {
       final int fnAt = cpp.indexOf('void Win32Window::FillSurfaceBackdrop()');
       expect(fnAt, isNonNegative);
       final int fnEnd = cpp.indexOf('\n}', fnAt);
       final String body = cpp.substring(fnAt, fnEnd);
       final int snapshotAt = body.indexOf('transition_snapshot_ != nullptr');
-      final int stretchAt = body.indexOf('StretchBlt(');
+      final int blendAt = body.indexOf('AlphaBlend(');
       final int brushAt = body.indexOf('PaintBackdrop(dc)');
       expect(snapshotAt, isNonNegative);
-      expect(stretchAt, greaterThan(snapshotAt));
+      expect(blendAt, greaterThan(snapshotAt));
       expect(
         brushAt,
-        greaterThan(stretchAt),
+        greaterThan(blendAt),
         reason:
             'a raced composition during the fullscreen jump must show the '
             'previous frame, not a solid colour flash; everything without a '
             'snapshot (interactive resize) keeps the cheap brush fill.',
       );
+      expect(
+        body.contains('MainSurfaceSeeThrough'),
+        isFalse,
+        reason:
+            'BUG-5591: skipping the snapshot on Mica left the bare material '
+            '(RGB 243 in a light theme) on screen for 1-3 frames of every '
+            'jump. The snapshot is opaque (alpha 255 + AlphaBlend), so it is '
+            'safe on a see-through surface.',
+      );
+      expect(
+        body.contains('StretchBlt('),
+        isFalse,
+        reason: 'StretchBlt writes alpha 0: additive ghost on Mica.',
+      );
+
+      final int capAt = cpp.indexOf(
+        'void Win32Window::CaptureTransitionSnapshot()',
+      );
+      final int capEnd = cpp.indexOf('\n}', capAt);
+      final String capture = cpp.substring(capAt, capEnd);
+      expect(capture.contains('CreateDIBSection('), isTrue);
+      expect(capture.contains('biBitCount = 32'), isTrue);
+      expect(capture.contains('0xFF000000u'), isTrue);
     });
 
     test('WM_ACTIVATE drops topmost while fullscreen and deactivated', () {
@@ -159,7 +352,7 @@ void main() {
       );
       expect(dispatchAt, isNonNegative);
       final int liftAt = flutterWindow.indexOf(
-        'message == WM_GETMINMAXINFO && IsFullscreen()',
+        'ApplyFullscreenMinMaxInfo(reinterpret_cast<MINMAXINFO*>(lparam))',
       );
       expect(
         liftAt,
@@ -170,12 +363,13 @@ void main() {
             'or the fullscreen SetWindowPos is clamped ~30px short and a '
             'taskbar strip stays exposed (measured).',
       );
-      final int liftEnd = flutterWindow.indexOf('return 0;', liftAt);
-      expect(liftEnd, greaterThan(liftAt));
-      expect(
-        flutterWindow.substring(liftAt, liftEnd).contains('ptMaxTrackSize'),
-        isTrue,
+      final int fnAt = cpp.indexOf(
+        'bool Win32Window::ApplyFullscreenMinMaxInfo(',
       );
+      expect(fnAt, isNonNegative);
+      final String body = cpp.substring(fnAt, cpp.indexOf('\n}', fnAt));
+      expect(body.contains('if (!fullscreen_'), isTrue);
+      expect(body.contains('ptMaxTrackSize'), isTrue);
     });
 
     test('the window channel exposes setFullscreen/isFullscreen', () {

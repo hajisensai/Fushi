@@ -4,6 +4,7 @@
 #include <windows.h>
 
 #include "child_resize_gate.h"
+#include "fullscreen_geometry.h"
 #include "main_surface_composition.h"
 
 #include <functional>
@@ -110,11 +111,20 @@ class Win32Window {
   // the same code path as maximize, which measurably never drops the view
   // layer. HWND_TOPMOST covers the taskbar (the shell's fullscreen detection
   // does not fire for an oversized framed window); topmost is dropped while
-  // the window is deactivated so other apps stay usable, and on exit the
-  // saved WINDOWPLACEMENT restores both geometry and a pre-fullscreen
-  // maximized state.
+  // the window is deactivated so other apps stay usable.
+  //
+  // BUG-5591: both directions are a single geometry step straight to the
+  // final rectangle, with DWM transitions force-disabled. The old two-step
+  // un-maximize / restore-then-maximize sequence made DWM animate the window
+  // surface (solid Mica frames) and detour through the pre-maximize normal
+  // rectangle. See fullscreen_geometry.h.
   void SetFullscreen(bool fullscreen);
   bool IsFullscreen() const { return fullscreen_; }
+
+  // WM_GETMINMAXINFO while fullscreen: lift the max track size, the window is
+  // deliberately larger than the monitor (BUG-1933). Returns false (|info|
+  // untouched) when not fullscreen.
+  bool ApplyFullscreenMinMaxInfo(MINMAXINFO* info) const;
 
  protected:
   // Processes and route salient window messages for mouse handling,
@@ -220,9 +230,10 @@ class Win32Window {
   // snapshot is held, FillSurfaceBackdrop stretches it onto the surface
   // instead of the solid brush, so if DWM races the fullscreen geometry jump
   // the revealed surface shows the previous frame's content (a barely
-  // noticeable stretch) rather than a solid colour flash. Snapshots live only
-  // across one SetFullscreen call; interactive resizing (WM_SIZE without a
-  // snapshot) keeps the cheap brush fill (BUG-1917 cadence unaffected).
+  // noticeable stretch) rather than a solid colour flash. A snapshot lives
+  // from one SetFullscreen call until the view's first frame at the new size
+  // (BUG-5591); interactive resizing (WM_SIZE without a snapshot) keeps the
+  // cheap brush fill (BUG-1917 cadence unaffected).
   void CaptureTransitionSnapshot();
   void ReleaseTransitionSnapshot();
 
@@ -247,8 +258,20 @@ class Win32Window {
   bool startup_cloaked_ = false;
   bool frame_chrome_suppressed_ = false;
   WINDOWPLACEMENT placement_before_fullscreen_ = {};
+  // BUG-5591: the exact window rectangle and zoom state before entering, for
+  // the single-step SetWindowPos exit; the monitor and frame insets the
+  // fullscreen geometry was computed from (WM_NCCALCSIZE / WM_GETMINMAXINFO).
+  RECT rect_before_fullscreen_ = {};
+  bool zoomed_before_fullscreen_ = false;
+  RECT fullscreen_monitor_ = {};
+  fushi::FrameInsets fullscreen_insets_ = {};
   HBITMAP transition_snapshot_ = nullptr;
   SIZE transition_snapshot_size_ = {};
+  // BUG-5591: true while SetFullscreen runs. Afterwards the snapshot is kept
+  // until the view reports a rasterized frame of |snapshot_release_size_|
+  // (the client size the jump landed on), see OnChildFrameRasterized.
+  bool fullscreen_transition_ = false;
+  SIZE snapshot_release_size_ = {};
 
   // Registration handle for GUID_MONITOR_POWER_ON power-setting notifications.
   // Held so it can be unregistered on Destroy() (avoids a handle leak). nullptr

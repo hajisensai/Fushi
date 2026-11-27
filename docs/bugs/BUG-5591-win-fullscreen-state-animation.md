@@ -1,0 +1,17 @@
+## BUG-5591 · win-fullscreen-state-animation
+- **报告**：2026-11-27（用户：Windows 视频页进 / 退全屏不顺——进入有实色帧，退出先闪一个小窗口再变大、也有实色帧）
+- **真实性**：✅ 真 bug。Release 版 60 fps 采样复现（玻璃设计 + 浅色主题、最大化窗口）：进入每次 2–5 帧 ≥99% 纯 RGB 243；退出每次 19–20 帧（约 320 ms）：全屏 → 屏幕中间小窗口（拉伸的快照）→ 纯 243 → 小窗里的视频 → 最大化放大动画。普通（非最大化）窗口：进入 1–3 帧、退出 2–3 帧纯 243。
+  - 根因 1（进入实色帧）：`fushi/windows/runner/win32_window.cpp:818`（基线）进入时先 `SetWindowPlacement(SW_SHOWNORMAL)` 把最大化窗口还原到显示器矩形，再在 `:844` `SetWindowPos` 撑大——两步、且改了 show state。show state 改变让 DWM 播还原动画，动画画的是窗口重定向表面、不是 Flutter 子视图合成层。
+  - 根因 2（退出小窗口）：`win32_window.cpp:866`（基线）退出时先 `SetWindowPlacement(SW_SHOWNORMAL)` 回到最大化前的普通矩形（屏幕中间的小窗），再 `:868` `ShowWindow(SW_MAXIMIZE)` 放大，两步各带一段 DWM 动画。
+  - 根因 3（退出实色帧 / 243 灰的来源）：`win32_window.cpp:674`（基线）`FillSurfaceBackdrop` 在主表面「透底」（`MainSurfaceSeeThrough`，即玻璃设计开了 Mica，`windowBackdropRequestedOf`）时跳过过渡快照、只刷透明底；`:851/:877/:882` 又在 resize 一返回就释放快照。透出来的就是 Windows 11 浅色 Mica 材质本身的颜色 RGB 243。另外 GDI 写出的 alpha 是 0，在 DWM 里按加色叠加，所以快照即便画上去在 Mica 窗口里也不是不透明的。
+  - 主题 / 设计系统：243 只在「玻璃设计 + Mica 生效 + 浅色」出现；深色主题下 Mica 是深灰（同一机制，颜色不同）。M3E 下主表面不透底，基线本来就画快照，只剩根因 1、2 的两步几何 + DWM 动画（表现为快照被拉伸的小窗 / 放大动画，没有纯色）。M3E / 深色本轮没有实测像素，结论来自代码路径。
+- **[x] ① 已修复** — 进出全屏各只有一步几何、关掉 DWM 窗口动画：
+  - `win32_window.cpp` `SetFullscreen`：整段包在 `ScopedNoDwmTransitions`（`DWMWA_TRANSITIONS_FORCEDISABLED`）里；最大化窗口用一次 `SetWindowPlacement` 直接还原到全屏矩形（`fullscreen_geometry.h` `FullscreenUnzoomPlacement`，rcNormalPosition = 目标、换算成工作区坐标），普通窗口一次 `SetWindowPos`；退出时普通窗口一次 `SetWindowPos` 回原矩形，最大化窗口 `ShowWindow(SW_MAXIMIZE)` 从全屏矩形直接放大、再 `SetWindowPlacement` 只记账普通矩形。
+  - 全屏期间 `WM_NCCALCSIZE` 把客户区钉成显示器（`FullscreenClientRect`），不受进入前 show state 测得的边框差影响；`WM_GETMINMAXINFO` 只放开 `ptMaxTrackSize`（`ApplyFullscreenMinMaxInfo`）。
+  - 快照：32 位 DIB、alpha 补成 255、`AlphaBlend` 画上去，玻璃 / M3E 都不透明；不透底表面沿用 BUG-1933（快照留在视图下面）；透底表面等视图在新尺寸上报出第一帧光栅化（`OnChildFrameRasterized`）后才换回透明底，非全屏过程的 `WM_SIZE` 丢掉残留快照。
+- **[x] ② 已加自动化测试** —
+  - 原生单测 `fushi/windows/runner/tests/fullscreen_geometry_test.cpp`（cmake 构建门 `fushi_windows_fullscreen_geometry_gate`）：全屏矩形、客户区钉死、工作区坐标换算（任务栏底 / 左 / 上）、un-zoom 直接落到全屏矩形而不是普通矩形、退出计划。
+  - 守卫 `fushi/test/build/win_fullscreen_flash_guard_test.dart`：DWM 动画关闭包住所有几何调用；进入无 `ShowWindow`、只一次 `SetWindowPlacement` 且走 `FullscreenUnzoomPlacement`；退出无 restore-to-normal、`ShowWindow(SW_MAXIMIZE)` 在记账 `SetWindowPlacement` 之前；透底表面只在光栅化回报后清快照。
+- **备注**：
+  - 复测（修复后，60 fps，玻璃 + 浅色，最大化）：进入一步到位、无任务栏残帧；退出不再出现小窗口，直接回最大化。残留：透底（Mica）表面每次跳变后仍有 1–3 帧纯 243（DWM 合成 Mica 底与 Flutter 新尺寸首帧之间的空档）；不透底表面（M3E）留快照无此问题。实验过：完全不释放快照 → 0 帧纯色（但半透明首页外壳会透出旧快照，不可取）；释放前 `DwmFlush` → 仍有 1–2 帧（且是等待，不采用）。根本消除需要在 Flutter 视图真正 present 新尺寸那一刻（而非 FrameTiming 回调）才换底（runner 目前拿不到这个信号），未做，登记于此。
+  - 测试期间用户要求不再做前台可见录屏；上述像素数据是要求前采的。多显示器、任务栏在左 / 上的真机路径只由单测覆盖，未实机测。

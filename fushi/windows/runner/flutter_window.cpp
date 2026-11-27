@@ -5391,18 +5391,13 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                                                       lparam);
     // BUG-1933: fullscreen deliberately sizes the window LARGER than the
     // monitor (frame off-screen, see Win32Window::SetFullscreen). The default
-    // ptMaxTrackSize (SM_C*MAXTRACK) silently clamps that SetWindowPos and
-    // leaves a strip of desktop/taskbar exposed at the bottom. window_manager's
-    // delegate consumes WM_GETMINMAXINFO (it applies our minimum size), so the
-    // override must happen here, after the delegates ran: lift the max track
-    // size while fullscreen, keeping whatever minimums the plugins wrote.
-    if (message == WM_GETMINMAXINFO && IsFullscreen()) {
-      auto* info = reinterpret_cast<MINMAXINFO*>(lparam);
-      if (info != nullptr) {
-        // Generous fixed headroom over any real monitor: monitor + frame.
-        info->ptMaxTrackSize.x = GetSystemMetrics(SM_CXVIRTUALSCREEN) + 256;
-        info->ptMaxTrackSize.y = GetSystemMetrics(SM_CYVIRTUALSCREEN) + 256;
-      }
+    // ptMaxTrackSize (SM_C*MAXTRACK) silently clamps that and leaves a strip
+    // of desktop/taskbar exposed at the bottom. window_manager's delegate
+    // consumes WM_GETMINMAXINFO (it applies our minimum size), so the override
+    // must happen here, after the delegates ran: lift the max track size while
+    // fullscreen, keeping whatever minimums the plugins wrote.
+    if (message == WM_GETMINMAXINFO &&
+        ApplyFullscreenMinMaxInfo(reinterpret_cast<MINMAXINFO*>(lparam))) {
       return 0;
     }
     if (result) {
