@@ -38,6 +38,16 @@
       "dbSchemaVersion": 182
     },
     {
+      "name": "fushi-3.4.0-beta.33024-linux-x86_64.flatpak",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.4.0-beta.33024/fushi-3.4.0-beta.33024-linux-x86_64.flatpak",
+      "releaseSequence": 33024,
+      "tag": "v3.4.0-beta.33024",
+      "version": "3.4.0-beta.33024",
+      "size": 261293448,
+      "sha256": "1d9673e295239cd04179a6dc4ee25e45595aeb6cef9a2ef13034008c8d9d0125",
+      "dbSchemaVersion": 182
+    },
+    {
       "name": "fushi-3.4.0-beta.33024-macos-arm64.dmg",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.4.0-beta.33024/fushi-3.4.0-beta.33024-macos-arm64.dmg",
       "releaseSequence": 33024,
