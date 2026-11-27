@@ -1021,6 +1021,13 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
             // 0.72 薄纱上合成成一条比上下都深的横线（BUG-3338）。
             final bool continuesBelow =
                 _nestedReach.value > outer + shown * _chromeHeight + 0.5;
+            // 页头大字随滚动收短了 [collapse]：嵌套层自己画的工具行（浏览页的
+            // 内容域页签、库页的标签行）跟着上移同样多，贴在收短后的页头底下——
+            // 底板已经按 `scrimTop` 上移，工具行留在原位就是悬在列表中间、和
+            // 页头之间空出一截。Apple 页头大字外壳里的嵌套工具行改为随内容滚走
+            // （[appleScrollAway]）。
+            final bool appleScrollAway = nested && appleBar && !widget.masthead;
+            final double nestedCollapse = nested ? collapse : 0;
             return Stack(
               clipBehavior: Clip.none,
               children: <Widget>[
@@ -1112,42 +1119,50 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
                           ),
                         ),
                 ),
+                // BUG-5544（反馈 ki-PPMWRKt）：位移拆成两段，
+                // 命中盒跟着工具行的「可见槽位」走。
+                // - 外段 [Transform.translate]（Positioned 的直接子节点）：页头
+                //   大字收短的 [collapse]。嵌套工具行整行贴在收短后的页头底下、
+                //   整行都看得见，命中盒必须一起上移。曾经它和下面的位移一起
+                //   包在 ExcludeSemantics / IgnorePointer / 淡出里面：这几层按
+                //   自己（仍在 `outer` 原位）的 size 判命中，[RenderTransform]
+                //   只平移绘制，桌面宽窗 collapse ≈ 62 px 超过整行高度，滚下去
+                //   后标签栏整行点不动（窄窗上半截死区），只有滚回顶部才恢复。
+                // - 内段：弹簧收起滑出 + Apple 外壳里随内容滚到导航栏背后的那段。
+                //   这两段里工具行确实被上面一层盖住，命中盒留在槽位里，等于只有
+                //   槽位内露出的部分可点，藏在导航栏背后的那截不被穿透误点。
+                // 两段都只改绘制与命中变换，滚动期间不重排。
                 Positioned(
                   top: outer,
                   left: 0,
                   right: 0,
-                  child: ExcludeSemantics(
-                    excluding: hidden,
-                    child: IgnorePointer(
-                      // 收起途中就不再接指针（正在离开的工具栏不该还能被点到）。
-                      ignoring: hidden || !controller.visible,
-                      // 玻璃安全的淡出（[fushiChromeFade]）：Apple 的玻璃栏
-                      // 不能压在 Opacity 下，否则采不到背景、淡出时成灰团。
-                      child: fushiChromeFade(
-                        context,
-                        hidden ? 0 : opacity,
-                        Transform.translate(
-                          // 用未截断的弹簧值：MD3 的轻微回弹体现在位置上
-                          // （Apple 弹簧临界阻尼，本就不越界）。
-                          // 页头大字随滚动收短了 [collapse]：嵌套层自己画的工具行
-                          // （浏览页的内容域页签）跟着上移同样多，贴在收短后的
-                          // 页头底下——底板已经按 `scrimTop` 上移，工具行留在
-                          // 原位就是悬在列表中间、和页头之间空出一截。
-                          // Apple 页头大字外壳里，页面自己的嵌套工具行（搜索
-                          // 框、标签行）不吸顶：跟内容一起滚走（iOS 27 图书：
-                          // 只有导航栏与分段吸顶），滚进页头底下被背板盖住。
-                          offset: Offset(
-                            0,
-                            -(1 - value) * (travel - selfFloor) -
-                                (nested
-                                    ? (appleBar && !widget.masthead
-                                          ? controller
-                                                .mastheadScrollOffset
-                                                .value
-                                          : collapse)
-                                    : 0),
+                  child: Transform.translate(
+                    offset: Offset(0, appleScrollAway ? 0 : -nestedCollapse),
+                    child: ExcludeSemantics(
+                      excluding: hidden,
+                      child: IgnorePointer(
+                        // 收起途中就不再接指针（正在离开的工具栏不该还能被点到）。
+                        ignoring: hidden || !controller.visible,
+                        // 玻璃安全的淡出（[fushiChromeFade]）：Apple 的玻璃栏
+                        // 不能压在 Opacity 下，否则采不到背景、淡出时成灰团。
+                        child: fushiChromeFade(
+                          context,
+                          hidden ? 0 : opacity,
+                          Transform.translate(
+                            // 用未截断的弹簧值：MD3 的轻微回弹体现在位置上
+                            // （Apple 弹簧临界阻尼，本就不越界）。
+                            // Apple 页头大字外壳里，页面自己的嵌套工具行（搜索
+                            // 框、标签行）不吸顶：跟内容一起滚走（iOS 27 图书：
+                            // 只有导航栏与分段吸顶），滚进页头底下被背板盖住。
+                            offset: Offset(
+                              0,
+                              -(1 - value) * (travel - selfFloor) -
+                                  (appleScrollAway
+                                      ? controller.mastheadScrollOffset.value
+                                      : 0),
+                            ),
+                            child: chrome,
                           ),
-                          child: chrome,
                         ),
                       ),
                     ),
