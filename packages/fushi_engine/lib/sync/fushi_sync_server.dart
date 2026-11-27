@@ -52,6 +52,7 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_wire.dart';
 import 'package:fushi_engine/sync/video_metadata_manifest.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/host_manifest_bodies.dart';
+import 'package:fushi_engine/sync/http_etag.dart';
 import 'package:fushi_engine/sync/host_request_observer.dart';
 import 'package:fushi_engine/sync/pdf_sync_package.dart'
     show kLiveLibraryPdfBooksCapability;
@@ -1301,7 +1302,7 @@ class FushiSyncServer {
         if (!compressible) return innerResponse;
         // 表示随 Accept-Encoding 变（RFC 9110 §12.5.5）：发不发 gzip 都声明，缓存
         // 才不会把 gzip 体交给不认 gzip 的请求。清单端点的 ETag 因此是弱的
-        // （hostManifestEtag）：两种表示共用一个验证器。
+        // （[weakContentEtag]）：两种表示共用一个验证器。
         final shelf.Response response = innerResponse.change(
           headers: <String, String>{'Vary': 'Accept-Encoding'},
         );

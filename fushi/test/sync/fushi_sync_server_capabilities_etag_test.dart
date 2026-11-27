@@ -49,7 +49,7 @@ void main() {
     expect(first.statusCode, 200);
     final String? etag = first.headers['etag'];
     expect(etag, isNotNull);
-    expect(etag, matches(RegExp(r'^"[0-9a-f]{32}"$')));
+    expect(etag, matches(RegExp(r'^W/"[0-9a-f]{32}"$')));
     expect(first.headers['cache-control'], 'no-cache');
     expect((jsonDecode(first.body) as Map)['hostUpdate'], isFalse);
 
@@ -65,15 +65,5 @@ void main() {
     expect(changed.statusCode, 200, reason: 'host 改了能力表：旧 ETag 不再命中');
     expect((jsonDecode(changed.body) as Map)['hostUpdate'], isTrue);
     expect(changed.headers['etag'], isNot(etag));
-  });
-
-  test('interconnectEtagMatches：列表、W/ 前缀、*；缺失不命中', () {
-    const String tag = '"abc"';
-    expect(interconnectEtagMatches(null, tag), isFalse);
-    expect(interconnectEtagMatches('', tag), isFalse);
-    expect(interconnectEtagMatches('"abc"', tag), isTrue);
-    expect(interconnectEtagMatches('"x", W/"abc"', tag), isTrue);
-    expect(interconnectEtagMatches('*', tag), isTrue);
-    expect(interconnectEtagMatches('"abcd"', tag), isFalse);
   });
 }

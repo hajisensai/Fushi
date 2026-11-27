@@ -11,6 +11,7 @@ import 'package:fushi_engine/sync/collection_manifest.dart';
 import 'package:fushi_engine/sync/collection_sync_engine.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/host_manifest_bodies.dart';
+import 'package:fushi_engine/sync/http_etag.dart';
 import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi_engine/sync/media_link_sync.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
@@ -127,7 +128,7 @@ void main() {
         utf8.decode(r1.body),
         (await loadLocalCollectionManifest(hostDb)).canonicalJson(),
       );
-      expect(r1.etag, hostManifestEtag(r1.body));
+      expect(r1.etag, weakContentEtag(r1.body));
 
       final r2 = await call(
         'GET',
@@ -352,7 +353,7 @@ void main() {
   group('HostManifestBodyCache', () {
     HostManifestBody body(String s) => HostManifestBody(
       bytes: Uint8List.fromList(utf8.encode(s)),
-      etag: hostManifestEtag(utf8.encode(s)),
+      etag: weakContentEtag(utf8.encode(s)),
     );
 
     test('命中不重算；并发读者共用一次重算；作废后退订并重算', () async {
@@ -542,21 +543,6 @@ void main() {
       expect(b3.etag, isNot(b1.etag));
       expect(utf8.decode(b3.bytes), await fresh());
     });
-  });
-
-  test('ifNoneMatchHits：列表、W/ 前缀、* 都按 RFC 9110 弱比较', () {
-    expect(hostManifestEtag(utf8.encode('{}')), matches(r'^W/"[0-9a-f]{32}"$'));
-    expect(ifNoneMatchHits('W/"abc"', 'W/"abc"'), isTrue);
-    expect(ifNoneMatchHits('"abc"', 'W/"abc"'), isTrue);
-    expect(ifNoneMatchHits('W/"abd"', 'W/"abc"'), isFalse);
-    const String etag = '"abc"';
-    expect(ifNoneMatchHits(null, etag), isFalse);
-    expect(ifNoneMatchHits('', etag), isFalse);
-    expect(ifNoneMatchHits('"abc"', etag), isTrue);
-    expect(ifNoneMatchHits('W/"abc"', etag), isTrue);
-    expect(ifNoneMatchHits('"x", "abc"', etag), isTrue);
-    expect(ifNoneMatchHits('*', etag), isTrue);
-    expect(ifNoneMatchHits('"abcd"', etag), isFalse);
   });
 }
 

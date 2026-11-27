@@ -92,3 +92,20 @@
    - `epub_books` 留在直接作废表里：清单只用它的 uid / bookKey / sourceMetadata，但它没有
      高频写入（阅读进度不在这张表，写入来自导入 / 刮削 / 元数据编辑），而按列收窄要在每次
      写入后重读全表这三列比对，代价与重算时读它那一步相当，省不下什么。
+4. **client 不发 `If-None-Match`**（审查第 8 条，补完第 2 条）：host 带了 ETag，client 的
+   三条清单 GET 却每次全量下载、全量解析。修：`InterconnectSyncBackend._getManifestConditional`
+   （`getRemoteCollectionManifest` / `getRemoteTagManifest` / `getRemoteMediaLinkManifest`
+   共用）按路由在内存里缓存上一次带 ETag 的 200 与解析出的清单，下次带 `If-None-Match`，
+   304 直接返回缓存的那个对象（不下载、不解析）。失效同能力表：配对身份（配置签名 + 选中的
+   host 身份 / 凭据 / 指纹）变了不带旧 ETag；连不上 / 超时 / 非 2xx·304 / 解析失败清缓存；
+   老 host 不带 ETag 不缓存、每次全量；同一路由在飞时并发请求合并。304 复用同一对象，所以
+   三种清单的 `fromJson` 产出的集合字段一律不可变（`List.unmodifiable` / `Map.unmodifiable`），
+   调用方改不动缓存。这一路走 `WebDavOps` 的 `HttpClientRequest`（同步编排用的
+   `InterconnectSyncBackend` 不经 `InterconnectHostChannel`），所以没有复用 `send(headers:)`，
+   头直接设在请求上。同时把 host 端两份 `If-None-Match` 匹配（清单的 `ifNoneMatchHits`、
+   能力表的 `interconnectEtagMatches`）与 ETag 生成合成 `fushi_engine/sync/http_etag.dart`
+   的 `ifNoneMatchHits` / `weakContentEtag`；能力表 ETag 也改成弱的（能力表 JSON 同样会被
+   gzip 中间件压缩，强 ETag 同第 2 条违规；弱比较下老 client 缓存的强形式照样命中）。
+   测试：`interconnect_manifest_etag_test.dart`（真 `FushiSyncServer` 304 复用 + 不可变 +
+   host 改了回 200；假 host 看请求头：带 / 不带 If-None-Match、老 host、换 host、失败清缓存、
+   并发合并）。

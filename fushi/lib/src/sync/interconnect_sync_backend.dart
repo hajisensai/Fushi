@@ -2430,24 +2430,114 @@ class InterconnectSyncBackend extends SyncBackend
   // 不经 WebDAV 文件箱伪装的 __collections__ 资产（互联资产层是 live 端点适配，语义
   // 不同）。读-合并-写：GET host 清单 → 引擎合并 → 应用本地 → POST 合并后清单。
 
-  /// GET 对端 host 当前合集清单（读）。老 host 无该端点返回 404 时优雅降级返回 null
-  /// （调用方跳过整个合集同步步骤，绝不因老 server 缺端点崩溃，与 [getRemoteAggregateBody]
-  /// 的 404 降级同纪律）。返回的清单已按 [CollectionManifest.fromJson] 解码。
-  Future<CollectionManifest?> getRemoteCollectionManifest() async {
+  /// 三条清单 GET（合集 / 标签 / 作品图谱）的条件请求缓存，键是路由（BUG-5606 审查
+  /// 第 8 条）。只在内存里，与本实例同寿。
+  final Map<String, _ManifestEtagSlot> _manifestSlots =
+      <String, _ManifestEtagSlot>{};
+
+  /// 当前会话的配对身份：配置签名（地址集 / 启用 / 指纹 / 令牌，见
+  /// [_sessionSignature]）+ 选中的 host 身份与凭据。任一变了（取消配对、重新配对、
+  /// 换了一台 host），旧 ETag 不再带出去。同一台 host 的地址之间切换不算变。
+  String get _manifestScope =>
+      '${_configSignature ?? ''}\n${_activeHostIdentity ?? ''}\n'
+      '${_activeToken ?? ''}\n${_activeFingerprint ?? ''}';
+
+  /// GET 一条清单 [route]，经 ETag 条件请求复用上一次的解析结果。
+  ///
+  /// - 上一次拿到的是同一配对身份下带 ETag 的 200：带 `If-None-Match` 去问，host
+  ///   回 304 就原样返回缓存的那份对象（不下载、不解析）。清单类型的集合字段在
+  ///   `fromJson` 里就是不可变的，调用方改不动它，下一次 304 拿到的仍是原样。
+  /// - 老 host（200 不带 ETag）：不缓存，每次整份下载解析（同改动前）。
+  /// - 404（老 host 无端点）→ null；连不上 / 超时 / 非 200·304 / 解析失败：清掉这条
+  ///   缓存再抛，下一次整份重来。
+  /// - 同一路由已有请求在飞（同一配对身份）时共用它的结局，不另发。
+  Future<T?> _getManifestConditional<T extends Object>(
+    String route,
+    T Function(Object? json) decode,
+  ) async {
     await _ensureResolved();
+    final String scope = _manifestScope;
+    final _ManifestEtagSlot? existing = _manifestSlots[route];
+    final _ManifestEtagSlot? slot = existing != null && existing.scope == scope
+        ? existing
+        : null;
+    final Future<Object?>? inFlight = slot?.flight;
+    if (inFlight != null) return await inFlight as T?;
+    final _ManifestEtagSlot mine = _ManifestEtagSlot(scope);
+    if (slot != null && slot.value is T && slot.etag != null) {
+      mine
+        ..etag = slot.etag
+        ..value = slot.value;
+    }
+    _manifestSlots[route] = mine;
+    final Future<T?> flight = _revalidateManifest<T>(route, mine, decode);
+    mine.flight = flight;
+    try {
+      return await flight;
+    } finally {
+      mine.flight = null;
+      if (mine.value == null && identical(_manifestSlots[route], mine)) {
+        _manifestSlots.remove(route);
+      }
+    }
+  }
+
+  Future<T?> _revalidateManifest<T extends Object>(
+    String route,
+    _ManifestEtagSlot slot,
+    T Function(Object? json) decode,
+  ) async {
+    final String? cachedEtag = slot.etag;
+    final Object? cached = slot.value;
+    slot
+      ..etag = null
+      ..value = null;
     final HttpClientRequest req = await _ops!.buildRequest(
       'GET',
-      '$_apiBase/api/library/collections',
+      '$_apiBase$route',
     );
+    if (cachedEtag != null && cached != null) {
+      req.headers.set(HttpHeaders.ifNoneMatchHeader, cachedEtag);
+    }
     final HttpClientResponse res = await _sendBounded(req);
+    if (res.statusCode == HttpStatus.notModified &&
+        cachedEtag != null &&
+        cached is T) {
+      await res.drain<void>();
+      slot
+        ..etag = res.headers.value(HttpHeaders.etagHeader) ?? cachedEtag
+        ..value = cached;
+      return cached;
+    }
     if (res.statusCode == 404) {
       await res.drain<void>();
-      return null; // 老 host 无合集端点：降级跳过，不崩。
+      return null; // 老 host 无该端点：降级跳过，不崩。
     }
-    _ops!.checkStatus(res.statusCode, 'GET /api/library/collections');
-    final String body = await _readBodyBounded(res);
-    return CollectionManifest.fromJson(jsonDecode(body));
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      // 含没带条件却回来的 304（host 契约外）：没有可复用的东西，按失败处理。
+      await res.drain<void>();
+      _ops!.checkStatus(res.statusCode, 'GET $route');
+      throw SyncBackendError('GET $route: unexpected HTTP ${res.statusCode}');
+    }
+    final String? etag = res.headers.value(HttpHeaders.etagHeader);
+    final T value = decode(jsonDecode(await _readBodyBounded(res)));
+    if (etag != null && etag.isNotEmpty) {
+      slot
+        ..etag = etag
+        ..value = value;
+    }
+    return value;
   }
+
+  /// GET 对端 host 当前合集清单（读）。老 host 无该端点返回 404 时优雅降级返回 null
+  /// （调用方跳过整个合集同步步骤，绝不因老 server 缺端点崩溃，与 [getRemoteAggregateBody]
+  /// 的 404 降级同纪律）。返回的清单已按 [CollectionManifest.fromJson] 解码；host 带
+  /// ETag 时经条件请求复用上一次的结果（[_getManifestConditional]）。
+  Future<CollectionManifest?> getRemoteCollectionManifest() =>
+      _getManifestConditional<CollectionManifest>(
+        '/api/library/collections',
+        CollectionManifest.fromJson,
+      );
 
   /// POST 本端合并后清单到对端 host（写），host 并入自己 DB（成员并集 + 墓碑防复活 +
   /// 手动序 LWW）并返回其合并结果。返回体供调用方核对/调试；互联读-合并-写的收敛
@@ -2472,21 +2562,12 @@ class InterconnectSyncBackend extends SyncBackend
   // 互联标签同步（`tag_sync.dart`）：直打 /api/library/tags，同合集清单的读-合并-写。
 
   /// GET 对端 host 标签清单。老 host 无端点（404）返回 null，调用方跳过标签维度。
-  Future<TagManifest?> getRemoteTagManifest() async {
-    await _ensureResolved();
-    final HttpClientRequest req = await _ops!.buildRequest(
-      'GET',
-      '$_apiBase/api/library/tags',
-    );
-    final HttpClientResponse res = await _sendBounded(req);
-    if (res.statusCode == 404) {
-      await res.drain<void>();
-      return null;
-    }
-    _ops!.checkStatus(res.statusCode, 'GET /api/library/tags');
-    final String body = await _readBodyBounded(res);
-    return TagManifest.fromJson(jsonDecode(body));
-  }
+  /// 经条件请求复用上一次的结果（[_getManifestConditional]）。
+  Future<TagManifest?> getRemoteTagManifest() =>
+      _getManifestConditional<TagManifest>(
+        '/api/library/tags',
+        TagManifest.fromJson,
+      );
 
   /// POST 本机标签清单到 host，host 按 LWW 并入自己 DB 并回并入后的清单。
   Future<TagManifest> putRemoteTagManifest(TagManifest manifest) async {
@@ -2507,21 +2588,12 @@ class InterconnectSyncBackend extends SyncBackend
   // 互联作品图谱同步（`media_link_sync.dart`）：直打 /api/library/media-links。
 
   /// GET 对端 host 作品图谱清单。老 host 无端点（404）返回 null，调用方跳过。
-  Future<MediaLinkManifest?> getRemoteMediaLinkManifest() async {
-    await _ensureResolved();
-    final HttpClientRequest req = await _ops!.buildRequest(
-      'GET',
-      '$_apiBase/api/library/media-links',
-    );
-    final HttpClientResponse res = await _sendBounded(req);
-    if (res.statusCode == 404) {
-      await res.drain<void>();
-      return null;
-    }
-    _ops!.checkStatus(res.statusCode, 'GET /api/library/media-links');
-    final String body = await _readBodyBounded(res);
-    return MediaLinkManifest.fromJson(jsonDecode(body));
-  }
+  /// 经条件请求复用上一次的结果（[_getManifestConditional]）。
+  Future<MediaLinkManifest?> getRemoteMediaLinkManifest() =>
+      _getManifestConditional<MediaLinkManifest>(
+        '/api/library/media-links',
+        MediaLinkManifest.fromJson,
+      );
 
   /// POST 本机作品图谱清单到 host，host 按整行 LWW 并入并回并入后的清单。
   Future<MediaLinkManifest> putRemoteMediaLinkManifest(
@@ -5109,4 +5181,15 @@ class HostUpdateOtherHost implements Exception {
   @override
   String toString() =>
       'HostUpdateOtherHost(expected: $expected, actual: $actual)';
+}
+
+/// [InterconnectSyncBackend] 一条清单 GET 的条件请求缓存槽：[scope] 是写入时的配对
+/// 身份，[etag] / [value] 是上一次带 ETag 的 200 与它解析出的清单（null = 还在飞 /
+/// 没有可复用的结果），[flight] 是在途那一次请求。
+final class _ManifestEtagSlot {
+  _ManifestEtagSlot(this.scope);
+  final String scope;
+  String? etag;
+  Object? value;
+  Future<Object?>? flight;
 }

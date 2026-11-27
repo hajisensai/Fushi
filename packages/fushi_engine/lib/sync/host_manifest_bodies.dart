@@ -17,7 +17,6 @@ import 'dart:convert';
 import 'dart:isolate';
 import 'dart:typed_data';
 
-import 'package:crypto/crypto.dart' show sha256;
 import 'package:drift/drift.dart' show TableUpdateQuery;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/collections/library_organize/organize_convergence.dart'
@@ -28,6 +27,7 @@ import 'package:fushi_engine/media/collections/library_organize/organize_converg
 import 'package:fushi_engine/sync/aggregate_sync_owner.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
 import 'package:fushi_engine/sync/collection_sync_engine.dart';
+import 'package:fushi_engine/sync/http_etag.dart' show weakContentEtag;
 import 'package:fushi_engine/sync/media_link_sync.dart';
 import 'package:fushi_engine/sync/tag_sync.dart';
 
@@ -43,7 +43,7 @@ enum HostManifestKind {
   mediaLinks,
 }
 
-/// 编码好的清单报文体（UTF-8 JSON）+ 它的弱 ETag（[hostManifestEtag]，可直接放进
+/// 编码好的清单报文体（UTF-8 JSON）+ 它的弱 ETag（`weakContentEtag`，可直接放进
 /// 响应头）。
 final class HostManifestBody {
   const HostManifestBody({required this.bytes, required this.etag});
@@ -88,30 +88,6 @@ abstract interface class HostManifestBodyHost {
   });
 }
 
-/// [bytes] 的**弱** ETag：`W/"<SHA-256 前 128 位 hex>"`。内容相等 ⇔ ETag 相等：
-/// 清单是 canonical JSON，同一份数据恒编出同一串字节。
-///
-/// 为什么是弱的：`_gzipTextMiddleware` 按 `Accept-Encoding` 把同一份清单发成 gzip
-/// 或明文，两种字节不同的表示共用一个验证器。RFC 9110 §8.8.3 要求强 ETag 在字节
-/// 不同的表示之间不同；弱 ETag 只声明「语义等价」，正合这里（清单端点不支持 Range
-/// / If-Range，用不到强验证器）。`If-None-Match` 本就按弱比较（[ifNoneMatchHits]），
-/// client 把收到的 ETag 原样回传即可，带不带 `W/` 都命中。
-String hostManifestEtag(List<int> bytes) =>
-    'W/"${sha256.convert(bytes).toString().substring(0, 32)}"';
-
-/// `If-None-Match` 头 [header] 是否命中 [etag]（RFC 9110 §13.1.2 弱比较：逗号分隔
-/// 列表、`W/` 前缀忽略、`*` 恒命中）。
-bool ifNoneMatchHits(String? header, String etag) {
-  if (header == null || header.isEmpty) return false;
-  final String want = etag.startsWith('W/') ? etag.substring(2) : etag;
-  for (final String raw in header.split(',')) {
-    final String tag = raw.trim();
-    if (tag == '*') return true;
-    if ((tag.startsWith('W/') ? tag.substring(2) : tag) == want) return true;
-  }
-  return false;
-}
-
 /// 后台所有者里的一份已解码清单（POST 的第一步解码在锁外做，结果暂存在所有者的
 /// session 里，交给锁内的合并命令）。
 final class _DecodedIncoming {
@@ -138,7 +114,7 @@ encodeLocalManifestCommand(HostManifestKind kind) =>
       final Uint8List bytes = utf8.encode(json);
       return (
         TransferableTypedData.fromList(<TypedData>[bytes]),
-        hostManifestEtag(bytes),
+        weakContentEtag(bytes),
       );
     };
 

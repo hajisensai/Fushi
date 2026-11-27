@@ -52,10 +52,10 @@ class MediaLinkManifest implements CanonicalJsonManifest {
     );
     return MediaLinkManifest(
       version: version,
-      links: <MediaLinkManifestEntry>[
+      links: List<MediaLinkManifestEntry>.unmodifiable(<MediaLinkManifestEntry>[
         for (final Object? e in requireManifestList(map, 'links', _label))
           MediaLinkManifestEntry.fromJson(e),
-      ],
+      ]),
     );
   }
 
@@ -103,11 +103,11 @@ class MediaLinkWireEndpoint {
     return MediaLinkWireEndpoint(
       kind: kind,
       key: key,
-      aliases: <String>[
+      aliases: List<String>.unmodifiable(<String>[
         if (aliases is List)
           for (final Object? a in aliases)
             if (a is String && a.isNotEmpty) a,
-      ],
+      ]),
     );
   }
 

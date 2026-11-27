@@ -585,8 +585,8 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     });
   }
 
-  /// `GET /api/capabilities`：能力表 + 强 ETag（正文的 SHA-256），认 `If-None-Match`
-  /// 条件请求（BUG-5603）。
+  /// `GET /api/capabilities`：能力表 + 弱 ETag（正文摘要，[weakContentEtag]；gzip 与
+  /// 明文共用），认 `If-None-Match` 条件请求（BUG-5603）。
   ///
   /// 能力表随 host 的设置 / 装配 / 外部依赖（ffmpeg、模型就绪…）实时变化，没有一个
   /// 能可靠追踪全部来源的版本号，所以版本就是正文本身：每次照常现算，正文没变就回
@@ -595,13 +595,12 @@ extension _FushiSyncServerPairing on FushiSyncServer {
   /// 解析。`Cache-Control: no-cache` 让中间层也只能「带条件重验后复用」。
   Future<shelf.Response> _capabilitiesRoute(shelf.Request request) async {
     final String body = jsonEncode(await _capabilitiesDocument());
-    final String etag =
-        '"${sha256.convert(utf8.encode(body)).toString().substring(0, 32)}"';
+    final String etag = weakContentEtag(utf8.encode(body));
     final Map<String, String> headers = <String, String>{
       'ETag': etag,
       'Cache-Control': 'no-cache',
     };
-    if (interconnectEtagMatches(request.headers['if-none-match'], etag)) {
+    if (ifNoneMatchHits(request.headers['if-none-match'], etag)) {
       return shelf.Response.notModified(headers: headers);
     }
     return jsonRawResponse(body, extraHeaders: headers);
@@ -1083,18 +1082,4 @@ InternetAddress? _parseForwardedNode(String raw) {
     v = v.substring(0, v.indexOf(':'));
   }
   return InternetAddress.tryParse(v);
-}
-
-/// `If-None-Match` 请求头 [ifNoneMatch] 是否命中 [etag]（RFC 9110 §13.1.2 的弱比较：
-/// 逗号分隔的列表、`W/` 前缀、`*`）。头缺失 / 为空 → false。
-bool interconnectEtagMatches(String? ifNoneMatch, String etag) {
-  if (ifNoneMatch == null) return false;
-  String opaque(String tag) => tag.startsWith('W/') ? tag.substring(2) : tag;
-  final String want = opaque(etag);
-  for (final String raw in ifNoneMatch.split(',')) {
-    final String tag = raw.trim();
-    if (tag.isEmpty) continue;
-    if (tag == '*' || opaque(tag) == want) return true;
-  }
-  return false;
 }
