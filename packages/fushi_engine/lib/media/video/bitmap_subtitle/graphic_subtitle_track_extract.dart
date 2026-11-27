@@ -29,6 +29,7 @@ import 'package:fushi_engine/media/video/bitmap_subtitle/bitmap_subtitle_track.d
 import 'package:fushi_engine/media/video/bitmap_subtitle/graphic_subtitle_input.dart';
 import 'package:fushi_engine/media/video/bitmap_subtitle/mpegts_subtitle_demuxer.dart';
 import 'package:fushi_engine/media/video/bitmap_subtitle/pgs_subtitle_parser.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/ffmpeg_watched_run.dart';
 import 'package:meta/meta.dart' show visibleForTesting;
@@ -210,7 +211,30 @@ Future<bool> extractGraphicSubtitleTrack({
   // async stat：输入是用户库里的视频，常在网络盘上；互联 host 的图形字幕端点在
   // app 主 isolate 上调这里，同步 stat 会冻结全部端点与 UI（BUG-3756）。
   int localLength = 0;
-  if (local != null) {
+  if (local != null && isBlurayPlaylistPath(local.path)) {
+    // 蓝光成员路径：按集展开的 `00001.p03.mpls` / 角度路径在盘上不存在，不能 stat
+    // 它本身；能读出播放列表、片段都在就算有输入，体积取各片段之和。ffmpeg 一侧由
+    // 后端把它改写成 concat 清单。
+    final BluraySource? source = await resolveBluraySource(local.path);
+    if (source == null) {
+      onFailure?.call('input missing');
+      return false;
+    }
+    for (final String stream in source.streamPaths) {
+      final FileStat clip;
+      try {
+        clip = await File(stream).stat();
+      } on FileSystemException {
+        onFailure?.call('input missing');
+        return false;
+      }
+      if (clip.type != FileSystemEntityType.file) {
+        onFailure?.call('input missing');
+        return false;
+      }
+      localLength += clip.size;
+    }
+  } else if (local != null) {
     final FileStat stat;
     try {
       stat = await local.stat();

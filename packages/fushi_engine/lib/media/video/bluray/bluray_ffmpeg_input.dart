@@ -50,16 +50,27 @@ Future<BlurayFfmpegInput> prepareBlurayFfmpegArgs(
       for (int i = lastInput + 2; i + 1 < args.length; i++)
         if (args[i] == '-map') args[i + 1],
     ];
+    // Only decoded A/V needs the shared preroll axis (-copyts + select/setpts).
+    // Stream-copied packets never pass through those filters, so under -copyts
+    // they would keep the clip's raw MPEG-TS clock (often 600 s or 4200 s past
+    // zero); without decoding, concat rebases every clip onto the playlist axis.
+    final List<String> outputArgs =
+        lastInput >= 0 && lastInput + 2 < args.length
+        ? args.sublist(lastInput + 2)
+        : const <String>[];
     final bool decode =
         !probe &&
         lastInput >= 0 &&
         lastInput + 2 < args.length &&
-        (maps.isEmpty ||
-            maps.any(
-              (String map) =>
-                  map.startsWith('[') ||
-                  RegExp(r'^\d+:[va](?::|\?|$)').hasMatch(map),
-            ));
+        (maps.isEmpty
+            ? !_streamCopies(outputArgs, 'v') || !_streamCopies(outputArgs, 'a')
+            : maps.any((String map) {
+                if (map.startsWith('[')) return true;
+                final Match? kind = RegExp(
+                  r'^\d+:([va])(?::|\?|$)',
+                ).firstMatch(map);
+                return kind != null && !_streamCopies(outputArgs, kind[1]!);
+              }));
     int cursor = 0;
     int inputIndex = 0;
     for (int i = 0; i < args.length; i++) {
@@ -143,6 +154,30 @@ Future<BlurayFfmpegInput> prepareBlurayFfmpegArgs(
     await temp.delete(recursive: true);
     rethrow;
   }
+}
+
+/// Whether [output] stream-copies every [kind] (`v` / `a`) stream it writes:
+/// a filter on that kind forces decoding, otherwise a generic (`-c copy`) or
+/// kind-specific (`-c:v copy`, `-vcodec copy`) copy codec settles it.
+bool _streamCopies(List<String> output, String kind) {
+  final String filter = kind == 'v' ? '-vf' : '-af';
+  if (output.contains('-filter_complex') || output.contains(filter)) {
+    return false;
+  }
+  final Set<String> keys = <String>{
+    '-c',
+    '-codec',
+    '-c:$kind',
+    '-codec:$kind',
+    kind == 'v' ? '-vcodec' : '-acodec',
+  };
+  bool copies = false;
+  for (int i = 0; i + 1 < output.length; i++) {
+    if (!keys.contains(output[i])) continue;
+    copies = output[i + 1] == 'copy';
+    if (!copies) return false;
+  }
+  return copies;
 }
 
 double _seconds(String value) {

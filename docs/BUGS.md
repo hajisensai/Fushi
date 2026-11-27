@@ -33,10 +33,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4806 条。点号进各自文件。
+> 共 4809 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5575](bugs/BUG-5575-pgs-ocr-interleaves-simultaneous-captions.md) | 🚧 | 🚧 | 同屏两条图形字幕被 OCR 逐字交错拼成一行 |
+| [BUG-5574](bugs/BUG-5574-bd-episode-path-pgs-extract-input-missing.md) | ✅ | ✅ | TV 原盘按集展开的成员路径抽不出 PGS 轨，补字幕全部退回语音识别 |
+| [BUG-5573](bugs/BUG-5573-bd-pgs-ocr-raw-clock-offset.md) | ✅ | ✅ | 原盘 PGS 识别字幕整条晚了片段 IN 点（电影 BD 常见 1 小时 10 分） |
 | [BUG-5533](bugs/BUG-5533-subtitle-fill-incomplete-download-stalls.md) | 🚧 | 🚧 | 整库补字幕遇到没下完的视频，每集卡到 5 分钟停滞超时才失败 |
 | [BUG-5530](bugs/BUG-5530-video-move-rebind-keeps-old-source.md) | 🚧 | 🚧 | 扫描搬家改指不改归属源、不迁路径关联列 |
 | [BUG-5528](bugs/BUG-5528-bd-subtitle-version-merge.md) | 🚧 | 🚧 | 原盘下载字幕版本对不上时只能整份换 ASR 稿：缺 TV 版 / BD 版逐句合并 |

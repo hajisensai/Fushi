@@ -1,7 +1,11 @@
 import 'dart:io';
 
 import 'package:test/test.dart';
+import 'package:fushi_engine/media/video/bitmap_subtitle/graphic_subtitle_input.dart';
+import 'package:fushi_engine/media/video/bitmap_subtitle/graphic_subtitle_track_extract.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_angle.dart';
+import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
+import 'package:fushi_engine/media/video/ffmpeg_watched_run.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_playlist.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
 import 'package:fushi_engine/media/video/disc/disc_format.dart';
@@ -24,6 +28,32 @@ const List<FixturePlayItem> _multiAngleItems = <FixturePlayItem>[
     angleClipIds: <String>['00021', '00031'],
   ),
 ];
+
+class _RecordingWatchedBackend implements FfmpegBackend, FfmpegWatchedRunner {
+  List<String>? args;
+
+  @override
+  Future<FfmpegRunResult> runWatched(
+    List<String> args,
+    FfmpegWatch watch,
+  ) async {
+    this.args = args;
+    File(args[args.indexOf('-f') + 2]).writeAsBytesSync(<int>[1]);
+    return const FfmpegRunResult(returnCode: 0, output: '');
+  }
+
+  @override
+  Future<FfmpegRunResult> run(List<String> args, Duration timeout) =>
+      throw StateError('观察式后端不走 run');
+
+  @override
+  Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) =>
+      throw StateError('PGS 不探测');
+
+  @override
+  Future<FfmpegRunResult> runQuery(List<String> args, Duration timeout) =>
+      throw StateError('不该查询');
+}
 
 void main() {
   group('角度成员路径', () {
@@ -164,6 +194,42 @@ void main() {
       expect(await hasLocalSingleMediaFile(angle), isFalse);
       await File(member).delete();
       expect(await hasLocalMediaFile(angle), isFalse);
+    });
+
+    test('抽图形字幕轨认角度 / 分集成员路径（自身不是文件），缺片段判缺', () async {
+      // BUG：抽轨前 stat 成员路径本身，`00001.p03.mpls` / 角度路径在盘上不存在，
+      // TV 原盘每一集的 PGS 识别都以「input missing」失败、退回语音识别。
+      final String angle = blurayAnglePath(member, 1);
+      final _RecordingWatchedBackend backend = _RecordingWatchedBackend();
+      final List<String> failures = <String>[];
+      final bool ok = await extractGraphicSubtitleTrack(
+        input: GraphicSubtitleInput.local(angle),
+        streamIndex: 0,
+        outputPath: p.join(disc.path, 'track.sup'),
+        codec: 'hdmv_pgs_subtitle',
+        onFailure: failures.add,
+        backend: backend,
+      );
+      expect(failures, isEmpty);
+      expect(ok, isTrue);
+      expect(backend.args, contains(angle));
+
+      // 该角度用到的片段缺一个：ffmpeg 的 concat 清单也拼不出来，抽轨前就判缺。
+      await File(p.join(disc.path, 'BDMV', 'STREAM', '00021.m2ts')).delete();
+      final _RecordingWatchedBackend second = _RecordingWatchedBackend();
+      expect(
+        await extractGraphicSubtitleTrack(
+          input: GraphicSubtitleInput.local(angle),
+          streamIndex: 0,
+          outputPath: p.join(disc.path, 'track2.sup'),
+          codec: 'hdmv_pgs_subtitle',
+          onFailure: failures.add,
+          backend: second,
+        ),
+        isFalse,
+      );
+      expect(second.args, isNull);
+      expect(failures, <String>['input missing']);
     });
   });
 }

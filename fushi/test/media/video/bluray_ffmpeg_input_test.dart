@@ -1,6 +1,9 @@
 import 'dart:io';
 
 import 'package:test/test.dart';
+import 'package:fushi_engine/media/video/bitmap_subtitle/bitmap_subtitle_track.dart';
+import 'package:fushi_engine/media/video/bitmap_subtitle/graphic_subtitle_input.dart';
+import 'package:fushi_engine/media/video/bitmap_subtitle/graphic_subtitle_track_extract.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_angle.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_ffmpeg_input.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
@@ -248,6 +251,52 @@ void main() {
       await prepared.dispose();
     },
   );
+
+  test(
+    'graphic subtitle extraction keeps stream copies on the playlist axis',
+    () async {
+      // 抽 PGS 的命令带一路 `-map 0:v:0? -c copy -f null` 只为报进度，不解码；
+      // 当成解码会插 -copyts，拷贝出来的字幕留着 m2ts 原始时钟（电影 BD 常从
+      // 4200 秒起），整条 OCR 字幕晚 1 小时 10 分。
+      final BlurayFfmpegInput prepared = await prepareBlurayFfmpegArgs(
+        buildGraphicSubtitleExtractArgs(
+          input: GraphicSubtitleInput.local(playlist),
+          streamIndex: 0,
+          outputPath: 'track.sup',
+          codec: BitmapSubtitleCodec.pgs,
+        ),
+      );
+      expect(prepared.args, isNot(contains('-copyts')));
+      expect(prepared.args, isNot(contains('-vf')));
+      expect(prepared.args, isNot(contains('-af')));
+      final String manifest = prepared.args[prepared.args.indexOf('-i') + 1];
+      final String text = await File(manifest).readAsString();
+      // 不解码时 preroll 为 0：inpoint 就是片段在 m2ts 时钟上的 IN 点，concat 据此
+      // 把每段重新对到播放列表的零轴上。
+      expect(text, contains('inpoint 10.000000000\noutpoint 12.000000000'));
+      expect(text, contains('inpoint 20.000000000\noutpoint 23.000000000'));
+      await prepared.dispose();
+    },
+  );
+
+  test('a decoded map still selects the preroll axis next to a copy', () async {
+    final BlurayFfmpegInput prepared = await prepareBlurayFfmpegArgs(<String>[
+      '-i',
+      playlist,
+      '-map',
+      '0:v:0',
+      '-map',
+      '0:a:0',
+      '-c:a',
+      'copy',
+      '-c:v',
+      'libx264',
+      'out.mkv',
+    ]);
+    expect(prepared.args.first, '-copyts');
+    expect(prepared.args, contains('-vf'));
+    await prepared.dispose();
+  });
 
   test('backend disposes manifests on return and exceptions', () async {
     final _RecordingBackend delegate = _RecordingBackend();
