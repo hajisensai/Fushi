@@ -387,12 +387,7 @@ final class SrsWriteRelayHost {
       case SrsWriteRelayWire.opOverwrite:
         return <String, Object?>{
           SrsWriteRelayWire.outcome: encodeMineOutcome(
-            await _mineOrOverwrite(
-              op as String,
-              profile,
-              destination,
-              request,
-            ),
+            await _mineOrOverwrite(op as String, profile, destination, request),
           ),
         };
       case SrsWriteRelayWire.opWriteFields:
