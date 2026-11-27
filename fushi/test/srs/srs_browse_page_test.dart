@@ -148,6 +148,7 @@ Future<void> _pump(
     ProviderScope(
       overrides: <Override>[
         appProvider.overrideWith((Ref ref) => appModel),
+        ...srsTestDonationOverrides,
         srsStoreProvider.overrideWith((Ref ref) async => store),
         ...overrides,
         srsCardFaceBuilderProvider.overrideWithValue(

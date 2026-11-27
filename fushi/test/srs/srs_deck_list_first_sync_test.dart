@@ -99,6 +99,7 @@ void main() {
       ProviderScope(
         overrides: <Override>[
           appProvider.overrideWith((Ref ref) => app),
+          ...srsTestDonationOverrides,
           srsStoreProvider.overrideWith((Ref ref) async => store),
           srsAppRuntimeProvider.overrideWithValue(runtime),
           srsRwkvServiceProvider.overrideWith((Ref ref) async => null),
