@@ -7,6 +7,7 @@ import 'package:fushi/src/focus/fushi_focus_controller.dart' show FushiFocusId;
 import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/current_app_icon.dart';
+import 'package:fushi/src/utils/components/fushi_compact_landscape.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/misc/official_links.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
@@ -38,8 +39,11 @@ class NavRailBrandButton extends StatelessWidget {
     // Apple：应用图标按 iOS / macOS 图标圆角（边长 × 0.225）裁，点按无水波（Apple
     // 的按压反馈是高亮而不是涟漪）；MD3 保持控件圆角 + 水波。
     final bool apple = isGlassDesign(context);
+    // 横屏手机 rail 只有 ~400dp 高：64 的图标连同菜单钮会吃掉三分之一，目的地只剩
+    // 三个摆得下，这里收成 40。
+    final double extent = isFushiCompactLandscapeWindow(context) ? 40 : 64;
     final BorderRadius iconRadius = apple
-        ? const BorderRadius.all(Radius.circular(64 * 0.225))
+        ? BorderRadius.all(Radius.circular(extent * 0.225))
         : tokens.radii.controlRadius;
     // 8 + 64 + 8 正好等于 kAdaptiveNavRailWidth（80），零余量。rail 外面是
     // SafeArea(right: false)，left inset 一旦大于 0（带刘海的平板/折叠屏横屏）
@@ -63,7 +67,7 @@ class NavRailBrandButton extends StatelessWidget {
               child: FittedBox(
                 fit: BoxFit.scaleDown,
                 child: SizedBox.square(
-                  dimension: 64,
+                  dimension: extent,
                   child: ClipRRect(
                     borderRadius: iconRadius,
                     child: const CurrentAppIcon(),

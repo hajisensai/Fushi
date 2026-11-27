@@ -38,6 +38,15 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-5589](bugs/BUG-5589-startup-collection-items-full-scan.md) | ✅ | ✅ | 启动后切模块掉帧：合集成员表被反复整表读进 UI isolate |
+> 共 4863 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5588](bugs/BUG-5588-notarize-poll-network-blip-drops-submission.md) | ✅ | ✅ | notarize-poll-network-blip-drops-submission |
+| [BUG-5587](bugs/BUG-5587-landscape-phone-detail-hero.md) | ✅ | ✅ | 横屏手机：详情页背景带占七成高度，标题与主按钮被挤出首屏 |
+| [BUG-5586](bugs/BUG-5586-landscape-phone-chrome.md) | ✅ | ✅ | 横屏手机：外壳按宽取档给了桌面页头 / 展开侧栏，快捷键页工具区挤没列表 |
+| [BUG-5585](bugs/BUG-5585-android-migrate-case-collision.md) | ✅ | ✅ | Android 书库移到外部：只差大小写的文件在目标上互相覆盖，校验照过、删源后永久丢失 |
+| [BUG-5584](bugs/BUG-5584-feedback-link-push-commits-truncated.md) | ✅ | ✅ | feedback-link-push-commits-truncated |
 | [BUG-5583](bugs/BUG-5583-idle-page-continuous-frames.md) | 🚧 | 🚧 | 页面静止时仍以接近屏幕刷新率持续出帧（视频库页 / 视频合集页） |
 | [BUG-5582](bugs/BUG-5582-route-transition-covered-page-full-replay.md) | ✅ | ✅ | 打开 / 返回二级页（视频合集等）转场掉帧：被盖住的那一页每帧整页重放绘制 |
 | [BUG-5581](bugs/BUG-5581-import-cycle-626-donation-subtitle-fill.md) | 🚧 | 🚧 | import-cycle-626-donation-subtitle-fill |
@@ -45,7 +54,7 @@
 | [BUG-5579](bugs/BUG-5579-debug-manifest-release-page-404.md) | ✅ | ✅ | 调试通道「打开发布页」落到 404：清单发布页按版本印记拼，包其实挂在滚动 release 上 |
 | [BUG-5578](bugs/BUG-5578-mdx-v1-key-info-terminator-drift.md) | ✅ | ✅ | MDict 1.2 版 .mdx 导入一律报 `record block info overflow` |
 | [BUG-5576](bugs/BUG-5576-flutter-logs-wipes-android-files-root.md) | ✅ | ✅ | flutter_logs 每 3 天冷启动整树删 Android 外部 files 根（外部书库、词典、有声书全没） |
-| [BUG-5572](bugs/BUG-5572-srs-kernel-bulk-reads-slow.md) | 🚧 | ✅ | SRS 内核批量读慢：笔记 / 实体视图 / 卡历史每条约 3 ms |
+| [BUG-5572](bugs/BUG-5572-srs-kernel-bulk-reads-slow.md) | ✅ | ✅ | SRS 内核批量读慢：笔记 / 实体视图 / 卡历史每条约 3 ms |
 | [BUG-5571](bugs/BUG-5571-diag-log-trim-on-every-append-freezes-ui.md) | ✅ | ✅ | diag-log-trim-on-every-append-freezes-ui |
 | [BUG-5570](bugs/BUG-5570-library-partial-content-loss-undetected.md) | ✅ | ✅ | 书库内容部分丢失（哨兵还在）启动期毫无告警 |
 | [BUG-5569](bugs/BUG-5569-scan-skips-missing-managed-content.md) | ✅ | ✅ | 来源扫描遇到已入库的书不检查受管内容，丢失的解包书目录与有声书音频字幕永远不会从原件重建 |
@@ -74,7 +83,7 @@
 | [BUG-5545](bugs/BUG-5545-curator-orphan-video-works.md) | ✅ | ✅ | 库管家每趟报 `libraryCurate.works.relations` 外键失败：视频作品 / 刮削快照的 owner 视频已不在库里 |
 | [BUG-5544](bugs/BUG-5544-masthead-tabs-hittest.md) | ✅ | ✅ | 页头大字收缩后嵌套标签行 / 工具行点不动 |
 | [BUG-5543](bugs/BUG-5543-web-video-subtitles.md) | ✅ | ✅ | web-video-subtitles |
-| [BUG-5542](bugs/BUG-5542-popup-srs-mining-read-only.md) | 🚧 | 🚧 | Android 应用外查词卡（:popup）制卡到 Fushi 复习报 SrsCoreReadOnlyException |
+| [BUG-5542](bugs/BUG-5542-popup-srs-mining-read-only.md) | ✅ | ✅ | Android 应用外查词卡（:popup）制卡到 Fushi 复习报 SrsCoreReadOnlyException |
 | [BUG-5541](bugs/BUG-5541-popup-favorite-unwired.md) | ✅ | ✅ | Android 应用外查词卡（:popup）点 ☆ 收藏没反应 |
 | [BUG-5540](bugs/BUG-5540-music-tags-ext-hint.md) | ✅ | ✅ | music-tags-ext-hint |
 | [BUG-5539](bugs/BUG-5539-v182-collection-side-orphans-not-purged.md) | 🚧 | 🚧 | v182-collection-side-orphans-not-purged |

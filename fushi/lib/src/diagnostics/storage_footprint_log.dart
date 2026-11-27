@@ -3,13 +3,15 @@
 //
 // 起因：同一 profile 手机端 App Data 15.6 GB、桌面 srs.db 只有 2.68 GB，却不知道手机上
 // 是库本体、WAL、媒体、备份快照还是缓存在胀；让用户跑 adb run-as 不现实。只记大小与
-// App 数据根下的相对路径（不含用户名 / 外部存储），不读文件内容。
+// App 自己数据目录下的相对路径（Android 另量外部 app 专属目录 `Android/data/<包名>/files`；
+// 不含用户名，不碰别的外部存储），不读文件内容。
 
 import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
+import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -188,13 +190,31 @@ Future<void> logStorageFootprint({
   }
 }
 
-/// 生产启动时调一次：[kStorageFootprintDelay] 后量 App 数据根（[resolveStorageFootprintRoot]）。
+/// Android 上 App 的另一块数据：外部 app 专属目录 `Android/data/<包名>/files`（书库根
+/// 可能在它下面的 `data/`，诊断日志与导出剪辑也在这里）。不在 [resolveStorageFootprintRoot]
+/// 量的 `/data/user/<u>/<包名>` 里——只量那一块时，书库迁到外部后的统计里根本看不到书库，
+/// 用户报「迁移后书库空了」就分不清书是真没了还是好好躺在外部。其它平台、外部存储不可用
+/// 时返回 null。
+Future<(Directory, String)?> resolveAndroidExternalFootprintRoot() async {
+  if (!Platform.isAndroid) return null;
+  final Directory? external = await AppPaths.androidExternalFilesDirectory();
+  if (external == null) return null;
+  return (external, 'android-external');
+}
+
+/// 生产启动时调一次：[kStorageFootprintDelay] 后量 App 数据根（[resolveStorageFootprintRoot]），
+/// Android 再量外部 app 专属目录（[resolveAndroidExternalFootprintRoot]）。
 void scheduleStorageFootprintLog() {
   Timer(kStorageFootprintDelay, () async {
     try {
       final (Directory root, String label) =
           await resolveStorageFootprintRoot();
       await logStorageFootprint(root: root, rootLabel: label);
+      final (Directory, String)? external =
+          await resolveAndroidExternalFootprintRoot();
+      if (external != null) {
+        await logStorageFootprint(root: external.$1, rootLabel: external.$2);
+      }
     } on Object catch (e, st) {
       ErrorLogService.instance.log(kStorageFootprintSource, e, st);
     }

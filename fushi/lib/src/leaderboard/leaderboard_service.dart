@@ -192,6 +192,9 @@ class LeaderboardService extends ChangeNotifier {
   /// 本机账户（上传开关 / 上次同步时刻等）；未开启为 null。
   LeaderboardLocalAccount? get account => _account;
 
+  /// 已解析到的本实例所属 Profile id；[load] 还没解析完前为 null。
+  int? get resolvedProfileId => _resolvedProfileId;
+
   /// 最近一次同步因服务端书架上限（8000 部）而没有上传的本地作品数；本进程还没同步过
   /// 为 null，0 = 没有丢弃。UI 在 > 0 时提示。
   int? get droppedForShelfLimit => _droppedForShelfLimit;
@@ -909,29 +912,54 @@ final Provider<Future<bool> Function()> leaderboardPrivacyWithdrawProvider =
           () => ref.read(leaderboardServiceProvider).syncAfterPrivacyChange(),
     );
 
-/// 当前 Profile 的排行榜服务。Profile 切换时重建（旧实例随之 dispose），换到新
-/// Profile 的账户文件。
-final ChangeNotifierProvider<LeaderboardService> leaderboardServiceProvider =
-    ChangeNotifierProvider<LeaderboardService>((ref) {
-      final int activeProfileId = ref.watch(
-        profileViewModelProvider.select(
-          (ProfileUiState s) => s.activeProfileId,
-        ),
-      );
-      final AppModel app = ref.read(appProvider);
-      final LeaderboardService service = LeaderboardService(
-        database: () => app.database,
-        supportRoot: () async => app.databaseDirectory,
-        profileId: () async => activeProfileId > 0
-            ? activeProfileId
-            : await app.database.resolveActiveProfileId(),
-        // 出站必须经全应用代理装配。
-        httpClientFactory: () async => createAppHttpIoClient(),
-      );
-      unawaited(
-        service.load().catchError((Object e, StackTrace st) {
+/// 当前 Profile 的排行榜服务。只在真正切到另一个 Profile 时重建（旧实例随之
+/// dispose），换到新 Profile 的账户文件；冷启动期间 [ProfileViewModel] 从初值 -1
+/// 装载到真实激活 id（或仅重建视图模型但激活 id 未变）时沿用当前实例，避免把已就绪的
+/// 账户身份短暂置空。
+final ChangeNotifierProvider<LeaderboardService>
+leaderboardServiceProvider = ChangeNotifierProvider<LeaderboardService>((ref) {
+  final int initialActive = ref.read(profileViewModelProvider).activeProfileId;
+  int? trackedProfileId = initialActive > 0 ? initialActive : null;
+  final AppModel app = ref.read(appProvider);
+  final LeaderboardService service = LeaderboardService(
+    database: () => app.database,
+    supportRoot: () async => app.databaseDirectory,
+    profileId: () async {
+      final int? known = trackedProfileId;
+      if (known != null) return known;
+      final int resolved = await app.database.resolveActiveProfileId();
+      return trackedProfileId ?? resolved;
+    },
+    // 出站必须经全应用代理装配。
+    httpClientFactory: () async => createAppHttpIoClient(),
+  );
+  bool disposed = false;
+  ref.onDispose(() => disposed = true);
+  ref.listen<int>(
+    profileViewModelProvider.select((ProfileUiState s) => s.activeProfileId),
+    (int? previous, int next) {
+      if (next <= 0) return;
+      final int? current = service.resolvedProfileId ?? trackedProfileId;
+      trackedProfileId = next;
+      if (current != null && current != next) {
+        ref.invalidateSelf();
+      }
+    },
+  );
+  unawaited(
+    service
+        .load()
+        .then((_) {
+          if (disposed) return;
+          final int? resolved = service.resolvedProfileId;
+          final int? target = trackedProfileId;
+          if (resolved != null && target != null && resolved != target) {
+            ref.invalidateSelf();
+          }
+        })
+        .catchError((Object e, StackTrace st) {
           ErrorLogService.instance.log('LeaderboardService.load', e, st);
         }),
-      );
-      return service;
-    });
+  );
+  return service;
+});

@@ -74,7 +74,7 @@
 //! 「卡 → 笔记」的反查表：一条笔记有哪些卡要看填空序号，序号来自字段内容（`card_cache::cloze_ordinals`），
 //! 别名层不读字段，在这里再算一遍就是第二份「笔记有哪些卡」的判定；缓存层已经是那唯一一份（C8）。
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use rusqlite::{OptionalExtension, params};
 use serde_json::{Value, json};
@@ -238,6 +238,14 @@ struct EvBuild {
     k_name: Vec<u8>,
     k_parent: Vec<u8>,
     k_note_type: Vec<u8>,
+}
+
+/// 一趟只读的按类读里别名表的查询结果（[Index::pass_memo]）：ID → 规范 ID、规范 ID → 别的成员。读快照里别名表
+/// 不变，批量读（几千条笔记的字段键、几万条日志里嵌的卡 / 笔记 ID）不再每次各点查一遍（BUG-5572）。
+#[derive(Default)]
+pub(crate) struct PassMemo {
+    pub(super) canon: HashMap<[u8; 16], [u8; 16]>,
+    pub(super) aliases: HashMap<[u8; 16], Vec<Ref>>,
 }
 
 impl EvBuild {
@@ -1358,6 +1366,11 @@ impl Index<'_, '_> {
         let Ref::Uuid(b) = r else {
             return Ok(r.clone());
         };
+        if let Some(m) = &self.pass_memo {
+            if let Some(c) = m.borrow().canon.get(b) {
+                return Ok(Ref::Uuid(*c));
+            }
+        }
         let canon: Option<[u8; 16]> = self
             .t
             .conn()
@@ -1366,6 +1379,9 @@ impl Index<'_, '_> {
             .query_row(params![self.col, b.as_slice()], |r| r.get(0))
             .optional()
             .map_err(sql)?;
+        if let Some(m) = &self.pass_memo {
+            m.borrow_mut().canon.insert(*b, canon.unwrap_or(*b));
+        }
         Ok(canon.map_or_else(|| r.clone(), Ref::Uuid))
     }
 
@@ -1384,6 +1400,11 @@ impl Index<'_, '_> {
         let Ref::Uuid(b) = canon else {
             return Ok(Vec::new());
         };
+        if let Some(m) = &self.pass_memo {
+            if let Some(a) = m.borrow().aliases.get(b) {
+                return Ok(a.clone());
+            }
+        }
         let mut stmt = self
             .t
             .conn()
@@ -1394,7 +1415,11 @@ impl Index<'_, '_> {
         let rows = stmt
             .query_map(params![self.col, b.as_slice()], |r| r.get::<_, Ref>(0))
             .map_err(sql)?;
-        rows.collect::<Result<_, _>>().map_err(sql)
+        let out: Vec<Ref> = rows.collect::<Result<_, _>>().map_err(sql)?;
+        if let Some(m) = &self.pass_memo {
+            m.borrow_mut().aliases.insert(*b, out.clone());
+        }
+        Ok(out)
     }
 
     /// 修改键的规范形：键里嵌着 ID 的（`f/<字段>`、`fieldDef/<…>`、`tmplDef/<…>`、`historyFrom/<…>`、

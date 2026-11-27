@@ -2510,6 +2510,7 @@
   "data_storage_migrate_failed_restart": "재시작",
   "data_storage_migrate_failed_suggestions": "다른 빈 폴더로 다시 시도하세요. 앱의 설치 폴더를 선택하지 말고 해당 위치의 파일이 사용 중이 아닌지 확인하세요.",
   "data_storage_migrate_failed_title": "데이터 마이그레이션 실패",
+  "data_storage_migrate_name_collision": "The destination folder does not tell upper and lower case apart, so ${file} and ${other} would become the same file and one would be lost. Rename or remove one of them, then try again. Nothing was moved.",
   "data_storage_migrate_overlay_progress": "파일 복사 중: $copied / $total",
   "data_storage_migrate_overlay_title": "데이터 이동 중",
   "data_storage_migrate_overlay_warning": "앱을 열어 두세요. 완료될 때까지 앱을 닫거나 컴퓨터를 종료하지 마세요.",

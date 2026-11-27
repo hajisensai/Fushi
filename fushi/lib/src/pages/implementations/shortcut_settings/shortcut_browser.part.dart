@@ -155,6 +155,12 @@ const double kShortcutBrowserTwoPaneMinWidth = 840;
 /// 宽屏左栏（域导航）宽度。
 const double kShortcutBrowserNavWidth = 240;
 
+/// 工具区（搜索 / 设备切换 / 手柄按钮样式 / 域筛选）固定在顶部所需的最小浏览器
+/// 高度。低于它（横屏手机 ~330dp、横放小窗）时工具区固定会占掉大半视口——切到
+/// 手柄设备再多出按钮样式一行，列表只剩一两行——所以改为随结果一起滚走，只留
+/// 分组标题吸顶。竖屏手机、平板、桌面窗口都在其上，工具区照旧固定。
+const double kShortcutBrowserPinnedToolbarMinHeight = 560;
+
 /// 撞键时用户的处置（内联冲突条）。
 enum _InlineConflictChoice { replace, swap, keepBoth }
 
@@ -770,27 +776,27 @@ class _ShortcutBindingsBrowserState extends State<ShortcutBindingsBrowser> {
               for (final ShortcutScope scope in widget.scopes)
                 scope: _visibleActions(scope),
             };
+        // 矮视口：工具区并进结果滚动视图的第一段，随列表滚走（见
+        // [kShortcutBrowserPinnedToolbarMinHeight]）。
+        final bool scrollingToolbar =
+            constraints.maxHeight.isFinite &&
+            constraints.maxHeight < kShortcutBrowserPinnedToolbarMinHeight;
         final Widget header = _buildHeader(context, wide: wide, rows: rows);
-        final Widget results = _buildResults(context, rows: rows);
-        if (!wide) {
-          return Column(
-            key: const ValueKey<String>('shortcut-browser-narrow'),
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              header,
-              SizedBox(height: tokens.spacing.gap / 2),
-              Expanded(child: results),
-            ],
-          );
-        }
-        return Column(
-          key: const ValueKey<String>('shortcut-browser-wide'),
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            header,
-            SizedBox(height: tokens.spacing.gap),
-            Expanded(
-              child: Row(
+        final double headerGap = wide
+            ? tokens.spacing.gap
+            : tokens.spacing.gap / 2;
+        final Widget results = _buildResults(
+          context,
+          rows: rows,
+          leading: scrollingToolbar
+              ? Padding(
+                  padding: EdgeInsets.only(bottom: headerGap),
+                  child: header,
+                )
+              : null,
+        );
+        final Widget body = wide
+            ? Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
                   SizedBox(
@@ -800,8 +806,19 @@ class _ShortcutBindingsBrowserState extends State<ShortcutBindingsBrowser> {
                   SizedBox(width: tokens.spacing.card),
                   Expanded(child: results),
                 ],
-              ),
-            ),
+              )
+            : results;
+        return Column(
+          key: ValueKey<String>(
+            wide ? 'shortcut-browser-wide' : 'shortcut-browser-narrow',
+          ),
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            if (!scrollingToolbar) ...<Widget>[
+              header,
+              SizedBox(height: headerGap),
+            ],
+            Expanded(child: body),
           ],
         );
       },
@@ -1047,15 +1064,24 @@ class _ShortcutBindingsBrowserState extends State<ShortcutBindingsBrowser> {
     );
   }
 
+  /// 结果滚动视图。[leading] 非空时作为第一段（矮视口下随列表滚走的工具区）。
   Widget _buildResults(
     BuildContext context, {
     required Map<ShortcutScope, List<ShortcutAction>> rows,
+    Widget? leading,
   }) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final List<ShortcutScope> scopes = _domain == null
         ? widget.scopes
         : <ShortcutScope>[_domain!];
-    final List<Widget> slivers = <Widget>[];
+    final List<Widget> slivers = <Widget>[
+      if (leading != null)
+        SliverToBoxAdapter(
+          key: const ValueKey<String>('shortcut-scrolling-toolbar'),
+          child: leading,
+        ),
+    ];
+    final int leadingSlivers = slivers.length;
     int rowIndex = 0;
     for (final ShortcutScope scope in scopes) {
       final List<ShortcutAction> actions = rows[scope]!;
@@ -1107,7 +1133,7 @@ class _ShortcutBindingsBrowserState extends State<ShortcutBindingsBrowser> {
         ),
       );
     }
-    if (slivers.isEmpty) {
+    if (slivers.length == leadingSlivers) {
       slivers.add(
         SliverFillRemaining(
           hasScrollBody: false,

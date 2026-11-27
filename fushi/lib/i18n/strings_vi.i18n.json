@@ -2510,6 +2510,7 @@
   "data_storage_migrate_failed_restart": "Khởi động lại",
   "data_storage_migrate_failed_suggestions": "Vui lòng thử lại với thư mục khác trống. Không chọn thư mục cài đặt ứng dụng, và đảm bảo không có tệp nào trong vị trí đó đang được sử dụng.",
   "data_storage_migrate_failed_title": "Di chuyển dữ liệu thất bại",
+  "data_storage_migrate_name_collision": "The destination folder does not tell upper and lower case apart, so ${file} and ${other} would become the same file and one would be lost. Rename or remove one of them, then try again. Nothing was moved.",
   "data_storage_migrate_overlay_progress": "Đang sao chép tệp: $copied / $total",
   "data_storage_migrate_overlay_title": "Đang di chuyển dữ liệu",
   "data_storage_migrate_overlay_warning": "Vui lòng giữ ứng dụng mở. Không đóng hoặc tắt máy tính cho đến khi hoàn tất.",

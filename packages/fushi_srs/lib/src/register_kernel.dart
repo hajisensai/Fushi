@@ -212,26 +212,41 @@ List<SrsNoteView> srsMaterializeNotes(
   final List<Object?> out = b.run(library);
   return <SrsNoteView>[
     for (int i = 0; i < notes.length; i++)
-      _noteView(notes[i], (out[i]! as Map).cast<String, Object?>()),
+      srsNoteViewOfKernel(
+        notes[i].id,
+        notes[i].edits,
+        (out[i]! as Map).cast<String, Object?>(),
+      ),
   ];
 }
 
-SrsNoteView _noteView(SrsEntitySource s, Map<String, Object?> r) {
+/// 内核算好的一条笔记（`ffsrs_materialize` 的 `note` 组那一项，或内核读命令 `read note_views` 表 `t` 的 `v`：
+/// native/fushi_fsrs/src/store/gen4/cmd/reads.rs）解成 [SrsNoteView]。[edits] 是这条笔记的修改记录，按内核物化时的
+/// 顺序（[r] 里寄存器的下标指向它）。[fields] 给了就是视图的字段（`read note_views` 把字段正文放在单独的字符串列里，
+/// 视图 JSON 里没有 `f`），否则从视图的 `f` 取。
+SrsNoteView srsNoteViewOfKernel(
+  String id,
+  List<SrsEditItem> edits,
+  Map<String, Object?> r, {
+  Map<String, String>? fields,
+}) {
   final Map<String, Object?> v = (r['v']! as Map).cast<String, Object?>();
   return SrsNoteView(
-    id: s.id,
+    id: id,
     noteTypeId: v['nt']! as String,
     guid: v['g']! as String,
     createdAt: v['ca']! as int,
-    fields: <String, String>{
-      for (final List<Object?> f in (v['f']! as List).cast<List<Object?>>())
-        f[0]! as String: f[1]! as String,
-    },
+    fields:
+        fields ??
+        <String, String>{
+          for (final List<Object?> f in (v['f']! as List).cast<List<Object?>>())
+            f[0]! as String: f[1]! as String,
+        },
     tags: <String>[for (final Object? t in v['t']! as List) t! as String],
     source: SrsSourceRef.fromJson(v['s']),
     deckId: v['dk'] as String?,
     deletedAt: v['da'] as int?,
-    edits: _edits(r, s.edits),
+    edits: _edits(r, edits),
     hasPendingDecision: v['pd'] == true,
   );
 }

@@ -127,6 +127,49 @@ void main() {
     );
   });
 
+  testWidgets('short landscape viewport scrolls the toolbar with the list', (
+    WidgetTester tester,
+  ) async {
+    // 横屏手机：工具区固定会把列表挤到只剩一两行，这里它要并进滚动视图。
+    await pumpBrowser(tester, buildRegistry(), size: const Size(780, 330));
+    final Finder scrolling = find.byKey(
+      const ValueKey<String>('shortcut-scrolling-toolbar'),
+    );
+    expect(scrolling, findsOneWidget);
+    expect(
+      find.descendant(
+        of: scrolling,
+        matching: find.byKey(const Key('shortcut_search_field')),
+      ),
+      findsOneWidget,
+    );
+    final double searchTop = tester
+        .getTopLeft(find.byKey(const Key('shortcut_search_field')))
+        .dy;
+    await tester.drag(
+      find.byKey(const ValueKey<String>('shortcut-results')),
+      const Offset(0, -300),
+    );
+    await tester.pumpAndSettle();
+    final Finder search = find.byKey(const Key('shortcut_search_field'));
+    expect(
+      search.evaluate().isEmpty || tester.getTopLeft(search).dy < searchTop,
+      isTrue,
+      reason: 'the toolbar scrolls away instead of staying pinned',
+    );
+
+    // 竖屏 / 桌面高度：工具区照旧固定在列表上方。
+    await pumpBrowser(tester, buildRegistry(), size: const Size(420, 900));
+    expect(scrolling, findsNothing);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('shortcut-results')),
+        matching: find.byKey(const Key('shortcut_search_field')),
+      ),
+      findsNothing,
+    );
+  });
+
   testWidgets('search filters rows by action name', (
     WidgetTester tester,
   ) async {

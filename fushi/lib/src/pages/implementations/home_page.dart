@@ -784,7 +784,7 @@ class _HomePageState extends BasePageState<HomePage>
         );
       }
 
-      // BUG-5492：启动期哨兵发现书库文件被清空（外部目录被文件管理器 / 清理工具删掉
+      // BUG-5586：启动期哨兵发现书库文件被清空（外部目录被文件管理器 / 清理工具删掉
       // 之类），请用户带日志反馈。排在移回提示之前：先让用户知道丢了什么。
       // BUG-5570：同一入口也接书库内容对账（哨兵还在、但成片的书 / 有声书文件不在），
       // 五端都弹；可重新扫描书 / 漫画来源（与来源页「重新扫描」同一个扫描入口）。
@@ -800,7 +800,7 @@ class _HomePageState extends BasePageState<HomePage>
         );
       }
 
-      // BUG-5492：书库还在外部 `Android/data` 的安装，一次性建议移回内部存储。
+      // BUG-5586：书库还在外部 `Android/data` 的安装，一次性建议移回内部存储。
       // 选「移回内部存储」时迁移遮罩接管界面并自动重启，后面的更新检查不会再跑。
       if (mounted) {
         await maybeShowAndroidStorageMoveBackPrompt(
@@ -2241,7 +2241,9 @@ class _HomePageState extends BasePageState<HomePage>
         // NavRailContentSync 与 buildBody），免得它们每帧重排；可见内容照常
         // 随 rail 重排，否则右侧贴边内容整段过渡被裁、结束时弹回（BUG-3447）。
         child: NavRailContentSync(
-          child: isGlassDesign(context) && sizeClass == WindowSizeClass.expanded
+          child:
+              isGlassDesign(context) &&
+                  adaptiveNavSidebarByWindow(context, sizeClass: sizeClass)
               ? _appleSidebarShell(
                   tabs: tabs,
                   reversed: reversed,

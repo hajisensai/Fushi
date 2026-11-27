@@ -13,6 +13,7 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use serde_json::{Value, json};
 
 use super::dispatch_tests::{call, open};
+use super::tests::decode;
 use crate::store::ffi::ffsrs_store_close;
 use crate::store::gen4::derive::Ref;
 
@@ -20,6 +21,26 @@ const REALDB_ENV: &str = "FUSHI_G4_REALDB";
 
 fn ms(t: Instant) -> f64 {
     t.elapsed().as_secs_f64() * 1000.0
+}
+
+/// 宿主以前的笔记物化（Dart `srsMaterializeNotes`）：payload + `read edits` 的 (行, 服务器时刻) 送进 `materialize` 的
+/// `note` 组。
+fn host_materialized(payload: &str, edits: &[(String, String)]) -> Value {
+    let header = format!(r#"[{{"t":"note","n":{},"rec":{payload}}}]"#, edits.len());
+    let (mut text, mut offs, mut servers) = (String::new(), vec![0u32], Vec::new());
+    for (j, st) in edits {
+        text.push_str(j);
+        offs.push(text.len() as u32);
+        servers.push(if st == "∅" {
+            crate::history::NONE_I64
+        } else {
+            st.parse().unwrap()
+        });
+    }
+    let out =
+        crate::registers::materialize(header.as_bytes(), text.as_bytes(), &offs, &servers).unwrap();
+    let mut out: Vec<Value> = serde_json::from_slice(&out).unwrap();
+    out.remove(0)
 }
 
 #[test]
@@ -106,8 +127,94 @@ fn views_realdb_bench_bulk_reads() {
         eprintln!("[realdb] {label} in chunks of {size}: {:.1} ms", ms(t));
         crate::store::prof::dump();
     };
+    // `read note_views` 与它替掉的宿主路径（`read entities` + `read edits` + `ffsrs_materialize`）在整份真库上逐条相同；
+    // 整批卡一起重放的 `read logs` 与逐卡一条命令的逐行相同（BUG-5572）。
+    let table = |req: Value, file: &str| -> Vec<Vec<String>> {
+        let mut req = req;
+        req["profile"] = json!(profile);
+        req["now"] = json!(now);
+        let (_, files) = call(h, &req, None).unwrap_or_else(|(rc, e)| panic!("{rc} {e}"));
+        let f = files.iter().find(|(n, _)| n == file).expect(file);
+        decode(&f.1).1
+    };
+    let t = Instant::now();
+    for c in n.chunks(500) {
+        let views = table(json!({"op": "read", "q": "note_views", "ids": c}), "t");
+        let rows = table(json!({"op": "read", "q": "note_views", "ids": c}), "e");
+        let fields = table(json!({"op": "read", "q": "note_views", "ids": c}), "f");
+        let mut f_at = 0usize;
+        let ents = table(json!({"op": "read", "q": "entities", "ids": c}), "t");
+        let edits = table(
+            json!({"op": "read", "q": "edits", "kind": "note", "ids": c}),
+            "t",
+        );
+        assert_eq!(views.len(), ents.len());
+        let (mut at, mut want_at) = (0usize, 0usize);
+        for (v, e) in views.iter().zip(&ents) {
+            assert_eq!(v[0], e[0]);
+            let n: usize = v[2].parse().unwrap();
+            let mine: Vec<(String, String)> = rows[at..at + n]
+                .iter()
+                .map(|r| (r[0].clone(), r[1].clone()))
+                .collect();
+            at += n;
+            let want: Vec<(String, String)> = edits[want_at..]
+                .iter()
+                .take_while(|r| r[0] == v[0])
+                .map(|r| (r[1].clone(), r[2].clone()))
+                .collect();
+            want_at += want.len();
+            assert_eq!(mine, want, "{}: rows", v[0]);
+            let nf: usize = v[3].parse().unwrap();
+            let mut got: Value = serde_json::from_str(&v[1]).unwrap();
+            got["v"]["f"] = json!(
+                fields[f_at..f_at + nf]
+                    .iter()
+                    .map(|f| json!([f[0], f[1]]))
+                    .collect::<Vec<_>>()
+            );
+            f_at += nf;
+            assert_eq!(got, host_materialized(&e[2], &mine), "{}: view", v[0]);
+        }
+    }
+    eprintln!(
+        "[realdb] note_views == host materialize for {} notes ({:.1} ms)",
+        n.len(),
+        ms(t)
+    );
+    let t = Instant::now();
+    let mut batched = Vec::new();
+    for c in k.chunks(200) {
+        batched.extend(table(json!({"op": "read", "q": "logs", "cards": c}), "t"));
+    }
+    let mut single = Vec::new();
+    for c in k.chunks(200) {
+        let mut c: Vec<&String> = c.iter().collect();
+        c.sort_by(|a, b| {
+            super::sql_order(&super::ref_of(a)).cmp(&super::sql_order(&super::ref_of(b)))
+        });
+        for card in c {
+            single.extend(table(
+                json!({"op": "read", "q": "logs", "cards": [card]}),
+                "t",
+            ));
+        }
+    }
+    assert_eq!(batched.len(), single.len());
+    assert!(batched == single, "batched logs = one card at a time");
+    eprintln!(
+        "[realdb] read logs batched == per card: {} rows ({:.1} ms)",
+        single.len(),
+        ms(t)
+    );
     for round in 0..2 {
         eprintln!("[realdb] --- round {round}");
+        chunked(
+            "read note_views(notes)",
+            n,
+            500,
+            &|c| json!({"op": "read", "q": "note_views", "ids": c}),
+        );
         chunked(
             "read edits(notes)",
             n,

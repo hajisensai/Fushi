@@ -840,6 +840,8 @@ BaseAnkiRepository _withSrsMining(
     onCardsAdded: () => revision.state++,
     backgroundMining: background ? () => appModel.srsMiningBackground : null,
     onBackgroundOutcome: background ? showSrsBackgroundMineOutcome : null,
+    // 只读打开复习库的辅助进程（Android `:popup` 查词窗 / 第二块屏面板）里，写入转交主进程执行（BUG-5542）。
+    writer: appModel.srsNoteWriter,
     // 「打开笔记」= 复习的笔记编辑页（复习模块开着时 SrsAppHost 已装上）。作品会话期间
     // 卡在作品配置的复习副本里，编辑页套那份副本打开。
     openNote: (String noteId) =>

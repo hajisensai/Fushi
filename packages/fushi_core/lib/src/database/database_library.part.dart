@@ -1568,7 +1568,387 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
       ),
       mode: InsertMode.insertOrIgnore,
     );
+    final CollectionBookAliasRow? bound =
+        await (select(collectionBookAliases)..where(
+              (t) =>
+                  t.localUid.equals(localUid) & t.remoteKey.equals(remoteKey),
+            ))
+            .getSingleOrNull();
+    if (bound != null && remoteKey != localUid) {
+      await _promoteEpubCollectionPassthroughInTx(
+        uid: localUid,
+        wireKeys: <String>{remoteKey},
+      );
+    }
   });
+
+  /// 单本 EPUB 入库或建立别名后，把合集成员表与自定义封面来源中同一本书的 wire 透传键
+  /// 升格成本机 `uid`；若同一合集已同时存在 `uid` 行则合并 `pinnedByUser` 并删冗余行。
+  Future<int> _promoteEpubCollectionPassthroughInTx({
+    required String uid,
+    required Iterable<String> wireKeys,
+  }) async {
+    if (uid.isEmpty) return 0;
+    final Set<String> keys = <String>{
+      for (final String k in wireKeys)
+        if (k.isNotEmpty && k != uid) k,
+    };
+    if (keys.isEmpty) return 0;
+    final List<MediaCollectionItemRow> passthroughRows =
+        await (select(mediaCollectionItems)
+              ..where(
+                (t) =>
+                    t.mediaType.equals(MediaKind.epub.dbValue) &
+                    t.entryKey.isIn(keys),
+              )
+              ..orderBy([
+                (t) => OrderingTerm(expression: t.collectionId),
+                (t) => OrderingTerm(expression: t.sortIndex),
+                (t) => OrderingTerm(expression: t.entryKey),
+              ]))
+            .get();
+    int changed = 0;
+    if (passthroughRows.isNotEmpty) {
+      final Map<int, List<MediaCollectionItemRow>> byCollection =
+          <int, List<MediaCollectionItemRow>>{};
+      for (final MediaCollectionItemRow row in passthroughRows) {
+        byCollection
+            .putIfAbsent(row.collectionId, () => <MediaCollectionItemRow>[])
+            .add(row);
+      }
+      for (final MapEntry<int, List<MediaCollectionItemRow>> entry
+          in byCollection.entries) {
+        await _mergeEpubCollectionPassthroughGroupInTx(
+          collectionId: entry.key,
+          targetUid: uid,
+          passthroughRows: entry.value,
+        );
+        changed += entry.value.length;
+      }
+    }
+    final Set<String> oldCoverSources = <String>{
+      for (final String k in keys) MediaKind.epub.compositeKey(k),
+    };
+    final List<MediaCollectionRow> coverMatches = await (select(
+      mediaCollections,
+    )..where((t) => t.coverSource.isIn(oldCoverSources))).get();
+    if (coverMatches.isNotEmpty) {
+      await (update(mediaCollections)..where(
+            (t) => t.id.isIn(<int>[
+              for (final MediaCollectionRow c in coverMatches) c.id,
+            ]),
+          ))
+          .write(
+            MediaCollectionsCompanion(
+              coverSource: Value<String?>(MediaKind.epub.compositeKey(uid)),
+            ),
+          );
+    }
+    return changed;
+  }
+
+  /// 在同一个合集内把若干指向 [targetUid] 的 EPUB 透传成员行合并到 `targetUid`：
+  /// 目标不存在时继承最早透传行的 `sortIndex`，目标已存在时仅按或提升 `pinnedByUser`，
+  /// 最后删掉冗余旧键行。
+  Future<void> _mergeEpubCollectionPassthroughGroupInTx({
+    required int collectionId,
+    required String targetUid,
+    required List<MediaCollectionItemRow> passthroughRows,
+  }) async {
+    if (passthroughRows.isEmpty) return;
+    final List<MediaCollectionItemRow> sorted =
+        List<MediaCollectionItemRow>.of(passthroughRows)..sort((a, b) {
+          final int s = a.sortIndex.compareTo(b.sortIndex);
+          return s != 0 ? s : a.entryKey.compareTo(b.entryKey);
+        });
+    final MediaCollectionItemRow? existing =
+        await (select(mediaCollectionItems)..where(
+              (t) =>
+                  t.collectionId.equals(collectionId) &
+                  t.mediaType.equals(MediaKind.epub.dbValue) &
+                  t.entryKey.equals(targetUid),
+            ))
+            .getSingleOrNull();
+    final bool mergedPinned =
+        (existing?.pinnedByUser ?? false) ||
+        sorted.any((MediaCollectionItemRow r) => r.pinnedByUser);
+    if (existing == null) {
+      await into(mediaCollectionItems).insert(
+        MediaCollectionItemsCompanion.insert(
+          collectionId: collectionId,
+          mediaType: MediaKind.epub.dbValue,
+          entryKey: targetUid,
+          sortIndex: Value<int>(sorted.first.sortIndex),
+          pinnedByUser: Value<bool>(mergedPinned),
+        ),
+        mode: InsertMode.insertOrIgnore,
+      );
+    } else if (mergedPinned && !existing.pinnedByUser) {
+      await (update(mediaCollectionItems)..where(
+            (t) =>
+                t.collectionId.equals(collectionId) &
+                t.mediaType.equals(MediaKind.epub.dbValue) &
+                t.entryKey.equals(targetUid),
+          ))
+          .write(
+            const MediaCollectionItemsCompanion(
+              pinnedByUser: Value<bool>(true),
+            ),
+          );
+    }
+    final Set<String> oldKeys = <String>{
+      for (final MediaCollectionItemRow r in sorted)
+        if (r.entryKey != targetUid) r.entryKey,
+    };
+    if (oldKeys.isNotEmpty) {
+      await (delete(mediaCollectionItems)..where(
+            (t) =>
+                t.collectionId.equals(collectionId) &
+                t.mediaType.equals(MediaKind.epub.dbValue) &
+                t.entryKey.isIn(oldKeys),
+          ))
+          .go();
+    }
+  }
+
+  /// 全库幂等自愈：把 `media_collection_items` 里已可在本地解析到 `epub_books.uid`
+  /// 的滞留 EPUB 透传键（`book_key` / 别名 `remote_key` / 在线漫画远端键）升格为
+  /// `uid` 并去重（`cover_source` 同理）。稳态时先做只读 SQL 检查，无滞留行直接返回
+  /// `0`（不开写事务、不发 `tableUpdates`）。
+  Future<int> reconcileEpubCollectionMemberKeys() async {
+    final ({
+      Map<({int collectionId, String targetUid}), List<MediaCollectionItemRow>>
+      groups,
+      Map<int, String> coverUpdates,
+    })
+    probe = await _loadEpubCollectionReconcilePlan();
+    if (probe.groups.isEmpty && probe.coverUpdates.isEmpty) return 0;
+
+    return transaction(() async {
+      final ({
+        Map<
+          ({int collectionId, String targetUid}),
+          List<MediaCollectionItemRow>
+        >
+        groups,
+        Map<int, String> coverUpdates,
+      })
+      plan = await _loadEpubCollectionReconcilePlan();
+      int changed = 0;
+      for (final MapEntry<
+            ({int collectionId, String targetUid}),
+            List<MediaCollectionItemRow>
+          >
+          entry
+          in plan.groups.entries) {
+        await _mergeEpubCollectionPassthroughGroupInTx(
+          collectionId: entry.key.collectionId,
+          targetUid: entry.key.targetUid,
+          passthroughRows: entry.value,
+        );
+        changed += entry.value.length;
+      }
+      for (final MapEntry<int, String> cover in plan.coverUpdates.entries) {
+        await (update(
+          mediaCollections,
+        )..where((t) => t.id.equals(cover.key))).write(
+          MediaCollectionsCompanion(coverSource: Value<String?>(cover.value)),
+        );
+      }
+      return changed;
+    });
+  }
+
+  Future<
+    ({
+      Map<({int collectionId, String targetUid}), List<MediaCollectionItemRow>>
+      groups,
+      Map<int, String> coverUpdates,
+    })
+  >
+  _loadEpubCollectionReconcilePlan() async {
+    final String epubType = MediaKind.epub.dbValue;
+    final List<QueryRow> directRows = await customSelect(
+      'SELECT mci.collection_id, mci.entry_key, mci.sort_index, '
+      '       mci.pinned_by_user, '
+      '       COALESCE(eb_alias.uid, eb_direct.uid) AS target_uid '
+      'FROM media_collection_items mci '
+      'LEFT JOIN collection_book_aliases cba '
+      '  ON cba.remote_key = mci.entry_key '
+      'LEFT JOIN epub_books eb_alias '
+      "  ON eb_alias.uid = cba.local_uid AND eb_alias.uid <> '' "
+      'LEFT JOIN epub_books eb_direct '
+      "  ON eb_direct.book_key = mci.entry_key AND eb_direct.uid <> '' "
+      'WHERE mci.media_type = ?1 '
+      '  AND COALESCE(eb_alias.uid, eb_direct.uid) IS NOT NULL '
+      '  AND mci.entry_key <> COALESCE(eb_alias.uid, eb_direct.uid) '
+      'ORDER BY mci.collection_id, mci.sort_index, mci.entry_key',
+      variables: <Variable<Object>>[Variable<String>(epubType)],
+      readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
+        mediaCollectionItems,
+        collectionBookAliases,
+        epubBooks,
+      },
+    ).get();
+
+    final Map<
+      ({int collectionId, String targetUid}),
+      List<MediaCollectionItemRow>
+    >
+    groups =
+        <
+          ({int collectionId, String targetUid}),
+          List<MediaCollectionItemRow>
+        >{};
+    final Set<(int, String)> seenItems = <(int, String)>{};
+    for (final QueryRow r in directRows) {
+      final int cid = r.read<int>('collection_id');
+      final String entryKey = r.read<String>('entry_key');
+      final String targetUid = r.read<String>('target_uid');
+      if (targetUid.isEmpty || entryKey == targetUid) continue;
+      seenItems.add((cid, entryKey));
+      groups
+          .putIfAbsent((
+            collectionId: cid,
+            targetUid: targetUid,
+          ), () => <MediaCollectionItemRow>[])
+          .add(
+            MediaCollectionItemRow(
+              collectionId: cid,
+              mediaType: epubType,
+              entryKey: entryKey,
+              sortIndex: r.read<int>('sort_index'),
+              pinnedByUser: r.read<bool>('pinned_by_user'),
+            ),
+          );
+    }
+
+    final List<QueryRow> onlineMangaBooks = await customSelect(
+      'SELECT book_key, uid, source_metadata FROM epub_books '
+      "WHERE uid <> '' AND source_metadata LIKE '%hibiki-online-manga%'",
+      readsFrom: <ResultSetImplementation<dynamic, dynamic>>{epubBooks},
+    ).get();
+    final Map<String, String> onlineUidByWireKey = <String, String>{};
+    for (final QueryRow r in onlineMangaBooks) {
+      final String bookKey = r.read<String>('book_key');
+      final String uid = r.read<String>('uid');
+      final String? meta = r.readNullable<String>('source_metadata');
+      final String wireKey = collectionBookWireKey(
+        bookKey: bookKey,
+        sourceMetadata: meta,
+      );
+      if (wireKey.isNotEmpty && wireKey != bookKey && wireKey != uid) {
+        onlineUidByWireKey.putIfAbsent(wireKey, () => uid);
+      }
+    }
+    if (onlineUidByWireKey.isNotEmpty) {
+      final List<String> wireKeys = onlineUidByWireKey.keys.toList();
+      const int chunkSize = 500;
+      for (int i = 0; i < wireKeys.length; i += chunkSize) {
+        final List<String> chunk = wireKeys.sublist(
+          i,
+          i + chunkSize > wireKeys.length ? wireKeys.length : i + chunkSize,
+        );
+        final List<MediaCollectionItemRow> rows =
+            await (select(mediaCollectionItems)..where(
+                  (t) => t.mediaType.equals(epubType) & t.entryKey.isIn(chunk),
+                ))
+                .get();
+        for (final MediaCollectionItemRow row in rows) {
+          if (seenItems.contains((row.collectionId, row.entryKey))) continue;
+          final String? targetUid = onlineUidByWireKey[row.entryKey];
+          if (targetUid == null ||
+              targetUid.isEmpty ||
+              row.entryKey == targetUid) {
+            continue;
+          }
+          seenItems.add((row.collectionId, row.entryKey));
+          groups
+              .putIfAbsent((
+                collectionId: row.collectionId,
+                targetUid: targetUid,
+              ), () => <MediaCollectionItemRow>[])
+              .add(row);
+        }
+      }
+    }
+
+    final Map<int, String> coverUpdates = <int, String>{};
+    final String epubPrefix = '$epubType|';
+    final List<MediaCollectionRow> coverRows = await (select(
+      mediaCollections,
+    )..where((t) => t.coverSource.like('$epubPrefix%'))).get();
+    if (coverRows.isNotEmpty) {
+      final List<String> rawKeys = <String>{
+        for (final MediaCollectionRow c in coverRows)
+          if (c.coverSource != null &&
+              c.coverSource!.length > epubPrefix.length)
+            c.coverSource!.substring(epubPrefix.length),
+      }.toList();
+      if (rawKeys.isNotEmpty) {
+        final Set<String> validUids = <String>{};
+        final Map<String, String> uidByAlias = <String, String>{};
+        final Map<String, String> uidByBookKey = <String, String>{};
+        const int chunkSize = 500;
+        for (int i = 0; i < rawKeys.length; i += chunkSize) {
+          final List<String> chunk = rawKeys.sublist(
+            i,
+            i + chunkSize > rawKeys.length ? rawKeys.length : i + chunkSize,
+          );
+          for (final String u
+              in await (selectOnly(epubBooks)
+                    ..addColumns([epubBooks.uid])
+                    ..where(
+                      epubBooks.uid.isIn(chunk) &
+                          epubBooks.uid.equals('').not(),
+                    ))
+                  .map((r) => r.read(epubBooks.uid)!)
+                  .get()) {
+            validUids.add(u);
+          }
+          for (final QueryRow r in await customSelect(
+            'SELECT cba.remote_key, eb.uid '
+            'FROM collection_book_aliases cba '
+            'JOIN epub_books eb ON eb.uid = cba.local_uid '
+            "WHERE eb.uid <> '' "
+            '  AND cba.remote_key IN (SELECT value FROM json_each(?1))',
+            variables: <Variable<Object>>[Variable<String>(jsonEncode(chunk))],
+            readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
+              collectionBookAliases,
+              epubBooks,
+            },
+          ).get()) {
+            uidByAlias[r.read<String>('remote_key')] = r.read<String>('uid');
+          }
+          for (final TypedResult r
+              in await (selectOnly(epubBooks)
+                    ..addColumns([epubBooks.bookKey, epubBooks.uid])
+                    ..where(
+                      epubBooks.bookKey.isIn(chunk) &
+                          epubBooks.uid.equals('').not(),
+                    ))
+                  .get()) {
+            uidByBookKey[r.read(epubBooks.bookKey)!] = r.read(epubBooks.uid)!;
+          }
+        }
+        for (final MediaCollectionRow c in coverRows) {
+          final String rawKey = c.coverSource!.substring(epubPrefix.length);
+          if (rawKey.isEmpty || validUids.contains(rawKey)) continue;
+          final String? targetUid =
+              uidByAlias[rawKey] ??
+              uidByBookKey[rawKey] ??
+              onlineUidByWireKey[rawKey];
+          if (targetUid != null &&
+              targetUid.isNotEmpty &&
+              targetUid != rawKey) {
+            coverUpdates[c.id] = MediaKind.epub.compositeKey(targetUid);
+          }
+        }
+      }
+    }
+
+    return (groups: groups, coverUpdates: coverUpdates);
+  }
 
   /// 只返回父书仍存在的 remoteKey → 本地 UID 映射。
   Future<Map<String, String>> getCollectionBookAliases() async {
@@ -1918,18 +2298,61 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
   }) => transaction(() async {
     if (userIntent) await _claimCollectionForUser(collectionId);
     final bool pin = pinnedByUser ?? userIntent;
-    final int next = await _nextCollectionSortIndex(collectionId);
+    bool effectivePin = pin;
+    List<MediaCollectionItemRow> stalePassthrough =
+        const <MediaCollectionItemRow>[];
+    if (mediaType == MediaKind.epub.dbValue && entryKey.isNotEmpty) {
+      final EpubBookRow? book = await (select(
+        epubBooks,
+      )..where((t) => t.uid.equals(entryKey))).getSingleOrNull();
+      if (book != null) {
+        final List<CollectionBookAliasRow> aliases = await (select(
+          collectionBookAliases,
+        )..where((t) => t.localUid.equals(book.uid))).get();
+        final Set<String> staleKeys = <String>{
+          book.bookKey,
+          collectionBookWireKey(
+            bookKey: book.bookKey,
+            sourceMetadata: book.sourceMetadata,
+          ),
+          for (final CollectionBookAliasRow a in aliases) a.remoteKey,
+        }..removeWhere((String k) => k.isEmpty || k == book.uid);
+        if (staleKeys.isNotEmpty) {
+          stalePassthrough =
+              await (select(mediaCollectionItems)
+                    ..where(
+                      (t) =>
+                          t.collectionId.equals(collectionId) &
+                          t.mediaType.equals(mediaType) &
+                          t.entryKey.isIn(staleKeys),
+                    )
+                    ..orderBy([
+                      (t) => OrderingTerm(expression: t.sortIndex),
+                      (t) => OrderingTerm(expression: t.entryKey),
+                    ]))
+                  .get();
+          if (stalePassthrough.any(
+            (MediaCollectionItemRow r) => r.pinnedByUser,
+          )) {
+            effectivePin = true;
+          }
+        }
+      }
+    }
+    final int insertSortIndex = stalePassthrough.isNotEmpty
+        ? stalePassthrough.first.sortIndex
+        : await _nextCollectionSortIndex(collectionId);
     await into(mediaCollectionItems).insert(
       MediaCollectionItemsCompanion.insert(
         collectionId: collectionId,
         mediaType: mediaType,
         entryKey: entryKey,
-        sortIndex: Value(next),
-        pinnedByUser: Value<bool>(pin),
+        sortIndex: Value(insertSortIndex),
+        pinnedByUser: Value<bool>(effectivePin),
       ),
       mode: InsertMode.insertOrIgnore,
     );
-    if (pin) {
+    if (effectivePin) {
       await (update(mediaCollectionItems)..where(
             (t) =>
                 t.collectionId.equals(collectionId) &
@@ -1942,6 +2365,18 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
               pinnedByUser: Value<bool>(true),
             ),
           );
+    }
+    if (stalePassthrough.isNotEmpty) {
+      final Set<String> staleKeys = <String>{
+        for (final MediaCollectionItemRow r in stalePassthrough) r.entryKey,
+      };
+      await (delete(mediaCollectionItems)..where(
+            (t) =>
+                t.collectionId.equals(collectionId) &
+                t.mediaType.equals(mediaType) &
+                t.entryKey.isIn(staleKeys),
+          ))
+          .go();
     }
     final MediaCollectionRow? col = await getMediaCollectionById(collectionId);
     if (col != null) {

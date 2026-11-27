@@ -154,7 +154,7 @@ class FushiMastheadSwitchHeadline extends InheritedWidget {
       oldWidget.headline != headline;
 }
 
-/// 手机 / 窄窗（与外壳底栏同一判据：真实窗口宽落在 compact 档）。
+/// 手机 / 窄窗（MD3 含横屏手机，见 [FushiPageTitleMetrics.isCompact]）。
 bool fushiMastheadCompact(BuildContext context) =>
     FushiPageTitleMetrics.isCompact(context);
 
