@@ -1756,9 +1756,12 @@ class _HomePageState extends BasePageState<HomePage>
     );
     // 桌面剪贴板/热键查词不再叠加独立 overlay 页；监听生命周期收窄到查词 tab。
     // 系统窗口材质（Windows 11 Mica / macOS vibrancy）生效时首页外壳 scaffold
-    // 半透明让系统背景透出；push 出去的页面不受影响，仍是实心底。玻璃设计系统
-    // 下只有导航层（悬浮侧栏及其四周）透出，内容区由 [_GlassContentSurface]
-    // 垫回实色分组底（Apple 26：内容层永远是实色）。
+    // 刷成 0.6 的 surface。注意：装了桌面 frame（[FushiDesktopTitleBar]）的宿主
+    // 上，根层 frame 是一整块实色 surface 垫在所有路由下面，系统材质在正常画面
+    // 里透不出来，这层半透明没有可见效果（BUG-5591，用户 2026-11-28 拍板维持
+    // 现状，不改 frame）；只有外壳下面没有实色底时才真正透出系统背景。push
+    // 出去的页面不受影响，仍是实心底。玻璃设计系统下内容区由
+    // [_GlassContentSurface] 垫回实色分组底（Apple 26：内容层永远是实色）。
     // BackdropGroup：外壳里并排的玻璃导航（侧栏 / 底栏）用
     // BackdropFilter.grouped 共用一次背景采样，不再各自抓一遍屏。
     return ValueListenableBuilder<bool>(
