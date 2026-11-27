@@ -1065,20 +1065,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     _seriesFilter = videoSeriesFilterFromName(
       appModelNoUpdate.prefsRepo.videoAllSeriesFilterName,
     );
-    // TODO-1255：书架展示走 listForShelf（自愈数据根迁移遗弃的封面路径）。
-    _future = _listForShelf();
-    _remoteFuture = _loadRemoteVideos();
-    // 首帧就预取分组/排序映射（合集折叠首绘就要 _collectionsById，不能等刷新）。
-    _loadLibraryMaps();
-    // 统一合集：后台给缺封面的各集补抽封面（拆集/迁移拆出的非首集、每集独立视频应各有封面）。
-    _maybeBackfillCovers();
-    // 搬家识别：后台给还没有内容指纹的本地视频补算（进程内一次，见仓库方法注释）。
-    unawaited(widget.repo.backfillContentFingerprintsOncePerProcess());
-    // 条目自动刮削：进页面补刮还没有资料的本地视频（取代旧页头「批量匹配海报」按钮）。
-    unawaited(_maybeAutoScrape());
-    // 在线补刮 + 待确认提醒（BUG-2199/BUG-2201）。视频 tab 访问过才挂载
-    // （HomePage `_visitedKeepAliveTabs`），所以这里就是「首次进入视频页」。
-    unawaited(_refreshPendingScrape());
     widget.importDropPort?.attach(_importSurfaceDrop);
     // BUG-793：订阅 videoBooks 表，任意导入路径落库后自动刷新库页。
     _videoUidsSub = widget.repo.watchVideoBookUids().listen(
@@ -1123,7 +1109,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     // AppModel 通知，本页不会因它重建 → 门控翻转后既不重取也不重渲染。显式订阅。
     // 用 appModelNoUpdate：initState 里读 appModel 会走 ref.watch，触发
     // 「initState 完成前依赖 InheritedWidget」断言。
-    // （门控基线已由上面的 _loadRemoteVideos() 首帧取数写入 _remoteGateAtLastLoad。）
+    // （门控基线由 initState 末尾 _startBackgroundWork 里的 _loadRemoteVideos()
+    // 首帧取数写入 _remoteGateAtLastLoad；监听不会同步触发，先挂后取不丢变化。）
     appModelNoUpdate.prefsRepo.addListener(_onPrefsChangedForRemoteGate);
     // 页头遥控按钮：进页面、回前台、配对清单 / 互联开关变化时重探，build 不探。
     SyncRepository.fushiClientUrlsRevision.addListener(
@@ -1135,7 +1122,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     _videoRemoteLifecycle = AppLifecycleListener(
       onResume: _onVideoRemoteConfigChanged,
     );
-    unawaited(_refreshVideoRemoteTargets());
     // 别处（「同一作品」等）要打开某个视频合集 = 请本页用唯一出口打开
     // （[requestVideoCollectionOpen]）。tab 懒构建时请求先于本页存在，补查一次。
     videoCollectionOpenRequest.addListener(_onVideoCollectionOpenRequested);
@@ -1148,6 +1134,34 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       HomeVideoPage.debugRefreshVideos = _refresh;
       return true;
     }());
+    // 必须放在最后（BUG-5602）。
+    _startBackgroundWork();
+  }
+
+  /// 首帧的取数与后台任务，只在 [initState] 的同步装配**全部完成后**才起。
+  ///
+  /// 生命周期语义：initState 半途抛错时 Flutter 把元素停用
+  /// （`_deactivateFailedChildSilently`）却永远不调 [dispose]，`mounted` 也一直是
+  /// true——之前起的异步任务因此既不会被 [dispose] 停掉，`mounted` 闸门也挡不住，
+  /// 跑完后在停用的元素上 `ref.read` 即断言「deactivated widget's ancestor」
+  /// （BUG-5602）。initState 走到这里 = 装配成功、本 State 保证有配对的 dispose，
+  /// 这些任务的「随页面 dispose 停」才成立。
+  void _startBackgroundWork() {
+    // TODO-1255：书架展示走 listForShelf（自愈数据根迁移遗弃的封面路径）。
+    _future = _listForShelf();
+    _remoteFuture = _loadRemoteVideos();
+    // 首帧就预取分组/排序映射（合集折叠首绘就要 _collectionsById，不能等刷新）。
+    _loadLibraryMaps();
+    // 统一合集：后台给缺封面的各集补抽封面（拆集/迁移拆出的非首集、每集独立视频应各有封面）。
+    _maybeBackfillCovers();
+    // 搬家识别：后台给还没有内容指纹的本地视频补算（进程内一次，见仓库方法注释）。
+    unawaited(widget.repo.backfillContentFingerprintsOncePerProcess());
+    // 条目自动刮削：进页面补刮还没有资料的本地视频（取代旧页头「批量匹配海报」按钮）。
+    unawaited(_maybeAutoScrape());
+    // 在线补刮 + 待确认提醒（BUG-2199/BUG-2201）。视频 tab 访问过才挂载
+    // （HomePage `_visitedKeepAliveTabs`），所以这里就是「首次进入视频页」。
+    unawaited(_refreshPendingScrape());
+    unawaited(_refreshVideoRemoteTargets());
   }
 
   /// 接「打开视频合集」请求（[requestVideoCollectionOpen]），用与视频库合集卡同一个
@@ -5976,9 +5990,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   }
 
   /// 旧封面流水线只组装 sidecar / 本地封面能力，不装配在线 metadata client。
+  ///
+  /// 读挂载时缓存的 [appModelNoUpdate]（与 `ref.read(appProvider)` 同一实例，
+  /// provider 不会重建）：本方法作为 [VideoScrapeAutoService] 的工厂被后台任务
+  /// 在异步缝隙里调用，不能去元素树上找 ProviderScope（BUG-5602）。
   Future<CoverScraperService> _scraperService() => createVideoScraperService(
     repository: widget.repo,
-    artifactDatabase: ref.read(appProvider).database,
+    artifactDatabase: appModelNoUpdate.database,
   );
 
   /// 本地封面补齐：进视频页 + 每次库变化（新视频入库）后跑一遍，仅识别 sidecar
@@ -5993,7 +6011,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           repository: widget.repo,
           serviceFactory: _scraperService,
           // 每轮进场读一次总闸：设置里关掉后下一轮立刻停，无需重建服务。
-          isEnabled: () => ref.read(appProvider).videoAutoScrape,
+          // 读挂载时缓存的 AppModel 而不是 ref：服务比任何一帧都活得长，闭包
+          // 不能依赖元素仍挂在树上（BUG-5602）。
+          isEnabled: () => appModelNoUpdate.videoAutoScrape,
         );
     if (service.isRunning) return;
     final List<VideoBookRow> books = await widget.repo.listAll();

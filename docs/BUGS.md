@@ -36,10 +36,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4875 条。点号进各自文件。
+> 共 4876 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5602](bugs/BUG-5602-video-page-failed-mount-orphan-ref-read.md) | ✅ | ✅ | 视频库页 initState 半途抛错后，后台自动刮削在停用的元素上读 ref |
 | [BUG-5600](bugs/BUG-5600-jellyfin-show-in-library-hides-cloud-videos.md) | ✅ | ✅ | 开了 Jellyfin「显示在视频库」后云盘远端视频全部消失 |
 | [BUG-5599](bugs/BUG-5599-srs-donation-set-before-mounted.md) | 🚧 | 🚧 | srs-donation-set-before-mounted |
 | [BUG-5598](bugs/BUG-5598-apple-popup-native-material-default-tint.md) | 🚧 | 🚧 | apple-popup-native-material-default-tint |
