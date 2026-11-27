@@ -125,6 +125,11 @@ jobs:
           INPUT_TAG_NAME: ${{ inputs.tag_name }}
           CALLER_REPO: ${{ github.repository }}
           WORKFLOW_REF: ${{ github.workflow_ref }}
+          # 暂停调试版自动发布（2026-11-27）：与 release.yml / release-desktop.yml 同名同判据，
+          # 'true' 时 auto 不再挑「develop 新提交 → debug」，formal / beta 照常；显式 channel
+          # 不看它。可复用 workflow 的 vars 取**调用方**仓（hajisensai/fushi-server）的变量，
+          # 所以要停服务端 debug 得在 fushi-server 上另设同名变量（docs/agent/build.md）。
+          PAUSE_DEBUG_RELEASE: ${{ vars.FUSHI_PAUSE_DEBUG_RELEASE }}
         run: python3 tool/server_release_plan.py
       # 公开仓 60 天没有活动会停掉定时 workflow；每轮 auto 调一次 enable（已启用时是空操作）
       # 续期。失败不影响发布。
