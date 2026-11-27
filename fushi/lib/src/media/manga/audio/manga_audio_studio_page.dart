@@ -34,7 +34,7 @@ import 'package:fushi/src/media/audiobook/tts/studio/tts_series_cast.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_service.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_text.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
-import 'package:fushi/src/media/audiobook/tts/tts_voice_add_flow.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_voice_settings_page.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_line_editor.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_render_service.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_stores.dart';

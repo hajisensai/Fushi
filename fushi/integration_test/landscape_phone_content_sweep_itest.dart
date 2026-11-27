@@ -9,7 +9,7 @@ import 'package:fushi/src/media/detail/item_scrape_detail.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart'
     show singleVideoBookUid;
-import 'package:fushi/src/media/video/video_specs_service.dart';
+import 'package:fushi/src/media/video/video_specs_providers.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/book_detail_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/media/audiobook/tts/tts_voice_add_flow.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_voice_settings_page.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi_engine/tts/providers/unsloth_studio_tts_provider.dart';

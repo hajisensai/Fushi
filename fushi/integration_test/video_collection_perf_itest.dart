@@ -14,6 +14,7 @@ import 'package:fushi/src/diagnostics/ui_activity_probe.dart';
 import 'package:fushi/src/diagnostics/windows_memory_probe.dart';
 import 'package:fushi/src/utils/components/prebaked_blur_image.dart';
 import 'package:fushi/src/media/video/video_specs_service.dart';
+import 'package:fushi/src/media/video/video_specs_providers.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/pages/implementations/video_work_detail_page.dart';

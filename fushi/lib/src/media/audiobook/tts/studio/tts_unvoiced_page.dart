@@ -13,7 +13,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_text.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_unvoiced_backfill.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_ui_text.dart';
-import 'package:fushi/src/media/audiobook/tts/tts_voice_add_flow.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_voice_settings_page.dart';
 import 'package:fushi/src/settings/glass_settings_renderer.dart'
     show GlassSettingsRenderer;
 import 'package:fushi/src/settings/settings_kit_core.dart';
