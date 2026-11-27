@@ -22,9 +22,11 @@ use crate::wire::{self, Credit, KnownFiles, Record, TrackRecord};
 /// 曲库永远看不到解析改动。
 ///
 /// - 1：BUG-4493 合写艺人署名拆成一人一个 `artist_uid`（[credit::split_artist_credit]）。
+/// - 2：ID3v2 后填充超过嗅探窗口的 MP3 按扩展名兜底读标签（[crate::tags] 的 `read_lofty`），
+///   之前入库成字段全空的曲目要重读。
 ///
 /// [credit::split_artist_credit]: crate::credit::split_artist_credit
-pub const PARSER_REVISION: i32 = 1;
+pub const PARSER_REVISION: i32 = 2;
 
 /// 每批记录上限（设计 §4.1：每批 ≥256 条的粗粒度；这里取上限 256，调用方可以要更少）。
 pub const MAX_BATCH: usize = 256;
