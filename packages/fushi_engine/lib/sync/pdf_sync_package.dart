@@ -30,12 +30,37 @@ String pdfBookFilePath(EpubBookRow row) => p.join(row.extractDir, row.epubPath);
 
 /// 这本书能不能经互联通道导出为 PDF：格式是 PDF 且原件此刻在盘上（非空）。
 /// 清单的 `hasPdfContent`、导出端点、client 推送与书架下载复用判据共用这一条。
-bool hasExportablePdfContent(EpubBookRow row) {
+bool hasExportablePdfContent(EpubBookRow row) => hasExportablePdfFile(
+  format: row.format,
+  extractDir: row.extractDir,
+  epubPath: row.epubPath,
+);
+
+/// [hasExportablePdfContent] 的按列形态（互联 host 书单在后台 isolate 里批量探测时
+/// 只带这几列，见 `host_background_io.dart`）。
+bool hasExportablePdfFile({
+  required String format,
+  required String extractDir,
+  required String epubPath,
+}) {
+  if (BookFormat.parseOrEpub(format) != BookFormat.pdf) return false;
+  if (extractDir.isEmpty || epubPath.isEmpty) return false;
+  try {
+    final File file = File(p.join(extractDir, epubPath));
+    return file.existsSync() && file.lengthSync() > 0;
+  } on FileSystemException {
+    return false;
+  }
+}
+
+/// [hasExportablePdfContent] 的异步形态：互联 host 的导出端点跑在 host 所在
+/// isolate 上（app 里即 UI isolate），不做同步 stat。
+Future<bool> hasExportablePdfContentAsync(EpubBookRow row) async {
   if (BookFormat.parseOrEpub(row.format) != BookFormat.pdf) return false;
   if (row.extractDir.isEmpty || row.epubPath.isEmpty) return false;
   try {
     final File file = File(pdfBookFilePath(row));
-    return file.existsSync() && file.lengthSync() > 0;
+    return await file.exists() && await file.length() > 0;
   } on FileSystemException {
     return false;
   }

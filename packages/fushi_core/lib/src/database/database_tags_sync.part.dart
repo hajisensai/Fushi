@@ -370,6 +370,36 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
   Future<List<BookTagRow>> getTagsForCollection(int collectionId) =>
       _tagsForHost(TagHostKind.collection, collectionTagEntryKey(collectionId));
 
+  /// 全部合集当前挂的标签：合集 id → 标签（组内按 createdAt、id 升序，与
+  /// [getTagsForCollection] 同口径）。一次连表查询，替代逐合集
+  /// [getTagsForCollection] 的 N+1（合集清单 `loadLocalCollectionManifest`）。
+  /// entryKey 解不出合集 id 的映射行（脏数据）不出现。
+  Future<Map<int, List<BookTagRow>>> getTagsForAllCollections() async {
+    final query =
+        select(bookTags).join([
+            innerJoin(
+              tagAssignments,
+              tagAssignments.tagId.equalsExp(bookTags.id),
+            ),
+          ])
+          ..where(
+            tagAssignments.mediaKind.equals(TagHostKind.collection.dbValue),
+          )
+          ..orderBy([
+            OrderingTerm.asc(bookTags.createdAt),
+            OrderingTerm.asc(bookTags.id),
+          ]);
+    final Map<int, List<BookTagRow>> out = <int, List<BookTagRow>>{};
+    for (final TypedResult row in await query.get()) {
+      final int? id = collectionIdOfTagEntryKey(
+        row.readTable(tagAssignments).entryKey,
+      );
+      if (id == null) continue;
+      (out[id] ??= <BookTagRow>[]).add(row.readTable(bookTags));
+    }
+    return out;
+  }
+
   /// 给合集加标签（幂等；清同名移除墓碑）。
   Future<void> addTagToCollection(int collectionId, int tagId) =>
       _addTagClocked(

@@ -160,11 +160,40 @@ mixin _LocalLibraryHostSyncState
   @override
   Future<CollectionManifest> mergeCollectionManifest(
     CollectionManifest incoming,
-  ) async {
-    late CollectionManifest merged;
+  ) => _mergeCollectionsLocked((int baseline) async {
+    final CollectionSyncOutcome outcome = await mergeIncomingCollectionManifest(
+      _db,
+      incoming,
+      lastSyncedAtMs: baseline,
+    );
+    return (changes: outcome.changes.entries, merged: outcome.merged);
+  });
+
+  /// 合集合并的锁内流程（对象接口与报文体接口共用一份）：[merge] 拿 host 自己那本
+  /// 基线算出变更集与合并结果 → 变更集落 host DB → 推进基线 → 收敛整理器合集。
+  ///
+  /// 经 [_runSyncStateExclusive] 串行：读清单→合并→落库→推基线整体互斥，避免与
+  /// 本机出站同步的合集落库交错（BUG-2717：不再等 host 自己的整轮同步）。重放同一
+  /// 清单幂等（应用端按目标态调和）。
+  ///
+  /// [reconcile] / [needsConvergence] 让报文体路径把「全表读」的两步放进后台所有者：
+  /// 缺省在本 isolate 做（对象接口）。[needsConvergence] 说 false 时跳过整理器合集
+  /// 收敛（没有可并的、也没有提议，收敛本身就是 no-op）。
+  Future<T> _mergeCollectionsLocked<T>(
+    Future<({List<CollectionManifestEntry> changes, T merged})> Function(
+      int baseline,
+    )
+    merge, {
+    Future<void> Function()? reconcile,
+    Future<bool> Function()? needsConvergence,
+  }) async {
+    late T merged;
     await _runSyncStateExclusive(() async {
-      await _db.reconcileEpubCollectionMemberKeys();
-      final CollectionManifest local = await loadLocalCollectionManifest(_db);
+      if (reconcile != null) {
+        await reconcile();
+      } else {
+        await _db.reconcileEpubCollectionMemberKeys();
+      }
       // BUG-1579：host 收 POST 走**自己那本账**（[SyncChannelScope.host]）。它与
       // 本机作为 client 跑的云/互联通道是三条独立的因果轴：共用一个键时，client
       // 通道刚推进的基线会把对端 POST 来的移出墓碑判成旧闻 → 引擎按「活胜」撤销
@@ -173,15 +202,14 @@ mixin _LocalLibraryHostSyncState
         _db,
         SyncChannelScope.host,
       );
-      final CollectionSyncOutcome outcome = CollectionSyncEngine.merge(
-        local: local,
-        remote: incoming,
-        lastSyncedAtMs: baseline,
-        // BUG-3657：书系列合集按卷号定序，与书架归组自愈同一判据；返回给
-        // client 的合并清单因此也是卷序。
-        ruleOrder: await loadBookSeriesRuleOrder(_db),
+      final ({List<CollectionManifestEntry> changes, T merged}) outcome =
+          await merge(baseline);
+      // 落库在本 isolate：解散合集要回收封面文件，路径根与图片缓存是 host 进程
+      // 装配的全局钩子（后台 isolate 里没有）。变更集通常为空或很小。
+      await applyCollectionLocalChanges(
+        _db,
+        CollectionLocalChanges(outcome.changes),
       );
-      await applyCollectionLocalChanges(_db, outcome.changes);
       final int nextBaseline = DateTime.now().millisecondsSinceEpoch;
       await writeCollectionsSyncBaselineMs(
         _db,
@@ -189,10 +217,96 @@ mixin _LocalLibraryHostSyncState
         nextBaseline,
       );
       // v124：基线推进之后再收敛整理器合集（见 convergeCollectionsAfterSync）。
-      await convergeCollectionsAfterSync(_db, baselineMs: nextBaseline);
+      if (needsConvergence == null || await needsConvergence()) {
+        await convergeCollectionsAfterSync(_db, baselineMs: nextBaseline);
+      }
       merged = outcome.merged;
     });
     return merged;
+  }
+
+  // ── 清单报文体（后台现算，host_manifest_bodies.dart）─────────────────────
+
+  /// 合集清单报文体缓存：数据源表有写入即作废（[collectionManifestSourceTables]）。
+  /// 标签 / 作品图谱清单只有几 KB，现算代价远小于维护一份表清单的风险，不缓存。
+  late final HostManifestBodyCache _collectionsBodyCache =
+      HostManifestBodyCache(
+        invalidations: () => collectionManifestInvalidations(_db),
+        compute: () =>
+            _encodeManifestInBackground(HostManifestKind.collections),
+      );
+
+  @override
+  Future<HostManifestBody> getManifestBody(HostManifestKind kind) =>
+      switch (kind) {
+        HostManifestKind.collections => _collectionsBodyCache.get(),
+        _ => _encodeManifestInBackground(kind),
+      };
+
+  Future<HostManifestBody> _encodeManifestInBackground(
+    HostManifestKind kind,
+  ) async {
+    final AggregateSyncOwner owner = await AggregateSyncOwner.spawn(_db);
+    try {
+      final (TransferableTypedData bytes, String etag) = await owner.run(
+        encodeLocalManifestCommand(kind),
+      );
+      return HostManifestBody(
+        bytes: bytes.materialize().asUint8List(),
+        etag: etag,
+      );
+    } finally {
+      await owner.close();
+    }
+  }
+
+  /// 解码在锁外（不拉长锁的持有时间），合并 / 落库在锁内；JSON 编解码与清单组装
+  /// 都在后台所有者里，本 isolate 只落合集变更集（见 [_mergeCollectionsLocked]）。
+  @override
+  Future<HostManifestMergeResult> mergeManifestBody(
+    HostManifestKind kind,
+    Uint8List body, {
+    String? encodingName,
+  }) async {
+    final AggregateSyncOwner owner = await AggregateSyncOwner.spawn(_db);
+    try {
+      final String? rejected = await owner.run(
+        decodeIncomingManifestCommand(
+          kind,
+          TransferableTypedData.fromList(<TypedData>[body]),
+          encodingName,
+        ),
+      );
+      if (rejected != null) return HostManifestRejected(rejected);
+      final TransferableTypedData merged;
+      switch (kind) {
+        case HostManifestKind.collections:
+          merged = await _mergeCollectionsLocked(
+            (int baseline) async {
+              final (
+                List<CollectionManifestEntry> changes,
+                TransferableTypedData bytes,
+              ) = await owner.run(
+                mergeIncomingCollectionsCommand(baseline),
+              );
+              return (changes: changes, merged: bytes);
+            },
+            reconcile: () => owner.run(reconcileCollectionMemberKeysCommand()),
+            needsConvergence: () =>
+                owner.run(collectionsNeedConvergenceCommand()),
+          );
+        case HostManifestKind.tags:
+        case HostManifestKind.mediaLinks:
+          late TransferableTypedData bytes;
+          await _runSyncStateExclusive(() async {
+            bytes = await owner.run(applyIncomingLwwManifestCommand(kind));
+          });
+          merged = bytes;
+      }
+      return HostManifestMerged(merged.materialize().asUint8List());
+    } finally {
+      await owner.close();
+    }
   }
 
   // ── 标签清单（互联标签同步，tag_sync.dart）────────────────────────────────

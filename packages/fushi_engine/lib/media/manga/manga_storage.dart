@@ -156,12 +156,28 @@ class MangaStorage {
   /// 归位到本层（原先是阅读器 widget 的静态方法）是因为互联 host 供图必须用**同一条**
   /// 穿越守卫：安全边界靠复制粘贴维持，抄漏一处就是真漏洞。
   static String? resolvePageFilePath(String imagesRoot, String relative) {
+    final String? filePath = _pageFileCandidate(imagesRoot, relative);
+    if (filePath == null || !File(filePath).existsSync()) return null;
+    return filePath;
+  }
+
+  /// [resolvePageFilePath] 的异步形态（同一条穿越守卫）：互联 host 供图跑在 host
+  /// 所在 isolate 上（app 里即 UI isolate），不做同步 stat。
+  static Future<String?> resolvePageFilePathAsync(
+    String imagesRoot,
+    String relative,
+  ) async {
+    final String? filePath = _pageFileCandidate(imagesRoot, relative);
+    if (filePath == null || !await File(filePath).exists()) return null;
+    return filePath;
+  }
+
+  /// 穿越守卫过关的页图绝对路径（不判存在）；越界 null。
+  static String? _pageFileCandidate(String imagesRoot, String relative) {
     final String joined = p.join(imagesRoot, relative);
     if (!p.isWithin(p.canonicalize(imagesRoot), p.canonicalize(joined))) {
       return null;
     }
-    final String filePath = p.normalize(p.absolute(joined));
-    if (!File(filePath).existsSync()) return null;
-    return filePath;
+    return p.normalize(p.absolute(joined));
   }
 }

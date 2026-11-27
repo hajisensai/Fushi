@@ -4,6 +4,7 @@
 library;
 
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:archive/archive_io.dart';
 import 'package:fushi_engine/utils/archive/native_zip.dart';
@@ -19,10 +20,16 @@ import 'package:path/path.dart' as p;
 ///
 /// Returns true if an archive was written; false when [extractDir] is empty or
 /// absent (nothing to package).
-Future<bool> repackageExtractedEpub(
-  String extractDir,
-  String outputPath,
-) async {
+///
+/// 根目录判定与整树打包都在一次性后台 isolate 里做：调用方（互联 host 的导出
+/// 端点、云同步导出）可能就在 UI isolate 上，几百 MB 的书同步打包会冻住界面。
+Future<bool> repackageExtractedEpub(String extractDir, String outputPath) =>
+    Isolate.run(
+      () => _repackageExtractedEpubSync(extractDir, outputPath),
+      debugName: 'repackage-epub',
+    );
+
+bool _repackageExtractedEpubSync(String extractDir, String outputPath) {
   final Directory? dir = resolveExtractedEpubRoot(extractDir);
   if (dir == null) return false;
   final ZipFileEncoder encoder = ZipFileEncoder();

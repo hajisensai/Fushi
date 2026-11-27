@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:drift/drift.dart' show DatabaseConnection, Value;
 import 'package:drift/native.dart';
@@ -9,6 +10,7 @@ import 'package:fushi_engine/sync/collection_sync_engine.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
+import 'package:fushi_engine/sync/host_manifest_bodies.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi/src/sync/sync_backend.dart' show syncChannelScopeOf;
 import 'package:fushi/src/sync/sync_orchestrator.dart';
@@ -1132,5 +1134,16 @@ class _CountingCollectionsHostService extends LocalLibraryHostService {
   ) {
     mergePosts++;
     return super.mergeCollectionManifest(incoming);
+  }
+
+  /// POST 端点走后台报文体路径（BUG-5606）：合集 POST 在这里计数。
+  @override
+  Future<HostManifestMergeResult> mergeManifestBody(
+    HostManifestKind kind,
+    Uint8List body, {
+    String? encodingName,
+  }) {
+    if (kind == HostManifestKind.collections) mergePosts++;
+    return super.mergeManifestBody(kind, body, encodingName: encodingName);
   }
 }

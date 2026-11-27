@@ -15,7 +15,7 @@ mixin _LocalLibraryHostLocalAudio
   Future<List<RemoteLocalAudioInfo>> listLocalAudio() async {
     return <RemoteLocalAudioInfo>[
       for (final LocalAudioDbEntry e in _localAudioEntries)
-        if (File(e.path).existsSync())
+        if (await File(e.path).exists())
           RemoteLocalAudioInfo(
             displayName: e.displayName,
             contentId: await resolveLocalAudioContentId(e),
