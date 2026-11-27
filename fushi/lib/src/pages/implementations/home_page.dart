@@ -786,11 +786,17 @@ class _HomePageState extends BasePageState<HomePage>
 
       // BUG-5492：启动期哨兵发现书库文件被清空（外部目录被文件管理器 / 清理工具删掉
       // 之类），请用户带日志反馈。排在移回提示之前：先让用户知道丢了什么。
-      if (mounted && Platform.isAndroid) {
+      // BUG-5570：同一入口也接书库内容对账（哨兵还在、但成片的书 / 有声书文件不在），
+      // 五端都弹；可重新扫描书 / 漫画来源（与来源页「重新扫描」同一个扫描入口）。
+      if (mounted) {
         await maybeShowLibraryVanishedAlert(
           context: context,
           supportRoot: appModelNoUpdate.databaseDirectory,
           openFeedback: openFeedbackComposeWith,
+          contentAudit: appModelNoUpdate.libraryContentAudit,
+          countRescannableSources: () async =>
+              (await _loadLibraryRescanSources()).length,
+          rescanSources: _rescanLibrarySources,
         );
       }
 
@@ -4222,6 +4228,32 @@ class _HomePageState extends BasePageState<HomePage>
       readonly: appModelNoUpdate.isMigrationReadonly,
       isModuleEnabled: visibility.isEnabled,
     );
+  }
+
+  /// BUG-5570：书库内容成片缺失时可重扫的来源：书 / 漫画来源（扫描会对照原件重建）。
+  /// 视频 / 音乐是原地播放，不在受管书库里，不在此列。库处于「已迁移只读」时一个都不扫。
+  Future<List<SourceLibraryRow>> _loadLibraryRescanSources() async {
+    if (appModelNoUpdate.isMigrationReadonly) return const <SourceLibraryRow>[];
+    final ModuleVisibility visibility = appModelNoUpdate.moduleVisibility;
+    return <SourceLibraryRow>[
+      for (final SourceLibraryRow source
+          in await appModelNoUpdate.database.getAllMediaSources())
+        if (switch (SourceLibraryKind.tryParse(source.mediaKind)) {
+          SourceLibraryKind.book => visibility.isEnabled(ModuleId.books),
+          SourceLibraryKind.manga => visibility.isEnabled(ModuleId.manga),
+          _ => false,
+        })
+          source,
+    ];
+  }
+
+  /// 「书库里有些文件不见了」提示选「重新扫描来源」：逐个走自动扫描同一个入口
+  /// （[_runAutoSourceScan]，与来源页「重新扫描」收尾一致、与其它扫描共用每来源锁），串行。
+  Future<void> _rescanLibrarySources() async {
+    for (final SourceLibraryRow source in await _loadLibraryRescanSources()) {
+      if (!mounted) return;
+      await _runAutoSourceScan(source);
+    }
   }
 
   /// 自动扫描一个来源，收尾与来源页「重新扫描」一致；分支（视频门被占延后、只在新增

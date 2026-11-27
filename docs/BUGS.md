@@ -40,6 +40,7 @@
 | [BUG-5572](bugs/BUG-5572-srs-kernel-bulk-reads-slow.md) | 🚧 | ✅ | SRS 内核批量读慢：笔记 / 实体视图 / 卡历史每条约 3 ms |
 | [BUG-5576](bugs/BUG-5576-flutter-logs-wipes-android-files-root.md) | ✅ | ✅ | flutter_logs 每 3 天冷启动整树删 Android 外部 files 根（外部书库、词典、有声书全没） |
 | [BUG-5569](bugs/BUG-5569-scan-skips-missing-managed-content.md) | ✅ | ✅ | 来源扫描遇到已入库的书不检查受管内容，丢失的解包书目录与有声书音频字幕永远不会从原件重建 |
+| [BUG-5570](bugs/BUG-5570-library-partial-content-loss-undetected.md) | ✅ | ✅ | 书库内容部分丢失（哨兵还在）启动期毫无告警 |
 | [BUG-5548](bugs/BUG-5548-apple-sidebar-scope-rebuilds-hidden-library-pages.md) | ✅ | ✅ | Apple 宽窗侧栏外壳切 tab 后紧跟一帧：所有访问过的保活库页（含藏起的）整页重建 |
 | [BUG-5547](bugs/BUG-5547-srs-rules7-full-rebuild-killed-loop.md) | ✅ | ✅ | 升级到缓存口径 7 后复习一直在加载：开库整层重建几分钟、切后台被杀就回滚重来 |
 | [BUG-5546](bugs/BUG-5546-curator-auto-retries-ai-failures.md) | ✅ | ✅ | AI 库管家默认开、书架每次重载就跑一趟，额度用完还逐个单元问 AI、下一趟再问一遍 |

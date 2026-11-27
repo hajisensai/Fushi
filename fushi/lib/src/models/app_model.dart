@@ -197,6 +197,7 @@ import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/models/home_dashboard_panel.dart';
 import 'package:fushi/src/models/home_widget_layout.dart';
 import 'package:fushi/src/storage/android_stray_library_merge.dart';
+import 'package:fushi/src/storage/library_content_audit.dart';
 import 'package:fushi/src/storage/library_sentinel.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/storage/books_directory.dart';
@@ -3825,6 +3826,12 @@ class AppModel
   Directory get databaseDirectory => _databaseDirectory;
   late Directory _databaseDirectory;
 
+  /// BUG-5570：本次冷启动的书库内容对账（[LibraryContentAudit.run]，后台 isolate、不挡启动）。
+  /// 首页的「书库文件不见了」提示读现场前先等它（带超时）；启动还没走到对账时为 null。
+  Future<LibraryContentAuditResult>? get libraryContentAudit =>
+      _libraryContentAudit;
+  Future<LibraryContentAuditResult>? _libraryContentAudit;
+
   /// Directory where database data is persisted.
   /// 磁盘上是否真装着名为 [name] 的词典（`dictionaryResourceDirectory/<name>/`）。
   ///
@@ -5882,6 +5889,45 @@ class AppModel
           );
         }
       }
+      // BUG-5570：哨兵只看书库根里那一个文件，哨兵还在时书库内容部分丢失（整树被清后部分
+      // 恢复、外部工具删掉大部分书目录）它看不出来。拿数据库当账本对一遍受管文件在不在：
+      // 后台 isolate 只读另开连接、逐条 stat，不挡冷启动；书库根不可读（卷未挂载、权限被
+      // 收回）不判。只判定、只写现场文件，不动任何行与文件。五端都跑：部分丢失哪端都会有。
+      _libraryContentAudit = LibraryContentAudit.run(
+        libraryRoot: _appDirectory,
+        supportRoot: _databaseDirectory,
+      );
+      unawaited(
+        _libraryContentAudit!.then((LibraryContentAuditResult audit) {
+          final LibraryContentLoss? loss = audit.loss;
+          switch (audit.status) {
+            case LibraryContentAuditStatus.clean:
+              return;
+            case LibraryContentAuditStatus.incident:
+              ErrorLogService.instance.logDataLocation(
+                'LibraryContentAudit',
+                loss!.describe(),
+              );
+            case LibraryContentAuditStatus.minor:
+            case LibraryContentAuditStatus.alreadyReported:
+              // 同一批缺失每次启动只在内容变了时占一条，平静的启动不写盘。
+              ErrorLogService.instance.logDataLocationIfChanged(
+                'LibraryContentAudit',
+                '${audit.status.name}：${loss!.summary()}',
+              );
+            case LibraryContentAuditStatus.rootUnreadable:
+              ErrorLogService.instance.logDataLocationIfChanged(
+                'LibraryContentAudit',
+                '书库根不可读，未对账：${_appDirectory.path}',
+              );
+            case LibraryContentAuditStatus.error:
+              ErrorLogService.instance.logDataLocationIfChanged(
+                'LibraryContentAudit',
+                '对账失败（未改动任何文件）：${audit.error}',
+              );
+          }
+        }),
+      );
       //    cloud backup backend can now coexist);
       // 4) BUG-1576: drop the pre-decoupling GLOBAL folder cache. Two channels
       //    took turns writing that single pair of keys, so its value can no
