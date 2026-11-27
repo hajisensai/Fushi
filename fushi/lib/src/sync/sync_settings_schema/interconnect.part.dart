@@ -175,7 +175,9 @@ class _FushiServerConfigWidget extends StatefulWidget {
 const double _kInterconnectPeerRowWideMinWidth = 520;
 
 class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
-    with _PairingV2FlowMixin<_FushiServerConfigWidget> {
+    with
+        _PairingV2FlowMixin<_FushiServerConfigWidget>,
+        StateResourceScope<_FushiServerConfigWidget> {
   @override
   SettingsContext get _pairSettingsContext => widget.settingsContext;
 
@@ -220,35 +222,26 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
     _tokenController.addListener(_onTokenTextChanged);
     _tokenFocus = FocusNode();
     _load();
-    _syncSettings(
-      widget.settingsContext,
-    ).clientConfigRevision.addListener(_onClientConfigRevision);
+    listenTo(
+      _syncSettings(widget.settingsContext).clientConfigRevision,
+      _onClientConfigRevision,
+    );
     // 后台地址学习也会写候选列表：跟着真值重载，免得下次编辑把学到的地址整份覆盖。
-    SyncRepository.fushiClientUrlsRevision.addListener(_onClientConfigRevision);
+    listenTo(SyncRepository.fushiClientUrlsRevision, _onClientConfigRevision);
     // 服务器词典目录刷新后更新「可用词典 / 上次刷新」。
-    RemoteDictionaryCatalogService.catalogRevision.addListener(
+    listenTo(
+      RemoteDictionaryCatalogService.catalogRevision,
       _onDictionaryCatalogRevision,
     );
     // Rebuild when the server-enabled flag flips so "add connection" re-gates.
-    _syncSettings(
-      widget.settingsContext,
-    ).roleRevision.addListener(_onRoleRevision);
+    listenTo(
+      _syncSettings(widget.settingsContext).roleRevision,
+      _onRoleRevision,
+    );
   }
 
   @override
   void dispose() {
-    _syncSettings(
-      widget.settingsContext,
-    ).clientConfigRevision.removeListener(_onClientConfigRevision);
-    SyncRepository.fushiClientUrlsRevision.removeListener(
-      _onClientConfigRevision,
-    );
-    RemoteDictionaryCatalogService.catalogRevision.removeListener(
-      _onDictionaryCatalogRevision,
-    );
-    _syncSettings(
-      widget.settingsContext,
-    ).roleRevision.removeListener(_onRoleRevision);
     _tokenFocus.dispose();
     _tokenController.removeListener(_onTokenTextChanged);
     _tokenController.dispose();

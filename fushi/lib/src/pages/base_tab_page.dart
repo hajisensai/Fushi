@@ -23,13 +23,7 @@ abstract class BaseTabPageState<T extends BaseTabPage>
   @override
   void initState() {
     super.initState();
-    mediaType.tabRefreshNotifier.addListener(refresh);
-  }
-
-  @override
-  void dispose() {
-    mediaType.tabRefreshNotifier.removeListener(refresh);
-    super.dispose();
+    listenTo(mediaType.tabRefreshNotifier, refresh);
   }
 
   // refresh() 已上提到 BaseModuleTabPageState（守卫式 setState），此处继承。

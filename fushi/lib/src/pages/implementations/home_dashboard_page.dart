@@ -226,7 +226,6 @@ import 'package:fushi/src/migration/migration_target_channel.dart';
 import 'package:fushi/src/pages/implementations/migration_page.dart';
 import 'package:fushi/src/pages/implementations/migration_import_page.dart';
 import 'package:fushi/src/migration/migration_importer.dart';
-import 'package:fushi_engine/foundation/engine_notifier.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -957,11 +956,6 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
   /// `_remoteGateAtLastLoad`），用于在 prefsRepo 的高频通知里只识别门控翻转。
   bool _remoteGateAtLastLoad = true;
 
-  /// 「显示远端条目」开关落在 prefsRepo（独立 ChangeNotifier），不经 AppModel
-  /// 通知、也不在 [_scheduleReload] 的表级信号里——必须显式订阅（[initState] 挂，
-  /// [dispose] 解除）才能让翻开关立即生效。
-  PreferencesRepository? _prefsRepoForRemoteGate;
-
   /// 已加载的统一事实面日行（v92：[StatFacts.daily] 按 mediaKind 分三份；今日
   /// 目标分子 / 今日时长 / 近 7 日日均都对它求和，免重查）。
   List<StatFact> _readingRows = const <StatFact>[];
@@ -1026,17 +1020,11 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
   /// 去掉上锁作品后的那份（待链接拼贴块不露上锁作品的封面 / 标题）。
   MediaTrackingHomeSnapshot _allTracking = MediaTrackingHomeSnapshot.empty;
 
-  /// 订阅「数据变了」信号（阅读/观看/导入落库）以自动刷新，及其防抖定时器。
-  /// 首页不保活、且阅读器是 pushed 路由（读完回来首页不重建 initState），故必须靠
-  /// DB 表级变更主动重查，否则「打开一本书读完回来」活动/热力图仍是旧数据。
-  StreamSubscription<void>? _dataChangeSub;
+  /// 「数据变了」信号（阅读/观看/导入落库）触发自动刷新的防抖定时器（订阅见
+  /// [initState]）。
   Timer? _reloadDebounce;
 
-  /// 切换激活 Profile（写 `preferences.active_profile_id`）/ 增删 Profile 的表级
-  /// 信号。统计按 Profile 隔离，但这两张表不在 `watchDashboardDataChanges` 的表集里，
-  /// 首页在屏 / 保活时切配置就一直停在上一个配置的统计（反馈 FH1toxJJxz）。
-  /// 偏好写入很频繁，所以信号到达只防抖后核对一次激活 Profile，真变了才重载。
-  StreamSubscription<Set<TableUpdate>>? _profileChangeSub;
+  /// 激活 Profile 表级信号的防抖定时器（订阅见 [initState]）。
   Timer? _profileCheckDebounce;
 
   /// 最近一次发起的整批载入所针对的 Profile（[_loadDashboardDataUnsafe] 开头解析）；
@@ -1102,7 +1090,7 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
   @override
   void initState() {
     super.initState();
-    homeWidgetEditRequested.addListener(_onWidgetEditRequested);
+    listenTo(homeWidgetEditRequested, _onWidgetEditRequested);
     // 设置页「编辑首页」在本页建出来之前就发了请求（首页 tab 首次进入）。
     WidgetsBinding.instance.addPostFrameCallback(
       (Duration _) => _onWidgetEditRequested(),
@@ -1123,43 +1111,59 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
     unawaited(_loadDashboardData());
     // Kavita 绑定书：服务器端改了进度（网页端翻页 / 标已读未读）时静默对账，
     // 采用后写本地阅读位置，表级信号会带动本页重载。进入 / 切回首页 / 回前台触发。
-    _kavitaLifecycle = AppLifecycleListener(onResume: _onResumeForKavita);
-    homeShellTabNotifier.addListener(_onTabForKavita);
+    final AppLifecycleListener kavitaLifecycle = AppLifecycleListener(
+      onResume: _onResumeForKavita,
+    );
+    onTeardown(kavitaLifecycle.dispose);
+    listenTo(homeShellTabNotifier, _onTabForKavita);
     _reconcileKavitaProgress();
     unawaited(_loadServerContinue());
     // 阅读/观看/导入写库 → 表级变更 → 防抖后重查聚合，首页自动刷新（竞态无关：
     // 信号在写入 commit 后才发，重查读到的是已落库数据）。
-    _dataChangeSub = ref
-        .read(appProvider)
-        .database
-        .watchDashboardDataChanges()
-        .listen((_) => _scheduleReload());
+    // 首页不保活、且阅读器是 pushed 路由（读完回来首页不重建 initState），故必须靠
+    // DB 表级变更主动重查，否则「打开一本书读完回来」活动/热力图仍是旧数据。
+    ownSubscription(
+      ref
+          .read(appProvider)
+          .database
+          .watchDashboardDataChanges()
+          .listen((_) => _scheduleReload()),
+    );
     final FushiDatabase db = ref.read(appProvider).database;
-    _profileChangeSub = db
-        .tableUpdates(
-          TableUpdateQuery.onAllTables(
-            <ResultSetImplementation<dynamic, dynamic>>[
-              db.profiles,
-              db.preferences,
-            ],
-          ),
-        )
-        .listen((Set<TableUpdate> _) => _scheduleActiveProfileCheck());
+    // 切换激活 Profile（写 `preferences.active_profile_id`）/ 增删 Profile 的表级
+    // 信号。统计按 Profile 隔离，但这两张表不在 `watchDashboardDataChanges` 的表集里，
+    // 首页在屏 / 保活时切配置就一直停在上一个配置的统计（反馈 FH1toxJJxz）。
+    // 偏好写入很频繁，所以信号到达只防抖后核对一次激活 Profile，真变了才重载。
+    ownSubscription(
+      db
+          .tableUpdates(
+            TableUpdateQuery.onAllTables(
+              <ResultSetImplementation<dynamic, dynamic>>[
+                db.profiles,
+                db.preferences,
+              ],
+            ),
+          )
+          .listen((Set<TableUpdate> _) => _scheduleActiveProfileCheck()),
+    );
     // P4：游戏改名/刮削（库页写穿 galgames 表后 GalgameRepository.load() 通知）
     // 也要刷新日明细/时间轴的游戏显示名——galgames 表不在
     // watchDashboardDataChanges 的表集里，走仓储 ChangeNotifier 这条既有通道
     // 与视频（videoBooks 表级信号）对齐失效语义。
-    _galgameRepo = ref.read(appProvider).galgameRepo
-      ..addListener(_scheduleReload);
+    listenTo(ref.read(appProvider).galgameRepo, _scheduleReload);
     // Bangumi 同步状态：outbox 与偏好都不在 watchDashboardDataChanges 的表集里，
     // 由服务层每轮同步结束后自增的 revision 通知（后台自动同步完成也会刷新本卡）。
-    _trackingRevision =
-        ref.read(appProvider).mediaTrackingService.statusRevision
-          ..addListener(_scheduleReload);
+    final trackingRevision = ref
+        .read(appProvider)
+        .mediaTrackingService
+        .statusRevision;
+    trackingRevision.addListener(_scheduleReload);
+    onTeardown(() => trackingRevision.removeListener(_scheduleReload));
     // 「显示远端条目」门控翻转（BUG-1182 同款，视频页已修、本页此前漏了）：
     // 翻开 → 立即补拉远端；关掉 → 立即清掉已混排进「继续」/时间轴的远端条目。
-    _prefsRepoForRemoteGate = ref.read(appProvider).prefsRepo
-      ..addListener(_onPrefsChangedForRemoteGate);
+    // 「显示远端条目」开关落在 prefsRepo（独立 ChangeNotifier），不经 AppModel
+    // 通知、也不在 [_scheduleReload] 的表级信号里——必须显式订阅才能让翻开关立即生效。
+    listenTo(ref.read(appProvider).prefsRepo, _onPrefsChangedForRemoteGate);
     _updateCount = HomeUpdateCount(ref.read(appProvider).updateFeedService);
   }
 
@@ -1179,12 +1183,6 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
     if (gate == _remoteGateAtLastLoad) return;
     unawaited(_loadRemoteDashboardData());
   }
-
-  /// 追踪状态版本号（[initState] 挂监听，[dispose] 解除）。
-  EngineValueListenable<int>? _trackingRevision;
-
-  /// 游戏库仓储（[initState] 挂监听，[dispose] 解除）。
-  GalgameRepository? _galgameRepo;
 
   /// 首页 tab 保活（2026-10 切 tab 卡顿）后，切回首页不再整页重挂载；切回时
   /// 只补做隐藏期间被推迟的重载（[_reloadDeferredWhileHidden]），并经共享 TTL
@@ -1243,8 +1241,6 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
   /// 最近一次混排上屏的三份远端清单（对象身份）；门控关闭清空远端状态时一并作废。
   List<RemoteBookInfo>? _appliedRemoteBooks;
   List<RemoteVideoInfo>? _appliedRemoteVideos;
-
-  AppLifecycleListener? _kavitaLifecycle;
 
   void _onTabForKavita() {
     if (_isVisibleTab) _reconcileKavitaProgress();
@@ -1326,17 +1322,9 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
   @override
   void dispose() {
     _reloadDebounce?.cancel();
-    _kavitaLifecycle?.dispose();
     _tickerValues?.removeListener(_syncSrsLive);
-    homeShellTabNotifier.removeListener(_onTabForKavita);
     _midnightReload?.cancel();
-    unawaited(_dataChangeSub?.cancel());
     _profileCheckDebounce?.cancel();
-    unawaited(_profileChangeSub?.cancel());
-    _galgameRepo?.removeListener(_scheduleReload);
-    _trackingRevision?.removeListener(_scheduleReload);
-    _prefsRepoForRemoteGate?.removeListener(_onPrefsChangedForRemoteGate);
-    homeWidgetEditRequested.removeListener(_onWidgetEditRequested);
     _dashboardScrollController.dispose();
     _toolbarScroll.dispose();
     _mastheadChrome.dispose();

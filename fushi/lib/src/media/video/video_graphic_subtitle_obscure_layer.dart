@@ -28,6 +28,7 @@ import 'package:fushi/src/media/video/graphic_subtitle_ocr.dart';
 import 'package:fushi/src/media/video/video_graphic_subtitle_regions.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
@@ -113,7 +114,9 @@ bool graphicSubtitleObscureActive({
 
 class _VideoGraphicSubtitleObscureLayerState
     extends State<VideoGraphicSubtitleObscureLayer>
-    with SingleTickerProviderStateMixin {
+    with
+        SingleTickerProviderStateMixin,
+        StateResourceScope<VideoGraphicSubtitleObscureLayer> {
   bool _hovering = false;
 
   /// 自己抽好的位图时间表（对应 [_regionsFor]）；null = 还没有 / 拿不到。
@@ -150,9 +153,20 @@ class _VideoGraphicSubtitleObscureLayerState
   void initState() {
     super.initState();
     widget.controller.addListener(_onControllerChanged);
+    onTeardown(() => widget.controller.removeListener(_onControllerChanged));
     widget.controller.positionMsListenable.addListener(_onPositionChanged);
+    onTeardown(
+      () => widget.controller.positionMsListenable.removeListener(
+        _onPositionChanged,
+      ),
+    );
     widget.regionTrack?.addListener(_onRegionTrackChanged);
+    onTeardown(() => widget.regionTrack?.removeListener(_onRegionTrackChanged));
     widget.touchControlsVisible?.addListener(_onTouchControlsChanged);
+    onTeardown(
+      () =>
+          widget.touchControlsVisible?.removeListener(_onTouchControlsChanged),
+    );
     _syncVisibility();
     _syncRegions();
   }
@@ -188,10 +202,6 @@ class _VideoGraphicSubtitleObscureLayerState
   void dispose() {
     _cancelRegionLoad();
     _ticker.dispose();
-    widget.regionTrack?.removeListener(_onRegionTrackChanged);
-    widget.touchControlsVisible?.removeListener(_onTouchControlsChanged);
-    widget.controller.removeListener(_onControllerChanged);
-    widget.controller.positionMsListenable.removeListener(_onPositionChanged);
     // 离开（换页 / 关遮蔽层）时把图形字幕还原成可见，不把「隐藏」留在播放器上。
     unawaited(widget.controller.setGraphicSubtitleVisible(true));
     super.dispose();

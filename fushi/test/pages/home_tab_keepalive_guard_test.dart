@@ -220,15 +220,14 @@ void main() {
       'lib/src/pages/implementations/reader_fushi_history_page.dart',
     ).readAsStringSync();
 
+    // 监听经 StateResourceScope 的 listenTo 登记：dispose 与 initState 半途失败
+    // 共用同一份撤销（BUG-5604），不再手写 removeListener。
     expect(
-      moduleTabSrc.contains('homeShellTabNotifier.addListener'),
+      moduleTabSrc.contains(
+        'listenTo(homeShellTabNotifier, _onShellTabChanged)',
+      ),
       isTrue,
-      reason: 'BUG-994：模块 tab 基类必须监听 tab 信号',
-    );
-    expect(
-      moduleTabSrc.contains('homeShellTabNotifier.removeListener'),
-      isTrue,
-      reason: 'BUG-994：模块 tab 基类 dispose 必须移除监听（防泄漏）',
+      reason: 'BUG-994：模块 tab 基类必须监听 tab 信号，且登记撤销（防泄漏）',
     );
     expect(
       RegExp(r'HomeTab get shellTab => HomeTab\.video').hasMatch(videoSrc),
@@ -242,14 +241,9 @@ void main() {
     );
 
     expect(
-      bookSrc.contains('homeShellTabNotifier.addListener'),
+      bookSrc.contains('listenTo(homeShellTabNotifier, _onShellTabActivated)'),
       isTrue,
-      reason: 'BUG-992：书架页必须监听 tab 信号',
-    );
-    expect(
-      bookSrc.contains('homeShellTabNotifier.removeListener'),
-      isTrue,
-      reason: 'BUG-992：书架页 dispose 必须移除监听（防泄漏）',
+      reason: 'BUG-992：书架页必须监听 tab 信号，且登记撤销（防泄漏）',
     );
     expect(
       RegExp(r'HomeTab\.books').hasMatch(bookSrc),

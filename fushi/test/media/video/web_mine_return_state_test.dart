@@ -329,9 +329,12 @@ void main() {
       );
       expect(timeout, contains('_autoRunTriggered || _mineRunning'));
       expect(timeout, contains('_finishMining(auto: true'));
+      // 截止 Timer 经 StateResourceScope 登记，随 dispose / 挂载失败取消（BUG-5604）。
       expect(
-        body(page, 'void dispose() {', '_flushPosition'),
-        contains('_autoStartDeadline?.cancel()'),
+        page,
+        contains(
+          'ownTimer(Timer(kWebMineAutoStartTimeout, _onAutoStartTimeout))',
+        ),
       );
       // 打开时队列已空：直接收尾，不等截止。
       final String refresh = body(

@@ -48,7 +48,7 @@ abstract class BaseModuleTabPageState<T extends BaseModuleTabPage>
   void initState() {
     super.initState();
     if (shellTab != null) {
-      homeShellTabNotifier.addListener(_onShellTabChanged);
+      listenTo(homeShellTabNotifier, _onShellTabChanged);
     }
   }
 
@@ -67,9 +67,6 @@ abstract class BaseModuleTabPageState<T extends BaseModuleTabPage>
 
   @override
   void dispose() {
-    if (shellTab != null) {
-      homeShellTabNotifier.removeListener(_onShellTabChanged);
-    }
     _tickerMode?.removeListener(_onTickerModeChanged);
     _tickerMode = null;
     super.dispose();

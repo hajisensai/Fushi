@@ -363,23 +363,26 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   void initState() {
     super.initState();
     // BUG-5489：词典文件状态变了（装载判定 / 重新导入后）就重画空态说明与结果上方横幅。
-    DictionaryFileHealthMonitor.instance.addListener(_onDictionaryFileHealth);
+    listenTo(DictionaryFileHealthMonitor.instance, _onDictionaryFileHealth);
     _popupHost =
         SharedLookupPopupScope.maybeOf(context) ??
         (_ownedPopupHost = SharedLookupPopupHost());
     // 登记为宿主页；成为渲染方时经 [onSharedLookupPopupClaimed] 接线查词计数。
     _popupHost.attach(this);
     WidgetsBinding.instance.addObserver(this);
+    onTeardown(() => WidgetsBinding.instance.removeObserver(this));
     // 挂载时键盘可能已经弹着（从别的输入框切过来），补读一次初值。
     WidgetsBinding.instance.addPostFrameCallback((_) => didChangeMetrics());
-    appModelNoUpdate.dictionarySearchAgainNotifier.addListener(_searchAgain);
-    appModelNoUpdate.dictionaryEntriesNotifier.addListener(
+    listenTo(appModelNoUpdate.dictionarySearchAgainNotifier, _searchAgain);
+    listenTo(
+      appModelNoUpdate.dictionaryEntriesNotifier,
       _onDictionaryEntriesChanged,
     );
     _searchFocusNode.addListener(_onFocusChanged);
     _imeBinding.attach(focusNode: _searchFocusNode);
     widget.focusSignal?.addListener(_consumeFocusRequest);
-    DesktopLookupService.instance.addListener(_onDesktopLookupPending);
+    onTeardown(() => widget.focusSignal?.removeListener(_consumeFocusRequest));
+    listenTo(DesktopLookupService.instance, _onDesktopLookupPending);
     // TODO-376：挂载即消费一次挂载前已排入的 pending。桌面悬浮字幕点词 / 深链在切到
     // 本 tab *之前* 就把待查词排进 pendingText 并 notify，那次 notify 发生在本页
     // addListener 之前收不到。故挂载即排一次后帧消费已存在的 pending（有 pending 才
@@ -702,20 +705,10 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
 
   @override
   void dispose() {
-    DictionaryFileHealthMonitor.instance.removeListener(
-      _onDictionaryFileHealth,
-    );
     _advancedMiningGate.dispose();
     _sourceScrollController.dispose();
-    WidgetsBinding.instance.removeObserver(this);
-    widget.focusSignal?.removeListener(_consumeFocusRequest);
-    DesktopLookupService.instance.removeListener(_onDesktopLookupPending);
     _searchFocusNode.removeListener(_onFocusChanged);
     _imeBinding.detach();
-    appModelNoUpdate.dictionarySearchAgainNotifier.removeListener(_searchAgain);
-    appModelNoUpdate.dictionaryEntriesNotifier.removeListener(
-      _onDictionaryEntriesChanged,
-    );
     _commitHistory();
     _debounceTimer?.cancel();
     _searchFocusNode.dispose();

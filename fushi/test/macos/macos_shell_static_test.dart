@@ -149,7 +149,7 @@ void main() {
     );
     expect(
       home,
-      contains('homeShellTabNotifier.addListener(_onShellTabRequested)'),
+      contains('listenTo(homeShellTabNotifier, _onShellTabRequested)'),
       reason:
           'HomePage listens so the root sidebar routes selection through '
           'the same _selectTab path (preserving _previousTab / focus reset).',

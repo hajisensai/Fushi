@@ -450,19 +450,6 @@ class _DictionaryDialogPageState extends BasePageState {
 
   @override
   void dispose() {
-    DictionaryRepository.remoteDictionariesRevision.removeListener(
-      _onRemoteDictionariesChanged,
-    );
-    SyncRepository.fushiClientUrlsRevision.removeListener(
-      _onRemoteDictionariesChanged,
-    );
-    RemoteDictionaryCatalogService.catalogRevision.removeListener(
-      _onRemoteDictionariesChanged,
-    );
-    RemoteDictionaryCatalogService.reachabilityRevision.removeListener(
-      _onReachabilityChanged,
-    );
-    DictionaryFileHealthMonitor.instance.removeListener(_onFileHealthChanged);
     _revision.dispose();
     for (final FocusNode node in _rowFocusNodes.values) {
       node.dispose();
@@ -479,22 +466,26 @@ class _DictionaryDialogPageState extends BasePageState {
     super.initState();
     // 服务器词典目录刷新 / 配置写入 / 配对列表（设备名、「用它查词典」开关）变化时
     // 跟着重建：服务器行由词典仓库持有，页面不存镜像。
-    DictionaryRepository.remoteDictionariesRevision.addListener(
+    listenTo(
+      DictionaryRepository.remoteDictionariesRevision,
       _onRemoteDictionariesChanged,
     );
-    SyncRepository.fushiClientUrlsRevision.addListener(
+    listenTo(
+      SyncRepository.fushiClientUrlsRevision,
       _onRemoteDictionariesChanged,
     );
     // 关掉「用它查词典」的 host 不在仓库的服务器行里，它的目录变化只走目录广播。
-    RemoteDictionaryCatalogService.catalogRevision.addListener(
+    listenTo(
+      RemoteDictionaryCatalogService.catalogRevision,
       _onRemoteDictionariesChanged,
     );
-    RemoteDictionaryCatalogService.reachabilityRevision.addListener(
+    listenTo(
+      RemoteDictionaryCatalogService.reachabilityRevision,
       _onReachabilityChanged,
     );
     // BUG-5489：词典文件状态（不在 / 读不到）由 AppModel 的装载路径判定，变了就重建
     // 行标签、顶部横幅与详情（sheet 经 [_revision] 跟着刷新）。
-    DictionaryFileHealthMonitor.instance.addListener(_onFileHealthChanged);
+    listenTo(DictionaryFileHealthMonitor.instance, _onFileHealthChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       unawaited(_loadServerSources());

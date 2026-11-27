@@ -116,8 +116,12 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       ownsRoute: (Route<dynamic> route) =>
           mounted && identical(ModalRoute.of(context), route),
     );
+    onTeardown(() => ExternalMediaNavigation.instance.unregister(this));
 
     FushiDesktopTitleBar.addCaptionTapListener(_onCaptionTap);
+    onTeardown(
+      () => FushiDesktopTitleBar.removeCaptionTapListener(_onCaptionTap),
+    );
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _seedWarmPopup();
@@ -171,8 +175,6 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
 
   @override
   void dispose() {
-    FushiDesktopTitleBar.removeCaptionTapListener(_onCaptionTap);
-    ExternalMediaNavigation.instance.unregister(this);
     _visibleRenderFailsafeTimer?.cancel();
     // TODO-058：controller 现持有挂起层兜底 Timer，作为其所有者必须 dispose 取消，防泄漏。
     _popup.dispose();

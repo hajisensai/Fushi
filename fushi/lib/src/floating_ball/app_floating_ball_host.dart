@@ -27,6 +27,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/floating_ball/camera_ocr_photo.dart';
 import 'package:fushi/src/floating_ball/desktop_system_ball_assets.dart';
 import 'package:fushi/src/utils/components/accent_logo_image.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/floating_ball/floating_ball_channel.dart';
 import 'package:fushi/src/feedback/feedback_diagnostics.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
@@ -387,7 +388,7 @@ class AppFloatingBallHost extends ConsumerStatefulWidget {
 }
 
 class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, StateResourceScope<AppFloatingBallHost> {
   /// 此刻挂着的宿主。原生回调是进程级、只装一次的（[FloatingBallChannel.installHandler]），
   /// 宿主 State 却会重建（例如新手引导结束换掉整棵树）：回调要是直接绑某个 State 的
   /// 方法，重建后就打到已销毁的那个上（`ref` 抛 deactivated widget）。一律经这里
@@ -445,7 +446,6 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
 
   /// Android 画中画中：Fushi 只剩小窗，应用外球不让位。
   bool _inPictureInPicture = false;
-  StreamSubscription<bool>? _pictureInPictureSub;
 
   /// 最近一次下发给原生的「让位」值（null = 当前这颗原生球还没下发过）。
   bool? _sentSystemBallYield;
@@ -495,29 +495,30 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     super.initState();
     _current = this;
     WidgetsBinding.instance.addObserver(this);
+    onTeardown(() => WidgetsBinding.instance.removeObserver(this));
     _lifecycle =
         WidgetsBinding.instance.lifecycleState ?? AppLifecycleState.resumed;
     if (Platform.isAndroid) {
       _inPictureInPicture = AndroidPictureInPicture.isActive;
-      _pictureInPictureSub = AndroidPictureInPicture.modeChanges.listen((
-        bool active,
-      ) {
-        _inPictureInPicture = active;
-        _pushSystemBallYield();
-      });
+      ownSubscription(
+        AndroidPictureInPicture.modeChanges.listen((bool active) {
+          _inPictureInPicture = active;
+          _pushSystemBallYield();
+        }),
+      );
     }
-    _registry.addListener(_onChanged);
-    pendingExternalLookup.addListener(_onChanged);
-    pendingOpenLookupPage.addListener(_onChanged);
-    pendingCameraOcr.addListener(_onChanged);
-    pendingClipboardLookup.addListener(_onChanged);
-    pendingSync.addListener(_onChanged);
-    pendingOpenAi.addListener(_onChanged);
-    pendingProfileSwitch.addListener(_onChanged);
-    pendingSystemOcrSetup.addListener(_onChanged);
-    feedbackWindowCaptureActive.addListener(_onChanged);
+    listenTo(_registry, _onChanged);
+    listenTo(pendingExternalLookup, _onChanged);
+    listenTo(pendingOpenLookupPage, _onChanged);
+    listenTo(pendingCameraOcr, _onChanged);
+    listenTo(pendingClipboardLookup, _onChanged);
+    listenTo(pendingSync, _onChanged);
+    listenTo(pendingOpenAi, _onChanged);
+    listenTo(pendingProfileSwitch, _onChanged);
+    listenTo(pendingSystemOcrSetup, _onChanged);
+    listenTo(feedbackWindowCaptureActive, _onChanged);
     // 「图标跟随主题色」开关一变，桌面系统球球面要重画。
-    appLogoFollowsAccent.addListener(_onLogoTintChanged);
+    listenTo(appLogoFollowsAccent, _onLogoTintChanged);
     if (Platform.isIOS ||
         Platform.isAndroid ||
         isDesktopSystemBallPlatform ||
@@ -583,19 +584,6 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     if (identical(_current, this)) _current = null;
     unawaited(_screenOcrLocal?.dispose());
     _screenOcrLens?.close();
-    WidgetsBinding.instance.removeObserver(this);
-    unawaited(_pictureInPictureSub?.cancel());
-    _registry.removeListener(_onChanged);
-    pendingExternalLookup.removeListener(_onChanged);
-    pendingOpenLookupPage.removeListener(_onChanged);
-    pendingCameraOcr.removeListener(_onChanged);
-    pendingClipboardLookup.removeListener(_onChanged);
-    pendingSync.removeListener(_onChanged);
-    pendingOpenAi.removeListener(_onChanged);
-    pendingProfileSwitch.removeListener(_onChanged);
-    pendingSystemOcrSetup.removeListener(_onChanged);
-    feedbackWindowCaptureActive.removeListener(_onChanged);
-    appLogoFollowsAccent.removeListener(_onLogoTintChanged);
     _prefs?.removeListener(_onPrefsChanged);
     final GlobalLookupController lookup = GlobalLookupController.instance;
     if (lookup.screenOcrHandler == _screenOcrFromHotKey) {

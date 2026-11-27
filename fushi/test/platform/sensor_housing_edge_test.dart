@@ -66,13 +66,8 @@ void main() {
     );
     expect(
       page,
-      contains('sensorHousingEdge.addListener(_onSensorHousingEdgeChanged);'),
-    );
-    expect(
-      page,
-      contains(
-        'sensorHousingEdge.removeListener(_onSensorHousingEdgeChanged);',
-      ),
+      // listenTo 登记：dispose 与 initState 半途失败共用撤销（BUG-5604）。
+      contains('listenTo(sensorHousingEdge, _onSensorHousingEdgeChanged);'),
     );
   });
 }

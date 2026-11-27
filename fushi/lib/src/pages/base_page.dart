@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/creator/creator_model.dart';
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 
 /// A page template which assumes use of [BasePageState] by which all pages
 /// in the app will conveniently share base functionality.
@@ -20,8 +21,12 @@ abstract class BasePage extends ConsumerStatefulWidget {
 /// A base class for providing all pages in the app with a collection
 /// of shared functions and variables. In large part, this was implemented to
 /// define shortcuts for common lengthy methods across UI code.
+///
+/// initState 里挂的外部订阅 / 监听 / Timer 一律经 [StateResourceScope] 登记
+/// （`listenTo` / `ownSubscription` / `ownTimer` / `onTeardown`）：initState 半途
+/// 抛错时框架不调 dispose，登记过的资源由失败路径回滚（BUG-5604）。
 abstract class BasePageState<T extends BasePage> extends ConsumerState<T>
-    with FushiPagePlaceholders<T> {
+    with FushiPagePlaceholders<T>, StateResourceScope<T> {
   late final AppModel _cachedAppModel;
   late final CreatorModel _cachedCreatorModel;
 

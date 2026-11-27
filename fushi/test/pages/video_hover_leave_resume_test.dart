@@ -300,16 +300,11 @@ void main() {
         pageSource.substring(fireAt, end),
         contains('pointerOverFloatingBall: appFloatingBallPointerInside.value'),
       );
+      // 经 StateResourceScope 登记：dispose 与 initState 半途失败共用撤销（BUG-5604）。
       expect(
         pageSource,
         contains(
-          'appFloatingBallPointerInside.addListener(_onFloatingBallPointerChanged)',
-        ),
-      );
-      expect(
-        pageSource,
-        contains(
-          'appFloatingBallPointerInside.removeListener(_onFloatingBallPointerChanged)',
+          'listenTo(appFloatingBallPointerInside, _onFloatingBallPointerChanged)',
         ),
       );
       final int onBall = pageSource.indexOf(

@@ -75,6 +75,7 @@ import 'package:fushi/src/sync/texthooker_ws_client.dart';
 import 'package:fushi/src/utils/misc/desktop_audio_playback.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
@@ -209,7 +210,10 @@ class TexthookerPage extends ConsumerStatefulWidget {
 }
 
 class _TexthookerPageState extends ConsumerState<TexthookerPage>
-    with DictionaryPageMixin, WidgetsBindingObserver
+    with
+        DictionaryPageMixin,
+        WidgetsBindingObserver,
+        StateResourceScope<TexthookerPage>
     implements SharedLookupPopupOwner {
   /// 查词弹窗栈与根 Overlay 浮层宿主。首页外壳里与查词 tab 共用同一个（只有一个常驻
   /// 热槽 WebView，拍板台 design-shared-lookup-webview）；外壳外（串流副屏等）私有一个。
@@ -653,14 +657,20 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     _autoLookupNewLines =
         _appModel.isPreferencesReady &&
         _appModel.prefsRepo.texthookerAutoLookupNewLines;
-    TexthookerService.instance.addListener(_onLines);
-    _session.addListener(_onSessionChanged);
-    GalHookTextOverlayController.instance.attachedText.addListener(
+    listenTo(TexthookerService.instance, _onLines);
+    listenTo(_session, _onSessionChanged);
+    listenTo(
+      GalHookTextOverlayController.instance.attachedText,
       _onAttachedTextChanged,
     );
     // BUG-1799：监听前台/后台切换，用户去 Anki 删卡再切回来时复核「已制卡」徽章。
     WidgetsBinding.instance.addObserver(this);
+    onTeardown(() => WidgetsBinding.instance.removeObserver(this));
     HardwareKeyboard.instance.addHandler(_handlePopupMineHardwareKey);
+    onTeardown(
+      () =>
+          HardwareKeyboard.instance.removeHandler(_handlePopupMineHardwareKey),
+    );
     // BUG-1028：开页 seed 常驻隐藏热槽，使查词弹窗 WebView 冷加载一次后全程复用，
     // 消除本页此前「每次点词 replaceStack 冷建 WebView」的高延迟（对齐 home_dictionary_page）。
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -738,13 +748,6 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   @override
   void dispose() {
     _linePreviewResetTimer?.cancel();
-    HardwareKeyboard.instance.removeHandler(_handlePopupMineHardwareKey);
-    WidgetsBinding.instance.removeObserver(this);
-    TexthookerService.instance.removeListener(_onLines);
-    _session.removeListener(_onSessionChanged);
-    GalHookTextOverlayController.instance.attachedText.removeListener(
-      _onAttachedTextChanged,
-    );
     // 共用宿主：注销即可（渲染方是本页时宿主把栈交给查词 tab 并收回热槽）；私有
     // 宿主随本页销毁（摘浮层、释放 controller）。
     _popupHost.detach(this);

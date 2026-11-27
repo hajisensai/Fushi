@@ -6,6 +6,10 @@
 // `ref.read` → 「Looking up a deactivated widget's ancestor is unsafe」（BUG-5602）。
 // 修法：后台任务改在 initState 的同步装配全部完成后才起，自动刮削服务的闭包改读
 // 挂载时缓存的 AppModel。
+//
+// 第二条（BUG-5604）：抛错点之前挂上的订阅 / 监听 / 落点也必须回滚——框架不调
+// dispose，靠 StateResourceScope 的失败路径撤销；之后库表变化、切 tab 都不再触达
+// 孤儿 State。
 import 'dart:io';
 
 import 'package:drift/native.dart';
@@ -17,8 +21,10 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/media/video/video_library_section.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/home_tab.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart';
+import 'package:fushi/src/pages/implementations/video_library_drop_port.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -120,6 +126,66 @@ void main() {
 
     // 让已起的后台任务（库查询 → 自动刮削一轮 → 远端清单）都走完。旧代码在这里
     // 由异步区抛出「deactivated widget's ancestor」，测试框架直接判红。
+    for (int i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 700));
+    }
+    expect(tester.takeException(), isNull);
+
+    await tester.pumpWidget(const SizedBox());
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('initState 半途抛错：抛错点之前挂上的订阅与监听全部回滚（BUG-5604）', (
+    WidgetTester tester,
+  ) async {
+    final HomeTab tabBefore = homeShellTabNotifier.value;
+    addTearDown(() => homeShellTabNotifier.value = tabBefore);
+    final VideoLibraryDropPort dropPort = VideoLibraryDropPort();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: <Override>[
+          platformServicesProvider.overrideWithValue(platformServices),
+          ankiRepositoryProvider.overrideWithValue(ankiRepository),
+          appProvider.overrideWith((ref) => appModel),
+        ],
+        child: TranslationProvider(
+          child: MaterialApp(
+            home: Scaffold(
+              body: HomeVideoPage(
+                repo: VideoBookRepository(db),
+                section: VideoLibrarySection.allVideos,
+                importDropPort: dropPort,
+                libraryRefreshSignal: _ThrowingListenable(),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(
+      tester.takeException().toString(),
+      contains(_ThrowingListenable.message),
+      reason: '前置：initState 确实半途抛错',
+    );
+    // 落点处理在抛错点之前挂上：不回滚的话导入视图的拖放会交给一个孤儿页。
+    expect(dropPort.attached, isFalse, reason: '导入落点已撤下');
+    await tester.pump(const Duration(milliseconds: 700));
+    expect(tester.takeException(), isNull);
+
+    // 库表变化（uid 集合 / 合集表订阅）与切回视频 tab（基类的 shell tab 监听）都
+    // 发生在失败之后：订阅已取消、监听已摘，孤儿 State 收不到，不会再读 ref。
+    await db.upsertVideoBook(
+      VideoBooksCompanion.insert(
+        bookUid: 'video/late',
+        title: '后来入库',
+        videoPath: '/abs/video/late.mp4',
+      ),
+    );
+    homeShellTabNotifier.value = HomeTab.video == tabBefore
+        ? HomeTab.values.firstWhere((HomeTab t) => t != HomeTab.video)
+        : tabBefore;
+    homeShellTabNotifier.value = HomeTab.video;
     for (int i = 0; i < 10; i++) {
       await tester.pump(const Duration(milliseconds: 700));
     }

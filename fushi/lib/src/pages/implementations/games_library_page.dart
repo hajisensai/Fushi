@@ -146,6 +146,7 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/utils/components/fushi_divider.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart'
     show HorizontalDragScrollable, WindowSizeClass;
@@ -200,7 +201,9 @@ class GamesLibraryPage extends ConsumerStatefulWidget {
 }
 
 class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
-    with LibraryReorderHost<GamesLibraryPage> {
+    with
+        LibraryReorderHost<GamesLibraryPage>,
+        StateResourceScope<GamesLibraryPage> {
   /// 本页合集卡的成员数，发布给「管理合集」页（与卡片「N 卷 / N 项」同源）。
   final CollectionDisplayCounts _collectionDisplayCounts =
       CollectionDisplayCounts();
@@ -259,10 +262,6 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
   Map<int, String> _collectionBackdropPathById = const <int, String>{};
   Map<int, String> _collectionLogoPathById = const <int, String>{};
 
-  /// 刮削资料 / 附加图变化订阅（单个游戏的 `item_*` 两表、合集刮削资料与
-  /// `media_images`），合并成一次映射重载。
-  StreamSubscription<void>? _itemScrapeSub;
-  StreamSubscription<void>? _collectionScrapeSub;
   Timer? _scrapeReloadDebounce;
 
   /// 启动流程的**再入守卫**：一次启动含位数探测、helper 确认/下载对话框、注入会话等多个 await，
@@ -283,27 +282,34 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
   @override
   void initState() {
     super.initState();
-    _appModel.prefsRepo.addListener(_onPrefsChanged);
+    listenTo(_appModel.prefsRepo, _onPrefsChanged);
     // 仓储是 ChangeNotifier：监听它，游戏从任何入口落库（「导入」视图快速导入、
     // 详情页编辑等）本页都能自动刷新，不再依赖「写操作都发生在本页」的隐含假设。
-    _repo.addListener(_refresh);
+    listenTo(_repo, _refresh);
     // BUG-1911：下载中的游戏要在库页占位，所以也得跟着下载队列刷新。
     _appModel.discoveryDownloadQueue.addListener(_refresh);
+    onTeardown(() => _appModel.discoveryDownloadQueue.removeListener(_refresh));
     // 游戏首页「全部 ›」/「游玩状态」图例带着视图跳过来：本页常驻 IndexedStack、
     // 不会重读偏好，所以经这条 notifier 就地换视图（挂载前就发出的请求，偏好里
     // 已是新视图，这里消费掉即可）。
-    galgameLibraryViewRequestNotifier.addListener(_onViewRequest);
+    listenTo(galgameLibraryViewRequestNotifier, _onViewRequest);
     if (galgameLibraryViewRequestNotifier.value != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _onViewRequest());
     }
     // 刮削写回 / 控制通道脚本写的单个游戏资料与附加图、合集刮削资料与附加图：
     // 系列色块的背景图 / 概览走预取映射，任何写入者落库后都重载一次。
-    _itemScrapeSub = _appModel.database.watchItemScrapeChanged().listen(
-      _onScrapeTablesChanged,
+    // 订阅单个游戏的 `item_*` 两表、合集刮削资料与 `media_images` 的变化，
+    // 合并成一次映射重载。
+    ownSubscription(
+      _appModel.database.watchItemScrapeChanged().listen(
+        _onScrapeTablesChanged,
+      ),
     );
-    _collectionScrapeSub = _appModel.database
-        .watchVideoScrapePresentationChanged()
-        .listen(_onScrapeTablesChanged);
+    ownSubscription(
+      _appModel.database.watchVideoScrapePresentationChanged().listen(
+        _onScrapeTablesChanged,
+      ),
+    );
     unawaited(_reload());
   }
 
@@ -330,14 +336,8 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
   @override
   void dispose() {
     _pendingIdentityRefresh.dispose();
-    _itemScrapeSub?.cancel();
-    _collectionScrapeSub?.cancel();
     _scrapeReloadDebounce?.cancel();
     _collectionDisplayCounts.dispose();
-    _appModel.prefsRepo.removeListener(_onPrefsChanged);
-    _repo.removeListener(_refresh);
-    _appModel.discoveryDownloadQueue.removeListener(_refresh);
-    galgameLibraryViewRequestNotifier.removeListener(_onViewRequest);
     _headerSearch.dispose();
     _searchController.dispose();
     super.dispose();

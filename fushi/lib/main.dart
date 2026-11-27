@@ -17,6 +17,7 @@ import 'package:macos_ui/macos_ui.dart'
     show MacosTheme, MacosWindow, WindowManipulator;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:media_kit/media_kit.dart';
@@ -1174,10 +1175,12 @@ class FushiReaderApp extends ConsumerStatefulWidget {
 }
 
 class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
-    with WidgetsBindingObserver, WindowListener {
+    with
+        WidgetsBindingObserver,
+        WindowListener,
+        StateResourceScope<FushiReaderApp> {
   final navigatorKey = GlobalKey<NavigatorState>();
   bool _isMainIntent = true;
-  StreamSubscription? _intentsSubscription;
 
   /// Android「用其他应用打开」/ 分享进来的书（拍板台 oeJzVRQ9p1）：原生复制好的副本
   /// 从这里取，走与桌面 open-with 同一条 [_routeExternalBook]。
@@ -1267,10 +1270,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     isActive: () => mounted,
   );
   bool _widgetSnapshotsStartScheduled = false;
-  StreamSubscription<String>? _sourceUrlSubscription;
 
-  /// 跨设备中转收到新卡（本机是落地设备）→ 补发，见 [PendingMineRelay.arrivals]。
-  StreamSubscription<int>? _pendingMineArrivals;
   bool _sourceNavigationScheduled = false;
   bool _sourceNavigationRunning = false;
   String? _openingCardSourceUrl;
@@ -1304,10 +1304,6 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
   /// 守卫：退出清理（停 Bonsoir 事件源）只跑一次，避免 [onWindowClose] 与
   /// [didChangeAppLifecycleState] 的 `detached` 兜底重复触发。
   bool _shutdownStarted = false;
-
-  /// BUG-2259：macOS ⌘Q / 菜单退出 / Dock 退出的 Dart 侧落点（仅 macOS 注册，
-  /// 见 [initState]）。持有以便 [dispose] 注销。
-  AppLifecycleListener? _exitRequestListener;
 
   /// 桌面本机控制通道（`fushi_cli` 的服务端，见 [_startCtlServer]）。
   CtlServer? _ctlServer;
@@ -1374,7 +1370,6 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
 
   /// 守卫：Windows 安装器 handoff marker 只在拿到真实 Navigator 后 reconcile 一次。
   bool _windowsUpdateHandoffChecked = false;
-  StreamSubscription<String>? _iosUrlSubscription;
 
   static bool get _isDesktop =>
       Platform.isWindows || Platform.isLinux || Platform.isMacOS;
@@ -1393,9 +1388,11 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     super.initState();
 
     WidgetsBinding.instance.addObserver(this);
-    crashReportStartupPrompt.addListener(_onCrashReportStartupPrompt);
-    _pendingMineArrivals = PendingMineRelay.arrivals.listen(
-      (_) => _flushPendingMines(),
+    onTeardown(() => WidgetsBinding.instance.removeObserver(this));
+    listenTo(crashReportStartupPrompt, _onCrashReportStartupPrompt);
+    // 跨设备中转收到新卡（本机是落地设备）→ 补发，见 [PendingMineRelay.arrivals]。
+    ownSubscription(
+      PendingMineRelay.arrivals.listen((_) => _flushPendingMines()),
     );
     // BUG-772：仅 Windows 挂 present-watchdog——runApp 后 30s 仍无一帧 rasterize
     // （firstFrameRasterized==false）判定 raster/present 楔死（快速进出视频的
@@ -1413,12 +1410,14 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     // 停掉 Bonsoir mDNS 事件源（TODO-036）。
     if (_isDesktop) {
       windowManager.addListener(this);
+      onTeardown(() => windowManager.removeListener(this));
     }
     // Windows 托盘图标：菜单动作、「关闭到托盘」回调。菜单内容在根 build 里推。
     DesktopTray.instance.attach(
       onEntry: (DesktopTrayEntry entry) => unawaited(_runTrayEntry(entry)),
       onHiddenToTray: _onHiddenToTray,
     );
+    onTeardown(DesktopTray.instance.detach);
     // BUG-2259：macOS 的「退出应用」不是「关窗口」。window_manager 的
     // setPreventClose(true) 只拦 NSWindow 的 windowShouldClose:（点红叉），而
     // ⌘Q / 菜单「退出 Fushi」/ Dock 右键退出 走的是 NSApplication 的
@@ -1437,9 +1436,10 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     // preventClose 完整覆盖，两条路同时挂只会让同一次退出跑两遍（虽有
     // _shutdownStarted 幂等守卫，但没有收益）。
     if (Platform.isMacOS) {
-      _exitRequestListener = AppLifecycleListener(
+      final AppLifecycleListener exitRequestListener = AppLifecycleListener(
         onExitRequested: _handleExitRequested,
       );
+      onTeardown(exitRequestListener.dispose);
     }
     if (Platform.isWindows || Platform.isLinux) {
       _externalVideoChannel.setMethodCallHandler(_handleExternalVideoChannel);
@@ -1498,8 +1498,11 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
         intents.ReceiveIntent.getInitialIntent().then(
           (intent) => handleIntent(intent: intent, isInitial: true),
         );
-        _intentsSubscription = intents.ReceiveIntent.receivedIntentStream
-            .listen((intent) => handleIntent(intent: intent, isInitial: false));
+        ownSubscription(
+          intents.ReceiveIntent.receivedIntentStream.listen(
+            (intent) => handleIntent(intent: intent, isInitial: false),
+          ),
+        );
         unawaited(
           _openWithInbox.start(
             onBook: _routeExternalBook,
@@ -1514,8 +1517,10 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     if (Platform.isMacOS) {
       // 原生侧只转交 Fushi 自己认的 host（卡片出处 + 小组件 / 菜单栏链接，见
       // macos/Runner/AppDelegate.swift），统一走 [handleIncomingUrl] 分流。
-      _sourceUrlSubscription = SourceUrlChannel.urls.listen(
-        (String url) => handleIncomingUrl(data: url, isInitial: false),
+      ownSubscription(
+        SourceUrlChannel.urls.listen(
+          (String url) => handleIncomingUrl(data: url, isInitial: false),
+        ),
       );
     }
     if (Platform.isIOS) {
@@ -1523,8 +1528,10 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
         IosUrlEventChannel.getInitialUrl().then(
           (url) => handleIncomingUrl(data: url, isInitial: true),
         );
-        _iosUrlSubscription = IosUrlEventChannel.urls.listen(
-          (url) => handleIncomingUrl(data: url, isInitial: false),
+        ownSubscription(
+          IosUrlEventChannel.urls.listen(
+            (url) => handleIncomingUrl(data: url, isInitial: false),
+          ),
         );
       });
     }
@@ -1942,12 +1949,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
 
   @override
   void dispose() {
-    crashReportStartupPrompt.removeListener(_onCrashReportStartupPrompt);
-    _sourceUrlSubscription?.cancel();
-    _pendingMineArrivals?.cancel();
-    _intentsSubscription?.cancel();
     _openWithInbox.stop();
-    _iosUrlSubscription?.cancel();
     _systemColorRefreshDebounce?.cancel();
     _widgetSnapshots.dispose();
     _loadingWatchdog?.cancel();
@@ -1958,14 +1960,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     _trackingAutoLinks?.dispose();
     _noticeFeed?.dispose();
     _noticeFeed = null;
-    _exitRequestListener?.dispose();
     unawaited(_ctlServer?.stop());
     _ctlServer = null;
-    if (_isDesktop) {
-      windowManager.removeListener(this);
-    }
-    DesktopTray.instance.detach();
-    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 

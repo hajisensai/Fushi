@@ -18,6 +18,7 @@ import 'package:fushi/src/sync/game_stream_client.dart';
 import 'package:fushi/src/sync/game_stream_virtual_button.dart';
 import 'package:fushi/src/sync/game_stream_companion_bridge.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/state_resource_scope.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/sync/game_stream_receiver.dart';
 import 'package:fushi/src/sync/game_stream_touch.dart';
@@ -240,7 +241,7 @@ bool get _isDesktopPlatform => switch (defaultTargetPlatform) {
 };
 
 class _GameStreamPageState extends State<GameStreamPage>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, StateResourceScope<GameStreamPage> {
   final GlobalKey _videoKey = GlobalKey();
   GameStreamLookupController? _lookupController;
   // The on-screen pad stands in for missing buttons on a touch screen; a
@@ -369,16 +370,26 @@ class _GameStreamPageState extends State<GameStreamPage>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    onTeardown(() => WidgetsBinding.instance.removeObserver(this));
     _lookupController = widget.lookupController;
     _lookupController?.addListener(_onLookupChanged);
+    onTeardown(() => _lookupController?.removeListener(_onLookupChanged));
     _caretLine = _currentCaretLine();
     widget.receiver?.addListener(_onReceiverChanged);
+    onTeardown(() => widget.receiver?.removeListener(_onReceiverChanged));
     widget.receiver?.renderer.addListener(_schedulePointerGeometryCheck);
+    onTeardown(
+      () => widget.receiver?.renderer.removeListener(
+        _schedulePointerGeometryCheck,
+      ),
+    );
     widget.inputComposer.addListener(_onReceiverChanged);
+    onTeardown(() => widget.inputComposer.removeListener(_onReceiverChanged));
     // Every controller button goes to the remote game: the companion's
     // lookup mode (hold L1) and R1 panel drive must not take one, also when
     // this stream leaves the second screen to the companion.
     widget.controllerLookupMode.claimRawInput(this);
+    onTeardown(() => widget.controllerLookupMode.releaseRawInput(this));
     _syncVolumeBoost();
     unawaited(_startCompanion());
   }
@@ -417,16 +428,10 @@ class _GameStreamPageState extends State<GameStreamPage>
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
     unawaited(_releasePointer());
     unawaited(_releaseHeldInputs());
-    _lookupController?.removeListener(_onLookupChanged);
-    widget.receiver?.removeListener(_onReceiverChanged);
-    widget.receiver?.renderer.removeListener(_schedulePointerGeometryCheck);
-    widget.inputComposer.removeListener(_onReceiverChanged);
     _stopCompanion();
     _volumeBoostAvailable.dispose();
-    widget.controllerLookupMode.releaseRawInput(this);
     _statsTimer?.cancel();
     _videoFocus.dispose();
     _keyboardFocus.dispose();
