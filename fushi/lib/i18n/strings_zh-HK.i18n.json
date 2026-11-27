@@ -10510,6 +10510,7 @@
   "shortcut_action_reader_toggle_furigana": "切換振假名",
   "shortcut_action_reader_toggle_study_clock": "暫停 / 繼續閱讀計時",
   "shortcut_action_srs_review_again": "Rate Again",
+  "shortcut_action_srs_review_dismiss_dict": "關閉詞典",
   "shortcut_action_srs_review_easy": "Rate Easy",
   "shortcut_action_srs_review_good": "Rate Good",
   "shortcut_action_srs_review_hard": "Rate Hard",

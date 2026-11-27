@@ -10510,6 +10510,7 @@
   "shortcut_action_reader_toggle_furigana": "Bật/tắt furigana",
   "shortcut_action_reader_toggle_study_clock": "Tạm dừng / tiếp tục hẹn giờ đọc",
   "shortcut_action_srs_review_again": "Rate Again",
+  "shortcut_action_srs_review_dismiss_dict": "Đóng từ điển",
   "shortcut_action_srs_review_easy": "Rate Easy",
   "shortcut_action_srs_review_good": "Rate Good",
   "shortcut_action_srs_review_hard": "Rate Hard",

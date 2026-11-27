@@ -855,6 +855,10 @@ enum ShortcutAction {
   srsReviewZoomIn(ShortcutScope.srsReview, 'srs_review_zoom_in'),
   srsReviewZoomOut(ShortcutScope.srsReview, 'srs_review_zoom_out'),
   srsReviewZoomReset(ShortcutScope.srsReview, 'srs_review_zoom_reset'),
+  // 「只关词典、绝不做别的」的可选专用动作（**默认无绑定**，与 [readerDismissDict] /
+  // [mangaDismissDict] / [videoDismissDict] 同形，反馈 wJmcCQBVn1）：查词弹窗开着时关一层，
+  // 没开时不消费。退出复习仍走 universal 的 [globalBack]（弹窗开着先关一层，否则退出）。
+  srsReviewDismissDict(ShortcutScope.srsReview, 'srs_review_dismiss_dict'),
 
   // Gamepad（TODO-700 T6）：dpad 四向作为可绑触发键。默认各绑对应 dpad 键，执行体
   // = 通用方向焦点移动（与摇杆同效果，但摇杆固定走 onStickMove 通道、不经注册表，

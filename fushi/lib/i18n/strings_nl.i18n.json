@@ -10510,6 +10510,7 @@
   "shortcut_action_reader_toggle_furigana": "Furigana aan/uit",
   "shortcut_action_reader_toggle_study_clock": "Leestimer pauzeren / hervatten",
   "shortcut_action_srs_review_again": "Rate Again",
+  "shortcut_action_srs_review_dismiss_dict": "Woordenboek sluiten",
   "shortcut_action_srs_review_easy": "Rate Easy",
   "shortcut_action_srs_review_good": "Rate Good",
   "shortcut_action_srs_review_hard": "Rate Hard",

@@ -1,0 +1,12 @@
+## BUG-5561 · 复习时「关闭词典」快捷键无效：复习页查词弹窗只认写死的 Esc，「返回上一级」开着弹窗直接退出复习
+- **报告**：2026-11-27（应用内反馈 wJmcCQBVn1：Windows 3.4.0+32563，「复习时，关闭词典快捷键无效」，正文空）
+- **真实性**：✅ 真 bug（读代码确认，未实机复现用户具体绑的哪个键）。
+  - 复习页查词弹窗的键盘闸 `SrsCardLookupController.guardKey`（`fushi/lib/src/pages/implementations/srs/srs_card_lookup.dart:235`）只认 `LogicalKeyboardKey.escape`；卡面 WebView 键盘桥闸 `guardBridgeToken`（同文件 :248）只认 token `'Escape'`，弹窗开着时其余 token 一律吞掉。
+  - `ShortcutScope.srsReview` 没有「关闭词典」动作（`shortcut_action.dart` 的 srsReview 组只有翻面 / 评分 / 重播 / 撤销 / 缩放），阅读器 / 漫画 / 视频各有可绑的 `readerDismissDict` / `mangaDismissDict` / `videoDismissDict`——用户在别处绑的「关闭词典」键、改过的「返回上一级」键在复习页都关不掉弹窗。
+  - 弹窗挂在根 Overlay、不是路由，复习页也没有 `PopScope`：弹窗开着时按非 Esc 的「返回上一级」（Alt+← / 用户改的键 / 手柄 B / 鼠标侧键）或 Android 系统返回，根上兜底走 `Navigator.maybePop`，连页带弹窗一起退出复习，而不是关一层。
+- **[x] ① 已修复** —
+  - 新增 `ShortcutAction.srsReviewDismissDict`（`srs_review_dismiss_dict`，默认空绑定，与另外三个 `*DismissDict` 同形），进设置页「SRS 复习」组，自动进卡面键盘桥键表（`srsReviewBridgeTokens` 按 scope 导出）。
+  - `guardKey` / `guardBridgeToken` 加 `dismiss` 参数：复习页按注册表判定这个键是不是「关闭词典」或 universal「返回上一级」（`_dismissesLookup`，键盘与键盘桥同一判据），是就关一层；Esc 兜底照旧。手柄入口 `_handleGamepadButton` 对 `srsReviewDismissDict` 关一层，弹窗没开时不消费。
+  - 复习页包一层 `PopScope(canPop: !_lookup.isOpen)`：根上的「返回上一级」各通道（键盘 / 手柄 / 鼠标）与 Android 系统返回都经 `maybePop` 先关一层，再按才退出，与其他模块的逐级退出一致。
+- **[x] ② 已加自动化测试** — `fushi/test/srs/srs_review_lookup_dismiss_test.dart`（真 `SrsReviewPage` 压在根路由上：系统返回先关弹窗再退出；自绑的「关闭词典」键关一层、弹窗没开时不做别的；卡面键盘桥的 Alt+← /「关闭词典」token 关一层）；`fushi/test/shortcuts/srs_review_shortcut_defaults_test.dart`「关闭词典默认无绑定（各平台），绑了键后进桥表」。
+- **备注**：反馈正文为空，不知道用户绑的是哪个键（键盘键 / 鼠标侧键 / 手柄键），三条通道都已覆盖；鼠标侧键走根上 `globalBack` → `maybePop` → 本页 `PopScope`。未做真机复测。

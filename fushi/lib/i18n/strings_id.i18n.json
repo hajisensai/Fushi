@@ -10510,6 +10510,7 @@
   "shortcut_action_reader_toggle_furigana": "Alihkan furigana",
   "shortcut_action_reader_toggle_study_clock": "Jeda / lanjutkan pengatur waktu membaca",
   "shortcut_action_srs_review_again": "Rate Again",
+  "shortcut_action_srs_review_dismiss_dict": "Tutup kamus",
   "shortcut_action_srs_review_easy": "Rate Easy",
   "shortcut_action_srs_review_good": "Rate Good",
   "shortcut_action_srs_review_hard": "Rate Hard",

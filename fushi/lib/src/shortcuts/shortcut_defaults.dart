@@ -728,6 +728,9 @@ class ShortcutDefaults {
     ShortcutAction.srsReviewZoomIn: _kb(_srsReviewZoomInKeys),
     ShortcutAction.srsReviewZoomOut: _kb(_srsReviewZoomOutKeys),
     ShortcutAction.srsReviewZoomReset: _kb(_srsReviewZoomResetKeys),
+    // 「只关词典」：默认空绑定（与 videoDismissDict 同形），给用户自绑的键 / 手柄键一个
+    // 没有副作用的落点。
+    ShortcutAction.srsReviewDismissDict: const ShortcutBindingSet(),
     // 焦点导航（scope 枚举名 gamepad 冻结）：上 / 下 / 左 / 右移焦 + 确认。默认值
     // 就是改造前的硬编码键——裸方向键（键盘，`global_navigation.dart`）、dpad 四向
     // （手柄，TODO-700 T6）、Enter / 手柄 A（确认）——所以默认安装行为不变，只是
