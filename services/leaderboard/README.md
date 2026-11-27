@@ -80,6 +80,7 @@ dashboard 的 Email Sending 里 Onboard 发件域名），否则用 Resend（`wr
 > `0007_feedback_video_mine.sql`（`feedback.has_video` + 两个索引）：没迁移就部署时视频补传、`GET /v1/feedback/mine` 与定时清理会 500。
 > `0008_media_video_pool.sql`（`media_usage.video_bytes`，反馈视频配额池）：没迁移就部署时视频补传与视频到期清理会 500。
 > `0027_srs_donations.sql`（SRS 捐赠四张新表 + `media_usage.donation_bytes` 捐赠配额池）：没迁移就部署时捐赠上传 / 撤回 / 统计会 500（其余接口不受影响）——**先迁移**。
+> `0029_srs_donation_feeds.sql`（新表 `srs_donation_feeds`；删 `srs_donation_batches` 与 `srs_donation_withdrawals.reported_batch`）：没迁移就部署时 feed 下载 / 管理与撤回会 500——**先迁移**；迁移后、部署前旧 Worker 的撤回会 500（只有一次部署的窗口）。
 > 例如 `0006_feedback_dev_notes.sql`：新代码的处理台列表显式选 `ai_summary` 列，没迁移就部署时 `/v1/dev/feedback` 与网页 `/dev` 会整页 500（反馈人接口不受影响）。迁移只加列，先迁移、旧代码照跑不受影响。
 > `0011_install_stats.sql`（`installs` / `install_days` 两张表 + `feedback.install_id`）：没迁移就部署时 `POST /v1/ping`、反馈提交、处理台详情与定时清理都会 500——**这条迁移碰了反馈提交，务必先迁移**。
 > `0014_cover_replace_guard.sql`（`cover_votes.confirmed` / `works.cover_cleared_at` 两列 + `cover_mismatches` 表 + 一个部分索引）：纯增量，旧 Worker 在线时先迁移不受影响；没迁移就部署时封面投票 / 上传 / 物化、删号与定时任务都会 500——**务必先迁移**（Actions 部署自动先迁移）。
@@ -195,7 +196,7 @@ Run workflow），push / PR 永远不会部署。维护者不需要在自己机�
 社交写（好友 / 屏蔽 / 举报）按账户每小时 120 次限流（`LIMITS.socialWritePerHour`）。被管理员隐藏的账户
 不出现在任何列表里，也不能被加好友或屏蔽。
 
-## SRS 复习历史捐赠（迁移 0027，`src/srs_donations.js`）
+## SRS 复习历史捐赠（迁移 0027 / 0029，`src/srs_donations.js`）
 
 用户自愿把脱敏复习历史（Anki 兼容 `.apkg`）捐给 anki-rwkv 训练调度模型（设计 `docs/specs/2026-11-26-srs-review-donation.md`）。
 文件存 R2 `srs-donations/<donorId>.apkg`，一个捐赠者一个文件，重传覆盖。字节占捐赠专用配额池（`budget.js` 的 `donation` 池，`media_usage.donation_bytes`，
@@ -206,14 +207,15 @@ Run workflow），push / PR 永远不会部署。维护者不需要在自己机�
 |---|---|---|---|
 | PUT | `/v1/srs-donations/:donorId` | Bearer donorKey | body = apkg 原始字节（必须 `Content-Length`，≤ 64 MiB，zip 魔数，流式写 R2），头 `x-donation-reviews` / `x-donation-cards` / 可选 `x-donation-app-version` → `{donated: true, updatedAt}`。首次上传的 key 认领该 ID（库里只存 SHA-256），之后换 key 403 `donor_key_mismatch`；每 donorId 每小时 2 次、每 IP 每日 128 MiB（429 `upload_quota_daily`） |
 | GET | `/v1/srs-donations/:donorId` | Bearer donorKey | `{donated, reviews, cards, updatedAt}`，无记录 `{donated: false}` |
-| DELETE | `/v1/srs-donations/:donorId` | Bearer donorKey | 撤回：删文件与行、记撤回（进下一批的撤回清单）→ `{donated: false}`，幂等 |
-| POST | `/v1/admin/srs-donations/batch` | Basic | 生成私有批次（快照全部捐赠 + 未报告的撤回，token 30 天有效）→ `{url, token, expiresAt, donors, reviews, withdrawn}` |
+| DELETE | `/v1/srs-donations/:donorId` | Bearer donorKey | 撤回：删文件与行、记撤回（立即出现在 feed 清单的 `withdrawn`）→ `{donated: false}`，幂等 |
+| POST | `/v1/admin/srs-donations/feeds` | Basic | body `{label}` 签发长期 feed（token 只给这一次，库里存哈希，不过期）→ `{id, label, createdAt, url, token}` |
+| DELETE | `/v1/admin/srs-donations/feeds/:id` | Basic | 吊销 feed（幂等，不存在 404）→ `{id, revokedAt}` |
 | GET | `/v1/srs-donations/stats` | 无（公开） | `{donors, reviews}`：捐赠者数与复习条数合计（无记录各为 0）；其他方法 405，走 READ_LIMITER |
-| GET | `/v1/admin/srs-donations` | Basic | 统计（含捐赠池占用 `pool: {usedBytes, quotaBytes}`）与历史批次 |
-| GET | `/d/srs-donations/<token>/`、`…/<donorId>.apkg`、`…/withdrawn.txt` | 链接即凭据 | 批次 JSON 清单 / 文件下载（attachment）/ 撤回 ID；过期或快照后已撤回 404 |
+| GET | `/v1/admin/srs-donations` | Basic | 统计（含捐赠池占用 `pool: {usedBytes, quotaBytes}`、撤回数 `withdrawals`）与全部 feed |
+| GET | `/d/srs-donations/<token>/`、`…/<donorId>.apkg`、`…/withdrawn.txt` | 链接即凭据 | 实时 JSON 清单 / 文件下载（attachment）/ 撤回 ID，均带 ETag（`If-None-Match` 命中 304）；吊销后或已撤回 404 |
 
-每月：`ADMIN_USER=… ADMIN_PASS=… node scripts/srs_donation_batch.mjs` 打印链接交给作者（`--stats` 只看数字，不生成批次——
-生成会把未报告的撤回标成已报告）。捐赠者数到 30 的提醒不在服务端做：所有者本地的 kaguya bot（fushi-bot）每小时轮询
+签发一次：`ADMIN_USER=… ADMIN_PASS=… node scripts/srs_donation_feed.mjs create anki-rwkv` 打印长期链接交给作者（token 只出现这一次；
+泄露或丢了用 `revoke <id>` 吊销再签发；不带命令 = `stats` 看数字与全部 feed）。作者自行定时拉清单（ETag 304）。捐赠者数到 30 的提醒不在服务端做：所有者本地的 kaguya bot（fushi-bot）每小时轮询
 公开的 `GET /v1/srs-donations/stats`，第一次 ≥ 30 人时在群里 @所有者；服务端没有 webhook / 里程碑表。
 
 ## 测试

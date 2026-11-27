@@ -1,32 +1,38 @@
 # Fushi review-history donation: data format
 
-This document is for the anki-rwkv maintainers who receive Fushi donation batches. It describes what is in each
+This document is for the anki-rwkv maintainers who receive Fushi donations. It describes what is in each
 file and how it differs from a native Anki export. Every statement here comes from the exporter source
 (`packages/fushi_engine/lib/srs/apkg/srs_donation_export.dart` and `srs_apkg_export.dart`). Format version: **1**.
 
-## 1. Batches
+## 1. Download feed
 
-The Fushi maintainer sends one private link per batch, usually monthly:
+The Fushi maintainer gives you one private, long-lived feed link. It stays valid until it is revoked:
 
 ```
-https://rank.fushi.moe/d/srs-donations/<token>/                 JSON manifest
+https://rank.fushi.moe/d/srs-donations/<token>/                 JSON manifest (live)
 https://rank.fushi.moe/d/srs-donations/<token>/<donorId>.apkg   one donor's file
 https://rank.fushi.moe/d/srs-donations/<token>/withdrawn.txt    withdrawn donor IDs, one per line
 ```
 
-- The token is 32 random bytes. It is the only credential, so please don't forward the link. A link expires
-  **30 days** after it is created; after that every URL under it returns 404.
-- The manifest looks like this:
-  `{"format":"fushi-srs-donation-batch","createdAt":ms,"expiresAt":ms,"files":[{"donorId","reviews","cards","bytes","updatedAt","url"}],"withdrawn":[donorId…],"withdrawnUrl"}`.
-- A batch is a snapshot of **every current donation**, not only the ones that changed since the last batch. Each
-  donor has exactly one file. When a donor re-uploads, the new file is a complete export that **replaces** the
-  previous one under the same `donorId`. It is not an increment.
+- The token is 32 random bytes. It is the only credential, so please don't forward the link. There is no expiry.
+  If the link leaks or is lost, the Fushi maintainer revokes it (every URL under it then returns 404) and sends
+  a new one.
+- The manifest is **live**, not a snapshot. Every request returns the current state:
+  `{"format":"fushi-srs-donation-feed","version":1,"files":[{"donorId","reviews","cards","bytes","updatedAt","etag","url"}],"withdrawn":[{"donorId","withdrawnAt"}],"withdrawnUrl"}`.
+  `files` lists every current donation, and `withdrawn` lists every donor who has withdrawn and not donated again.
+- Each donor has exactly one file. When a donor re-uploads, the new file is a complete export that **replaces**
+  the previous one under the same `donorId`, and `updatedAt` / `etag` change. It is not an increment.
 - `donorId` is 32 lowercase hex characters. It stays the same for a given Fushi profile on every device, and it
   matches `fushi_donation_meta.donor_id` inside the file.
-- **Withdrawals**: `withdrawn` / `withdrawn.txt` list the donors who withdrew since the previous batch. Please
-  delete all of their data and exclude it from future training. Fushi has already deleted the stored file. A
-  donor who withdrew can donate again later. In that case they appear in `files` of a later batch, and that
-  file is a new consent. If a file was withdrawn after the batch snapshot was taken, its URL returns 404.
+- **Polling** (for example every 30 minutes) is cheap:
+  - The manifest and `withdrawn.txt` carry an `ETag`. Send it back as `If-None-Match`; if nothing changed, the
+    response is `304 Not Modified` with no body.
+  - For each entry in `files`, download the file only if you don't have that `donorId` yet or its `etag`
+    (equivalently `updatedAt`) differs from your copy. A file URL also answers `If-None-Match: <etag>` with 304.
+- **Withdrawals**: delete all data of every donor in `withdrawn`, and of every donor you hold who is no longer in
+  `files`, and exclude it from future training. Fushi has already deleted the stored file, so its URL returns
+  404. A donor who withdrew can donate again later. They then leave `withdrawn` and reappear in `files` with a
+  new `updatedAt`, and that file is a new consent.
 
 ## 2. File layout
 
@@ -243,4 +249,4 @@ Use `revlog.id`:
   shift.
 
 Do not dedupe on `cid` or `nid`, because these ids differ from the ids in the original Anki collection (section 3).
-Across batches, a donor's file replaces their earlier file (section 1).
+A donor's newer file replaces their earlier file (section 1).

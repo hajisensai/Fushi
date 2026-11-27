@@ -6,7 +6,7 @@
 ## 目标
 
 复习量够的用户在 SRS 首页看到一条可关闭的横幅，自愿把复习历史捐给 anki-rwkv 训练调度模型。
-文件先传到我们自己的 `rank.fushi.moe`（R2），所有者每月生成一个私有批次链接交给作者；不走 Dropbox。
+文件先传到我们自己的 `rank.fushi.moe`（R2），所有者给作者一个长期有效、可吊销的私有 feed 链接（2026-11-27 起；原先是每月一个 30 天快照批次，作者要每 30 分钟自动拉，快照拉了也不变、撤回最长等一个月，改成实时清单）；不走 Dropbox。
 
 ## 已拍板的取舍
 
@@ -16,8 +16,8 @@
 | 平台 | iOS 不加（判据写进 `fushi/lib/src/models/store_compliance.dart`：`srsDonationAvailableOn({required bool isIOS}) => !isIOS`，消费端不写 `Platform.isIOS`） |
 | 共享范围 | Fushi + anki-rwkv，可共享给 Open Spaced Repetition 成员仅作研究，永不公开 |
 | 卡面内容 | 只保留词头 + 读音（规则见下），其余全部清空；用户可在预览里逐词排除或整体关掉 |
-| 投递 | 一个用户一个文件，同一捐赠 ID 重传覆盖旧文件；每月一个私有批次链接 |
-| 撤回 | 用户随时在设置里撤回：我们删文件，并把 ID 记进下一批的撤回清单交给作者删除 |
+| 投递 | 一个用户一个文件，同一捐赠 ID 重传覆盖旧文件；一个长期私有 feed 链接，清单实时 |
+| 撤回 | 用户随时在设置里撤回：我们删文件，ID 立即出现在 feed 清单的撤回列表里，作者下次拉取时删除 |
 | 里程碑 | kaguya bot 每小时轮询公开统计接口 GET /v1/srs-donations/stats，第一次 ≥30 人时在群里 @所有者（fushi-bot PR #16） |
 
 同意文案（英文原文，作者给定；各语言翻译保持同义）：
@@ -73,20 +73,21 @@ Future<void> exportSrsDonationFile({
 
 ## 服务端（`services/leaderboard/src/srs_donations.js`）
 
-存储：R2 `MEDIA` 桶键 `srs-donations/<donorId>.apkg`；D1 迁移 `0027_srs_donations.sql`：
+存储：R2 `MEDIA` 桶键 `srs-donations/<donorId>.apkg`；D1 迁移 `0027_srs_donations.sql` + `0029_srs_donation_feeds.sql`：
 - `srs_donations(donor_id TEXT PRIMARY KEY, key_hash TEXT NOT NULL, bytes INTEGER, reviews INTEGER, cards INTEGER, app_version TEXT, created_at INTEGER, updated_at INTEGER)`
-- `srs_donation_withdrawals(donor_id TEXT PRIMARY KEY, withdrawn_at INTEGER NOT NULL, reported_batch TEXT NULL)`
-- `srs_donation_batches(token TEXT PRIMARY KEY, created_at INTEGER, expires_at INTEGER, donors_json TEXT, withdrawn_json TEXT)`
+- `srs_donation_withdrawals(donor_id TEXT PRIMARY KEY, withdrawn_at INTEGER NOT NULL)`：长期保留，重新捐赠时删掉该行
+- `srs_donation_feeds(id INTEGER PRIMARY KEY, label TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL, revoked_at INTEGER)`：token 明文只在签发时给一次
+- （0027 的 `srs_donation_batches` 与 `reported_batch` 列由 0029 删除）
 - `media_usage.donation_bytes INTEGER NOT NULL DEFAULT 0`（同迁移加列，捐赠专用配额池）
 
 接口：
-- `PUT /v1/srs-donations/:donorId`，`Authorization: Bearer <donorKey>`，body = apkg 原始字节（`application/octet-stream`，流式写 R2），头 `x-donation-reviews` / `x-donation-cards` / `x-donation-app-version`。校验：donorId 32 位小写 hex、key 64 位 hex、zip 魔数 `PK\x03\x04`、大小 ≤ 64 MiB；已有记录时 key_hash 必须一致，否则 403。按 donorId 每小时 2 次、按 IP 日字节额度（`budget.js` 口径）；R2 字节占捐赠专用配额池（`media_usage.donation_bytes`，`DONATION_QUOTA_BYTES` 默认 2 GiB，满了 `507 donation_quota`；迁移 0027）。曾撤回的 ID 重新捐赠：删掉撤回记录中尚未 `reported_batch` 的那条，已报告过的保留（作者那边已删，新文件照常进下一批）。→ `200 {donated: true, reviews, cards, updatedAt}`（与 GET 同一形状，2026-11-27 起；此前只回 `updatedAt`，客户端显示「捐出 0 次」）。
+- `PUT /v1/srs-donations/:donorId`，`Authorization: Bearer <donorKey>`，body = apkg 原始字节（`application/octet-stream`，流式写 R2），头 `x-donation-reviews` / `x-donation-cards` / `x-donation-app-version`。校验：donorId 32 位小写 hex、key 64 位 hex、zip 魔数 `PK\x03\x04`、大小 ≤ 64 MiB；已有记录时 key_hash 必须一致，否则 403。按 donorId 每小时 2 次、按 IP 日字节额度（`budget.js` 口径）；R2 字节占捐赠专用配额池（`media_usage.donation_bytes`，`DONATION_QUOTA_BYTES` 默认 2 GiB，满了 `507 donation_quota`；迁移 0027）。曾撤回的 ID 重新捐赠：删掉它的撤回记录（新文件在 feed 清单里取代它，作者按 updatedAt 换新）。→ `200 {donated: true, reviews, cards, updatedAt}`（与 GET 同一形状，2026-11-27 起；此前只回 `updatedAt`，客户端显示「捐出 0 次」）。
 - `GET /v1/srs-donations/:donorId`（Bearer）→ `200 {donated, reviews, cards, updatedAt}`，无记录 `{donated: false}`。
 - `DELETE /v1/srs-donations/:donorId`（Bearer）→ 删 R2 + 行，写撤回记录 → `200 {donated: false}`。无记录也 200（幂等）。
-- 管理（`checkBasicAuth`）：`POST /v1/admin/srs-donations/batch` 生成批次：快照当前全部捐赠与尚未报告的撤回 ID，随机 32 字节 token，30 天有效，返回 `{url}`；`GET /v1/admin/srs-donations` 列统计。
-- 批次下载（凭 token，无其他认证）：`GET /d/srs-donations/<token>/` → 纯文本 / JSON 清单（每个文件的 donorId、reviews、bytes、下载 URL，加 `withdrawn` 列表）；`GET /d/srs-donations/<token>/<donorId>.apkg` → `Content-Disposition: attachment`、`application/octet-stream`；`GET /d/srs-donations/<token>/withdrawn.txt`。过期 404。快照之后被撤回的文件同样 404。
+- 管理（`checkBasicAuth`）：`POST /v1/admin/srs-donations/feeds` body `{label}` 签发 feed（随机 32 字节 token，库里只存 sha256，不过期）→ `{id, label, createdAt, url, token}`；`DELETE /v1/admin/srs-donations/feeds/:id` 吊销（幂等）；`GET /v1/admin/srs-donations` 列统计与全部 feed。
+- feed 下载（凭 token，无其他认证；吊销后 404）：`GET /d/srs-donations/<token>/` → 实时 JSON 清单 `{format: 'fushi-srs-donation-feed', version: 1, files: [{donorId, reviews, cards, bytes, updatedAt, etag, url}], withdrawn: [{donorId, withdrawnAt}], withdrawnUrl}`，带 ETag、`If-None-Match` 命中 304；`GET /d/srs-donations/<token>/<donorId>.apkg` → `Content-Disposition: attachment`、`application/octet-stream`，ETag = `"<updatedAt>-<bytes>"`（304 不读 R2）；`GET /d/srs-donations/<token>/withdrawn.txt`（带 ETag）。已撤回的文件 404。
 - 公开统计：`GET /v1/srs-donations/stats`（无鉴权、`no-store`，其他方法 405）→ `200 {donors, reviews}`（捐赠者数 / 复习条数合计，无记录各为 0）。30 人提醒由所有者本地的 kaguya bot 轮询它完成，服务端无 webhook。
-- 脚本 `services/leaderboard/scripts/srs_donation_batch.mjs`：调管理接口生成批次并打印链接。
+- 脚本 `services/leaderboard/scripts/srs_donation_feed.mjs`：`create <label>` 签发并打印链接、`revoke <id>` 吊销、`stats`（默认）看统计。
 
 ## 客户端（`fushi/lib/src/srs/donation/`）
 
