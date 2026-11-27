@@ -65,6 +65,7 @@
 | [BUG-5563](bugs/BUG-5563-website-linux-download-missing.md) | ✅ | ✅ | 官网下载页没有 Linux，文档仍写「Linux 只能从源码构建」 |
 | [BUG-5551](bugs/BUG-5551-srs-import-media-pseudo-conflict.md) | ✅ | ✅ | srs-import-media-pseudo-conflict |
 | [BUG-5549](bugs/BUG-5549-leaderboard-deeplink.md) | ✅ | ✅ | leaderboard-deeplink |
+| [BUG-5580](bugs/BUG-5580-manga-epub-raster-spine.md) | ✅ | ✅ | spine 直接引用位图的漫画 EPUB 打不开、导不进（no readable chapters） |
 | [BUG-5548](bugs/BUG-5548-apple-sidebar-scope-rebuilds-hidden-library-pages.md) | ✅ | ✅ | Apple 宽窗侧栏外壳切 tab 后紧跟一帧：所有访问过的保活库页（含藏起的）整页重建 |
 | [BUG-5547](bugs/BUG-5547-srs-rules7-full-rebuild-killed-loop.md) | ✅ | ✅ | 升级到缓存口径 7 后复习一直在加载：开库整层重建几分钟、切后台被杀就回滚重来 |
 | [BUG-5546](bugs/BUG-5546-curator-auto-retries-ai-failures.md) | ✅ | ✅ | AI 库管家默认开、书架每次重载就跑一趟，额度用完还逐个单元问 AI、下一趟再问一遍 |

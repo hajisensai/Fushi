@@ -101,7 +101,7 @@ class EpubParser {
   /// 容器损坏（缺尾记录 / CRC 不符 / deflate 坏）抛 [EpubArchiveCorruptException]；
   /// 这时若 [extractDir] 是本次新建的，连同写了一半的条目一起删掉。
   ///
-  /// [includeSvgSpineDocuments]：见 [parseFromExtracted]。
+  /// [includeImageSpineItems]：见 [parseFromExtracted]。
   ///
   /// 以下三个参数只有漫画导入（`MangaArchiveImporter`）传，书籍导入不传、行为不变：
   /// - [cap]：按实际解出字节封顶（[ZipExtractionCap]），超限抛
@@ -112,7 +112,7 @@ class EpubParser {
   static EpubBook parseSyncFromPath(
     String filePath,
     String extractDir, {
-    bool includeSvgSpineDocuments = false,
+    bool includeImageSpineItems = false,
     ZipExtractionCap? cap,
     bool Function(String entryName)? extractEntry,
     void Function()? onEntryExtracted,
@@ -120,7 +120,7 @@ class EpubParser {
     final EpubStagedExtraction staged = openStagedFromPath(
       filePath,
       extractDir,
-      includeSvgSpineDocuments: includeSvgSpineDocuments,
+      includeImageSpineItems: includeImageSpineItems,
       cap: cap,
       deferEntry: extractEntry == null
           ? null
@@ -149,7 +149,7 @@ class EpubParser {
   static EpubStagedExtraction openStagedFromPath(
     String filePath,
     String extractDir, {
-    bool includeSvgSpineDocuments = false,
+    bool includeImageSpineItems = false,
     ZipExtractionCap? cap,
     bool Function(String entryName)? deferEntry,
     void Function()? onEntryExtracted,
@@ -177,7 +177,7 @@ class EpubParser {
       staged._extractStage(deferred: false);
       staged.book = parseFromExtracted(
         extractDir,
-        includeSvgSpineDocuments: includeSvgSpineDocuments,
+        includeImageSpineItems: includeImageSpineItems,
       );
       return staged;
     } catch (e) {
@@ -305,15 +305,20 @@ class EpubParser {
 
   /// Parse an already-extracted EPUB directory.
   ///
-  /// [includeSvgSpineDocuments]（BUG-3845 / OjZ-K53WBY）：EPUB 3 允许 spine 项直接
+  /// [includeImageSpineItems]（BUG-3845 / OjZ-K53WBY）：EPUB 3 允许 spine 项直接
   /// 是 SVG 内容文档（`image/svg+xml`），固定版式漫画有的就是每页一个
   /// `<svg><image xlink:href="p-001.jpg"/></svg>`。默认（书籍 / 阅读器路径）仍只收
   /// HTML 类 spine 项——阅读器只按 HTML 注入分页脚本，且把 SVG 项插进 chapters 会
   /// 移位存量书 chaptersJson 里的章号。漫画导入只从章节里取页图、不渲染章节，传
   /// true 把 SVG 项也收成章节，否则这类书整本 0 章、抛「no readable chapters」。
+  ///
+  /// 同一开关也收 spine 项**直接就是位图**（`image/jpeg` 等）的书（反馈
+  /// 8NPHawEd0I：Open Manga Format 的集英社电子版，`standard.opf` 的 spine 逐页
+  /// 引用 JPEG，没有任何 XHTML 页）。这类章节本身就是页图（[EpubChapter
+  /// .isRasterImage]），漫画导入从它取图，不读成 HTML。
   static EpubBook parseFromExtracted(
     String extractDir, {
-    bool includeSvgSpineDocuments = false,
+    bool includeImageSpineItems = false,
   }) {
     debugParseFromExtractedCount += 1;
     final File? containerFile = _findContainerXml(extractDir);
@@ -347,7 +352,7 @@ class EpubParser {
       manifest,
       opfDir,
       extractDir,
-      includeSvgSpineDocuments: includeSvgSpineDocuments,
+      includeImageSpineItems: includeImageSpineItems,
     );
     if (chapters.isEmpty) {
       throw const FormatException('EPUB spine contains no readable chapters');
@@ -762,7 +767,7 @@ class EpubParser {
     Map<String, _ManifestItem> manifest,
     String opfDir,
     String extractDir, {
-    required bool includeSvgSpineDocuments,
+    required bool includeImageSpineItems,
   }) {
     final List<EpubChapter> chapters = <EpubChapter>[];
     // HBK-AUDIT-103: spineIndex must reflect the itemref's true position in the
@@ -786,8 +791,11 @@ class EpubParser {
         continue;
       }
       // BUG-1203：与阅读器资源拦截器共用同一个谓词（epub_book.dart），不再各留副本。
+      final bool rasterPage =
+          includeImageSpineItems && _isRasterMediaType(item.mediaType);
       if (!isHtmlMediaType(item.mediaType) &&
-          !(includeSvgSpineDocuments && _isSvgMediaType(item.mediaType))) {
+          !(includeImageSpineItems && _isSvgMediaType(item.mediaType)) &&
+          !rasterPage) {
         continue;
       }
 
@@ -801,8 +809,9 @@ class EpubParser {
       if (absPath == null) {
         continue;
       }
-      final File file = File(absPath);
-      if (!file.existsSync()) {
+      // 位图页不查盘：漫画导入先只解 container / OPF / spine 文档、页图延后补解
+      // （`deferEntry`），此刻页图还不在盘上。真缺图由拷页时报「page not found」。
+      if (!rasterPage && !File(absPath).existsSync()) {
         continue;
       }
 

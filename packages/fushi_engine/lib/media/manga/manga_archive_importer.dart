@@ -721,7 +721,7 @@ abstract final class MangaArchiveImporter {
       extraction = EpubParser.openStagedFromPath(
         archivePath,
         extractionPath,
-        includeSvgSpineDocuments: true,
+        includeImageSpineItems: true,
         cap: cap,
         deferEntry: _isPageImageEntry,
         onEntryExtracted: onEntryExtracted,
@@ -1218,7 +1218,7 @@ abstract final class MangaArchiveImporter {
       final EpubBook book = EpubParser.parseSyncFromPath(
         archivePath,
         extractionPath,
-        includeSvgSpineDocuments: true,
+        includeImageSpineItems: true,
         extractEntry: _isNotPageImageEntry,
       );
       return _pureImageEpubRejection(book);
