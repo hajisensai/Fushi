@@ -502,6 +502,12 @@ enum ShortcutAction {
   // 漫画 / 视频 / 首页都不认领它，解析到也交回 app 根（与 F11 同一条路）。默认桌面
   // Ctrl+J（macOS ⌘J），手柄留空。
   globalOpenAiAssistant(ShortcutScope.global, 'global_open_ai_assistant'),
+  // 打开「待发卡片」列表（应用内反馈 OElRvCndxk，用户拍板：进注册表、默认不绑键，
+  // 不在播放器 / 阅读器工具栏常驻按钮）。批量制卡时在视频 / 小说里直接看攒下的卡，
+  // 不必退到 设置 → 制卡 → 待发卡片。执行体与「呼出 AI 助手」同一条路（app 根
+  // wrapWithGlobalNavigation 的键盘 / Android 手柄键事件 / 鼠标，桌面手柄经
+  // GamepadService 的 global 兜底），都交给 [runGlobalCommandAction]。三平台默认空绑定。
+  globalOpenPendingCards(ShortcutScope.global, 'global_open_pending_cards'),
 
   // 「唤出上下文菜单（右键菜单）」的**按钮归属声明**。它不进任何执行回调表——菜单的
   // 执行体分散在各卡片 / 各媒体表面自己的 `showMenu`，本动作只回答一件事：这次按下的

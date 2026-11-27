@@ -118,6 +118,8 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_global_toggle_fullscreen;
       case ShortcutAction.globalOpenAiAssistant:
         return t.shortcut_action_global_open_ai_assistant;
+      case ShortcutAction.globalOpenPendingCards:
+        return t.shortcut_action_global_open_pending_cards;
       case ShortcutAction.globalContextMenu:
         return t.shortcut_action_global_context_menu;
       case ShortcutAction.audiobookPlayPause:

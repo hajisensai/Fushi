@@ -546,15 +546,49 @@ KeyEventResult _handleGlobalToggleFullscreen(
 /// （`openAiAgentFromShortcut`）；测试直接注入。
 typedef GlobalOpenAiAssistant = bool Function();
 
-/// 键盘 / 手柄键事件解析到 [ShortcutAction.globalOpenAiAssistant] 时交给
-/// [open]。只认按下沿（重复沿不重开浮层）；解析不到或 [open] 不认领时 ignored。
-KeyEventResult _handleGlobalOpenAiAssistant(
+/// 「打开待发卡片」（[ShortcutAction.globalOpenPendingCards]，应用内反馈 OElRvCndxk）的
+/// 执行面：在主导航器上推待发卡片列表，返回「这次按键是否被认领」（导航还没起来时
+/// false，按键照常冒泡）。装配在 `main.dart`，与「已加入待发队列」提示上的「查看队列」
+/// 同一个落点；测试直接注入。
+typedef GlobalOpenPendingCards = bool Function();
+
+/// app 根「直接做一件事」的 global 动作（窗口全屏、呼出 AI 助手、打开待发卡片）的唯一
+/// 执行体，键盘 / Android 手柄键事件（[_handleGlobalCommand]）、鼠标
+/// （[_executeGlobalMouseAction]）、桌面手柄（`GamepadService.runGlobalCommand`，main.dart
+/// 装上）三条入口共用。返回是否认领：执行面没装 / 不认领（AI 模块关着）时 false，调用方
+/// 让按键照常往下走；不是这类动作也 false。全屏在没有桌面窗口的平台照样认领、只是不做事
+/// （键是用户有意分配的，与 [_handleGlobalToggleFullscreen] 同口径）。
+bool runGlobalCommandAction(
+  ShortcutAction? action, {
+  GlobalOpenAiAssistant? openAiAssistant,
+  GlobalOpenPendingCards? openPendingCards,
+}) {
+  switch (action) {
+    case ShortcutAction.globalToggleFullscreen:
+      if (desktopWindowFullscreenSupported) {
+        unawaited(_toggleWindowFullscreen());
+      }
+      return true;
+    case ShortcutAction.globalOpenAiAssistant:
+      return openAiAssistant?.call() ?? false;
+    case ShortcutAction.globalOpenPendingCards:
+      return openPendingCards?.call() ?? false;
+    default:
+      return false;
+  }
+}
+
+/// 键盘 / 手柄键事件解析到「呼出 AI 助手」/「打开待发卡片」时交给对应执行面
+/// （[runGlobalCommandAction]）。只认按下沿（重复沿不重开）；解析不到或执行面不认领时
+/// ignored。
+KeyEventResult _handleGlobalCommand(
   FushiShortcutRegistry registry,
-  KeyEvent event,
-  GlobalOpenAiAssistant? open,
-) {
-  if (open == null || event is! KeyDownEvent) return KeyEventResult.ignored;
-  // 改绑成裸字母时，在输入框里打这个字母是打字，不是呼出 AI。
+  KeyEvent event, {
+  GlobalOpenAiAssistant? openAiAssistant,
+  GlobalOpenPendingCards? openPendingCards,
+}) {
+  if (event is! KeyDownEvent) return KeyEventResult.ignored;
+  // 改绑成裸字母时，在输入框里打这个字母是打字，不是呼出 AI / 打开列表。
   if (keyTypesIntoFocusedTextField(event)) return KeyEventResult.ignored;
   ShortcutAction? action = _resolveGlobalKeyboardAction(registry, event);
   if (action == null) {
@@ -563,10 +597,17 @@ KeyEventResult _handleGlobalOpenAiAssistant(
       action = registry.resolveGamepad(gamepad, scope: ShortcutScope.global);
     }
   }
-  if (action != ShortcutAction.globalOpenAiAssistant) {
+  if (action != ShortcutAction.globalOpenAiAssistant &&
+      action != ShortcutAction.globalOpenPendingCards) {
     return KeyEventResult.ignored;
   }
-  return open() ? KeyEventResult.handled : KeyEventResult.ignored;
+  return runGlobalCommandAction(
+        action,
+        openAiAssistant: openAiAssistant,
+        openPendingCards: openPendingCards,
+      )
+      ? KeyEventResult.handled
+      : KeyEventResult.ignored;
 }
 
 /// Whether the running platform has a desktop window whose fullscreen state can
@@ -655,6 +696,7 @@ void _handleGlobalPointerDown(
   FushiShortcutRegistry registry,
   PointerDownEvent event,
   GlobalOpenAiAssistant? openAiAssistant,
+  GlobalOpenPendingCards? openPendingCards,
 ) {
   final ShortcutAction? action = resolveMouseBindingAction(
     registry: registry,
@@ -665,8 +707,13 @@ void _handleGlobalPointerDown(
     ],
   );
   if (action == null) return;
-  bool run() =>
-      _executeGlobalMouseAction(context, navigatorKey, action, openAiAssistant);
+  bool run() => _executeGlobalMouseAction(
+    context,
+    navigatorKey,
+    action,
+    openAiAssistant,
+    openPendingCards,
+  );
   dispatchClaimedMouseAction(
     event,
     run,
@@ -684,8 +731,8 @@ void _handleGlobalPointerDown(
 ///   · [ShortcutAction.globalBack] → [Navigator.maybePop]（与 [_handleGlobalBack] 同）；
 ///   · [ShortcutAction.globalToggleFullscreen] → [_toggleWindowFullscreen]（与
 ///     [_handleGlobalToggleFullscreen] 同，移动端无窗口时有意 no-op）；
-///   · [ShortcutAction.globalOpenAiAssistant] → 注入的 [GlobalOpenAiAssistant]（与
-///     [_handleGlobalOpenAiAssistant] 同）；
+///   · [ShortcutAction.globalOpenAiAssistant] / [ShortcutAction.globalOpenPendingCards]
+///     → 注入的执行面（与 [_handleGlobalCommand] 同一个 [runGlobalCommandAction]）；
 ///   · 页面滚动六件套（[ShortcutAction.globalScrollPageUp] 等）→ 与键盘 / 手柄
 ///     LB/RB 完全同一个执行体 [executePageScroll]（目标解析在
 ///     `FushiFocusScroll.resolveActivePageScrollable`）。
@@ -704,6 +751,7 @@ bool _executeGlobalMouseAction(
   GlobalKey<NavigatorState> navigatorKey,
   ShortcutAction action,
   GlobalOpenAiAssistant? openAiAssistant,
+  GlobalOpenPendingCards? openPendingCards,
 ) {
   switch (action) {
     case ShortcutAction.globalBack:
@@ -723,8 +771,14 @@ bool _executeGlobalMouseAction(
       }
       return true;
     case ShortcutAction.globalOpenAiAssistant:
-      // 与键盘同一个执行面；AI 模块关着时不认领，同一按钮上其它层的绑定照常。
-      return openAiAssistant?.call() ?? false;
+    case ShortcutAction.globalOpenPendingCards:
+      // 与键盘同一个执行面；不认领（AI 模块关着 / 导航还没起来）时同一按钮上其它层的
+      // 绑定照常。
+      return runGlobalCommandAction(
+        action,
+        openAiAssistant: openAiAssistant,
+        openPendingCards: openPendingCards,
+      );
     case ShortcutAction.globalScrollPageUp:
     case ShortcutAction.globalScrollPageDown:
     case ShortcutAction.globalScrollLineUp:
@@ -944,6 +998,7 @@ Widget wrapWithGlobalNavigation({
   bool focusNavigationEnabled = true,
   FushiShortcutRegistry? registry,
   GlobalOpenAiAssistant? openAiAssistant,
+  GlobalOpenPendingCards? openPendingCards,
 }) {
   final Map<ShortcutActivator, Intent> shortcuts = <ShortcutActivator, Intent>{
     // 焦点导航总开关关闭时，把 Tab / Shift+Tab 中和成 DoNothingIntent，使 Flutter
@@ -1028,14 +1083,15 @@ Widget wrapWithGlobalNavigation({
         if (fullscreenResult == KeyEventResult.handled) {
           return fullscreenResult;
         }
-        // 呼出 AI 助手（默认 Ctrl+J / ⌘J，D4 ②）。同样不受焦点导航开关门控；AI 模块
-        // 关着时 [openAiAssistant] 不认领，按键继续往下走。
-        final KeyEventResult aiResult = _handleGlobalOpenAiAssistant(
+        // 呼出 AI 助手（默认 Ctrl+J / ⌘J，D4 ②）与打开待发卡片（默认不绑）。同样不受
+        // 焦点导航开关门控；执行面不认领（AI 模块关着）时按键继续往下走。
+        final KeyEventResult commandResult = _handleGlobalCommand(
           registry,
           event,
-          openAiAssistant,
+          openAiAssistant: openAiAssistant,
+          openPendingCards: openPendingCards,
         );
-        if (aiResult == KeyEventResult.handled) return aiResult;
+        if (commandResult == KeyEventResult.handled) return commandResult;
         // 页面滚动六件套（默认 PageUp/PageDown、↑/↓、Home/End）。同样**不受**
         // [focusNavigationEnabled] 门控——「用键盘滚页面」与实验性焦点导航无关，
         // 默认安装就得能用；方向键与焦点导航的让位规则见 [_handleGlobalScroll]。
@@ -1088,6 +1144,7 @@ Widget wrapWithGlobalNavigation({
                         registry,
                         event,
                         openAiAssistant,
+                        openPendingCards,
                       ),
                   child: child,
                 ),

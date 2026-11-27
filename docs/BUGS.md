@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4823 条。点号进各自文件。
+> 共 4824 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5556](bugs/BUG-5556-desktop-gamepad-global-commands.md) | ✅ | ✅ | 桌面手柄绑定的全屏 / AI 助手等 global 动作按了没反应 |
 | [BUG-5548](bugs/BUG-5548-apple-sidebar-scope-rebuilds-hidden-library-pages.md) | ✅ | ✅ | Apple 宽窗侧栏外壳切 tab 后紧跟一帧：所有访问过的保活库页（含藏起的）整页重建 |
 | [BUG-5547](bugs/BUG-5547-srs-rules7-full-rebuild-killed-loop.md) | ✅ | ✅ | 升级到缓存口径 7 后复习一直在加载：开库整层重建几分钟、切后台被杀就回滚重来 |
 | [BUG-5546](bugs/BUG-5546-curator-auto-retries-ai-failures.md) | ✅ | ✅ | AI 库管家默认开、书架每次重载就跑一趟，额度用完还逐个单元问 AI、下一趟再问一遍 |
