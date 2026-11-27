@@ -1,90 +1,20 @@
 {
   "schemaVersion": 1,
-  "version": "3.4.0-beta.32958",
-  "tag": "v3.4.0-beta.32958",
+  "version": "3.4.0-beta.33024",
+  "tag": "v3.4.0-beta.33024",
   "channel": "beta",
   "prerelease": true,
-  "releaseSequence": 32961,
+  "releaseSequence": 33024,
   "notes": "## Fushi 3.4.0\n\n- **Home**: the home page is now an editable widget grid (resize by dragging, keyboard and gamepad included); a \"What's new\" card appears after each update\n- **Review (Fushi SRS)**: a new sync and storage generation (protocol 4, see Notes); custom card order mixing reviews and new cards; daily limits counted in reviews, cards or minutes; import CSV / TSV / TXT with field mapping; \"Generate with TTS\" for audio fields; model calibration and UM+ charts in statistics; the review home shows deck trees from paired devices; Anki (.apkg) imports keep the history of cards already deleted in Anki\n- **Reading**: paste text to read it directly; writing and page direction follow EPUB metadata; single / double / auto page modes, including foldables; optional seamless chapter joining; lyrics mode becomes its own reading mode; PDF books can play an audiobook with highlighting; open or share EPUB / PDF / TXT / CBZ / CBR / CB7 into Fushi on Android; import whole archives of books (7z / zip / rar, encrypted and multi-part); book scraping adds AniList, openBD, NDL and Rakuten Books\n- **Manga**: panel-by-panel reading with a dialogue strip; in-place speech-bubble zoom; AI upscaling for low-resolution pages; pausable download queue; manga read-aloud and an OCR task manager; the Kellenok v0.3 recogniser and new local OCR models (including your own PaddleOCR model)\n- **Voiced manga**: a production desk that uses AI to mark who says each line, assigns voices per series or volume, generates the whole volume and lets you review and redo single lines; lines can reuse a matching audiobook or be cut from a drama-CD / anime audio track; play voiced manga in the reader and mine cards with the voiced line\n- **Video**: a full-screen subtitle workbench (generate Japanese subtitles, split bilingual files, align line by line) on all platforms; subtitle generation also works on online streams, web pages, DVD / Blu-ray and files outside the library; a smart mask over burned-in subtitles; background audio playback with lock-screen controls; a portrait study layout on phones; YouTube live replay chat; rename library files from scraped metadata\n- **Web video & browser extension**: web videos play in Fushi's own player by default, with Fushi-controlled fullscreen and rotation; the mining queue shows failure reasons with per-item retry; web videos can generate subtitles; an extension install guide for Android (Vivaldi)\n- **Music & audiobooks**: fullscreen lyric visualizer with 18 animated styles driven by on-device beat and vocal analysis; music videos join the music library as MV tracks; much fuller Jellyfin / Subsonic support (albums, offline downloads, favorites, server lyrics); share your music library with your other devices over interconnect; play queue, audio effects (EQ and more) and editable playlists with .m3u import / export; on-device ASR Japanese lyrics; audiobook subtitle export and an A/V sync panel\n- **Lookup & mining**: out-of-app lookup on Windows, Android and Linux captures the whole sentence and the last audio line; re-query by tapping a word chunk when nothing is found; adjustable dictionary scan length; choose which fields to overwrite when replacing a card; customizable advanced-mining layout; .7z / .rar dictionary packs can be dropped in\n- **Library & AI**: a library steward that fills in missing metadata and covers and collects uncertain matches in one review list; the AI assistant gets a long-task mode and can rename and merge collections and sort out specials and movies; works are linked as sequels, spin-offs and movies; a per-work NSFW flag blurs covers\n- **Sync & storage**: online-source items and streamed books sync across devices; interconnect syncs manga chapter progress and PDF books, and pairing is hardened; \"Check database\" and one-tap \"Clear all caches\"; overwrite snapshots are kept for 30 days\n- **Media tracking**: a new optional module that sends what you read and watch to AniList, MangaBaka and Bangumi\n- **Interface**: M3E color-block and large-title redesign; goals per language with an Android widget; reorganized settings; a status monitor page and floating window; themed app icons; the Apple look follows iOS 27 / macOS 27\n- **Games**: OCR game mode for games that cannot be hooked; global hotkeys to read the current line aloud; galgame adapters for AliceSoft System 4, Nitroplus N2System and TyranoScript, plus fixes for KiriKiri, CatSystem2, BGI, RealLive, Artemis and more\n- **Platforms**: on new Android installs the library lives in Android/data (existing installs are offered a one-time move); Linux builds are published (Flatpak and tar.gz); Windows Explorer shows Fushi cover thumbnails; dual-screen companion for Android devices with a second display; iOS Files-app import inbox; Steam Deck Game Mode screen OCR\n- **Headless server**: an official Docker image; the WebUI is rebuilt in M3E; Fushi review on the server (remote review, AnkiConnect, RWKV scheduling); the server is released automatically on all three channels\n- **Fixes**: RWKV weights now download from Fushi's mirror, fixing \"sm56-package.zip size mismatch\" in 3.3.0; ANRs when closing the video player, sharing to Fushi and syncing on slow devices; crashes with 4K manga page sets and when migrating large Lapis decks on iPad; a full disk is no longer mistaken for database corruption; zip manga with non-UTF-8 names, over 2 GiB or ZIP64; switching or restoring a library no longer lets the old library write into the new one; plus many other fixes, most of them from in-app feedback\n\n### Notes\n\n- **Review library upgrade (protocol 4)**: on first launch your review library is converted once to the new format; cards, history and settings are kept. Once any 3.4.0 device syncs with a sync location, older versions stop syncing there. **Update every device and the Fushi server**; older versions cannot open the converted library\n- **Profile priority**: when several profiles match a work, the order is now work > media type > language > default\n- **Dictionary format upgrade**: existing dictionaries are upgraded in place to a faster index after asking\n- **Review gestures changed**: swipe down undoes; on the answer side swipe left is Good and swipe right is Again; tapping no longer flips the card. Custom bindings are kept\n- **Daily limits** now count reviews by default; decks that counted cards get a one-time prompt to keep the old behaviour\n- **RWKV model change**: the default model is now sm98; RWKV decks download the new weights and replay your history once\n- **Music folders**: video files already in music folders are added as MV tracks on the next rescan; move non-music videos out first\n- **Apple glass effect**: has its own quality setting; Apple-theme users should pick it again in appearance settings\n- Web videos open in Fushi's player by default; the home page layout is replaced by the widget grid; settings were reorganized (values are kept)\n\n---\n\n## Fushi 3.4.0 更新公告\n\n- **首页**：首页改为可编辑的小组件网格（拖动改尺寸，键盘与手柄也能调）；每次更新后出现「本版新内容」卡片\n- **复习（Fushi 复习）**：复习库换用新一代同步与存储格式（协议 4，见注意事项）；自定义出卡顺序，复习与新卡可混排；每日上限可按次数、卡片数或分钟计；导入 CSV / TSV / TXT 并映射字段；音频字段可「用 TTS 生成」；统计页新增模型校准与 UM+ 图表；复习首页展示已配对设备的牌组树；导入 Anki（.apkg）时保留 Anki 端已删卡的复习记录\n- **阅读**：粘贴文本直接阅读；排版与翻页方向跟随 EPUB 元数据；单页 / 双页 / 自动三档，适配折叠屏；连续模式可选章节无缝衔接；歌词模式成为独立阅读模式；PDF 可挂有声书并高亮；Android 上可从其他应用打开 / 分享 EPUB / PDF / TXT / CBZ / CBR / CB7；可直接导入整包书（7z / zip / rar，含加密与分卷）；书籍刮削新增 AniList、openBD、NDL、楽天ブックス\n- **漫画**：逐格阅读与台词文字条；气泡原位放大；低清页 AI 超分；下载队列可暂停；漫画朗读与 OCR 任务管理；识别器升级到 Kellenok v0.3，新增本地 OCR 模型（可导入自己的 PaddleOCR 模型）\n- **有声漫画**：制作台用 AI 标注每句台词是谁说的，按系列或单卷指派声音，整卷生成后可逐句复核、单句重做；台词可复用匹配的有声书，或从广播剧 / 动画音轨里剪出；阅读器内直接播放，制卡时带上配音句子\n- **视频**：全屏字幕工作台（生成日语字幕、拆双语字幕、逐句对轴），五端可用；字幕生成支持在线流、网页、DVD / 蓝光与未入库文件；智能遮布遮住硬字幕；后台播放声音并接入锁屏控制；手机竖屏学习版式；YouTube 直播回放聊天栏；按刮削资料整理文件名\n- **网页视频与浏览器扩展**：网页视频默认用 Fushi 自己的播放器，全屏与转屏由 Fushi 接管；制卡队列写明失败原因、可单行重试；网页视频可生成字幕；Android 新增扩展安装引导（Vivaldi）\n- **音乐与有声书**：全屏歌词动画，18 种样式由本机分析的节拍与人声驱动；MV 作为曲目进入音乐库；Jellyfin / Subsonic 支持大幅补全（专辑、离线下载、收藏、服务器歌词）；经互联把音乐库共享给自己的其他设备；播放队列、音效（EQ 等）与可编辑歌单（支持 .m3u 导入导出）；本机 ASR 生成日语歌词；有声书可导出字幕，新增音画同步面板\n- **查词与制卡**：应用外查词（Windows、Android、Linux）抓取整句并带上最后一句语音；查不到时可点选词块重查；词典扫描长度可调；覆写已有卡时可选覆盖哪些字段；高级制卡布局可自定义；可直接拖入 .7z / .rar 词典包\n- **书库与 AI**：库管家补齐缺失的元数据与封面，拿不准的匹配集中到一张待确认清单；AI 助手新增长程模式，能改名与合并合集、判定特别篇与电影；作品之间串成续作 / 外传 / 电影关系；作品级 NSFW 标记模糊封面\n- **同步与存储**：在线源条目与流媒体书跨设备同步；互联同步分章漫画进度与 PDF 书，配对加固；新增「检查数据库」与一键清除全部缓存；覆盖导入前的快照保留 30 天\n- **媒体追踪**：新增可选模块，把读过、看过的内容同步到 AniList、MangaBaka 与 Bangumi\n- **界面**：M3E 色块 + 大字顶栏改版；目标按语言重做并有 Android 桌面小部件；设置页重新整理；状态监测页与悬浮小窗；主题应用图标；Apple 外观对齐 iOS 27 / macOS 27\n- **游戏**：无法 Hook 的游戏可用 OCR 游戏模式；朗读当前台词的全局快捷键；新增 AliceSoft System 4、Nitroplus N2System、TyranoScript 适配，并修复 KiriKiri、CatSystem2、BGI、RealLive、Artemis 等引擎\n- **平台**：Android 新安装时书库默认放在 Android/data，老安装会一次性提示迁移；Linux 正式出包（Flatpak 与 tar.gz）；Windows 资源管理器显示 Fushi 封面缩略图；带第二块屏的 Android 设备支持双屏伴侣；iOS 新增「文件」App 导入收件箱；Steam Deck 游戏模式支持截屏识字\n- **无头服务端**：官方 Docker 镜像；WebUI 用 M3E 重做；服务端支持 Fushi 复习（远程复习、AnkiConnect、RWKV 排程）；服务端三通道自动发布\n- **修复**：RWKV 权重改从 Fushi 镜像下载，修复 3.3.0 报「sm56-package.zip size mismatch」；关闭视频播放页、分享到 Fushi、慢设备同步时的 ANR；打开 4K 漫画图集、iPad 上迁移大型 Lapis 牌组时闪退；磁盘写满不再被当成数据库损坏；非 UTF-8 文件名、超过 2 GiB 或 ZIP64 的 zip 漫画导入失败；换库或恢复备份时旧库不会再写进新库；另有大量修复，大多来自应用内反馈\n\n### 注意事项\n\n- **复习库换代（协议 4）**：更新后首次启动会把复习库一次性转换成新格式，卡片、复习记录与设置都保留。任意一台 3.4.0 设备接触某个同步位置后，旧版本在该位置停止同步。**请把所有设备与 Fushi 服务端一起更新**；转换后的复习库旧版本无法打开\n- **配置优先级**：一部作品命中多个配置时，生效顺序改为 作品 > 媒体类型 > 语言 > 默认\n- **词典格式升级**：已有词典会在询问后原地升级为更快的索引\n- **复习手势调整**：下滑撤销；答案面左滑「良好」、右滑「重来」；单击不再翻面。已自定义的绑定保留\n- **每日上限**默认改按作答次数计；原来按卡片数计的牌组会提醒一次，可选择保持不变\n- **RWKV 模型更换**：默认模型换成 sm98，RWKV 牌组会下载新权重并重放一次复习历史\n- **音乐文件夹**：已有的视频文件会在下次重扫时作为 MV 曲目加入；不是 MV 的视频请先移出\n- **Apple 玻璃效果**：改为独立的质量设置，使用 Apple 主题的用户请到外观设置里重新选一次\n- 网页视频默认用 Fushi 播放器打开；首页布局换成小组件网格；设置页重新整理（配置值不变）",
   "assets": [
     {
-      "name": "fushi-3.4.0-beta.32958-arm64-v8a.apk",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.4.0-beta.32958/fushi-3.4.0-beta.32958-arm64-v8a.apk",
-      "releaseSequence": 32958,
-      "tag": "v3.4.0-beta.32958",
-      "version": "3.4.0-beta.32958",
-      "size": 285563681,
-      "sha256": "23535e6408b74774b0549a4413ccb40b9aa4c2f1192dac9df75e5a5d48b99adf",
-      "dbSchemaVersion": 182
-    },
-    {
-      "name": "fushi-3.4.0-beta.32958-armeabi-v7a.apk",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.4.0-beta.32958/fushi-3.4.0-beta.32958-armeabi-v7a.apk",
-      "releaseSequence": 32958,
-      "tag": "v3.4.0-beta.32958",
-      "version": "3.4.0-beta.32958",
-      "size": 248273692,
-      "sha256": "0a78e7f22280205f8ae682c5edf4f2657940e408edf6ee0e1f6e35ef26b5cf1c",
-      "dbSchemaVersion": 182
-    },
-    {
-      "name": "fushi-3.4.0-beta.32958-ios.ipa",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.4.0-beta.32958/fushi-3.4.0-beta.32958-ios.ipa",
-      "releaseSequence": 32961,
-      "tag": "v3.4.0-beta.32958",
-      "version": "3.4.0-beta.32958",
-      "size": 98883511,
-      "sha256": "3aca9403ffcd931ceba345d4ee0f396d10a6aa7c64635070ba38beb206d19b85",
-      "dbSchemaVersion": 182
-    },
-    {
-      "name": "fushi-3.4.0-beta.32958-linux-x86_64.flatpak",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.4.0-beta.32958/fushi-3.4.0-beta.32958-linux-x86_64.flatpak",
-      "releaseSequence": 32961,
-      "tag": "v3.4.0-beta.32958",
-      "version": "3.4.0-beta.32958",
-      "size": 261263800,
-      "sha256": "bca72098aef1be15d4c95d588daa87111d7ba303993b97ebcd516ca1cdf6a71c",
-      "dbSchemaVersion": 182
-    },
-    {
-      "name": "fushi-3.4.0-beta.32958-macos-arm64.dmg",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.4.0-beta.32958/fushi-3.4.0-beta.32958-macos-arm64.dmg",
-      "releaseSequence": 32961,
-      "tag": "v3.4.0-beta.32958",
-      "version": "3.4.0-beta.32958",
-      "size": 297223629,
-      "sha256": "d0d274df22fb7d3a9a1216e3e6d144cb04070bc855fd7fef55006d460bb30eb9",
-      "dbSchemaVersion": 182
-    },
-    {
-      "name": "fushi-3.4.0-beta.32958-macos-arm64.zip",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.4.0-beta.32958/fushi-3.4.0-beta.32958-macos-arm64.zip",
-      "releaseSequence": 32961,
-      "tag": "v3.4.0-beta.32958",
-      "version": "3.4.0-beta.32958",
-      "size": 281770707,
-      "sha256": "4a3fe57df8baaba4d70ac55cf3f2ba6c400538876b842fc06e46f8f0e160a009",
-      "dbSchemaVersion": 182
-    },
-    {
-      "name": "fushi-3.4.0-beta.32958-windows-setup.exe",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.4.0-beta.32958/fushi-3.4.0-beta.32958-windows-setup.exe",
-      "releaseSequence": 32961,
-      "tag": "v3.4.0-beta.32958",
-      "version": "3.4.0-beta.32958",
-      "size": 306341568,
-      "sha256": "d0e54e641f6e9ab51ff0c8c02d8bdac6966db6f4f391892e8128bb10068c7305",
-      "dbSchemaVersion": 182
-    },
-    {
-      "name": "fushi-3.4.0-beta.32958-x86_64.apk",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.4.0-beta.32958/fushi-3.4.0-beta.32958-x86_64.apk",
-      "releaseSequence": 32958,
-      "tag": "v3.4.0-beta.32958",
-      "version": "3.4.0-beta.32958",
-      "size": 302504537,
-      "sha256": "6bbfe60c3c669b0edd46072321337068aed724f79f4d64d2f649bc6ed4b0db7a",
+      "name": "fushi-3.4.0-beta.33024-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.4.0-beta.33024/fushi-3.4.0-beta.33024-windows-setup.exe",
+      "releaseSequence": 33024,
+      "tag": "v3.4.0-beta.33024",
+      "version": "3.4.0-beta.33024",
+      "size": 306369624,
+      "sha256": "71f2b028b6f26fb707a3a0867b228b91d4288df7110889f479cc2c6546dfd8b0",
       "dbSchemaVersion": 182
     }
   ]
