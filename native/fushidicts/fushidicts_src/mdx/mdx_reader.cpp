@@ -306,6 +306,14 @@ ContainerIndex parse_container_index(const uint8_t* data, size_t size) {
   bool is_v2 = result.version_major >= 2;
   bool is_utf16 = (enc_lower.find("utf-16") != std::string::npos || enc_lower.find("utf16") != std::string::npos);
   int null_term_bytes = is_utf16 ? 2 : 1;
+  // The first/last headword copies inside key block info carry a NUL terminator
+  // only in v2. A v1.x container (MDict 1.2 era, `GeneratedByEngineVersion="1.2"`)
+  // stores them bare: adding the terminator there drifted every block meta, the
+  // key-block walk stopped short, and the record section header was read from
+  // the middle of the key blocks -> "record block info overflow" (feedback
+  // qC77I6m6CK: five old 1.2 dictionaries all failed this way). The keys inside
+  // the key blocks themselves are NUL-terminated in both versions.
+  const size_t info_term_bytes = is_v2 ? static_cast<size_t>(null_term_bytes) : 0;
 
   // --- Key Block Header ---
   uint64_t num_key_blocks, num_entries;
@@ -382,12 +390,12 @@ ContainerIndex parse_container_index(const uint8_t* data, size_t size) {
         if (ipos + 2 > key_block_info.size()) break;
         uint16_t first_len = be16(key_block_info.data() + ipos);
         ipos += 2;
-        ipos += (is_utf16 ? first_len * 2 : first_len) + null_term_bytes;
+        ipos += (is_utf16 ? first_len * 2 : first_len) + info_term_bytes;
         // Skip last key
         if (ipos + 2 > key_block_info.size()) break;
         uint16_t last_len = be16(key_block_info.data() + ipos);
         ipos += 2;
-        ipos += (is_utf16 ? last_len * 2 : last_len) + null_term_bytes;
+        ipos += (is_utf16 ? last_len * 2 : last_len) + info_term_bytes;
         if (ipos + 16 > key_block_info.size()) break;
         meta.compressed_size = be64(key_block_info.data() + ipos);
         ipos += 8;
@@ -400,11 +408,11 @@ ContainerIndex parse_container_index(const uint8_t* data, size_t size) {
         if (ipos + 1 > key_block_info.size()) break;
         uint8_t first_len = key_block_info[ipos];
         ipos += 1;
-        ipos += (is_utf16 ? first_len * 2 : first_len) + null_term_bytes;
+        ipos += (is_utf16 ? first_len * 2 : first_len) + info_term_bytes;
         if (ipos + 1 > key_block_info.size()) break;
         uint8_t last_len = key_block_info[ipos];
         ipos += 1;
-        ipos += (is_utf16 ? last_len * 2 : last_len) + null_term_bytes;
+        ipos += (is_utf16 ? last_len * 2 : last_len) + info_term_bytes;
         if (ipos + 8 > key_block_info.size()) break;
         meta.compressed_size = be32(key_block_info.data() + ipos);
         ipos += 4;
@@ -420,6 +428,10 @@ ContainerIndex parse_container_index(const uint8_t* data, size_t size) {
   keys.reserve(num_entries);
 
   if (pos + key_blocks_size > size) throw std::runtime_error("mdx: key blocks overflow");
+  // The header's key_blocks_size is authoritative for where the record section
+  // starts; the per-block walk below only decodes keys. Re-anchoring after the
+  // walk keeps a short / partial walk from shifting the record header.
+  const size_t record_section_pos = pos + static_cast<size_t>(key_blocks_size);
 
   for (const auto& meta : key_block_metas) {
     if (pos + meta.compressed_size > size) break;
@@ -477,6 +489,8 @@ ContainerIndex parse_container_index(const uint8_t* data, size_t size) {
       keys.push_back(std::move(entry));
     }
   }
+
+  pos = record_section_pos;
 
   // --- Record Blocks ---
   uint64_t num_record_blocks, record_block_info_size, record_blocks_total_size;
