@@ -79,6 +79,8 @@ void main() {
           ..writeAsStringSync(documentFor(cases));
         final _ChromeRun result = await _runChrome(chrome!, <String>[
           '--headless',
+          // 管理员（提权）shell 下 Windows Chrome 会降权自重启、原进程立即 exit 0（BUG-5609）。
+          '--do-not-de-elevate',
           '--no-sandbox',
           '--disable-gpu',
           '--no-first-run',

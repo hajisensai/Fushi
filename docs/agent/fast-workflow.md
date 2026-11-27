@@ -116,6 +116,8 @@ Get-CimInstance Win32_Process |
 # Stop-Process -Id <pid> -Force
 ```
 
+**不是并发伪红、但长得像的：真 Chrome 测试在提权 shell 里秒退（BUG-5609）。** 症状是 `chrome exited before DevTools was ready (code 0, signal null, after ~60ms) (chrome wrote no stderr)`，或 `--dump-dom` 测试拿到空输出；develop 基线同样红。原因是本机 agent shell 跑在管理员（High Mandatory Level）下，新版 Windows Chrome 检测到提权会经 shell 降权自重启，我们 spawn 的那个进程立刻 exit 0，重启出来的浏览器（命令行末尾多了 `--noerrdialogs --no-first-run --do-not-de-elevate`）成了孤儿、还握着临时 profile。CI 的 Windows runner 不开 UAC 拆分令牌，不触发，所以只在本机红。仓库里所有真 Chrome 启动点已带 `--do-not-de-elevate`，由 `fushi/test/build/chrome_launch_do_not_de_elevate_guard_test.dart` 守住：**新写 Chrome 启动参数表时紧挨 headless 那项加上它**。再撞上同症状先看启动点是不是绕开了这条约束；清孤儿只按命令行里自己的临时 profile 路径找 PID 杀，不按名字杀 `chrome.exe`（用户自己的浏览器也叫这个名）。
+
 ### 判别纪律（三条，不可打折）
 
 1. **先分型再动手**：先看是断言失败、suite 装载失败还是零输出。只有断言失败才是「被测代码可能坏了」，另两类先按并发伪红查。

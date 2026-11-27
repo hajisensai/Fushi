@@ -272,7 +272,7 @@ test('真 Chrome：textarea / input 里能取词（镜像 div），密码框不�
     fs.writeFileSync(path.join(dir, 'probe.html'), PROBE_HTML);
     const url = 'file:///' + path.join(dir, 'probe.html').replace(/\\/g, '/').replace(/^\//, '');
     const dom = execFileSync(chrome, [
-      '--headless=new', '--disable-gpu', '--no-first-run', '--no-sandbox',
+      '--headless=new', '--do-not-de-elevate', '--disable-gpu', '--no-first-run', '--no-sandbox',
       '--user-data-dir=' + path.join(dir, 'ud'), '--allow-file-access-from-files', '--dump-dom', url,
     ], { encoding: 'utf8', timeout: 60000, stdio: ['ignore', 'pipe', 'ignore'] });
     const m = dom.match(/RESULT([\s\S]*?)END/);
@@ -397,7 +397,7 @@ test('真 Chrome 像素：输入框镜像选区有可见高亮，真字透得出
     fs.copyFileSync(path.join(__dirname, 'vendor', 'selection.js'), path.join(dir, 'selection.js'));
     fs.writeFileSync(path.join(dir, 'probe.html'), HIGHLIGHT_HTML);
     const url = 'file:///' + path.join(dir, 'probe.html').replace(/\\/g, '/').replace(/^\//, '');
-    const common = ['--headless=new', '--disable-gpu', '--no-first-run', '--no-sandbox', '--hide-scrollbars',
+    const common = ['--headless=new', '--do-not-de-elevate', '--disable-gpu', '--no-first-run', '--no-sandbox', '--hide-scrollbars',
       '--force-device-scale-factor=1', '--window-size=600,400', '--allow-file-access-from-files', '--disable-lcd-text'];
     const dom = execFileSync(chrome, [...common, '--user-data-dir=' + path.join(dir, 'ud1'), '--dump-dom', url + '#input'],
       { encoding: 'utf8', timeout: 60000, stdio: ['ignore', 'pipe', 'ignore'] });
