@@ -799,7 +799,6 @@ impl<'t, 'c> Index<'t, 'c> {
         };
         // 规范键 → (写入 (k, state), 来自哪几个 (成员, 原值键))。
         type Group = (Vec<(i64, i64)>, BTreeSet<(Ref, Vec<u8>)>);
-        let p_groups = crate::store::prof::span("class.groups"); // PROBE
         let mut groups: BTreeMap<String, Group> = BTreeMap::new();
         for m in &members {
             for (key, k, state) in self.member_registers(kind, m)? {
@@ -821,8 +820,6 @@ impl<'t, 'c> Index<'t, 'c> {
                 g.1.insert((m.clone(), key));
             }
         }
-        drop(p_groups); // PROBE
-        let _p_judge = crate::store::prof::span("class.judge"); // PROBE
         let conflicts_only = matches!(pick, Pick::Conflicts { .. });
         // 归回涉及的名字（改名后的名字与它的规范名）：寄存器里没有这些名字写的写入时，换名不改变谁见过谁（支配只问
         // 「上下文里这条写入的写入者那一格 ≥ 它的 seq」，那一格的写入者不在换名表里就不变），按类判与按原值判相同。
@@ -877,9 +874,7 @@ impl<'t, 'c> Index<'t, 'c> {
             keys: Some(&keys),
         };
         let (mut out, mut top) = (Vec::new(), 0i64);
-        let p_lines = crate::store::prof::span("class.lines"); // PROBE
         let lines = self.edit_lines_with(&ks, &|i| emit[i], Some(&c), profile, keep)?;
-        drop(p_lines); // PROBE
         for l in lines {
             top = top.max(l.physical);
             out.push((

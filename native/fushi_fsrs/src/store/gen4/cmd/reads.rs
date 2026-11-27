@@ -701,10 +701,7 @@ impl<'t, 'c> Reads<'t, 'c> {
                 Some((k, _, d)) if k == EntKind::Note as i64 => d,
                 _ => continue,
             };
-            let p_rows = crate::store::prof::span("nv.rows"); // PROBE
             let rows = super::note_edit_rows_objects(self.t, &mut self.ix, &c, &self.profile)?;
-            drop(p_rows); // PROBE
-            let p_mat = crate::store::prof::span("nv.materialize"); // PROBE
             let n = rows.len() as i64;
             let mut objects = Vec::with_capacity(rows.len());
             for (_, j, st, obj) in rows {
@@ -712,8 +709,6 @@ impl<'t, 'c> Reads<'t, 'c> {
                 objects.push((obj, st));
             }
             let mut v = crate::registers::note_entity_of_objects(&payload, objects)?;
-            drop(p_mat); // PROBE
-            let _p_ser = crate::store::prof::span("nv.serialize"); // PROBE
             // 字段正文不进 `v`：原样进表 `f` 的字符串列，两边都不按 JSON 转义 / 解析它（几十 KB 的释义 HTML）。
             let fs = match v
                 .get_mut("v")
@@ -1184,10 +1179,7 @@ impl<'t, 'c> Reads<'t, 'c> {
     fn logs(&mut self, req: &Value) -> Result<Vec<u8>, String> {
         let mut cards = canon_ids(&self.ix, need_list(req, "cards")?)?;
         cards.sort_by(|a, b| sql_order(a).cmp(&sql_order(b)));
-        let p_rep = crate::store::prof::span("logs.replayed"); // PROBE
         let mut by_card = self.ix.replayed_logs(&cards.iter().cloned().collect())?;
-        drop(p_rep); // PROBE
-        let _p_rows = crate::store::prof::span("logs.row_json+table"); // PROBE
         let mut out = Table::new(&[
             ("id", KIND_STR),
             ("card_id", KIND_STR),

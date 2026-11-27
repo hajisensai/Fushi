@@ -1188,7 +1188,6 @@ impl<'t, 'c> Index<'t, 'c> {
         }
         let mut writes = Vec::with_capacity(ks.len());
         for (i, &k) in ks.iter().enumerate() {
-            let _pp = crate::store::prof::span("lines.write"); // PROBE
             let (e, full) = self.edit_write(k, emit(i))?;
             writes.push(Write {
                 k,
@@ -1266,10 +1265,7 @@ impl<'t, 'c> Index<'t, 'c> {
                 .value
                 .as_deref()
                 .ok_or_else(|| format!("gen4 index: emitted write {} has no value", w.k))?;
-            let p_parse = crate::store::prof::span("lines.value_parse"); // PROBE
             let value = serde_json::from_str::<Value>(text).unwrap_or(Value::Null);
-            drop(p_parse); // PROBE
-            let p_canon = crate::store::prof::span("lines.canon_value"); // PROBE
             let (entity, key, value) = match class {
                 None => (w.ed.entity.text(), w.ed.key.clone(), value),
                 Some(c) => {
@@ -1281,8 +1277,6 @@ impl<'t, 'c> Index<'t, 'c> {
                     )
                 }
             };
-            drop(p_canon); // PROBE
-            let _p_ser = crate::store::prof::span("lines.serialize"); // PROBE
             let mut m = Map::new();
             m.insert("p".into(), json!(profile));
             m.insert("k".into(), json!(w.ed.kind.wire()));
