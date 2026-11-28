@@ -667,6 +667,60 @@ void main() {
       });
     });
 
+    // BUG-5613：首页「继续观看」「下一集」与详情大卡同样跳过锚点之后已标看完的集。
+    test('看完第 2 集、第 3～9 集只标了已看 → 三处都落在第 10 集', () {
+      final List<VideoSeriesPlaybackState> members = <VideoSeriesPlaybackState>[
+        const VideoSeriesPlaybackState(
+          lastWatchedAtMs: 100,
+          positionMs: 0,
+          completed: true,
+        ),
+        const VideoSeriesPlaybackState(
+          lastWatchedAtMs: 200,
+          positionMs: 0,
+          completed: true,
+        ),
+        for (int i = 2; i < 9; i++)
+          const VideoSeriesPlaybackState(
+            lastWatchedAtMs: 0,
+            positionMs: 0,
+            completed: true,
+          ),
+        for (int i = 9; i < 34; i++)
+          const VideoSeriesPlaybackState(
+            lastWatchedAtMs: 0,
+            positionMs: 0,
+            completed: false,
+          ),
+      ];
+      expect(continueWatchingSeriesIndex(members), 9, reason: '继续观看');
+      expect(nextEpisodeAfterLatestPlayed(members), 9, reason: '下一集');
+      expect(
+        continueMemberIndex(<CollectionMemberProgress>[
+          for (final VideoSeriesPlaybackState m in members) m.progress,
+        ]),
+        9,
+        reason: '详情大卡',
+      );
+    });
+
+    test('锚点之后全部已标看完 → 继续观看 / 下一集不占行', () {
+      const List<VideoSeriesPlaybackState> members = <VideoSeriesPlaybackState>[
+        VideoSeriesPlaybackState(
+          lastWatchedAtMs: 200,
+          positionMs: 0,
+          completed: true,
+        ),
+        VideoSeriesPlaybackState(
+          lastWatchedAtMs: 0,
+          positionMs: 0,
+          completed: true,
+        ),
+      ];
+      expect(continueWatchingSeriesIndex(members), isNull);
+      expect(nextEpisodeAfterLatestPlayed(members), isNull);
+    });
+
     test('最后一集之后没有下一集', () {
       const List<VideoSeriesPlaybackState> members = <VideoSeriesPlaybackState>[
         VideoSeriesPlaybackState(

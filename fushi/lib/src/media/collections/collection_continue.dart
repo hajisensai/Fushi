@@ -2,7 +2,8 @@
 ///
 /// 不给合集加 currentEpisode 类指针列（消灭状态同步问题）——继续位置纯从成员进度
 /// 数据推导。锚点规则（BUG-1542）：取**最近一次播放**的成员（`lastPlayedAt` 最大）；
-/// 它已完成 → 下一个（没有下一个就它自己）；否则停在它。
+/// 它已完成 → 它之后第一个还没看完的成员（BUG-5613；之后全看完就最后一个）；否则
+/// 停在它。
 ///
 /// 为什么锚点是时刻而不是位置：`lastPlayedAt` 落库前（schema v85）这里只有「有没有
 /// 进度」的静态事实，只能退而取**排序位置最靠后**的有痕迹成员。那等价于假设「用户
@@ -105,15 +106,35 @@ class CollectionMemberProgress {
 /// - 全无痕迹 → 0（从头开始）。
 /// - 有时刻：锚点 = `lastPlayedAt` 最大的成员（并列取位置靠后者，贴连播方向）。
 /// - 无任何时刻（旧库）：锚点 = 位置最靠后的有痕迹成员（v85 前口径）。
-/// - 锚点已看完（[CollectionMemberProgress.isFinished]）且后面还有成员 → 下一个；
-///   否则停在锚点。**重看已打勾的集到一半退出**不算看完：停在它（BUG-3491）。
+/// - 锚点没看完 → 停在锚点。**重看已打勾的集到一半退出**不算看完：停在它
+///   （BUG-3491）。
+/// - 锚点已看完（[CollectionMemberProgress.isFinished]）→ 它之后第一个还没看完的
+///   成员（[firstUnfinishedMemberFrom]，BUG-5613）；之后全都看完（含锚点就是最后
+///   一个）→ 最后一个成员。
 int continueMemberIndex(List<CollectionMemberProgress> members) {
   final int? anchor = latestPlayedMemberIndex(members);
   if (anchor == null) return 0;
-  if (members[anchor].isFinished && anchor + 1 < members.length) {
-    return anchor + 1;
+  if (!members[anchor].isFinished) return anchor;
+  return firstUnfinishedMemberFrom(members, anchor + 1) ?? members.length - 1;
+}
+
+/// 从 [start] 起（含）第一个还没看完（非 [CollectionMemberProgress.isFinished]）
+/// 的成员下标；[start] 起全都看完或越界 → null。
+///
+/// 「锚点看完 → 下一集」的**唯一**推进判据（BUG-5613）：详情大卡
+/// [continueMemberIndex]、视频首页「继续观看」与「下一集」（`video_home_layout.dart`）
+/// 都经这里，不许各写一份 `anchor + 1`。与 Jellyfin Next-Up 同一语义——锚点之后
+/// 已标记看完（在本机、媒体服务器或互联对端标的）或进度到片尾区的集要跳过。标记
+/// 已看不写 `lastPlayedAt`（标记不等于播放），锚点仍是最后真正播放的那集；此前只取
+/// `anchor + 1`，用户看完第 2 集、再把第 3～9 集标已看后，各处仍说「继续看第 3 集」。
+int? firstUnfinishedMemberFrom(
+  List<CollectionMemberProgress> members,
+  int start,
+) {
+  for (int i = start < 0 ? 0 : start; i < members.length; i++) {
+    if (!members[i].isFinished) return i;
   }
-  return anchor;
+  return null;
 }
 
 /// 合集「最近播放」锚点——**唯一判据**（BUG-3370）。详情大卡 / 合集卡进度行的

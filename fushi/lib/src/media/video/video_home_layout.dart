@@ -304,35 +304,44 @@ int? latestPlayedSeriesIndex(List<VideoSeriesPlaybackState> members) =>
 
 /// 「下一集」行的目标集（Next-Up）：
 ///
-/// * 锚点（[latestPlayedSeriesIndex]）**已开始看**（看完或有进度）→ 紧接的下一集；
-///   没有下一集 → null；
+/// * 锚点（[latestPlayedSeriesIndex]）**已开始看**（看完或有进度）→ 它之后第一个
+///   还没看完的集（[firstUnfinishedMemberFrom]，已标看完的跳过，BUG-5613）；之后
+///   全看完 → null；
 /// * 锚点**只打开过**（有时刻、进度 0、未完成）→ 停在它自己——它就是还没看的
 ///   下一集。此前一律取锚点 +1：看完第 7 集自动连播第 8 集几秒退出，「下一集」
 ///   跳到第 9 集，第 8 集在首页无入口（BUG-3370）。
 int? nextEpisodeAfterLatestPlayed(List<VideoSeriesPlaybackState> members) {
-  final int? current = latestPlayedSeriesIndex(members);
+  final List<CollectionMemberProgress> progress = _progressOf(members);
+  final int? current = latestPlayedMemberIndex(progress);
   if (current == null) return null;
-  if (!members[current].progress.hasStarted) return current;
-  if (current + 1 >= members.length) return null;
-  return current + 1;
+  if (!progress[current].hasStarted) return current;
+  return firstUnfinishedMemberFrom(progress, current + 1);
 }
 
 /// 「继续观看」行的合集目标集（Next-Up 语义，与 hero 大卡的
 /// [continueMemberIndex] 同一锚点、给同一答案）：
 ///
 /// * 最近实际播放的那集**没看完**（有进度，或只打开过、进度 0）→ 停在它；
-/// * 它**已看完** → 紧接的下一集（整部看完、没有下一集 → null，不再占继续行）；
+/// * 它**已看完** → 它之后第一个还没看完的集（[firstUnfinishedMemberFrom]：之后已
+///   标看完的集跳过，BUG-5613；之后全看完 → null，不再占继续行）；
 ///   已打勾但**重看到一半**退出不算看完，停在它（BUG-3491）；
 /// * 整部合集没有任何播放痕迹 → null。
 ///
 /// 「只打开过」也进本行（BUG-3370）：用户确实打开过这部合集，此前按「进度为 0」
 /// 整部丢掉，只碰过第 1 集几秒的合集在首页彻底消失，大卡却显示「继续看 第1集」。
 int? continueWatchingSeriesIndex(List<VideoSeriesPlaybackState> members) {
-  final int? current = latestPlayedSeriesIndex(members);
+  final List<CollectionMemberProgress> progress = _progressOf(members);
+  final int? current = latestPlayedMemberIndex(progress);
   if (current == null) return null;
-  if (!members[current].progress.isFinished) return current;
-  return current + 1 < members.length ? current + 1 : null;
+  if (!progress[current].isFinished) return current;
+  return firstUnfinishedMemberFrom(progress, current + 1);
 }
+
+List<CollectionMemberProgress> _progressOf(
+  List<VideoSeriesPlaybackState> members,
+) => <CollectionMemberProgress>[
+  for (final VideoSeriesPlaybackState member in members) member.progress,
+];
 
 /// 「规格」筛选的档位（多选，交接文档 2026-10-24 第 9 项）：前四档是**载体**
 /// （BD 原盘 / UHD BD / DVD / 普通文件，互斥），后两档是**画质**（4K / HDR）。
