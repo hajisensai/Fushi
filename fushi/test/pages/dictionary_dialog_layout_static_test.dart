@@ -306,11 +306,8 @@ void main() {
 
     // Material path empties the app bar and renders an in-page action bar.
     expect(source, contains('_buildActionBar'));
-    expect(
-      source,
-      contains('if (!cupertino) _buildActionBar(compact: compact)'),
-    );
-    expect(source, contains('final List<Widget> actions = cupertino'));
+    expect(source, contains('if (!glass) _buildActionBar(compact: compact)'));
+    expect(source, contains('final List<Widget> actions = glass'));
 
     // The four actions are labeled buttons reusing the existing i18n keys.
     for (final String label in <String>[

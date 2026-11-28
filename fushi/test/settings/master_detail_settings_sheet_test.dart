@@ -68,18 +68,20 @@ void main() {
     expect(source, contains('this.maxHeightFactor = 0.80'));
   });
 
-  test('extracted sub-page back header keeps the platform-adaptive chrome', () {
+  test('extracted sub-page back header uses the shared chrome', () {
     final String header = _between(
       source,
       'class FushiSettingsSubPageHeader',
       'class FushiMasterDetailSettingsSheet',
     );
-    // Cupertino 用 navTitleTextStyle，其余平台用主题 titleMedium（不写死字号）。
-    expect(header, contains('navTitleTextStyle'));
+    // 标题用主题 titleMedium（不写死字号）。
+    expect(header, contains('Theme.of(context).textTheme.titleMedium'));
     expect(header, isNot(contains('fontSize: 17')));
-    // 返回按钮：Cupertino 走 CupertinoButton，其余走共享 FushiIconButton。
-    expect(header, contains('CupertinoButton('));
+    // 返回按钮只有共享 FushiIconButton 一种：原来按隐藏 Cupertino 设计系统分出的
+    // CupertinoButton + navTitleTextStyle 分支已随该设计系统整删。
     expect(header, contains('FushiIconButton('));
+    expect(header, isNot(contains('CupertinoButton(')));
+    expect(header, isNot(contains('navTitleTextStyle')));
     expect(header, isNot(contains('return IconButton(')));
     expect(header, contains('overflow: TextOverflow.ellipsis'));
   });
