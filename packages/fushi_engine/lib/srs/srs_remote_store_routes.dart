@@ -31,12 +31,8 @@ shelf.Response _json(Object? body, {int status = 200}) => shelf.Response(
 shelf.Response _error(int status, String code) =>
     _json(<String, Object?>{'error': code}, status: status);
 
-/// [reqPath] 是不是远程复习的端点（V2，或只回拒绝的 V1）。
-bool isSrsRemoteStorePath(String reqPath) =>
-    reqPath.startsWith(kSrsRemoteStoreV2PathPrefix) ||
-    reqPath.startsWith(kSrsRemoteStorePathPrefix);
-
-/// [reqPath] 满足 [isSrsRemoteStorePath] 时调用。
+/// [reqPath] 以 [kSrsRemoteStoreV2PathPrefix]（V2）或 [kSrsRemoteStorePathPrefix]（只回拒绝的 V1）开头时调用
+/// （互联端点表的 `srsRemoteStore` 模块）。
 Future<shelf.Response> handleSrsRemoteStoreRequest(
   SrsRemoteStoreService service,
   shelf.Request request,

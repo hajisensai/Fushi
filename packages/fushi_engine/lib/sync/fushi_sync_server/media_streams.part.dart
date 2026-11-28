@@ -1,20 +1,14 @@
 part of '../fushi_sync_server.dart';
 
-/// 统一流票的三条路由（设计 docs/specs/2026-11-23-interconnect-music-library-design.md §3.5 / §4.3）：
+/// 统一流票的三条路由（设计 docs/specs/2026-11-23-interconnect-music-library-design.md §3.5 / §4.3；端点表
+/// 见 host_routes.part.dart 的 `libraryMediaStreams` 模块）：
 ///
 /// - `POST /api/library/media/streamurl` `{kind, id}` → `{url, ticket}`（Basic）；
-/// - `GET|HEAD /api/library/media/stream?token=`（免 Basic，见 auth.part.dart `_kPublicRoutes`）；
+/// - `GET|HEAD /api/library/media/stream?token=`（免 Basic，门是 URL 里的票）；
 /// - `POST /api/library/media/streamrelease?ticket=` → 204（Basic，幂等）。
 ///
 /// 视频不经这里签发（要带转码档 / 集号 / 蓝光段表），仍走 `/api/library/videos/<id>/streamurl` 老路径，
 /// 但票在同一张 [LibraryMediaStreams] 表里，吊销 / 释放 / TTL / 上限同一套。
-bool isLibraryMediaStreamRoute(String path) =>
-    path == kLibraryMediaStreamUrlPath ||
-    path == kLibraryMediaStreamPath ||
-    path == kLibraryMediaStreamReleasePath;
-
-bool _isLibraryMediaStreamPath(String path) => path == kLibraryMediaStreamPath;
-
 extension _MediaStreamsDomain on FushiSyncServer {
   /// 把已过鉴权的请求打包给模块：凭据指纹、已配对身份一次算好。
   InterconnectRequest _interconnectRequest(
@@ -28,9 +22,8 @@ extension _MediaStreamsDomain on FushiSyncServer {
     return InterconnectRequest(
       raw: request,
       path: reqPath,
-      credentialFingerprint: password == null
-          ? null
-          : _credentialFingerprint(password),
+      credentialFingerprint: () =>
+          password == null ? null : _credentialFingerprint(password),
       basicPassword: password,
       isPairedPeer: () => _validatePeerAuth(authorization),
       hostId: hostId,
@@ -38,21 +31,8 @@ extension _MediaStreamsDomain on FushiSyncServer {
     );
   }
 
-  Future<shelf.Response> _handleLibraryMediaStreams(
-    shelf.Request request,
-    String method,
-    String reqPath,
-  ) async {
-    if (reqPath == kLibraryMediaStreamPath) {
-      if (method != 'GET' && method != 'HEAD') return shelf.Response(405);
-      return _serveLibraryMediaStream(request);
-    }
-    if (reqPath == kLibraryMediaStreamUrlPath) {
-      if (method != 'POST') return shelf.Response(405);
-      return _issueLibraryMediaStream(request);
-    }
-    // streamrelease
-    if (method != 'POST') return shelf.Response(405);
+  /// `POST streamrelease?ticket=`：释放一张统一流票。
+  shelf.Response _releaseLibraryMediaStream(shelf.Request request) {
     final String? ticket = request.url.queryParameters['ticket'];
     if (ticket == null || ticket.isEmpty) {
       return shelf.Response(400, body: 'Missing ticket');

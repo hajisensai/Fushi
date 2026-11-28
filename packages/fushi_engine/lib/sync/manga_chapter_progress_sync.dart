@@ -334,17 +334,27 @@ class MangaChapterProgressInterconnectModule extends InterconnectHostModule {
   final MangaChapterProgressHost? host;
 
   @override
-  String get capabilityKey => kMangaChapterProgressCapability;
+  String get name => kMangaChapterProgressCapability;
 
   @override
+  List<InterconnectCapability> get capabilities => <InterconnectCapability>[
+    InterconnectCapability(kMangaChapterProgressCapability, capability),
+  ];
+
+  /// 能力值；null = 本 host 此刻不提供（键不出现）。
   Future<Object?> capability() async => host == null
       ? null
       : const <String, Object?>{'v': kMangaChapterProgressWireVersion};
 
   @override
-  List<String> get routePrefixes => const <String>[kMangaChapterProgressPath];
+  List<InterconnectRoute> get routes => <InterconnectRoute>[
+    InterconnectRoute(
+      const InterconnectPath.subtree(kMangaChapterProgressPath),
+      trust: InterconnectTrust.credential,
+      handler: handle,
+    ),
+  ];
 
-  @override
   Future<shelf.Response> handle(InterconnectRequest request) async {
     final MangaChapterProgressHost? h = host;
     if (h == null) {

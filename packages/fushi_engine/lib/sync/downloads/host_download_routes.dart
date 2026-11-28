@@ -120,9 +120,14 @@ class HostDownloadsInterconnectModule extends InterconnectHostModule {
   final HostDownloadHost? host;
 
   @override
-  String get capabilityKey => 'downloads';
+  String get name => 'downloads';
 
   @override
+  List<InterconnectCapability> get capabilities => <InterconnectCapability>[
+    InterconnectCapability('downloads', capability),
+  ];
+
+  /// 能力值；null = 本 host 此刻不提供（键不出现）。
   Future<Object?> capability() async {
     final Map<String, Object?>? downloads = await host?.capability();
     if (downloads == null) return null;
@@ -135,9 +140,14 @@ class HostDownloadsInterconnectModule extends InterconnectHostModule {
   }
 
   @override
-  List<String> get routePrefixes => const <String>['/api/downloads'];
+  List<InterconnectRoute> get routes => <InterconnectRoute>[
+    InterconnectRoute(
+      const InterconnectPath.subtree('/api/downloads'),
+      trust: InterconnectTrust.credential,
+      handler: handle,
+    ),
+  ];
 
-  @override
   Future<shelf.Response> handle(InterconnectRequest request) async {
     final HostDownloadHost? h = host;
     if (h == null) return shelf.Response.notFound('Host downloads off');

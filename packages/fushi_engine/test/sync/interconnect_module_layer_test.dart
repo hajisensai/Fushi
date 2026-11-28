@@ -119,15 +119,22 @@ class _StreamModule extends InterconnectHostModule {
   final String prefix = '/api/test-module';
 
   @override
-  String get capabilityKey => 'testModule';
+  String get name => 'testModule';
 
   @override
-  Future<Object?> capability() async => <String, Object?>{'v': 1};
+  List<InterconnectCapability> get capabilities => <InterconnectCapability>[
+    InterconnectCapability('testModule', () => <String, Object?>{'v': 1}),
+  ];
 
   @override
-  List<String> get routePrefixes => <String>[prefix];
+  List<InterconnectRoute> get routes => <InterconnectRoute>[
+    InterconnectRoute(
+      InterconnectPath.subtree(prefix),
+      trust: InterconnectTrust.credential,
+      handler: handle,
+    ),
+  ];
 
-  @override
   Future<shelf.Response> handle(InterconnectRequest request) async =>
       shelf.Response.ok(
         jsonEncode(<String, Object?>{
@@ -148,21 +155,54 @@ class _StreamModule extends InterconnectHostModule {
 }
 
 class _PrefixModule extends InterconnectHostModule {
-  _PrefixModule(this.capabilityKey, this.routePrefixes);
+  _PrefixModule(this.name, List<String> prefixes)
+    : routes = <InterconnectRoute>[
+        for (final String prefix in prefixes)
+          InterconnectRoute(
+            InterconnectPath.subtree(prefix),
+            trust: InterconnectTrust.credential,
+            handler: (InterconnectRequest _) async => shelf.Response.ok(''),
+          ),
+      ];
 
   @override
-  final String capabilityKey;
+  final String name;
 
   @override
-  final List<String> routePrefixes;
-
-  @override
-  Future<Object?> capability() async => null;
-
-  @override
-  Future<shelf.Response> handle(InterconnectRequest request) async =>
-      shelf.Response.ok('');
+  final List<InterconnectRoute> routes;
 }
+
+/// 任意路由 / 能力位的测试模块。
+class _DeclaredModule extends InterconnectHostModule {
+  _DeclaredModule(
+    this.name, {
+    this.routes = const <InterconnectRoute>[],
+    this.capabilities = const <InterconnectCapability>[],
+  });
+
+  @override
+  final String name;
+
+  @override
+  final List<InterconnectRoute> routes;
+
+  @override
+  final List<InterconnectCapability> capabilities;
+}
+
+InterconnectRoute _ok(
+  InterconnectPath path, {
+  Set<String>? methods,
+  InterconnectTrust trust = InterconnectTrust.credential,
+  String body = '',
+}) => InterconnectRoute(
+  path,
+  methods: methods,
+  trust: trust,
+  handler: (InterconnectRequest _) async => shelf.Response.ok(body),
+);
+
+bool _always(String _) => true;
 
 String _basic(String password) =>
     'Basic ${base64Encode(utf8.encode('hibiki:$password'))}';
@@ -359,9 +399,241 @@ void main() {
           _PrefixModule('a', <String>['/api/x']),
         ],
       );
-      expect(table.match('/api/x'), isNotNull);
-      expect(table.match('/api/x/1'), isNotNull);
-      expect(table.match('/api/xy'), isNull);
+      expect(table.lookup('/api/x', 'GET'), isA<InterconnectRouteHit>());
+      expect(table.lookup('/api/x/1', 'GET'), isA<InterconnectRouteHit>());
+      expect(table.lookup('/api/xy', 'GET'), isA<InterconnectRouteMiss>());
+    });
+
+    test('精确路径 / under / where 的跨模块冲突', () {
+      InterconnectModuleTable two(InterconnectPath a, InterconnectPath b) =>
+          InterconnectModuleTable(<InterconnectHostModule>[
+            _DeclaredModule('a', routes: <InterconnectRoute>[_ok(a)]),
+            _DeclaredModule('b', routes: <InterconnectRoute>[_ok(b)]),
+          ]);
+      expect(
+        () => two(
+          const InterconnectPath.exact('/api/m'),
+          const InterconnectPath.exact('/api/m'),
+        ),
+        throwsArgumentError,
+      );
+      expect(
+        () => two(
+          const InterconnectPath.exact('/api/x/y'),
+          const InterconnectPath.subtree('/api/x'),
+        ),
+        throwsArgumentError,
+      );
+      expect(
+        () => two(
+          const InterconnectPath.under('/api/x/'),
+          const InterconnectPath.where('/api/x/y', _always),
+        ),
+        throwsArgumentError,
+      );
+      // 互不相交的不报：一条精确路径是另一条的「前缀」、under 不含前缀本身。
+      two(
+        const InterconnectPath.exact('/api/m'),
+        const InterconnectPath.exact('/api/m/targets'),
+      );
+      two(
+        const InterconnectPath.under('/api/v/'),
+        const InterconnectPath.exact('/api/v'),
+      );
+      // 同一模块里可以先窄后宽（免 Basic 的子路径 + 整棵子树）。
+      InterconnectModuleTable(<InterconnectHostModule>[
+        _DeclaredModule(
+          'a',
+          routes: <InterconnectRoute>[
+            _ok(
+              const InterconnectPath.exact('/api/a/s'),
+              methods: <String>{'GET'},
+            ),
+            _ok(const InterconnectPath.subtree('/api/a')),
+          ],
+        ),
+      ]);
+    });
+
+    test('路由的方法集：非空、大写；路径命中而方法不受理是单独一态（405）', () {
+      expect(
+        () => _ok(const InterconnectPath.exact('/api/a'), methods: <String>{}),
+        throwsArgumentError,
+      );
+      expect(
+        () => _ok(
+          const InterconnectPath.exact('/api/a'),
+          methods: <String>{'get'},
+        ),
+        throwsArgumentError,
+      );
+      final InterconnectModuleTable table = InterconnectModuleTable(
+        <InterconnectHostModule>[
+          _DeclaredModule(
+            'a',
+            routes: <InterconnectRoute>[
+              _ok(
+                const InterconnectPath.exact('/api/a'),
+                methods: <String>{'POST'},
+              ),
+            ],
+          ),
+        ],
+      );
+      expect(table.lookup('/api/a', 'POST'), isA<InterconnectRouteHit>());
+      expect(
+        table.lookup('/api/a', 'GET'),
+        isA<InterconnectRouteMethodNotAllowed>(),
+      );
+      expect(table.lookup('/api/b', 'GET'), isA<InterconnectRouteMiss>());
+    });
+
+    test('能力分组：成员须声明、恰好一个提供者；分组按成员序、落在第一个提供者处', () async {
+      const InterconnectCapabilityGroup g = InterconnectCapabilityGroup(
+        'g',
+        <String>['x', 'y'],
+      );
+      InterconnectCapability member(String key, Object? v) =>
+          InterconnectCapability.member(g, key, () => v);
+      expect(
+        () => InterconnectModuleTable(<InterconnectHostModule>[
+          _DeclaredModule(
+            'a',
+            capabilities: <InterconnectCapability>[member('x', true)],
+          ),
+        ]),
+        throwsArgumentError,
+        reason: 'y 没人提供',
+      );
+      expect(
+        () => InterconnectModuleTable(<InterconnectHostModule>[
+          _DeclaredModule(
+            'a',
+            capabilities: <InterconnectCapability>[
+              member('x', true),
+              member('y', true),
+              member('z', true),
+            ],
+          ),
+        ]),
+        throwsArgumentError,
+        reason: 'z 不是成员',
+      );
+      expect(
+        () => InterconnectModuleTable(<InterconnectHostModule>[
+          _DeclaredModule(
+            'a',
+            capabilities: <InterconnectCapability>[
+              member('x', true),
+              member('y', true),
+            ],
+          ),
+          _DeclaredModule(
+            'b',
+            capabilities: <InterconnectCapability>[member('x', false)],
+          ),
+        ]),
+        throwsArgumentError,
+        reason: 'x 重复提供',
+      );
+      final InterconnectModuleTable table = InterconnectModuleTable(
+        <InterconnectHostModule>[
+          _DeclaredModule(
+            'top',
+            capabilities: <InterconnectCapability>[
+              InterconnectCapability('first', () => 1),
+              InterconnectCapability('absent', () => null),
+            ],
+          ),
+          _DeclaredModule(
+            'b',
+            capabilities: <InterconnectCapability>[member('y', false)],
+          ),
+          _DeclaredModule(
+            'c',
+            capabilities: <InterconnectCapability>[
+              InterconnectCapability('last', () async => true),
+              member('x', true),
+            ],
+          ),
+        ],
+      );
+      expect(
+        jsonEncode(await table.capabilities()),
+        '{"first":1,"g":{"x":true,"y":false},"last":true}',
+      );
+    });
+  });
+
+  group('信任级', () {
+    test('urlTicket / probe / bootstrap 只对声明的方法免 Basic；其余照常 401', () async {
+      final FushiSyncServer server = await start(
+        modules: <InterconnectHostModule>[
+          _DeclaredModule(
+            'trust',
+            routes: <InterconnectRoute>[
+              _ok(
+                const InterconnectPath.exact('/api/t/stream'),
+                methods: <String>{'GET'},
+                trust: const InterconnectTrust.urlTicket('测试票'),
+                body: 'ticket',
+              ),
+              _ok(
+                const InterconnectPath.exact('/api/t/probe'),
+                methods: <String>{'GET'},
+                trust: InterconnectTrust.reachabilityProbe,
+                body: 'probe',
+              ),
+              _ok(
+                const InterconnectPath.exact('/api/t/pair'),
+                methods: <String>{'POST'},
+                trust: InterconnectTrust.pairingBootstrap,
+                body: 'pair',
+              ),
+              _ok(const InterconnectPath.subtree('/api/t'), body: 'basic'),
+            ],
+          ),
+        ],
+      );
+      Future<String> anon(String method, String path) async {
+        final r = await _send(server, method, path, password: null);
+        return '${r.status} ${r.body}';
+      }
+
+      expect(await anon('GET', '/api/t/stream'), '200 ticket');
+      expect(await anon('POST', '/api/t/stream'), '401 ');
+      expect(await anon('GET', '/api/t/probe'), '200 probe');
+      expect(await anon('POST', '/api/t/pair'), '200 pair');
+      expect(await anon('GET', '/api/t/pair'), '401 ');
+      expect(await anon('GET', '/api/t/other'), '401 ');
+      final r = await _send(server, 'POST', '/api/t/stream');
+      expect('${r.status} ${r.body}', '200 basic', reason: '带凭据走宽路由');
+    });
+
+    test('queryTicketOrCredential：票有效免 Basic，无效落到 Basic', () async {
+      final FushiSyncServer server = await start(
+        modules: <InterconnectHostModule>[
+          _DeclaredModule(
+            'query',
+            routes: <InterconnectRoute>[
+              _ok(
+                const InterconnectPath.exact('/api/q'),
+                methods: <String>{'GET'},
+                trust: InterconnectTrust.queryTicketOrCredential(
+                  (shelf.Request r) async =>
+                      r.url.queryParameters['key'] == 'good',
+                ),
+                body: 'q',
+              ),
+            ],
+          ),
+        ],
+      );
+      Future<int> status(String path, {String? password}) async =>
+          (await _send(server, 'GET', path, password: password)).status;
+      expect(await status('/api/q?key=good'), 200);
+      expect(await status('/api/q?key=bad'), 401);
+      expect(await status('/api/q?key=bad', password: _token), 200);
     });
   });
 
@@ -584,21 +856,66 @@ void main() {
     });
   });
 
-  test('守卫：服务器本体不再为已迁进模块层的功能手写分支 / 字段', () {
-    final String server = <String>[
-      File('lib/sync/fushi_sync_server.dart').readAsStringSync(),
-      for (final FileSystemEntity f in Directory(
-        'lib/sync/fushi_sync_server',
-      ).listSync())
-        if (f is File && f.path.endsWith('.dart')) f.readAsStringSync(),
-    ].join(String.fromCharCode(10));
+  /// 服务器本体（fushi_sync_server.dart 与它的 part）的源码。
+  String serverSource() => <String>[
+    File('lib/sync/fushi_sync_server.dart').readAsStringSync(),
+    for (final FileSystemEntity f in Directory(
+      'lib/sync/fushi_sync_server',
+    ).listSync())
+      if (f is File && f.path.endsWith('.dart')) f.readAsStringSync(),
+  ].join(String.fromCharCode(10));
+
+  test('守卫：服务器本体不手写路径分支，端点只经端点表登记', () {
+    // 放宽名单：还没迁进端点表、仍在 handler 里手写的**二级**分发（原文片段，按出现次数列）。A1 已把
+    // `_handleRequest` 的一级分支全部迁完；这些是 handler 在自己的前置门（库服务 null → 404 等）之后再按
+    // 子路径分的支，拆成独立路由要先给模块加「前置门 + 子路由」的声明，不在 A1。只列现存项、只减不增：
+    // 新增一条即红；迁走一条也红，提醒从这里删掉。
+    const List<String> notYetMigrated = <String>[
+      "reqPath == '/api/game-stream/mine'",
+      "reqPath == '/api/library/dictionaries'",
+      "reqPath == '/api/library/books'",
+      "reqPath == '/api/library/localaudio'",
+      "reqPath == '/api/library/audiobooks'",
+      "reqPath == '/api/lookup/dictionary'",
+      "reqPath == '/api/lookup/dictionary/styles'",
+      "reqPath == '/api/lookup/dictionary/media'",
+      "reqPath == '/api/lookup/audio'",
+      "reqPath == '/api/lookup/audio/list'",
+      "reqPath == '/api/lookup/audio/file'",
+      'reqPath == kInterconnectPluginRelayPath',
+      'reqPath == kInterconnectPluginRelayInvokePath',
+      'reqPath == kInterconnectPluginRelayCoversPath',
+      'reqPath == kInterconnectSourceSharePath',
+      "reqPath == '/api/library/videos'",
+      "reqPath.startsWith('/api/library/videos/'",
+      "reqPath.startsWith('/api/library/videos/'",
+      "reqPath == '/api/library/metadata'",
+      "reqPath == '/api/library/metadata/candidates'",
+      "reqPath == '/api/library/metadata/scrape'",
+      "reqPath == '/api/library/metadata/episode-groups'",
+      "reqPath == '/api/library/metadata/episode-group'",
+    ];
+    final RegExp branch = RegExp(
+      r"reqPath\s*==\s*[^\s;)|&]+|reqPath\.startsWith\(\s*'/api/[^']*'",
+    );
+    final List<String> found = <String>[
+      for (final RegExpMatch m in branch.allMatches(serverSource()))
+        m.group(0)!,
+    ]..sort();
+    expect(
+      found,
+      <String>[...notYetMigrated]..sort(),
+      reason: '路径分支一律写进端点表（InterconnectRoute）；放宽名单只减不增，迁走的要从名单删掉',
+    );
+  });
+
+  test('守卫：服务器本体不再持有已迁进模块层的功能的处理函数 / 字段', () {
+    final String server = serverSource();
     for (final String banned in <String>[
-      "reqPath == '/api/ocr/job'",
-      "reqPath == '/api/jobs'",
-      "reqPath == '/api/downloads'",
       'kTorrentEngineRoutePrefix',
-      "reqPath == '/api/assistant'",
-      "reqPath == '/api/subscriptions'",
+      // 免 Basic 表与能力位手拼段已并进端点表。
+      '_kPublicRoutes',
+      '_capabilitiesBase',
       'handleMangaOcrRequest(',
       'handleHostJobRequest(',
       'handleHostDownloadRequest(',

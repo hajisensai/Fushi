@@ -15,7 +15,6 @@ import 'dart:io';
 
 import 'package:fushi_engine/ai/ai_settings.dart';
 import 'package:fushi_engine/media/video/live_transcode.dart';
-import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi_engine/srs/srs_remote_store.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
@@ -1131,12 +1130,6 @@ class _ScreenOcr implements ScreenOcrHost {
       throw UnimplementedError('${invocation.memberName}');
 }
 
-class _OcrService implements MangaOcrService {
-  @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      throw UnimplementedError('${invocation.memberName}');
-}
-
 /// 每个能力位取最满一态的 host。[tls] = 是否带 [SecurityContext]（只影响 TLS 相关位；带了就不能
 /// 明文起监听，只走 [FushiSyncServer.handleInProcess]）。
 FushiSyncServer _maximalServer(String dir, {required bool tls}) {
@@ -1204,8 +1197,9 @@ Future<String> _probe(
       for (final List<int> chunk in await res.toList()) ...chunk,
     ];
     // 2xx 只记状态码：成功体里有端口、长轮询令牌这类每次都变的值，对照表管的是门，不是正文。
-    if (res.statusCode >= 200 && res.statusCode < 300)
+    if (res.statusCode >= 200 && res.statusCode < 300) {
       return '${res.statusCode}';
+    }
     String body = utf8
         .decode(bytes, allowMalformed: true)
         .replaceAll(RegExp(r'\s+'), ' ');
