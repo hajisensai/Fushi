@@ -750,6 +750,62 @@ void main() {
     expect(File(foreign).existsSync(), isTrue);
   });
 
+  // v183 × BUG-5609：用户在「横幅…」里选的横幅上了来源锁——哪怕选的正是获取会贴
+  // 的同一个 MangaBaka URL，它也是单条目 `_user` 文件、不是共用图：重跑获取不覆盖，
+  // 清除 / 撤销（快照在获取前或获取后）都不撤它。
+  test('用户选的横幅：重跑获取不覆盖，清除与撤销都不撤', () async {
+    const String bannerUrl = 'https://images.mangabaka.dev/banner/1';
+    await seed('k1', 'テスト漫画 1');
+    await seed('k2', 'テスト漫画 2');
+    final ItemScrapeKey k1 = ItemScrapeKey(
+      MediaKind.epub,
+      (await db.resolveEpubBookUid('k1'))!,
+    );
+    final BookArtSnapshot beforeFetch = await store.snapshot('k1');
+    final BookArtScrapeService svc = service(mangaBakaOk);
+    await svc.run(<String>['k1', 'k2']);
+    svc.close();
+    expect(await store.bannerStateOf('k1'), BookArtBannerState.fetched);
+    final String shared = (await backdropOf('k2'))!.path;
+    final BookArtSnapshot afterFetch = await store.snapshot('k1');
+
+    final File pick = File('${thumbs.path}/pick.png')
+      ..writeAsBytesSync(png(32, 18, shade: 60));
+    final String mine = await itemScrape.setUserImageFromFile(
+      k1,
+      MediaImageKind.backdrop,
+      pick,
+      sourceUrl: bannerUrl,
+    );
+    expect(mine, isNot(shared));
+    Future<void> expectMineKept(String reason) async {
+      final ItemImageRow row = (await backdropOf('k1'))!;
+      expect(row.path, mine, reason: reason);
+      expect(row.userChosen, isTrue, reason: reason);
+      expect(File(mine).existsSync(), isTrue, reason: reason);
+      expect(
+        await store.bannerStateOf('k1'),
+        BookArtBannerState.other,
+        reason: reason,
+      );
+    }
+
+    await expectMineKept('picked');
+
+    final BookArtScrapeService again = service(mangaBakaOk);
+    await again.run(<String>['k1', 'k2']);
+    again.close();
+    await expectMineKept('refetch');
+    expect((await backdropOf('k2'))!.path, shared, reason: '别的卷照常');
+
+    await store.restore(afterFetch);
+    await expectMineKept('undo to after-fetch');
+    await store.restore(beforeFetch);
+    await expectMineKept('undo to before-fetch');
+    await store.remove('k1');
+    await expectMineKept('clear fetched art');
+  });
+
   test('Bangumi 补卷要求种类一致：轻小说不补漫画版单行本封面', () async {
     for (final int v in <int>[1, 2]) {
       await db.insertEpubBook(

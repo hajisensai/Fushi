@@ -18,3 +18,4 @@
   6. 撤销时横幅没贴回去（位置被占 / 无备份）仍照快照写回横幅四项。`_restoreBanner` 返回横幅是否在书上，只有在时记录才带横幅。测试：位置被别处占着时记录不写回横幅。
   7. 撤销备份按卷各复制一份横幅。改成内容寻址 `banner_<sha256>`，同系列各卷快照共用；每次被用到刷新修改时间，过期清理按修改时间判；`discardSnapshot` 不再删它（别的卷还要用）。测试：两卷共用一份、逐卷恢复都成功、31 天后清理。
 - **备注**：之后「用户手选背景图上锁」（ItemScrapeStore 层）合入时，锁的判断放进格锁里（`_replaceSlot`），`setSharedImageFromFile` 自然过同一把锁；手选写单条目文件名，不会被认成获取贴的共用图。
+  - 已落地（横幅选择 PR，schema v183 `item_images.user_chosen`）：判锁在 `_replaceSlot` 的格锁里、先于 `when` 与落盘；本层写入口改名表明口径——共用写 `writeScrapedSharedImageFromFile`、条件清 `clearScrapedImage`（刮削口径，遇用户图返回 null / false），用户口径是 `setUserImageFromFile/Url` / `clearUserImage`。用户的图文件名带 `_user`。测试：`item_scrape_store_test.dart`（共用写 / 条件清遇用户图让路、并发不留共用文件、共用图撤销写回仍是共用图）、`book_art_scrape_service_test.dart`（用户选的横幅：重跑获取、清除、撤销都不动）。
