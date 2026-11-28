@@ -1,4 +1,4 @@
-# fushi_server — 无头 Fushi 服务端（Linux / Windows / macOS）
+# fushi_server — 无头 Fushi 服务端（Linux / Windows，Docker 镜像）
 
 `fushi_server` 是 Fushi 的无 GUI 服务端：一个 CLI 进程，跑与桌面 Fushi **同一份**互联
 host（`packages/fushi_engine`），带 WebUI。装在 NAS / 家用服务器 / VPS 上，手机和桌面
