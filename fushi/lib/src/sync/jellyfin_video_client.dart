@@ -2933,6 +2933,11 @@ class JellyfinVideoClient
     hasCover: item.hasCover,
     coverUrl: coverUrl(item),
     seriesCoverUrl: seriesCoverUrl(item),
+    workBackdropItemId: mediaServerWorkImageItemId(
+      item,
+      MediaServerImageKind.backdrop,
+    ),
+    workLogoItemId: mediaServerWorkImageItemId(item, MediaServerImageKind.logo),
     completedAt: completedAtOf(item),
     positionMs: item.positionMs,
     positionUpdatedAtMs: item.lastPlayedAtMs,

@@ -767,6 +767,11 @@ class PlexVideoClient
     durationMs: item.durationMs,
     hasCover: item.hasCover,
     coverUrl: coverUrl(item),
+    workBackdropItemId: mediaServerWorkImageItemId(
+      item,
+      MediaServerImageKind.backdrop,
+    ),
+    workLogoItemId: mediaServerWorkImageItemId(item, MediaServerImageKind.logo),
     positionMs: item.positionMs,
     positionUpdatedAtMs: item.lastPlayedAtMs,
     collection: mediaServerCollectionOf(item),

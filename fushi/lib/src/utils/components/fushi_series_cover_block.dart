@@ -105,6 +105,29 @@ class FushiSeriesMeta {
     year: year,
   );
 
+  /// 只补空位的背景图 / logo：已有的（本机刮削的）一律不换，[backdrop] / [logo]
+  /// 只填进原本为 null 的槽。补进的背景图是外部来源的无字图（[backdropHasText] 为
+  /// false）；原有背景图保留它自己的旗子。两项都补不了时原样返回。
+  FushiSeriesMeta withMissingArt({
+    ImageProvider? backdrop,
+    ImageProvider? logo,
+  }) {
+    final bool addBackdrop = this.backdrop == null && backdrop != null;
+    final bool addLogo = this.logo == null && logo != null;
+    if (!addBackdrop && !addLogo) return this;
+    return FushiSeriesMeta(
+      backdrop: addBackdrop ? backdrop : this.backdrop,
+      backdropHasText: addBackdrop ? false : backdropHasText,
+      logo: addLogo ? logo : this.logo,
+      poster: poster,
+      overview: overview,
+      chip: chip,
+      genres: genres,
+      rating: rating,
+      year: year,
+    );
+  }
+
   /// 背景图 / logo / 概览 / chip 一项都没有（海报不算：没刮削的条目也有封面）。
   bool get isEmpty =>
       backdrop == null && logo == null && overview == null && chip == null;

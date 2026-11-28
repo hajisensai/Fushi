@@ -3019,6 +3019,8 @@ class RemoteVideoInfo {
     this.coverUrl,
     this.coverPath,
     this.seriesCoverUrl,
+    this.workBackdropItemId,
+    this.workLogoItemId,
     this.positionMs = 0,
     this.positionUpdatedAtMs = 0,
     this.delayMs = 0,
@@ -3117,6 +3119,14 @@ class RemoteVideoInfo {
   /// [coverUrl] 对单集是截图，剧 / 合集卡片应优先用本字段。只在 client
   /// 本地由服务器条目派生，不进 wire。
   final String? seriesCoverUrl;
+
+  /// 作品级背景图 / 标题 logo 所在的服务器条目 id（仅媒体服务器填写；其余来源恒
+  /// null）：集取所属剧的、剧没有才取集自己的，电影取自身的（与服务器页、首页
+  /// 「继续」同一判据 `mediaServerWorkImageItemId`）。存 id 不存地址——地址带
+  /// 访问令牌、换线路就变，展示时经服务器自己的取图器现拼（BUG-5614）。只在
+  /// client 本地由服务器条目派生，不进 wire。
+  final String? workBackdropItemId;
+  final String? workLogoItemId;
 
   /// 远端播放列表的剧集（TODO-885）。空 = 单视频（向后兼容）；length>1 = 多集播放列表。
   final List<RemoteVideoEpisode> episodes;
@@ -3239,6 +3249,8 @@ class RemoteVideoInfo {
     coverUrl: coverUrl,
     coverPath: coverPath,
     seriesCoverUrl: seriesCoverUrl,
+    workBackdropItemId: workBackdropItemId,
+    workLogoItemId: workLogoItemId,
     positionMs: positionMs,
     positionUpdatedAtMs: positionUpdatedAtMs,
     delayMs: delayMs,
@@ -3320,6 +3332,8 @@ class RemoteVideoInfo {
     String? coverUrl,
     String? coverPath,
     String? seriesCoverUrl,
+    String? workBackdropItemId,
+    String? workLogoItemId,
     String? subtitleFileName,
     List<RemoteVideoEmbeddedSubtitleTrack>? embeddedSubtitleTracks,
     int? positionMs,
@@ -3349,6 +3363,8 @@ class RemoteVideoInfo {
     coverUrl: coverUrl ?? this.coverUrl,
     coverPath: coverPath ?? this.coverPath,
     seriesCoverUrl: seriesCoverUrl ?? this.seriesCoverUrl,
+    workBackdropItemId: workBackdropItemId ?? this.workBackdropItemId,
+    workLogoItemId: workLogoItemId ?? this.workLogoItemId,
     positionMs: positionMs ?? this.positionMs,
     positionUpdatedAtMs: positionUpdatedAtMs ?? this.positionUpdatedAtMs,
     delayMs: delayMs ?? this.delayMs,

@@ -1525,6 +1525,52 @@ void main() {
       expect(noTag.parentLogoItemId, isNull);
     });
 
+    test('远端占位带作品级背景 / logo 的条目 id：集取剧的、电影取自身、没有为 null（BUG-5614）', () {
+      final JellyfinVideoClient c = _client(
+        MockClient((_) async => http.Response('', 404)),
+      );
+      final RemoteVideoInfo episode = c.infoFromItem(
+        JellyfinApi.parseItem(<String, Object?>{
+          'Id': 'ep1',
+          'Name': 'Ep',
+          'Type': 'Episode',
+          'SeriesName': 'Show',
+          // 集自己也有背景：作品级图仍认剧的。
+          'BackdropImageTags': <Object?>['ep-bd'],
+          'ParentBackdropItemId': 'series-1',
+          'ParentBackdropImageTags': <Object?>['bd-tag'],
+          'ParentLogoItemId': 'series-1',
+          'ParentLogoImageTag': 'logo-tag',
+        }),
+      );
+      expect(episode.workBackdropItemId, 'series-1');
+      expect(episode.workLogoItemId, 'series-1');
+
+      final RemoteVideoInfo movie = c.infoFromItem(
+        JellyfinApi.parseItem(<String, Object?>{
+          'Id': 'm1',
+          'Name': 'Movie',
+          'Type': 'Movie',
+          'BackdropImageTags': <Object?>['bd'],
+          'ImageTags': <String, Object?>{'Logo': 'lg'},
+        }),
+      );
+      expect(movie.workBackdropItemId, 'm1');
+      expect(movie.workLogoItemId, 'm1');
+
+      final RemoteVideoInfo bare = c.infoFromItem(
+        JellyfinApi.parseItem(<String, Object?>{
+          'Id': 'm2',
+          'Name': 'Bare',
+          'Type': 'Movie',
+        }),
+      );
+      expect(bare.workBackdropItemId, isNull);
+      expect(bare.workLogoItemId, isNull);
+      // 不进互联 wire。
+      expect(episode.toJson().keys, isNot(contains('workBackdropItemId')));
+    });
+
     test('集的剧海报：SeriesPrimaryImageTag > ParentPrimaryImage 回落 > 无则用集自身图', () {
       MediaServerItem map(Map<String, Object?> extra) =>
           JellyfinVideoClient.mediaServerItemFrom(

@@ -93,24 +93,24 @@ MediaServerItem mediaServerParentImageItem(
   hasLogo: kind == MediaServerImageKind.logo,
 );
 
-/// 条目「作品级」图片的所在条目：集先认所属剧的那张（[parentId]，服务器报了才有）
-/// ——集代表的是那部剧，系列色块 / hero 要的是剧的背景与艺术字，不是这一集；剧没有
-/// 再退回集自己的（[own]）。电影 / 剧 / 季只看自己。都没有为 null。
-MediaServerItem? _workImageItem(
-  MediaServerItem item, {
-  required String? parentId,
-  required bool own,
-  required MediaServerImageKind kind,
-}) {
-  final bool episode = item.type == MediaServerItemType.episode;
-  if (episode && parentId != null && parentId.isNotEmpty) {
-    return mediaServerParentImageItem(parentId, kind);
-  }
-  if (own) return item;
-  if (parentId != null && parentId.isNotEmpty) {
-    return mediaServerParentImageItem(parentId, kind);
-  }
-  return null;
+/// 作品级图片（[mediaServerWorkImageItemId] 选出的 [itemId]）的 provider：背景图
+/// 走网格尺寸（[mediaServerCoverImage]），logo 走 hero 尺寸（[mediaServerHeroImage]）
+/// ——与服务器页同一缓存键（条目 id : 图种 (: 宽度)），同一部剧在服务器页、首页与
+/// 视频库之间只取一次。
+ImageProvider? mediaServerWorkArtImage(
+  MediaServerBrowser browser,
+  String itemId,
+  MediaServerImageKind kind,
+) {
+  final MediaServerItem source = mediaServerParentImageItem(itemId, kind);
+  return switch (kind) {
+    MediaServerImageKind.logo => mediaServerHeroImage(
+      browser,
+      source,
+      kind: MediaServerImageKind.logo,
+    ),
+    _ => mediaServerCoverImage(browser, source, kind: kind),
+  };
 }
 
 /// 条目的横版背景图（无字剧照）：集用所属剧的（[MediaServerItem.parentBackdropItemId]），
@@ -119,18 +119,13 @@ ImageProvider? mediaServerBackdropImage(
   MediaServerBrowser browser,
   MediaServerItem item,
 ) {
-  final MediaServerItem? source = _workImageItem(
+  final String? id = mediaServerWorkImageItemId(
     item,
-    parentId: item.parentBackdropItemId,
-    own: item.hasBackdrop,
-    kind: MediaServerImageKind.backdrop,
+    MediaServerImageKind.backdrop,
   );
-  if (source == null) return null;
-  return mediaServerCoverImage(
-    browser,
-    source,
-    kind: MediaServerImageKind.backdrop,
-  );
+  return id == null
+      ? null
+      : mediaServerWorkArtImage(browser, id, MediaServerImageKind.backdrop);
 }
 
 /// 条目的标题艺术字（logo，hero 尺寸）：集用所属剧的
@@ -140,12 +135,11 @@ ImageProvider? mediaServerLogoImage(
   MediaServerBrowser browser,
   MediaServerItem item,
 ) {
-  final MediaServerItem? source = _workImageItem(
+  final String? id = mediaServerWorkImageItemId(
     item,
-    parentId: item.parentLogoItemId,
-    own: item.hasLogo,
-    kind: MediaServerImageKind.logo,
+    MediaServerImageKind.logo,
   );
-  if (source == null) return null;
-  return mediaServerHeroImage(browser, source, kind: MediaServerImageKind.logo);
+  return id == null
+      ? null
+      : mediaServerWorkArtImage(browser, id, MediaServerImageKind.logo);
 }

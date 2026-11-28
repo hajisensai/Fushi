@@ -197,6 +197,35 @@ RemoteCollectionMembership? mediaServerCollectionOf(MediaServerItem item) {
   );
 }
 
+/// 条目「作品级」背景图 / logo（[kind] 只认 [MediaServerImageKind.backdrop] /
+/// [MediaServerImageKind.logo]）所在的条目 id：集先认所属剧的那张（上级 id，服务器
+/// 报了才有）——集代表的是那部剧，系列色块 / hero 要的是剧的背景与艺术字，不是这
+/// 一集；剧没有再退回集自己的。电影 / 剧 / 季先看自己，没有再借上级。都没有为
+/// null。服务器页、首页「继续」与视频库的远端占位（`RemoteVideoInfo.workBackdropItemId`
+/// / `workLogoItemId`）共用这一条判据。
+String? mediaServerWorkImageItemId(
+  MediaServerItem item,
+  MediaServerImageKind kind,
+) {
+  final (String? parentId, bool own) = switch (kind) {
+    MediaServerImageKind.backdrop => (
+      item.parentBackdropItemId,
+      item.hasBackdrop,
+    ),
+    MediaServerImageKind.logo => (item.parentLogoItemId, item.hasLogo),
+    MediaServerImageKind.primary ||
+    MediaServerImageKind.thumb => throw ArgumentError.value(
+      kind,
+      'kind',
+      'only backdrop / logo have a work-level owner',
+    ),
+  };
+  final bool hasParent = parentId != null && parentId.isNotEmpty;
+  if (item.type == MediaServerItemType.episode && hasParent) return parentId;
+  if (own) return item.id;
+  return hasParent ? parentId : null;
+}
+
 /// 网格一页的条目数。桌面 6 列 × 10 行，移动端 3 列 × 20 行，都在一页内可滚一段。
 const int kMediaServerPageSize = 60;
 
