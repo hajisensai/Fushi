@@ -6,6 +6,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/migration/migration_exporter.dart';
 import 'package:fushi/src/migration/migration_readonly.dart';
 import 'package:fushi/src/migration/migration_target_channel.dart';
+import 'package:fushi/src/storage/app_storage_areas.dart';
 import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -115,15 +116,17 @@ class _MigrationPageState extends State<MigrationPage> {
         dbDirectory: appModel.databaseDirectory.path,
         dictionaryResourceDirectory: appModel.dictionaryResourceDirectory.path,
         appVersion: appModel.packageInfo.version,
-        booksRootDirectory: p.join(appModel.appDirectory.path, 'fushi_books'),
-        audiobooksRootDirectory: p.join(
+        booksRootDirectory: EngineStorageArea.epubBooks.pathUnder(
           appModel.appDirectory.path,
-          'audiobooks',
         ),
-        fontsRootDirectory: p.join(appModel.appDirectory.path, 'custom_fonts'),
-        gameCoversRootDirectory: p.join(
+        audiobooksRootDirectory: EngineStorageArea.audiobooks.pathUnder(
           appModel.appDirectory.path,
-          'game_covers',
+        ),
+        fontsRootDirectory: AppStorageArea.customFonts.pathUnder(
+          appModel.appDirectory.path,
+        ),
+        gameCoversRootDirectory: AppStorageArea.gameCovers.pathUnder(
+          appModel.appDirectory.path,
         ),
         srsStorage: appModel.srsStorageForBackup,
       );

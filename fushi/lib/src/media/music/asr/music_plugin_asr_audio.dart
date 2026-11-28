@@ -19,6 +19,7 @@
 /// 所以 ffmpeg 的报错文本一律经凭据脱敏再给界面。副本同放这个目录（目录名冻结）。
 library;
 
+import 'package:fushi_engine/foundation/storage_area.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -38,7 +39,11 @@ import 'package:fushi/src/media/music/plugin/music_plugins.dart';
 /// `<数据根>/asr_jobs/music_subtitles/plugin_audio`：与音乐字幕导出目录
 /// （`asr_jobs/music_subtitles/out`）同级。布局只在这里写一次。
 Directory musicPluginAsrAudioRootUnder(Directory supportRoot) => Directory(
-  p.join(supportRoot.path, 'asr_jobs', 'music_subtitles', 'plugin_audio'),
+  p.join(
+    EngineStorageArea.asrJobs.pathUnder(supportRoot.path),
+    'music_subtitles',
+    'plugin_audio',
+  ),
 );
 
 /// 这首插件曲目的转写音频副本。

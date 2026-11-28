@@ -10,11 +10,11 @@ import 'package:fushi_engine/sync/interconnect_file_box_prune.dart'
     show InterconnectSyncDataUsage, measureInterconnectSyncData;
 import 'package:path/path.dart' as p;
 
+export 'package:fushi_engine/foundation/storage_area.dart'
+    show StorageCategoryId, StorageEntryDeletability;
+
 import 'package:fushi/src/storage/app_paths.dart';
-import 'package:fushi/src/storage/books_directory.dart'
-    show kLegacyBooksDirectoryName;
-import 'package:fushi/src/storage/export_directory.dart'
-    show kLegacyExportDirectoryName;
+import 'package:fushi/src/storage/app_storage_areas.dart';
 import 'package:fushi/src/sync/backup_archive_name.dart'
     show isBackupArchiveName;
 
@@ -28,95 +28,27 @@ import 'package:fushi/src/sync/backup_archive_name.dart'
 /// （见 `video_storage.dart` 头注释的共享资产误删坑）。每条明细带
 /// [StorageEntryKind] 说明它接哪条原语（或只读）。
 ///
-/// 类目清单是 [AppPaths.fushiOwnedDocumentsEntries] 的**全覆盖分组**：documents
-/// 根下白名单顶层目录每一个都归属且只归属一个类目（守卫见
-/// `storage_usage_service_test.dart`），support 根整体归「数据库与内部数据」，
-/// 其中 OCR 模型子目录单独拆出（它是唯一可删可恢复的 support 子项）。
+/// 类目由受管存储区域登记表派生（D1，`app_storage_areas.dart`）：documents 根下每个
+/// 登记区域归属且只归属一个类目（[StorageArea.category]），support 根整体归「数据库与
+/// 内部数据」，其中登记到别的类目的区域（OCR 模型、字幕生成任务）单独拆出。
+/// [StorageCategoryId] 本身只是 id，定义在 fushi_engine；标题 / 图标在 UI 层。
 ///
 /// 每个类目都出明细：书籍/词典的条目来自 DB（有标题、接既有删除原语），其余
-/// 类目的条目就是类目根下的直接子项（`_childEntriesSync`，只读展示）。
+/// 类目的条目就是类目根下的直接子项（`_childEntriesSync`）。条目能不能删由区域的
+/// [StorageAreaPath.entryDeletability] 给默认值，所有者按条目收紧
+/// （[StorageEntryUsage.deletability]）。
 ///
 /// 目录求和递归 stat 整棵树（词典是 GB 级），全部经 [Isolate.run] 隔离跑，
 /// 绝不在 UI isolate 同步扫。
-enum StorageCategoryId {
-  /// 书籍与有声书：`fushi_books`（EPUB/漫画解压正文）+ `hoshi_books`（旧名残留）
-  /// + `audiobooks`（复制导入的音频）。
-  books,
-
-  /// 词典数据：`dictionaryResources` + `dictionaryImportWorkingDirectory` +
-  /// `recommended_pack`（新手引导推荐包＝词典+发音库的下载暂存，常态为空）。
-  dictionaries,
-
-  /// 视频下载：`remote_videos` + `anime_downloads` + `videos`。
-  videoDownloads,
-
-  /// 封面与缩略图：`video_covers` + `game_covers` + `thumbnails`。
-  covers,
-
-  /// 字幕副本：`video_subtitles`。
-  subtitles,
-
-  /// 字幕生成任务：`<support>/asr_jobs`（[kAsrJobsSupportChild]）。视频 / 音乐字幕管线
-  /// 的任务缓存（识别稿、抽出的音轨、校对批次，删了下次重跑从头来）、上游转录任务，
-  /// 以及原盘字幕产物 `video_subtitles/disc_out` 与音乐字幕产物 `music_subtitles/out`
-  /// ——后两者是库里登记着的字幕，只读展示，随库行删除回收。明细见
-  /// [subtitleJobEntriesSync]。
-  subtitleJobs,
-
-  /// 视频着色器与 mpv Lua 脚本：`mpv_shaders`（Anime4K 下载与用户自导入混放）
-  /// + `mpv_scripts`（体量极小，不值得独立类目）。
-  shaders,
-
-  /// 自定义字体：`custom_fonts`。
-  customFonts,
-
-  /// 网页存档与浏览器数据：`webArchive` + `browser`。
-  web,
-
-  /// 导出文件：`fushiExport` + `hibikiExport`。
-  exports,
-
-  /// 移动端分享后留在 app 临时目录里的本地备份归档。单列而不是混进缓存，
-  /// 让总量来源可解释，并提供稳定的聚合清理入口（BUG-1979）。
-  backups,
-
-  /// 数据库与内部数据：support 根的直接子项减去 OCR 模型子目录（主库
-  /// `fushi.db`、本地发音库副本 `local_audio_*.db` 等都在明细里）。
-  database,
-
-  /// 漫画 OCR 模型：`<support>/ocr_models`（可删可恢复）。
-  ocrModels,
-
-  /// BUG-1905：缓存与临时文件。
-  ///
-  /// 此前 `scanCategories` 只取 documents + support 两个根，**缓存根一个都没扫过**，
-  /// 而在 iOS 上它恰恰是大头：`path_provider` 的 `getTemporaryDirectory()` 在 Apple
-  /// 平台返回的是 **`Library/Caches`**（不是 `tmp`，见 `PathProviderPlugin.swift` 的
-  /// `case .temp: return .cachesDirectory`），而 Dart 的 `Directory.systemTemp` 读
-  /// `TMPDIR` 指向 `<沙盒>/tmp`——**两个不同目录**。落在这里的有：远端封面缓存
-  /// （自称常驻）、互联导入发音库的 staging 副本（与 support 里那份重复）、整包
-  /// `.fushiaudio` / EPUB、备份 zip、file_picker 对每个导入文件的整份复制、
-  /// `flutter_cache_manager` 的图片缓存。
-  ///
-  /// iOS 系统设置里的「文稿与数据」= Documents + 整个 Library/* + tmp，三块全算；
-  /// 只扫两块必然少报（用户 2026-08-28：app 内 6.9 GB vs 系统 13.68 GB）。
-  ///
-  /// **具体扫哪些根按平台门控**——桌面的临时目录是全系统共享的，算进来会严重高报。
-  /// 判据与理由见 [resolveStorageCacheRoots]。
-  cache,
-
-  /// BUG-1905：其他未归类 —— documents 根下**不在**白名单里的顶层项。
-  ///
-  /// 存在的意义是让「漏算」变得**结构上无法隐藏**：此前总计 = 各类目之和，
-  /// 而类目 = 一份手写白名单，漏了什么就静默少算多少，页面自己永远发现不了
-  /// （守卫测试也只断言「类目清单 == 迁移白名单」，而迁移白名单本身就故意排除
-  /// 了 temp、`video_clips`、日志）。现在白名单之外的东西会自己冒出来。
-  ///
-  /// **只在 documents 根是 Fushi 专属容器时才有意义**：老安装的扁平布局下
-  /// documents 根就是用户真实的 `Documents` 文件夹（共享目录，装着用户自己的
-  /// 文件），把那些算进来既不准也吓人。桌面扁平布局下本类目恒为 0。
-  other,
-}
+///
+/// 两个兜底类目：
+/// - [StorageCategoryId.cache]（BUG-1905）：缓存 / 临时根。iOS 上 `path_provider` 的
+///   `getTemporaryDirectory()` 是 `Library/Caches`、`Directory.systemTemp` 是沙盒 `tmp`，
+///   两个都要算（系统「文稿与数据」= Documents + Library/* + tmp）；桌面的临时目录全系统
+///   共享，不算。判据见 [resolveStorageCacheRoots]。
+/// - [StorageCategoryId.other]（BUG-1905）：documents 根下**未登记**的顶层项，让漏算在
+///   结构上无法隐藏；只在 documents 根是 Fushi 专属容器时才算（老扁平布局下 documents
+///   根是用户自己的 Documents，恒为 0）。
 
 /// 明细条目的种类 = 它接哪条删除原语。可删性属于**条目**而不是类目：同一个
 /// 「数据库与内部数据」类目里，活库是只读的，快照残留却可删（BUG-1870）。
@@ -151,65 +83,48 @@ enum StorageEntryKind {
   interconnectLegacyFileBox,
 
   /// 类目根下的磁盘子项，只读展示（删它就是裸 `Directory.delete`，绕过墓碑/引用护栏）。
+  /// 与 [StorageEntryDeletability.no] 一一对应（[StorageEntryUsage] 构造期断言）。
   readOnly,
 
-  /// 类目根下的磁盘子项，且**可以**直接删（`paths` = 待删路径）。只用于
-  /// [kDeletableEntryCategories] 里那些纯派生 / 缓存 / 可重新获取的类目 —— 那里的
-  /// 东西没有任何 DB 行引用，裸删不绕过任何护栏。
+  /// 类目根下的磁盘子项，且**可以**直接删（`paths` = 待删路径）。只由区域可删性不为
+  /// [StorageEntryDeletability.no] 的区域产出（缓存 / 可重新获取 / 用户确认后可删的
+  /// 东西，没有任何 DB 行引用，裸删不绕过任何护栏）。线上 `kind` 名冻结（控制通道 ls）。
   derivedFile,
 }
 
-/// 明细可**直接删**的类目。
-///
-/// 判据是「删了不会留下悬空引用」：这些根下装的要么是能重新生成的派生数据（封面/
-/// 缩略图），要么是缓存/暂存（浏览器数据、Anki 制卡暂存、临时文件 —— 导出的备份包
-/// 就落在这里），要么是能重新下载的资源（OCR 模型、着色器）。
-///
-/// 刻意**不含**：books / dictionaries（各有自己的删除原语，走 kind 分流）、
-/// videoDownloads / subtitles / customFonts（都有 DB 行或配置指着，裸删会留下孤儿行
-/// 和指向空文件的字体配置 —— 见本文件头注释的共享资产误删坑；视频下载里库认识的
-/// 视频另以 [StorageEntryKind.videoBook] 接视频库删除链，不走裸删）、database（活库，其中
-/// 快照残留是 [StorageEntryKind.databaseSnapshots] 专用原语、不走裸删）、
-/// other（白名单之外，语义不明）。
-///
-/// [StorageCategoryId.subtitleJobs] 在内：它的任务缓存是可重跑出来的派生数据；同一
-/// 类目里登记着的字幕产物（[kSubtitleJobOutputDirNames]）另以 readOnly 产出，不能裸删。
-///
-/// [StorageCategoryId.backups] 在内：它产出的
-/// [StorageEntryKind.backupArchives] 聚合项同样接通用文件删除原语，装的是上次导出
-/// 遗留的临时包、无任何 DB 行引用。以前它在事实上可删却不在本集合里，集合的文档
-/// 与事实分家（守卫 `storage_usage_service_test.dart` 钉住这条契约）。
-const Set<StorageCategoryId> kDeletableEntryCategories = <StorageCategoryId>{
-  StorageCategoryId.covers,
-  StorageCategoryId.web,
-  StorageCategoryId.exports,
-  StorageCategoryId.ocrModels,
-  StorageCategoryId.shaders,
-  StorageCategoryId.cache,
-  StorageCategoryId.backups,
-  StorageCategoryId.subtitleJobs,
-};
-
-/// 明细「可直接删」的 kind —— 与 [kDeletableEntryCategories] 是同一件事的两个面：
-/// 前者说哪个类目会产出可删明细，后者说这些明细长什么样。UI 的删除分流按 kind 走
-/// （`storage_usage_view.dart`），扫描侧按类目走，两边必须对得上。
-const Set<StorageEntryKind> kDirectlyDeletableEntryKinds = <StorageEntryKind>{
-  StorageEntryKind.derivedFile,
-  StorageEntryKind.backupArchives,
-};
-
 /// 一个类目内的单条可展开条目（一本书 / 一部词典 / 类目根下的一个子项）。
 class StorageEntryUsage {
+  /// [deletability] 省略时：只读明细 = [StorageEntryDeletability.no]，其余 =
+  /// [StorageEntryDeletability.confirm]。只读 ⇔ 不可删；进一键清缓存
+  /// （[StorageEntryDeletability.cacheBulk]）的只能是走通用文件删除原语的明细。
   const StorageEntryUsage({
     required this.id,
     required this.label,
     required this.bytes,
     required this.paths,
     required this.kind,
+    StorageEntryDeletability? deletability,
     this.externalPaths = const <String>[],
     this.group,
     this.itemCount = 0,
-  });
+  }) : assert(
+         (kind == StorageEntryKind.readOnly) ==
+             (deletability == null
+                 ? kind == StorageEntryKind.readOnly
+                 : deletability == StorageEntryDeletability.no),
+         'readOnly entries and only they are not deletable',
+       ),
+       assert(
+         deletability != StorageEntryDeletability.cacheBulk ||
+             kind == StorageEntryKind.derivedFile ||
+             kind == StorageEntryKind.backupArchives,
+         'only plain-file entries may join bulk cache clearing',
+       ),
+       deletability =
+           deletability ??
+           (kind == StorageEntryKind.readOnly
+               ? StorageEntryDeletability.no
+               : StorageEntryDeletability.confirm);
 
   /// 域内主键（EPUB 书 = bookKey，纯字幕书 = `SrtBooks.uid`，词典 = 词典名，
   /// 通用子项 = 绝对路径）。
@@ -220,6 +135,10 @@ class StorageEntryUsage {
   final String label;
 
   final StorageEntryKind kind;
+
+  /// 能不能删、进不进一键清缓存（所有者按条目判定；区域级默认见
+  /// [StorageAreaPath.entryDeletability]）。
+  final StorageEntryDeletability deletability;
 
   /// 该条目占用字节数（多个目录求和）。
   final int bytes;
@@ -484,74 +403,20 @@ class BundledComponentUsage {
   final String path;
 }
 
-/// 每类目 → documents 根下归属的顶层目录名。与
-/// [AppPaths.fushiOwnedDocumentsEntries] 保持全覆盖（守卫测试咬住）。
-const Map<StorageCategoryId, List<String>> kStorageCategoryDocumentsChildren =
-    <StorageCategoryId, List<String>>{
-      StorageCategoryId.books: <String>[
-        'fushi_books',
-        // 旧名存量目录（启动就地改名失败时仍可能在磁盘上）：引用迁移常量，
-        // 不重复旧代号字面量（fushi_rename_guard 禁模式）。
-        kLegacyBooksDirectoryName,
-        'audiobooks',
-      ],
-      StorageCategoryId.dictionaries: <String>[
-        'dictionaryResources',
-        'dictionaryImportWorkingDirectory',
-        'recommended_pack',
-      ],
-      StorageCategoryId.videoDownloads: <String>[
-        'remote_videos',
-        'anime_downloads',
-        'videos',
-        // 下载页「手动添加任务」的 .torrent 元数据（随任务持久化）。体量很小，但必须
-        // 归进某个类目——否则存储页总量对不上白名单（守卫逼着新目录选类目）。
-        'manual_torrents',
-        // 音频 CD 抓轨产物（BUG-3312）：抓好的 FLAC，「仅此一次」导入音乐库
-        // （BUG-4175 前按「无画面的视频」进视频库）；类目沿用，不挪。
-        'audio_cd',
-        // 在线音源插件曲目下载（`music_downloads/<插件>/<专辑>/`）：与音频 CD 抓轨同属
-        // 「下载进来的媒体文件」，归同一类目，不为音乐另立类目。
-        'music_downloads',
-        // iOS「文件」App 收件箱收进来的视频批次（拍板台 nLXhu0d7gV，`inbox_imports/video/<批次>/`）：
-        // 与音频 CD 抓轨同为「仅此一次」导入后原地引用的媒体文件，归同一类目。书 / 漫画
-        // 原地扫收件箱、不进这里（导入器已复制进书库，见 `import_inbox.dart`）。
-        'inbox_imports',
-      ],
-      StorageCategoryId.covers: <String>[
-        'video_covers',
-        'game_covers',
-        'music_covers',
-        'thumbnails',
-      ],
-      StorageCategoryId.subtitles: <String>['video_subtitles'],
-      StorageCategoryId.shaders: <String>['mpv_shaders', 'mpv_scripts'],
-      StorageCategoryId.customFonts: <String>['custom_fonts'],
-      StorageCategoryId.web: <String>['webArchive', 'browser'],
-      StorageCategoryId.exports: <String>[
-        'fushiExport',
-        // 同上：旧名存量目录走迁移常量。
-        kLegacyExportDirectoryName,
-        // 卡片来源回看的待回写草稿（临时音频 / 图片 / 字段）：本质是等着写回 Anki 的
-        // 导出产物，回写或丢弃即删。
-        'card_source_drafts',
-      ],
-      StorageCategoryId.database: <String>[
-        'onboarding_tutorial',
-        // 旧版复习自动备份（升级到同步 v2 后留 30 天自动清理，见 srs_legacy_backup_cleanup.dart）。
-        'srs_backups',
-        // 删 Profile 前自动做的复习数据备份（撤销途径，BUG-3818）。
-        'srs_profile_backups',
-      ],
-      StorageCategoryId.ocrModels: <String>[],
-    };
+/// [category] 在 documents 根下的区域（登记表派生，见 `app_storage_areas.dart`）。
+List<StorageArea> _documentsAreasOf(StorageCategoryId category) =>
+    kAppStorageAreas.inCategory(category, StorageRootId.documents);
 
-/// `<support>/asr_jobs`（[StorageCategoryId.subtitleJobs] 的根）：视频字幕管线的任务根
-/// `video_subtitles`（`videoSubtitleJobsRootUnder`）、音乐字幕的 `music_subtitles`、上游
-/// 转录任务都在它下面。
-const String kAsrJobsSupportChild = 'asr_jobs';
+/// [category] 在 [docs] 下的全部类目根（每个区域的现名 + 存量旧名）。
+List<String> _documentsRootsOf(StorageCategoryId category, Directory docs) =>
+    <String>[
+      for (final StorageArea area in _documentsAreasOf(category))
+        for (final String name in area.topLevelNames) p.join(docs.path, name),
+    ];
 
-/// 字幕管线的任务根（[kAsrJobsSupportChild] 下）：明细按其中每个任务一条展开。
+/// 字幕管线的任务根（[EngineStorageArea.asrJobs] 下：视频字幕管线的
+/// `video_subtitles`（`videoSubtitleJobsRootUnder`）、音乐字幕的 `music_subtitles`）：
+/// 明细按其中每个任务一条展开。上游转录任务与它们同级。
 const Set<String> kSubtitleJobRootNames = <String>{
   'video_subtitles',
   'music_subtitles',
@@ -647,16 +512,6 @@ String _subtitleOutputLabel(final FileSystemEntity output) {
   return files.isEmpty ? name : files.first;
 }
 
-/// `<support>/sync-data`：互联 host 的 WebDAV 根（`FushiSyncServer.syncDataDir` =
-/// `p.join(<数据根>, 'sync-data')`，数据根即 `AppModel.databaseDirectory` = support 根）。
-/// 在「数据库与内部数据」里不整块显示，按用途拆开（见
-/// `StorageUsageService._interconnectEntries`）。
-const String kInterconnectSyncDataSupportChild = 'sync-data';
-
-/// `<support>/ocr_models`（[StorageCategoryId.ocrModels] 的根；
-/// 各本机模型落在它下面的兄弟目录，见 `MangaOcrLocalModel.modelsDirectory`）。
-const String kOcrModelsSupportChild = 'ocr_models';
-
 /// 同步递归求目录字节数（isolate 入口；每个 entry 单独容错——扫描中途被删/
 /// 无权限的文件跳过不炸整树）。
 int directorySizeSync(final String path) {
@@ -738,8 +593,7 @@ String audiobookPersistDirPath(
   final Directory documentsRoot,
   final String persistKey,
 ) => p.join(
-  documentsRoot.path,
-  'audiobooks',
+  EngineStorageArea.audiobooks.pathUnder(documentsRoot.path),
   fnv1a32Hex(utf8.encode(persistKey)),
 );
 
@@ -835,9 +689,10 @@ class StorageUsageService {
         case StorageCategoryId.database:
           yield await _scanDatabase(support, docs);
         case StorageCategoryId.ocrModels:
-          yield await _scanGeneric(id, <String>[
-            p.join(support.path, kOcrModelsSupportChild),
-          ]);
+          yield await _scanAreas(id, <String, StorageArea>{
+            EngineStorageArea.ocrModels.pathUnder(support.path):
+                EngineStorageArea.ocrModels,
+          });
         case StorageCategoryId.subtitleJobs:
           yield await _scanSubtitleJobs(support);
         case StorageCategoryId.cache || StorageCategoryId.backups:
@@ -853,11 +708,7 @@ class StorageUsageService {
         case StorageCategoryId.videoDownloads:
           yield await _scanVideoDownloads(docs, videos);
         default:
-          final List<String> children =
-              kStorageCategoryDocumentsChildren[id] ?? const <String>[];
-          yield await _scanGeneric(id, <String>[
-            for (final String child in children) p.join(docs.path, child),
-          ]);
+          yield await _scanAreas(id, _documentsAreaRoots(id, docs));
       }
     }
   }
@@ -868,11 +719,10 @@ class StorageUsageService {
   ) async {
     // 总量按目录整树（含孤儿），明细按 DB 已知的书。全部路径打包进**一次**
     // isolate 调用，避免几百本书起几百个 isolate。
-    final List<String> categoryRoots = <String>[
-      for (final String child
-          in kStorageCategoryDocumentsChildren[StorageCategoryId.books]!)
-        p.join(docs.path, child),
-    ];
+    final List<String> categoryRoots = _documentsRootsOf(
+      StorageCategoryId.books,
+      docs,
+    );
     // BUG-1893：明细口径 = DB 里记的真实音频路径（`audioRoot`/`audioPathsJson`）
     // ∪ 哈希派生的 persist 目录，去嵌套去重后求和。只按哈希反推会漏掉同步导入
     // 落的明文目录（几 GB 音频显示成 0）。
@@ -941,12 +791,13 @@ class StorageUsageService {
     final List<String> dictionaryNames,
     final Map<String, String> dictionaryDisplayNames,
   ) async {
-    final List<String> categoryRoots = <String>[
-      for (final String child
-          in kStorageCategoryDocumentsChildren[StorageCategoryId.dictionaries]!)
-        p.join(docs.path, child),
-    ];
-    final String resourcesRoot = p.join(docs.path, 'dictionaryResources');
+    final List<String> categoryRoots = _documentsRootsOf(
+      StorageCategoryId.dictionaries,
+      docs,
+    );
+    final String resourcesRoot = AppStorageArea.dictionaryResources.pathUnder(
+      docs.path,
+    );
     final List<String> perDictPaths = <String>[
       for (final String name in dictionaryNames) p.join(resourcesRoot, name),
     ];
@@ -1005,12 +856,10 @@ class StorageUsageService {
     final Directory docs,
     final List<StorageVideoRef> videos,
   ) async {
-    final List<String> categoryRoots = <String>[
-      for (final String child
-          in kStorageCategoryDocumentsChildren[StorageCategoryId
-              .videoDownloads]!)
-        p.join(docs.path, child),
-    ];
+    final List<String> categoryRoots = _documentsRootsOf(
+      StorageCategoryId.videoDownloads,
+      docs,
+    );
     // 只认落在类目根之内的本地文件：网络行、桌面原位引用的外部视频都不是这里的
     // 占用（类目总量也扫不到它们，算进来明细之和就会超过总量）。同一文件被多行
     // 引用时只归第一行，不重复计数。
@@ -1106,7 +955,8 @@ class StorageUsageService {
     final InterconnectSyncDataUsage usage,
   ) {
     final String base =
-        '${p.basename(support.path)}/$kInterconnectSyncDataSupportChild';
+        '${p.basename(support.path)}/'
+        '${AppStorageArea.interconnectSyncData.relativePath}';
     return <StorageEntryUsage>[
       StorageEntryUsage(
         id: kInterconnectSharedEntryId,
@@ -1174,12 +1024,11 @@ class StorageUsageService {
     final List<String> snapshotPaths = <String>[
       for (final Map<String, Object> e in snapshots) e['path'] as String,
     ];
-    final String syncDataDir = p.join(
+    final String syncDataDir = AppStorageArea.interconnectSyncData.pathUnder(
       support.path,
-      kInterconnectSyncDataSupportChild,
     );
     final bool hasSyncData = supportChildNames.contains(
-      kInterconnectSyncDataSupportChild,
+      AppStorageArea.interconnectSyncData.topLevelName,
     );
     final List<StorageEntryUsage> syncDataEntries = hasSyncData
         ? _interconnectEntries(
@@ -1188,21 +1037,22 @@ class StorageUsageService {
             await _measureSyncData(syncDataDir),
           )
         : const <StorageEntryUsage>[];
-    final StorageCategoryUsage localState =
-        await _scanGeneric(StorageCategoryId.database, <String>[
-          for (final String child
-              in kStorageCategoryDocumentsChildren[StorageCategoryId.database]!)
-            p.join(docs.path, child),
-        ]);
+    final StorageCategoryUsage localState = await _scanAreas(
+      StorageCategoryId.database,
+      _documentsAreaRoots(StorageCategoryId.database, docs),
+    );
     final List<StorageEntryUsage> entries =
         <StorageEntryUsage>[
           ...localState.entries,
           ..._childEntries(
             raw,
             excludePaths: <String>{
-              p.join(support.path, kOcrModelsSupportChild),
-              // 字幕生成任务单列一类（[StorageCategoryId.subtitleJobs]）。
-              p.join(support.path, kAsrJobsSupportChild),
+              // 登记到别的类目的 support 区域单列（OCR 模型、字幕生成任务）。
+              for (final StorageArea area in kAppStorageAreas.under(
+                StorageRootId.support,
+              ))
+                if (area.category != StorageCategoryId.database)
+                  p.join(support.path, area.topLevelName),
               // 互联同步数据按用途拆成下面几条，不再整块一行。
               syncDataDir,
               ...snapshotPaths,
@@ -1249,7 +1099,7 @@ class StorageUsageService {
   Future<StorageCategoryUsage> _scanSubtitleJobs(
     final Directory support,
   ) async {
-    final String root = p.join(support.path, kAsrJobsSupportChild);
+    final String root = EngineStorageArea.asrJobs.pathUnder(support.path);
     final List<Map<String, Object>> raw = await _run(
       () => subtitleJobEntriesSync(root),
     );
@@ -1276,21 +1126,34 @@ class StorageUsageService {
     );
   }
 
-  /// 通用类目扫描：类目根下每个直接子项一条明细，类目总量 = 明细求和。
-  Future<StorageCategoryUsage> _scanGeneric(
+  /// [category] 在 documents 根下的区域 → 类目根（现名与存量旧名各一个根）。
+  static Map<String, StorageArea> _documentsAreaRoots(
+    final StorageCategoryId category,
+    final Directory docs,
+  ) => <String, StorageArea>{
+    for (final StorageArea area in _documentsAreasOf(category))
+      for (final String name in area.topLevelNames)
+        p.join(docs.path, name): area,
+  };
+
+  /// 通用类目扫描：每个区域根下的每个直接子项一条明细，类目总量 = 明细求和。
+  /// 明细的可删性取所属区域的 [StorageAreaPath.entryDeletability]。
+  Future<StorageCategoryUsage> _scanAreas(
     final StorageCategoryId id,
-    final List<String> roots,
+    final Map<String, StorageArea> roots,
   ) async {
+    final List<String> rootPaths = roots.keys.toList();
     final List<Map<String, Object>> raw = await _run(
-      () => _childEntriesSync(roots),
+      () => _childEntriesSync(rootPaths),
     );
     final List<StorageEntryUsage> entries =
-        _childEntries(
-          raw,
-          kind: kDeletableEntryCategories.contains(id)
-              ? StorageEntryKind.derivedFile
-              : StorageEntryKind.readOnly,
-        )..sort(
+        <StorageEntryUsage>[
+          for (final MapEntry<String, StorageArea> root in roots.entries)
+            ..._childEntries(<Map<String, Object>>[
+              for (final Map<String, Object> e in raw)
+                if (p.equals(p.dirname(e['path'] as String), root.key)) e,
+            ], deletability: root.value.entryDeletability),
+        ]..sort(
           (StorageEntryUsage a, StorageEntryUsage b) =>
               b.bytes.compareTo(a.bytes),
         );
@@ -1336,7 +1199,7 @@ class StorageUsageService {
                   isBackupArchiveName(p.basename(entry['path'] as String)))
                 entry['path'] as String,
           },
-          kind: StorageEntryKind.derivedFile,
+          deletability: StorageEntryDeletability.cacheBulk,
         )..sort(
           (StorageEntryUsage a, StorageEntryUsage b) =>
               b.bytes.compareTo(a.bytes),
@@ -1389,10 +1252,8 @@ class StorageUsageService {
 
   /// BUG-1905：documents 根下**白名单之外**的顶层项。
   ///
-  /// 让漏算无法隐藏：白名单是手写的，漏了什么就静默少算多少，而总计恰恰是各类目
-  /// 之和，页面自己永远发现不了。已知的两个既有漏点就落在这里——剪辑导出
-  /// `video_clips`（`clip_export.part.dart`，`fushiOwnedDocumentsEntries` 明确「刻意
-  /// 不收」）与错误日志 `.txt`。
+  /// 让漏算无法隐藏：总计是各类目之和，documents 根下没登记成区域的东西若不在这里
+  /// 冒出来，页面自己永远发现不了。
   ///
   /// 桌面老扁平安装下 documents 根就是用户自己的文档文件夹，那里的东西不是 app 的
   /// 占用，本类目直接返回 0（见 [AppPaths.documentsRootIsFushiOwned]）。
@@ -1419,7 +1280,9 @@ class StorageUsageService {
         shared: _childEntriesSync(shared),
       ),
     );
-    const Set<String> known = AppPaths.fushiOwnedDocumentsEntries;
+    final Set<String> known = kAppStorageAreas.topLevelNamesUnder(
+      StorageRootId.documents,
+    );
     final List<StorageEntryUsage> entries =
         <StorageEntryUsage>[
           for (final StorageEntryUsage e in _childEntries(raw.docs))
@@ -1439,12 +1302,12 @@ class StorageUsageService {
   }
 
   /// isolate 回传的原始子项 → 明细。[excludePaths] 里的子项既不计入明细也不计入
-  /// 总量（被别的类目单列、或已聚合进别的条目时用）。[kind] 决定这批明细有没有
-  /// 删除入口，默认只读。
+  /// 总量（被别的类目单列、或已聚合进别的条目时用）。[deletability] 决定这批明细
+  /// 有没有删除入口，默认只读。
   static List<StorageEntryUsage> _childEntries(
     final List<Map<String, Object>> raw, {
     final Set<String> excludePaths = const <String>{},
-    final StorageEntryKind kind = StorageEntryKind.readOnly,
+    final StorageEntryDeletability deletability = StorageEntryDeletability.no,
   }) {
     return <StorageEntryUsage>[
       for (final Map<String, Object> e in raw)
@@ -1455,7 +1318,10 @@ class StorageUsageService {
             label: e['label'] as String,
             bytes: e['bytes'] as int,
             paths: <String>[e['path'] as String],
-            kind: kind,
+            kind: deletability == StorageEntryDeletability.no
+                ? StorageEntryKind.readOnly
+                : StorageEntryKind.derivedFile,
+            deletability: deletability,
           ),
     ];
   }

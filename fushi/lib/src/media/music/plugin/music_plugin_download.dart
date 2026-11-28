@@ -40,17 +40,12 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/src/media/music/plugin/music_plugins.dart';
 import 'package:fushi/src/media/video/online/anime_episode_downloader.dart';
 import 'package:fushi/src/storage/app_paths.dart';
+import 'package:fushi/src/storage/app_storage_areas.dart';
 import 'package:fushi/src/storage/download_layout.dart';
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
 import 'package:fushi/src/sync/remote_video_client.dart'
     show RemoteDownloadCancelled;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
-
-/// **旧**落点 `<documents>/music_downloads` 的目录名（登记在 `AppPaths.fushiOwnedDocumentsEntries`，
-/// 随数据根迁移）。2026-11 起新下载落 `<下载根>/music`（[DownloadLayout.musicRoot]）；旧目录里已下好
-/// 的曲目仍被曲库按绝对路径引用、原地保留，[MusicPluginDownloadService.legacyRoots] 让「已下载」判定
-/// 继续认得它们（否则同一首会被重新下一份到新根）。
-const String kMusicDownloadsDirName = 'music_downloads';
 
 /// 下载中的字节暂存在 `<主名>.download`（下载器在它旁边再派生 `.part` / HLS 断点文件），
 /// 下完嗅探出格式后改名成 `<主名>.<扩展名>`。
@@ -408,8 +403,11 @@ class MusicPluginDownloadService {
   }) => MusicPluginDownloadService(
     downloads: downloads,
     root: () async => Directory((await DownloadRoot.current()).musicRoot),
+    // **旧**落点 `<documents>/music_downloads`（[AppStorageArea.musicDownloads]，随数据根迁移）。
+    // 2026-11 起新下载落 `<下载根>/music`（[DownloadLayout.musicRoot]）；旧目录里已下好的曲目仍被
+    // 曲库按绝对路径引用、原地保留，这里让「已下载」判定继续认得它们（否则同一首会被重新下一份）。
     legacyRoots: () async => <Directory>[
-      await AppPaths.documentsSubdirectory(kMusicDownloadsDirName),
+      await AppPaths.areaDirectory(AppStorageArea.musicDownloads),
     ],
     stream: (String pluginId, String trackId) => fetchFullMusicPluginStream(
       plugins().source(pluginId),

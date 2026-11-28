@@ -13,9 +13,9 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/storage/app_storage_areas.dart';
 import 'package:fushi/src/sync/sync_compare_dialog.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart'
     show runExclusiveWithSync;
@@ -239,7 +239,7 @@ Future<Map<String, Object?>> applySyncCompareForCli(
           entry: e,
           tempDir: tempDir,
           audioDatabaseRoot: Directory(
-            p.join(appModel.appDirectory.path, 'audiobooks'),
+            EngineStorageArea.audiobooks.pathUnder(appModel.appDirectory.path),
           ),
         ),
       );

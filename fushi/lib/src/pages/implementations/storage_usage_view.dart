@@ -140,8 +140,8 @@ class StorageUsageView extends ConsumerStatefulWidget {
 
   /// 删除 [StorageEntryKind.derivedFile] 明细指向的路径（文件或目录）。
   ///
-  /// 只有 [kDeletableEntryCategories] 里的类目会产出这种明细 —— 那里装的都是派生
-  /// 数据 / 缓存 / 可重新获取的资源，没有 DB 行引用，所以这条原语就是裸删；本 widget
+  /// 只有可删性不为「不可删」的区域会产出这种明细（区域登记表，见
+  /// `app_storage_areas.dart`）—— 那里的东西没有 DB 行引用，所以这条原语就是裸删；本 widget
   /// 自身仍不碰磁盘（真实现在 `settings_schema_storage.dart` 接线）。
   /// 返回 null = 成功，非 null = 失败原因。
   final Future<String?> Function(List<String> paths) deleteFiles;
@@ -370,7 +370,7 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
 
   // ── 一键清除全部缓存（反馈 jg3XoDVISk）─────────────────────────────────
 
-  /// 当前扫描结果里一键清缓存要删的明细（类目口径见 [kClearAllCacheCategories]）。
+  /// 当前扫描结果里一键清缓存要删的明细（口径见 [buildStorageCacheClearPlan]）。
   StorageCacheClearPlan get _cacheClearPlan =>
       buildStorageCacheClearPlan(_usage.values);
 

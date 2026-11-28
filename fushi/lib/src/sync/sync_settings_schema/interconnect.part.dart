@@ -2631,7 +2631,9 @@ class _InterconnectProfileTransferWidgetState
     final String json = await repo.exportProfileToJson(
       activeId,
       // 与「配置管理」页导出同参：剥掉指向本机 custom_fonts/ 的绝对路径。
-      fontsRootDirectory: p.join(appModel.appDirectory.path, 'custom_fonts'),
+      fontsRootDirectory: AppStorageArea.customFonts.pathUnder(
+        appModel.appDirectory.path,
+      ),
     );
     return InterconnectSyncBackend.instance.putRemoteProfileJson(
       json,

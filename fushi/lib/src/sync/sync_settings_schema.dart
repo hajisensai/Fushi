@@ -32,6 +32,7 @@ import 'package:fushi/src/settings/settings_search.dart'
     show SettingsSearchReveal;
 import 'package:fushi/src/startup/media_handle_registry.dart';
 import 'package:fushi/src/storage/app_paths.dart';
+import 'package:fushi/src/storage/app_storage_areas.dart';
 import 'package:fushi/src/storage/data_root_migrator.dart';
 import 'package:fushi/src/storage/macos_data_root_access.dart';
 import 'package:fushi/src/sync/backup_merge_engine.dart'
@@ -441,7 +442,9 @@ SettingsDestination buildSyncBackupDestination() {
               // 750a：远端独有书带有声书时一并补下音频包（解包落
               // <appDirectory>/audiobooks，与 host 导入位置一致）。
               audioDatabaseRoot: Directory(
-                p.join(ctx.appModel.appDirectory.path, 'audiobooks'),
+                EngineStorageArea.audiobooks.pathUnder(
+                  ctx.appModel.appDirectory.path,
+                ),
               ),
             ),
           ),

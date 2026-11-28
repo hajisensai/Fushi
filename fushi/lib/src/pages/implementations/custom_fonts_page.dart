@@ -22,6 +22,7 @@ import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/settings/settings_kit_core.dart';
+import 'package:fushi/src/storage/app_storage_areas.dart';
 import 'package:fushi/src/utils/components/fushi_reorderable_grid.dart';
 import 'package:fushi/src/utils/components/fushi_search.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -506,7 +507,9 @@ Future<void> persistCustomFontState({
 
 /// 字体落地目录：`<appDirectory>/custom_fonts`。不存在时创建。
 Directory customFontsDirectory(Directory appDirectory) {
-  final Directory dir = Directory(p.join(appDirectory.path, 'custom_fonts'));
+  final Directory dir = Directory(
+    AppStorageArea.customFonts.pathUnder(appDirectory.path),
+  );
   if (!dir.existsSync()) dir.createSync(recursive: true);
   return dir;
 }

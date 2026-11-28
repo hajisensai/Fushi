@@ -13,6 +13,7 @@ import 'package:fushi/src/diagnostics/previous_exit_log.dart'
     show activityNameFromBreadcrumbFileName;
 import 'package:fushi/src/startup/test_environment.dart';
 import 'package:fushi/src/storage/android_library_db_witness.dart';
+import 'package:fushi/src/storage/app_storage_areas.dart';
 import 'package:fushi/src/storage/directory_move.dart'
     show kDirectoryCopyPartSuffix, moveDirectoryMerging;
 import 'package:fushi/src/storage/macos_data_root_access.dart';
@@ -95,7 +96,7 @@ class AppPaths {
     }
     // BUG-1115：默认 documents 布局的判定**只在这里**做一次（启动期，真实异步环境）。
     // 判定要探测文件系统，绝不能塞进 [_resolveDocumentsRoot]——那条路径会被运行时的静态
-    // 便捷层（`documentsSubdirectory` 等）高频调用，其中就包括 widget 测试里的封面/资源
+    // 便捷层（`areaDirectory` 等）高频调用，其中就包括 widget 测试里的封面/资源
     // 解析：`testWidgets` 跑在 FakeAsync 上，真实文件 IO 的 future 在那里永不完成、
     // `.timeout()` 还会留下 pending timer，整批页面测试会挂死或报「Timer is still pending」。
     await _ensureDocumentsLayoutDecided();
@@ -645,13 +646,11 @@ class AppPaths {
   /// `.nomedia`）或只放过程性临时物，与「书库在不在这个根」无关。#4366 指出：已中招
   /// 的安装（书库在内部、锚点指向外部）外部根里恰好只有冷启动建出的
   /// `fushiExport/.nomedia`，把它当书库就会让对账认定「锚定的根有书」、永远不自愈。
-  static const Set<String> libraryEvidenceIgnoredEntries = <String>{
-    'fushiExport',
-    'hibikiExport',
-    'dictionaryImportWorkingDirectory',
-    'recommended_pack',
-    'onboarding_tutorial',
-  };
+  /// 由区域登记表派生（`StorageArea.countsAsLibraryEvidence`，见 `app_storage_areas.dart`）。
+  static final Set<String> libraryEvidenceIgnoredEntries =
+      Set<String>.unmodifiable(
+        kAppStorageAreas.libraryEvidenceIgnoredDocumentsEntries,
+      );
 
   /// 书库消失哨兵文件名（BUG-5492，`LibrarySentinel`）：放在书库根，内容是随机 token。
   static const String librarySentinelFileName = '.fushi_library_sentinel';
@@ -1453,91 +1452,16 @@ class AppPaths {
   /// 用户自己的文件和 shell junction）。迁移引擎对共享根**只搬这份白名单里的顶层项**，
   /// 绝不整树搬移 / 整树删除用户 `Documents`。BUG-1115 之后新装走
   /// `<Documents>/Fushi/data`（Fushi 专属根，迁移走整树语义），白名单对它不生效——但
-  /// 老安装可能永远停在扁平布局，故白名单及其守卫**长期有效**，新增
-  /// `<documents>/<child>` 派生点仍必须收进来。每一项都必须对应仓库里一个真实的派生点：
+  /// 老安装可能永远停在扁平布局，故白名单**长期有效**。
   ///
-  ///  - `audiobooks` —— [audiobooksDirectory]；`AppModel` 各处
-  ///    `join(appDirectory, 'audiobooks')`；`AudiobookStorage.ensurePersistDir`。
-  ///  - `fushi_books` —— [epubBooksDirectory]；`EpubStorage`；backup restore。
-  ///  - `hoshi_books` —— 上一条的存量旧名。启动就地改名 `fushi_books`
-  ///    （W2-7，`books_directory.dart`），改名失败留在旧名时数据根搬迁必须
-  ///    继续认它。无派生点是有意的（同 `hibikiExport` 条目）。
-  ///  - `video_covers` —— [videoCoversDirectory]；`VideoStorage.coversDirName`。
-  ///  - `game_covers` —— [gameCoversDirectory]；游戏库封面（手选 + 自动获取）。
-  ///  - `video_subtitles` —— [videoSubtitlesDirectory]；`VideoStorage.subtitlesDirName`。
-  ///  - `mpv_shaders` —— [mpvShadersDirectory]。
-  ///  - `mpv_scripts` —— [mpvLuaScriptsDirectory]。
-  ///  - `remote_videos` —— [remoteVideosDirectory]。
-  ///  - `videos` —— backup restore 的视频落点（`backup.part.dart`
-  ///    `join(appDirectory, 'videos')`）。
-  ///  - `custom_fonts` —— 字体导入/加载（`custom_fonts_page.dart` 等
-  ///    `join(appDirectory, 'custom_fonts')`）。
-  ///  - `fushiExport` —— `AppModel.prepareExportDirectory`（`export_directory.dart`）。
-  ///  - `hibikiExport` —— 上一条的存量旧名。启动准备目录时就地改名 `fushiExport`
-  ///    （W2-4），但改名可能因句柄占用等失败而留在旧名——数据根搬迁必须继续认它，
-  ///    否则旧目录会被留在旧位置（数据分家）。无派生点是有意的（守卫单向：派生点
-  ///    必须进白名单，白名单允许含仅存量的旧名）。
-  ///  - `browser` / `thumbnails` / `dictionaryResources` /
-  ///    `dictionaryImportWorkingDirectory` / `webArchive` ——
-  ///    `AppModel` 运行时目录系列派生。
-  ///
-  /// **刻意不收**：`video_clips` 与桌面导出目录 `Hibiki`（直连 path_provider 的用户可见
-  /// 导出物，属用户文件语义）。错误日志 / 面包屑 / 诊断日志不在 documents 下，见
-  /// [diagnosticsDirectory]（4w_veZGiQ7：它们曾直落平台 Documents 根）。
-  ///
-  /// 守卫测试 `test/storage/documents_whitelist_guard_test.dart` 扫描源码派生点，
-  /// 新增 `<documents>/<child>` 派生而漏加这里会红。
-  static const Set<String> fushiOwnedDocumentsEntries = <String>{
-    'audiobooks',
-    'fushi_books',
-    'hoshi_books',
-    'video_covers',
-    'game_covers',
-    // 音乐刮削下载的 Cover Art Archive 专辑封面（`<documents>/music_covers/<发行 MBID>.jpg`，
-    // music_albums.cover_path 指向它；数据根迁移按 DataRootMigrator._rebaseMusicAlbums 改写）。
-    'music_covers',
-    'video_subtitles',
-    'mpv_shaders',
-    'mpv_scripts',
-    'remote_videos',
-    'videos',
-    'anime_downloads',
-    'custom_fonts',
-    'fushiExport',
-    'hibikiExport',
-    'browser',
-    'thumbnails',
-    'dictionaryResources',
-    'dictionaryImportWorkingDirectory',
-    'webArchive',
-    // 新手引导推荐包的下载暂存目录（含 .part 半截文件，随根搬走以免续传丢进度；
-    // 导入成功后由向导 initState 整目录删除，常态下为空/不存在）。
-    'recommended_pack',
-    'onboarding_tutorial',
-    // 下载页「手动添加任务」落的 .torrent 元数据，随任务长期持久化，必须随数据根走
-    // （留在旧根 = 换根后任务恢复不出种子）。派生点：AppModel 的
-    // manualTorrentDirectory。
-    'manual_torrents',
-    // 卡片来源回看的待回写草稿（临时音频/图片/字段，`card_source_drafts/<sourceId>`），
-    // 失败后可恢复提交，必须随数据根走。派生点：card_source_router.dart。
-    'card_source_drafts',
-    // 删 Profile 前自动做的复习数据备份（`.fushisrs`，撤销途径，BUG-3818），必须随数据根走。
-    // 派生点：AppPaths.srsProfileBackupsDirectory（srs_profile_cleanup.dart 使用）。
-    'srs_profile_backups',
-    // 音频 CD 抓轨产物（BUG-3312，`<documents>/audio_cd/<卷标> (<光盘id>)/`）。导入后的
-    // 视频条目 videoPath 指向这里，必须随数据根走。派生点：audio_cd_import.dart。
-    'audio_cd',
-    // 在线音源插件曲目下载（`<documents>/music_downloads/<插件>/<专辑>/`）。导入后的曲目
-    // path 指向这里，必须随数据根走。派生点：music_plugin_download.dart。
-    'music_downloads',
-    // 旧版复习自动备份（`<documents>/srs_backups/`）。同步 v2 已取消定时备份（时间线 + 归档 + 手动
-    // 导出取代），旧文件升级后再留 30 天（srs_legacy_backup_cleanup.dart），这期间仍随数据根走。
-    'srs_backups',
-    // iOS「文件」App 收件箱收进来的文件（拍板台 nLXhu0d7gV，`<documents>/inbox_imports/<域>/<批次>/`）。
-    // 视频 / 曲目条目原地引用这里，必须随数据根走、随容器漂移重基。派生点：
-    // AppPaths.inboxImportsDirectory（import_inbox.dart / media_sources_view.dart 使用）。
-    'inbox_imports',
-  };
+  /// 由区域登记表派生（D1）：documents 根下随数据根迁移的区域的顶层名 + 存量旧名
+  /// （`fushi_books` 的 `hoshi_books`、`fushiExport` 的旧名），见 `app_storage_areas.dart`
+  /// 与 fushi_engine `storage_area.dart`。新增 `<documents>/<child>` 只在登记表加一个
+  /// 区域，所有者经 [areaDirectory] 取目录。**刻意不收**的 `video_clips` 登记在
+  /// `StorageRootId.userExports` 根下（直连平台目录、不随数据根走）。错误日志 / 面包屑
+  /// / 诊断日志不在 documents 下，见 [diagnosticsDirectory]（4w_veZGiQ7）。
+  static final Set<String> fushiOwnedDocumentsEntries =
+      Set<String>.unmodifiable(kAppStorageAreas.dataRootDocumentsEntries);
 
   /// BUG-1115：[newDataRoot] 落在**共享** documents 根（老安装的扁平布局 = 平台
   /// `Documents`）内部时，它是否是一个安全的迁移目标。
@@ -1557,8 +1481,9 @@ class AppPaths {
   static bool isSafeNestedTargetInSharedDocuments({
     required String sharedDocumentsRoot,
     required String newDataRoot,
-    Set<String> ownedEntries = fushiOwnedDocumentsEntries,
+    Set<String>? ownedEntries,
   }) {
+    final Set<String> owned = ownedEntries ?? fushiOwnedDocumentsEntries;
     final String canonRoot = p.canonicalize(sharedDocumentsRoot);
     final String canonNew = p.canonicalize(newDataRoot);
     if (!p.isWithin(canonRoot, canonNew)) return false;
@@ -1566,9 +1491,7 @@ class AppPaths {
         .split(p.relative(canonNew, from: canonRoot))
         .first
         .toLowerCase();
-    return !ownedEntries.any(
-      (String owned) => owned.toLowerCase() == firstSegment,
-    );
+    return !owned.any((String name) => name.toLowerCase() == firstSegment);
   }
 
   // ---- 诊断目录（错误日志 / 崩溃面包屑 / 诊断日志） ----
@@ -1790,62 +1713,75 @@ class AppPaths {
   /// 需要「这个目录里的东西全是我们的」时（存储页统计 / 清理）用它。
   static Future<Directory> appCacheRootDirectory() => _resolveAppCacheRoot();
 
-  /// `<documents>/<child>` 的绝对路径目录（不创建）。集中派生点，保证各模块对同一
-  /// 子目录名拿到逐字节一致的绝对路径。
-  static Future<Directory> documentsSubdirectory(String child) async {
-    final Directory root = await _resolveDocumentsRoot();
-    return Directory(p.join(root.path, child));
+  /// [root] 的绝对路径。
+  static Future<Directory> rootDirectory(StorageRootId root) => switch (root) {
+    StorageRootId.documents => _resolveDocumentsRoot(),
+    StorageRootId.support => _resolveSupportRoot(),
+    StorageRootId.temp => _resolveTempRoot(),
+    StorageRootId.appCache => _resolveAppCacheRoot(),
+    StorageRootId.userExports => userExportsBaseDirectory(),
+    StorageRootId.hostData => throw StateError(
+      'the app has no ${root.name} root (headless server only)',
+    ),
+  };
+
+  /// 受管区域 [area] 的绝对路径目录（不创建）。目录名只登记在区域上
+  /// （`app_storage_areas.dart` / fushi_engine `storage_area.dart`），各模块经这里拿到
+  /// 逐字节一致的绝对路径。
+  static Future<Directory> areaDirectory(StorageArea area) async {
+    final Directory root = await rootDirectory(area.root);
+    return Directory(area.pathUnder(root.path));
   }
 
   /// 有声书音频持久根 `<documents>/audiobooks`（复制导入的统一落点）。
   static Future<Directory> audiobooksDirectory() =>
-      documentsSubdirectory('audiobooks');
+      areaDirectory(EngineStorageArea.audiobooks);
 
   /// EPUB 解压正文根 `<documents>/fushi_books`。
   static Future<Directory> epubBooksDirectory() =>
-      documentsSubdirectory('fushi_books');
+      areaDirectory(EngineStorageArea.epubBooks);
 
   /// 视频封面目录 `<documents>/video_covers`。
   static Future<Directory> videoCoversDirectory() =>
-      documentsSubdirectory('video_covers');
+      areaDirectory(EngineStorageArea.videoCovers);
 
   /// 游戏库封面目录 `<documents>/game_covers`（手动设置与自动获取的统一落点，
   /// 文件名是 `<GalgameEntry.id>.<ext>`）。
   static Future<Directory> gameCoversDirectory() =>
-      documentsSubdirectory('game_covers');
+      areaDirectory(AppStorageArea.gameCovers);
 
   /// 音乐刮削封面目录 `<documents>/music_covers`（文件名 = 发行 MBID）。
   static Future<Directory> musicCoversDirectory() =>
-      documentsSubdirectory('music_covers');
+      areaDirectory(AppStorageArea.musicCovers);
 
   /// 视频外挂字幕副本目录 `<documents>/video_subtitles`。
   static Future<Directory> videoSubtitlesDirectory() =>
-      documentsSubdirectory('video_subtitles');
+      areaDirectory(EngineStorageArea.videoSubtitles);
 
   /// mpv 着色器目录 `<documents>/mpv_shaders`。
   static Future<Directory> mpvShadersDirectory() =>
-      documentsSubdirectory('mpv_shaders');
+      areaDirectory(AppStorageArea.mpvShaders);
 
   /// mpv Lua 脚本目录 `<documents>/mpv_scripts`。
   static Future<Directory> mpvLuaScriptsDirectory() =>
-      documentsSubdirectory('mpv_scripts');
+      areaDirectory(AppStorageArea.mpvScripts);
 
   /// 远程视频下载目录 `<documents>/remote_videos`。
   static Future<Directory> remoteVideosDirectory() =>
-      documentsSubdirectory('remote_videos');
+      areaDirectory(EngineStorageArea.remoteVideos);
 
   /// 旧版复习自动备份根 `<documents>/srs_backups`（只剩升级后 30 天的清理在用）。
   static Future<Directory> srsBackupsDirectory() =>
-      documentsSubdirectory('srs_backups');
+      areaDirectory(AppStorageArea.srsBackups);
 
   /// iOS 收件箱批次落点 `<documents>/inbox_imports`（见 `import_inbox.dart`）。
   static Future<Directory> inboxImportsDirectory() =>
-      documentsSubdirectory('inbox_imports');
+      areaDirectory(AppStorageArea.inboxImports);
 
   /// 删 Profile 前自动做的复习数据备份 `<documents>/srs_profile_backups`（`.fushisrs`，撤销途径；
   /// 不进旧备份的 30 天清理，见 `srs_profile_cleanup.dart`）。
   static Future<Directory> srsProfileBackupsDirectory() =>
-      documentsSubdirectory('srs_profile_backups');
+      areaDirectory(AppStorageArea.srsProfileBackups);
 }
 
 /// Android 书库位置锚点（[AppPaths.androidLibraryAnchorFileName] 的内容）。

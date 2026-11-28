@@ -250,17 +250,22 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
       // Full-data backup: pack the book + audiobook content trees too. Roots
       // are derived the same way the app lays them out under the documents
       // dir (fushi_books / audiobooks).
-      booksRootDirectory: p.join(appModel.appDirectory.path, 'fushi_books'),
-      audiobooksRootDirectory: p.join(appModel.appDirectory.path, 'audiobooks'),
+      booksRootDirectory: EngineStorageArea.epubBooks.pathUnder(
+        appModel.appDirectory.path,
+      ),
+      audiobooksRootDirectory: EngineStorageArea.audiobooks.pathUnder(
+        appModel.appDirectory.path,
+      ),
       // BUG-183: pack the imported custom fonts so they travel with their
       // config; otherwise the restored config points at files that never
       // crossed over and the fonts silently never apply.
-      fontsRootDirectory: p.join(appModel.appDirectory.path, 'custom_fonts'),
+      fontsRootDirectory: AppStorageArea.customFonts.pathUnder(
+        appModel.appDirectory.path,
+      ),
       // Game covers travel with the `games` category (rows + cover files).
       srsStorage: appModel.srsStorageForBackup,
-      gameCoversRootDirectory: p.join(
+      gameCoversRootDirectory: AppStorageArea.gameCovers.pathUnder(
         appModel.appDirectory.path,
-        'game_covers',
       ),
     );
     // TODO-1358: summarize what is on this device so the category picker shows
@@ -1197,16 +1202,20 @@ Future<void> runBackupImportFlowForFile({
     );
   }
 
-  final String booksRoot = p.join(appModel.appDirectory.path, 'fushi_books');
-  final String audiobooksRoot = p.join(
+  final String booksRoot = EngineStorageArea.epubBooks.pathUnder(
     appModel.appDirectory.path,
-    'audiobooks',
   );
-  final String fontsRoot = p.join(appModel.appDirectory.path, 'custom_fonts');
-  final String videosRoot = p.join(appModel.appDirectory.path, 'videos');
-  final String gameCoversRoot = p.join(
+  final String audiobooksRoot = EngineStorageArea.audiobooks.pathUnder(
     appModel.appDirectory.path,
-    'game_covers',
+  );
+  final String fontsRoot = AppStorageArea.customFonts.pathUnder(
+    appModel.appDirectory.path,
+  );
+  final String videosRoot = AppStorageArea.restoredVideos.pathUnder(
+    appModel.appDirectory.path,
+  );
+  final String gameCoversRoot = AppStorageArea.gameCovers.pathUnder(
+    appModel.appDirectory.path,
   );
 
   try {

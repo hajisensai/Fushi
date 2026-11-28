@@ -1,9 +1,8 @@
 /// 引擎侧数据根目录装配点。
 ///
 /// app 的 `AppPaths`（path_provider + shared_preferences）是各根目录的唯一真相源；
-/// 引擎只需要三个根（documents / support / temp），子目录名是引擎与 app 共同的
-/// 契约（`video_covers` / `video_subtitles` …），所以派生方法放在这里、实现方只
-/// 提供三个根：
+/// 引擎只需要三个根（documents / support / temp），子目录登记在 [StorageArea]
+/// （`storage_area.dart`）上，所以派生方法放在这里、实现方只提供根：
 /// - Flutter app：`AppPathsEngineBridge`，三个根委派 `AppPaths.*RootDirectory()`。
 /// - 无头服务端：配置文件里的 `data_dir` 下 `documents/` / `support/` / `tmp/`。
 ///
@@ -13,7 +12,7 @@ library;
 
 import 'dart:io';
 
-import 'package:path/path.dart' as p;
+import 'package:fushi_engine/foundation/storage_area.dart';
 
 abstract class EnginePaths {
   const EnginePaths();
@@ -27,28 +26,44 @@ abstract class EnginePaths {
   /// 临时目录（等价 `getTemporaryDirectory()`）。
   Future<Directory> tempRootDirectory();
 
-  /// `<documents>/<child>` 的绝对路径目录（不创建）。与 `AppPaths.documentsSubdirectory`
-  /// 同派生规则，保证两边对同一子目录名拿到逐字节一致的路径。
-  Future<Directory> documentsSubdirectory(String child) async {
-    final Directory root = await documentsRootDirectory();
-    return Directory(p.join(root.path, child));
+  /// 区域 [area] 的绝对路径目录（不创建）。区域的根与相对路径只登记在
+  /// [StorageArea] 上（`storage_area.dart`），这里只做根解析，保证 app 与服务端对
+  /// 同一区域拿到逐字节一致的路径。
+  Future<Directory> areaDirectory(StorageArea area) async {
+    final Directory root = await rootDirectory(area.root);
+    return Directory(area.pathUnder(root.path));
   }
+
+  /// [root] 的绝对路径。三个通用根由上面的抽象方法给出；其余根只有部分宿主有
+  /// （app 的缓存 / 导出根、服务端的 `data_dir`），宿主覆写 [hostRootDirectory]。
+  Future<Directory> rootDirectory(StorageRootId root) => switch (root) {
+    StorageRootId.documents => documentsRootDirectory(),
+    StorageRootId.support => supportRootDirectory(),
+    StorageRootId.temp => tempRootDirectory(),
+    StorageRootId.appCache ||
+    StorageRootId.userExports ||
+    StorageRootId.hostData => hostRootDirectory(root),
+  };
+
+  /// 宿主专属根。默认没有：向不具备该根的宿主要它是编程错误。
+  Future<Directory> hostRootDirectory(StorageRootId root) async =>
+      throw StateError('storage root ${root.name} is not available here');
 
   /// 视频封面目录 `<documents>/video_covers`。
   Future<Directory> videoCoversDirectory() =>
-      documentsSubdirectory('video_covers');
+      areaDirectory(EngineStorageArea.videoCovers);
 
   /// 视频外挂字幕副本目录 `<documents>/video_subtitles`。
   Future<Directory> videoSubtitlesDirectory() =>
-      documentsSubdirectory('video_subtitles');
+      areaDirectory(EngineStorageArea.videoSubtitles);
 
   /// EPUB 解压正文根 `<documents>/fushi_books`。
   Future<Directory> epubBooksDirectory() =>
-      documentsSubdirectory('fushi_books');
+      areaDirectory(EngineStorageArea.epubBooks);
 
   /// 有声书音频持久根 `<documents>/audiobooks`。
   Future<Directory> audiobooksDirectory() =>
-      documentsSubdirectory('audiobooks');
+      areaDirectory(EngineStorageArea.audiobooks);
 
   /// 系统文件选择器把用户选中的文件**拷进** app 沙盒时落盘的目录（BUG-2863）。
   ///
@@ -71,10 +86,8 @@ abstract class EnginePaths {
   /// 无全文件访问 / provider 解析不出真实路径时放进 app cache——两处都会被系统或
   /// `FilePicker.clearTemporaryFiles()` 清空。要长期引用的视频必须在落库前挪到
   /// 这里，`videoPath` 才不会过一阵变成「找不到文件」。
-  Future<Directory> pickedVideoCopiesDirectory() async {
-    final Directory root = await supportRootDirectory();
-    return Directory(p.join(root.path, 'imported_videos'));
-  }
+  Future<Directory> pickedVideoCopiesDirectory() =>
+      areaDirectory(EngineStorageArea.pickedVideoCopies);
 }
 
 /// 固定根目录实现（服务端 / 测试用）。

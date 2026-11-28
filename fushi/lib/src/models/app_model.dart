@@ -20,6 +20,7 @@ import 'package:fushi/src/media/source_library/source_library_scanner.dart'
     show SourceLibraryScanner, applyBlurayDiscCollectionArtwork;
 import 'package:fushi/src/models/asset_licenses.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
+import 'package:fushi/src/storage/app_storage_areas.dart';
 import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
 import 'package:fushi/src/utils/adaptive/shell_style.dart';
 import 'package:fushi/src/utils/derived_value_listenable.dart';
@@ -1470,7 +1471,9 @@ class AppModel
       localAudioEntriesProvider: () => localAudioDbsOnThisDevice,
       localAudioStagingDir: temporaryDirectory,
       onLocalAudioImported: importSyncedLocalAudioDb,
-      audioDatabaseRoot: Directory('${appDirectory.path}/audiobooks'),
+      audioDatabaseRoot: Directory(
+        EngineStorageArea.audiobooks.pathUnder(appDirectory.path),
+      ),
       // 互联「配置文件」（Profile）双向搬运（用户诉求：把一台设备调好的配置搬到另一台）。
       // 三条依赖都注入回调而不是把 ProfileRepository 拖进 host service：它的构造还要
       // anki repo 与「词典装没装」的磁盘判据，那两样只有 AppModel 这里凑得齐。
@@ -1488,7 +1491,9 @@ class AppModel
           activeId,
           // 与「配置管理」页导出同参：把指向本机 custom_fonts/ 的绝对路径剥成相对，
           // 免得对端拿到一堆指向不存在目录的字体路径。
-          fontsRootDirectory: path.join(appDirectory.path, 'custom_fonts'),
+          fontsRootDirectory: AppStorageArea.customFonts.pathUnder(
+            appDirectory.path,
+          ),
         );
       },
       // 推送方随书带来的显示名：走 ReaderFushiSource（写穿 MediaSource 内存缓存，
@@ -1525,7 +1530,9 @@ class AppModel
       videoDefaultContentLanguage: () => defaultContentLanguage,
       // client→host 视频上传（syncVideoFiles 开关驱动）：落 <documents>/remote_videos
       // （与 client 下载远端视频落点一致，AppPaths.remoteVideosDirectory 同目录）。
-      uploadedVideoRoot: Directory('${appDirectory.path}/remote_videos'),
+      uploadedVideoRoot: Directory(
+        EngineStorageArea.remoteVideos.pathUnder(appDirectory.path),
+      ),
       // 上传视频封面 best-effort 抽帧（桌面 ffmpeg；移动端无则留空占位）。
       extractVideoCover:
           ({required String videoPath, required String bookUid}) =>
@@ -3364,7 +3371,7 @@ class AppModel
   late final RecommendedPackDownloadController
   recommendedPackDownloadController = RecommendedPackDownloadController(
     packDirectory: () =>
-        Directory(path.join(appDirectory.path, 'recommended_pack')),
+        Directory(AppStorageArea.recommendedPack.pathUnder(appDirectory.path)),
   );
 
   late FileExportManager _fileExportManager;
@@ -6228,20 +6235,22 @@ class AppModel
 
       StartupTimeline.mark('tracking+theme');
       debugPrint('[Fushi] init: directories + system palette (parallel)');
-      _browserDirectory = Directory(path.join(appDirectory.path, 'browser'));
+      _browserDirectory = Directory(
+        AppStorageArea.browser.pathUnder(appDirectory.path),
+      );
       _thumbnailsDirectory = Directory(
-        path.join(appDirectory.path, 'thumbnails'),
+        AppStorageArea.thumbnails.pathUnder(appDirectory.path),
       );
 
       _dictionaryResourceDirectory = Directory(
-        path.join(appDirectory.path, 'dictionaryResources'),
+        AppStorageArea.dictionaryResources.pathUnder(appDirectory.path),
       );
 
       _dictionaryImportWorkingDirectory = Directory(
-        path.join(appDirectory.path, 'dictionaryImportWorkingDirectory'),
+        AppStorageArea.dictionaryImportWorking.pathUnder(appDirectory.path),
       );
       _webArchiveDirectory = Directory(
-        path.join(appDirectory.path, 'webArchive'),
+        AppStorageArea.webArchive.pathUnder(appDirectory.path),
       );
 
       // TODO-1260：这些目录都派生自数据根（documentsRoot）；盘掉线时 create() 会 hang。
@@ -6352,7 +6361,7 @@ class AppModel
       // (a no-op DB touch when every path already resolves).
       try {
         final int relocated = await readerSettings.healMissingFontFilePaths(
-          path.join(appDirectory.path, 'custom_fonts'),
+          AppStorageArea.customFonts.pathUnder(appDirectory.path),
         );
         if (relocated > 0) {
           debugPrint(
@@ -6830,20 +6839,22 @@ class AppModel
       mediaHistoryRepo = MediaHistoryRepository(_database);
       await mediaHistoryRepo.loadFromDb();
 
-      _browserDirectory = Directory(path.join(appDirectory.path, 'browser'));
+      _browserDirectory = Directory(
+        AppStorageArea.browser.pathUnder(appDirectory.path),
+      );
       _thumbnailsDirectory = Directory(
-        path.join(appDirectory.path, 'thumbnails'),
+        AppStorageArea.thumbnails.pathUnder(appDirectory.path),
       );
       _dictionaryResourceDirectory = Directory(
-        path.join(appDirectory.path, 'dictionaryResources'),
+        AppStorageArea.dictionaryResources.pathUnder(appDirectory.path),
       );
       _dictionaryImportWorkingDirectory = Directory(
-        path.join(appDirectory.path, 'dictionaryImportWorkingDirectory'),
+        AppStorageArea.dictionaryImportWorking.pathUnder(appDirectory.path),
       );
       _exportDirectory = await prepareExportDirectory();
       _alternateExportDirectory = _exportDirectory;
       _webArchiveDirectory = Directory(
-        path.join(appDirectory.path, 'webArchive'),
+        AppStorageArea.webArchive.pathUnder(appDirectory.path),
       );
 
       await Future.wait(<Future<void>>[
@@ -9421,8 +9432,8 @@ class AppModel
   /// 生产代码不要直接调：走 [ensureAnimeDownloadServiceRunning]（模块门 + 并发去重）。
   Future<void> startAnimeDownloadService() async {
     if (_animeDownloadService != null) return;
-    final Directory baseDir = await AppPaths.documentsSubdirectory(
-      'anime_downloads',
+    final Directory baseDir = await AppPaths.areaDirectory(
+      AppStorageArea.animeDownloads,
     );
     final AnimeDownloadPlanStore store = AnimeDownloadPlanStore(
       baseDir: baseDir,
@@ -9878,7 +9889,7 @@ class AppModel
       // 面板的「配对」入口照旧）。
       onDownloadOnlyCompleted: _onDownloadOnlyCompleted,
       manualTorrentDirectory: Directory(
-        path.join(appDirectory.path, 'manual_torrents'),
+        AppStorageArea.manualTorrents.pathUnder(appDirectory.path),
       ),
       updateFeed: updateFeedService,
       // 目标来源被删的任务重试时改绑到默认下载来源（BUG-2755）。
@@ -12771,7 +12782,7 @@ class AppModel
     return AppFontLoader.resolveForNativeOverlay(
       settings.floatingLyricFonts,
       allowedDirectories: <String>[
-        path.join(appDirectory.path, 'custom_fonts'),
+        AppStorageArea.customFonts.pathUnder(appDirectory.path),
       ],
     );
   }

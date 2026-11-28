@@ -3437,7 +3437,6 @@
     "test/storage/data_root_migrator_path_gaps_test.dart": 3700,
     "test/storage/data_root_migrator_test.dart": 3600,
     "test/storage/desktop_identity_continuity_guard_test.dart": 100,
-    "test/storage/documents_whitelist_guard_test.dart": 700,
     "test/storage/export_directory_migration_test.dart": 100,
     "test/storage/installer_data_root_bootstrap_test.dart": 200,
     "test/storage/legacy_support_dir_migration_test.dart": 200,

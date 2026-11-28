@@ -1,18 +1,16 @@
 import 'dart:io';
 
+import 'package:fushi_engine/foundation/storage_area.dart';
 import 'package:path/path.dart' as p;
 
-/// 书库正文树（epub/manga/pdf 三种书共用）的目录名。
-///
-/// W2-7：新名 `fushi_books`；历史名 `hoshi_books` 由
-/// [migrateLegacyBooksDirectoryAt] 在启动期就地改名。库内含旧目录名的绝对路径
-/// 列（`epub_books.extract_dir` / `media_items.image_url`）由 fushi_core v72
-/// 迁移同批改写。
-const String kBooksDirectoryName = 'fushi_books';
+export 'package:fushi_engine/foundation/storage_area.dart'
+    show kLegacyBooksDirectoryName;
 
-/// 存量旧目录名。旧字面量只允许活在本迁移文件、`AppPaths` 双名搬迁白名单与
-/// `BackupService` 的旧归档前缀读侧回退里。
-const String kLegacyBooksDirectoryName = 'hoshi_books';
+// 书库正文树（epub/manga/pdf 三种书共用）登记为 [EngineStorageArea.epubBooks]：
+// W2-7 新名 `fushi_books`，存量旧名 [kLegacyBooksDirectoryName] 由
+// [migrateLegacyBooksDirectoryAt] 在启动期就地改名。库内含旧目录名的绝对路径
+// 列（`epub_books.extract_dir` / `media_items.image_url`）由 fushi_core v72
+// 迁移同批改写。
 
 /// 在 [documentsRootPath]（documents 根）下做书库目录的存量改名迁移：新目录
 /// 不存在且旧目录存在时 rename（同根同盘 O(1)、内容原样保留）。改名失败（句柄
@@ -25,7 +23,7 @@ void migrateLegacyBooksDirectoryAt(
   void Function(Object error, StackTrace stack)? onMigrationError,
 }) {
   final Directory target = Directory(
-    p.join(documentsRootPath, kBooksDirectoryName),
+    EngineStorageArea.epubBooks.pathUnder(documentsRootPath),
   );
   if (target.existsSync()) return;
   final Directory legacy = Directory(

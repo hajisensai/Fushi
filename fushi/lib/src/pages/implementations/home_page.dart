@@ -1,3 +1,4 @@
+import 'package:fushi/src/storage/app_storage_areas.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/pages/implementations/home_nav_peek.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart';
@@ -1058,7 +1059,9 @@ class _HomePageState extends BasePageState<HomePage>
     triggerAutoSyncOnAppOpen(
       db: appModel.database,
       dictionaryResourceRoot: appModel.dictionaryResourceDirectory,
-      audioDatabaseRoot: Directory('${appModel.appDirectory.path}/audiobooks'),
+      audioDatabaseRoot: Directory(
+        EngineStorageArea.audiobooks.pathUnder(appModel.appDirectory.path),
+      ),
       tempDir: appModel.temporaryDirectory,
       localAudioEntries: appModel.localAudioDbsOnThisDevice,
       onLocalAudioImported: appModel.importSyncedLocalAudioDb,

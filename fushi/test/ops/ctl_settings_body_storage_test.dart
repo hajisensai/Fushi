@@ -129,7 +129,8 @@ void main() {
       );
       expect(covers['bytes'], 2048);
       expect(covers['size'], '2.0 KB');
-      expect(covers['deletableEntries'], 1);
+      // BUG-5613：封面有库行指着、混着手动封面，明细只读。
+      expect(covers['deletableEntries'], 0);
       final Map<String, Object?> shaders = rows.singleWhere(
         (Map<String, Object?> r) => r['id'] == 'shaders',
       );
@@ -143,6 +144,8 @@ void main() {
   ) async {
     final String thumb = p.join(docs.path, 'thumbnails', 'a.png');
     writeFile(thumb, 2048);
+    final String export = p.join(docs.path, 'fushiExport', 'deck.apkg');
+    writeFile(export, 1024);
     writeFile(p.join(docs.path, 'video_subtitles', 's.srt'), 64);
     writeFile(p.join(docs.path, 'fushi_books', 'keyA', 'ch1.html'), 512);
     await pumpContext(tester);
@@ -153,10 +156,22 @@ void main() {
       final Map<String, Object?> thumbRow = rows.singleWhere(
         (Map<String, Object?> r) => r['category'] == 'covers',
       );
-      expect(thumbRow['kind'], 'derivedFile');
-      expect(thumbRow['deletable'], isTrue);
-      await entries.remove!(sc, thumbRow['id']! as String);
-      expect(File(thumb).existsSync(), isFalse);
+      // BUG-5613：封面明细只读，控制通道 rm 同样拒删，文件原样留着。
+      expect(thumbRow['kind'], 'readOnly');
+      expect(thumbRow['deletable'], isFalse);
+      await expectLater(
+        entries.remove!(sc, thumbRow['id']! as String),
+        throwsArgumentError,
+      );
+      expect(File(thumb).existsSync(), isTrue);
+
+      final Map<String, Object?> exportRow = rows.singleWhere(
+        (Map<String, Object?> r) => r['category'] == 'exports',
+      );
+      expect(exportRow['kind'], 'derivedFile');
+      expect(exportRow['deletable'], isTrue);
+      await entries.remove!(sc, exportRow['id']! as String);
+      expect(File(export).existsSync(), isFalse);
 
       final Map<String, Object?> subRow = rows.singleWhere(
         (Map<String, Object?> r) => r['category'] == 'subtitles',

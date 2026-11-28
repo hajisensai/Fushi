@@ -36,6 +36,7 @@ import 'package:fushi/src/shortcuts/shortcut_preferences.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi/src/stats/study_diag_export.dart';
+import 'package:fushi/src/storage/app_storage_areas.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
 
 export 'package:fushi/src/ops/settings_index.dart'
@@ -842,9 +843,8 @@ Future<Object?> _exportProfile(OpContext context, CtlCall call) async {
   // 与配置管理页的导出同参：字体根用于把本机字体绝对路径剥成相对。
   final String content = await viewModel.exportProfile(
     target.id,
-    fontsRootDirectory: p.join(
+    fontsRootDirectory: AppStorageArea.customFonts.pathUnder(
       context.appModel.appDirectory.path,
-      'custom_fonts',
     ),
   );
   return <String, Object?>{

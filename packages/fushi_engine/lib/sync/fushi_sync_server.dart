@@ -540,6 +540,10 @@ final class _ListenAddressNic implements NetworkInterface {
   int get index => _nic.index;
 }
 
+/// 互联 host 的 WebDAV 根目录名：[FushiSyncServer] 在宿主给的数据目录下拼这一段。
+/// app 在 `<support>` 下（登记为 `AppStorageArea.interconnectSyncData`）。
+const String kInterconnectSyncDataDirName = 'sync-data';
+
 class FushiSyncServer {
   FushiSyncServer({
     required String syncDataDir,
@@ -574,7 +578,7 @@ class FushiSyncServer {
     Duration videoFingerprintWarmDelay = const Duration(minutes: 1),
     @visibleForTesting VideoSourceFingerprint? videoFingerprints,
   }) : assert(listenScope == null || !allowLan, 'listenScope 与 allowLan 只给一个'),
-       syncDataDir = p.join(syncDataDir, 'sync-data'),
+       syncDataDir = p.join(syncDataDir, kInterconnectSyncDataDirName),
        _blurayClipRelays = blurayClipRelays ?? BlurayClipRelayPool(),
        _videoFingerprintWarmDelay = videoFingerprintWarmDelay,
        _videoFingerprints =

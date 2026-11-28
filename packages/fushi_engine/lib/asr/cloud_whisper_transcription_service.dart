@@ -37,6 +37,7 @@ import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/asr/asr_transcript_proofreader.dart'
     show asrCueWithProofreadText;
 import 'package:path/path.dart' as p;
+import 'package:fushi_engine/foundation/storage_area.dart';
 
 /// 云端转录在「模型选择」里的保留 id（与系统语音的保留 id 同一机制：不是
 /// [AsrModelPack]，`buildAsrModelRegistry` 认不出会忽略，由 UI 层解释）。
@@ -357,7 +358,7 @@ class CloudWhisperTranscriptionService extends AsrTranscriptionService {
     final Future<Directory> Function()? override = _jobsRootOverride;
     if (override != null) return override();
     final Directory support = await asrSupportRootDirectory();
-    return Directory(p.join(support.path, 'asr_jobs'));
+    return Directory(EngineStorageArea.asrJobs.pathUnder(support.path));
   }
 
   /// 纯函数：由文件名、字节数与「引擎 + 提供商主机 + 模型」派生稳定任务 id——

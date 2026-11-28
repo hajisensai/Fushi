@@ -51,6 +51,7 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_proofre
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer.dart';
 import 'package:fushi_engine/media/video/video_duration_probe.dart';
 import 'package:path/path.dart' as p;
+import 'package:fushi_engine/foundation/storage_area.dart';
 
 /// 管线阶段（进度回调与断点重置用）。
 enum VideoSubtitleStage {
@@ -235,8 +236,12 @@ class VideoSubtitleAiConfig {
 /// 管线任务目录的根：`<数据根>/asr_jobs/video_subtitles`。app 前台、app 当 host、
 /// 无头服务端（任务与 `subgen` 命令）都用这一处，同一视频在哪条入口跑都续同一份
 /// 缓存。与上游转录任务目录（`<数据根>/asr_jobs/<sha1>`）同级不冲突。
-Directory videoSubtitleJobsRootUnder(Directory supportRoot) =>
-    Directory(p.join(supportRoot.path, 'asr_jobs', 'video_subtitles'));
+Directory videoSubtitleJobsRootUnder(Directory supportRoot) => Directory(
+  p.join(
+    EngineStorageArea.asrJobs.pathUnder(supportRoot.path),
+    'video_subtitles',
+  ),
+);
 
 /// 原盘成员（蓝光整卷 / 分集 `.mpls`、DVD title）的默认字幕导出目录：
 /// `<任务根>/disc_out/<videoSubtitleJobId(成员路径)>`。不是原盘成员返回 null。
