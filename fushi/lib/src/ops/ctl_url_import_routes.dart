@@ -60,8 +60,8 @@ class UrlImportYoutubeProbe {
 
 /// 操作本体：导入门面、模块门、只读闸门按回调注入，测试不必起 AppModel。
 ///
-/// 参数（必填、http(s)、类型）由 [OpArgs.parse] 按 [UrlImportOps] 的声明校验，这里
-/// 不再手写。[kit] 只给撤销用（删条目还在旧路径的 library 域上）。
+/// 参数（必填、http(s)、类型）由 [OpArgs] 按 [UrlImportOps] 的声明校验（取值时），这里
+/// 不再手写；模块门 / 只读门仍排在取参数之前，与迁移前的报错顺序一致。[kit] 只给撤销用（删条目还在旧路径的 library 域上）。
 List<FushiOp> buildUrlImportOpsFor({
   required OpDescribeKit kit,
   required StreamVideoUrlImporter Function() importer,

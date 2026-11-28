@@ -188,7 +188,7 @@ class _WebSearchCtl {
       );
     }
     if (state != kAiAgentWebSearchAllow) {
-      if (args.boolean(WebSearchOps.consent) != true) {
+      if (!args.gate(WebSearchOps.consent)) {
         throw CtlFailure(
           400,
           'consent_required',
@@ -204,7 +204,6 @@ class _WebSearchCtl {
   /// `web search <搜索词>`：发给用户配置的后端，每条结果发一个结果 id。
   Future<Object?> search(OpArgs args) async {
     final String query = args.requiredText(WebSearchOps.searchQuery);
-    if (query.isEmpty) throw const CtlFailure.badRequest('query 不能为空');
     final int limit =
         args.integer(WebSearchOps.searchLimit) ?? WebSearchOps.defaultLimit;
     if (limit <= 0) throw const CtlFailure.badRequest('limit 必须为正');

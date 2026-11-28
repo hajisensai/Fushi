@@ -242,4 +242,63 @@ void main() {
     );
     expect(await VideoBookRepository(db).listAll(), isEmpty);
   });
+
+  test('HTTP 直连的线上行为与迁移到 OpSpec 之前一致：400 文案、门先于参数错误', () async {
+    Matcher bad(String message) => throwsA(
+      isA<CtlFailure>()
+          .having((CtlFailure f) => f.status, 'status', 400)
+          .having((CtlFailure f) => f.message, 'message', message),
+    );
+    // 文案：必填地址不带参数名，可选地址带参数名（迁移前 _requireUrl / _optUrl）。
+    expect(
+      () => call(
+        'POST',
+        UrlImportOps.root,
+        body: <String, Object?>{'url': ' file:///a.mp4 '},
+      ),
+      bad('只认 http(s) 地址：file:///a.mp4'),
+    );
+    expect(
+      () => call(
+        'GET',
+        '${UrlImportOps.root}/probe',
+        body: <String, Object?>{'url': 'ftp://h/x'},
+      ),
+      bad('只认 http(s) 地址：ftp://h/x'),
+    );
+    expect(
+      () => call(
+        'POST',
+        UrlImportOps.root,
+        body: <String, Object?>{
+          'url': 'https://cdn.example.com/a.mp4',
+          'subtitleUrl': 'C:\\a.srt',
+        },
+      ),
+      bad('subtitleUrl 只认 http(s) 地址：C:\\a.srt'),
+    );
+    expect(() => call('GET', '${UrlImportOps.root}/probe'), bad('url 缺失'));
+    // 顺序：只读门 / 模块门（422）先于参数错误（400）。
+    readonly = true;
+    expect(
+      () => call(
+        'POST',
+        UrlImportOps.root,
+        body: <String, Object?>{'url': 'file:///a.mp4'},
+      ),
+      _status(422),
+    );
+    expect(() => call('POST', UrlImportOps.root), _status(422));
+    enabled = false;
+    expect(() => call('GET', '${UrlImportOps.root}/probe'), _status(422));
+    expect(
+      () => call(
+        'GET',
+        '${UrlImportOps.root}/probe',
+        body: <String, Object?>{'url': 'ftp://h/x'},
+      ),
+      _status(422),
+    );
+    expect(await VideoBookRepository(db).listAll(), isEmpty);
+  });
 }

@@ -80,8 +80,23 @@ bool magnetHasAddressParams(String magnet) {
   return false;
 }
 
+/// 磁力链接参数的两种语义（构造期校验要求地址类参数显式选角色）：
+/// - `server.download.add-with-trackers`：链接带 tracker / web seed 地址，BT 客户端会去
+///   请求它们——会被请求的外部地址，声明即要求先确认；
+/// - `server.download.add`：模型发起的调用只收不带地址参数的磁力（纯 DHT，带了的由
+///   转发层拒掉，见下面的 handler），值只是内容哈希引用，调用方选不了目的主机。
+const OpParam _magnetWithAddresses = OpParam.remoteUrl(
+  'magnet',
+  description: 'Magnet URI.',
+  required: true,
+);
+const OpParam _magnetHashOnly = OpParam.entityRef(
+  'magnet',
+  description: 'Magnet URI.',
+  required: true,
+);
+
 const List<OpParam> _downloadAddParams = <OpParam>[
-  OpParam.string('magnet', description: 'Magnet URI.', required: true),
   OpParam.string(
     'title',
     description: 'Work title (used for organizing and scraping).',
@@ -640,6 +655,7 @@ Future<Object?> _srsSetDeck(AdminDispatch dispatch, String uid, String deck) =>
     confirm: withAddresses,
     longRunning: true,
     params: <OpParam>[
+      withAddresses ? _magnetWithAddresses : _magnetHashOnly,
       ..._downloadAddParams,
       if (withAddresses)
         const OpParam.userGate(

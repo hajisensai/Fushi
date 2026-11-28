@@ -204,6 +204,12 @@ void main() {
         env.searchRequests[1].queryParameters['count'],
         '${WebSearchOps.maxLimit}',
       );
+      // HTTP 直连的数字按 CtlCall.optInt 截断（迁移到 OpSpec 之前的行为）。
+      await env.call(WebSearchOps.search.pattern, <String, Object?>{
+        'query': 'd',
+        'limit': 2.9,
+      });
+      expect(env.searchRequests[2].queryParameters['count'], '2');
       await expectLater(env.search('c', limit: 0), _fails('bad_request'));
       await expectLater(env.search('  '), _fails('bad_request'));
     });

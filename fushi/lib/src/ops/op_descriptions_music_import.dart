@@ -175,6 +175,7 @@ List<OpDescription> describeMusicImportOps(OpDescribeKit kit) {
           'music.plugin.inspect. A changed signer clears the old login and '
           'storage. Runs third-party code.',
       risk: OpRisk.irreversible,
+      installsCode: true,
       availability: plugins,
       params: const <OpParam>[
         _packagePathParam,

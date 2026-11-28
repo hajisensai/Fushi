@@ -107,7 +107,7 @@ class OpParam {
        );
 
   /// 会被请求的外部地址（[OpParamRole.remoteUrl]）：声明即要求操作先确认。
-  /// [httpOnly]：[OpArgs.parse] 只收 http(s) 且有主机的地址。
+  /// [httpOnly]：只收 http(s) 且有主机的地址（[OpArgs] 取值时校验）。
   const OpParam.remoteUrl(
     String name, {
     required String description,
@@ -260,7 +260,8 @@ class OpParam {
   /// 语义角色（[OpParamRole]）。不进线上 schema。
   final OpParamRole role;
 
-  /// 只收 http(s) 且有主机的地址（[OpArgs.parse] 校验，错误 400）。不进线上 schema。
+  /// 只收 http(s) 且有主机的地址（[OpArgs.text] / [OpArgs.requiredText] 取值时校验，
+  /// 错误 400）。不进线上 schema。
   final bool httpOnly;
 
   Map<String, Object?> toJsonSchema() => <String, Object?>{
@@ -495,16 +496,19 @@ class FushiOpSpec {
   );
 }
 
-//// 一条可执行、进操作目录的操作：声明（[decl]）+ 实现 + 可用性 + 撤销。
+/// 一条可执行、进操作目录的操作：声明（[decl]）+ 实现 + 可用性 + 撤销。
 ///
 /// 两种来路：
 /// - [OpSpec.bind]（[FushiOp.fromSpec]）：声明与实现一处写完，控制通道路由
-///   [route] 由它派生，HTTP 直连也经 [OpArgs.parse] 按声明校验参数；
+///   [route] 由它派生，HTTP 直连也经 [OpArgs.parse] 按声明取参数；
 /// - 旧路径 [FushiOp.new]：还没迁到 [OpSpec] 的域（经 [OpDescription.bind]）与
 ///   进程内操作，拿一条现成的 [CtlRoute]，声明由路由的 method / pattern 现拼。
 ///
 /// 两种来路都在构造时跑同一组约束（id 形状、[validateOpSpec]、风险与撤销的对应），
-/// 违反抛 [ArgumentError]——描述写错在组目录时就炸，不靠事后守卫。
+/// 违反抛 [ArgumentError]——描述写错在组目录时就炸，不靠事后守卫。执行都经 [run]：
+/// [OpSpec] 来路的操作在实现成功返回后查表态参数读没读
+/// （[OpArgs.requireGatesConsulted]）；旧路径的实现直接读 body，这条查不了，由
+/// `op_catalog_ratchet_guard_test.dart` 的读源码检查顶着，随旧路径一起只减不增。
 class FushiOp {
   /// 旧路径（还没迁到 [OpSpec] 的域、进程内操作）：描述 + 现成路由。
   FushiOp({
@@ -577,7 +581,8 @@ class FushiOp {
     this.taskStatus,
     this.taskIdOf,
     this.consentGranted,
-  }) : _run = run {
+  }) : _run = run,
+       _declared = legacyRoute == null {
     _validate();
     route =
         legacyRoute ??
@@ -585,7 +590,7 @@ class FushiOp {
           decl.method,
           decl.pattern,
           (CtlCall call) =>
-              _run(OpArgs.parse(decl, call, unknown: OpUnknownParams.warn)),
+              this.run(OpArgs.parse(decl, call, surface: OpCallSurface.http)),
           requiresReady: decl.requiresReady,
           op: this,
         );
@@ -595,6 +600,9 @@ class FushiOp {
   final OpSpec decl;
 
   final OpHandler _run;
+
+  /// [OpSpec.bind] 来路（声明与实现同处）；false = 旧路径（实现是手写路由的 handler）。
+  final bool _declared;
 
   /// 控制通道路由：[OpSpec] 来路的由声明派生（HTTP 直连按声明解析参数后调同一个
   /// 实现）；旧路径的是传进来的那条。
@@ -630,8 +638,22 @@ class FushiOp {
   /// MCP / 远端宿主照旧逐次确认。
   final bool Function()? consentGranted;
 
-  /// 用已解析的参数执行（进程内调用器、撤销、组合操作走这里；HTTP 走 [route]）。
-  Future<Object?> run(OpArgs args) => _run(args);
+  /// 用已解析的参数执行——唯一的执行入口：进程内调用器、撤销、组合操作直接调，
+  /// HTTP 经 [route] 解析后也调到这里。[args] 必须是按本操作的声明解析的。
+  ///
+  /// [OpSpec] 来路的操作：实现成功返回后，声明了的表态参数必须都被读过
+  /// （[OpArgs.requireGatesConsulted]），否则抛 [StateError]。唯一不要求读的情形是
+  /// 执行前用户已有长期同意（[consentAlreadyGranted]，绑定时给的同一个判据）——那时
+  /// 同意已经记在本机，这次调用不需要再表态。
+  Future<Object?> run(OpArgs args) async {
+    if (!identical(args.spec, decl)) {
+      throw StateError('$id：参数是按 ${args.spec.id} 的声明解析的');
+    }
+    final bool standingConsent = consentAlreadyGranted;
+    final Object? result = await _run(args);
+    if (_declared && !standingConsent) args.requireGatesConsulted();
+    return result;
+  }
 
   /// 此刻是否已有长期同意（见 [consentGranted]）。
   bool get consentAlreadyGranted => consentGranted?.call() ?? false;

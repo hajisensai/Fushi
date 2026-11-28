@@ -437,7 +437,7 @@ void main() {
         params: params,
         body: body,
       ),
-      unknown: OpUnknownParams.warn,
+      surface: OpCallSurface.http,
     );
     final OpUndo undo = op.undo!;
     final Map<String, Object?> before =

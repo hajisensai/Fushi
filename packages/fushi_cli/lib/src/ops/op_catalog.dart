@@ -116,11 +116,11 @@ class OpCatalog {
       .toList(growable: false);
 }
 
-//// 进程内调用器：AI 助手与 `/api/admin/ops/call` 都经它调操作。
+/// 进程内调用器：AI 助手与 `/api/admin/ops/call` 都经它调操作。
 ///
 /// 参数严格校验（未知参数、类型、枚举、必填一律 400 回给调用方），表态参数按
-/// [OpCaller] 处理，再经与 HTTP 直连同一个 [OpArgs.parse] 得到 [OpArgs] 直接调
-/// 实现——与按钮、`fushi_cli` 走同一个方法。
+/// [OpCaller] 处理，再经与 HTTP 直连同一个 [OpArgs.parse]（进程内口径）得到 [OpArgs]
+/// 调 [FushiOp.run]——与按钮、`fushi_cli` 走同一个方法。
 class OpInvoker {
   OpInvoker(this.catalog, {bool Function()? ready})
     : _ready = ready ?? _alwaysReady;
@@ -175,7 +175,8 @@ class OpInvoker {
   /// 校验参数并拼出 [OpArgs]（单独暴露给测试与「确认卡片」预览）。
   ///
   /// 这里只做进程内调用独有的两件事——表态参数由谁给（模型不许给）、对象参数铺进
-  /// body 顶层——然后交给 [OpArgs.parse]（拒绝未知参数），转换与校验只在那里。
+  /// body 顶层——然后交给 [OpArgs.parse]（进程内口径：拒绝未知参数、查必填），转换
+  /// 只有 [coerceOpParam] 一份。
   OpArgs buildCall(
     FushiOp op,
     Map<String, Object?> args, {
@@ -194,9 +195,9 @@ class OpInvoker {
       }
       if (entry.value == null) continue;
       if (param.inPath) {
-        pathParams[param.name] = '${coerceOpParam(param, entry.value!)}';
+        pathParams[param.name] = '${_coerce(param, entry.value!)}';
       } else if (param.spread) {
-        final Object value = coerceOpParam(param, entry.value!);
+        final Object value = _coerce(param, entry.value!);
         for (final MapEntry<String, Object?> e
             in (value as Map<String, Object?>).entries) {
           if (declared.containsKey(e.key)) {
@@ -206,7 +207,7 @@ class OpInvoker {
         }
       } else {
         // 旧路径的 handler 直接读 body：放转换后的值（与 [OpArgs.values] 同一份）。
-        body[param.name] = coerceOpParam(param, entry.value!);
+        body[param.name] = _coerce(param, entry.value!);
       }
     }
     for (final String gate in grantedGates) {
@@ -230,7 +231,10 @@ class OpInvoker {
         body: body,
         fromModel: caller == OpCaller.model,
       ),
-      unknown: OpUnknownParams.reject,
+      surface: OpCallSurface.inProcess,
     );
   }
+
+  static Object _coerce(OpParam param, Object value) =>
+      coerceOpParam(param, value, OpCallSurface.inProcess);
 }
