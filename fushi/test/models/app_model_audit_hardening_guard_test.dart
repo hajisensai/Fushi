@@ -67,14 +67,6 @@ void main() {
         reason: 'initialise 起的 yomitan-api server 必须在 dispose 关停',
       );
     });
-
-    test('anime 下载服务在 dispose 内被 stop', () {
-      expect(
-        disposeBody(source),
-        contains('_animeDownloadService?.stop()'),
-        reason: 'initialise 起的番剧下载服务必须在 dispose 关停',
-      );
-    });
   });
 
   group('BUG-913 弹窗内联 family provider autoDispose 化', () {

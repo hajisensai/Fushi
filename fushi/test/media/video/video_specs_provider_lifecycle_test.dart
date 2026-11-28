@@ -122,24 +122,6 @@ void _providerDeclarationGuards() {
         reason: '本文件里不该出现 ChangeNotifierProvider',
       );
     });
-
-    test('服务实例与 db 连接身份绑定，不靠逐条关库路径记得清空', () {
-      final String appModel = maskComments(
-        File('lib/src/models/app_model.dart').readAsStringSync(),
-      );
-      expect(
-        containsCodeLine(
-          appModel,
-          'if (_videoSpecsService == null || !identical(_videoSpecsServiceDb, db)) {',
-        ),
-        isTrue,
-        reason:
-            'videoSpecsService getter 必须比对建立时那个 FushiDatabase 的身份；'
-            '否则 close/reopen 之后（retryInitialise / 数据根迁移 / 切 Profile / '
-            '恢复备份）服务会继续绑着已关闭的连接，读写被 try 吞成 debugPrint，'
-            '静默退化成「每次滚动都重探、永不落库」',
-      );
-    });
   });
 }
 

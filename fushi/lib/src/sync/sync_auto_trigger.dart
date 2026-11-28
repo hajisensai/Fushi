@@ -1644,6 +1644,10 @@ void uninstallCollectionsSyncWatcher() {
   _collectionsSyncDebounce = null;
 }
 
+/// 测试观察点：观察者此刻是否装着（断言「每条关库 / 销毁路径都把它撤了」用）。
+@visibleForTesting
+bool get collectionsSyncWatcherInstalledForTest => _collectionsWatchSub != null;
+
 /// 测试观察点：观察者累计排定的防抖次数（仅测试断言「合集写入确实触发调度」用）。
 @visibleForTesting
 int collectionsSyncScheduledForTest = 0;

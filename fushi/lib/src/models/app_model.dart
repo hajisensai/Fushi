@@ -211,6 +211,7 @@ import 'package:fushi/src/storage/download_root_migrator.dart';
 import 'package:fushi/src/storage/export_directory.dart';
 import 'package:fushi/src/storage/installer_data_root_bootstrap.dart';
 import 'package:fushi/src/storage/sandbox_relocation.dart';
+import 'package:fushi/src/startup/database_session.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/src/startup/startup_timeline.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
@@ -1125,13 +1126,22 @@ class AppModel
     FushiDatabase db, {
     DictionaryRepository? dictionaryRepository,
   }) {
-    _database = db;
-    _databaseOpened = true;
+    // 与生产同一套生命周期：关库 / 重试 / dispose 都经这一代收尾（不建 SRS 存储，
+    // 需要的测试用 [wireSrsStorageForTesting]）。同步接线：测试 seam 不 await。
+    final DatabaseSession session = _beginDatabaseSession(db, 'test');
+    _ownDatabaseCloseQuiescers(session);
     if (dictionaryRepository != null) {
-      dictRepo = dictionaryRepository;
-      _dictionaryRepoReady = true;
+      _ownDictionaryRepository(session, () => dictionaryRepository);
     }
   }
+
+  /// Test seam：当前这一代的生命周期（断言「某个资源确实登记在这一代上」用）。
+  @visibleForTesting
+  DatabaseSession? get databaseSessionForTesting => _session;
+
+  /// Test seam：标成「初始化已完成」（只接了数据库的测试要验证关库信号把它置回 false 时用）。
+  @visibleForTesting
+  void markInitialisedForTesting() => _isInitialised = true;
 
   /// Test seam：注入词典资源目录（测试走真实的词典引擎排期路径时用，目录下按词典名建子目录）。
   @visibleForTesting
@@ -1160,11 +1170,11 @@ class AppModel
   }
 
   /// Test seam：注入带假 Bangumi API 的 [MediaTrackingService]（控制通道 /
-  /// 设置页测试不能打真网络）。
+  /// 设置页测试不能打真网络）。与生产同一条路：登记在当前这一代上（先
+  /// [wireDatabaseForTesting]），同一代里已有的先收掉。
   @visibleForTesting
   void wireMediaTrackingServiceForTesting(MediaTrackingService service) {
-    _mediaTrackingService?.dispose();
-    _mediaTrackingService = service;
+    _mediaTrackingServiceSlot.replace(_requireSession(), () => service);
   }
 
   /// 全应用共享的冲突弹窗调度器：三处同步入口（手动 / 关书后 / app 启动）
@@ -1841,19 +1851,226 @@ class AppModel
   RouteObserver<PageRoute> get routeObserver => _routeObserver;
   final RouteObserver<PageRoute> _routeObserver = RouteObserver<PageRoute>();
 
-  /// Persistent database (Drift/SQLite).
-  late FushiDatabase _database;
+  /// 进程级常驻服务的生命周期（F6 `ProcessLifetime`）：不握某一代连接、不随换库重建的
+  /// 服务在创建处登记到这里（缓存字段用 [OwnedSlot]，`obtain(_processLifetime, …)`），
+  /// [dispose] 统一逆序收尾。[dispose] 里现存的手写收尾清单是迁移前的存量，只减不增
+  /// （`test/startup/app_model_dispose_ratchet_test.dart`）。
+  final ProcessLifetime _processLifetime = ProcessLifetime(
+    label: 'AppModel.process',
+    onError: ErrorLogService.instance.log,
+  );
 
-  /// True once [_database] has been opened in an init path. Used by
-  /// [retryInitialise] to close a stale connection before re-running init
-  /// (the late fields are reassigned, so the old DB would otherwise leak).
-  bool _databaseOpened = false;
+  /// 当前这一代主库连接的生命周期（F6 `DatabaseSession`）：绑库资源一律在它上面
+  /// 登记，换库只有一个动作 [_closeDatabaseSession]。null = 还没有任何初始化路径开过库
+  /// （或测试 seam 刻意没接库）。关完的那一代留在这里直到下一代打开，经它取连接抛
+  /// [DatabaseSessionClosedException]。
+  DatabaseSession? _session;
 
-  /// Whether [database] is safe to read. False before any init path has opened
-  /// the DB (and while a test seam deliberately leaves [_database] unset), so
-  /// callers outside the init flow must gate [database] access on this instead
-  /// of risking a LateInitializationError.
-  bool get isDatabaseReady => _databaseOpened;
+  /// Persistent database (Drift/SQLite) of the current [_session].
+  FushiDatabase get _database {
+    final DatabaseSession? session = _session;
+    if (session == null) {
+      throw StateError('database requested before any init path opened it');
+    }
+    return session.database;
+  }
+
+  /// Whether [database] is safe to use. False before any init path has opened
+  /// the DB (and while a test seam deliberately leaves it unset) and from the
+  /// moment the session starts closing, so callers outside the init flow must
+  /// gate [database] access on this.
+  ///
+  /// 与「懒建的绑库服务还能不能登记」是同一个条件（[DatabaseSession.isOpen]）：门闩为 true
+  /// 时 `OwnedSlot.obtain` 一定不会因为这一代在关而抛，为 false 时调用方本来就不该再取。
+  bool get isDatabaseReady => _session?.isOpen ?? false;
+
+  /// 打开新的一代：旧的一代必须已经关完（每条换库路径都先 [_closeDatabaseSession]）。
+  /// 只在这里登记「每一代都有」的资源；其余绑库资源在各自创建处登记。
+  ///
+  /// [srs] 非 null 时同时建本代的 SRS 存储持有者（见 [_openSrsStorageHost]）：它先于
+  /// 「关库前要等的写手」登记，于是在它们（SRS 同步等）收尾之后才关。
+  Future<DatabaseSession> _openDatabaseSession(
+    FushiDatabase database, {
+    required String label,
+    required ({bool isMainProcess, Future<void> Function()? beforePrimaryOpen})?
+    srs,
+  }) async {
+    final DatabaseSession session = _beginDatabaseSession(database, label);
+    if (srs != null) {
+      await _openSrsStorageHost(
+        session,
+        isMainProcess: srs.isMainProcess,
+        beforePrimaryOpen: srs.beforePrimaryOpen,
+      );
+    }
+    _ownDatabaseCloseQuiescers(session);
+    return session;
+  }
+
+  /// [_openDatabaseSession] 的同步部分（测试 seam [wireDatabaseForTesting] 也走它）。
+  DatabaseSession _beginDatabaseSession(FushiDatabase database, String label) {
+    final DatabaseSession? previous = _session;
+    assert(
+      previous == null || previous.isClosed,
+      'a new database session was opened before the previous one closed',
+    );
+    final DatabaseSession session = DatabaseSession(
+      database,
+      label: 'DatabaseSession.$label',
+      onError: ErrorLogService.instance.log,
+    );
+    _session = session;
+    // 「连接要关了」的信号，每一代关闭开始时发一次，每条关库路径都一样（不在各路径里手写）：
+    // * [isInitialised] 置 false——关库前要等的写手（[addDatabaseCloseQuiescer]）据此不开
+    //   新一轮，只等在跑的一轮收尾；
+    // * 关库通知（首页刷新、SRS 第四代迁移的「正在关」判据）。
+    // 模型自身销毁（[dispose] → [DatabaseSession.detach]）不是关连接，这两件都不发生。
+    session.onConnectionClosing(() {
+      _isInitialised = false;
+      databaseCloseNotifier.notifyListeners();
+    }, label: 'databaseCloseSignal');
+    // BUG-1569②：合集观察者是模块级全局，订阅的是这一代连接的表 + 未决防抖 Timer，
+    // 它由 initialise / 同步模块门在本代内装上（可能装多次，也可能从没装）；撤是幂等的，
+    // 所以每一代关闭开始时无条件撤一次，防抖到点后不会再对已关闭的库发查询。
+    session.onClosing(
+      uninstallCollectionsSyncWatcher,
+      label: 'collectionsSyncWatcher',
+    );
+    return session;
+  }
+
+  /// 由 Riverpod 侧子系统登记的写手（SRS 同步，[addDatabaseCloseQuiescer]）：AppModel 不持有
+  /// 它们，登记表是进程级的；每一代**关连接前**逐个等它们收尾（[ReleasePhase.withConnection]：
+  /// 模型自身销毁不关连接，也就不等它们）。
+  void _ownDatabaseCloseQuiescers(DatabaseSession session) {
+    session.own<List<Future<void> Function()>>(
+      () => _databaseCloseQuiescers,
+      (List<Future<void> Function()> quiescers) async {
+        for (final Future<void> Function() quiesce
+            in List<Future<void> Function()>.of(quiescers)) {
+          try {
+            await quiesce();
+          } catch (e, stack) {
+            ErrorLogService.instance.log(
+              'AppModel.databaseCloseQuiescer',
+              e,
+              stack,
+            );
+          }
+        }
+      },
+      label: 'databaseCloseQuiescers',
+      phase: ReleasePhase.withConnection,
+    );
+  }
+
+  /// 关掉当前这一代（幂等）。重试开库、关库、弹窗进程关库、无界面复习写入引擎交库全走
+  /// 这里，不再各列各的清理清单（`test/startup/app_model_dispose_ratchet_test.dart` 守着
+  /// 这几条路径里不再出现手写收尾）。
+  Future<void> _closeDatabaseSession({Duration? drainTimeout}) async {
+    await _session?.close(drainTimeout: drainTimeout);
+  }
+
+  /// 当前这一代（懒建的绑库服务在创建处登记用）。没开过库时抛，与读 [_database] 同语义。
+  DatabaseSession _requireSession() {
+    final DatabaseSession? session = _session;
+    if (session == null) {
+      throw StateError('database session requested before any init path');
+    }
+    return session;
+  }
+
+  /// 偏好仓库变更转发成本模型通知：订阅的是这一代的仓库，本代关闭时撤。
+  void _forwardPreferenceChanges(DatabaseSession session) {
+    session.own<PreferencesRepository>(
+      () => prefsRepo..addListener(notifyListeners),
+      (PreferencesRepository r) => r.removeListener(notifyListeners),
+      label: 'prefsRepo.listener',
+    );
+  }
+
+  /// 主题变更转发：[themeNotifier] 绑的是这一代连接，本代关闭时撤订阅
+  /// （notifier 对象本身由 [dispose] 销毁——页面可能还挂着它）。
+  /// [_themeListenerAdded] 记的是「[themeNotifier] 这个 late 字段已由某条初始化路径赋值」，
+  /// 撤订阅不改它：关库之后 [refreshSystemPalette] / [dispose] 仍要认得这个 notifier。
+  void _forwardThemeChanges(DatabaseSession session) {
+    session.own<ThemeNotifier>(
+      () {
+        _themeListenerAdded = true;
+        return themeNotifier..addListener(notifyListeners);
+      },
+      (ThemeNotifier n) => n.removeListener(notifyListeners),
+      label: 'themeNotifier.listener',
+    );
+  }
+
+  /// 媒体源共享的数据库引用：本代关闭时清掉（只清仍指向本代连接的那份）。
+  void _attachMediaSourceDatabase(DatabaseSession session) {
+    session.own<FushiDatabase>(
+      () {
+        final FushiDatabase database = session.database;
+        MediaSource.setDatabase(database);
+        return database;
+      },
+      MediaSource.clearDatabase,
+      label: 'MediaSource.setDatabase',
+    );
+  }
+
+  /// 媒体服务器请求漏斗的自动换线路（拍板台 design-media-server-failover-transport）：按
+  /// 服务器共享、单飞，写回走这一代的连接。全局装配点只有一个槽位：本代关闭时卸掉（只卸
+  /// 仍是自己装的那份），下一代重新装。
+  void _installMediaServerRouteFailover(DatabaseSession session) {
+    session.own<MediaServerRouteFailover>(
+      () {
+        final MediaServerRouteFailover failover =
+            mediaServerRouteFailoverForRepository(
+              () => SyncRepository(session.database),
+            );
+        MediaServerRouteFailover.install(failover);
+        return failover;
+      },
+      (MediaServerRouteFailover failover) {
+        if (identical(MediaServerRouteFailover.instance, failover)) {
+          MediaServerRouteFailover.install(null);
+        }
+      },
+      label: 'MediaServerRouteFailover.install',
+    );
+  }
+
+  /// 词典仓库：本代关闭时先把 Dart 侧排队的元数据写入与查词历史排空进 Drift，再注销它的
+  /// 退出 flush 并丢弃（下一代按新连接重建）。查词历史是 debounce 的可丢数据，写失败只记
+  /// 日志，不否决关库（否则停在「已标记未初始化、连接却还开着」的半关态）。
+  void _ownDictionaryRepository(
+    DatabaseSession session,
+    DictionaryRepository Function() create,
+  ) {
+    session.own<DictionaryRepository>(
+      () {
+        final DictionaryRepository repository = create();
+        dictRepo = repository;
+        _dictionaryRepoReady = true;
+        return repository;
+      },
+      (DictionaryRepository repo) async {
+        try {
+          await repo.flushPendingWritesNow();
+        } catch (e, stack) {
+          ErrorLogService.instance.log(
+            '${session.label}.dictionaryFlush',
+            e,
+            stack,
+          );
+        }
+        if (_dictionaryRepoReady && identical(dictRepo, repo)) {
+          _dictionaryRepoReady = false;
+        }
+        repo.dispose();
+      },
+      label: 'dictRepo',
+    );
+  }
 
   /// 进程级 SRS 存储（`<数据库目录>/srs.db`，Rust 独占）。每条开主库的初始化路径各建一份；
   /// 第一次需要 SRS 时才真正打开（复习模块关着时从不打开）。关主库前先关它。
@@ -1865,22 +2082,35 @@ class AppModel
     return host;
   }
 
-  SrsStorageHost? _srsStorageHost;
+  /// 与主库并排的存储，跟连接同寿命（[ReleasePhase.withConnection]）：[DatabaseSession.close]
+  /// 在本库名下的后台工作全部退出之后、关主库之前关它（覆盖恢复随后要换 / 删这个文件，
+  /// POSIX 上删开着的库只是 unlink，连接还写旧 inode；主进程打开时的搬迁读的是主库连接）。
+  /// 模型自身销毁（[DatabaseSession.detach]）不关连接，也就不动它。
+  late final OwnedSlot<SrsStorageHost> _srsStorageHostSlot =
+      OwnedSlot<SrsStorageHost>(
+        'srsStorageHost',
+        (SrsStorageHost host) => host.close(),
+        phase: ReleasePhase.withConnection,
+      );
+  SrsStorageHost? get _srsStorageHost => _srsStorageHostSlot.valueOrNull;
 
-  /// 换一份 SRS 存储持有者（旧的先关）。[isMainProcess] 为 false 时不搬迁旧库（见 [SrsStorageHost]）。
+  /// 建本代的 SRS 存储持有者。[isMainProcess] 为 false 时不搬迁旧库（见 [SrsStorageHost]）。
   /// [beforePrimaryOpen] 见 [SrsStorageHost]（主界面的引擎开主库前让无界面执行引擎交出主库，BUG-5542）。
-  Future<void> _resetSrsStorageHost({
+  Future<void> _openSrsStorageHost(
+    DatabaseSession session, {
     required bool isMainProcess,
     Future<void> Function()? beforePrimaryOpen,
   }) async {
-    await _closeSrsStorage();
     await useSrsTempDirectory();
-    _srsStorageHost = SrsStorageHost(
-      dbDirectory: _databaseDirectory.path,
-      isMainProcess: isMainProcess,
-      legacyDatabase: () => _database,
-      beforePrimaryOpen: beforePrimaryOpen,
-    );
+    _srsStorageHostSlot.obtain(session, () {
+      final FushiDatabase database = session.database;
+      return SrsStorageHost(
+        dbDirectory: _databaseDirectory.path,
+        isMainProcess: isMainProcess,
+        legacyDatabase: () => database,
+        beforePrimaryOpen: beforePrimaryOpen,
+      );
+    });
   }
 
   /// 本进程复习笔记写入的执行方（BUG-5542，见 [SrsNoteWriter]）：只读打开复习库的 Android 辅助进程（`:popup` 查词窗 /
@@ -1956,9 +2186,11 @@ class AppModel
     if (_isInitialised) return;
     try {
       await _prepareRuntimeDirectories();
-      _database = FushiDatabase(_databaseDirectory.path, isMainProcess: false);
-      _databaseOpened = true;
-      await _resetSrsStorageHost(isMainProcess: true);
+      await _openDatabaseSession(
+        FushiDatabase(_databaseDirectory.path, isMainProcess: false),
+        label: 'srsWriteHost',
+        srs: (isMainProcess: true, beforePrimaryOpen: null),
+      );
       _prefsRepo = PreferencesRepository(_database);
       await prefsRepo.loadFromDb();
       _applyStatDayResetHour();
@@ -1971,24 +2203,8 @@ class AppModel
     }
   }
 
-  /// 无界面执行引擎交出主库（[initialiseForSrsWriteHost] 的反向）：先关复习库、再关主库。
-  Future<void> closeForSrsWriteHost() async {
-    _isInitialised = false;
-    await _closeSrsStorage();
-    if (_databaseOpened) await _database.close();
-  }
-
-  /// 关 SRS 存储（幂等）。必须在关主库之前：主进程打开时的搬迁读的是主库连接。
-  Future<void> _closeSrsStorage() async {
-    final SrsStorageHost? host = _srsStorageHost;
-    _srsStorageHost = null;
-    if (host == null) return;
-    try {
-      await host.close();
-    } catch (e, stack) {
-      ErrorLogService.instance.log('AppModel.closeSrsStorage', e, stack);
-    }
-  }
+  /// 无界面执行引擎交出主库（[initialiseForSrsWriteHost] 的反向）：关掉这一代（复习库在主库之前关）。
+  Future<void> closeForSrsWriteHost() => _closeDatabaseSession();
 
   /// 备份导出要读的本机 SRS 存储：复习模块开着时照常打开；模块关着时只在本机有复习库文件（新代 `srs4.db`
   /// 或协议 3 的 `srs.db`，[SrsStorageHost.hasStoredLibrary]）时打开——数据在就得能随备份走，没用过复习的设备
@@ -1999,12 +2215,6 @@ class AppModel
     return host.acquireIfStored(
       moduleEnabled: moduleVisibility.isEnabled(ModuleId.srs),
     );
-  }
-
-  /// Test seam：注入一份 SRS 存储持有者（不经初始化路径）。
-  @visibleForTesting
-  void wireSrsStorageForTesting(SrsStorageHost host) {
-    _srsStorageHost = host;
   }
 
   /// Theme management, extracted from AppModel for testability.
@@ -2025,14 +2235,22 @@ class AppModel
   /// **不放 `initialise()`**：弹窗词典与悬浮词典是另外两个 entry point，不经
   /// `initialise()`，而它们也可能间接走到会投递的代码路径；懒 getter 让「谁用谁
   /// 建」，用不到的进程一分钱不花（与 `installAsrHostBindings` 那处同类教训）。
-  UpdateFeedService? _updateFeedService;
-  UpdateFeedService get updateFeedService =>
-      _updateFeedService ??= UpdateFeedService(
-        database: database,
-        prefs: prefsRepo,
-        notifier: systemNotifier,
-        notificationText: localizedUpdateNotificationText,
+  ///
+  /// 它握着这一代的连接与偏好仓库：随这一代丢弃，下一代按新连接懒建。
+  late final OwnedSlot<UpdateFeedService> _updateFeedServiceSlot =
+      OwnedSlot<UpdateFeedService>(
+        'updateFeedService',
+        (UpdateFeedService _) {},
       );
+  UpdateFeedService get updateFeedService => _updateFeedServiceSlot.obtain(
+    _requireSession(),
+    () => UpdateFeedService(
+      database: database,
+      prefs: prefsRepo,
+      notifier: systemNotifier,
+      notificationText: localizedUpdateNotificationText,
+    ),
+  );
 
   /// 本进程唯一的系统通知后端（更新提醒与反馈回复提醒共用）。
   ///
@@ -2264,10 +2482,17 @@ class AppModel
   /// Media history and search history, extracted for testability.
   late MediaHistoryRepository mediaHistoryRepo;
 
-  /// 番剧/小说/漫画进度的可靠 Bangumi 同步入口。
-  MediaTrackingService? _mediaTrackingService;
-  MediaTrackingService get mediaTrackingService =>
-      _mediaTrackingService ??= _buildMediaTrackingService();
+  /// 番剧/小说/漫画进度的可靠 Bangumi 同步入口。BUG-1647：它的仓库与重试定时器绑这一代
+  /// 连接，随这一代收尾；同一代里替换（初始化路径、测试 seam）时先收旧的。
+  late final OwnedSlot<MediaTrackingService> _mediaTrackingServiceSlot =
+      OwnedSlot<MediaTrackingService>(
+        'mediaTrackingService',
+        (MediaTrackingService service) => service.dispose(),
+      );
+  MediaTrackingService? get _mediaTrackingService =>
+      _mediaTrackingServiceSlot.valueOrNull;
+  MediaTrackingService get mediaTrackingService => _mediaTrackingServiceSlot
+      .obtain(_requireSession(), _buildMediaTrackingService);
 
   /// Installed tracking plugins (docs/specs/2026-11-10-tracking-plugins.md):
   /// packages, storage and credentials under
@@ -2376,9 +2601,13 @@ class AppModel
 
   /// Offline anime id list for linking media server episodes. Created (and
   /// downloaded) only when an episode has no AniList / MAL id of its own.
-  AnimeIdentityMapping? _trackingAnimeIdsOrNull;
+  late final OwnedSlot<AnimeIdentityMapping> _trackingAnimeIdsSlot =
+      OwnedSlot<AnimeIdentityMapping>(
+        'trackingAnimeIds',
+        (AnimeIdentityMapping mapping) => mapping.close(),
+      );
   AnimeIdentityMapping get _trackingAnimeIds =>
-      _trackingAnimeIdsOrNull ??= AnimeIdentityMapping();
+      _trackingAnimeIdsSlot.obtain(_processLifetime, AnimeIdentityMapping.new);
 
   /// A manga's or PDF's read state changed (reader reached a chapter / volume
   /// end, or chapters were marked on the series page / by a Kavita refresh).
@@ -2541,7 +2770,7 @@ class AppModel
 
   /// [dictRepo] 是否已经赋值。
   ///
-  /// 它是 late 字段，而 `_databaseOpened = true` 发生在它被赋值**之前**，所以
+  /// 它是 late 字段，而本代 [DatabaseSession] 在它被赋值**之前**就已打开，所以
   /// 「DB 已就绪」并不蕴含「词典仓库已就绪」——初始化早期与测试 seam 都能撞进这段
   /// 窗口，此时读 [dictionaries] 会抛 LateInitializationError。需要在初始化完成前
   /// 读词典（例如查词弹窗注入按词典语言分流的字体 CSS）的调用方必须先问这个。
@@ -2552,15 +2781,21 @@ class AppModel
   late final AudioController audioCtrl = AudioController();
 
   /// Apple Music 账号与本平台的 MusicKit 桥（MusicKit 方案 §3.1 / §4）：播放后端与设置页共用。
-  /// 懒建；[dispose] 只拆真正建过的那一份（连带桥与网页桥的隐藏 WebView）。
-  AppleMusicAccount get appleMusicAccount =>
-      _appleMusicAccount ??= AppleMusicAccount(
-        bridge: createAppleMusicBridge,
-        connected: () =>
-            isPreferencesReady && prefsRepo.musicAppleMusicConnected,
-        setConnected: (bool v) => prefsRepo.setMusicAppleMusicConnected(v),
+  /// 懒建，进程级：账号持有桥订阅，网页桥还持有隐藏的 HeadlessInAppWebView（播放后端只
+  /// 借用桥），模型销毁时只拆真正建过的那一份。
+  AppleMusicAccount get appleMusicAccount => _appleMusicAccountSlot.obtain(
+    _processLifetime,
+    () => AppleMusicAccount(
+      bridge: createAppleMusicBridge,
+      connected: () => isPreferencesReady && prefsRepo.musicAppleMusicConnected,
+      setConnected: (bool v) => prefsRepo.setMusicAppleMusicConnected(v),
+    ),
+  );
+  late final OwnedSlot<AppleMusicAccount> _appleMusicAccountSlot =
+      OwnedSlot<AppleMusicAccount>(
+        'appleMusicAccount',
+        (AppleMusicAccount account) => account.dispose(),
       );
-  AppleMusicAccount? _appleMusicAccount;
 
   /// 播放器「喜欢」用的 Apple Music 评分客户端（懒建，跨账号复用：token 每次现取）。
   AppleMusicPersonalClient? _appleMusicRatingsClient;
@@ -3526,10 +3761,11 @@ class AppModel
       await inFlight;
       return;
     }
-    // A previous attempt may have partially initialised resources. Tear down
-    // the ones that would otherwise leak or double-register before re-running
-    // (the late fields below are reassigned by initialise()).
-    if (_databaseOpened) {
+    // A previous attempt may have partially initialised resources: close that
+    // generation (every DB-bound resource registered on it is released, in
+    // reverse order) before re-running init.
+    final DatabaseSession? previous = _session;
+    if (previous != null && !previous.isClosed) {
       try {
         await _flushDictionaryWritesBeforeClose();
       } catch (e, stack) {
@@ -3544,14 +3780,8 @@ class AppModel
         notifyListeners();
         return;
       }
-      _prefsRepo?.removeListener(notifyListeners);
-      if (_themeListenerAdded) {
-        themeNotifier.removeListener(notifyListeners);
-        _themeListenerAdded = false;
-      }
-      await _closeSrsStorage();
       try {
-        await _database.close();
+        await _closeDatabaseSession();
       } catch (e, stack) {
         ErrorLogService.instance.log(
           'AppModel.retryInitialise.close',
@@ -3559,15 +3789,6 @@ class AppModel
           stack,
         );
       }
-      _databaseOpened = false;
-      _stopRemoteDictionaryCatalog();
-      if (_dictionaryRepoReady) {
-        dictRepo.dispose();
-        _dictionaryRepoReady = false;
-      }
-      // 仓储绑的是刚被关掉的那个 db 实例，必须丢掉让它重建（否则重试后所有游戏库
-      // 读写都打在已关闭的连接上）。
-      _galgameRepo = null;
     }
     _initError = null;
     _downgradeError = null;
@@ -5413,16 +5634,25 @@ class AppModel
 
   /// 按 host 推送 / 下载单本词典的服务（与目录服务同在主进程；弹窗进程没有 = null，
   /// 管理页不给这两个动作）。导入后走与同步一样的 [refreshAfterSyncRun]。
+  ///
+  /// 服务握着这一代的连接：随这一代丢弃（关库途中同样返回 null，不再新建）。
   DictionaryTransferService? get dictionaryTransferService =>
-      _remoteDictionaryCatalog == null
+      !isDatabaseReady || _remoteDictionaryCatalog == null
       ? null
-      : (_dictionaryTransferService ??= DictionaryTransferService(
-          db: _database,
-          dictionaryResourceRoot: dictionaryResourceDirectory,
-          tempDir: temporaryDirectory,
-          onPostRun: refreshAfterSyncRun,
-        ));
-  DictionaryTransferService? _dictionaryTransferService;
+      : _dictionaryTransferServiceSlot.obtain(
+          _requireSession(),
+          () => DictionaryTransferService(
+            db: database,
+            dictionaryResourceRoot: dictionaryResourceDirectory,
+            tempDir: temporaryDirectory,
+            onPostRun: refreshAfterSyncRun,
+          ),
+        );
+  late final OwnedSlot<DictionaryTransferService>
+  _dictionaryTransferServiceSlot = OwnedSlot<DictionaryTransferService>(
+    'dictionaryTransferService',
+    (DictionaryTransferService _) {},
+  );
 
   /// 本机给一本服务器词典起显示名（设备本地，见
   /// [DictionaryRepository.setRemoteDictionaryLocalDisplayName]）。
@@ -5857,43 +6087,50 @@ class AppModel
       StartupTimeline.mark('data-roots');
       debugPrint('[Fushi] init: Drift database');
       ErrorLogService.instance.markInitStep('open-database（Drift 打开 fushi.db）');
-      _database = FushiDatabase(_databaseDirectory.path);
-      _databaseOpened = true;
-      // 媒体服务器请求漏斗的自动换线路：按服务器共享、单飞，写回走现取的数据库
-      // （拍板台 design-media-server-failover-transport）。
-      MediaServerRouteFailover.install(
-        mediaServerRouteFailoverForRepository(() => SyncRepository(_database)),
-      );
       // Android 主进程里替辅助进程执行写入的无界面引擎（BUG-5542）在主界面开主库之前交出主库。
-      await _resetSrsStorageHost(
-        isMainProcess: true,
-        beforePrimaryOpen: Platform.isAndroid
-            ? SrsWriteRelayHostChannel.claimPrimary
-            : null,
+      final DatabaseSession session = await _openDatabaseSession(
+        FushiDatabase(_databaseDirectory.path),
+        label: 'main',
+        srs: (
+          isMainProcess: true,
+          beforePrimaryOpen: Platform.isAndroid
+              ? SrsWriteRelayHostChannel.claimPrimary
+              : null,
+        ),
       );
+      _installMediaServerRouteFailover(session);
       // 服务器曲目的离线副本（v175）：进程内索引跟着表走，播放项据此换成本地文件。
-      MusicServerDownloadIndex.instance.attach(_database);
+      // 单例的表订阅绑的是这一代连接：本代关闭时撤掉，下一代重新 attach。
+      session.own<MusicServerDownloadIndex>(
+        () => MusicServerDownloadIndex.instance..attach(session.database),
+        (MusicServerDownloadIndex index) => index.detach(session.database),
+        label: 'MusicServerDownloadIndex.attach',
+      );
       // 服务器曲目离线 / 配置删了时没送达的播放与收藏（v176 补发队列）：「连不上」的判据补上
       // Jellyfin 传输层自己的异常；补发时找当前配置的 Jellyfin / Subsonic。
       musicServerUnreachable = (Object e) =>
           e is JellyfinTransportException || musicServerReportUnreachable(e);
-      MusicServerOfflineQueue.instance
-        ..attach(
-          _database,
-          browsers: () async => <MusicServerBrowser>[
-            for (final MusicServerBinding b in (await loadMusicServerBindings(
-              this,
-            )).values)
-              b.browser,
-          ],
-        )
-        ..onFavoriteApplied = (String serverId, String itemId, bool fav) =>
-            MusicServerFavoriteStore.instance.confirm(
-              serverId,
-              MusicServerItemKind.track,
-              itemId,
-              fav,
-            );
+      session.own<MusicServerOfflineQueue>(
+        () => MusicServerOfflineQueue.instance
+          ..attach(
+            session.database,
+            browsers: () async => <MusicServerBrowser>[
+              for (final MusicServerBinding b in (await loadMusicServerBindings(
+                this,
+              )).values)
+                b.browser,
+            ],
+          )
+          ..onFavoriteApplied = (String serverId, String itemId, bool fav) =>
+              MusicServerFavoriteStore.instance.confirm(
+                serverId,
+                MusicServerItemKind.track,
+                itemId,
+                fav,
+              ),
+        (MusicServerOfflineQueue queue) => queue.detach(session.database),
+        label: 'MusicServerOfflineQueue.attach',
+      );
       // 音乐来源扫完 → 缺 ReplayGain 标签的曲目进后台 EBU R128 测量（设计 §7.3）。
       // 同时把还没有 MV 的本机曲目和附近的视频 / 蓝光流做一轮声纹匹配（只对没对过的）。
       onMusicSourceScanned = () {
@@ -6118,14 +6355,16 @@ class AppModel
         // 只在 applyProfile（用户操作）里调，那时 late 的资源目录早已就位。
         isDictionaryInstalled: isDictionaryInstalledOnDisk,
       );
-      dictRepo = DictionaryRepository(
-        _database,
-        onCacheRebuild: _rebuildDictPathsCache,
-        // 查词历史在首帧之后才落进内存（见下方 deferHistory），到了让首页词典页重画。
-        onHistoryLoaded: notifyListeners,
-        isLowMemory: () => prefsRepo.lowMemoryMode,
+      _ownDictionaryRepository(
+        session,
+        () => DictionaryRepository(
+          session.database,
+          onCacheRebuild: _rebuildDictPathsCache,
+          // 查词历史在首帧之后才落进内存（见下方 deferHistory），到了让首页词典页重画。
+          onHistoryLoaded: notifyListeners,
+          isLowMemory: () => prefsRepo.lowMemoryMode,
+        ),
       );
-      _dictionaryRepoReady = true;
       // 系统语音兜底（「朗读声音」里的系统语音预设拿不到 AppModel）按已装词典
       // 的词头语言定语言：现读，词典增删即时生效（BUG-3669）。
       systemTtsDictionaryLanguages = () => installedDictionarySourceLanguages;
@@ -6155,7 +6394,7 @@ class AppModel
       }
       // v153：服务器托管词典目录（词典仓库已装载，目录对账后让它重读）。
       _startRemoteDictionaryCatalog();
-      prefsRepo.addListener(notifyListeners);
+      _forwardPreferenceChanges(session);
       navRailExpandedNotifier.value = prefsRepo.navRailExpanded;
       // 封面模式默认是音画同步片段：2026-09-28 被钉成 GIF 的存量安装在这里迁一次。
       await prefsRepo.settleMiningImageModeInstallDefault();
@@ -6197,8 +6436,7 @@ class AppModel
       _applyMemoryPolicy();
       // BUG-1647：lazy getter 可能已提前建过实例；替换前先取消其重试定时器，
       // 否则旧定时器会拿着旧 repository 继续同步。
-      _mediaTrackingService?.dispose();
-      _mediaTrackingService = _buildMediaTrackingService();
+      _mediaTrackingServiceSlot.replace(session, _buildMediaTrackingService);
       _startTrackingPlugins();
       // 互联「来源共享」收插件时用的本机插件体系（同步编排在别处建，经全局装配点取）。
       sourceSharePluginStores = sourceSharePluginStoresOf;
@@ -6223,8 +6461,7 @@ class AppModel
       themeNotifier = ThemeNotifier(_database, () => textTheme)
         ..usePageBackdropImageDirectory(pageBackdropDir);
       themeNotifier.loadFromPrefsSnapshot(prefsSnapshot);
-      themeNotifier.addListener(notifyListeners);
-      _themeListenerAdded = true;
+      _forwardThemeChanges(session);
 
       StartupTimeline.mark('tracking+theme');
       debugPrint('[Fushi] init: directories + system palette (parallel)');
@@ -6340,7 +6577,7 @@ class AppModel
       // 本地音频库补内容身份 + 收掉内容相同的重复登记（拍板 pr3481）：要扫库，
       // 后台跑，不挡启动；只在主进程跑（弹窗进程不改登记）。
       unawaited(_normalizeLocalAudioLibrariesQuietly());
-      MediaSource.setDatabase(_database);
+      _attachMediaSourceDatabase(session);
       final readerSettings = ReaderSettings(_database);
       await readerSettings.loadFromPrefsSnapshot(prefsSnapshot);
       // TODO-1393 self-heal: recover custom-font entries whose stored absolute
@@ -6680,7 +6917,7 @@ class AppModel
       // BUG-815: a custom data root IS configured but is currently unreachable
       // (slow/sleeping/disconnected drive). AppPaths.resolve threw INSTEAD of
       // silently deriving the empty default location — the DB was never opened
-      // (_databaseOpened stays false, so retry is a clean re-run). Surface a
+      // (no session exists, so retry is a clean re-run). Surface a
       // dedicated "data location unavailable" escape screen (Retry / explicit
       // opt-in-to-default); do NOT set _initError so the generic error screen
       // doesn't shadow it. The real data is untouched on e.configuredPath.
@@ -6763,9 +7000,11 @@ class AppModel
       debugPrint('[Fushi-popup] init: Drift database');
       // TODO-905 D3: the :popup process must NOT delete a poisoned -wal/-shm
       // sidecar (the main process owns recovery); it backs off on IOERR.
-      _database = FushiDatabase(_databaseDirectory.path, isMainProcess: false);
-      _databaseOpened = true;
-      await _resetSrsStorageHost(isMainProcess: false);
+      final DatabaseSession session = await _openDatabaseSession(
+        FushiDatabase(_databaseDirectory.path, isMainProcess: false),
+        label: 'popup',
+        srs: (isMainProcess: false, beforePrimaryOpen: null),
+      );
 
       _prefsRepo = PreferencesRepository(_database);
       await prefsRepo.loadFromDb();
@@ -6785,8 +7024,7 @@ class AppModel
       themeNotifier = ThemeNotifier(_database, () => textTheme)
         ..usePageBackdropImageDirectory(pageBackdropDir);
       themeNotifier.loadFromPrefsSnapshot(prefsRepo.prefsSnapshot);
-      themeNotifier.addListener(notifyListeners);
-      _themeListenerAdded = true;
+      _forwardThemeChanges(session);
       // 默认主题 `system-theme` 取 Android 壁纸色板；这个进程（:popup / 第二块屏
       // 面板）不跑主进程 initialise，不在这里取就退回种子色，副屏 / 弹窗和主屏
       // 配色对不上。
@@ -6799,17 +7037,18 @@ class AppModel
       await platformServices.init();
       await installAppNetworkBindings();
       _applyStatDayResetHour();
-      prefsRepo.addListener(notifyListeners);
+      _forwardPreferenceChanges(session);
       // BUG-1647：同主进程路径，替换前取消旧实例可能挂起的重试定时器。
-      _mediaTrackingService?.dispose();
-      _mediaTrackingService = _buildMediaTrackingService();
+      _mediaTrackingServiceSlot.replace(session, _buildMediaTrackingService);
 
-      dictRepo = DictionaryRepository(
-        _database,
-        onCacheRebuild: _rebuildDictPathsCache,
-        isLowMemory: () => prefsRepo.lowMemoryMode,
+      _ownDictionaryRepository(
+        session,
+        () => DictionaryRepository(
+          session.database,
+          onCacheRebuild: _rebuildDictPathsCache,
+          isLowMemory: () => prefsRepo.lowMemoryMode,
+        ),
       );
-      _dictionaryRepoReady = true;
       // 系统语音兜底（「朗读声音」里的系统语音预设拿不到 AppModel）按已装词典
       // 的词头语言定语言：现读，词典增删即时生效（BUG-3669）。
       systemTtsDictionaryLanguages = () => installedDictionarySourceLanguages;
@@ -6868,7 +7107,7 @@ class AppModel
       // 与词典引擎里那份英文 transforms JSON 无关，所以放在引擎初始化之后也没问题。
       unawaited(applyTransformDescriptionLocale(appLocale.toLanguageTag()));
       populateMediaTypes();
-      MediaSource.setDatabase(_database);
+      _attachMediaSourceDatabase(session);
       populateMediaSources();
       populateDictionaryFormats();
       populateEnhancements();
@@ -8334,7 +8573,16 @@ class AppModel
   AnimeDownloadPlanStore? get animeDownloadPlanStore => _animeDownloadPlanStore;
 
   /// 番剧下载：qb 完成监听 + 自动入库服务（app 生命周期常驻；未配置时每 tick 空转）。
-  AnimeDownloadService? _animeDownloadService;
+  ///
+  /// 服务的 tick 会写这一代的库、导入器握着这一代的连接：随这一代停下并丢弃，下一代的
+  /// [startAnimeDownloadService] 重新建（重试开库之后下载中心照常启动）。
+  late final OwnedSlot<AnimeDownloadService> _animeDownloadServiceSlot =
+      OwnedSlot<AnimeDownloadService>(
+        'animeDownloadService',
+        (AnimeDownloadService service) => service.stop(),
+      );
+  AnimeDownloadService? get _animeDownloadService =>
+      _animeDownloadServiceSlot.valueOrNull;
   AnimeDownloadService? get animeDownloadService => _animeDownloadService;
 
   AnimeDownloadSubscriptionStore? _animeDownloadSubscriptionStore;
@@ -8347,25 +8595,38 @@ class AppModel
   ///
   /// 作品页 / 阅读器 / mokuro 目录页只负责 enqueue；worker 在 [startMangaDownloads]
   /// （HomePage 就绪后）才开始消费，之前入队的任务留在表里等着。关库 / 切 Profile
-  /// 时在 [quiesceBackgroundDatabaseWriters] 销毁。书架页监听
+  /// 时随本代 [DatabaseSession] 销毁。书架页监听
   /// [MangaDownloadService.mokuroImportedCount] 增量刷新书列表。
-  MangaDownloadService? _mangaDownloadService;
+  late final OwnedSlot<MangaDownloadService> _mangaDownloadServiceSlot =
+      OwnedSlot<MangaDownloadService>(
+        'mangaDownloadService',
+        (MangaDownloadService service) => service.dispose(),
+      );
   MangaDownloadService get mangaDownloadService =>
-      _mangaDownloadService ??= MangaDownloadService(
-        database: database,
-        serviceFor: onlineMangaLibraryService,
-        onChapterDownloaded: _autoOcrDownloadedMangaChapter,
-        mokuroDownloader: () => MokuroMoeVolumeDownloader(
-          client: MokuroMoeClient(baseUrl: mangaOnlineCatalogBaseUrl),
+      _mangaDownloadServiceSlot.obtain(
+        _requireSession(),
+        () => MangaDownloadService(
+          database: database,
+          serviceFor: onlineMangaLibraryService,
+          onChapterDownloaded: _autoOcrDownloadedMangaChapter,
+          mokuroDownloader: () => MokuroMoeVolumeDownloader(
+            client: MokuroMoeClient(baseUrl: mangaOnlineCatalogBaseUrl),
+          ),
         ),
       );
 
   /// 「重新入库」扫描器（懒建；与 [mangaDownloadService] 同生命周期，关库 / 切
-  /// Profile 时在 [quiesceBackgroundDatabaseWriters] 一并丢弃）。下载页任务 tab
+  /// Profile 时随本代 [DatabaseSession] 一并丢弃）。下载页任务 tab
   /// 从这里取，不自己按数据库 new。
-  OnlineMangaReshelf? _onlineMangaReshelf;
-  OnlineMangaReshelf get onlineMangaReshelf =>
-      _onlineMangaReshelf ??= OnlineMangaReshelf(database: database);
+  late final OwnedSlot<OnlineMangaReshelf> _onlineMangaReshelfSlot =
+      OwnedSlot<OnlineMangaReshelf>(
+        'onlineMangaReshelf',
+        (OnlineMangaReshelf _) {},
+      );
+  OnlineMangaReshelf get onlineMangaReshelf => _onlineMangaReshelfSlot.obtain(
+    _requireSession(),
+    () => OnlineMangaReshelf(database: database),
+  );
 
   /// 启动章节下载 worker：复位上次进程死亡留下的 `running` 行并开始消费。幂等。
   Future<void> startMangaDownloads() => mangaDownloadService.start();
@@ -8434,39 +8695,54 @@ class AppModel
   /// 漏过一次（`retryInitialise` 里只清了 `_galgameRepo`）。漏掉的后果不是崩溃而是
   /// 静默退化——服务仍绑着已关闭的连接，读写全被 prime/_probeAndStore 的 try 吞成
   /// debugPrint，表现为「每次滚动都重探、永远不落库」。身份比对把它变成结构保证。
-  VideoSpecsService? _videoSpecsService;
+  late final OwnedSlot<VideoSpecsService> _videoSpecsServiceSlot =
+      OwnedSlot<VideoSpecsService>(
+        'videoSpecsService',
+        (VideoSpecsService service) => service.dispose(),
+      );
 
-  /// [_videoSpecsService] 建立时用的那个连接，仅用于身份比对。
-  FushiDatabase? _videoSpecsServiceDb;
-
-  VideoSpecsService get videoSpecsService {
-    final FushiDatabase db = database;
-    if (_videoSpecsService == null || !identical(_videoSpecsServiceDb, db)) {
-      _videoSpecsService?.dispose();
-      _videoSpecsService = VideoSpecsService(db);
-      _videoSpecsServiceDb = db;
-    }
-    return _videoSpecsService!;
-  }
+  VideoSpecsService get videoSpecsService => _videoSpecsServiceSlot.obtain(
+    _requireSession(),
+    () => VideoSpecsService(database),
+  );
 
   /// Mihon 扩展生态宿主（Android 原生 / Windows、macOS 内置 Java sidecar）。
   ///
   /// 与 mokuro 下载队列一样按首次访问懒建：普通书架和 Mokuro 浏览不会启动 JVM，
   /// 只有进入漫画源/漫画扩展/来源设置才读取扩展数据库；桌面 runtime 又会等到
   /// 第一次真正调用扩展时才启动 M-Extension-Server。
-  MihonManager? _mihonManager;
+  ///
+  /// manager 握着这一代的连接（三张扩展表的读写全走它）：随这一代销毁，下一代按新连接
+  /// 懒建；共用的运行时（[_sharedMihonRuntime]）是进程级的，不跟着换。
+  late final OwnedSlot<MihonManager> _mihonManagerSlot =
+      OwnedSlot<MihonManager>(
+        'mihonManager',
+        (MihonManager manager) => manager.dispose(),
+      );
+  MihonManager? get _mihonManager => _mihonManagerSlot.valueOrNull;
   MihonManager get mihonManager {
     _onlineSourcesTouched = true;
-    return _mihonManager ??= _createMihonManager(MihonMediaKind.manga);
+    return _mihonManagerOf(MihonMediaKind.manga);
   }
+
+  /// [kind] 这个生态的 manager：没有就在当前这一代上建一个并登记。
+  MihonManager _mihonManagerOf(MihonMediaKind kind) => switch (kind) {
+    MihonMediaKind.manga => _mihonManagerSlot,
+    MihonMediaKind.anime => _animeMihonManagerSlot,
+  }.obtain(_requireSession(), () => _createMihonManager(kind));
 
   /// 视频（Aniyomi）扩展的 manager：与 [mihonManager] 共用同一个运行时，只是
   /// 三张扩展表按 `media_kind` 分片、默认仓库不同、根目录不同（`mihon_anime/`，
   /// 扩展 APK / 暂存 / 封面缓存各自独立，删一边的缓存不波及另一边）。
-  MihonManager? _animeMihonManager;
+  late final OwnedSlot<MihonManager> _animeMihonManagerSlot =
+      OwnedSlot<MihonManager>(
+        'animeMihonManager',
+        (MihonManager manager) => manager.dispose(),
+      );
+  MihonManager? get _animeMihonManager => _animeMihonManagerSlot.valueOrNull;
   MihonManager get animeMihonManager {
     _onlineSourcesTouched = true;
-    return _animeMihonManager ??= _createMihonManager(MihonMediaKind.anime);
+    return _mihonManagerOf(MihonMediaKind.anime);
   }
 
   /// 视频收藏「跳回原处」解析器（`resolveFavoriteVideoOrigin`）的真实来源：收藏夹 /
@@ -8527,14 +8803,7 @@ class AppModel
       mediaKind: kind.dbValue,
     );
     if (installed.isEmpty) return null;
-    final MihonManager manager = switch (kind) {
-      MihonMediaKind.manga => _mihonManager ??= _createMihonManager(
-        MihonMediaKind.manga,
-      ),
-      MihonMediaKind.anime => _animeMihonManager ??= _createMihonManager(
-        MihonMediaKind.anime,
-      ),
-    };
+    final MihonManager manager = _mihonManagerOf(kind);
     // 构造时已经起了 initialise（读库 + 拉索引）；等它完成再比版本，否则
     // installed 还是空表。
     await manager.initialise();
@@ -8640,9 +8909,13 @@ class AppModel
   /// 小说在线源（LNReader 插件）管理器。按首次访问懒建，只有进入书的「导入」
   /// 视图在线源三段才会碰；插件运行时（headless WebView）更要等第一次真正调用
   /// 插件才起。平台门在 [isNovelOnlineSourcesAvailable]，没过门的平台别来取。
-  LnReaderManager? _lnReaderManager;
+  late final OwnedSlot<LnReaderManager> _lnReaderManagerSlot =
+      OwnedSlot<LnReaderManager>(
+        'lnReaderManager',
+        (LnReaderManager manager) => manager.dispose(),
+      );
   LnReaderManager get lnReaderManager =>
-      _lnReaderManager ??= _createLnReaderManager();
+      _lnReaderManagerSlot.obtain(_processLifetime, _createLnReaderManager);
 
   LnReaderManager _createLnReaderManager() {
     late final LnReaderManager manager;
@@ -8771,7 +9044,14 @@ class AppModel
   Directory get aidokuLibraryRoot =>
       Directory(path.join(databaseDirectory.path, 'aidoku'));
 
-  AnimeDownloadSubscriptionService? _animeDownloadSubscriptionService;
+  late final OwnedSlot<AnimeDownloadSubscriptionService>
+  _animeDownloadSubscriptionServiceSlot =
+      OwnedSlot<AnimeDownloadSubscriptionService>(
+        'animeDownloadSubscriptionService',
+        (AnimeDownloadSubscriptionService service) => service.stop(),
+      );
+  AnimeDownloadSubscriptionService? get _animeDownloadSubscriptionService =>
+      _animeDownloadSubscriptionServiceSlot.valueOrNull;
   AnimeDownloadSubscriptionService? get animeDownloadSubscriptionService =>
       _animeDownloadSubscriptionService;
 
@@ -8788,9 +9068,20 @@ class AppModel
   /// == null` 当门闩，把「还没到启动时机」和「重启中途失败死掉」混成一态：一旦
   /// `_startVideoDownloadPipeline()` 抛出，service 永久留 null，此后所有设置
   /// 变更都在门闩上原地返回，管线再也救不回来。改用本位表达意图：
-  /// [startAnimeDownloadService] 置 true，[quiesceBackgroundDatabaseWriters]
-  /// 与 [dispose] 置 false；service 是否存在只是结果，不再当开关用。
-  bool _videoDownloadPipelineRuntimeWanted = false;
+  /// 意图就是这个槽位里有没有值：[startAnimeDownloadService] 把「要运行时的那一代」登记
+  /// 进来，那一代关闭时整套运行时（管线 / 订阅 / 保活 / 刮削协调 / 后端，本代内可因设置
+  /// 变更重建多次）被收掉、槽位清空；service 是否存在只是结果，不再当开关用。
+  /// 排空上限只由退出路径给（[DatabaseSession.drainTimeout]，见
+  /// [VideoDownloadPipelineService.stop]）：迁移导入 / 备份导入 / 数据根迁移要等到真收尾。
+  late final OwnedSlot<DatabaseSession> _videoDownloadPipelineRuntimeSlot =
+      OwnedSlot<DatabaseSession>(
+        'videoDownloadPipelineRuntime',
+        (DatabaseSession session) => _disposeVideoDownloadPipelineRuntime(
+          pipelineDrainTimeout: session.drainTimeout,
+        ),
+      );
+  bool get _videoDownloadPipelineRuntimeWanted =>
+      _videoDownloadPipelineRuntimeSlot.valueOrNull != null;
   VideoDownloadPipelineService? get videoDownloadPipelineService =>
       _videoDownloadPipelineService;
   VideoDownloadSubscriptionService? _videoDownloadSubscriptionService;
@@ -9394,12 +9685,19 @@ class AppModel
   /// 下次调用由 [startAnimeDownloadService] 自身的幂等判断兜住。失败只记日志、
   /// 不抛：调用方都是 fire-and-forget，或（下载后端引导）随后按就绪判据重读状态。
   Future<void> ensureAnimeDownloadServiceRunning() {
+    // 在飞的启动只对它所属的那一代算数：换过库之后（重试开库）上一代的启动会在登记处被
+    // 拒，不能让新一代的调用搭它的车。
+    final DatabaseSession? session = _session;
     final Future<void>? inFlight = _animeDownloadServiceStarting;
-    if (inFlight != null) return inFlight;
+    if (inFlight != null &&
+        identical(_animeDownloadServiceStartingSession, session)) {
+      return inFlight;
+    }
     if (!moduleVisibility.isEnabled(ModuleId.browse)) {
       return Future<void>.value();
     }
-    final Future<void> starting = () async {
+    late final Future<void> starting;
+    starting = () async {
       try {
         await startAnimeDownloadService();
       } catch (e, s) {
@@ -9409,18 +9707,28 @@ class AppModel
           s,
         );
       } finally {
-        _animeDownloadServiceStarting = null;
+        if (identical(_animeDownloadServiceStarting, starting)) {
+          _animeDownloadServiceStarting = null;
+          _animeDownloadServiceStartingSession = null;
+        }
       }
       // 就绪判据（[isEmbeddedTorrentReady]）随服务启动而变：让读它的 UI 重算。
       notifyListeners();
     }();
+    _animeDownloadServiceStartingSession = session;
     return _animeDownloadServiceStarting = starting;
   }
+
+  /// [_animeDownloadServiceStarting] 是替哪一代启动的。
+  DatabaseSession? _animeDownloadServiceStartingSession;
 
   /// 启动番剧下载完成监听。幂等（重复调用不重建）；失败由调用方记日志，不破坏 init。
   /// 生产代码不要直接调：走 [ensureAnimeDownloadServiceRunning]（模块门 + 并发去重）。
   Future<void> startAnimeDownloadService() async {
     if (_animeDownloadService != null) return;
+    // 整个启动只认这一代：中途这一代开始关闭，后面的登记直接被拒（不会有哪个服务先
+    // 启动了却没人收），已登记的由这一代的关闭收掉。
+    final DatabaseSession session = _requireSession();
     final Directory baseDir = await AppPaths.documentsSubdirectory(
       'anime_downloads',
     );
@@ -9484,61 +9792,68 @@ class AppModel
     // 拒绝执行而不是删光；但正确顺序才是第一道防线，别指望兜底。
     await _refreshAnimeDownloadPlanIds(store);
 
-    _animeDownloadService = AnimeDownloadService(
-      store: store,
-      configProvider: () =>
-          effectiveTorrentConfig(prefsRepo.qbConnectionConfig),
-      importer: buildAnimeDownloadImporter(database),
-      // BUG-5387 审查遗留：下载完成后的入库都是后台写手，一律登记成当前库的后台工作
-      // ——换库时关库等它们停稳，它们的 SQL / 网络 / 抽帧随关库中断。
-      bookImporter: (AnimeDownloadPlan plan, List<String> paths) =>
-          _database.runBackgroundWork<int?>(
-            'torrent.bookImport',
-            (DatabaseWorkToken _) => _importDownloadedBooks(plan, paths),
-          ),
-      // 发现页新内容类型（有声书/游戏）：整包直通发现导入执行器。
-      discoveryImporter: (AnimeDownloadPlan plan, List<String> paths) =>
-          _database.runBackgroundWork<DiscoveryImportOutcome?>(
-            'torrent.discoveryImport',
-            (DatabaseWorkToken _) => _importDiscoveryDownload(plan, paths),
-          ),
-      // BUG-1206：字幕在下载完成时按包内真实文件名反查补取，不在选种时预下。
-      subtitleResolver: JimakuPlanSubtitleResolver(
-        apiKeyProvider: () => prefsRepo.jimakuApiKey,
-        httpClientFactory: createDownloadHttpClient,
-        stagingDirFor: store.subsDirFor,
-        defaultContentLanguageProvider: () => prefsRepo.defaultContentLanguage,
-      ).resolve,
-      // 对时间轴在视频真正下完后做（边下边播那一轮视频还残缺）。
-      subtitleAligner: alignDownloadedSubtitle,
-      backendFactory: _torrentBackendFor,
-      onTick: () {
-        // BUG-3577：两轮扫描在工作 isolate 里按序执行，这里只投递。
-        final EmbeddedTorrentHostClient? host = _embeddedTorrentHost;
-        host?.postMaintenanceSweep();
-        unawaited(_saveEmbeddedTorrentResume());
-      },
-    )..start();
+    _animeDownloadServiceSlot.obtain(
+      session,
+      () => AnimeDownloadService(
+        store: store,
+        configProvider: () =>
+            effectiveTorrentConfig(prefsRepo.qbConnectionConfig),
+        importer: buildAnimeDownloadImporter(session.database),
+        // BUG-5387 审查遗留：下载完成后的入库都是后台写手，一律登记成这一代库的后台工作
+        // ——换库时关库等它们停稳，它们的 SQL / 网络 / 抽帧随关库中断。
+        bookImporter: (AnimeDownloadPlan plan, List<String> paths) =>
+            session.database.runBackgroundWork<int?>(
+              'torrent.bookImport',
+              (DatabaseWorkToken _) => _importDownloadedBooks(plan, paths),
+            ),
+        // 发现页新内容类型（有声书/游戏）：整包直通发现导入执行器。
+        discoveryImporter: (AnimeDownloadPlan plan, List<String> paths) =>
+            session.database.runBackgroundWork<DiscoveryImportOutcome?>(
+              'torrent.discoveryImport',
+              (DatabaseWorkToken _) => _importDiscoveryDownload(plan, paths),
+            ),
+        // BUG-1206：字幕在下载完成时按包内真实文件名反查补取，不在选种时预下。
+        subtitleResolver: JimakuPlanSubtitleResolver(
+          apiKeyProvider: () => prefsRepo.jimakuApiKey,
+          httpClientFactory: createDownloadHttpClient,
+          stagingDirFor: store.subsDirFor,
+          defaultContentLanguageProvider: () =>
+              prefsRepo.defaultContentLanguage,
+        ).resolve,
+        // 对时间轴在视频真正下完后做（边下边播那一轮视频还残缺）。
+        subtitleAligner: alignDownloadedSubtitle,
+        backendFactory: _torrentBackendFor,
+        onTick: () {
+          // BUG-3577：两轮扫描在工作 isolate 里按序执行，这里只投递。
+          final EmbeddedTorrentHostClient? host = _embeddedTorrentHost;
+          host?.postMaintenanceSweep();
+          unawaited(_saveEmbeddedTorrentResume());
+        },
+      )..start(),
+    );
     final AnimeDownloadSubscriptionStore subscriptionStore =
         AnimeDownloadSubscriptionStore(baseDir: baseDir);
     _animeDownloadSubscriptionStore = subscriptionStore;
-    _animeDownloadSubscriptionService = AnimeDownloadSubscriptionService(
-      store: subscriptionStore,
-      planStore: store,
-      configProvider: () =>
-          effectiveTorrentConfig(prefsRepo.qbConnectionConfig),
-      backendFactory: _torrentBackendFor,
-      jimakuApiKeyProvider: () => prefsRepo.jimakuApiKey,
-      httpClientFactory: createDownloadHttpClient,
-      animeSiteProvider: () => prefsRepo.btSites
-          .where(
-            (BtSiteConfig site) =>
-                site.enabled &&
-                site.format == BtSiteFormat.nyaa &&
-                site.effectiveDomains.contains(BtSiteDomain.anime),
-          )
-          .firstOrNull,
-    )..start();
+    _animeDownloadSubscriptionServiceSlot.obtain(
+      session,
+      () => AnimeDownloadSubscriptionService(
+        store: subscriptionStore,
+        planStore: store,
+        configProvider: () =>
+            effectiveTorrentConfig(prefsRepo.qbConnectionConfig),
+        backendFactory: _torrentBackendFor,
+        jimakuApiKeyProvider: () => prefsRepo.jimakuApiKey,
+        httpClientFactory: createDownloadHttpClient,
+        animeSiteProvider: () => prefsRepo.btSites
+            .where(
+              (BtSiteConfig site) =>
+                  site.enabled &&
+                  site.format == BtSiteFormat.nyaa &&
+                  site.effectiveDomains.contains(BtSiteDomain.anime),
+            )
+            .firstOrNull,
+      )..start(),
+    );
 
     // TODO-1961-a：上次会话留下的种子在这里接回来（续传 + 继续做种）。
     //
@@ -9547,7 +9862,8 @@ class AppModel
     // 用户永远没有这种文件，于是永远不建 session、不绑端口、不起 DHT，与
     // BUG-1053 修复后的行为逐字节一致。
     await _restoreEmbeddedTorrentSession(store);
-    _videoDownloadPipelineRuntimeWanted = true;
+    // 这一代要下载流水线运行时（见 [_videoDownloadPipelineRuntimeSlot]）：先登记再启动。
+    _videoDownloadPipelineRuntimeSlot.obtain(session, () => session);
     await _startVideoDownloadPipeline();
   }
 
@@ -10274,50 +10590,69 @@ class AppModel
   }
 
   /// 发现页自动导入执行器（懒建；域导入器全接生产原语）。
+  /// 域导入器握着这一代的连接与游戏库仓储：随这一代丢弃。
   DiscoveryImportExecutor get discoveryImportExecutor =>
-      _discoveryImportExecutor ??= DiscoveryImportExecutor(
-        // 包里有几份字幕时挑学习语言的那份（全 app 只有日语，与视频 sidecar 同源）。
-        subtitleLangCode: kLearningLanguageCode,
-        importers: buildProductionDiscoveryImporters(
-          db: database,
-          srtBookRepo: SrtBookRepository(database),
-          audiobookRepo: AudiobookRepository(database),
-          galgameRepo: galgameRepo,
-          transcribeAudiobook: _transcribeDiscoveryAudiobook,
+      _discoveryImportExecutorSlot.obtain(
+        _requireSession(),
+        () => DiscoveryImportExecutor(
+          // 包里有几份字幕时挑学习语言的那份（全 app 只有日语，与视频 sidecar 同源）。
+          subtitleLangCode: kLearningLanguageCode,
+          importers: buildProductionDiscoveryImporters(
+            db: database,
+            srtBookRepo: SrtBookRepository(database),
+            audiobookRepo: AudiobookRepository(database),
+            galgameRepo: galgameRepo,
+            transcribeAudiobook: _transcribeDiscoveryAudiobook,
+          ),
         ),
       );
-  DiscoveryImportExecutor? _discoveryImportExecutor;
+  late final OwnedSlot<DiscoveryImportExecutor> _discoveryImportExecutorSlot =
+      OwnedSlot<DiscoveryImportExecutor>(
+        'discoveryImportExecutor',
+        (DiscoveryImportExecutor _) {},
+      );
 
   /// 有声书「转录后入库」队列（懒建，app 生命周期常驻；落盘在数据库目录旁，
   /// 重启后未完成的任务从断点续跑）。
   AudiobookTranscribeImportQueue get audiobookTranscribeImportQueue =>
-      _audiobookTranscribeImportQueue ??= AudiobookTranscribeImportQueue(
-        store: File(
-          path.join(databaseDirectory.path, 'audiobook_transcribe_jobs.json'),
+      _audiobookTranscribeImportQueueSlot.obtain(
+        _requireSession(),
+        () => AudiobookTranscribeImportQueue(
+          store: File(
+            path.join(databaseDirectory.path, 'audiobook_transcribe_jobs.json'),
+          ),
+          transcriber: AppAudiobookTranscriber(
+            serviceFactory: createAsrTranscriptionService,
+            preferredLanguageTag: () => prefsRepo.asrTranscribeLanguage,
+          ),
+          importer:
+              (
+                AudiobookTranscribeJob job,
+                String subtitlePath,
+                AudiobookTranscribeImportSink sink,
+              ) => importTranscribedAudiobook(
+                db: database,
+                srtBookRepo: SrtBookRepository(database),
+                audiobookRepo: AudiobookRepository(database),
+                subtitlePath: subtitlePath,
+                audioPaths: job.audioPaths,
+                contentPath: job.contentPath,
+                targetBookKey: job.targetBookKey,
+                title: job.title,
+                onStep: sink.step,
+                onCoverage: sink.coverage,
+              ),
         ),
-        transcriber: AppAudiobookTranscriber(
-          serviceFactory: createAsrTranscriptionService,
-          preferredLanguageTag: () => prefsRepo.asrTranscribeLanguage,
-        ),
-        importer:
-            (
-              AudiobookTranscribeJob job,
-              String subtitlePath,
-              AudiobookTranscribeImportSink sink,
-            ) => importTranscribedAudiobook(
-              db: database,
-              srtBookRepo: SrtBookRepository(database),
-              audiobookRepo: AudiobookRepository(database),
-              subtitlePath: subtitlePath,
-              audioPaths: job.audioPaths,
-              contentPath: job.contentPath,
-              targetBookKey: job.targetBookKey,
-              title: job.title,
-              onStep: sink.step,
-              onCoverage: sink.coverage,
-            ),
       );
-  AudiobookTranscribeImportQueue? _audiobookTranscribeImportQueue;
+
+  /// 入库那一步写库：本代关闭时在跑的入库等它写完；在跑的转录在下一个检查点暂停，进度留在
+  /// ASR 任务目录，任务回到排队、下次启动续跑。槽位随之清空：数据根可能迁移，下一代按新目录重建。
+  late final OwnedSlot<AudiobookTranscribeImportQueue>
+  _audiobookTranscribeImportQueueSlot =
+      OwnedSlot<AudiobookTranscribeImportQueue>(
+        'audiobookTranscribeImportQueue',
+        (AudiobookTranscribeImportQueue queue) => queue.close(),
+      );
 
   /// 导入执行器的 `transcribeAudiobook` 端口：素材库 → 转录队列 → 挡下。
   Future<DiscoveryImportOutcome> _transcribeDiscoveryAudiobook(
@@ -10406,7 +10741,7 @@ class AppModel
         !(_discoveryRegistryLacksPrefs && isPreferencesReady)) {
       return cached;
     }
-    cached?.close();
+    unawaited(_mediaDiscoveryServiceSlot.release());
     _discoveryRegistryLacksPrefs = !isPreferencesReady;
     // 两道判据分开登记（判据本身只写在 store_compliance.dart）：
     //  * 内置 / 预置源与用户添加的 BT 站（种子索引，落地只有 torrent）过
@@ -10422,11 +10757,14 @@ class AppModel
         StoreRestrictedCapability.externalDiscovery.isAvailable;
     final bool userServerSources =
         userConfiguredServersAvailable && isPreferencesReady;
-    return _mediaDiscoveryService = MediaDiscoveryService(
-      sources: <MediaDiscoverySource>[
-        if (builtInSources) ..._builtInDiscoverySources(),
-        if (userServerSources) ..._userServerDiscoverySources(),
-      ],
+    return _mediaDiscoveryServiceSlot.obtain(
+      _requireSession(),
+      () => MediaDiscoveryService(
+        sources: <MediaDiscoverySource>[
+          if (builtInSources) ..._builtInDiscoverySources(),
+          if (userServerSources) ..._userServerDiscoverySources(),
+        ],
+      ),
     );
   }
 
@@ -10487,7 +10825,15 @@ class AppModel
             ),
       ];
 
-  MediaDiscoveryService? _mediaDiscoveryService;
+  /// 注册表的源握着这一代的连接 / 偏好，自己还有 HTTP client：本代关闭或配置变更重建时
+  /// close 并清槽（不 close 的话每改一次配置就漏一个 client）。
+  late final OwnedSlot<MediaDiscoveryService> _mediaDiscoveryServiceSlot =
+      OwnedSlot<MediaDiscoveryService>(
+        'mediaDiscoveryService',
+        (MediaDiscoveryService service) => service.close(),
+      );
+  MediaDiscoveryService? get _mediaDiscoveryService =>
+      _mediaDiscoveryServiceSlot.valueOrNull;
 
   /// 上一份注册表是否在偏好就绪前建的（因而必然缺用户自配的 OPDS 源）。
   /// 偏好就绪后第一次取用就据此重建一次，见 [mediaDiscoveryService]。
@@ -10501,8 +10847,7 @@ class AppModel
   ///
   /// 旧实例先 close 再丢弃，否则每改一次配置就漏一个 HTTP client。
   Future<void> reloadDiscoverySources() async {
-    _mediaDiscoveryService?.close();
-    _mediaDiscoveryService = null;
+    await _mediaDiscoveryServiceSlot.release();
     notifyListeners();
   }
 
@@ -10545,9 +10890,18 @@ class AppModel
 
   /// 每台 Audiobookshelf 服务器一个共享协议层实例（令牌轮换不能被多个实例踩）。
   /// 其它地方要访问 ABS 一律经它借，见 [AudiobookshelfApiRegistry]。
-  AudiobookshelfApiRegistry get audiobookshelfApis => _audiobookshelfApis ??=
-      AudiobookshelfApiRegistry(persistTokens: persistAudiobookshelfTokens);
-  AudiobookshelfApiRegistry? _audiobookshelfApis;
+  AudiobookshelfApiRegistry get audiobookshelfApis =>
+      _audiobookshelfApisSlot.obtain(
+        _processLifetime,
+        () => AudiobookshelfApiRegistry(
+          persistTokens: persistAudiobookshelfTokens,
+        ),
+      );
+  late final OwnedSlot<AudiobookshelfApiRegistry> _audiobookshelfApisSlot =
+      OwnedSlot<AudiobookshelfApiRegistry>(
+        'audiobookshelfApis',
+        (AudiobookshelfApiRegistry registry) => registry.close(),
+      );
 
   /// 字幕书的远端音频绑定 → 可播放的流式接缝；服务器配置已删 / 已登出 / 不是
   /// Audiobookshelf 时返回 null（调用方当作「没有可播放的音频」）。
@@ -10780,33 +11134,50 @@ class AppModel
   /// 发现页直链下载队列（懒建，app 生命周期常驻——关闭发现页不中断下载，
   /// 语义同 [mangaDownloadService]）。
   DiscoveryDownloadQueue get discoveryDownloadQueue {
-    final DiscoveryDownloadQueue? existing = _discoveryDownloadQueue;
-    if (existing != null) return existing;
-    final DiscoveryDownloadQueue queue = DiscoveryDownloadQueue(
-      resolvePayload: (DiscoveryResourceItem item) {
-        // 直链条目（控制通道 `dl add <url>`）没有发现源，payload 入队时已物化。
-        final DiscoveryHttpPayload? direct = directLinkPayloadOf(item);
-        if (direct != null) return Future<DiscoveryPayload>.value(direct);
-        final MediaDiscoverySource? source = mediaDiscoveryService.sourceById(
-          item.sourceId,
-        );
-        if (source == null) {
-          throw StateError('unknown discovery source: ${item.sourceId}');
-        }
-        return source.resolvePayload(item);
-      },
-      importer: (DiscoveryDownloadTask task, File file) =>
-          discoveryImportExecutor.importDownload(task, file),
-      // BUG-4354：下载网关回人机验证挑战时弹 WebView 解题（UI 装好解题器前为 null）。
-      challengeSolver: DownloadGatewayChallengeGate.solve,
+    final DatabaseSession session = _requireSession();
+    final DiscoveryDownloadQueue queue = _discoveryDownloadQueueSlot.obtain(
+      session,
+      _buildDiscoveryDownloadQueue,
     );
-    // BUG-2714：队列有未结束任务时挂下载保活。
-    _discoveryDownloadKeepAlive = DiscoveryDownloadKeepAliveBinding(queue);
-    return _discoveryDownloadQueue = queue;
+    // BUG-2714：队列有未结束任务时挂下载保活（后登记先收：保活先于队列撤）。
+    _discoveryDownloadKeepAliveSlot.obtain(
+      session,
+      () => DiscoveryDownloadKeepAliveBinding(queue),
+    );
+    return queue;
   }
 
-  DiscoveryDownloadQueue? _discoveryDownloadQueue;
-  DiscoveryDownloadKeepAliveBinding? _discoveryDownloadKeepAlive;
+  DiscoveryDownloadQueue _buildDiscoveryDownloadQueue() =>
+      DiscoveryDownloadQueue(
+        resolvePayload: (DiscoveryResourceItem item) {
+          // 直链条目（控制通道 `dl add <url>`）没有发现源，payload 入队时已物化。
+          final DiscoveryHttpPayload? direct = directLinkPayloadOf(item);
+          if (direct != null) return Future<DiscoveryPayload>.value(direct);
+          final MediaDiscoverySource? source = mediaDiscoveryService.sourceById(
+            item.sourceId,
+          );
+          if (source == null) {
+            throw StateError('unknown discovery source: ${item.sourceId}');
+          }
+          return source.resolvePayload(item);
+        },
+        importer: (DiscoveryDownloadTask task, File file) =>
+            discoveryImportExecutor.importDownload(task, file),
+        // BUG-4354：下载网关回人机验证挑战时弹 WebView 解题（UI 装好解题器前为 null）。
+        challengeSolver: DownloadGatewayChallengeGate.solve,
+      );
+
+  late final OwnedSlot<DiscoveryDownloadQueue> _discoveryDownloadQueueSlot =
+      OwnedSlot<DiscoveryDownloadQueue>(
+        'discoveryDownloadQueue',
+        (DiscoveryDownloadQueue queue) => queue.dispose(),
+      );
+  late final OwnedSlot<DiscoveryDownloadKeepAliveBinding>
+  _discoveryDownloadKeepAliveSlot =
+      OwnedSlot<DiscoveryDownloadKeepAliveBinding>(
+        'discoveryDownloadKeepAlive',
+        (DiscoveryDownloadKeepAliveBinding binding) => binding.dispose(),
+      );
 
   /// 发现页下载的落盘目录（与 torrent 同根：用户配置的下载根 → 默认根
   /// [downloadDefaultSaveRoot]，再按媒体域分子目录）。
@@ -11939,31 +12310,48 @@ class AppModel
   /// 服务器托管词典目录的刷新者（主进程初始化后才有；弹窗进程没有）。
   RemoteDictionaryCatalogService? get remoteDictionaryCatalog =>
       _remoteDictionaryCatalog;
-  RemoteDictionaryCatalogService? _remoteDictionaryCatalog;
+
+  /// 目录服务绑的是这一代连接与词典仓库：本代关闭时停（配对列表订阅一起撤）。
+  late final OwnedSlot<RemoteDictionaryCatalogService>
+  _remoteDictionaryCatalogSlot = OwnedSlot<RemoteDictionaryCatalogService>(
+    'remoteDictionaryCatalog',
+    (RemoteDictionaryCatalogService catalog) {
+      catalog.dispose();
+      SyncRepository.fushiClientUrlsRevision.removeListener(
+        _onPairedFushiClientUrlsChanged,
+      );
+    },
+  );
+  RemoteDictionaryCatalogService? get _remoteDictionaryCatalog =>
+      _remoteDictionaryCatalogSlot.valueOrNull;
   AppLifecycleListener? _remoteDictionaryCatalogLifecycle;
 
   /// 建（或随数据库重建）服务器词典目录刷新者：跟随配对列表、回前台按 host 节流
   /// 刷新，启动时先补一次。
   void _startRemoteDictionaryCatalog() {
-    _remoteDictionaryCatalog?.dispose();
-    // 「词典服务器」行的副本跟同一条配对列表广播（先摘再挂，重建时不重复订阅）。
-    SyncRepository.fushiClientUrlsRevision
-      ..removeListener(_onPairedFushiClientUrlsChanged)
-      ..addListener(_onPairedFushiClientUrlsChanged);
-    unawaited(refreshPairedFushiClientUrls());
-    final SyncRepository syncRepository = SyncRepository(_database);
-    final RemoteDictionaryCatalogService catalog =
-        RemoteDictionaryCatalogService(
-          db: _database,
-          syncRepository: syncRepository,
-          transport: InterconnectPostTransport(
-            repo: syncRepository,
-            httpClient: _remoteLookupClient,
-          ),
-          dictionaries: dictRepo,
-          reachability: _remoteDictionaryReachability,
-        )..start();
-    _remoteDictionaryCatalog = catalog;
+    final DatabaseSession session = _requireSession();
+    // 同一代里重建：旧的先收（它的收尾同步摘掉配对列表订阅，下面再挂不会重复）。
+    final RemoteDictionaryCatalogService catalog = _remoteDictionaryCatalogSlot
+        .replace(session, () {
+          // 「词典服务器」行的副本跟同一条配对列表广播。
+          SyncRepository.fushiClientUrlsRevision.addListener(
+            _onPairedFushiClientUrlsChanged,
+          );
+          unawaited(refreshPairedFushiClientUrls());
+          final SyncRepository syncRepository = SyncRepository(
+            session.database,
+          );
+          return RemoteDictionaryCatalogService(
+            db: session.database,
+            syncRepository: syncRepository,
+            transport: InterconnectPostTransport(
+              repo: syncRepository,
+              httpClient: _remoteLookupClient,
+            ),
+            dictionaries: dictRepo,
+            reachability: _remoteDictionaryReachability,
+          )..start();
+        });
     _remoteDictionaryCatalogLifecycle ??= AppLifecycleListener(
       onResume: () {
         final RemoteDictionaryCatalogService? current =
@@ -11980,14 +12368,6 @@ class AppModel
   ) => unawaited(
     catalog.refreshOnResume().then<void>((_) {}, onError: (Object _) {}),
   );
-
-  void _stopRemoteDictionaryCatalog() {
-    SyncRepository.fushiClientUrlsRevision.removeListener(
-      _onPairedFushiClientUrlsChanged,
-    );
-    _remoteDictionaryCatalog?.dispose();
-    _remoteDictionaryCatalog = null;
-  }
 
   /// 本端生效配置对 [candidate] 这台 host 的词典选择，随远端查词请求的 `dictionaries`
   /// 字段发出；host 只按它排除与排序，不需要知道配置是什么。[profileView] 非 null 时用
@@ -13218,77 +13598,24 @@ class AppModel
   @override
   FushiDatabase get database => _database;
 
-  /// Close the database and notify listeners, without exiting the app.
-  /// BUG-1505：关库**之前**把后台写手停掉。
+  /// Close the database without exiting the app (callers restart afterwards).
   ///
-  /// `closeDatabase()` 只关连接，不停任何人。下载流水线这类常驻 drain 循环仍在跑，
-  /// 于是关库后每次唤醒都撞上 drift 的
-  /// 「Tried to send Request ... over isolate channel, but the connection was
-  /// closed!」——用户机器上实测一次迁移导入刷出 8 条。它至少污染诊断日志（真正的
-  /// 失败原因被淹没），更糟的是合并导入正在直接操作同一个库文件，此时放任第二个
-  /// 写手继续往里写是数据安全问题，不是噪声问题。
+  /// 关的是当前这一代 [DatabaseSession]：先发关库信号、撤表订阅，取消本库名下的后台工作，
+  /// 再按登记逆序收尾每个绑库资源（BUG-1505：下载 / 订阅 / 漫画队列等后台写手在关连接
+  /// **之前**停下，否则关库后每次唤醒都撞「connection was closed」，合并导入时还是第二个写手；
+  /// BUG-5387：旧库里读到的行身份不会写进备份恢复 / 迁移换上来的新库），最后关连接。
   ///
-  /// 只停「后台自己会写库」的那几个（下载/订阅/漫画队列），不碰查词、TTS 这类只读
-  /// 子系统：closeDatabase 之后调用方一律走重启，停多了没收益、只增加爆炸半径。
-  ///
-  /// [pipelineDrainTimeout] 只在**退出路径**给：见
-  /// [VideoDownloadPipelineService.stop] 的注释——迁移导入 / 备份导入 / 数据根迁移
-  /// 也走这条链，它们在关库后要在文件层动整个 DB 目录，放行一个仍在飞的 `_process`
-  /// 会让它继续打已关闭的连接、并被随后的 `_videoDownloadBackend?.close()` 抽掉
-  /// 句柄。那些路径必须等到真收尾。
-  Future<void> quiesceBackgroundDatabaseWriters({
-    Duration? pipelineDrainTimeout,
-  }) async {
-    _animeDownloadService?.stop();
-    _animeDownloadSubscriptionService?.stop();
-    _mangaDownloadService?.dispose();
-    _mangaDownloadService = null;
-    _onlineMangaReshelf = null;
-    // 服务持有 FushiDatabase 引用，db 关闭/重开时必须一并销毁，否则新库开出来后
-    // 旧实例还拿着已关闭的连接，探测队列一落库就抛。
-    _videoSpecsService?.dispose();
-    _videoSpecsService = null;
-    _videoSpecsServiceDb = null;
-    _discoveryDownloadKeepAlive?.dispose();
-    _discoveryDownloadKeepAlive = null;
-    _discoveryDownloadQueue?.dispose();
-    _discoveryDownloadQueue = null;
-    _mediaDiscoveryService?.close();
-    _mediaDiscoveryService = null;
-    _videoDownloadPipelineRuntimeWanted = false;
-    await _disposeVideoDownloadPipelineRuntime(
-      pipelineDrainTimeout: pipelineDrainTimeout,
-    );
-    // 转录后入库队列：入库那一步写库，必须在关库前停下（在跑的入库等它写完；
-    // 在跑的转录在下一个检查点暂停，进度留在 ASR 任务目录，任务回到排队、下次
-    // 启动续跑）。置空：数据根可能随之迁移，下次按新目录重建。
-    final AudiobookTranscribeImportQueue? transcribeQueue =
-        _audiobookTranscribeImportQueue;
-    _audiobookTranscribeImportQueue = null;
-    await transcribeQueue?.close();
-    // 扩展视频沉浸时间桥持 StudyClock 写链：关库前封段并等写完，否则最后一段丢、
-    // 或 stop 落在已关闭连接上抛「connection was closed」。幂等，可与
-    // stopFushiApiServer 重复调。
-    await _browserVideoStudyBridge?.stopAll();
-    // 由 Riverpod 侧子系统登记的写手（SRS 同步）：AppModel 不持有它们，只在这里等。
-    for (final Future<void> Function() quiesce
-        in List<Future<void> Function()>.of(_databaseCloseQuiescers)) {
-      try {
-        await quiesce();
-      } catch (e, stack) {
-        ErrorLogService.instance.log(
-          'AppModel.quiesceBackgroundDatabaseWriters',
-          e,
-          stack,
-        );
-      }
-    }
-  }
+  /// [pipelineDrainTimeout] 只在**退出路径**给：见 [VideoDownloadPipelineService.stop] 的
+  /// 注释——迁移导入 / 备份导入 / 数据根迁移也走这条链，它们在关库后要在文件层动整个 DB
+  /// 目录，必须等到真收尾。
+  Future<void> closeDatabase({Duration? pipelineDrainTimeout}) =>
+      _closeDatabaseSession(drainTimeout: pipelineDrainTimeout);
 
   /// 关库前要等的后台写手（不归 AppModel 构造的子系统，如 SRS 同步调度器）。
   ///
-  /// [closeDatabase] 先把 [isInitialised] 置 false 再逐个等：登记方据此不开新一轮，
-  /// 等在跑的一轮收尾，连接才关。否则半截同步打在已关闭的连接上（反馈 OMWOurRQKb 日志
+  /// 每条关库路径都先把 [isInitialised] 置 false 再逐个等（这一步写在每一代的关库信号里，
+  /// 见 [_beginDatabaseSession]，不在各路径里手写）：登记方据此不开新一轮，等在跑的一轮
+  /// 收尾，连接才关。否则半截同步打在已关闭的连接上（反馈 OMWOurRQKb 日志
   /// `SrsDbStore._loadLocal`「connection was closed」）。
   final List<Future<void> Function()> _databaseCloseQuiescers =
       <Future<void> Function()>[];
@@ -13305,47 +13632,10 @@ class AppModel
     _databaseCloseQuiescers.remove(quiesce);
   }
 
-  Future<void> closeDatabase({Duration? pipelineDrainTimeout}) async {
-    _isInitialised = false;
-    // BUG-5387：换库的生命周期边界。先让本库名下的后台写库工作（来源扫描、视频刮削 /
-    // 补刮、整文件哈希升级、封面回填、响度测量……）全部收到取消，与下面其它写手的收尾
-    // 并行停下；关连接前等它们真正退出。此后它们发出的 SQL 被拦下，旧库里读到的行身份
-    // 不会写进备份恢复 / 迁移换上来的新库。
-    final Future<void> backgroundWorkStopped = _database
-        .quiesceBackgroundWork();
-    // BUG-1569②：合集观察者持有本库的表订阅 + 未决防抖 Timer，关库前必须撤——
-    // 否则防抖到点后 _runCollectionsSync 会对已关闭的 db 发起查询（drift「connection
-    // was closed」异常）。initialise 装载（installCollectionsSyncWatcher），此前只有
-    // 测试 teardown 调过 uninstall，生产三条关库路径全都不撤订阅。
-    uninstallCollectionsSyncWatcher();
-    databaseCloseNotifier.notifyListeners();
-    await quiesceBackgroundDatabaseWriters(
-      pipelineDrainTimeout: pipelineDrainTimeout,
-    );
-    await _drainDictionaryWritesForClose('AppModel.closeDatabase');
-    await backgroundWorkStopped;
-    // srs.db 先关：覆盖恢复随后要换 / 删这个文件（POSIX 上删开着的库只是 unlink，连接还写旧 inode）。
-    await _closeSrsStorage();
-    await _database.close();
-  }
-
   /// Metadata operations queued in Dart have not necessarily reached Drift.
   /// Every DB close boundary must drain them, including partial-init retries.
   Future<void> _flushDictionaryWritesBeforeClose() async {
     if (_dictionaryRepoReady) await dictRepo.flushPendingWritesNow();
-  }
-
-  /// 真正关库的边界（[closeDatabase] / [closeForPopup]）用的排空：元数据写入队列
-  /// 自己不抛；会抛的只有查词历史——它是 debounce 的可丢数据，写失败不能否决
-  /// 关库。否则 app 停在「已标记未初始化、watcher 已撤，连接却还开着」的半关态，
-  /// 备份恢复 / 迁移导入 / 退出全跟着中断。失败记日志后照常关。
-  /// （[retryInitialise] 不走这里：它在 flush 失败时保留旧连接重试，见那里。）
-  Future<void> _drainDictionaryWritesForClose(String scope) async {
-    try {
-      await _flushDictionaryWritesBeforeClose();
-    } catch (e, stack) {
-      ErrorLogService.instance.log('$scope.dictionaryFlush', e, stack);
-    }
   }
 
   /// Safely shutdown and stop database operations.
@@ -13355,23 +13645,19 @@ class AppModel
   }
 
   Future<void> closeForPopup() async {
-    // BUG-1569②：与 [closeDatabase] 同理——撤合集观察者，防止防抖 Timer 对已
-    // 关闭的 db 跑轻量同步。
-    uninstallCollectionsSyncWatcher();
-    _prefsRepo?.removeListener(notifyListeners);
-    databaseCloseNotifier.notifyListeners();
-    await _drainDictionaryWritesForClose('AppModel.closeForPopup');
-    await _closeSrsStorage();
-    await _database.close();
+    await _closeDatabaseSession();
+    // 词典引擎实例是进程级的（不绑这一代连接）：弹窗进程随后结束，这里一并释放。
     FushiDicts.disposeInstance();
   }
 
   @override
   void dispose() {
-    unawaited(_extensionImageOcr?.close());
-    _extensionImageOcr = null;
-    _trackingAnimeIdsOrNull?.close();
-    _trackingAnimeIdsOrNull = null;
+    // 当前这一代的绑库资源（仓库、观察者、后台写手、单例 attach）统一由 session 逆序收尾；
+    // dispose 是同步的，只能投递出去。这里不是关连接（与改造前一致）：连接、它名下的后台
+    // 工作、与它同寿命的 SRS 存储都留给持有方——生产退出链此前已经 closeDatabase 整代关完
+    // （这里就是空操作），测试 seam 接的连接归测试。下面只剩进程级的常驻服务。
+    unawaited(_session?.detach());
+    unawaited(_processLifetime.close());
     // BUG-913：对称释放 initialise() 起的 4 个 app-wide 常驻子系统。dispose 是同步的、
     // 这些 stop 多为 Future → fire-and-forget（unawaited）；先停常驻服务，再走现有
     // notifier/repo dispose，最后 super.dispose()。
@@ -13388,39 +13674,11 @@ class AppModel
       syncServerController.dispose();
       unawaited(videoRemoteHost.dispose());
     }
-    // BUG-1569②：合集观察者是模块级全局（幂等，未装载时 no-op），dispose 路径
-    // 也对称撤掉，防止未决防抖 Timer 在 AppModel 销毁后仍去摸 db。
-    uninstallCollectionsSyncWatcher();
     // 其余三个 stop 都 null 安全 / 单例安全，未启动也可调，无需 _isInitialised 守卫。
     unawaited(TexthookerWsClientManager.instance.stop());
     unawaited(stopFushiApiServer());
-    _animeDownloadService?.stop();
-    _animeDownloadSubscriptionService?.stop();
-    _videoDownloadPipelineRuntimeWanted = false;
-    unawaited(_disposeVideoDownloadPipelineRuntime());
     // 查字幕按需建的那套 registry 不属于下载管线（管线关着时它才存在），得单独收。
     _disposeOnDemandSubtitleRegistry();
-    _mangaDownloadService?.dispose();
-    _mangaDownloadService = null;
-    _onlineMangaReshelf = null;
-    // 服务持有 FushiDatabase 引用，db 关闭/重开时必须一并销毁，否则新库开出来后
-    // 旧实例还拿着已关闭的连接，探测队列一落库就抛。
-    _videoSpecsService?.dispose();
-    _videoSpecsService = null;
-    _videoSpecsServiceDb = null;
-    _discoveryDownloadKeepAlive?.dispose();
-    _discoveryDownloadKeepAlive = null;
-    _discoveryDownloadQueue?.dispose();
-    _discoveryDownloadQueue = null;
-    _audiobookshelfApis?.close();
-    _mediaDiscoveryService?.close();
-    _mediaDiscoveryService = null;
-    _mihonManager?.dispose();
-    _mihonManager = null;
-    _animeMihonManager?.dispose();
-    _animeMihonManager = null;
-    _lnReaderManager?.dispose();
-    _lnReaderManager = null;
     unawaited(_musicPluginManager?.dispose());
     _musicPluginManager = null;
     _musicPluginRelay?.dispose();
@@ -13429,9 +13687,6 @@ class AppModel
     unawaited(_trackingPluginManager?.dispose());
     _trackingPluginManager = null;
     _trackingPluginProviders = null;
-    // Apple Music 账号持有桥订阅；网页桥还持有隐藏的 HeadlessInAppWebView（播放后端只借用桥）。
-    _appleMusicAccount?.dispose();
-    _appleMusicAccount = null;
     final ExitFlushCallback? mihonExitShutdown = _mihonRuntimeExitShutdown;
     _mihonRuntimeExitShutdown = null;
     if (mihonExitShutdown != null) {
@@ -13439,11 +13694,9 @@ class AppModel
     }
     unawaited(_shutdownMihonRuntime());
     _mihonRuntime = null;
-    _prefsRepo?.removeListener(notifyListeners);
     if (_themeListenerAdded) {
-      themeNotifier.removeListener(notifyListeners);
+      // [_themeListenerAdded] = themeNotifier 已赋值。订阅由 session 撤（removeListener 允许在 dispose 之后调用）；notifier 对象到此为止。
       themeNotifier.dispose();
-      _themeListenerAdded = false;
     }
     dictionaryDownloadController.dispose();
     recommendedPackDownloadController.dispose();
@@ -13463,17 +13716,14 @@ class AppModel
     // fields unassigned, and reading them would throw.
     _prefsRepo?.dispose();
     if (_isInitialised) {
-      dictRepo.dispose();
       mediaHistoryRepo.dispose();
     }
-    _stopRemoteDictionaryCatalog();
     // 弹窗进程挂的后台再探测（[_probeRemoteDictionaryHost]）随实例停掉。
     _remoteDictionaryReachability.dispose();
     _remoteDictionaryCatalogLifecycle?.dispose();
     _remoteDictionaryCatalogLifecycle = null;
     _remoteLookupHttpClient?.close();
     _remoteLookupHttpClient = null;
-    _animeDownloadService?.stop();
     // TODO-1961-a：退出前强制存一次 resume（下次启动据此续传/继续做种）。
     // 用最近一次 tick 缓存的计划 id 集合剪枝 —— dispose 是同步的，不能在这里
     // await 一次 `store.loadAll()`；缓存最多落后一个 tick（20s），代价只是某个
@@ -14256,7 +14506,7 @@ class AppModel
 
   /// 重读 [pairedFushiClientUrls]。读失败只记日志、保留旧副本（只是一行副标题）。
   Future<void> refreshPairedFushiClientUrls() async {
-    if (!_databaseOpened) return;
+    if (!isDatabaseReady) return;
     try {
       _pairedFushiClientUrls = List<FushiClientUrl>.unmodifiable(
         await SyncRepository(_database).getFushiClientUrls(),
@@ -14387,7 +14637,14 @@ class AppModel
   ///
   /// 懒建：绑的是 [database]，只有真正用到游戏库的路径才会碰它，冷启动不多跑查询。
   /// 库页/详情页直接用这个仓储做增删改与会话查询。
-  GalgameRepository get galgameRepo => _galgameRepo ??= GalgameRepository(
+  ///
+  /// 仓储绑的是这一代连接：本代关闭时丢掉，下一代懒建新的。
+  GalgameRepository get galgameRepo =>
+      _galgameRepoSlot.obtain(_requireSession(), _buildGalgameRepository);
+  late final OwnedSlot<GalgameRepository> _galgameRepoSlot =
+      OwnedSlot<GalgameRepository>('galgameRepo', (GalgameRepository _) {});
+
+  GalgameRepository _buildGalgameRepository() => GalgameRepository(
     database,
     // 游玩状态改动上报媒体记录（Bangumi 收藏 type）。fail-open：同步不可用时
     // 本地状态照常生效，事件留在 outbox 由后续同步重试。
@@ -14398,7 +14655,6 @@ class AppModel
       );
     },
   );
-  GalgameRepository? _galgameRepo;
 
   /// 当前缓存的游戏库列表（同步读，供 widget 首帧渲染）。首次进页面为空表，
   /// 页面在 initState 里调 [reloadGalgames] 从 DB 拉真值。
@@ -14921,15 +15177,23 @@ class AppModel
 
   /// 浏览器扩展网页视频沉浸时间 → 学习统计的桥（POST `/api/extension/study` 的
   /// sink）。与 server manager 同寿命：懒建于 [_ensureYomitanManager]，
-  /// [stopFushiApiServer] / [quiesceBackgroundDatabaseWriters] 时封段等落库。
+  /// [stopFushiApiServer] / 每一代关库前（[addDatabaseCloseQuiescer]）封段等落库。
   BrowserVideoStudyBridge? _browserVideoStudyBridge;
 
-  BrowserVideoStudyBridge _ensureBrowserVideoStudyBridge() =>
-      _browserVideoStudyBridge ??= BrowserVideoStudyBridge(
-        database: () => database,
-        // 暂停且在场时的空闲门：与阅读面 / app 内视频同一设置。
-        studyIdleTimeout: () => readingIdleTimeout,
-      );
+  BrowserVideoStudyBridge _ensureBrowserVideoStudyBridge() {
+    final BrowserVideoStudyBridge? existing = _browserVideoStudyBridge;
+    if (existing != null) return existing;
+    final BrowserVideoStudyBridge bridge = BrowserVideoStudyBridge(
+      database: () => database,
+      // 暂停且在场时的空闲门：与阅读面 / app 内视频同一设置。
+      studyIdleTimeout: () => readingIdleTimeout,
+    );
+    // 桥本身跟 server manager 同寿命（进程级），但它持 StudyClock 写链：每一代关库前
+    // 封段并等写完，否则最后一段丢、或 stop 落在已关闭连接上。幂等，可与
+    // stopFushiApiServer 重复调。
+    addDatabaseCloseQuiescer(bridge.stopAll);
+    return _browserVideoStudyBridge = bridge;
+  }
 
   /// 复习模块（SRS）的 AnkiConnect v6 兼容端点：模块开着时由 `srs_app_runtime.dart`
   /// 注入，关着时为 null（Fushi API 根路径 404，不暴露）。运行中切换立即作用到在跑的
@@ -14976,14 +15240,21 @@ class AppModel
 
   /// 浏览器扩展 / app 内浏览器抓图取词的识别会话（懒建，设置变了自动换会话；
   /// [dispose] 时关掉，释放模型 isolate 与临时目录）。
-  ExtensionImageOcrService? _extensionImageOcr;
+  late final OwnedSlot<ExtensionImageOcrService> _extensionImageOcrSlot =
+      OwnedSlot<ExtensionImageOcrService>(
+        'extensionImageOcr',
+        (ExtensionImageOcrService service) => service.close(),
+      );
 
   ExtensionImageOcrService _ensureExtensionImageOcr() =>
-      _extensionImageOcr ??= ExtensionImageOcrService(
-        prepare: _prepareExtensionImageOcr,
-        configKey: () =>
-            '$mangaOcrEnginePreference|$mangaOcrLocalModel|'
-            '$mangaOcrLensLanguage|$mangaOcrIgnoreFurigana',
+      _extensionImageOcrSlot.obtain(
+        _processLifetime,
+        () => ExtensionImageOcrService(
+          prepare: _prepareExtensionImageOcr,
+          configKey: () =>
+              '$mangaOcrEnginePreference|$mangaOcrLocalModel|'
+              '$mangaOcrLensLanguage|$mangaOcrIgnoreFurigana',
+        ),
       );
 
   /// 抓图取词的引擎解析：与漫画在线直读同一口径（引擎偏好 / 本机模型），但用户此刻
