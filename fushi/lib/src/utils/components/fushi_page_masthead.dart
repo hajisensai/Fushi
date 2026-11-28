@@ -896,6 +896,13 @@ class FushiMastheadTitle extends StatelessWidget {
                 softWrap: maxLines! > 1,
                 overflow: TextOverflow.ellipsis,
                 style: base,
+                // 末行下沿按字体自然下伸量排：页名行高紧（0.98 / 1.05），按行高
+                // 压缩后的下沿比 g / p / y 的字形高，两行都放不下而出省略号时
+                // 段落按自身边界裁切，会把末行下伸部切掉（BUG-5611）。
+                textHeightBehavior: const TextHeightBehavior(
+                  applyHeightToLastDescent: false,
+                  leadingDistribution: TextLeadingDistribution.even,
+                ),
               ),
             )
           // 放不下时先缩字号（≤ 15%）再按词换行，不截断、不出省略号
