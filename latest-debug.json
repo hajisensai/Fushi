@@ -15,13 +15,13 @@
       "version": "1.3.3-debug.9114"
     },
     {
-      "name": "fushi-3.4.0-debug.33039-macos-arm64.zip",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.4.0-debug.33039-macos-arm64.zip",
-      "releaseSequence": 33039,
-      "tag": "v3.4.0-debug.33039+09ad1eb",
-      "version": "3.4.0-debug.33039",
-      "size": 282022395,
-      "sha256": "dc10eede920f5840c5698e3683ca93f810d0b369b041f09683d97653c1bbd05e",
+      "name": "fushi-3.4.1-debug.33053-macos-arm64.zip",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.4.1-debug.33053-macos-arm64.zip",
+      "releaseSequence": 33053,
+      "tag": "v3.4.1-debug.33053+4d853cf",
+      "version": "3.4.1-debug.33053",
+      "size": 282015536,
+      "sha256": "3e26e4c15b34613b98291fba1f5cd117c622bd1e4e20c2b76c3101a0df8de2a3",
       "dbSchemaVersion": 182
     },
     {
