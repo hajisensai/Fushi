@@ -368,79 +368,81 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
   /// 查词都不受影响）。其下是制卡结果队列（[_mineNotices]，小号卡）：只有卡片本身
   /// 吃指针（撤销 / 重试 / 悬停暂停）。整层跟着顶栏显隐上下（[_followTopChrome]），
   /// 窗口与全屏复用。
+  ///
+  /// 返回**未定位**的子树，由挂载方定位（controls Stack 里 `Positioned.fill`，网页档露出站点
+  /// 页面时 [WebVideoSurfaceLayers] 把它放在返回条下面）。BUG-5612：原来这里自带
+  /// `Positioned.fill`，网页档又在外面套一层 `Positioned`，两层叠在同一个 RenderObject 上。
   Widget _buildOsdOverlay() {
-    return Positioned.fill(
-      child: SafeArea(
-        child: _followTopChrome(
-          (BuildContext context, double top) => Align(
-            alignment: Alignment.topLeft,
-            child: Padding(
-              padding: EdgeInsets.only(left: 16, right: 16, top: top),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  ValueListenableBuilder<_VideoOsdMessage?>(
-                    valueListenable: _osdNotifier,
-                    builder: (BuildContext _, _VideoOsdMessage? osd, __) {
-                      return IgnorePointer(
-                        child: AnimatedSwitcher(
-                          // eink 下归零（墨水屏残影，UI 巡检 PR-4）。
-                          duration: einkSafeDuration(
-                            context,
-                            const Duration(milliseconds: 180),
-                          ),
-                          // M3E 进场（与底部 FushiToast 同一手感）：淡入 + 从左上角
-                          // 锚点由 0.86 弹到 1（spatialFast 带一点过冲）；退场反向。
-                          // Apple 的通知是玻璃 HUD：淡入淡出走玻璃安全通道（不让
-                          // Opacity 压在玻璃上），缩放声明成自缩放（背景不随之缩）。
-                          transitionBuilder:
-                              (Widget child, Animation<double> animation) {
-                                return FushiChromeFadeTransition(
-                                  opacity: CurvedAnimation(
-                                    parent: animation,
-                                    curve: FushiMotion.enter,
-                                    reverseCurve: FushiMotion.exit,
-                                  ),
-                                  child: ScaleTransition(
-                                    alignment: Alignment.topLeft,
-                                    scale: Tween<double>(begin: 0.86, end: 1)
-                                        .animate(
-                                          CurvedAnimation(
-                                            parent: animation,
-                                            curve: FushiMotion.release,
-                                            reverseCurve: FushiMotion.exit,
-                                          ),
-                                        ),
-                                    child: fushiGlassSelfScale(
-                                      context,
-                                      scaling: true,
-                                      child: child,
-                                    ),
-                                  ),
-                                );
-                              },
-                          child: osd == null
-                              ? const SizedBox.shrink()
-                              : Padding(
-                                  padding: const EdgeInsets.only(bottom: 8),
-                                  child: _buildOsdCard(osd),
-                                ),
+    return SafeArea(
+      child: _followTopChrome(
+        (BuildContext context, double top) => Align(
+          alignment: Alignment.topLeft,
+          child: Padding(
+            padding: EdgeInsets.only(left: 16, right: 16, top: top),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                ValueListenableBuilder<_VideoOsdMessage?>(
+                  valueListenable: _osdNotifier,
+                  builder: (BuildContext _, _VideoOsdMessage? osd, __) {
+                    return IgnorePointer(
+                      child: AnimatedSwitcher(
+                        // eink 下归零（墨水屏残影，UI 巡检 PR-4）。
+                        duration: einkSafeDuration(
+                          context,
+                          const Duration(milliseconds: 180),
                         ),
-                      );
-                    },
+                        // M3E 进场（与底部 FushiToast 同一手感）：淡入 + 从左上角
+                        // 锚点由 0.86 弹到 1（spatialFast 带一点过冲）；退场反向。
+                        // Apple 的通知是玻璃 HUD：淡入淡出走玻璃安全通道（不让
+                        // Opacity 压在玻璃上），缩放声明成自缩放（背景不随之缩）。
+                        transitionBuilder:
+                            (Widget child, Animation<double> animation) {
+                              return FushiChromeFadeTransition(
+                                opacity: CurvedAnimation(
+                                  parent: animation,
+                                  curve: FushiMotion.enter,
+                                  reverseCurve: FushiMotion.exit,
+                                ),
+                                child: ScaleTransition(
+                                  alignment: Alignment.topLeft,
+                                  scale: Tween<double>(begin: 0.86, end: 1)
+                                      .animate(
+                                        CurvedAnimation(
+                                          parent: animation,
+                                          curve: FushiMotion.release,
+                                          reverseCurve: FushiMotion.exit,
+                                        ),
+                                      ),
+                                  child: fushiGlassSelfScale(
+                                    context,
+                                    scaling: true,
+                                    child: child,
+                                  ),
+                                ),
+                              );
+                            },
+                        child: osd == null
+                            ? const SizedBox.shrink()
+                            : Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: _buildOsdCard(osd),
+                              ),
+                      ),
+                    );
+                  },
+                ),
+                FushiMineNoticeStack(
+                  controller: _mineNotices,
+                  anchor: MineNoticeStackAnchor.top,
+                  compact: true,
+                  maxWidth: math.min(
+                    360,
+                    MediaQuery.sizeOf(context).width - 32,
                   ),
-                  FushiMineNoticeStack(
-                    controller: _mineNotices,
-                    anchor: MineNoticeStackAnchor.top,
-                    compact: true,
-                    maxWidth: math.min(
-                      360,
-                      MediaQuery.sizeOf(context).width - 32,
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),

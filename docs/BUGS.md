@@ -40,7 +40,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-5612](bugs/BUG-5612-video-web-parentdata-conflict.md) | 🚧 | 🚧 | video-web-parentdata-conflict |
+| [BUG-5612](bugs/BUG-5612-video-web-parentdata-conflict.md) | ✅ | ✅ | video-web-parentdata-conflict |
 | [BUG-5611](bugs/BUG-5611-web-video-builtin-white.md) | ✅ | ✅ | web-video-builtin-white |
 | [BUG-5607](bugs/BUG-5607-torrent-dht-test-default-timeout.md) | ✅ | ✅ | torrent-dht-test-default-timeout |
 | [BUG-5606](bugs/BUG-5606-host-isolate-offload.md) | ✅ | ✅ | 电脑当互联 host，iPhone 连过来同步时电脑界面一卡一卡 |

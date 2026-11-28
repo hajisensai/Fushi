@@ -440,7 +440,7 @@ extension _VideoLayout on _VideoFushiPageState {
                     _buildVideoSidePanelOverlay(controller),
                     _buildDiscMenuChrome(controller),
                     Positioned.fill(child: _buildDiscExitHoldRing()),
-                    _buildOsdOverlay(),
+                    Positioned.fill(child: _buildOsdOverlay()),
                   ],
                 ),
               );
@@ -867,7 +867,7 @@ extension _VideoLayout on _VideoFushiPageState {
                         // 底部字幕（控制条可见时恰好抬到进度条上方）把缩略图压在下面。
                         // IgnorePointer，挪层不改任何命中。
                         _buildThumbnailPreviewOverlay(controller),
-                        _buildOsdOverlay(),
+                        Positioned.fill(child: _buildOsdOverlay()),
                         // 在线视频后台制卡 / 看完再制卡的右上角角标（无任务时零尺寸）。
                         _buildMineQueueBadgeOverlay(),
                         // Ix4j5SKUth：「循环当前句」开着时的常驻标记（关着零尺寸）。

@@ -1833,25 +1833,16 @@ extension _VideoWebSource on _VideoFushiPageState {
       key: _webSurfaceKey,
       session: session,
     );
-    // 网页档没有站点视频时顶部返回条的总高度（含顶部让位，见 [webVideoReturnBarExtent]）：
-    // 站点页面让在它下面，返回钮不压在 WebView 上——收输入的 WebView2 子窗口会先于
-    // Flutter 吃掉落在它矩形里的点击。
-    final double barExtent = webVideoReturnBarExtent(context);
-    return Stack(
-      fit: StackFit.expand,
-      children: <Widget>[
-        Positioned(
-          left: 0,
-          right: 0,
-          bottom: 0,
-          top: hasVideo ? 0 : barExtent,
-          child: session.underlay
-              ? surface
-              : IgnorePointer(ignoring: hasVideo, child: surface),
-        ),
-        if (hasVideo && _webAdShowing)
-          Positioned.fill(
-            child: ColoredBox(
+    // 站点页面让在顶部返回条下面（[WebVideoSurfaceLayers]），返回钮不压在 WebView 上——收输入
+    // 的 WebView2 子窗口会先于 Flutter 吃掉落在它矩形里的点击。
+    return WebVideoSurfaceLayers(
+      surface: session.underlay
+          ? surface
+          : IgnorePointer(ignoring: hasVideo, child: surface),
+      hasVideo: hasVideo,
+      video: video,
+      adCover: _webAdShowing
+          ? ColoredBox(
               key: const ValueKey<String>('video-web-ad-cover'),
               color: Colors.black,
               child: Center(
@@ -1860,33 +1851,11 @@ extension _VideoWebSource on _VideoFushiPageState {
                   style: _videoControlTitleStyle(),
                 ),
               ),
-            ),
-          ),
-        if (hasVideo) Positioned.fill(child: video),
-        Positioned(
-          left: 0,
-          right: 0,
-          top: 0,
-          height: barExtent,
-          child: AnimatedSwitcher(
-            duration: fushiMotionDuration(context, FushiMotion.short),
-            child: hasVideo
-                ? const SizedBox.shrink(
-                    key: ValueKey<String>('video-web-return-bar-hidden'),
-                  )
-                : _buildWebReturnBar(),
-          ),
-        ),
-        // 露出站点页面时也要看得到短提示：播放器档的 OSD 层挂在控制条里，这里补一层。
-        if (!hasVideo)
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            top: barExtent,
-            child: _buildOsdOverlay(),
-          ),
-      ],
+            )
+          : null,
+      returnBar: _buildWebReturnBar(),
+      // 露出站点页面时也要看得到短提示：播放器档的 OSD 层挂在控制条里，这里补一层。
+      osd: _buildOsdOverlay(),
     );
   }
 
