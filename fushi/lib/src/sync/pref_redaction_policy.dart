@@ -1,4 +1,5 @@
-import 'package:fushi_core/fushi_core.dart' show PrefKeyRegistry, PrefPolicy;
+import 'package:fushi_core/fushi_core.dart'
+    show PrefKeyRegistry, PrefPolicy, PrefTrait;
 import 'package:fushi/src/prefs/fushi_pref_registry.dart';
 
 /// 「一条 `preferences` key 能不能离开本设备」的**唯一真相源**。
@@ -47,5 +48,5 @@ abstract final class PrefRedactionPolicy {
   /// 不跨设备跟随，而导入侧的对称保留会把本机值原样留住）。名字像凭据的固定键在登记表
   /// 构造期就必须声明成凭据。
   static bool isDeviceLocalOrCredential(String key) =>
-      kFushiPrefRegistry.policyOf(key).redacted;
+      kFushiPrefRegistry.has(key, PrefTrait.redacted);
 }

@@ -255,11 +255,11 @@ void main() {
     test('设备本地键目录展开到每个槽位（漏展开 = 基线随备份跨设备泄漏）', () {
       for (final SyncChannelScope s in SyncChannelScope.all) {
         expect(
-          SyncRepository.deviceLocalPrefKeys,
+          SyncRepository.deviceLocalPrefKeys.keys,
           contains(s.key('sync_collections_baseline_ms')),
         );
         expect(
-          SyncRepository.deviceLocalPrefKeys,
+          SyncRepository.deviceLocalPrefKeys.keys,
           contains(s.key('sync_deletion_tombstones_baseline_ms')),
         );
       }

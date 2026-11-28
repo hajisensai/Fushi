@@ -524,7 +524,10 @@ void main() {
     });
 
     test('sync_device_id is in the device-local key catalog', () {
-      expect(SyncRepository.deviceLocalPrefKeys, contains('sync_device_id'));
+      expect(
+        SyncRepository.deviceLocalPrefKeys.keys,
+        contains('sync_device_id'),
+      );
     });
   });
 
@@ -566,7 +569,7 @@ void main() {
     test('is device-local in every channel slot', () {
       for (final SyncChannelScope scope in SyncChannelScope.all) {
         expect(
-          SyncRepository.deviceLocalPrefKeys,
+          SyncRepository.deviceLocalPrefKeys.keys,
           contains(scope.key('sync_content_sniff_cache')),
         );
       }
@@ -575,7 +578,7 @@ void main() {
 
   group('device-local pref key catalog', () {
     test('includes backend selection, credentials and server config', () {
-      final List<String> keys = SyncRepository.deviceLocalPrefKeys;
+      final List<String> keys = SyncRepository.deviceLocalPrefKeys.keys;
       expect(keys, contains('sync_backend_type'));
       expect(keys, contains('sync_webdav_password'));
       expect(keys, contains('sync_sftp_private_key'));
@@ -585,7 +588,7 @@ void main() {
     });
 
     test('excludes behavior flags, folder cache and per-book content', () {
-      final List<String> keys = SyncRepository.deviceLocalPrefKeys;
+      final List<String> keys = SyncRepository.deviceLocalPrefKeys.keys;
       expect(keys, isNot(contains('sync_auto_enabled')));
       expect(keys, isNot(contains('sync_stats_enabled')));
       expect(keys, isNot(contains('sync_audiobook_enabled')));
@@ -605,7 +608,7 @@ void main() {
     });
 
     test('carries no removed SMB keys', () {
-      final List<String> keys = SyncRepository.deviceLocalPrefKeys;
+      final List<String> keys = SyncRepository.deviceLocalPrefKeys.keys;
       expect(keys.where((String k) => k.startsWith('sync_smb_')), isEmpty);
     });
   });

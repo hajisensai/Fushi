@@ -267,8 +267,8 @@ void main() {
 
   group('[F] 设备本地黑名单', () {
     test('新列表键与旧单值键都不随备份跨设备（含 accessToken）', () {
-      expect(SyncRepository.deviceLocalPrefKeys, contains(_kListKey));
-      expect(SyncRepository.deviceLocalPrefKeys, contains(_kLegacyKey));
+      expect(SyncRepository.deviceLocalPrefKeys.keys, contains(_kListKey));
+      expect(SyncRepository.deviceLocalPrefKeys.keys, contains(_kLegacyKey));
     });
   });
 }

@@ -8,6 +8,7 @@ import 'package:fushi_engine/profile/profile_document.dart'
         kProfileSettingCategoryPref,
         kProfileSettingCategoryRemoteDictionaryMeta;
 import 'package:fushi/src/prefs/fushi_pref_registry.dart';
+import 'package:fushi_core/fushi_core.dart' show PrefTrait;
 
 class ProfileKeys {
   ProfileKeys._();
@@ -55,7 +56,7 @@ class ProfileKeys {
   /// 默认（未登记的键）随 Profile 走；漏登一个本机状态键的后果是切到它落地前建的老 Profile
   /// 时被剪掉（BUG-3754 / BUG-1019 那一类）——所以新增这类键时在它所属域的登记里声明策略。
   static bool isExcludedPref(String key) =>
-      !kFushiPrefRegistry.policyOf(key).profileScoped;
+      kFushiPrefRegistry.has(key, PrefTrait.outsideProfile);
 
   static Map<String, String> ankiSettingsToMap(AnkiSettings s) => {
     'selectedDeckId': s.selectedDeckId?.toString() ?? '',

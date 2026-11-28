@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/ai/mcp_client/ai_mcp_client_form.dart';
 import 'package:fushi/src/ai/mcp_client/ai_mcp_client_runtime.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/sync/pref_redaction_policy.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/mcp_client/mcp_client_config.dart';
@@ -64,9 +65,10 @@ void main() {
   test('the key is known, a credential, redacted and device-local', () {
     const String key = 'ai_mcp_client_servers';
     expect(isKnownPreferenceKey(key), isTrue);
+    // 声明是凭据，判定链（出境打码）也确实拦它。
     expect(kFushiPrefRegistry.keyNamed(key)?.policy.credential, isTrue);
-    expect(kFushiPrefRegistry.keyNamed(key)?.policy.credential, isTrue);
-    expect(SyncRepository.deviceLocalPrefKeys, contains(key));
+    expect(PrefRedactionPolicy.isDeviceLocalOrCredential(key), isTrue);
+    expect(SyncRepository.deviceLocalPrefKeys.keys, contains(key));
   });
 
   group('form parsing', () {

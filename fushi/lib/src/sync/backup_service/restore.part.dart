@@ -2709,11 +2709,17 @@ class BackupRestoreService {
   /// 的 `srs_mining_target` 是普通偏好、随设置恢复，判定只给它兜默认值，不覆盖。
   /// 不导入设置的恢复（设置层整层写回本机）不调本方法，本机判定原样保留。
   static Future<void> _clearInstallScopedPrefs(String dbDirectory) async {
-    final List<String> keys = SyncRepository.installScopedPrefKeys;
     FushiDatabase? db;
     try {
       db = FushiDatabase(dbDirectory);
-      await (db.delete(db.preferences)..where((t) => t.key.isIn(keys))).go();
+      // 逐键按生效策略判（与导出剔除 [_stripCredentials] 同一写法）：安装级的键族和固定键
+      // 一样被清掉，不靠一份只列得出固定键的名单。
+      final List<String> keys = (await db.getAllPrefs()).keys
+          .where(SyncRepository.installScopedPrefKeys.contains)
+          .toList(growable: false);
+      if (keys.isNotEmpty) {
+        await (db.delete(db.preferences)..where((t) => t.key.isIn(keys))).go();
+      }
       await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
     } catch (e, st) {
       // 导入的库打不开（不是 SQLite / 已损坏）：与 [_readDeviceLocalPrefs] 同口径，

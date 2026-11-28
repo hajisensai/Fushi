@@ -1,4 +1,4 @@
-// 「本次安装」的一次性判定键（SyncRepository.installScopedPrefKeys，目前只有
+// 「本次安装」的一次性判定键（SyncRepository.installScopedPrefKeys.keys，目前只有
 // `srs_mining_target_install_default`）不得随备份 / 推荐包出境；导入设置的恢复把它清掉
 // （外来值、本机旧值都不留），下次启动按恢复后的数据重新判定。
 //
@@ -132,8 +132,8 @@ void main() {
   }
 
   test('判定键登记为设备本地：Profile / 备份 / 分享三条出境通道共用的谓词都认它', () {
-    expect(SyncRepository.installScopedPrefKeys, contains(_marker));
-    expect(SyncRepository.deviceLocalPrefKeys, contains(_marker));
+    expect(SyncRepository.installScopedPrefKeys.keys, contains(_marker));
+    expect(SyncRepository.deviceLocalPrefKeys.keys, contains(_marker));
     expect(PrefRedactionPolicy.isDeviceLocalOrCredential(_marker), isTrue);
     expect(ProfileKeys.isExcludedPref(_marker), isTrue);
   });

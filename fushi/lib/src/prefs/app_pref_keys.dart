@@ -667,6 +667,15 @@ final List<PrefKeyDef> kAppPrefKeyDefs = <PrefKeyDef>[
     policy: PrefPolicy.profile,
     kind: PrefKind.state,
   ),
+  // int（毫秒）：`video_duration_ms_<bookUid>`——本机播放器记下的每集真实片长
+  // （engine 的 kVideoDurationPrefPrefix，BUG-3491）。一直经常量前缀读写、没登记过；按
+  // 现状（默认策略）登记。
+  PrefKeyFamily<int>(
+    prefix: 'video_duration_ms_',
+    defaultValue: 0,
+    policy: PrefPolicy.profile,
+    kind: PrefKind.state,
+  ),
   PrefKeyFamily.untyped(
     prefix: 'video_remote_position_',
     policy: PrefPolicy.profile,

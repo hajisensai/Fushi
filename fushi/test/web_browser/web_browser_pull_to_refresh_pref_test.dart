@@ -65,7 +65,7 @@ void main() {
 
   test('下拉刷新偏好是设备本地键', () {
     expect(
-      SyncRepository.deviceLocalPrefKeys,
+      SyncRepository.deviceLocalPrefKeys.keys,
       contains(kWebBrowserPullToRefreshPref),
     );
   });

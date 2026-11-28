@@ -149,9 +149,17 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'ai_web_knowledge_disabled_sites',
   // String：旧版（只有三个维基时）启用的站点 id。只读迁移用，新版不再写。
   'ai_web_knowledge_sources',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'airing_calendar_cache',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'anki_video_template_fallback_noticed',
   // bool：应用外快捷键总开关（OS 热键 / 鼠标侧键 / 手柄触发），默认 true。
   'app_external_hotkeys_enabled',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'app_theme_key',
   'asr_transcribe_language',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'audio_highlight_color',
   'audio_sources',
   // bool：总开关。没有字幕的有声书下载完成后，自动用设备端语音模型转录并入库
   // （有正文转完对齐）。默认开；关 = 一律不自动转录（不下模型、不跑推理），
@@ -192,21 +200,29 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'auto_search',
   'auto_search_debounce_delay',
   'auto_update_dictionaries',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'backup_merge_import_settings',
   // bool（默认 false）：从 NSFW 作品制卡时卡上的封面 / 页图用模糊副本。见
   // media/nsfw/nsfw_card_image.dart。
   'blur_nsfw_card_images',
   // bool（默认 true）：NSFW 作品的封面在库页 / 继续卡等处打模糊。见
   // media/nsfw/nsfw_cover_blur.dart。
   'blur_nsfw_covers',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'brightness_mode',
   'clipboard_panel_block_capture',
   'collapse_dictionaries',
   'collapsed_collection_ids',
   'compress_mining_media',
   'custom_dict_css',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'custom_themes',
   'deduplicate_pitch_accents',
   // String（BCP-47，如 'ja' / 'zh-Hant'；空串 = 未设置）：全局默认内容语言。
   // 内容字体链优先级的第三档，兜在「资源手动指定 > 内容自带元数据」之后。
   'default_content_language',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'delete_prompt_remembered_choices',
   'design_system',
   // bool（默认 false）：Windows 上点关闭按钮 / Alt+F4 时把主窗口收进托盘而不是退出
   // （desktop_tray.dart）。
@@ -315,6 +331,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'gal_hook_text_padding',
   'gal_hook_text_vertical_alignment',
   'gal_hook_text_window_bg_opacity',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'gal_hook_text_window_rect',
   'gal_hook_toolbar_auto_hide',
   'gal_hook_toolbar_labels',
   'gal_mining_animated_format',
@@ -331,13 +349,17 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'gal_ocr_region',
   'galgame_library',
   'galgame_library_view',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'game_stream_video_overrides',
   'games_collapsed_collection_ids',
   // String（默认 'grid'）：游戏库主体布局，'grid' 海报网格 / 'list' 分段卡列表。
   // 页头切换钮写入，跨会话记住。
   'games_library_layout',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'glass_material',
   // String（默认 'minimal'）：Apple（Cupertino）设计系统的玻璃画质档位
   // `off`（实色）/ `minimal` / `standard` / `premium`，见 FushiGlassMaterial。
-  // 随 Profile 走（ThemeNotifier._profileThemePrefKeys）；旧键 `glass_material` 冻结不读。
+  // 随 Profile 走（ThemeNotifier.profileThemePrefKeys）；旧键 `glass_material` 冻结不读。
   'glass_quality',
   'global_dict_css',
   'harmonic_frequency',
@@ -363,6 +385,26 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 布局缺失 = 没编辑过，渲染时由旧键 `home_dashboard_panels` 迁移现算、不落盘。
   // kind id 与字段冻结。随 Profile 走、进备份 / 同步（同 home_dashboard_panels）。
   'home_widget_layout',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'interconnect_leaderboard_link_host',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'interconnect_profile_transfer',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'interconnect_remote_update',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'interconnect_sync_audiobook_files',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'interconnect_sync_auto',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'interconnect_sync_content',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'interconnect_sync_favorites',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'interconnect_sync_manga_content',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'interconnect_sync_stats',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'interconnect_sync_video_files',
   // bool（默认 true，BUG-1891）：进视频页时是否自动向 Jellyfin/Emby 服务器枚举
   // 条目。几十万条目的公共 Emby 服上自动枚举会被当成爬虫，关掉后改由下拉刷新手动触发。
   'jellyfin_auto_list_videos',
@@ -385,6 +427,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 true）：顶栏显示返回 / 前进图标。关掉照样记录，面板与刻度照常。
   'jump_history_toolbar',
   'last_dictionary_update_at',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'leaderboard_follow_paired_login',
   // bool（默认 false）：连续收听提醒开关（反馈 5_mzP54WVx）；int 分钟（15..120，默认
   // 60）：提醒间隔。普通偏好，随 Profile / 备份走。见 media/listening_reminder.dart。
   'listening_reminder_enabled',
@@ -476,6 +520,14 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'manga_zoom_percent',
   'manga_zoom_sensitivity',
   'maximum_terms',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'media_tracking_bangumi_account_name',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'media_tracking_last_sync_unauthorized_v1',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'migration_import_done_v1',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'migration_readonly_v1',
   // bool（默认 true）：制卡提示——查重拦下（「重复卡片，未导出」）时弹 toast
   // （反馈 aK5wv0CnWf）。失败与「成功但缺音频」不受开关影响。
   'mine_notice_duplicate',
@@ -636,6 +688,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'overlay_lookup_independent_size',
   'overlay_lookup_max_height',
   'overlay_lookup_max_width',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'override_thumbnail_prefix_migrated',
   // 页面背景（page_backdrop_style.dart）：预设 / 强度 / 漂移动效 / 图片模糊 /
   // 遮罩浓度 / 从图片取色 / 选中的候选色随 Profile；两张图片路径与取色缓存
   // （`path|修改时间:字节数|argb,argb…`）设备本地。
@@ -677,10 +731,16 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 2jGkpD-iD6，见 lookup/popup_ui_scale.dart）。阅读偏好，随 Profile 快照走。
   'popup_ui_scale',
   'popup_wheel_speed',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'pure_black_dark',
   // 阅读器顶栏 / 底栏按钮布局 JSON（ReaderControlLayout，v1 槽位表）。
   'reader_control_layout',
   // 窄窗（手机竖屏）按钮布局 JSON（同 reader_control_layout 形；空 = 沿用宽窗那份）。
   'reader_control_layout_compact',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'reader_paper_dark',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'reader_paper_light',
   // String 'left' | 'right'：小说 / 漫画阅读设置侧边弹窗停靠在哪一侧（与翻页方向无关）。
   'reader_settings_panel_side',
   // String 'floating' | 'docked'：阅读器工具栏样式（M3E 悬浮工具栏 / 贴边实体条）。
@@ -720,6 +780,12 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'screen_ocr.engine',
   // bool：Android 截屏识字保持录屏会话、之后不再弹确认框（默认 false）。
   'screen_ocr.keep_capture_session',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'selected_custom_theme_id',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'server_anki_landing_claimed_at',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'server_anki_settings',
   // string（JSON 数组，最近的在前）：最近打开的设置一级分类（SettingsDestinationId.name），
   // 首页侧栏「设置」速览卡读它（settings_recent_destinations.dart，设备本地）。
   'settings_recent_destinations',
@@ -729,10 +795,20 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // String：书架「阅读状态」筛选（ShelfReadStatus.name，'' = 全部）。
   'shelf_read_status_filter',
   'shelf_sort_mode',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'shell_block_arrangement',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'shell_content_layout',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'shell_rail_style',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'shell_smooth_corners',
   'show_expression_tags',
   'show_floating_lyric',
   'show_media_notification',
   'show_remote_entries',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'srs_anki_migration_settings',
   // String（JSON 数组 [{name, query}]，SrsBrowseSavedView）：复习卡片浏览器里用户存的视图
   // （名字 + Anki 搜索语法）。缺省 '' = 没有。非凭据、跨设备（随 Profile / 备份；不进复习同步）。
   'srs_browse_saved_views',
@@ -756,6 +832,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'srs_donation_last_reviews',
   'srs_donation_never',
   'srs_donation_snooze_until',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'srs_export_anki_options',
   // int（0 = 关）：每日复习张数目标（小组件「目标」卡；只对内置 SRS 有意义）。
   'srs_goal_daily_reviews',
   'srs_import_anki_options',
@@ -774,6 +852,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // String（SrsMiningTarget.wire）：复习模块开着时制卡发往 Anki 还是 Fushi 复习（二选一；
   // 存量 'both' 读成 'anki'）。没设过取下面的安装默认。模块关着时不读。非凭据、跨设备。
   'srs_mining_target',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'srs_rating_guide_dismissed',
   // bool（默认 true）：复习页顶栏悬浮——不占布局、默认收起，点卡面空白 / 右键唤出、
   // 再点收起（与小说、漫画阅读器的悬浮顶栏同一口径）；false = 固定页头常驻。非凭据、跨设备。
   'srs_review_chrome_floating',
@@ -803,6 +883,16 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'srs_review_volume',
   // double（默认 1.0，0.6–2.0）：复习页卡面缩放（Ctrl / ⌘ + 滚轮、Ctrl + 加减号 / 0）。
   'srs_review_zoom',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'srs_sync_auto',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'srs_sync_ignored_profile_conflicts',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'stats_day_reset_hour',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'stats_reading_clock_start_mode',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'stats_reading_idle_timeout_minutes',
   // int 1..7（DateTime.weekday，缺省 1 = 周一）：一周从星期几开始。每周目标、首页
   // 「今日」格、统计「本周」与范围条的「周」共用（镜像到 StatWindow.weekStartDay）。
   // 设置 › 目标 › 计数只给周一 / 周日 / 周六三项。随 Profile 走。
@@ -820,10 +910,38 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool，默认 true：自动下载的外挂字幕按视频内嵌字幕轨对时间轴
   // （embedded_reference_subtitle_sync.dart）。
   'subtitle_reference_sync_enabled',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'sync_audiobook_enabled',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'sync_audiobook_files_enabled',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'sync_auto_enabled',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'sync_content_enabled',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'sync_dictionary_enabled',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'sync_interconnect_backend_migrated',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'sync_interconnect_enabled',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'sync_local_audio_enabled',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'sync_manga_content_enabled',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'sync_stats_enabled',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'sync_video_files_enabled',
   // bool，默认 false：捕获工作台「新句自动查词」（反馈 q9Jcu_Zr2_，texthooker_page.dart）。
   'texthooker_auto_lookup_new_lines',
   'texthooker_enabled',
   'texthooker_urls',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'theme_follow_app_icon',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'theme_mascot_glow',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'theme_tint_app_logo',
   'torrent_upload_intro_shown',
   // double（默认 1.0）：查词 / 制卡 TTS 兜底发音的倍速（变速不变调，ffmpeg atempo
   // 烧进合成文件；制卡的 TTS 单词音频同样用它，与有声书播放倍速开关无关）。
@@ -852,6 +970,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // String（`VideoSeriesFilter.name`，默认 `standalone`）：「全部视频」系列归属
   // 筛选的上次选择（BUG-2835，用户拍板默认只看散片、并记住选择）。
   'video_all_series_filter',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'video_anidb_hash_enabled',
   'video_anime4k_prompt_shown',
   'video_asbplayer_config',
   'video_auto_play_next',
@@ -861,6 +981,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // （BUG-2544）。桌面最小化本来就不暂停，不读这个键。
   'video_background_play',
   'video_black_flicker_notice_suppressed',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'video_clip_export_video_bitrate_kbps',
   'video_control_customization',
   'video_custom_action_bindings',
   'video_danmaku_block_rules',
@@ -885,11 +1007,15 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 拿到种子文件表后把特典文件设为不下载；AI 下视频选版本时也丢掉只有特典的发布。
   // 默认 false（旧行为：整颗种子全下）。非凭据、跨设备。
   'video_download_skip_extras',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'video_download_subscription_auto_disable_days',
   // String（VideoEntryOrientation.storageValue，拍板台 P9AS-fvjJh）：手机 / 平板
   // 进入视频时的方向——`landscape` 横屏（默认）/ `video_aspect` 按视频比例 /
   // `sensor` 跟随手机旋转。桌面不读。
   'video_entry_orientation',
   'video_fit_mode',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'video_hdr_output',
   // String（VideoImmersiveControlLayout JSON，空串 = 没改过、按普通布局派生）：
   // 沉浸锁定后屏幕左右侧栏的按钮排列。
   'video_immersive_control_layout',
@@ -920,6 +1046,18 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // `<serverId>|series|<seriesId>` → 规格签名 + 版本名；按写入先后保留最近
   // 500 条。非凭据、跨设备（服务器条目 id 在哪台设备上都一样）。
   'video_media_server_version_choices',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'video_metadata_anidb_client_name',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'video_metadata_anidb_client_version',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'video_metadata_download_staff_images',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'video_metadata_identifier_words',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'video_metadata_locale',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'video_metadata_primary_provider',
   'video_mining_animated_format',
   // String（`SentenceAudioSourcePick.wireName`）：视频制卡句子音频来源——当前播放
   // 音轨（默认）/ 指定第 N 条音轨 `track:<N>` / 中置声道 `front_center`。
@@ -964,6 +1102,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // String（默认 'all'）：视频断点续播 off / long_videos / all
   // （VideoResumeMode.wire，video_resume.dart）。
   'video_resume_mode',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'video_screenshot_destination',
   'video_secondary_subtitle_blur',
   'video_secondary_subtitle_obscure_hide',
   // bool（未写过时继承 video_subtitle_obscure_reveal）：副字幕遮蔽态是否允许
@@ -1005,6 +1145,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 true）：遮蔽（模糊 / 隐藏）态是否允许悬停 / 点击临时显形。关掉后
   // 遮蔽在整句期间恒定生效，不被误触破功。
   'video_subtitle_obscure_reveal',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'video_subtitle_opensubtitles_enabled_repaired',
   // string（默认空）：主字幕轨默认语言偏好（反馈 Fz9HXThdSW，参考 PotPlayer）：逗号 /
   // 空白分隔，按顺序挑第一条命中的内封轨，见 parseSubtitleLanguagePreferences。
   'video_subtitle_preferred_languages',
@@ -1022,11 +1164,21 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 旧库残留行无人读。）
   'video_theme_song_auto_skip',
   'video_time_display_remaining',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'video_web_sites',
   'video_youtube_quality_height',
   // string（JSON 数组，空串 = 用预置站点）：app 内浏览器的站点书签（web_browser_sites.dart）。
   'web_browser_sites',
   // bool（默认 true）：网页漫画章末二维码广告页剔除（判定在 native/fushi_web_core 的 comic_ad）。
   'web_comic_ad_filter',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'web_video_hosting',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'web_video_hosting_learned_by_site',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'web_video_hosting_manual_by_site',
+  // 一直经命名常量读写、从没登记过的存量键（2026-11-28 守卫补上常量扫描时补登名字）。
+  'web_video_shader_tier',
   'yomitan_api_port',
   'yomitan_api_server_enabled',
 };

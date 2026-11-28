@@ -72,7 +72,7 @@ void main() {
     await SyncRepository(db).setWebHistorySyncEnabled(true);
     expect(await readWebHistorySyncEnabled(db), isTrue);
     expect(
-      SyncRepository.deviceLocalPrefKeys,
+      SyncRepository.deviceLocalPrefKeys.keys,
       contains(kSyncWebHistoryPrefKey),
     );
   });

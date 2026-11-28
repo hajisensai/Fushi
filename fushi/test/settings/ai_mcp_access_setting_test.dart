@@ -35,7 +35,7 @@ void main() {
       'ai_mcp_token_sha256',
     ]) {
       expect(isKnownPreferenceKey(key), isTrue);
-      expect(SyncRepository.deviceLocalPrefKeys, contains(key));
+      expect(SyncRepository.deviceLocalPrefKeys.keys, contains(key));
     }
   });
 }

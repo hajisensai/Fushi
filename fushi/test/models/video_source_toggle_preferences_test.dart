@@ -89,7 +89,10 @@ void main() {
 
   test('BT site list is device-local and treated as a credential', () {
     // 站点地址可能带 passkey：与 video_resource_torznab_config 同样归类。
-    expect(SyncRepository.deviceLocalPrefKeys, contains(kResourceBtSitesPref));
+    expect(
+      SyncRepository.deviceLocalPrefKeys.keys,
+      contains(kResourceBtSitesPref),
+    );
     expect(
       kFushiPrefRegistry.keyNamed(kResourceBtSitesPref)?.policy.credential,
       isTrue,

@@ -151,6 +151,9 @@ void main() {
     expect(prefs.aiAgentWebSearchConsent, '', reason: '再打开要重新确认，不直接算已同意');
 
     expect(isKnownPreferenceKey(kAiAgentWebSearchPref), isTrue);
-    expect(SyncRepository.deviceLocalPrefKeys, contains(kAiAgentWebSearchPref));
+    expect(
+      SyncRepository.deviceLocalPrefKeys.keys,
+      contains(kAiAgentWebSearchPref),
+    );
   });
 }

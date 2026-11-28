@@ -16,7 +16,7 @@ import 'package:fushi/src/sync/sync_repository.dart';
 void main() {
   group('PrefRedactionPolicy.isDeviceLocalOrCredential', () {
     test('redacts every device-local key (the whitelist is the main line)', () {
-      for (final String key in SyncRepository.deviceLocalPrefKeys) {
+      for (final String key in SyncRepository.deviceLocalPrefKeys.keys) {
         expect(
           PrefRedactionPolicy.isDeviceLocalOrCredential(key),
           isTrue,
@@ -32,7 +32,7 @@ void main() {
         // 窗口放到屏幕外。字面量钉死冻结的持久化名。
         expect(kFloatingLyricWindowRectPrefKey, 'floating_lyric_window_rect');
         expect(
-          SyncRepository.deviceLocalPrefKeys,
+          SyncRepository.deviceLocalPrefKeys.keys,
           contains(kFloatingLyricWindowRectPrefKey),
         );
         expect(
@@ -151,9 +151,8 @@ void main() {
     test('every explicitly named sensitive key is actually matched', () {
       // sensitiveKeys 里若有条目其实已被子串兜底覆盖，是冗余而非错误；
       // 但反过来——列了却没被 matched——说明判定链断了。
-      for (final String key in kFushiPrefRegistry.keyNamesWhere(
-        (PrefPolicy p) => p.credential,
-      )) {
+      for (final String key
+          in kFushiPrefRegistry.select(PrefTrait.credential).keys) {
         expect(PrefRedactionPolicy.isDeviceLocalOrCredential(key), isTrue);
       }
       for (final String prefix in <String>[

@@ -402,7 +402,7 @@ void main() {
 
   test('「仅从本机移除」清单是设备本地偏好：不随备份 / 同步带到别的设备', () {
     expect(
-      SyncRepository.deviceLocalPrefKeys,
+      SyncRepository.deviceLocalPrefKeys.keys,
       contains('hidden_remote_books'),
       reason: '「仅从本机」漂到另一台设备会让那边的同一份远端书也被隐藏',
     );

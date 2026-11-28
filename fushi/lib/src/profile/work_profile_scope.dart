@@ -13,7 +13,7 @@ import 'package:fushi_engine/media/media_pref_keys.dart'
 import 'package:fushi/src/models/preference_keys.dart'
     show kWorkProfileSessionPrefKey;
 import 'package:fushi/src/models/preferences_repository.dart'
-    show PreferencesRepository, kFloatingLyricWindowRectPrefKey;
+    show PreferencesRepository;
 import 'package:fushi/src/models/theme_notifier.dart' show ThemeNotifier;
 import 'package:fushi/src/profile/combo/combo_repository.dart'
     show ComboScope, SettingKey;
@@ -301,9 +301,8 @@ class WorkProfileScope extends ChangeNotifier {
     if (key.startsWith(_readerPrefix)) {
       return !appLevelReaderPrefKeys.contains(key);
     }
-    if (key.startsWith('floating_lyric_')) {
-      return key != kFloatingLyricWindowRectPrefKey;
-    }
+    // 窗口矩形 `floating_lyric_window_rect` 是设备本地键，第一行已经挡掉，不用点名。
+    if (key.startsWith('floating_lyric_')) return true;
     return videoSubtitleStylePrefKeys.contains(key) ||
         srsMiningPrefKeys.contains(key) ||
         ThemeNotifier.isProfileThemePrefKey(key);

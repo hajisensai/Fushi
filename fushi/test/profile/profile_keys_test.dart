@@ -322,9 +322,8 @@ void main() {
 
     test('delegates to the shared policy rather than re-implementing it', () {
       // 防漂移：任何只改 PrefRedactionPolicy 而漏改这里的做法都会被这条抓住。
-      for (final String key in kFushiPrefRegistry.keyNamesWhere(
-        (PrefPolicy p) => p.credential,
-      )) {
+      for (final String key
+          in kFushiPrefRegistry.select(PrefTrait.credential).keys) {
         expect(ProfileKeys.isExcludedPref(key), isTrue);
       }
       for (final String substring in PrefKeyRegistry.defaultCredentialShapes) {

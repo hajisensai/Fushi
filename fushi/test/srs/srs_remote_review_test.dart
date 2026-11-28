@@ -434,7 +434,7 @@ void main() {
   test('首页已配对设备的落盘缓存：偏好键已登记且设备本地；库没开时不读不写', () async {
     expect(isKnownPreferenceKey(kSrsHomePairedCachePrefKey), isTrue);
     expect(
-      SyncRepository.deviceLocalPrefKeys,
+      SyncRepository.deviceLocalPrefKeys.keys,
       contains(kSrsHomePairedCachePrefKey),
       reason: '描述的是这台设备配对的主机，不随备份 / 同步 / Profile 走',
     );

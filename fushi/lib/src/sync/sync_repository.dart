@@ -1999,31 +1999,31 @@ class SyncRepository {
 
   // ── Device-local key catalog ──────────────────────────────────────
 
-  /// 设备本地的固定键名：导入备份时必须保留在本设备、不能被备份覆盖——后端选择 +
+  /// 设备本地的键：导入备份时必须保留在本设备、不能被备份覆盖——后端选择 +
   /// 全部凭据/令牌 + 本机服务器配置 + 互联客户端地址/令牌（含旧单地址键）。从偏好键登记表
-  /// 派生（声明了 [PrefPolicy.deviceLocal] 的固定键，含 [prefKeyDefs] 与各模块自带的登记），
-  /// 不再手写清单。
+  /// 派生（[PrefTrait.deviceLocal]，含 [prefKeyDefs] 与各模块自带的登记），不再手写清单。
+  /// `contains(key)` 按生效策略判定（固定键与键族一视同仁），`.keys` / `.families` 是同一个
+  /// 集合的枚举形态。
   ///
   /// 故意不在其中：
   /// - 行为开关 `sync_auto_enabled`/`sync_stats_enabled`/`sync_audiobook_enabled`/
   ///   `sync_content_enabled`/`sync_manga_content_enabled` —— 当作用户设置，随备份恢复。
   /// - 内容 `audiobook_pos_*` —— 随备份恢复。
   /// - folder cache `sync_root_folder_id`/`sync_folder_cache` —— 不还原，下次同步重建。
-  static final List<String> deviceLocalPrefKeys = List<String>.unmodifiable(
-    kFushiPrefRegistry.keyNamesWhere((PrefPolicy p) => p.deviceLocal),
+  static final PrefKeySelection deviceLocalPrefKeys = kFushiPrefRegistry.select(
+    PrefTrait.deviceLocal,
   );
 
-  /// 设备本地键里更严的一类：描述**本次安装**的一次性判定 / 迁移结论（声明了
-  /// [PrefPolicy.installScoped] 的固定键）。
+  /// 设备本地键里更严的一类：描述**本次安装**的一次性判定 / 迁移结论
+  /// （[PrefTrait.installScoped]，固定键与键族一视同仁）。
   ///
   /// 和其余设备本地键一样导出时剔除、不进 Profile 快照 / 分享。导入侧更严：导入
   /// 设置的覆盖恢复（含崩溃恢复重放）会把它们**清掉**——外来值是别的机器的结论，
   /// 本机旧值依据的是恢复前的数据，两者都不留，下次启动按恢复后的数据重新判定
   /// （见 `BackupRestoreService._clearInstallScopedPrefs`）。不导入设置的恢复把设置层
   /// 整层写回本机，判定随之保留。旧版本导出的、还带着这些键的包也靠这一步兜住。
-  static final List<String> installScopedPrefKeys = List<String>.unmodifiable(
-    kFushiPrefRegistry.keyNamesWhere((PrefPolicy p) => p.installScoped),
-  );
+  static final PrefKeySelection installScopedPrefKeys = kFushiPrefRegistry
+      .select(PrefTrait.installScoped);
 
   /// 按通道分槽、且属设备本地的键基名（展开进 [deviceLocalPrefKeys]）。
   ///

@@ -568,7 +568,7 @@ void main() {
 
     test('sync_jellyfin_server 在设备本地键目录（令牌不随备份跨设备）', () {
       expect(
-        SyncRepository.deviceLocalPrefKeys,
+        SyncRepository.deviceLocalPrefKeys.keys,
         contains('sync_jellyfin_server'),
       );
     });

@@ -194,7 +194,7 @@ void main() {
       isFalse,
     );
     expect(
-      SyncRepository.deviceLocalPrefKeys,
+      SyncRepository.deviceLocalPrefKeys.keys,
       containsAll(<String>[
         kWebBrowserFullscreenTakeoverPref,
         kWebBrowserFullscreenAutoRotatePref,

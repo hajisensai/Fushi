@@ -741,49 +741,78 @@ final List<PrefKeyDef> backupContentPrefKeyDefs = <PrefKeyDef>[
     ),
 ];
 
-/// 内容注册表的固定键（登记表里备份归 [PrefBackup.content] 的固定键）：
-/// [settingsPrefPredicate] 与可移植设置判定（`PortableSettingsPolicy`）共用。
-final List<String> backupContentRegistryPrefKeys = List<String>.unmodifiable(
-  kFushiPrefRegistry.keyNamesWhere(
-    (PrefPolicy p) => p.backup == PrefBackup.content,
-  ),
+/// The `preferences` rows the `progress` backup category owns (audiobook
+/// positions): what an "exclude progress" export strips and what decides
+/// whether a backup carries any progress. Derived from the pref-key registry
+/// ([PrefTrait.progressBackup]), the same declaration [settingsPrefPredicate]
+/// reads — a key declared progress is excluded from `settings` AND handled by
+/// `progress`, never one without the other.
+final String progressPrefPredicate = prefSelectionSql(
+  kFushiPrefRegistry.select(PrefTrait.progressBackup),
+  matching: true,
 );
 
-/// 由登记表拼出「不归 `settings` 类别管」的 SQL 排除条件：备份归进度 / 内容的固定键
-/// （`NOT IN`）与键族（前缀族 `NOT LIKE '<前缀>%'`、子串族 `instr(...) = 0`）。被另一个
-/// 同样排除的前缀族包住的键族不再重复出条件。登记表里出现 SQL 表达不了的族形状（带后缀
-/// 的族）时直接抛错，绝不静默漏掉。
-String _buildSettingsPrefPredicate() {
-  bool excludedFromSettings(PrefPolicy p) =>
-      p.backup == PrefBackup.progress || p.backup == PrefBackup.content;
-  String quote(String v) => v.replaceAll("'", "''");
-  final List<PrefKeyFamily<Object?>> families = kFushiPrefRegistry.families
-      .where((PrefKeyFamily<Object?> f) => excludedFromSettings(f.policy))
-      .toList();
-  final List<String> clauses = <String>[];
-  for (final PrefKeyFamily<Object?> f in families) {
-    if (f.suffix.isNotEmpty || (f.prefix.isNotEmpty && f.marker.isNotEmpty)) {
-      throw StateError(
-        'settingsPrefPredicate: unsupported family ${f.pattern}',
-      );
-    }
-    if (f.marker.isNotEmpty) continue;
-    final bool nested = families.any(
-      (PrefKeyFamily<Object?> o) =>
-          !identical(o, f) && o.marker.isEmpty && f.prefix.startsWith(o.prefix),
+/// 由登记表拼出「不归 `settings` 类别管」的 SQL 排除条件：备份归进度 / 内容
+/// （[PrefTrait.outsideSettingsBackup]）的固定键与键族，一视同仁。
+String _buildSettingsPrefPredicate() => prefSelectionSql(
+  kFushiPrefRegistry.select(PrefTrait.outsideSettingsBackup),
+  matching: false,
+);
+
+/// 把登记表的一条通道选择（[PrefKeySelection]）翻译成 `preferences.key` 上的 SQL 条件。
+/// [matching] 为 true 给「属于这条通道」（各子句 `OR`），false 给「不属于」（各子句取反后
+/// `AND`）。两种写法由同一份枚举生成，和 [PrefKeySelection.contains] 判的是同一个集合。
+///
+/// 固定键出 `IN (...)`，前缀族出 `LIKE '<前缀>%'`（沿用既有 SQL 形态：前缀里的 `_` 在
+/// LIKE 里是单字符通配、ASCII 不分大小写，只会比逐键判定多匹配、不会少），子串族出
+/// `instr(...)`；被另一个入选键族整个包住的键族不重复出子句。SQL 表达不了的形状——带后缀
+/// 的族、既有前缀又有子串的族、前缀里带 `%`、带形状兜底或包含未登记键的选择——直接抛
+/// [StateError]，绝不静默漏掉。
+String prefSelectionSql(PrefKeySelection selection, {required bool matching}) {
+  if (!selection.isEnumerable) {
+    throw StateError(
+      'prefSelectionSql: ${selection.trait.name} cannot be enumerated '
+      '(shape rules / unregistered keys)',
     );
-    if (nested) continue;
-    clauses.add("key NOT LIKE '${quote(f.prefix)}%'");
   }
-  final String notIn = backupContentRegistryPrefKeys
-      .map((String k) => "'${quote(k)}'")
-      .join(', ');
-  clauses.add('key NOT IN ($notIn)');
-  for (final PrefKeyFamily<Object?> f in families) {
-    if (f.marker.isEmpty) continue;
-    clauses.add("instr(key, '${quote(f.marker)}') = 0");
+  String quote(String v) => v.replaceAll("'", "''");
+  final List<String> prefixClauses = <String>[];
+  final List<String> markerClauses = <String>[];
+  for (final PrefKeyFamily<Object?> f in selection.families) {
+    if (f.suffix.isNotEmpty || (f.prefix.isNotEmpty && f.marker.isNotEmpty)) {
+      throw StateError('prefSelectionSql: unsupported family ${f.pattern}');
+    }
+    if (selection.families.any(
+      (PrefKeyFamily<Object?> o) => !identical(o, f) && o.encloses(f),
+    )) {
+      continue;
+    }
+    if (f.marker.isNotEmpty) {
+      markerClauses.add(
+        matching
+            ? "instr(key, '${quote(f.marker)}') > 0"
+            : "instr(key, '${quote(f.marker)}') = 0",
+      );
+      continue;
+    }
+    if (f.prefix.contains('%')) {
+      throw StateError('prefSelectionSql: "%" in prefix of ${f.pattern}');
+    }
+    prefixClauses.add(
+      matching
+          ? "key LIKE '${quote(f.prefix)}%'"
+          : "key NOT LIKE '${quote(f.prefix)}%'",
+    );
   }
-  return clauses.join(' AND ');
+  final List<String> clauses = <String>[
+    ...prefixClauses,
+    if (selection.keys.isNotEmpty)
+      'key ${matching ? 'IN' : 'NOT IN'} '
+          "(${selection.keys.map((String k) => "'${quote(k)}'").join(', ')})",
+    ...markerClauses,
+  ];
+  if (clauses.isEmpty) return matching ? '0' : '1';
+  return clauses.join(matching ? ' OR ' : ' AND ');
 }
 
 /// Strips the four DB-only data categories (TODO-1193) from the standalone
@@ -826,7 +855,7 @@ Future<void> _stripExcludedDataCategories(
       await db.customStatement('DELETE FROM reader_positions');
       await db.customStatement('DELETE FROM bookmarks');
       await db.customStatement(
-        "DELETE FROM preferences WHERE key LIKE 'audiobook_pos_%'",
+        'DELETE FROM preferences WHERE $progressPrefPredicate',
       );
       // v128 内置浏览器历史 / 书签随「进度」走；它们的删除墓碑（逻辑键，不随表
       // cascade）同样只在勾了进度时出境——否则「没导出浏览数据」的备份仍带着删过的网址。
@@ -1132,7 +1161,7 @@ class BackupService {
   Future<int> _countProgressRows() async =>
       await _countRows('reader_positions') +
       await _countRows('bookmarks') +
-      await _countRowsWhere('preferences', "key LIKE 'audiobook_pos_%'");
+      await _countRowsWhere('preferences', progressPrefPredicate);
 
   /// Statistics records on the live DB: the legacy day aggregates the old
   /// `statsCount` already summed PLUS the v92 `study_segments` fact table —
@@ -1842,7 +1871,7 @@ class BackupService {
   /// [_readDeviceLocalPrefs] 就用**同一个**谓词从本机捞出来、由
   /// `_applyPreservedConfig` 在导入后写回，两侧绝不各写一份清单。
   static bool _isDeviceLocalPrefKey(String key) =>
-      kFushiPrefRegistry.policyOf(key).backup == PrefBackup.never;
+      kFushiPrefRegistry.has(key, PrefTrait.notBackedUp);
 
   /// Strips device-local config and credentials from the standalone DB copy in
   /// [dbDirectory] before it leaves the device. Opened via [FushiDatabase]
