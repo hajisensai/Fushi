@@ -1,9 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/prefs/fushi_pref_registry.dart';
 import 'package:fushi/src/media/kavita/kavita_api_registry.dart';
 import 'package:fushi/src/media/kavita/kavita_server_config.dart';
-import 'package:fushi/src/models/preference_keys.dart';
-import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/pref_redaction_policy.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
 
 KavitaServerConfig _cfg({
   String id = 'a',
@@ -76,13 +76,20 @@ void main() {
 
   group('credential registration', () {
     test('kavita_servers is a known credential pref and redacted', () {
-      expect(kKnownPreferenceKeys, contains(kKavitaServersPref));
-      expect(kCredentialPreferenceKeys, contains(kKavitaServersPref));
+      expect(isKnownPreferenceKey(kKavitaServersPref), isTrue);
+      // 声明是凭据，判定链（出境打码）也确实拦它。
       expect(
-        PrefRedactionPolicy.sensitiveKeys.contains(kKavitaServersPref),
+        kFushiPrefRegistry.keyNamed(kKavitaServersPref)?.policy.credential,
         isTrue,
       );
-      expect(SyncRepository.deviceLocalPrefKeys, contains(kKavitaServersPref));
+      expect(
+        PrefRedactionPolicy.isDeviceLocalOrCredential(kKavitaServersPref),
+        isTrue,
+      );
+      expect(
+        SyncRepository.deviceLocalPrefKeys.keys,
+        contains(kKavitaServersPref),
+      );
     });
   });
 

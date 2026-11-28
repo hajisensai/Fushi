@@ -95,7 +95,7 @@ class AListSiteConfig {
   );
 
   /// 密码 base64 存放：遮蔽不是加密，纪律靠本键登记进
-  /// `kCredentialPreferenceKeys` 与 device-local 清单（同 OPDS）。
+  /// 偏好键登记表的凭据声明（`kFushiPrefRegistry`） 与 device-local 清单（同 OPDS）。
   Map<String, Object?> toJson() => <String, Object?>{
     'id': id,
     'name': name,

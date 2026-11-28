@@ -23,94 +23,42 @@ library;
 
 import 'dart:convert';
 
-import 'package:fushi/src/profile/profile_keys.dart';
-import 'package:fushi/src/sync/backup_service.dart'
-    show backupContentRegistryPrefKeys;
+import 'package:fushi/src/prefs/fushi_pref_registry.dart';
+import 'package:fushi/src/prefs/non_portable_setting_shape.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:meta/meta.dart';
 
 /// 「一条 preferences key 能不能作为设置跨设备流动」的唯一判定。
 ///
-/// 判定顺序（任一命中即不可移植），[exclusionReason] 给出命中的那一条：
-/// 1. [ProfileKeys.isExcludedPref]——凭据 / 设备本地（`PrefRedactionPolicy` 与
+/// 真相源是偏好键登记表的 [PrefPolicy.syncable]（[kFushiPrefRegistry] 的生效策略），
+/// 本类不再自己叠名单。一个键不可同步，来自下面几种声明之一（[exclusionReason] 给出
+/// 是哪一种）：
+/// 1. 不随 Profile 的键——凭据 / 设备本地（`PrefRedactionPolicy` 与
 ///    `SyncRepository.deviceLocalPrefKeys`）、本库状态标记（版本号、首启、迁移结论、
 ///    激活 Profile id）、按条目的内容状态（有声书位置 / 速度、书名改名、扫描索引……）、
 ///    这台设备的界面布局（缩放、语言、导航栏、页签顺序）、更新通道与代理。
-/// 2. [backupContentRegistryPrefKeys]——收藏句 / 本地音频库 / 音频来源 / 字体目录：
-///    各有自己的资产通道，值里是本机文件路径。
-/// 3. [nonPortablePrefixes]——整族设备 / 通道 / 平台状态。
-/// 4. [nonPortableTokens]——key 按非字母数字切成词，含其中任一词即排除：本机路径、
-///    窗口几何、平台专属、外部工具连接。
-///
-/// 防漏优先于防误伤：误伤一个只是那项设置不跨设备跟随（各设备照旧各自保存），漏一个
-/// 则是把别的设备的路径 / 连接地址写进这台设备。
+/// 2. 内容注册表（`backupContentPrefKeyDefs`）——收藏句 / 本地音频库 / 音频来源 /
+///    字体目录：各有自己的资产通道，值里是本机文件路径。
+/// 3. 名字形状兜底 [NonPortableSettingShapeRule]（登记表的一条形状规则）——整族设备 /
+///    通道 / 平台状态的前缀，以及本机路径、窗口几何、平台专属、外部工具连接的切词。
 abstract final class PortableSettingsPolicy {
-  /// 整族不可移植的 key 前缀。
-  static const List<String> nonPortablePrefixes = <String>[
-    // 同步 / 备份 / 互联 / P2P / 网络：通道配置、基线、开关本身（「同步设置」开关若
-    // 跟着同步，一台设备关掉就会把所有设备一起关掉）。
-    'sync_',
-    'backup_',
-    'interconnect_',
-    'p2p_',
-    'network_',
-    'update_',
-    // 复习同步 v2 的存储位置、密钥。
-    'srs_sync2_',
-    // 数据目录 / 沙盒书签 / 桌面窗口：本机文件系统与屏幕。
-    'data_root',
-    'sandbox_',
-    'desktop_',
-    'migration_',
-    // galgame 文本 / 语音 hook 只在 Windows 上有，参数与具体游戏进程绑定。
-    'gal_hook',
-    'galgame',
-    // 「上一次」系列是这台设备的使用状态，不是设置。
-    'last_',
-  ];
-
-  /// key 里出现即排除的词（key 按 `[^a-z0-9]+` 切词后逐词比较，不做子串匹配，
-  /// `export` 不会命中 `port`，`portrait` 也不会）。
-  static const Set<String> nonPortableTokens = <String>{
-    // 本机路径
-    'path', 'paths', 'dir', 'dirs', 'directory', 'folder', 'folders', 'root',
-    'roots', 'exe', 'executable', 'binary', 'bookmark',
-    // 窗口 / 屏幕几何
-    'window', 'rect', 'tray', 'autostart', 'monitor',
-    // 平台专属
-    'windows', 'macos', 'linux', 'android', 'ios', 'overlay', 'hotkey',
-    'hwdec', 'gpu', 'device', 'devices',
-    // 外部工具 / 服务连接（地址、端口、外部进程）
-    'host', 'port', 'url', 'urls', 'endpoint', 'server', 'servers', 'proxy',
-    'anki', 'ankiconnect', 'mpv', 'ffmpeg', 'qb', 'qbittorrent', 'jellyfin',
-    'plex', 'emby', 'subsonic', 'kavita', 'opds', 'alist', 'audiobookshelf',
-    'yomitan', 'obs', 'texthooker', 'websocket', 'lunahook', 'torznab',
-    // 缓存 / 迁移 / 一次性提示
-    'cache', 'cached', 'migrated', 'migration', 'baseline', 'dismissed',
-    'notice', 'onboarding',
-  };
-
-  static final RegExp _tokenSplitter = RegExp(r'[^a-z0-9]+');
-
   /// [key] 能否作为设置跨设备流动。
-  static bool isPortable(String key) => exclusionReason(key) == null;
+  static bool isPortable(String key) =>
+      !kFushiPrefRegistry.has(key, PrefTrait.unsyncable);
 
-  /// [key] 不可移植的原因（测试与诊断用）；可移植时 null。
+  /// [key] 不可移植的原因（测试与诊断用）；可移植时 null。判定只看生效策略的
+  /// [PrefPolicy.syncable]，下面只是把「为什么」说成人话。
   static String? exclusionReason(String key) {
-    if (ProfileKeys.isExcludedPref(key)) {
+    final PrefPolicy policy = kFushiPrefRegistry.policyOf(key);
+    if (policy.syncable) return null;
+    if (!policy.profileScoped) {
       return 'device-local / credential / per-item state (ProfileKeys)';
     }
-    if (backupContentRegistryPrefKeys.contains(key)) {
+    if (policy.backup != PrefBackup.settings) {
       return 'content registry with its own sync channel';
     }
-    final String lower = key.toLowerCase();
-    for (final String prefix in nonPortablePrefixes) {
-      if (lower.startsWith(prefix)) return 'prefix "$prefix"';
-    }
-    for (final String token in lower.split(_tokenSplitter)) {
-      if (nonPortableTokens.contains(token)) return 'token "$token"';
-    }
-    return null;
+    return kNonPortableSettingShapeRule.reasonFor(key) ??
+        'declared not syncable';
   }
 }
 

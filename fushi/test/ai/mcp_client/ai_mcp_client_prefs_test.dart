@@ -3,11 +3,11 @@
 // - 键登记为凭据键、日志脱敏键、设备本地键（请求头 / 环境变量里可能有 token）；
 // - 编辑页多行文本 ↔ 字段的解析；
 // - 平台判据。没有内置预设：清单默认为空，server 全由用户自己添加。
+import 'package:fushi/src/prefs/fushi_pref_registry.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/ai/mcp_client/ai_mcp_client_form.dart';
 import 'package:fushi/src/ai/mcp_client/ai_mcp_client_runtime.dart';
-import 'package:fushi/src/models/preference_keys.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/sync/pref_redaction_policy.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -64,10 +64,11 @@ void main() {
 
   test('the key is known, a credential, redacted and device-local', () {
     const String key = 'ai_mcp_client_servers';
-    expect(kKnownPreferenceKeys, contains(key));
-    expect(kCredentialPreferenceKeys, contains(key));
-    expect(PrefRedactionPolicy.sensitiveKeys, contains(key));
-    expect(SyncRepository.deviceLocalPrefKeys, contains(key));
+    expect(isKnownPreferenceKey(key), isTrue);
+    // 声明是凭据，判定链（出境打码）也确实拦它。
+    expect(kFushiPrefRegistry.keyNamed(key)?.policy.credential, isTrue);
+    expect(PrefRedactionPolicy.isDeviceLocalOrCredential(key), isTrue);
+    expect(SyncRepository.deviceLocalPrefKeys.keys, contains(key));
   });
 
   group('form parsing', () {

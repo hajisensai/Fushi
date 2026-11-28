@@ -12,11 +12,9 @@ import 'package:fushi/src/models/preference_keys.dart'
         kWhatsNewSeenSeqPrefKey,
         kWhatsNewSeenVersionPrefKey,
         kWorkProfileSessionPrefKey;
-import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart'
-    show kPageBackdropDeviceLocalPrefKeys;
+import 'package:fushi/src/prefs/fushi_pref_registry.dart';
 import 'package:fushi/src/utils/adaptive/shell_style.dart'
     show ShellLayoutInstallDefault;
-import 'package:fushi/src/web_browser/web_browser_prefs.dart';
 import 'package:fushi/src/models/preferences_repository.dart'
     show
         kDownloadExecutionHostPrefKey,
@@ -335,12 +333,10 @@ class SyncRepository {
   static const _keyStreamVideoPullSinceMs = 'sync_stream_video_pull_since_ms';
   // 删除墓碑**推送**的因果基线（互联通道专用，与上面的消费基线镜像对称）：描述
   // 「本设备已把删除推给对端 host 到什么时刻」。deletedAt 晚于它的墓碑才需要推。
-  //
   // 为什么不复用墓碑行上的 `remotePublishedAt`：那个字段的语义是「已写进云端
   // `__tombstones__` 资产」。互联推送去标它，会让同时配了云备份的设备在云通道
   // `syncDeletionTombstones` 的 `remotePublishedAt == 0` 过滤里永远跳过这条——只连
   // 云的第三台设备就再也收不到这次删除了。两个通道各记各的账。
-  //
   // 设备本地（[deviceLocalPrefKeys]）：随备份跨设备会让新设备以为自己已经推过一批
   // 它从没连过的 host。
   static const _keyDeletionTombstonesPushBaselineMs =
@@ -439,7 +435,6 @@ class SyncRepository {
   static const String syncAudioBookPreferenceKey = _keySyncAudioBook;
 
   // ── Folder cache（按通道分槽，BUG-1576） ───────────────────────────
-  //
   // 根 folderId 与「书名→folderId」映射描述的是**某一个远端**的目录布局，绝不是
   // 设备的属性。双通道并存后共用一份全局键 = 后写者覆盖先写者，而互联/WebDAV 的
   // folderId 是绝对 URL，被另一条通道读回后会连同自己的凭据发往对端主机
@@ -2004,46 +1999,31 @@ class SyncRepository {
 
   // ── Device-local key catalog ──────────────────────────────────────
 
-  /// 导入备份时必须保留在本设备、不能被备份覆盖的 preference key：后端选择 +
-  /// 全部凭据/令牌 + 本机服务器配置 + 互联客户端地址/令牌（含旧单地址键）。
+  /// 设备本地的键：导入备份时必须保留在本设备、不能被备份覆盖——后端选择 +
+  /// 全部凭据/令牌 + 本机服务器配置 + 互联客户端地址/令牌（含旧单地址键）。从偏好键登记表
+  /// 派生（[PrefTrait.deviceLocal]，含 [prefKeyDefs] 与各模块自带的登记），不再手写清单。
+  /// `contains(key)` 按生效策略判定（固定键与键族一视同仁），`.keys` / `.families` 是同一个
+  /// 集合的枚举形态。
   ///
-  /// 故意排除：
+  /// 故意不在其中：
   /// - 行为开关 `sync_auto_enabled`/`sync_stats_enabled`/`sync_audiobook_enabled`/
   ///   `sync_content_enabled`/`sync_manga_content_enabled` —— 当作用户设置，随备份恢复。
   /// - 内容 `audiobook_pos_*` —— 随备份恢复。
   /// - folder cache `sync_root_folder_id`/`sync_folder_cache` —— 不还原，下次同步重建。
-  ///
-  /// 这是"哪些 key 属于设备本地"的唯一真相源；备份导入只引用本清单，杜绝两处漂移。
-  ///
-  /// BUG-1579：因果基线拆成 per-channel 键后，本清单同步展开成「基名 × 全部槽位」
-  /// （[_perChannelDeviceLocalBases] × [SyncChannelScope.all]）。漏展开的后果不是
-  /// 编译错误而是静默泄漏——基线会随备份跨设备携带，正是拆键前就有的老毛病。
-  static final List<String> deviceLocalPrefKeys = <String>[
-    ..._deviceLocalFixedKeys,
-    ...installScopedPrefKeys,
-    for (final String base in _perChannelDeviceLocalBases)
-      for (final SyncChannelScope scope in SyncChannelScope.all)
-        scope.key(base),
-  ];
+  static final PrefKeySelection deviceLocalPrefKeys = kFushiPrefRegistry.select(
+    PrefTrait.deviceLocal,
+  );
 
-  /// 设备本地键里更严的一类：描述**本次安装**的一次性判定 / 迁移结论。
+  /// 设备本地键里更严的一类：描述**本次安装**的一次性判定 / 迁移结论
+  /// （[PrefTrait.installScoped]，固定键与键族一视同仁）。
   ///
   /// 和其余设备本地键一样导出时剔除、不进 Profile 快照 / 分享。导入侧更严：导入
   /// 设置的覆盖恢复（含崩溃恢复重放）会把它们**清掉**——外来值是别的机器的结论，
   /// 本机旧值依据的是恢复前的数据，两者都不留，下次启动按恢复后的数据重新判定
   /// （见 `BackupRestoreService._clearInstallScopedPrefs`）。不导入设置的恢复把设置层
   /// 整层写回本机，判定随之保留。旧版本导出的、还带着这些键的包也靠这一步兜住。
-  ///
-  /// - `srs_mining_target_install_default`：挖词目标出厂默认（'anki' / 'srs'），兼
-  ///   一次性判定标记。维护者用装了新版的机器打推荐包，包里会是 'anki'；新用户一导入
-  ///   就会被当成老 Anki 用户（复习模块关、挖词发 Anki）。
-  /// - `remote_lookup_host_switches_migrated`：全局「远程查词」并入每台 host 开关的
-  ///   一次性迁移已跑标记。配对列表是设备本地的，别的机器的标记随过来会让本机跳过
-  ///   迁移，原先关着远程查词的已配对 host 更新后直接开始查服务器。
-  static const List<String> installScopedPrefKeys = <String>[
-    PreferencesRepository.srsMiningTargetInstallDefaultKey,
-    PreferencesRepository.remoteLookupHostSwitchesMigratedKey,
-  ];
+  static final PrefKeySelection installScopedPrefKeys = kFushiPrefRegistry
+      .select(PrefTrait.installScoped);
 
   /// 按通道分槽、且属设备本地的键基名（展开进 [deviceLocalPrefKeys]）。
   ///
@@ -2065,311 +2045,1049 @@ class SyncRepository {
   /// `syncRemoteAccountPrefKey`（`sync_baseline_scope.dart`）。设备本地。
   static const String syncRemoteAccountPrefBase = 'sync_remote_account';
 
-  static const List<String> _deviceLocalFixedKeys = <String>[
+  /// 同步 / 备份域登记的设备本地键（架构重构 F1）：凡是「只对这台设备成立、绝不随备份 /
+  /// 设置同步 / Profile 走」的固定键都在这里声明一次，[deviceLocalPrefKeys]、
+  /// [installScopedPrefKeys]、`PrefRedactionPolicy`、`ProfileKeys.isExcludedPref` 全部从
+  /// 登记表派生。内置浏览器、页面背景、功能模块的键在各自文件里登记。
+  ///
+  /// BUG-1579：因果基线拆成 per-channel 键后，这里同步登记「基名 × 全部槽位」
+  /// （[_perChannelDeviceLocalBases] × [SyncChannelScope.all]）。漏登的后果不是编译错误
+  /// 而是静默泄漏——基线会随备份跨设备携带。
+  static final List<PrefKeyDef> prefKeyDefs = <PrefKeyDef>[
     // 楽天ブックス书籍检索凭据：用户自己注册的应用凭据，只留在这台设备。
-    'book_scrape_rakuten_access_key',
-    'book_scrape_rakuten_application_id',
+    // 楽天ブックス书籍检索凭据：键名没有 api_key / token 形状，必须点名。也在
+    // deviceLocalPrefKeys 中。
+    // 楽天ブックス书籍检索凭据。
+    PrefKey<String>(
+      'book_scrape_rakuten_access_key',
+      defaultValue: '',
+      policy: PrefPolicy.localCredential,
+      kind: PrefKind.setting,
+    ),
+    PrefKey<String>(
+      'book_scrape_rakuten_application_id',
+      defaultValue: '',
+      policy: PrefPolicy.localCredential,
+      kind: PrefKind.setting,
+    ),
     // 「同步浏览历史」是这台设备的隐私许可：从另一台设备恢复备份不得替这台设备
     // 打开浏览轨迹外流。
-    kSyncWebHistoryPrefKey,
+    PrefKey.untyped(
+      kSyncWebHistoryPrefKey,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
     // 「同步设置」同理是这台设备「接收别处设置」的许可。
-    kSyncSettingsEnabledPrefKey,
-    // app 内浏览器的版式 / 行为偏好（标签页样式、侧边栏开合……）：
-    // 按这台设备的屏幕与习惯调，唯一清单在 web_browser_prefs.dart。
-    ...kWebBrowserDeviceLocalPrefKeys,
-    // 页面背景的自定义图片文件路径与取色缓存：文件只在这台设备的数据目录里。
-    ...kPageBackdropDeviceLocalPrefKeys,
+    PrefKey.untyped(
+      kSyncSettingsEnabledPrefKey,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
     // 第二块屏启动策略、已同意的副屏与查词显示屏（SecondScreenController 的键）：
     // 描述的是本机硬件，不跟去别的设备。
-    'second_screen_mode',
-    'second_screen_approved_displays',
-    'second_screen_lookup_screen',
+    PrefKey.untyped(
+      'second_screen_mode',
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
+    PrefKey.untyped(
+      'second_screen_approved_displays',
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
+    PrefKey.untyped(
+      'second_screen_lookup_screen',
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
     // 手柄查词模式的开启方式（ControllerLookupStyle）：跟这台设备的手柄走。
-    'controller_lookup_style',
+    PrefKey.untyped(
+      'controller_lookup_style',
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
     // v105 统计按 Profile 隔离：legacy 统计归属 Profile 的值是本库自增 id，
     // 换一台设备就指向别的 Profile，绝不随备份 / Profile 分享出境。
-    kStatLegacyProfileIdPrefKey,
+    // v105 统计按 Profile 隔离：legacy 统计家族归属哪个 Profile 是**本库**的
+    // 事实（值是本库自增 id），与 active_profile_id 同族。进快照就会被别的
+    // Profile 的 applyProfile 剪掉，legacy 历史随即对所有 Profile 可见。
+    PrefKey.untyped(
+      kStatLegacyProfileIdPrefKey,
+      policy: PrefPolicy.local,
+      kind: PrefKind.state,
+    ),
     // 主进程此刻打开的作品会话（值是本库自增配置 id，只给本机弹窗进程镜像用）。
-    kWorkProfileSessionPrefKey,
+    // 主进程此刻打开的作品会话（发给弹窗进程镜像）：与 active_profile_id 同族。
+    PrefKey<String>(
+      kWorkProfileSessionPrefKey,
+      defaultValue: '',
+      policy: PrefPolicy.local,
+      kind: PrefKind.state,
+    ),
     // 「本版新内容」看到哪个版本：描述这台设备装过的包，跟去别的设备会误判。
-    kWhatsNewSeenVersionPrefKey,
-    kWhatsNewSeenSeqPrefKey,
-    kWhatsNewCardDismissedVersionPrefKey,
+    // 「本版新内容」看到哪个版本：描述本机装过的包，与新手引导标志同族。
+    PrefKey<String>(
+      kWhatsNewSeenVersionPrefKey,
+      defaultValue: '',
+      policy: PrefPolicy.local,
+      kind: PrefKind.state,
+    ),
+    PrefKey<int>(
+      kWhatsNewSeenSeqPrefKey,
+      defaultValue: 0,
+      policy: PrefPolicy.local,
+      kind: PrefKind.state,
+    ),
+    PrefKey<String>(
+      kWhatsNewCardDismissedVersionPrefKey,
+      defaultValue: '',
+      policy: PrefPolicy.local,
+      kind: PrefKind.state,
+    ),
     // 库页「每行数量」：合适的列数取决于这台设备的屏幕（BUG-4219）。
-    kLibraryGridColumnsPrefKey,
+    PrefKey<String?>(
+      kLibraryGridColumnsPrefKey,
+      defaultValue: null,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
     // 库页布局出厂判定（G1：新安装 = 拼贴 / 升级上来 = 封面网格 + 待弹选择框）：
     // 本设备一次性的判定结论。不进 Profile 快照 / 备份 / 设置同步，导入时保留本机
     // 值——随推荐包或老 Profile 换进来会把新用户重判成老用户（切网格并弹框）。
     // 有意不放进 [installScopedPrefKeys]：那一类导入时会被清掉、下次启动重判，
     // 而重判在已有书库的数据上必然得出「升级上来」。
-    ShellLayoutInstallDefault.prefKey,
+    PrefKey.untyped(
+      ShellLayoutInstallDefault.prefKey,
+      policy: PrefPolicy.local,
+      kind: PrefKind.state,
+    ),
     // 书架文件夹导入「缺字幕就转录」：几个小时的设备端推理，跑不跑得动是这台设备
     // 的事（手机上开着、恢复到没有 ASR 算力的机器上不该跟着开）。同组的总开关
     // `audiobook_auto_transcribe` 是同步的，这一个有意设成设备本地。
-    PreferencesRepository.audiobookFolderImportTranscribeKey,
+    PrefKey<bool>(
+      PreferencesRepository.audiobookFolderImportTranscribeKey,
+      defaultValue: false,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
     // Android 桌面小组件的默认隐私：描述这台设备的桌面。
-    PreferencesRepository.widgetPrivacyHideTitlesKey,
-    PreferencesRepository.widgetPrivacyHideDefinitionsKey,
-    PreferencesRepository.widgetPrivacyHideProfileKey,
+    // Android 桌面小组件的默认隐私：描述这台设备的桌面，不随 Profile 走。
+    PrefKey<bool>(
+      PreferencesRepository.widgetPrivacyHideTitlesKey,
+      defaultValue: false,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
+    PrefKey<bool>(
+      PreferencesRepository.widgetPrivacyHideDefinitionsKey,
+      defaultValue: false,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
+    PrefKey<bool>(
+      PreferencesRepository.widgetPrivacyHideProfileKey,
+      defaultValue: false,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
     // 复习同步 v2 的文件夹存储位置：路径是这台设备的磁盘 / 挂载点，换设备恢复带过去没有意义。
-    PreferencesRepository.srsFolderLocationsKey,
+    PrefKey<String>(
+      PreferencesRepository.srsFolderLocationsKey,
+      defaultValue: '',
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
     // 移除了、本机复习内核还没忘掉的位置：描述的是这台设备的内核状态，与上一项同一个事务写。
-    PreferencesRepository.srsForgetPendingKey,
+    PrefKey<String>(
+      PreferencesRepository.srsForgetPendingKey,
+      defaultValue: '',
+      policy: PrefPolicy.local,
+      kind: PrefKind.state,
+    ),
     // 复习同步 v2 里关掉的通道位置：是这台设备「在不在那里同步」的选择，别的设备恢复备份不能替它关 / 开。
-    PreferencesRepository.srsDisabledLocationsKey,
+    PrefKey<String>(
+      PreferencesRepository.srsDisabledLocationsKey,
+      defaultValue: '',
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
     // 首次 v2 同步的确认是这台设备做的：别的设备恢复备份带过来不能替它确认。
-    PreferencesRepository.srsSync2MergeConfirmedKey,
+    PrefKey<bool>(
+      PreferencesRepository.srsSync2MergeConfirmedKey,
+      defaultValue: false,
+      policy: PrefPolicy.local,
+      kind: PrefKind.state,
+    ),
     // 复习同步 v2 存储位置的加密密钥：凭据，绝不随备份 / Profile 出境（换设备时重新输入口令）。
-    PreferencesRepository.srsLocationKeysKey,
+    // 复习同步 v2 各存储位置的端到端加密密钥（hex）。
+    // 复习同步 v2 各存储位置的集合密钥（hex）。
+    PrefKey<String>(
+      PreferencesRepository.srsLocationKeysKey,
+      defaultValue: '',
+      policy: PrefPolicy.localCredential,
+      kind: PrefKind.state,
+    ),
     // 复习首页「已配对设备」的牌组摘要缓存（kSrsHomePairedCachePrefKey）：描述的是这台设备配对的主机与
     // 上次看到的数字，别的设备恢复备份带过来只会画出它没配对的主机。
-    'srs_home_paired_cache',
+    PrefKey.untyped(
+      'srs_home_paired_cache',
+      policy: PrefPolicy.local,
+      kind: PrefKind.state,
+    ),
     // BUG-3644 统计同步的 Profile 名字别名：键是本库自增 id，同上。
-    kStudyProfileNameAliasesPrefKey,
+    // BUG-3644 统计同步的 Profile 名字别名：键是本库自增 id，同族。
+    PrefKey.untyped(
+      kStudyProfileNameAliasesPrefKey,
+      policy: PrefPolicy.local,
+      kind: PrefKind.state,
+    ),
     // 待确认队列里「忽略」的作品：元素是本机合集自增 id / 书 uid 拼的作品键，
     // 换一台设备就指向别的作品（反馈 Fbchzxuq6f）。
-    kVideoScrapeIgnoredWorksPrefKey,
+    PrefKey.untyped(
+      kVideoScrapeIgnoredWorksPrefKey,
+      policy: PrefPolicy.local,
+      kind: PrefKind.state,
+    ),
     // 书 / 漫画与游戏的同一种忽略（BUG-5283）：键里是本机合集 / 游戏自增 id。
-    kBookScrapeIgnoredPrefKey,
-    kGameScrapeIgnoredPrefKey,
-    _keyBackendType,
+    PrefKey.untyped(
+      kBookScrapeIgnoredPrefKey,
+      policy: PrefPolicy.local,
+      kind: PrefKind.state,
+    ),
+    PrefKey.untyped(
+      kGameScrapeIgnoredPrefKey,
+      policy: PrefPolicy.local,
+      kind: PrefKind.state,
+    ),
+    PrefKey.untyped(
+      _keyBackendType,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
     // 云备份通道开关与上一行的后端选择是同一件事的两半——「这台设备走不走云盘、
     // 走哪个」——而凭据本就设备本地。随备份 / 设置同步漂走会出错：只想在电脑上
     // 保留互联的用户一关，手机恢复备份（或收到同步过来的设置）就跟着静默停掉云备份，
     // 而对只靠云盘同步的设备，这等于用同步本身把同步通道切断。
-    _keyCloudSyncEnabled,
+    PrefKey.untyped(
+      _keyCloudSyncEnabled,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
     // 「新下载任务交给哪台互联 host 执行」指向的是本设备配的 host 地址，随备份
     // 到别的设备只会指错（PC 恢复手机的备份后把任务投给它自己）。
-    kDownloadExecutionHostPrefKey,
+    PrefKey<String>(
+      kDownloadExecutionHostPrefKey,
+      defaultValue: '',
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
     // 「允许配对设备远程启动游戏」是本机安全开关：从另一台电脑恢复备份不得替
     // 这台电脑打开远程起进程的门。
-    kGameStreamRemoteLaunchPrefKey,
+    PrefKey<bool>(
+      kGameStreamRemoteLaunchPrefKey,
+      defaultValue: false,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
     // 串流查词栏尺寸按这台设备的屏幕调：平板上调大的值恢复到手机上只会不合身。
-    kGameStreamLookupLayoutPrefKey,
+    PrefKey<String>(
+      kGameStreamLookupLayoutPrefKey,
+      defaultValue: '',
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
     // 串流手柄按键映射按这台设备的手柄配：掌机的映射恢复到手机上没有意义。
-    kGameStreamButtonProfilePrefKey,
+    PrefKey<String>(
+      kGameStreamButtonProfilePrefKey,
+      defaultValue: '',
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
     // 串流第二块屏开关按这台设备有没有第二块屏选：掌机的选择恢复到手机上没有意义。
-    kGameStreamSecondScreenPrefKey,
+    PrefKey<String>(
+      kGameStreamSecondScreenPrefKey,
+      defaultValue: '',
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
     // Windows 悬浮字幕窗口矩形存的是本机物理像素坐标：换一台显示器布局 / DPI
     // 不同的设备恢复，窗口会落到屏幕外或尺寸错位。
-    kFloatingLyricWindowRectPrefKey,
+    PrefKey.untyped(
+      kFloatingLyricWindowRectPrefKey,
+      policy: PrefPolicy.local,
+      kind: PrefKind.state,
+    ),
     // 「本机作为制卡落地设备」：换设备恢复备份若把它带过去，就会同时有两台落地设备，
     // 同一张卡被两边各落一次。
-    _keyPendingMineLandingClaimedAt,
+    PrefKey.untyped(
+      _keyPendingMineLandingClaimedAt,
+      policy: PrefPolicy.local,
+      kind: PrefKind.state,
+    ),
     // Anki 制卡设置：AnkiConnect 地址 / apiKey（明文）/ 本机 Anki 路径都是这台设备的
     // 事实，迁 Drift 之前它活在 SharedPreferences 里，本来就不随备份 / 同步出境。
-    kAnkiSettingsPrefKey,
+    // 同形：AnkiSettings JSON 里的 AnkiConnect apiKey 明文。
+    // Anki 制卡设置整份 JSON（含 AnkiConnect apiKey）：牌组 / 笔记类型 / 映射等
+    // 字段已由 [ankiSettingsToMap] 按字段随 Profile 走；整行进快照的话，切到迁 Drift
+    // 之前建的老 Profile 会因「快照里没有这个键」把它删掉，Anki 设置整份清空。
+    // （它同时在设备本地名单里，[isExcludedPref] 第一道判定已拦；这里点名防名单漂移。）
+    // AnkiSettings JSON 里的 AnkiConnect apiKey（明文）。
+    PrefKey.untyped(
+      kAnkiSettingsPrefKey,
+      policy: PrefPolicy.localCredential,
+      kind: PrefKind.setting,
+    ),
     // （旧键 google_drive_hoshi_compat 已由 fushi_core v72 迁移清行：Hoshi 共享
     // 空间功能删除后它无任何读写方；导入的旧备份库开库时同样被清，故无需再列。）
-    _keyDesktopCredentials,
-    _keyOneDriveToken,
-    _keyDropboxToken,
-    _keyWebDavUrl,
-    _keyWebDavUsername,
-    _keyWebDavPassword,
-    _keyFtpHost,
-    _keyFtpPort,
-    _keyFtpUsername,
-    _keyFtpPassword,
-    _keyFtpUseTls,
-    _keySftpHost,
-    _keySftpPort,
-    _keySftpUsername,
-    _keySftpPassword,
-    _keySftpPrivateKey,
-    _keyServerEnabled,
-    _keyServerPort,
-    _keyServerPassword,
-    _keyDeviceId,
-    _keyLanRequiresPin,
-    _keyServerTlsEnabled,
-    _keyInterconnectPublicUrls,
+    PrefKey.untyped(
+      _keyDesktopCredentials,
+      policy: PrefPolicy.localCredential,
+      kind: PrefKind.setting,
+    ),
+    PrefKey.untyped(
+      _keyOneDriveToken,
+      policy: PrefPolicy.localCredential,
+      kind: PrefKind.setting,
+    ),
+    PrefKey.untyped(
+      _keyDropboxToken,
+      policy: PrefPolicy.localCredential,
+      kind: PrefKind.setting,
+    ),
+    PrefKey.untyped(
+      _keyWebDavUrl,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
+    PrefKey.untyped(
+      _keyWebDavUsername,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
+    PrefKey.untyped(
+      _keyWebDavPassword,
+      policy: PrefPolicy.localCredential,
+      kind: PrefKind.setting,
+    ),
+    PrefKey.untyped(
+      _keyFtpHost,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
+    PrefKey.untyped(
+      _keyFtpPort,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
+    PrefKey.untyped(
+      _keyFtpUsername,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
+    PrefKey.untyped(
+      _keyFtpPassword,
+      policy: PrefPolicy.localCredential,
+      kind: PrefKind.setting,
+    ),
+    PrefKey.untyped(
+      _keyFtpUseTls,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
+    PrefKey.untyped(
+      _keySftpHost,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
+    PrefKey.untyped(
+      _keySftpPort,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
+    PrefKey.untyped(
+      _keySftpUsername,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
+    PrefKey.untyped(
+      _keySftpPassword,
+      policy: PrefPolicy.localCredential,
+      kind: PrefKind.setting,
+    ),
+    PrefKey.untyped(
+      _keySftpPrivateKey,
+      policy: PrefPolicy.localCredential,
+      kind: PrefKind.setting,
+    ),
+    PrefKey.untyped(
+      _keyServerEnabled,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
+    PrefKey.untyped(
+      _keyServerPort,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
+    PrefKey.untyped(
+      _keyServerPassword,
+      policy: PrefPolicy.localCredential,
+      kind: PrefKind.setting,
+    ),
+    PrefKey.untyped(
+      _keyDeviceId,
+      policy: PrefPolicy.local,
+      kind: PrefKind.state,
+    ),
+    PrefKey.untyped(
+      _keyLanRequiresPin,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
+    PrefKey.untyped(
+      _keyServerTlsEnabled,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
+    PrefKey.untyped(
+      _keyInterconnectPublicUrls,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
     // P2P：私钥外带 = 两台设备同一个 NodeId；开关与中继是本机的意愿与网络环境。
-    _keyInterconnectP2pEnabled,
-    _keyInterconnectP2pSecret,
-    _keyInterconnectP2pRelayUrls,
+    PrefKey.untyped(
+      _keyInterconnectP2pEnabled,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
+    PrefKey.untyped(
+      _keyInterconnectP2pSecret,
+      policy: PrefPolicy.localCredential,
+      kind: PrefKind.state,
+    ),
+    PrefKey.untyped(
+      _keyInterconnectP2pRelayUrls,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
     // 互联设备钥匙与「我的设备」：私钥外带 = 两台设备共用一个身份；host 侧的标记 /
     // 指纹描述的是**本机**配对表里的 peer，搬到别的设备上毫无意义（还会串号）。
-    _keyInterconnectDevicePrivateKey,
-    kInterconnectOwnerDevicePeersPref,
-    kInterconnectPeerDeviceKeysPref,
-    _keyFushiClientUrls,
-    _keyFushiClientToken,
-    _keyFushiClientUrl,
-    _keyVideoRemoteLastHostId,
+    PrefKey.untyped(
+      _keyInterconnectDevicePrivateKey,
+      policy: PrefPolicy.localCredential,
+      kind: PrefKind.state,
+    ),
+    PrefKey.untyped(
+      kInterconnectOwnerDevicePeersPref,
+      policy: PrefPolicy.local,
+      kind: PrefKind.state,
+    ),
+    PrefKey.untyped(
+      kInterconnectPeerDeviceKeysPref,
+      policy: PrefPolicy.local,
+      kind: PrefKind.state,
+    ),
+    PrefKey.untyped(
+      _keyFushiClientUrls,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
+    PrefKey.untyped(
+      _keyFushiClientToken,
+      policy: PrefPolicy.localCredential,
+      kind: PrefKind.setting,
+    ),
+    PrefKey.untyped(
+      _keyFushiClientUrl,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
+    PrefKey.untyped(
+      _keyVideoRemoteLastHostId,
+      policy: PrefPolicy.local,
+      kind: PrefKind.state,
+    ),
     // Jellyfin 服务器绑定含访问令牌，属设备本地凭据，绝不随备份跨设备。旧单值键
     // 与新列表键都列：旧键在迁移前的备份里仍可能存在。
-    _keyJellyfinServer,
-    _keyJellyfinServers,
+    PrefKey.untyped(
+      _keyJellyfinServer,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
+    PrefKey.untyped(
+      _keyJellyfinServers,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
     // 「要不要接收 host 的 service-config（外部服务 API key）」是每台设备自己的
     // 信任决策，跨设备携带会把 A 机的选择强加给 B 机。
-    _keyInterconnectServiceConfigSync,
+    PrefKey.untyped(
+      _keyInterconnectServiceConfigSync,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
     // 来源共享的收 / 发开关与账本（记的是「这台设备从哪台 host 收下了哪条来源」）：
     // 都只对这台设备成立。
-    _keyInterconnectSourceShareSync,
-    _keyInterconnectSourceShareHost,
-    _keyInterconnectSourceShareHostItems,
-    _keyInterconnectSourceSharePlugins,
-    'interconnect_source_share_ledger',
+    PrefKey.untyped(
+      _keyInterconnectSourceShareSync,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
+    PrefKey.untyped(
+      _keyInterconnectSourceShareHost,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
+    PrefKey.untyped(
+      _keyInterconnectSourceShareHostItems,
+      policy: PrefPolicy.local,
+      kind: PrefKind.state,
+    ),
+    PrefKey.untyped(
+      _keyInterconnectSourceSharePlugins,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
+    PrefKey.untyped(
+      'interconnect_source_share_ledger',
+      policy: PrefPolicy.local,
+      kind: PrefKind.state,
+    ),
     // 在线源条目同步账本（拍板台 mY5VWg1nD-）：记的是这台设备的库见过哪些在线条目，
     // 随 Profile 快照 / 备份走会让本机删过的条目被建回、或对端新加的建不出来。
-    kOnlineLibraryLedgerPrefKey,
+    PrefKey.untyped(
+      kOnlineLibraryLedgerPrefKey,
+      policy: PrefPolicy.local,
+      kind: PrefKind.state,
+    ),
     // 「当 host 时愿不愿意为对端转码视频」是本机算力的意愿：一台台式机说「可以」，
     // 不代表那台跑着同一份备份的旧笔记本也愿意被烤。
-    kInterconnectTranscodeEnabledPref,
+    PrefKey<bool>(
+      kInterconnectTranscodeEnabledPref,
+      defaultValue: true,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
     // 「当 host 时让不让已配对设备用本机的 AI 额度」同理是这台机器主人的决定。
-    kInterconnectAiRelayEnabledPref,
+    PrefKey<bool>(
+      kInterconnectAiRelayEnabledPref,
+      defaultValue: true,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
     // 合集同步因果基线：描述「本设备见过共享清单到什么时刻」，跨设备携带会让
     // 新设备把没见过的墓碑误判成旧闻而复活成员（见 getCollectionsSyncBaselineMs）。
     // 这两条是**解耦前的全局键**：现值仍被 per-channel 读作迁移初值，故照旧不能
     // 跨设备携带；per-channel 槽位由 _perChannelDeviceLocalBases 展开补上。
-    _keyCollectionsBaselineMs,
+    PrefKey.untyped(
+      _keyCollectionsBaselineMs,
+      policy: PrefPolicy.local,
+      kind: PrefKind.state,
+    ),
     // 删除墓碑消费基线：同理设备本地，跨设备携带会让新设备反复弹老墓碑确认框。
-    _keyDeletionTombstonesBaselineMs,
+    PrefKey.untyped(
+      _keyDeletionTombstonesBaselineMs,
+      policy: PrefPolicy.local,
+      kind: PrefKind.state,
+    ),
     // 删除墓碑推送基线：同理设备本地，跨设备携带会让新设备以为自己已经把一批删除
     // 推给过一个它从没连过的 host（漏推 = 对端该删的没删）。
-    _keyDeletionTombstonesPushBaselineMs,
+    PrefKey.untyped(
+      _keyDeletionTombstonesPushBaselineMs,
+      policy: PrefPolicy.local,
+      kind: PrefKind.state,
+    ),
     // TODO-1961：下载保存根与历史根都是**本机绝对路径**（如 D:\downloads），跨设备
     // 恢复必然指向新机不存在的位置。启动校验会回退默认根并警告（不丢数据），但让它
     // 漂过去只会给用户「我明明设过怎么变了」的困惑，故按设备本地处理不随备份携带。
-    'download_save_root',
-    'download_save_root_history',
+    // TODO-1961: the download folder (and the history of folders we still have
+    // to recognise) describes this device's disks, not a reading profile.
+    // Snapshotting it would make a profile switch redirect downloads onto a
+    // path that may not even exist on this machine.
+    PrefKey<String>(
+      'download_save_root',
+      defaultValue: '',
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
+    PrefKey<String>(
+      'download_save_root_history',
+      defaultValue: '',
+      policy: PrefPolicy.local,
+      kind: PrefKind.state,
+    ),
     // 发现/下载闭环：第三方 indexer / 字幕服务配置、下载后端路径映射和受管来源
     // 都描述本机能力。跨设备恢复会携带明文凭据、无效绝对路径或错误 source id。
-    'video_resource_torznab_config',
-    'video_subtitle_opensubtitles_config',
+    // JSON 内含 API key / OpenSubtitles 登录密码；名字本身不含 credential 形状，
+    // 必须显式点名。
+    PrefKey.untyped(
+      'video_resource_torznab_config',
+      policy: PrefPolicy.localCredential,
+      kind: PrefKind.setting,
+    ),
+    PrefKey<String>(
+      'video_subtitle_opensubtitles_config',
+      defaultValue: '',
+      policy: PrefPolicy.localCredential,
+      kind: PrefKind.setting,
+    ),
     // 用户 BT 站清单：与 Torznab 同类（第三方 indexer 地址，可能带 passkey）。
-    'resource_bt_sites',
+    // 同形：用户 BT 站清单，地址里可能带站点 passkey。
+    PrefKey.untyped(
+      'resource_bt_sites',
+      policy: PrefPolicy.localCredential,
+      kind: PrefKind.setting,
+    ),
     // 旧内置 BT 站迁移的已跑标记：描述本安装的一次性判定，随备份漂到新装设备会让
     // 新设备跳过判定、漂回老设备会让它重跑，都不对。
-    kBtSitesLegacyMigrationPref,
+    PrefKey.untyped(
+      kBtSitesLegacyMigrationPref,
+      policy: PrefPolicy.local,
+      kind: PrefKind.state,
+    ),
     // 用户自配的 AI 提供商：条目里带 base64 的 API key，且本地推理服务（Ollama /
     // LM Studio）的地址是 `http://localhost:11434` 这种只对本机成立的端点。跨设备
     // 恢复既泄付费凭据又指向一台并不在跑的服务。功能映射按 provider id 指向它们，
     // 单独漂过去只会变成一堆悬空 id，故一并设备本地。
-    'ai_providers',
-    'ai_feature_providers',
+    // AI 提供商清单：每条里带 base64 的 API key，键名本身没有 api_key/token 形状，
+    // 必须显式点名，否则备份/Profile 分享时会把用户的付费 key 旁路带出设备。
+    // 每条 AI 提供商记录里带 base64 的 apiKeyB64。
+    PrefKey<String>(
+      'ai_providers',
+      defaultValue: '',
+      policy: PrefPolicy.localCredential,
+      kind: PrefKind.setting,
+    ),
+    PrefKey<String>(
+      'ai_feature_providers',
+      defaultValue: '',
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
     // 多 key 轮换的冷却记录：按本机 key 的指纹索引，换台设备全是悬空记录。
-    'ai_key_health',
+    PrefKey.untyped(
+      'ai_key_health',
+      policy: PrefPolicy.local,
+      kind: PrefKind.state,
+    ),
     // 联网搜索后端：JSON 内含 Brave API key，SearXNG 地址也可能是本机实例。
-    'ai_web_search',
+    // 同形：联网搜索配置 JSON 里的 Brave API key。
+    // 联网搜索配置 JSON 里的 Brave API key。
+    PrefKey<String?>(
+      'ai_web_search',
+      defaultValue: null,
+      policy: PrefPolicy.localCredential,
+      kind: PrefKind.setting,
+    ),
     // 「抓搜索结果网页交给 AI」的同意：同意的是这台设备上配的那个后端，跟着它设备本地。
-    'ai_web_search_page_fetch',
+    PrefKey.untyped(
+      'ai_web_search_page_fetch',
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
     // 「AI 助手自主联网搜索」的首次确认：同理跟着这台设备配的后端设备本地。
-    'ai_agent_web_search',
+    PrefKey.untyped(
+      'ai_agent_web_search',
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
     // 「允许已配对设备远程使用 AI 助手」：授权的是这台机器的 AI 指派与操作目录，
     // 只对点它的那台设备成立；漂过去会让另一台设备静默对配对设备开放。
-    'ai_agent_for_peers',
+    PrefKey<bool>(
+      'ai_agent_for_peers',
+      defaultValue: false,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
     // AI 助手在本机还是远端执行：远端指的是这台设备配对的执行设备，换台设备没有意义。
-    'ai_agent_executor',
+    PrefKey<String>(
+      'ai_agent_executor',
+      defaultValue: '',
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
     // 外部 AI 访问（MCP）的开关与配对令牌摘要：授权的是这台机器上的 MCP 客户端，
     // 漂过去会让另一台设备静默对外开放、或让旧令牌在新设备上生效。
-    'ai_mcp_enabled',
-    'ai_mcp_token_sha256',
+    PrefKey<bool>(
+      'ai_mcp_enabled',
+      defaultValue: false,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
+    PrefKey<String>(
+      'ai_mcp_token_sha256',
+      defaultValue: '',
+      policy: PrefPolicy.localCredential,
+      kind: PrefKind.state,
+    ),
     // AI 助手接入的外部 MCP server：请求头里可能有 token，本地程序的命令与路径只对
     // 这台机器成立；漂到别的设备既泄凭据又会去拉起一个不存在的程序。
-    'ai_mcp_client_servers',
+    // 同形：外部 MCP server 清单里 base64 的请求头 / 环境变量值（可能是 token）。
+    // 外部 MCP server 清单里 base64 的请求头 / 环境变量值（可能是 token）。
+    PrefKey<String>(
+      'ai_mcp_client_servers',
+      defaultValue: '',
+      policy: PrefPolicy.localCredential,
+      kind: PrefKind.setting,
+    ),
     // 音乐输出设备与独占模式描述的是这台机器的声卡 / DAC：别的设备上同名设备不存在，
     // 独占在另一台机器上会让别的程序静默无声。
-    'music_audio_device',
-    'music_exclusive_output',
+    PrefKey<String>(
+      'music_audio_device',
+      defaultValue: 'auto',
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
+    PrefKey<bool>(
+      'music_exclusive_output',
+      defaultValue: false,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
     // Apple Music 账号连接：授权（Apple ID / Music-User-Token）只在授权的那台设备上存在，
     // 漂过去会让另一台设备显示「已连接」却拿不到 token。
-    'music_apple_music_connected',
+    PrefKey<bool>(
+      'music_apple_music_connected',
+      defaultValue: false,
+      policy: PrefPolicy.local,
+      kind: PrefKind.state,
+    ),
     // 漫画 OCR 大模型档位：开了就是「上传漫画页 + 按量计费」，这种同意只对点它的
     // 那台设备成立，漂过去会让另一台配了 AI 的设备静默开始上传。
-    'manga_ocr_ai_mode',
+    PrefKey<String>(
+      'manga_ocr_ai_mode',
+      defaultValue: '',
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
     // 视频日语字幕的 AI 校对开关与「会发送什么」的同意：与上一条同理，只对点它的
     // 那台设备成立。分段方式 / MOSS 后端取决于这台机器的显卡，换设备没有意义。
-    'video_subtitle_ai_proofread',
-    'video_subtitle_ai_consented',
+    PrefKey<bool>(
+      'video_subtitle_ai_proofread',
+      defaultValue: false,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
+    PrefKey<bool>(
+      'video_subtitle_ai_consented',
+      defaultValue: false,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
     // 画面参考（AI 校对时附上视频画面）与它的同意：发图的同意同样只对点它的那台设备成立。
-    'video_subtitle_ai_frames',
-    'video_subtitle_ai_frames_consented',
+    PrefKey<bool>(
+      'video_subtitle_ai_frames',
+      defaultValue: true,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
+    PrefKey<bool>(
+      'video_subtitle_ai_frames_consented',
+      defaultValue: false,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
     // AI 整理库：自动整理开关、开关时刻与「会发送什么」的同意——与上两条同理只对
     // 点它的那台设备成立（只在一台设备上开就够，结果靠合集同步传播）。
-    'library_organize_allowed_keys',
-    'library_organize_auto',
-    'library_organize_auto_since',
-    'library_organize_consented',
+    PrefKey<String>(
+      'library_organize_allowed_keys',
+      defaultValue: '',
+      policy: PrefPolicy.local,
+      kind: PrefKind.state,
+    ),
+    PrefKey<bool>(
+      'library_organize_auto',
+      defaultValue: false,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
+    PrefKey<int>(
+      'library_organize_auto_since',
+      defaultValue: 0,
+      policy: PrefPolicy.local,
+      kind: PrefKind.state,
+    ),
+    PrefKey<bool>(
+      'library_organize_consented',
+      defaultValue: false,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
     // AI 库管家：自动开关与本机运行记录 / 水位——同理只对这台设备成立。
-    'library_curate_auto',
-    'library_curate_state',
+    PrefKey<bool>(
+      'library_curate_auto',
+      defaultValue: false,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
+    PrefKey<String>(
+      'library_curate_state',
+      defaultValue: '',
+      policy: PrefPolicy.local,
+      kind: PrefKind.state,
+    ),
     // AI 管库自动复查：开关与本机复查水位——同理只对这台设备成立（水位漂过去会让
     // 另一台设备以为已经全库复查过）。
-    'library_agent_review_auto',
-    'library_agent_review_state',
-    'video_subtitle_segmenter',
-    'video_subtitle_moss_backend',
+    PrefKey<bool>(
+      'library_agent_review_auto',
+      defaultValue: false,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
+    PrefKey<String>(
+      'library_agent_review_state',
+      defaultValue: '',
+      policy: PrefPolicy.local,
+      kind: PrefKind.state,
+    ),
+    PrefKey<String>(
+      'video_subtitle_segmenter',
+      defaultValue: 'auto',
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
+    PrefKey<String>(
+      'video_subtitle_moss_backend',
+      defaultValue: 'auto',
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
     // 按系列记住的字幕文件夹（0PZAhFd1RO）：值是这台机器上的外部绝对路径，系列键里
     // 是本库自增的合集 id——换台设备路径不存在、id 指向别的合集。
-    'video_subtitle_series_dirs',
+    PrefKey<String>(
+      'video_subtitle_series_dirs',
+      defaultValue: '',
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
     // 已删除的「查词自动按句意挑词条」开关（2026-10-09 移除）：存量值仍是
     // 设备本地的计费同意，留在清单里免得旧备份把它漂到别的设备。
-    'lookup_ai_context_auto',
+    PrefKey.untyped(
+      'lookup_ai_context_auto',
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
     // 用户自配的 OPDS 书目服务器：条目里带 base64 密码，且服务器地址多是
     // 局域网 IP（`http://192.168.x.x:8080`），跨设备恢复既泄凭据又指向一台
     // 新机根本连不到的主机。
-    'discovery_opds_servers',
+    // 同形：JSON 内含 base64 的 OPDS 服务器密码，键名本身没有 credential 形状。
+    // 每条 OPDS 服务器记录里带 base64 的 passwordB64。
+    PrefKey<String>(
+      'discovery_opds_servers',
+      defaultValue: '',
+      policy: PrefPolicy.localCredential,
+      kind: PrefKind.setting,
+    ),
     // 同形：AList / OpenList 站点清单，条目里带 base64 密码。
-    'discovery_alist_sites',
+    // 同形：AList / OpenList 站点清单里的 base64 密码。
+    // 每条 AList / OpenList 站点记录里带 base64 的 passwordB64。
+    PrefKey<String>(
+      'discovery_alist_sites',
+      defaultValue: '',
+      policy: PrefPolicy.localCredential,
+      kind: PrefKind.setting,
+    ),
     // 同形：Kavita 服务器清单，条目里带 base64 长期 API key，服务器地址多是局域网 IP。
-    'kavita_servers',
+    // 同形：Kavita 服务器清单里的 base64 长期 API key。
+    // 每条 Kavita 服务器记录里带 base64 的长期 API key。
+    PrefKey.untyped(
+      'kavita_servers',
+      policy: PrefPolicy.localCredential,
+      kind: PrefKind.setting,
+    ),
     // Kavita 漫画每章「上次成功同步」时刻：只对这台设备的本地进度有意义，漂到别的
     // 设备会让进度决策的基线错位（把别处的推进误判成冲突或被覆盖）。
-    'kavita_manga_sync_state',
+    PrefKey.untyped(
+      'kavita_manga_sync_state',
+      policy: PrefPolicy.local,
+      kind: PrefKind.state,
+    ),
     // 同形：Audiobookshelf 服务器清单，条目里带 base64 令牌（refresh token 会轮换，
     // 两台设备共用一枚只会互相把对方挤下线）。
-    'discovery_audiobookshelf_servers',
+    // 同形：Audiobookshelf 服务器清单里的 base64 access / refresh token。
+    // 每条 Audiobookshelf 服务器记录里带 base64 的 access / refresh token。
+    PrefKey<String>(
+      'discovery_audiobookshelf_servers',
+      defaultValue: '',
+      policy: PrefPolicy.localCredential,
+      kind: PrefKind.setting,
+    ),
     // 同形：OpenSubsonic 服务器清单（服务器曲库），条目里带 base64 密码 / API key；
     // 混排开关按这些服务器的 id 记，跟着一起设备本地。
-    'music_subsonic_servers',
-    'music_server_library_mix',
+    // 同形：OpenSubsonic 服务器清单（服务器曲库）里的 base64 密码 / API key。
+    // 每条 OpenSubsonic 服务器记录里带 base64 的 passwordB64 / apiKeyB64。
+    PrefKey<String>(
+      'music_subsonic_servers',
+      defaultValue: '',
+      policy: PrefPolicy.localCredential,
+      kind: PrefKind.setting,
+    ),
+    PrefKey<String>(
+      'music_server_library_mix',
+      defaultValue: '',
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
     // 音乐库生成字幕按条目记住的「先分离人声」：键是本机曲库的曲目 / 专辑身份与本库
     // 自增的来源 id，换台设备指向别的条目。
-    'music_subtitle_vocal_separation',
-    'video_download_backend_path_mappings',
-    'video_download_target_source_id',
-    'video_download_embedded_installation_id',
+    PrefKey<String>(
+      'music_subtitle_vocal_separation',
+      defaultValue: '',
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
+    PrefKey<String>(
+      'video_download_backend_path_mappings',
+      defaultValue: '',
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
+    PrefKey<int>(
+      'video_download_target_source_id',
+      defaultValue: 0,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
+    PrefKey<String>(
+      'video_download_embedded_installation_id',
+      defaultValue: '',
+      policy: PrefPolicy.local,
+      kind: PrefKind.state,
+    ),
     // 安装统计（updates/usage_heartbeat.dart）：回退种子 / PoW 缓存随备份漂到另一台设备，
     // 两台设备就可能被算成同一个安装；发不发统计是这台设备上的同意，上次心跳时刻也只对本机有意义。
-    'usage_stats_enabled',
-    'usage_stats_install_id',
-    'usage_stats_install_pow',
-    'usage_stats_last_ping_at',
+    PrefKey<bool>(
+      'usage_stats_enabled',
+      defaultValue: true,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
+    PrefKey<String>(
+      'usage_stats_install_id',
+      defaultValue: '',
+      policy: PrefPolicy.local,
+      kind: PrefKind.state,
+    ),
+    PrefKey<String>(
+      'usage_stats_install_pow',
+      defaultValue: '',
+      policy: PrefPolicy.local,
+      kind: PrefKind.state,
+    ),
+    PrefKey<int>(
+      'usage_stats_last_ping_at',
+      defaultValue: 0,
+      policy: PrefPolicy.local,
+      kind: PrefKind.state,
+    ),
     // 服务端通知（updates/notice_feed.dart）：缓存的是发给这台设备这份构建的通知，
     // 已弹过的记录也只对本机有意义。
-    'notices_cache',
-    'notices_seen',
+    PrefKey.untyped(
+      'notices_cache',
+      policy: PrefPolicy.local,
+      kind: PrefKind.state,
+    ),
+    PrefKey.untyped(
+      'notices_seen',
+      policy: PrefPolicy.local,
+      kind: PrefKind.state,
+    ),
     // 书架「仅从本机移除」的远端书：语义就是只对这台设备成立，随备份漂到另一台
     // 设备会让那边的同一份远端书也莫名消失。
-    'hidden_remote_books',
+    PrefKey<String?>(
+      'hidden_remote_books',
+      defaultValue: null,
+      policy: PrefPolicy.local,
+      kind: PrefKind.state,
+    ),
     // 朗读声音预设：带 base64 的 API key，地址多是本机 / 局域网的 GPT-SoVITS
     // 服务（`http://127.0.0.1:9880`），跨设备带过去只会指向一台不存在的服务。
     // 当前预设 id 指向的就是这份清单里的条目，一起留在本机。
-    'tts_voice_presets',
-    'tts_active_preset_id',
+    // 同形：朗读声音预设清单里 base64 的 Azure / Google API key 与网关 Bearer。
+    // 每份朗读声音预设里 base64 的 secretsB64（API key / Bearer）。
+    PrefKey.untyped(
+      'tts_voice_presets',
+      policy: PrefPolicy.localCredential,
+      kind: PrefKind.setting,
+    ),
+    PrefKey.untyped(
+      'tts_active_preset_id',
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
     // 朗读声音按作品记（本书 / 系列 + 语言 → 预设 id）：同样指向上面清单里的条目。
-    'tts_media_voices',
+    PrefKey.untyped(
+      'tts_media_voices',
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
     // 制卡单词音频的 TTS 兜底声音：可能是上面清单里某份预设的 id，一起留在本机。
     // 各配置自己那份按 uid 停放（`mining_tts_fallback_voice::<uid>`，
-    // PrefRedactionPolicy.deviceLocalKeyPrefixes），同样不离开本机。
-    'mining_tts_fallback_voice',
+    // 偏好键登记表的设备本地键族），同样不离开本机。
+    PrefKey.untyped(
+      'mining_tts_fallback_voice',
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
     // galgame 台词浮窗 TTS 设置：里面的声音也是上面清单里的预设 id。
-    'gal_line_tts_settings',
+    PrefKey.untyped(
+      'gal_line_tts_settings',
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
     // 本机 GPT-SoVITS 整合包的磁盘路径与端口：换一台设备毫无意义。
-    'tts_gpt_sovits_local',
+    PrefKey.untyped(
+      'tts_gpt_sovits_local',
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
     // 本机 Irodori-TTS-Server 的专属目录与端口：同上。
-    'tts_irodori_local',
+    PrefKey.untyped(
+      'tts_irodori_local',
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
     // 「制卡到已配对设备」每台主机的「保存到」：按 hostId 记、指向这台设备配对过的主机，
     // 带到另一台设备上没有意义。
-    PreferencesRepository.mineToServerTargetsKey,
+    PrefKey<String>(
+      PreferencesRepository.mineToServerTargetsKey,
+      defaultValue: '',
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
     // 从互联对端下载的有声书当时的内容版本：记的是「这台设备手上是哪一份」，带到别的
     // 设备上会让它误报 / 漏报「对端有更新」。
-    kInterconnectAudiobookRevisionsPrefKey,
+    PrefKey.untyped(
+      kInterconnectAudiobookRevisionsPrefKey,
+      policy: PrefPolicy.local,
+      kind: PrefKind.state,
+    ),
     // 电脑端「缓存其他应用的声音」：开着就常驻录这台机器的系统混音，是这台设备的
     // 录音许可，不能随备份 / 同步在别的设备上被替用户打开。
-    PreferencesRepository.crossAppAudioCaptureDesktopKey,
+    PrefKey<bool>(
+      PreferencesRepository.crossAppAudioCaptureDesktopKey,
+      defaultValue: false,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
+    PrefKey.untyped(
+      PreferencesRepository.srsMiningTargetInstallDefaultKey,
+      policy: PrefPolicy.installScopedLocal,
+      kind: PrefKind.state,
+    ),
+    PrefKey<bool>(
+      PreferencesRepository.remoteLookupHostSwitchesMigratedKey,
+      defaultValue: false,
+      policy: PrefPolicy.installScopedLocal,
+      kind: PrefKind.state,
+    ),
+    for (final String base in _perChannelDeviceLocalBases)
+      for (final SyncChannelScope scope in SyncChannelScope.all)
+        PrefKey.untyped(
+          scope.key(base),
+          policy: PrefPolicy.local,
+          kind: PrefKind.state,
+        ),
   ];
 
   // ── Helpers ───────────────────────────────────────────────────────

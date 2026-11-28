@@ -3,8 +3,10 @@ import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/prefs/fushi_pref_registry.dart';
+import 'package:fushi/src/prefs/non_portable_setting_shape.dart';
 import 'package:fushi/src/sync/backup_service.dart'
-    show backupContentRegistryPrefKeys;
+    show backupContentPrefKeyDefs;
 import 'package:fushi/src/sync/settings_sync.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -81,8 +83,45 @@ void main() {
     }
 
     test('内容注册表整份清单都被排除', () {
-      for (final String k in backupContentRegistryPrefKeys) {
+      expect(backupContentPrefKeyDefs, isNotEmpty);
+      for (final PrefKeyDef def in backupContentPrefKeyDefs) {
+        final String k = (def as PrefKey<Object?>).name;
         expect(PortableSettingsPolicy.isPortable(k), isFalse, reason: k);
+        expect(
+          PortableSettingsPolicy.exclusionReason(k),
+          'content registry with its own sync channel',
+        );
+      }
+    });
+
+    test('判定只读登记表的 syncable：声明、键族、形状兜底合并成同一个结论', () {
+      final PrefKeySelection unsyncable = kFushiPrefRegistry.select(
+        PrefTrait.unsyncable,
+      );
+      // 形状兜底是登记表的一条规则，不是本通道另叠的名单。
+      expect(unsyncable.shapes, contains(kNonPortableSettingShapeRule));
+      final List<String> samples = <String>[
+        ...kFushiPrefRegistry.keys.map((PrefKey<Object?> k) => k.name),
+        for (final PrefKeyFamily<Object?> f in kFushiPrefRegistry.families)
+          '${f.prefix}x${f.marker}y${f.suffix}',
+        'theme_follow_app_icon',
+        'some_window_size',
+        'sync_brand_new_flag',
+        'nobody_registered_me',
+      ];
+      for (final String key in samples) {
+        final bool syncable = kFushiPrefRegistry.policyOf(key).syncable;
+        expect(PortableSettingsPolicy.isPortable(key), syncable, reason: key);
+        expect(
+          PortableSettingsPolicy.exclusionReason(key) == null,
+          syncable,
+          reason: key,
+        );
+        expect(unsyncable.contains(key), !syncable, reason: key);
+      }
+      // 登记成「不同步」的固定键一个都不可移植（旧实现只认 Profile 排除 + 内容固定键）。
+      for (final String key in unsyncable.keys) {
+        expect(PortableSettingsPolicy.isPortable(key), isFalse, reason: key);
       }
     });
 

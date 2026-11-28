@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:fushi/src/prefs/fushi_pref_registry.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/preference_keys.dart';
@@ -62,7 +63,10 @@ void main() {
     expect(stored['apiKeyB64'], base64Encode(utf8.encode('tok-秘密')));
     expect((await reloaded()).aiWebSearchConfig!.apiKey, 'tok-秘密');
     // 与 ai_providers 同样登记成凭据（不进日志 / 明文导出）。
-    expect(kCredentialPreferenceKeys, contains('ai_web_search'));
+    expect(
+      kFushiPrefRegistry.keyNamed('ai_web_search')?.policy.credential,
+      isTrue,
+    );
   });
 
   test('旧版明文 apiKey：启动时就地迁成 apiKeyB64，key 不丢', () async {
@@ -107,7 +111,7 @@ void main() {
     final PreferencesRepository fresh = await reloaded();
     expect(fresh.aiWebSearchPageFetchDecision, kAiWebSearchPageFetchAllow);
     expect(fresh.aiWebSearch, cfg);
-    expect(kKnownPreferenceKeys, contains(kAiWebSearchPageFetchPref));
+    expect(isKnownPreferenceKey(kAiWebSearchPageFetchPref), isTrue);
   });
 
   test('设置项助手：切后端保留已填字段，关闭清空', () async {
@@ -146,7 +150,10 @@ void main() {
     await prefs.setAiAgentWebSearchEnabled(true);
     expect(prefs.aiAgentWebSearchConsent, '', reason: '再打开要重新确认，不直接算已同意');
 
-    expect(kKnownPreferenceKeys, contains(kAiAgentWebSearchPref));
-    expect(SyncRepository.deviceLocalPrefKeys, contains(kAiAgentWebSearchPref));
+    expect(isKnownPreferenceKey(kAiAgentWebSearchPref), isTrue);
+    expect(
+      SyncRepository.deviceLocalPrefKeys.keys,
+      contains(kAiAgentWebSearchPref),
+    );
   });
 }

@@ -301,7 +301,7 @@ void main() {
     test('anki_settings 是设备本地 + 凭据：不进 Profile 快照 / 备份', () {
       expect(ProfileKeys.isExcludedPref(kAnkiSettingsPrefKey), isTrue);
       expect(
-        SyncRepository.deviceLocalPrefKeys,
+        SyncRepository.deviceLocalPrefKeys.keys,
         contains(kAnkiSettingsPrefKey),
       );
       expect(

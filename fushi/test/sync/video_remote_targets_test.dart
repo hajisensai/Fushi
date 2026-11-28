@@ -156,7 +156,7 @@ void main() {
     await repo.setVideoRemoteLastHostId('pc');
     expect(await repo.getVideoRemoteLastHostId(), 'pc');
     expect(
-      SyncRepository.deviceLocalPrefKeys,
+      SyncRepository.deviceLocalPrefKeys.keys,
       contains('video_remote_last_host_id'),
     );
   });

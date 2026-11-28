@@ -154,7 +154,7 @@ class WebSearchConfig {
 
   /// API key 在 JSON 里 base64 存放，与 `AiProviderConfig.toJson` 的 `apiKeyB64` 同一
   /// 口径：**遮蔽不是加密**，真正的纪律是隔离——`ai_web_search` 登记在
-  /// `kCredentialPreferenceKeys`、`PrefRedactionPolicy.sensitiveKeys` 与设备本地清单。
+  /// 偏好键登记表的凭据声明（`kFushiPrefRegistry`） 与设备本地清单。
   Map<String, Object?> toJson() => <String, Object?>{
     'kind': kind.name,
     if (endpoint != null) 'endpoint': endpoint,

@@ -1,10 +1,11 @@
 import 'dart:convert';
 
+import 'package:fushi/src/prefs/fushi_pref_registry.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/profile/profile_keys.dart';
 import 'package:fushi/src/sync/backup_service.dart';
-import 'package:fushi/src/sync/pref_redaction_policy.dart';
 
 void main() {
   group('ProfileKeys.isExcludedPref', () {
@@ -321,10 +322,11 @@ void main() {
 
     test('delegates to the shared policy rather than re-implementing it', () {
       // 防漂移：任何只改 PrefRedactionPolicy 而漏改这里的做法都会被这条抓住。
-      for (final String key in PrefRedactionPolicy.sensitiveKeys) {
+      for (final String key
+          in kFushiPrefRegistry.select(PrefTrait.credential).keys) {
         expect(ProfileKeys.isExcludedPref(key), isTrue);
       }
-      for (final String substring in PrefRedactionPolicy.credentialSubstrings) {
+      for (final String substring in PrefKeyRegistry.defaultCredentialShapes) {
         expect(ProfileKeys.isExcludedPref('any_subsystem_$substring'), isTrue);
       }
     });

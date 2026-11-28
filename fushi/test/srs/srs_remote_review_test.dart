@@ -6,6 +6,7 @@
 // - 回包丢了用同一请求 id 重发：只记一条日志；出卡后卡在主机上被复习过：作答回 stale；
 // - 媒体按名字拉进缓存，同名只拉一次，非法名字不发请求；
 // - 本机同一个 SrsReviewPage 跑在远程作用域里：键盘翻面 → 评分 → 下一张 → Ctrl+Z 撤销，日志写在主机库。
+import 'package:fushi/src/prefs/fushi_pref_registry.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -15,7 +16,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/models/preference_keys.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_deck_list_page.dart';
@@ -432,9 +432,9 @@ void main() {
   });
 
   test('首页已配对设备的落盘缓存：偏好键已登记且设备本地；库没开时不读不写', () async {
-    expect(kKnownPreferenceKeys, contains(kSrsHomePairedCachePrefKey));
+    expect(isKnownPreferenceKey(kSrsHomePairedCachePrefKey), isTrue);
     expect(
-      SyncRepository.deviceLocalPrefKeys,
+      SyncRepository.deviceLocalPrefKeys.keys,
       contains(kSrsHomePairedCachePrefKey),
       reason: '描述的是这台设备配对的主机，不随备份 / 同步 / Profile 走',
     );

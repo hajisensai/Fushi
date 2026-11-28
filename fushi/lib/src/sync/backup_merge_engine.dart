@@ -2553,12 +2553,6 @@ class BackupMergeEngine {
   }
 }
 
-/// Preference keys that must never travel between devices on a merge import.
-/// Re-exported for the caller / tests; the engine itself only touches audiobook
-/// positions, so device-local sync prefs are inherently never merged.
-List<String> mergeSkippedDeviceLocalPrefKeys() =>
-    List<String>.unmodifiable(SyncRepository.deviceLocalPrefKeys);
-
 /// 值是**本库**自增 id 的偏好键：接管源库偏好（同机换包名迁移）时不能照搬——
 /// profiles 按名字合并、id 重新分配，源库的 id 在本库指向的是别的配置。
 /// 整份恢复不受影响（那时 profiles 表与这些键来自同一个库，彼此一致）。

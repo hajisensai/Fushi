@@ -2097,7 +2097,7 @@ class PreferencesRepository extends ChangeNotifier
   }
 
   /// 「功能模块」的用户排序（底栏 / 侧栏 tab 顺序）。与开关同为设备本地键
-  /// （[ModuleId.devicePrefKeys]）；缺省空 = 枚举顺序。
+  /// （[ModuleId.prefKeyDefs]）；缺省空 = 枚举顺序。
   List<ModuleId> get moduleOrder => ModuleId.parseOrder(
     getPref(ModuleId.orderPrefKey, defaultValue: '') as String,
   );
@@ -7887,7 +7887,7 @@ class PreferencesRepository extends ChangeNotifier
   //
   // ⚠️ 存量设备的 Drift `preferences` 行**不删**（没有迁移方案就别动持久化数据），
   // 而 `manga_cloud_ocr_api_key` 仍然留在
-  // `sync/pref_redaction_policy.dart` 的 `sensitiveKeys` 里 —— 老用户库里已经写
+  // 偏好键登记表里声明成凭据 —— 老用户库里已经写
   // 过的那个 key 必须继续被备份/Profile 快照/Profile 分享三条出境通道剔除。
   // 删代码不等于删数据，脱敏名单不能跟着删。
 
@@ -7906,7 +7906,7 @@ class PreferencesRepository extends ChangeNotifier
 
   /// TODO-1961：内置下载引擎的下载根（新任务落点）。空串 = 未设置 → 用默认根
   /// `<documents>/anime_downloads/content`（与本 key 出现之前逐字节一致）。
-  /// 设备本地路径，不进 Profile 快照（见 `ProfileKeys._excludedPrefKeys`）。
+  /// 设备本地路径，不进 Profile 快照（见 偏好键登记表 `kFushiPrefRegistry`）。
   /// 发现页「全部源」聚合排除的**内置**源 id（逗号分隔，默认空）。用户 BT 站
   /// 展开的发现源各自带 `enabled`，不进这里（旧版默认排除的内置成人站已不存在）。
   String get discoveryDisabledSources =>

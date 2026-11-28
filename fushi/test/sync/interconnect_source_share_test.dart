@@ -668,7 +668,7 @@ void main() {
 
     test('账本与两个开关都是设备本地键', () {
       expect(
-        SyncRepository.deviceLocalPrefKeys,
+        SyncRepository.deviceLocalPrefKeys.keys,
         containsAll(<String>[
           SourceShareLedger.prefKey,
           'interconnect_sync_source_share',

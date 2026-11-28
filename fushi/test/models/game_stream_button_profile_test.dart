@@ -194,7 +194,7 @@ void main() {
     addTearDown(reopened.dispose);
     expect(reopened.gameStreamButtonProfile, profile);
     expect(
-      SyncRepository.deviceLocalPrefKeys,
+      SyncRepository.deviceLocalPrefKeys.keys,
       contains(kGameStreamButtonProfilePrefKey),
     );
   });

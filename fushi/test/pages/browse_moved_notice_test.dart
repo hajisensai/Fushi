@@ -1,10 +1,10 @@
 import 'dart:io';
 
+import 'package:fushi/src/prefs/fushi_pref_registry.dart';
 import 'package:drift/native.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/models/preference_keys.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/browse_moved_notice.dart';
 import 'package:fushi/src/profile/profile_keys.dart';
@@ -79,7 +79,7 @@ void main() {
     });
 
     test('键登记在注册表，且不随 Profile 快照走', () {
-      expect(kKnownPreferenceKeys, contains('browse_moved_notice_handled'));
+      expect(isKnownPreferenceKey('browse_moved_notice_handled'), isTrue);
       expect(
         ProfileKeys.isExcludedPref('browse_moved_notice_handled'),
         isTrue,

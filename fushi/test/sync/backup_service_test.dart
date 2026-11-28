@@ -779,7 +779,7 @@ void main() {
         addTearDown(() => cleanupTempDir(srcDir));
         final srcDb = FushiDatabase(srcDir.path);
         // Seed every device-local key with a sentinel value.
-        for (final String key in SyncRepository.deviceLocalPrefKeys) {
+        for (final String key in SyncRepository.deviceLocalPrefKeys.keys) {
           await srcDb.setPref(key, 'sentinel-$key');
         }
         // Content that SHOULD travel with the backup.
@@ -821,7 +821,7 @@ void main() {
 
         final dstDb = FushiDatabase(dstDir.path);
         addTearDown(dstDb.close);
-        for (final String key in SyncRepository.deviceLocalPrefKeys) {
+        for (final String key in SyncRepository.deviceLocalPrefKeys.keys) {
           expect(
             await dstDb.getPref(key),
             isNull,
@@ -857,7 +857,7 @@ void main() {
       ];
       for (final String k in secretKeys) {
         expect(
-          SyncRepository.deviceLocalPrefKeys,
+          SyncRepository.deviceLocalPrefKeys.keys,
           contains(k),
           reason: '$k is stripped on export but missing from preserve list',
         );

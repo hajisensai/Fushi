@@ -944,7 +944,10 @@ class ThemeNotifier extends ChangeNotifier {
   /// 反馈 kEFPY4cuKZ：随配置（Profile）走的主题键——打开带作品级配置的作品时按作品配置读写
   /// （[WorkProfileScope]），离开作品读回全局。图标取色缓存与页面背景图片路径 / 取色缓存描述的
   /// 是这台设备（后者已由 `ProfileKeys.isExcludedPref` 排除），不在其列。
-  static const Set<String> _profileThemePrefKeys = <String>{
+  ///
+  /// 作品级归属还没迁进偏好键登记表（要先给 `PrefPolicy` 加作品级字段）：这份名单只减不增，
+  /// 条数由 `preference_keys_guard_test.dart` 的棘轮盯着。
+  static const Set<String> profileThemePrefKeys = <String>{
     'app_theme_key',
     'brightness_mode',
     'design_system',
@@ -978,7 +981,7 @@ class ThemeNotifier extends ChangeNotifier {
 
   /// [key] 是否本类持有、随配置走的主题键（含旧的扁平自定义主题 `custom_theme_*`）。
   static bool isProfileThemePrefKey(String key) =>
-      _profileThemePrefKeys.contains(key) || key.startsWith('custom_theme_');
+      profileThemePrefKeys.contains(key) || key.startsWith('custom_theme_');
 
   /// 作品级配置会话是否接管 [key]（只读视图有自己那份配置的偏好，不叠会话）。
   bool _workScoped(String key) =>
@@ -3217,7 +3220,7 @@ class ThemeNotifier extends ChangeNotifier {
   // Storage: the new `custom_themes` pref holds a List<String>, each element a
   // JSON-encoded [CustomThemeEntry]; `selected_custom_theme_id` holds the
   // currently-selected entry id. Both are per-Profile (NOT in
-  // ProfileKeys._excludedPrefKeys) so the existing snapshot/apply/prune machinery
+  // 偏好键登记表 kFushiPrefRegistry) so the existing snapshot/apply/prune machinery
   // carries them, exactly like the legacy flat custom_theme_* keys.
   //
   // The legacy flat 11-key custom theme is migrated into a single list entry on

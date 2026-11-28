@@ -167,7 +167,7 @@ void main() {
 
     test('设备本地：不随备份 / 同步 / Profile 走', () {
       expect(
-        SyncRepository.deviceLocalPrefKeys,
+        SyncRepository.deviceLocalPrefKeys.keys,
         contains(kLibraryGridColumnsPrefKey),
       );
     });

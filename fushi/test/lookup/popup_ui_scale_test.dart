@@ -1,8 +1,8 @@
 import 'package:drift/drift.dart' hide isNull;
+import 'package:fushi/src/prefs/fushi_pref_registry.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/lookup/popup_ui_scale.dart';
-import 'package:fushi/src/models/preference_keys.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
@@ -153,7 +153,7 @@ void main() {
     });
 
     test('已登记键、随 Profile 快照走（不是设备本地）', () {
-      expect(kKnownPreferenceKeys, contains('popup_ui_scale'));
+      expect(isKnownPreferenceKey('popup_ui_scale'), isTrue);
       expect(ProfileKeys.isExcludedPref('popup_ui_scale'), isFalse);
     });
 

@@ -1,6 +1,6 @@
 import 'package:drift/native.dart';
+import 'package:fushi/src/prefs/fushi_pref_registry.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/models/preference_keys.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -49,6 +49,6 @@ void main() {
   });
 
   test('键登记在 preference_keys.dart', () {
-    expect(kKnownPreferenceKeys, contains('video_slim_progress_bar'));
+    expect(isKnownPreferenceKey('video_slim_progress_bar'), isTrue);
   });
 }

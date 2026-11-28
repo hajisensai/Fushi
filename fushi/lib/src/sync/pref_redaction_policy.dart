@@ -1,17 +1,6 @@
-import 'package:fushi/src/models/preference_keys.dart'
-    show
-        kAnkiSettingsPrefKey,
-        kMiningTtsFallbackVoiceProfilePrefKeyPrefix,
-        kMusicScanParserRevisionPrefKeyPrefix,
-        kSrsDayRolloverPendingPrefKeyPrefix,
-        kSrsDayRolloverSeenPrefKeyPrefix;
-import 'package:fushi/src/sync/sync_repository.dart';
-import 'package:fushi_engine/media/tracking/media_tracking_service.dart'
-    show kTrackingSeriesMergeDeclinedPrefSuffix;
-import 'package:fushi_engine/sync/online_library_sync.dart'
-    show OnlineLibraryMailbox;
-import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart'
-    show kPageBackdropProfileParkedPrefKeyPrefixes;
+import 'package:fushi_core/fushi_core.dart'
+    show PrefKeyRegistry, PrefPolicy, PrefTrait;
+import 'package:fushi/src/prefs/fushi_pref_registry.dart';
 
 /// 「一条 `preferences` key 能不能离开本设备」的**唯一真相源**。
 ///
@@ -47,160 +36,17 @@ import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart'
 /// 来、在导入后由 `_applyPreservedConfig` 写回去。两侧共用本谓词，是这条对称
 /// 契约不再随新增 key 漂移的原因——绝不能一侧改成硬编码清单。
 abstract final class PrefRedactionPolicy {
-  /// 形状兜底：key 含这些子串即视为凭据，**不限前缀**。
-  ///
-  /// 已核对全仓 128 个真实 pref key：命中者只有 `yomitan_api_key` /
-  /// `jimaku_api_key` / `manga_cloud_ocr_api_key`（外加白名单里的 `sync_*`
-  /// 家族），全是真凭据，零误伤。其余同形状字符串都是 i18n 标签
-  /// （`settings_secret_hide`、`video_setting_qb_password` 等），永远不落
-  /// `preferences` 表，与本谓词无交集。
-  static const List<String> credentialSubstrings = <String>[
-    'password',
-    'token',
-    'secret',
-    'private_key',
-    'credential',
-    'api_key',
-  ];
-
-  /// 前缀兜底：整族按行 id 展开、无法逐个列举的凭据 key。
-  ///
-  /// `media_source_secret_<sourceId>` 是网络来源（SFTP/FTP）的登录密码与私钥
-  /// PEM，base64 存 `preferences`、与来源行一一对应（见
-  /// `SourceLibraryCredentialStore`）。它其实也被 `secret` 子串命中，这里显式列
-  /// 出是为了把「整族按 id 展开」这件事写在判定里，而不是靠子串巧合。
-  static const List<String> sensitiveKeyPrefixes = <String>[
-    'media_source_secret_',
-  ];
-
-  /// 名字看不出是凭据、但值里裹着凭据的 key——必须逐个点名。
-  ///
-  /// 形状兜底对它们无效（`qb_connection_config` 不含任何凭据子串），而它们的值
-  /// 确实是明文密码或 API key。新增同类 key 时必须补进这里。
-  static const Set<String> sensitiveKeys = <String>{
-    // 复习同步 v2 各存储位置的端到端加密密钥（hex）。
-    'srs_sync2_location_keys',
-    // qBittorrent WebUI 连接配置：{host, port, username, password} JSON，密码明文。
-    'qb_connection_config',
-    // 手动 HTTP 代理登录名；密码由 `password` 形状兜底命中，两者都不得随备份出境。
-    'network_proxy_username',
-    'video_anidb_username',
-    'video_anidb_password',
-    'video_anidb_udp_api_key',
-    // 第三方服务 API key（都被 `api_key` 子串覆盖，显式列出以便审计时一眼看全）。
-    'yomitan_api_key',
-    'jimaku_api_key',
-    'video_subtitle_subdl_api_key',
-    'manga_cloud_ocr_api_key',
-    // 楽天ブックス书籍检索凭据：键名没有 api_key / token 形状，必须点名。也在
-    // deviceLocalPrefKeys 中。
-    'book_scrape_rakuten_access_key',
-    'book_scrape_rakuten_application_id',
-    'video_scraper_tmdb_api_key',
-    'music_acoustid_api_key',
-    'video_metadata_fanart_api_key',
-    'video_metadata_bangumi_token',
-    'video_metadata_douban_authorized_token',
-    // Bangumi 追番同步 access token（media_tracking_service.dart）。此前只靠
-    // `token` 子串兜底才被拦——形状兜底是防漏网的最后一道，真凭据必须点名
-    //（apikey 同步设定重设计 2026-08-17：名单对称性审计）。
-    'media_tracking_bangumi_access_token',
-    // 授权端点可能是私有服务 URL，也可能携带 query credential；它的名字没有
-    // token/api_key 形状，必须显式点名，避免备份/Profile 分享时旁路出境。
-    'video_metadata_douban_authorized_endpoint',
-    // JSON 内含 API key / OpenSubtitles 登录密码；名字本身不含 credential 形状，
-    // 必须显式点名。两者也在 deviceLocalPrefKeys 中，双重声明便于安全审计。
-    'video_resource_torznab_config',
-    'video_subtitle_opensubtitles_config',
-    // 同形：用户 BT 站清单，地址里可能带站点 passkey。也在 deviceLocalPrefKeys 中。
-    'resource_bt_sites',
-    // AI 提供商清单：每条里带 base64 的 API key，键名本身没有 api_key/token 形状，
-    // 必须显式点名，否则备份/Profile 分享时会把用户的付费 key 旁路带出设备。
-    'ai_providers',
-    // 同形：联网搜索配置 JSON 里的 Brave API key。
-    'ai_web_search',
-    // 同形：外部 MCP server 清单里 base64 的请求头 / 环境变量值（可能是 token）。
-    // 也在 deviceLocalPrefKeys 中。
-    'ai_mcp_client_servers',
-    // 同形：JSON 内含 base64 的 OPDS 服务器密码，键名本身没有 credential 形状。
-    // 也在 deviceLocalPrefKeys 中，双重声明便于安全审计。
-    'discovery_opds_servers',
-    // 同形：AList / OpenList 站点清单里的 base64 密码。
-    'discovery_alist_sites',
-    // 同形：Kavita 服务器清单里的 base64 长期 API key。
-    'kavita_servers',
-    // 同形：Audiobookshelf 服务器清单里的 base64 access / refresh token。
-    'discovery_audiobookshelf_servers',
-    // 同形：OpenSubsonic 服务器清单（服务器曲库）里的 base64 密码 / API key。
-    'music_subsonic_servers',
-    // 同形：朗读声音预设清单里 base64 的 Azure / Google API key 与网关 Bearer。
-    // 也在 deviceLocalPrefKeys 中。
-    'tts_voice_presets',
-    // 同形：AnkiSettings JSON 里的 AnkiConnect apiKey 明文。也在 deviceLocalPrefKeys 中。
-    kAnkiSettingsPrefKey,
-  };
-
-  /// 前缀登记：按 id 展开、无法逐个列进 [SyncRepository.deviceLocalPrefKeys] 的**设备本地状态**（不是凭据）。
-  ///
-  /// - 复习翻日时刻的待写标记 / 已见修改记录（后缀 = profile uid，`AppModel.setStatDayResetHourByUser` /
-  ///   `adoptSyncedDayRollover`）：描述的是「这台设备有没有把用户的修改写进复习」「这台设备见过哪条修改」，
-  ///   带到别的设备会让那台设备补写一个不是它的用户刚改的值，或把真正新来的修改当成见过的。
-  /// - 音乐来源上次全量解析的扫描修订号（后缀 = 本机来源 id，`MusicLibraryScanner`）：描述的是这台设备的曲库
-  ///   （设备本地表）用哪版解析器入的库；带到别的设备会让那台设备以为自己已经重新解析过、存量曲目永远不更新。
-  /// - 各配置停放的 TTS 兜底声音（后缀 = profile uid，`ProfileRepository` 切换配置时停放 / 换回）：值多半指向
-  ///   本机的朗读声音预设，与 live 键 `mining_tts_fallback_voice` 同族，带到别的设备只会指向不存在的预设。
-  /// - 各配置停放的页面背景图片路径 / 取色缓存（后缀 = profile uid，同上停放 / 换回）：路径指向本机 app 数据目录
-  ///   里的复制件，与 live 键（`kPageBackdropDeviceLocalPrefKeys`）同族。
-  /// - 互联 host 的在线源条目清单信箱（后缀 = 对端设备 id，拍板台 mY5VWg1nD-）：是这台 host 收着的
-  ///   别的设备的清单，带到别的设备会把过期清单当成那台 host 收到的转发出去；进 Profile 快照则切
-  ///   Profile 时被剪掉或换回旧值。
-  static final List<String> deviceLocalKeyPrefixes =
-      List<String>.unmodifiable(<String>[
-        kMiningTtsFallbackVoiceProfilePrefKeyPrefix,
-        ...kPageBackdropProfileParkedPrefKeyPrefixes.values,
-        kMusicScanParserRevisionPrefKeyPrefix,
-        kSrsDayRolloverPendingPrefKeyPrefix,
-        kSrsDayRolloverSeenPrefKeyPrefix,
-        OnlineLibraryMailbox.keyPrefix,
-      ]);
-
-  /// 后缀登记：前缀里夹着可变段（如追踪站点 id，插件站点 id 不可枚举）、只能按结尾认的**设备本地状态**。
-  ///
-  /// - 追踪站点的「不合并」系列卡清单（`media_tracking_<site>_book_series_merge_declined_v1`，
-  ///   `MediaTrackingService.declineSeriesMerge`，BUG-5373）：值是本机合集自增 id，带到别的设备就指向
-  ///   别的系列卡——那边真该提示合并的卡被静默跳过。
-  static final List<String> deviceLocalKeySuffixes = List<String>.unmodifiable(
-    <String>[kTrackingSeriesMergeDeclinedPrefSuffix],
-  );
-
   /// key 是否属于「设备本地 / 凭据」，即备份、Profile 快照与 Profile 分享 JSON
-  /// 三条出境通道都必须剔除、且导入时必须从本机保留的那一类。
+  /// 三条出境通道都必须剔除、且导入时必须从本机保留的那一类；ctl 读值同样打码。
   ///
-  /// 判定顺序（任一命中即 true）：
-  /// 1. [SyncRepository.deviceLocalPrefKeys] 白名单——主防线，同步后端凭据 +
-  ///    设备本地配置（device_id / 端口 / 因果基线等）的单一真相源；
-  /// 1b. [deviceLocalKeyPrefixes] 前缀 / [deviceLocalKeySuffixes] 后缀——按 id 展开的设备本地状态；
-  /// 2. [sensitiveKeys] 点名——名字不像凭据但值是凭据的；
-  /// 3. [sensitiveKeyPrefixes] 前缀——按行 id 展开的整族凭据；
-  /// 4. [credentialSubstrings] 形状兜底——将来新增、还没进前三条的凭据 key 也
-  ///    先拦下来（防漏优先于防误伤：漏一个是泄密，误伤一个只是该 key 不跨设备
-  ///    跟随，而导入侧的对称保留会把本机值原样留住）。
-  static bool isDeviceLocalOrCredential(String key) {
-    if (SyncRepository.deviceLocalPrefKeys.contains(key)) return true;
-    for (final String prefix in deviceLocalKeyPrefixes) {
-      if (key.startsWith(prefix)) return true;
-    }
-    for (final String suffix in deviceLocalKeySuffixes) {
-      if (key.endsWith(suffix)) return true;
-    }
-    if (sensitiveKeys.contains(key)) return true;
-    final String lower = key.toLowerCase();
-    for (final String prefix in sensitiveKeyPrefixes) {
-      if (lower.startsWith(prefix)) return true;
-    }
-    for (final String substring in credentialSubstrings) {
-      if (lower.contains(substring)) return true;
-    }
-    return false;
-  }
+  /// 从偏好键登记表派生（[kFushiPrefRegistry]）：声明了 [PrefPolicy.deviceLocal] 或
+  /// [PrefPolicy.credential] 的固定键与键族（同步后端凭据、设备本地配置、按 id 展开的设备
+  /// 本地状态、名字不像凭据但值是凭据的键、整族凭据 `media_source_secret_<id>`），再叠上
+  /// 名字形状兜底（[PrefKeyRegistry.defaultCredentialShapes]：键名含 password / token /
+  /// secret / private_key / credential / api_key 即按凭据拦，**不限前缀**）——将来新增、
+  /// 还没登记的凭据键也先拦下来（防漏优先于防误伤：漏一个是泄密，误伤一个只是该 key
+  /// 不跨设备跟随，而导入侧的对称保留会把本机值原样留住）。名字像凭据的固定键在登记表
+  /// 构造期就必须声明成凭据。
+  static bool isDeviceLocalOrCredential(String key) =>
+      kFushiPrefRegistry.has(key, PrefTrait.redacted);
 }

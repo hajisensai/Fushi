@@ -674,7 +674,7 @@ class AiProviderConfig {
   ///
   /// 说清楚：这是**遮蔽不是加密**——能解码回来的东西挡不住拿到设备的人。本仓没有
   /// secure storage，既有做法（OPDS 密码、同步服务器密码）同样是 base64。真正被
-  /// 执行的纪律不在编码强度，而在**隔离**：本键登记进 `kCredentialPreferenceKeys`
+  /// 执行的纪律不在编码强度，而在**隔离**：本键登记进 偏好键登记表的凭据声明（`kFushiPrefRegistry`）
   /// （绝不写日志、绝不进明文导出）与 device-local 清单（绝不随备份/同步出设备）。
   Map<String, Object?> toJson() => relay != null
       ? <String, Object?>{

@@ -101,7 +101,7 @@ void main() {
     test('remembered account keys are device-local for every backend type', () {
       for (final SyncBackendType type in SyncBackendType.values) {
         expect(
-          SyncRepository.deviceLocalPrefKeys,
+          SyncRepository.deviceLocalPrefKeys.keys,
           contains(syncRemoteAccountPrefKey(type)),
           reason: type.name,
         );

@@ -446,7 +446,7 @@ void main() {
       addTearDown(reopened.dispose);
       expect(reopened.gameStreamLookupLayout, layout);
       expect(
-        SyncRepository.deviceLocalPrefKeys,
+        SyncRepository.deviceLocalPrefKeys.keys,
         contains(kGameStreamLookupLayoutPrefKey),
       );
     });

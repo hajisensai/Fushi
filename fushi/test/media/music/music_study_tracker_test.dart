@@ -1,12 +1,12 @@
 import 'dart:async';
 
+import 'package:fushi/src/prefs/fushi_pref_registry.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/music_signal_path.dart';
 import 'package:fushi/src/media/music/music_study_tracker.dart';
-import 'package:fushi/src/models/preference_keys.dart';
 import 'package:fushi_audio/fushi_audio.dart' show StudyClock;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/stats/study_char_count.dart';
@@ -337,7 +337,7 @@ void main() {
 
   test('每曲已计句子并集的动态偏好键前缀登记在偏好键注册表', () {
     expect(
-      kKnownPreferenceKeyPrefixes,
+      kFushiPrefRegistry.families.map((PrefKeyFamily<Object?> f) => f.prefix),
       contains(kMusicLyricCoveragePrefPrefix),
     );
     expect(

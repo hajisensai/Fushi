@@ -21,6 +21,8 @@
 library;
 
 import 'package:flutter/foundation.dart';
+import 'package:fushi_core/fushi_core.dart'
+    show PrefKey, PrefKeyDef, PrefKind, PrefPolicy;
 
 import 'package:fushi/src/models/store_compliance.dart';
 
@@ -231,14 +233,30 @@ enum ModuleId {
   /// 时沿用旧开关（开着 = 查词），见 `PreferencesRepository.startupModule`。
   static const String startupPrefKey = 'startup_module';
 
-  /// 「功能模块」全部设备本地键：开关 + 顺序 + 启动页。与开关同理，顺序与启动页描述
-  /// 的是**这台设备**的入口布局，不随 Profile 走、不进备份（见 `profile_keys.dart`
-  /// 与 `backup_service.dart` 的排除名单）。
-  static Set<String> get devicePrefKeys => <String>{
-    ...allPrefKeys,
-    orderPrefKey,
-    startupPrefKey,
-  };
+  /// 「功能模块」全部键的登记：开关 + 顺序 + 启动页。描述的是**这台设备**的入口布局：
+  /// 不随 Profile 走（切到模块开关落地前建的老快照会把它们剪掉、回落默认全开），任何备份
+  /// 类别组合下都不出境、导入时保留本机值（勾了设置的备份把「书关着」带到新设备，恢复完
+  /// 首屏只剩首页 + 设置），但不是机密，ctl 照常读值（[PrefPolicy.deviceVisible]）。
+  static List<PrefKeyDef> get prefKeyDefs => <PrefKeyDef>[
+    for (final ModuleId id in ModuleId.values)
+      PrefKey<bool>(
+        id.prefKey,
+        defaultValue: id.defaultEnabled,
+        policy: PrefPolicy.deviceVisible,
+        kind: PrefKind.setting,
+      ),
+    const PrefKey<String>(
+      orderPrefKey,
+      defaultValue: '',
+      policy: PrefPolicy.deviceVisible,
+      kind: PrefKind.setting,
+    ),
+    PrefKey.untyped(
+      startupPrefKey,
+      policy: PrefPolicy.deviceVisible,
+      kind: PrefKind.setting,
+    ),
+  ];
 
   /// 解析 [orderPrefKey] 的存储值。未知键（对端新模块 / 已删模块）与重复项直接
   /// 跳过，**绝不抛异常**；结果只是用户意愿，补全见 [orderModules]。

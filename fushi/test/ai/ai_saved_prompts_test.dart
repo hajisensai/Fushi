@@ -1,10 +1,10 @@
 import 'dart:convert';
 
+import 'package:fushi/src/prefs/fushi_pref_registry.dart';
 import 'package:drift/drift.dart' show DatabaseConnection;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/ai/ai_saved_prompts.dart';
-import 'package:fushi/src/models/preference_keys.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -203,7 +203,7 @@ void main() {
     });
 
     test('偏好键已登记；默认空列表；写入后读回一致', () async {
-      expect(kKnownPreferenceKeys, contains(kAiSavedPromptsPrefKey));
+      expect(isKnownPreferenceKey(kAiSavedPromptsPrefKey), isTrue);
       expect(prefs.aiSavedPrompts, isEmpty);
       const List<AiSavedPrompt> prompts = <AiSavedPrompt>[
         AiSavedPrompt(id: 'a', name: 'A', text: 'x', sceneWire: 'srs_field'),

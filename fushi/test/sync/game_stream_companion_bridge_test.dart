@@ -448,7 +448,7 @@ void main() {
       addTearDown(reopened.dispose);
       expect(reopened.gameStreamSecondScreen, GameStreamSecondScreen.off);
       expect(
-        SyncRepository.deviceLocalPrefKeys,
+        SyncRepository.deviceLocalPrefKeys.keys,
         contains(kGameStreamSecondScreenPrefKey),
       );
     });

@@ -138,7 +138,7 @@ class OpdsServerConfig {
   /// 本仓没有 secure storage，既有做法就是 `sync_repository.dart` 的
   /// `_encodeSecret`（同样是 base64，用于 WebDAV / 同步服务器密码）。
   /// 真正被执行的纪律不在编码强度，而在**隔离**：本键登记进
-  /// `kCredentialPreferenceKeys`（绝不写日志、绝不进明文导出）与
+  /// 偏好键登记表的凭据声明（`kFushiPrefRegistry`）（绝不写日志、绝不进明文导出）与
   /// device-local 清单（绝不随备份/同步出设备）。
   Map<String, Object?> toJson() => <String, Object?>{
     'id': id,

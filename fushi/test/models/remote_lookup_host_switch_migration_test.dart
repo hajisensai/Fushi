@@ -127,9 +127,9 @@ void main() {
     );
     // 导入设置的恢复（`_clearInstallScopedPrefs`）：删掉全部安装级键，随设置走的
     // 存量全局键与配对列表留着；之后是新进程。
-    await (db.delete(
-      db.preferences,
-    )..where((t) => t.key.isIn(SyncRepository.installScopedPrefKeys))).go();
+    await (db.delete(db.preferences)
+          ..where((t) => t.key.isIn(SyncRepository.installScopedPrefKeys.keys)))
+        .go();
     final PreferencesRepository restored = PreferencesRepository(db);
     await restored.loadFromDb();
     expect(
@@ -187,11 +187,11 @@ void main() {
 
   test('marker is install-scoped (not synced, not in profile snapshots)', () {
     expect(
-      SyncRepository.installScopedPrefKeys,
+      SyncRepository.installScopedPrefKeys.keys,
       contains(PreferencesRepository.remoteLookupHostSwitchesMigratedKey),
     );
     expect(
-      SyncRepository.deviceLocalPrefKeys,
+      SyncRepository.deviceLocalPrefKeys.keys,
       contains(PreferencesRepository.remoteLookupHostSwitchesMigratedKey),
     );
   });

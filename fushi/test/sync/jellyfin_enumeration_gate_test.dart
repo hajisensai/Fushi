@@ -13,12 +13,12 @@
 //  [C] `RemoteLibraryCache.peek`：只读缓存不取数——关掉自动列出后上一次手动刷新
 //      的清单还得留在屏幕上，否则切一次 tab 卡片全没了，比自动枚举还糟。
 
+import 'package:fushi/src/prefs/fushi_pref_registry.dart';
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-import 'package:fushi/src/models/preference_keys.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart'
     show shouldFetchRemoteVideoList;
@@ -43,7 +43,7 @@ void main() {
 
   group('[A] 自动列出条目开关', () {
     test('键已登记进 kKnownPreferenceKeys（守卫要求）', () {
-      expect(kKnownPreferenceKeys, contains('jellyfin_auto_list_videos'));
+      expect(isKnownPreferenceKey('jellyfin_auto_list_videos'), isTrue);
     });
 
     test('默认 true：绝大多数用户是自建小库，改默认等于把所有人的远端卡关掉', () {

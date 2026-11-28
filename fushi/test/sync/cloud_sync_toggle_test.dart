@@ -118,6 +118,9 @@ void main() {
   });
 
   test('开关设备本地：不随备份 / 设置同步漂到别的设备', () {
-    expect(SyncRepository.deviceLocalPrefKeys, contains('sync_cloud_enabled'));
+    expect(
+      SyncRepository.deviceLocalPrefKeys.keys,
+      contains('sync_cloud_enabled'),
+    );
   });
 }

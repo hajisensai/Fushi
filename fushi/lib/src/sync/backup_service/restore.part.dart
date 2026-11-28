@@ -26,43 +26,6 @@ typedef _ContentRowCounts = ({
 class BackupRestoreService {
   BackupRestoreService._();
 
-  /// Predicate for the keep-THIS-device-settings restore ([_reapplySettingsLayer],
-  /// the `importSettings=false` overwrite path). Restores from bak every pref row
-  /// EXCEPT the ones that are CONTENT and must follow the imported backup:
-  ///   - `audiobook_pos_*`      -> reading progress (the `progress` category)
-  ///   - `favorite_sentences`   -> favorites content (travels)
-  ///   - `local_audio_dbs` / `audio_source_configs` -> audio-source registry that
-  ///     points at the imported local-audio `.db` files (BUG-780: the old
-  ///     `NOT LIKE 'audiobook_pos_%'` restored these from THIS device, wiping the
-  ///     backup's registration so the `.db` files landed but no source was
-  ///     registered → imported local audio silently stopped working).
-  ///   - font catalog + legacy font prefs -> font registry (the `fonts` category)
-  ///   - `*override_title://*`  -> 用户给书改的名字是内容，跟着导入的备份走
-  ///     （BUG-1488；与 [settingsPrefPredicate] 的内容/设置切分保持对称）
-  /// UNLIKE [settingsPrefPredicate] this KEEPS `sync_*` restored from bak: the
-  /// keep-settings path writes no `{'mode':'prefs'}` sidecar and never calls
-  /// [_applyPreservedConfig], so this wholesale restore is the ONLY place the
-  /// device's own (never-exported) sync config is preserved — excluding `sync_*`
-  /// here would drop it. Same content-vs-settings split as the export strip and
-  /// [_reapplyExcludedSettingsLayers], so the two restore paths stay symmetric.
-  static final String _keepDeviceSettingsPrefPredicate =
-      _buildKeepDeviceSettingsPrefPredicate();
-
-  static String _buildKeepDeviceSettingsPrefPredicate() {
-    final List<String> contentRegistryKeys = <String>[
-      _favoriteSentencesPrefKey,
-      _localAudioDbsPrefKey,
-      _audioSourceConfigsPrefKey,
-      _fontCatalogPrefKey,
-      ..._legacyFontPrefKeys,
-    ];
-    final String notIn = contentRegistryKeys
-        .map((String k) => "'${k.replaceAll("'", "''")}'")
-        .join(', ');
-    return "key NOT LIKE 'audiobook_pos_%' AND key NOT IN ($notIn) "
-        'AND $_notOverrideTitleSql';
-  }
-
   /// Sidecar file holding this device's sync config across an import. Written
   /// BEFORE the destructive DB overwrite so a crash mid-import is recoverable
   /// (a startup sweep re-applies it). Deleted once the import completes.
@@ -2515,17 +2478,20 @@ class BackupRestoreService {
       await db.transaction(() async {
         // preferences: keep this device's SETTINGS from bak, but let CONTENT
         // prefs (audiobook positions, favorites, local-audio / audio-source
-        // registry, font registry) follow the imported backup — see
-        // [_keepDeviceSettingsPrefPredicate]. `sync_*` stays restored from bak
-        // (device-local, never exported), which this predicate keeps.
+        // registry, font registry, 书名改名) follow the imported backup — the
+        // same content-vs-settings split as the export strip
+        // ([settingsPrefPredicate], derived from the pref-key registry), so the
+        // two restore paths stay symmetric. Device-local `sync_*` config is
+        // never exported and is matched by the predicate, so it stays restored
+        // from bak here (BUG-780).
         await db.customStatement(
-          'DELETE FROM preferences WHERE $_keepDeviceSettingsPrefPredicate',
+          'DELETE FROM preferences WHERE $settingsPrefPredicate',
         );
         await _copyTableByColumnNames(
           db,
           schema: 'bak',
           table: 'preferences',
-          where: _keepDeviceSettingsPrefPredicate,
+          where: settingsPrefPredicate,
         );
         // 制卡映射归 settings（[backupTableRules]）：保留本机设置时一并保留。
         await db.customStatement('DELETE FROM anki_mappings');
@@ -2743,11 +2709,17 @@ class BackupRestoreService {
   /// 的 `srs_mining_target` 是普通偏好、随设置恢复，判定只给它兜默认值，不覆盖。
   /// 不导入设置的恢复（设置层整层写回本机）不调本方法，本机判定原样保留。
   static Future<void> _clearInstallScopedPrefs(String dbDirectory) async {
-    const List<String> keys = SyncRepository.installScopedPrefKeys;
     FushiDatabase? db;
     try {
       db = FushiDatabase(dbDirectory);
-      await (db.delete(db.preferences)..where((t) => t.key.isIn(keys))).go();
+      // 逐键按生效策略判（与导出剔除 [_stripCredentials] 同一写法）：安装级的键族和固定键
+      // 一样被清掉，不靠一份只列得出固定键的名单。
+      final List<String> keys = (await db.getAllPrefs()).keys
+          .where(SyncRepository.installScopedPrefKeys.contains)
+          .toList(growable: false);
+      if (keys.isNotEmpty) {
+        await (db.delete(db.preferences)..where((t) => t.key.isIn(keys))).go();
+      }
       await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
     } catch (e, st) {
       // 导入的库打不开（不是 SQLite / 已损坏）：与 [_readDeviceLocalPrefs] 同口径，

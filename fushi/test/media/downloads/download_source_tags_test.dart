@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/prefs/fushi_pref_registry.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/downloads/download_source_method.dart';
@@ -6,7 +7,6 @@ import 'package:fushi/src/media/downloads/download_task_card.dart';
 import 'package:fushi/src/media/downloads/manga_download_tasks_section.dart';
 import 'package:fushi/src/media/manga/download/manga_download_service.dart'
     show kMokuroMoeDownloadRuntime;
-import 'package:fushi/src/models/preference_keys.dart';
 import 'package:fushi/src/pages/implementations/download_notice.dart';
 import 'package:fushi/src/profile/profile_keys.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
@@ -67,7 +67,7 @@ void main() {
         'p2p_download_notice_dismissed',
         'game_resource_notice_dismissed',
       ]) {
-        expect(kKnownPreferenceKeys, contains(key));
+        expect(isKnownPreferenceKey(key), isTrue);
         expect(ProfileKeys.isExcludedPref(key), isTrue);
       }
     });

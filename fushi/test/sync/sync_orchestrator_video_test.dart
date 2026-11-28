@@ -101,7 +101,7 @@ void main() {
       // Behaviour switch, like sync_audiobook_files — must NOT sit in the
       // device-local key catalog (which a backup import preserves).
       expect(
-        SyncRepository.deviceLocalPrefKeys,
+        SyncRepository.deviceLocalPrefKeys.keys,
         isNot(contains('sync_video_files_enabled')),
       );
     });

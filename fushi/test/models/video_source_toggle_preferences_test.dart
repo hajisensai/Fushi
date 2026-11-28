@@ -1,9 +1,9 @@
 import 'package:drift/drift.dart';
+import 'package:fushi/src/prefs/fushi_pref_registry.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-import 'package:fushi/src/models/preference_keys.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/sync/pref_redaction_policy.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -81,16 +81,22 @@ void main() {
   test('keys are registered as known preference keys', () {
     // 未登记的键会被偏好审计当成孤儿清掉。旧停用清单键冻结但仍登记，防止键名
     // 被别的功能复用。
-    expect(kKnownPreferenceKeys, contains('jimaku_enabled'));
-    expect(kKnownPreferenceKeys, contains('video_resource_disabled_sources'));
-    expect(kKnownPreferenceKeys, contains(kResourceBtSitesPref));
+    expect(isKnownPreferenceKey('jimaku_enabled'), isTrue);
+    expect(isKnownPreferenceKey('video_resource_disabled_sources'), isTrue);
+    expect(isKnownPreferenceKey(kResourceBtSitesPref), isTrue);
     expect(kResourceBtSitesPref, 'resource_bt_sites');
   });
 
   test('BT site list is device-local and treated as a credential', () {
     // 站点地址可能带 passkey：与 video_resource_torznab_config 同样归类。
-    expect(SyncRepository.deviceLocalPrefKeys, contains(kResourceBtSitesPref));
-    expect(PrefRedactionPolicy.sensitiveKeys, contains(kResourceBtSitesPref));
+    expect(
+      SyncRepository.deviceLocalPrefKeys.keys,
+      contains(kResourceBtSitesPref),
+    );
+    expect(
+      kFushiPrefRegistry.keyNamed(kResourceBtSitesPref)?.policy.credential,
+      isTrue,
+    );
     expect(
       PrefRedactionPolicy.isDeviceLocalOrCredential(kResourceBtSitesPref),
       isTrue,
