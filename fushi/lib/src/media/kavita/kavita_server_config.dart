@@ -6,7 +6,7 @@
 /// 所以没有令牌轮换，也不存账号密码。
 ///
 /// key 以 base64 存放：遮蔽不是加密。真正的纪律是本键 `kavita_servers` 登记进
-/// `kCredentialPreferenceKeys`（不进日志 / 明文导出）、`PrefRedactionPolicy` 与
+/// 偏好键登记表的凭据声明（`kFushiPrefRegistry`）（不进日志 / 明文导出）、`PrefRedactionPolicy` 与
 /// device-local 清单（不随备份 / 同步出设备），同 OPDS / AList / ABS。
 library;
 

@@ -1,3 +1,5 @@
+import 'package:fushi_core/fushi_core.dart'
+    show PrefKey, PrefKeyDef, PrefKind, PrefPolicy;
 import 'package:fushi_engine/foundation/pref_store.dart';
 
 /// 浏览器的设备本地偏好（不进备份 / 同步 / Profile）。读写一律走这里的函数，
@@ -137,29 +139,92 @@ bool webBrowserFullscreenAutoRotate(PrefStore prefs) => _readBool(
 Future<void> setWebBrowserFullscreenAutoRotate(PrefStore prefs, bool value) =>
     prefs.setPref(kWebBrowserFullscreenAutoRotatePref, value);
 
-/// 浏览器的设备本地偏好键：不进备份 / 同步 / Profile 快照
-/// （`SyncRepository._deviceLocalFixedKeys` 展开它）。功能插件的键用字面量登记，
-/// 免得本文件反向依赖各功能目录。
-const List<String> kWebBrowserDeviceLocalPrefKeys = <String>[
-  kWebBrowserTabStylePref,
-  kWebBrowserSidebarOpenPref,
-  kWebBrowserCollapseOnScrollPref,
-  kWebBrowserForceDarkPref,
-  kWebBrowserDesktopModeDefaultPref,
-  kWebBrowserRestoreTabsPref,
-  kWebBrowserPullToRefreshPref,
-  kWebBrowserFullscreenTakeoverPref,
-  kWebBrowserFullscreenAutoRotatePref,
+/// 浏览器偏好键的登记：设备本地（按这台设备的屏幕与习惯调），不进备份 / 同步 /
+/// Profile 快照。功能插件的键用字面量登记，免得本文件反向依赖各功能目录。
+final List<PrefKeyDef> kWebBrowserPrefKeyDefs = <PrefKeyDef>[
+  PrefKey.untyped(
+    kWebBrowserTabStylePref,
+    policy: PrefPolicy.local,
+    kind: PrefKind.setting,
+  ),
+  PrefKey.untyped(
+    kWebBrowserSidebarOpenPref,
+    policy: PrefPolicy.local,
+    kind: PrefKind.setting,
+  ),
+  PrefKey.untyped(
+    kWebBrowserCollapseOnScrollPref,
+    policy: PrefPolicy.local,
+    kind: PrefKind.setting,
+  ),
+  PrefKey.untyped(
+    kWebBrowserForceDarkPref,
+    policy: PrefPolicy.local,
+    kind: PrefKind.setting,
+  ),
+  PrefKey.untyped(
+    kWebBrowserDesktopModeDefaultPref,
+    policy: PrefPolicy.local,
+    kind: PrefKind.setting,
+  ),
+  PrefKey.untyped(
+    kWebBrowserRestoreTabsPref,
+    policy: PrefPolicy.local,
+    kind: PrefKind.setting,
+  ),
+  PrefKey.untyped(
+    kWebBrowserPullToRefreshPref,
+    policy: PrefPolicy.local,
+    kind: PrefKind.setting,
+  ),
+  PrefKey.untyped(
+    kWebBrowserFullscreenTakeoverPref,
+    policy: PrefPolicy.local,
+    kind: PrefKind.setting,
+  ),
+  PrefKey.untyped(
+    kWebBrowserFullscreenAutoRotatePref,
+    policy: PrefPolicy.local,
+    kind: PrefKind.setting,
+  ),
   // 已删除的「整页注音」「生词高亮」开关：不再读写，存量值仍不进备份 / 同步。
-  'web_browser_furigana',
-  'web_browser_known_words',
+  PrefKey.untyped(
+    'web_browser_furigana',
+    policy: PrefPolicy.local,
+    kind: PrefKind.setting,
+  ),
+  PrefKey.untyped(
+    'web_browser_known_words',
+    policy: PrefPolicy.local,
+    kind: PrefKind.setting,
+  ),
   // web_browser_sites.dart（当前搜索引擎、自定义引擎）。
-  'web_browser_search_engine',
-  'web_browser_custom_search_engines',
+  PrefKey.untyped(
+    'web_browser_search_engine',
+    policy: PrefPolicy.local,
+    kind: PrefKind.setting,
+  ),
+  PrefKey.untyped(
+    'web_browser_custom_search_engines',
+    policy: PrefPolicy.local,
+    kind: PrefKind.setting,
+  ),
   // data/web_browser_site_settings.dart（按站点的权限决定）。
-  'web_browser_site_permissions',
+  PrefKey.untyped(
+    'web_browser_site_permissions',
+    policy: PrefPolicy.local,
+    kind: PrefKind.setting,
+  ),
   // 已删除的 features/youtube_subtitles 开关：不再读写，存量值仍不进备份 / 同步。
-  'web_browser_youtube_subtitles',
+  PrefKey.untyped(
+    'web_browser_youtube_subtitles',
+    policy: PrefPolicy.local,
+    kind: PrefKind.setting,
+  ),
   // features/extension_host（扩展脚本的 chrome.storage.local）。
-  'web_browser_extension_storage',
+  PrefKey.untyped(
+    'web_browser_extension_storage',
+    policy: PrefPolicy.local,
+    kind: PrefKind.setting,
+  ),
 ];

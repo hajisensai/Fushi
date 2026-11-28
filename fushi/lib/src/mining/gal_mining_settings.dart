@@ -324,7 +324,7 @@ class GalMiningSettings {
   );
 }
 
-/// 单游戏覆盖层的偏好键前缀（登记在 `kKnownPreferenceKeyPrefixes`）。
+/// 单游戏覆盖层的偏好键前缀（登记在 偏好键登记表的键族）。
 const String kGalMiningOverridesPrefKeyPrefix = 'gal_mining_overrides::';
 
 String galMiningOverridesPrefKey(String gameId) =>

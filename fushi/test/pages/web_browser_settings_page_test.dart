@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:fushi/src/sync/sync_repository.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -193,7 +194,7 @@ void main() {
       isFalse,
     );
     expect(
-      kWebBrowserDeviceLocalPrefKeys,
+      SyncRepository.deviceLocalPrefKeys,
       containsAll(<String>[
         kWebBrowserFullscreenTakeoverPref,
         kWebBrowserFullscreenAutoRotatePref,

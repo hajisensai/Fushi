@@ -82,7 +82,7 @@ class SubsonicServerConfig {
   String get displayName =>
       name.trim().isNotEmpty ? name.trim() : serverUrl.host;
 
-  /// 凭据 base64 存放：遮蔽不是加密。真正的纪律是本键登记进 `kCredentialPreferenceKeys`
+  /// 凭据 base64 存放：遮蔽不是加密。真正的纪律是本键登记进 偏好键登记表的凭据声明（`kFushiPrefRegistry`）
   /// （不进日志 / 明文导出）与设备本地清单（不随备份 / 同步出设备），同 OPDS / ABS。
   Map<String, Object?> toJson() => <String, Object?>{
     'id': id,

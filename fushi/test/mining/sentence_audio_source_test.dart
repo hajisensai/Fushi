@@ -1,10 +1,10 @@
 import 'dart:convert';
+import 'package:fushi/src/prefs/fushi_pref_registry.dart';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show DatabaseConnection;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/models/preference_keys.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi_anki/fushi_anki_core.dart' show MiningRequestOverrides;
 import 'package:fushi_core/fushi_core.dart';
@@ -400,7 +400,7 @@ void main() {
       restored.dispose();
       final Map<String, String> prefs = await db.getAllPrefs();
       expect(prefs.containsKey('video_mining_audio_source'), isTrue);
-      expect(kKnownPreferenceKeys, contains('video_mining_audio_source'));
+      expect(isKnownPreferenceKey('video_mining_audio_source'), isTrue);
     });
   });
 

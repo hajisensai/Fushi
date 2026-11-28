@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/settings/nav_module_order_list.dart';
@@ -44,9 +45,18 @@ void main() {
     });
 
     test('顺序键随模块开关一起是设备本地键（不进备份 / Profile）', () {
-      expect(ModuleId.devicePrefKeys, contains(ModuleId.orderPrefKey));
-      expect(ModuleId.devicePrefKeys, contains(ModuleId.startupPrefKey));
-      expect(ModuleId.devicePrefKeys, containsAll(ModuleId.allPrefKeys));
+      expect(<String>{
+        for (final PrefKeyDef d in ModuleId.prefKeyDefs)
+          if (d is PrefKey<Object?>) d.name,
+      }, contains(ModuleId.orderPrefKey));
+      expect(<String>{
+        for (final PrefKeyDef d in ModuleId.prefKeyDefs)
+          if (d is PrefKey<Object?>) d.name,
+      }, contains(ModuleId.startupPrefKey));
+      expect(<String>{
+        for (final PrefKeyDef d in ModuleId.prefKeyDefs)
+          if (d is PrefKey<Object?>) d.name,
+      }, containsAll(ModuleId.allPrefKeys));
     });
   });
 

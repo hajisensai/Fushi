@@ -8,12 +8,11 @@ import 'package:drift/drift.dart' show QueryRow, Variable;
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/models/audio_source_config.dart';
 import 'package:fushi_engine/media/video/video_member_file.dart';
-import 'package:fushi_engine/media/override_title_key.dart';
 import 'package:fushi_engine/utils/archive/native_zip.dart';
 import 'package:fushi_engine/media/video/strm_file.dart'
     show isNetworkOnlyVideoPath, kSourceLibrarySftpScheme;
 import 'package:fushi/src/models/local_audio_manager.dart';
-import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/prefs/fushi_pref_registry.dart';
 import 'package:fushi/src/sync/backup_merge_engine.dart';
 import 'package:fushi/src/sync/backup_srs_tables.dart';
 import 'package:fushi/src/sync/pref_redaction_policy.dart';
@@ -724,32 +723,68 @@ const List<String> _profilesLayerTablesChildFirst = <String>[
 /// a `settings`-excluded backup and its restore never diverge.
 final String settingsPrefPredicate = _buildSettingsPrefPredicate();
 
-/// 住在 `preferences` 里、但属于**内容注册表**而不是设置的 key：收藏句、本地音频库
-/// 清单、音频来源配置、字体目录（含旧字体键）。它们各有自己的资产通道（并且值里是
-/// 本机文件路径），[settingsPrefPredicate] 与可移植设置判定（`PortableSettingsPolicy`）
-/// 共用这一份清单。
-const List<String> backupContentRegistryPrefKeys = <String>[
-  _favoriteSentencesPrefKey,
-  _localAudioDbsPrefKey,
-  _audioSourceConfigsPrefKey,
-  _fontCatalogPrefKey,
-  ..._legacyFontPrefKeys,
+/// 住在 `preferences` 里、但属于**内容注册表**而不是设置的 key 的登记：收藏句、本地音频库
+/// 清单、音频来源配置、字体目录（含旧字体键）。它们各有自己的资产通道（并且值里是本机
+/// 文件路径），所以备份归 [PrefBackup.content]、不跨设备同步；仍随 Profile 快照走（现状）。
+final List<PrefKeyDef> backupContentPrefKeyDefs = <PrefKeyDef>[
+  for (final String key in <String>[
+    _favoriteSentencesPrefKey,
+    _localAudioDbsPrefKey,
+    _audioSourceConfigsPrefKey,
+    _fontCatalogPrefKey,
+    ..._legacyFontPrefKeys,
+  ])
+    PrefKey.untyped(
+      key,
+      policy: PrefPolicy.profileContent,
+      kind: PrefKind.setting,
+    ),
 ];
 
-String _buildSettingsPrefPredicate() {
-  const List<String> preservedExactKeys = backupContentRegistryPrefKeys;
-  final String notIn = preservedExactKeys
-      .map((String k) => "'${k.replaceAll("'", "''")}'")
-      .join(', ');
-  return "key NOT LIKE 'audiobook_pos_%' "
-      'AND key NOT IN ($notIn) '
-      'AND $_notOverrideTitleSql';
-}
+/// 内容注册表的固定键（登记表里备份归 [PrefBackup.content] 的固定键）：
+/// [settingsPrefPredicate] 与可移植设置判定（`PortableSettingsPolicy`）共用。
+final List<String> backupContentRegistryPrefKeys = List<String>.unmodifiable(
+  kFushiPrefRegistry.keyNamesWhere(
+    (PrefPolicy p) => p.backup == PrefBackup.content,
+  ),
+);
 
-/// 「这行 pref 不是书名 override」的 SQL 判据。用 `instr` 而非 `LIKE '%…%'`：
-/// 前缀里的 `_` 在 LIKE 里是通配符，`instr` 是逐字节子串匹配，零歧义。
-const String _notOverrideTitleSql =
-    "instr(key, '$kOverrideTitleKeyMarker') = 0";
+/// 由登记表拼出「不归 `settings` 类别管」的 SQL 排除条件：备份归进度 / 内容的固定键
+/// （`NOT IN`）与键族（前缀族 `NOT LIKE '<前缀>%'`、子串族 `instr(...) = 0`）。被另一个
+/// 同样排除的前缀族包住的键族不再重复出条件。登记表里出现 SQL 表达不了的族形状（带后缀
+/// 的族）时直接抛错，绝不静默漏掉。
+String _buildSettingsPrefPredicate() {
+  bool excludedFromSettings(PrefPolicy p) =>
+      p.backup == PrefBackup.progress || p.backup == PrefBackup.content;
+  String quote(String v) => v.replaceAll("'", "''");
+  final List<PrefKeyFamily<Object?>> families = kFushiPrefRegistry.families
+      .where((PrefKeyFamily<Object?> f) => excludedFromSettings(f.policy))
+      .toList();
+  final List<String> clauses = <String>[];
+  for (final PrefKeyFamily<Object?> f in families) {
+    if (f.suffix.isNotEmpty || (f.prefix.isNotEmpty && f.marker.isNotEmpty)) {
+      throw StateError(
+        'settingsPrefPredicate: unsupported family ${f.pattern}',
+      );
+    }
+    if (f.marker.isNotEmpty) continue;
+    final bool nested = families.any(
+      (PrefKeyFamily<Object?> o) =>
+          !identical(o, f) && o.marker.isEmpty && f.prefix.startsWith(o.prefix),
+    );
+    if (nested) continue;
+    clauses.add("key NOT LIKE '${quote(f.prefix)}%'");
+  }
+  final String notIn = backupContentRegistryPrefKeys
+      .map((String k) => "'${quote(k)}'")
+      .join(', ');
+  clauses.add('key NOT IN ($notIn)');
+  for (final PrefKeyFamily<Object?> f in families) {
+    if (f.marker.isEmpty) continue;
+    clauses.add("instr(key, '${quote(f.marker)}') = 0");
+  }
+  return clauses.join(' AND ');
+}
 
 /// Strips the four DB-only data categories (TODO-1193) from the standalone
 /// exported DB copy in [dbDirectory] when the user unticked them. Opened via
@@ -1807,8 +1842,7 @@ class BackupService {
   /// [_readDeviceLocalPrefs] 就用**同一个**谓词从本机捞出来、由
   /// `_applyPreservedConfig` 在导入后写回，两侧绝不各写一份清单。
   static bool _isDeviceLocalPrefKey(String key) =>
-      PrefRedactionPolicy.isDeviceLocalOrCredential(key) ||
-      ModuleId.devicePrefKeys.contains(key);
+      kFushiPrefRegistry.policyOf(key).backup == PrefBackup.never;
 
   /// Strips device-local config and credentials from the standalone DB copy in
   /// [dbDirectory] before it leaves the device. Opened via [FushiDatabase]

@@ -1,25 +1,24 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/models/preference_keys.dart';
+import 'package:fushi/src/prefs/fushi_pref_registry.dart';
 
 import '../helpers/source_guard.dart';
 
-/// 数据层重构 2026-08 P2 守卫：`preferences` 表的**新增键必须过注册表**。
+/// `preferences` 表的**新增键必须有登记**（数据层重构 2026-08 P2 → 架构重构 F1）。
 ///
-/// 病灶：`(key, value)` 万能表的键以 ~140 个裸字符串字面量散落全代码库，无集中
-/// 定义、无类型注解，拼错键名静默读到默认值。全量迁移到类型化门面 = 百文件级
-/// churn 且不消灭任何 bug（存量键都活着），所以走「存量冻结、增量设门」：
-/// [kKnownPreferenceKeys] 是唯一入口，本守卫扫 `getPref*/setPref*` 调用点的
-/// 字面量键，不在注册表里的新键直接红。
+/// 登记有两处，按「只减不增」收敛到一处：
+///  - 偏好键登记表 [kFushiPrefRegistry]（`lib/src/prefs/`）：键名 + 值类型 + 默认值 + 各通道
+///    策略。凡是不按默认（随 Profile、可同步、进备份设置类）处理的键、全部动态键族都在这里，
+///    新键一律加在这里；
+///  - [kKnownPreferenceKeys]：只登记了名字、还没迁进登记表的存量键（默认策略）。它只许变少：
+///    迁一个删一个，与登记表不相交，条数有上限（下面的棘轮）。
 ///
-/// 判据（窄而准）：
-///  - 只扫**字面量**第一参（单/双引号）；含 `$`（插值动态键）跳过——动态键
-///    形态登记在 [kKnownPreferenceKeyPrefixes]，不在本守卫扫描面内；
-///  - 先 [maskComments] 再匹配：注释里的示例键不算调用（守卫可信度的底线，
-///    否则「把键写进注释」既能骗红也能骗绿）；
-///  - 经命名常量引用的键（`getPref(kSomeKey)`）不在扫描面内——那已经是比裸
-///    字面量更好的形态，不设门。
+/// 字面量扫描（窄而准）：只扫 `getPref*/setPref*` 的**字面量**第一参；含 `$`（插值动态键）
+/// 跳过——动态键族在登记表里声明；先 [maskComments] 再匹配，注释里的示例键不算调用；经命名
+/// 常量引用的键不在扫描面内。
 void main() {
   final RegExp callPattern = RegExp(
     r'(?:getPref|setPref|getPreference|setPreference)\w*(?:<[^>()]*>)?\(\s*'
@@ -77,7 +76,7 @@ void f(Prefs p) {
         if (e.path.endsWith('preference_keys.dart')) continue;
         scanned++;
         for (final String key in extractPrefKeyLiterals(e.readAsStringSync())) {
-          if (!kKnownPreferenceKeys.contains(key)) {
+          if (!isKnownPreferenceKey(key)) {
             violations.putIfAbsent(key, () => <String>[]).add(e.path);
           }
         }
@@ -88,23 +87,48 @@ void f(Prefs p) {
       violations,
       isEmpty,
       reason:
-          '发现未登记的偏好键。新键必须先登记进 '
-          'lib/src/models/preference_keys.dart 的 kKnownPreferenceKeys'
-          '（按字母序），并在调用点旁注释类型与用途。违规：\n'
+          '发现未登记的偏好键。新键必须登记进偏好键登记表（lib/src/prefs/ 或所属域的 '
+          'PrefKeyDef 清单，声明类型、默认值与各通道策略）。违规：\n'
           '${violations.entries.map((e) => '  ${e.key} ← ${e.value.join(', ')}').join('\n')}',
     );
   });
 
-  test('注册表纪律：键按字母序、无空键、前缀表无空前缀', () {
+  test('名字登记表纪律：按字母序、无空键、与偏好键登记表不相交', () {
     final List<String> keys = kKnownPreferenceKeys.toList();
     final List<String> sorted = List<String>.of(keys)..sort();
     expect(keys, sorted, reason: '注册表按字母序维护，插错位置合并冲突翻倍');
     expect(keys.any((String k) => k.isEmpty), isFalse);
-    expect(kKnownPreferenceKeyPrefixes.any((String p) => p.isEmpty), isFalse);
     expect(
-      kCredentialPreferenceKeys.difference(kKnownPreferenceKeys),
+      keys.where((String k) => kFushiPrefRegistry.keyNamed(k) != null),
       isEmpty,
-      reason: '凭据键是注册表子集',
+      reason: '迁进偏好键登记表的键必须从 kKnownPreferenceKeys 删掉，同一个键不登记两处',
+    );
+  });
+
+  test('棘轮：只登记名字的存量键与未声明类型的登记只减不增', () {
+    expect(
+      kKnownPreferenceKeys.length,
+      lessThanOrEqualTo(_kKnownPreferenceKeysCeiling),
+      reason:
+          'kKnownPreferenceKeys 只减不增：新键登记进偏好键登记表（PrefKey，带类型与策略）。'
+          '迁走存量键后把上限同步调低到 ${kKnownPreferenceKeys.length}',
+    );
+    final int untyped = <PrefKeyDef>[
+      ...kFushiPrefRegistry.keys,
+      ...kFushiPrefRegistry.families,
+    ].where((PrefKeyDef d) => d.isUntyped).length;
+    expect(
+      untyped,
+      lessThanOrEqualTo(_kUntypedPrefKeyDefsCeiling),
+      reason:
+          '未声明类型的登记（PrefKey.untyped / PrefKeyFamily.untyped）只减不增：新登记写成 '
+          'PrefKey<T>(..., defaultValue: ...)。类型化后把上限同步调低到 $untyped',
     );
   });
 }
+
+/// [kKnownPreferenceKeys] 的条数上限（2026-11-28 迁出有特殊策略的键后的现值）。
+const int _kKnownPreferenceKeysCeiling = 453;
+
+/// 未声明类型的登记条数上限（2026-11-28 现值）。
+const int _kUntypedPrefKeyDefsCeiling = 246;

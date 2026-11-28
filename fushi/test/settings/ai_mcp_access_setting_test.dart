@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/models/preference_keys.dart';
+import 'package:fushi/src/prefs/fushi_pref_registry.dart';
 import 'package:fushi/src/ops/ctl_settings_routes.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema_ai.dart';
@@ -34,7 +34,7 @@ void main() {
       'ai_mcp_enabled',
       'ai_mcp_token_sha256',
     ]) {
-      expect(kKnownPreferenceKeys, contains(key));
+      expect(isKnownPreferenceKey(key), isTrue);
       expect(SyncRepository.deviceLocalPrefKeys, contains(key));
     }
   });

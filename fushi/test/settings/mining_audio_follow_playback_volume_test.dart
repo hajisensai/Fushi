@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:fushi/src/prefs/fushi_pref_registry.dart';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show DatabaseConnection;
@@ -6,7 +7,6 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/mining/mining_playback_volume_gain.dart';
-import 'package:fushi/src/models/preference_keys.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -261,8 +261,8 @@ void main() {
 
     test('key 在偏好白名单里', () {
       expect(
-        kKnownPreferenceKeys,
-        contains('mining_audio_follow_playback_volume'),
+        isKnownPreferenceKey('mining_audio_follow_playback_volume'),
+        isTrue,
       );
     });
   });

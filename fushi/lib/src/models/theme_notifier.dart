@@ -3217,7 +3217,7 @@ class ThemeNotifier extends ChangeNotifier {
   // Storage: the new `custom_themes` pref holds a List<String>, each element a
   // JSON-encoded [CustomThemeEntry]; `selected_custom_theme_id` holds the
   // currently-selected entry id. Both are per-Profile (NOT in
-  // ProfileKeys._excludedPrefKeys) so the existing snapshot/apply/prune machinery
+  // 偏好键登记表 kFushiPrefRegistry) so the existing snapshot/apply/prune machinery
   // carries them, exactly like the legacy flat custom_theme_* keys.
   //
   // The legacy flat 11-key custom theme is migrated into a single list entry on

@@ -121,7 +121,7 @@ Future<List<MediaCollectionItemRow>> sortedCollectionRows({
 /// 加入顺序（逐本加入 / 目录自动合集按扫描序），不是用户排出来的序；只有用户
 /// 明确选过「手动」、拖拽过或「存为手动顺序 / 一键整理」落过盘，才写 `manual`，
 /// 此后默认走手动序。键里是本机合集自增 id，属于设备本地状态，不进 Profile 快照
-/// （见 `ProfileKeys._excludedPrefPrefixes`）。
+/// （见 偏好键登记表 `kFushiPrefRegistry`）。
 const String kCollectionDetailSortPrefPrefix = 'collection_detail_sort_';
 
 /// 合集 [collectionId] 的详情页排序偏好键。

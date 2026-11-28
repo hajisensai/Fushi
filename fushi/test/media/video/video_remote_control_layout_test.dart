@@ -1,9 +1,9 @@
 import 'dart:convert';
 
+import 'package:fushi/src/prefs/fushi_pref_registry.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_remote_control_layout.dart';
-import 'package:fushi/src/models/preference_keys.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -220,7 +220,7 @@ void main() {
     });
 
     test('键登记在 preference_keys.dart', () {
-      expect(kKnownPreferenceKeys, contains('video_remote_control_layout'));
+      expect(isKnownPreferenceKey('video_remote_control_layout'), isTrue);
     });
   });
 }

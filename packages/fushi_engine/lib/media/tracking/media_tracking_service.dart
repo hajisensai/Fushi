@@ -81,7 +81,7 @@ typedef _SeriesCard = ({
 /// ([TrackingProviderPrefKeys.seriesMergeDeclined],
 /// `media_tracking_<site>_book_series_merge_declined_v1`). The value holds
 /// this device's series card ids, so the key is device-local state: the app
-/// registers this ending in `PrefRedactionPolicy.deviceLocalKeySuffixes` (not
+/// registers this ending in 偏好键登记表的设备本地后缀键族 (not
 /// in backups, Profile snapshots or settings sync — on another device the ids
 /// name other cards).
 const String kTrackingSeriesMergeDeclinedPrefSuffix =

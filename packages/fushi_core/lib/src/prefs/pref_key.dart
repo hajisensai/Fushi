@@ -94,16 +94,9 @@ final class PrefPolicy {
     backup: PrefBackup.settings,
   );
 
-  /// 随 Profile、进备份设置类，但不跨设备同步。
-  static const PrefPolicy profileUnsynced = PrefPolicy(
-    profileScoped: true,
-    syncable: false,
-    backup: PrefBackup.settings,
-  );
-
-  /// 本安装 / 本设备的设置或状态，不随 Profile、不同步，但随备份设置类恢复
-  /// （首启标志、界面缩放、更新通道……）。
-  static const PrefPolicy install = PrefPolicy(
+  /// 不随 Profile、不同步，但随备份设置类恢复：本安装 / 本设备的设置或状态（首启标志、
+  /// 界面缩放、更新通道……）与按条目的状态（有声书倍速、合集排序……）。
+  static const PrefPolicy unscoped = PrefPolicy(
     profileScoped: false,
     syncable: false,
     backup: PrefBackup.settings,

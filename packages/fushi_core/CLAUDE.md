@@ -16,6 +16,7 @@
 
 - `FushiDatabase` -- 全部数据访问层，提供 media items / anki mappings / search history / audiobooks / audio cues / srt books / reader positions / bookmarks / reading statistics / preferences / dictionary metadata / epub books / book tags / profiles 等完整 CRUD API。
 - `PrefCodec` -- 偏好值的 `encode<T>` / `decode<T>` 泛型编解码。
+- `PrefKey<T>` / `PrefKeyFamily<T>` / `PrefKeyRegistry`（`lib/src/prefs/pref_key.dart`，架构重构 F1）-- 偏好键登记表的类型：键名 + 类型与编解码 + 默认值 + 正交策略（`PrefPolicy`：随 Profile、可同步、备份归属、设备本地、凭据、安装级）+ 类别（设置 / 状态）+ 动态键族；`lookup(String)` 反查、`policyOf(String)` 按「更严」合并命中的登记并叠加凭据形状兜底。app 的登记表在 `fushi/lib/src/prefs/fushi_pref_registry.dart`。
 - `FushiTextSelection` -- 跨模块共享的文本选区数据模型。
 
 ## 关键依赖与配置

@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:fushi/src/prefs/fushi_pref_registry.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -92,7 +93,7 @@ void main() {
 
     test('工具条文字说明默认开（用户要求每个按钮都有文字说明）', () {
       expect(prefs.galHookToolbarLabels, isTrue);
-      expect(kKnownPreferenceKeys, contains('gal_hook_toolbar_labels'));
+      expect(isKnownPreferenceKey('gal_hook_toolbar_labels'), isTrue);
     });
 
     test('穿透时仍拦截鼠标默认开（点字查词是既有行为，不能被这次改动掀掉）', () {

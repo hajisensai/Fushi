@@ -3,6 +3,7 @@
 // · 标签页的控制器按偏好建出 `enabled`，偏好变化时即时同步到已建的控制器
 //   （[WebBrowserPullToRefreshBinding]，用假平台控制器直接驱动行为）。
 // 设置页开关项的可见性与读写见 test/pages/web_browser_settings_page_test.dart。
+import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
@@ -64,7 +65,7 @@ void main() {
 
   test('下拉刷新偏好是设备本地键', () {
     expect(
-      kWebBrowserDeviceLocalPrefKeys,
+      SyncRepository.deviceLocalPrefKeys,
       contains(kWebBrowserPullToRefreshPref),
     );
   });

@@ -1,11 +1,11 @@
 import 'dart:io';
 
+import 'package:fushi/src/prefs/fushi_pref_registry.dart';
 import 'package:drift/drift.dart' show DatabaseConnection;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/mining/galgame_window_video.dart';
-import 'package:fushi/src/models/preference_keys.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/anki/mining_media_quality_labels.dart'
     show miningClipFormatLabel;
@@ -444,8 +444,10 @@ void main() {
 
     test('迁移标记键登记为已知偏好，且不随 Profile 快照走', () {
       expect(
-        kKnownPreferenceKeys,
-        contains(PreferencesRepository.miningImageModeInstallDefaultKey),
+        isKnownPreferenceKey(
+          PreferencesRepository.miningImageModeInstallDefaultKey,
+        ),
+        isTrue,
       );
       expect(
         ProfileKeys.isExcludedPref(

@@ -1,10 +1,10 @@
 import 'dart:io';
 
+import 'package:fushi/src/prefs/fushi_pref_registry.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/models/module_id.dart';
-import 'package:fushi/src/models/preference_keys.dart';
 import 'package:fushi/src/profile/profile_keys.dart';
 import 'package:fushi/src/platform/desktop/desktop_tray.dart';
 
@@ -92,7 +92,7 @@ void main() {
   });
 
   test('「已收进托盘」提示标记是设备本地键，不随 Profile 切换重弹', () {
-    expect(kKnownPreferenceKeys, contains('desktop_tray_hint_shown'));
+    expect(isKnownPreferenceKey('desktop_tray_hint_shown'), isTrue);
     expect(ProfileKeys.isExcludedPref('desktop_tray_hint_shown'), isTrue);
   });
 

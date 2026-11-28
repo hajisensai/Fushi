@@ -1,7 +1,8 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
-import 'package:fushi_core/fushi_core.dart' show PrefCodec;
+import 'package:fushi_core/fushi_core.dart'
+    show PrefCodec, PrefKey, PrefKeyDef, PrefKeyFamily, PrefKind, PrefPolicy;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/models/home_tab.dart';
@@ -138,13 +139,28 @@ const List<String> kPageBackdropDeviceLocalPrefKeys = <String>[
   kPageBackdropModuleImagesPrefKey,
 ];
 
+/// 页面背景的偏好键登记：[kPageBackdropDeviceLocalPrefKeys] 与各配置的停放键族
+/// （[kPageBackdropProfileParkedPrefKeyPrefixes]）都设备本地——文件只在这台设备的数据目录
+/// 里，不进 Profile 快照 / 分享 / 备份 / 设置同步。样式（预设 / 强度 / 模糊…）不在此列，
+/// 照常随 Profile。
+final List<PrefKeyDef> kPageBackdropPrefKeyDefs = <PrefKeyDef>[
+  for (final String key in kPageBackdropDeviceLocalPrefKeys)
+    PrefKey.untyped(key, policy: PrefPolicy.local, kind: PrefKind.setting),
+  for (final String prefix in kPageBackdropProfileParkedPrefKeyPrefixes.values)
+    PrefKeyFamily.untyped(
+      prefix: prefix,
+      policy: PrefPolicy.local,
+      kind: PrefKind.setting,
+    ),
+];
+
 /// 背景图片按配置记、只留在本机：live 键 → 停放键前缀（后缀 = profile uid）。
 ///
 /// 样式（预设 / 强度 / 模糊…）随 Profile 快照走，图片路径却是设备本地的——两者拆开后切配置
 /// 只换样式不换图。这里把图片键接进 `ProfileRepository.perProfileDeviceLocalPrefs`：切走时
 /// live 值停放到这份配置名下，切入时换回；没停放过的配置沿用切换前的图（现有全局图就是每份
 /// 配置的初始值，不需要迁移）。停放键与 live 键同样设备本地
-/// （`PrefRedactionPolicy.deviceLocalKeyPrefixes`）：不进 Profile 快照 / 分享 / 备份 / 设置同步。
+/// （偏好键登记表的设备本地键族）：不进 Profile 快照 / 分享 / 备份 / 设置同步。
 /// 取色缓存跟着图走，一并停放，切回来不用重取。
 const Map<String, String> kPageBackdropProfileParkedPrefKeyPrefixes =
     <String, String>{
