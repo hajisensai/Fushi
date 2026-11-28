@@ -35,6 +35,7 @@ export 'src/database/sync_tombstone_kind.dart';
 export 'src/database/srs_rows.dart';
 export 'src/database/tables.dart';
 export 'src/database/tag_host_kind.dart';
+export 'src/prefs/pref_key.dart';
 export 'src/utils/fushi_debug_print.dart';
 export 'src/utils/jp_codepoint_fold.dart';
 export 'src/utils/latin1_mojibake.dart';
