@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/widgets.dart';
+import 'package:fushi/src/storage/app_storage_areas.dart';
 import 'package:fushi/src/sync/app_font_sync_local.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/storage/storage_usage_service.dart'
@@ -295,7 +296,9 @@ Future<ManualSyncOutcome> runManualSyncWithFeedback({
     onlyChannels: onlyChannels,
     db: appModel.database,
     dictionaryResourceRoot: appModel.dictionaryResourceDirectory,
-    audioDatabaseRoot: Directory('${appModel.appDirectory.path}/audiobooks'),
+    audioDatabaseRoot: Directory(
+      EngineStorageArea.audiobooks.pathUnder(appModel.appDirectory.path),
+    ),
     tempDir: appModel.temporaryDirectory,
     localAudioEntries: appModel.localAudioDbsOnThisDevice,
     onLocalAudioImported: appModel.importSyncedLocalAudioDb,
@@ -347,7 +350,9 @@ Future<ManualSyncOutcome> runAssetTransferWithFeedback({
     direction: direction,
     scope: scope,
     dictionaryResourceRoot: appModel.dictionaryResourceDirectory,
-    audioDatabaseRoot: Directory('${appModel.appDirectory.path}/audiobooks'),
+    audioDatabaseRoot: Directory(
+      EngineStorageArea.audiobooks.pathUnder(appModel.appDirectory.path),
+    ),
     tempDir: appModel.temporaryDirectory,
     localAudioEntries: appModel.localAudioDbsOnThisDevice,
     onLocalAudioImported: appModel.importSyncedLocalAudioDb,

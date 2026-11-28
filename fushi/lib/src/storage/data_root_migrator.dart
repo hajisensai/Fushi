@@ -14,6 +14,7 @@ import 'package:fushi/src/models/local_audio_manager.dart'
     show LocalAudioManager;
 import 'package:fushi/src/profile/profile_keys.dart' show ProfileKeys;
 import 'package:fushi/src/storage/app_paths.dart';
+import 'package:fushi/src/storage/app_storage_areas.dart';
 import 'package:fushi/src/storage/path_rebase_coverage.dart';
 import 'package:fushi_engine/media/torrent/torrent_fast_resume.dart';
 import 'package:fushi/src/sync/backup_path_rebase.dart'
@@ -1792,12 +1793,11 @@ class DataRootMigrator {
   }
 
   /// 内置 torrent 引擎的 fast-resume 目录 `<documents>/anime_downloads/resume`。
-  /// 派生点与 `AppModel.startAnimeDownloadService`（`documentsSubdirectory(
-  /// 'anime_downloads')` + [kEmbeddedTorrentFastResumeDirName]）一致。
+  /// 派生点与 `AppModel.startAnimeDownloadService`（[AppStorageArea.animeDownloads]
+  /// + [kEmbeddedTorrentFastResumeDirName]）一致。
   static String embeddedTorrentFastResumeDirectory(String documentsRoot) =>
       p.join(
-        documentsRoot,
-        'anime_downloads',
+        AppStorageArea.animeDownloads.pathUnder(documentsRoot),
         kEmbeddedTorrentFastResumeDirName,
       );
 

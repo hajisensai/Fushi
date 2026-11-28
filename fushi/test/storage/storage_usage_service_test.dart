@@ -6,7 +6,7 @@ import 'package:fushi_audio/fushi_audio.dart' show AudiobookStorage;
 import 'package:fushi_core/fushi_core.dart' show fnv1a32Hex;
 import 'package:path/path.dart' as p;
 
-import 'package:fushi/src/storage/app_paths.dart';
+import 'package:fushi/src/storage/app_storage_areas.dart';
 import 'package:fushi/src/storage/storage_usage_service.dart';
 import 'package:fushi/src/sync/backup_archive_name.dart'
     show isBackupArchiveName;
@@ -71,23 +71,6 @@ void main() {
       writeFile(file, 42);
       expect(directorySizeSync(file), 42);
     });
-  });
-
-  test('类目清单全覆盖 documents 白名单：每个顶层目录归属且只归属一个类目', () {
-    final List<String> assigned = <String>[
-      for (final List<String> children
-          in kStorageCategoryDocumentsChildren.values)
-        ...children,
-    ];
-    // 无重复归属。
-    expect(assigned.toSet().length, assigned.length, reason: '同一顶层目录被分进了多个类目');
-    // 与白名单互为全集（新目录加进 fushiOwnedDocumentsEntries 时，这里逼着
-    // 给它选一个存储类目——否则存储页总量会漏账）。
-    expect(
-      assigned.toSet(),
-      AppPaths.fushiOwnedDocumentsEntries,
-      reason: '存储类目清单必须与 AppPaths.fushiOwnedDocumentsEntries 全覆盖对齐',
-    );
   });
 
   test('audiobookPersistDirPath 与 AudiobookStorage 真实落盘目录逐字节一致', () async {
@@ -511,7 +494,12 @@ void main() {
     test('database 类目 = support 根整体减去 OCR 模型；ocrModels 单列', () async {
       writeFile(p.join(support.path, 'fushi.sqlite'), 1000);
       writeFile(
-        p.join(support.path, kOcrModelsSupportChild, 'manga', 'a.onnx'),
+        p.join(
+          support.path,
+          EngineStorageArea.ocrModels.relativePath,
+          'manga',
+          'a.onnx',
+        ),
         300,
       );
 
@@ -541,7 +529,10 @@ void main() {
     });
 
     test('字幕生成任务单列一类：任务缓存可删、登记着的产物只读，不再混进 database', () async {
-      final String asr = p.join(support.path, kAsrJobsSupportChild);
+      final String asr = p.join(
+        support.path,
+        EngineStorageArea.asrJobs.relativePath,
+      );
       final String videoJobs = p.join(asr, 'video_subtitles');
       writeFile(p.join(support.path, 'fushi.sqlite'), 1000);
       // 日语任务（state.json 记着媒体路径）与普通话任务（目录名带语言后缀）。
@@ -589,10 +580,6 @@ void main() {
         'music_subtitles/plugin_audio': StorageEntryKind.derivedFile,
         '0f0f': StorageEntryKind.derivedFile,
       });
-      expect(
-        kDeletableEntryCategories,
-        contains(StorageCategoryId.subtitleJobs),
-      );
     });
 
     test('通用类目：明细 = 类目根下直接子项，label 带顶层目录前缀，总量 = 明细之和', () async {
@@ -640,7 +627,12 @@ void main() {
       writeFile(p.join(support.path, 'fushi.sqlite'), 1000);
       writeFile(p.join(support.path, 'local_audio_1.db'), 20);
       writeFile(
-        p.join(support.path, kOcrModelsSupportChild, 'manga', 'a.onnx'),
+        p.join(
+          support.path,
+          EngineStorageArea.ocrModels.relativePath,
+          'manga',
+          'a.onnx',
+        ),
         300,
       );
 
@@ -809,7 +801,7 @@ void main() {
     test('BUG-4991：互联 sync-data 拆成共享 / 复习同步 / 旧版残留 / 其他，总量不少算', () async {
       final String syncData = p.join(
         support.path,
-        kInterconnectSyncDataSupportChild,
+        AppStorageArea.interconnectSyncData.relativePath,
       );
       final String root = p.join(syncData, 'fushi-data');
       writeFile(p.join(support.path, 'fushi.db'), 1000);
@@ -880,14 +872,14 @@ void main() {
         ),
       );
 
-      // 旧版残留不进「可直接裸删」的口径（一键清缓存不会碰它）。
-      expect(kDirectlyDeletableEntryKinds, isNot(contains(legacy.kind)));
+      // 旧版残留不进一键清缓存（走自己的删除原语、逐条确认）。
+      expect(legacy.deletability, StorageEntryDeletability.confirm);
     });
 
     test('BUG-4991：无旧版残留 / 无其他时只出共享与复习同步两条（0 也显示）', () async {
       final String syncData = p.join(
         support.path,
-        kInterconnectSyncDataSupportChild,
+        AppStorageArea.interconnectSyncData.relativePath,
       );
       Directory(p.join(syncData, 'fushi-data')).createSync(recursive: true);
 
@@ -1047,12 +1039,11 @@ void main() {
       );
     });
 
-    test('可直接删的明细，其类目必须登记在 kDeletableEntryCategories', () async {
-      // 集合的文档说「只有该集合里的类目会产出 deleteFiles 明细」，而 backups 明明
-      // 也接通用文件删除原语。契约与事实分家时，这条断言先红。
+    test('可删明细的可删性来自所属区域：备份 / 缓存可删，封面只读（BUG-5613）', () async {
       writeFile(p.join(cache.path, 'fushi-backup-2026-08-31.fushi.zip'), 9000);
       writeFile(p.join(cache.path, 'ordinary-cache.bin'), 700);
       writeFile(p.join(docs.path, 'video_covers', 'c.jpg'), 100);
+      writeFile(p.join(docs.path, 'browser', 'Cookies'), 50);
 
       final List<StorageCategoryUsage> all = await service()
           .scanCategories(
@@ -1060,27 +1051,27 @@ void main() {
             dictionaryNames: const <String>[],
           )
           .toList();
+      StorageEntryUsage only(StorageCategoryId id) =>
+          all.firstWhere((StorageCategoryUsage u) => u.id == id).entries.single;
 
-      final Set<StorageCategoryId> deletableSeen = <StorageCategoryId>{};
-      for (final StorageCategoryUsage usage in all) {
-        for (final StorageEntryUsage entry in usage.entries) {
-          if (!kDirectlyDeletableEntryKinds.contains(entry.kind)) continue;
-          deletableSeen.add(usage.id);
-          expect(
-            kDeletableEntryCategories,
-            contains(usage.id),
-            reason:
-                '${usage.id} 产出了可直接删的明细（${entry.kind}），'
-                '却不在 kDeletableEntryCategories 里',
-          );
-        }
-      }
       expect(
-        deletableSeen,
-        contains(StorageCategoryId.backups),
-        reason: '本用例必须真的走到备份聚合项，否则断言是空转',
+        only(StorageCategoryId.backups).deletability,
+        StorageEntryDeletability.confirm,
       );
-      expect(deletableSeen, contains(StorageCategoryId.cache));
+      expect(
+        only(StorageCategoryId.cache).deletability,
+        StorageEntryDeletability.cacheBulk,
+      );
+      expect(only(StorageCategoryId.covers).kind, StorageEntryKind.readOnly);
+      expect(
+        only(StorageCategoryId.covers).deletability,
+        StorageEntryDeletability.no,
+      );
+      expect(only(StorageCategoryId.web).kind, StorageEntryKind.derivedFile);
+      expect(
+        only(StorageCategoryId.web).deletability,
+        StorageEntryDeletability.confirm,
+      );
     });
 
     test('备份聚合项的 label 是路径形状身份串，不是写死的英文 UI 文案', () async {

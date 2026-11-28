@@ -13,6 +13,7 @@
 ///   遥控不会把它当成哪个视频的任务。
 library;
 
+import 'package:fushi_engine/foundation/storage_area.dart';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -43,8 +44,13 @@ class MusicAsrTrackSlot {
 
 /// `<数据根>/asr_jobs/music_subtitles/out`：与视频任务目录（`asr_jobs/video_subtitles`）
 /// 同级。布局只在这里写一次。
-Directory musicSubtitleOutRootUnder(Directory supportRoot) =>
-    Directory(p.join(supportRoot.path, 'asr_jobs', 'music_subtitles', 'out'));
+Directory musicSubtitleOutRootUnder(Directory supportRoot) => Directory(
+  p.join(
+    EngineStorageArea.asrJobs.pathUnder(supportRoot.path),
+    'music_subtitles',
+    'out',
+  ),
+);
 
 /// 解析 SRT 的入口（生产 [FushiLyricsAsync.parse]：后台 isolate 跑 Rust 解析）。
 typedef MusicAsrSubtitleParse =

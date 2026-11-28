@@ -11,6 +11,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/pages/implementations/storage_usage_view.dart';
 import 'package:fushi/src/settings/storage_usage_actions.dart';
+import 'package:fushi/src/storage/app_storage_areas.dart';
 import 'package:fushi/src/storage/storage_usage_service.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -582,7 +583,12 @@ void main() {
 
   testWidgets('可选模块区已移除：OCR 模型只剩占用行，没有下载/删除按钮', (WidgetTester tester) async {
     writeFile(
-      p.join(support.path, kOcrModelsSupportChild, 'manga', 'a.onnx'),
+      p.join(
+        support.path,
+        EngineStorageArea.ocrModels.relativePath,
+        'manga',
+        'a.onnx',
+      ),
       300,
     );
 
@@ -853,7 +859,7 @@ void main() {
     writeFile(p.join(support.path, 'fushi.db'), 1000);
     final String syncData = p.join(
       support.path,
-      kInterconnectSyncDataSupportChild,
+      AppStorageArea.interconnectSyncData.relativePath,
     );
     Directory(syncData).createSync(recursive: true);
     bool pruned = false;
@@ -962,7 +968,7 @@ void main() {
 
   testWidgets('BUG-4991：取消确认框不调清理原语', (WidgetTester tester) async {
     Directory(
-      p.join(support.path, kInterconnectSyncDataSupportChild),
+      p.join(support.path, AppStorageArea.interconnectSyncData.relativePath),
     ).createSync(recursive: true);
     int pruneCalls = 0;
 
@@ -1010,7 +1016,7 @@ void main() {
     WidgetTester tester,
   ) async {
     Directory(
-      p.join(support.path, kInterconnectSyncDataSupportChild),
+      p.join(support.path, AppStorageArea.interconnectSyncData.relativePath),
     ).createSync(recursive: true);
     // 代替 FushiSyncServerController：同为 Listenable，起停时 notify。
     final ValueNotifier<bool> running = ValueNotifier<bool>(true);

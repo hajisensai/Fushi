@@ -220,15 +220,14 @@ String? storageVideoDeleteFailureReason(VideoLibraryDeleteResult result) {
   return null;
 }
 
-/// 明细能不能删（只读子项删它就是绕过护栏的裸删）。
+/// 明细能不能删：所有者在条目上给的 [StorageEntryUsage.deletability]（只读子项删它
+/// 就是绕过护栏的裸删）。视频条目另看视频删除链有没有接上。
 bool isStorageEntryDeletable(
   StorageEntryUsage entry, {
   bool canDeleteVideos = true,
-}) => switch (entry.kind) {
-  StorageEntryKind.readOnly => false,
-  StorageEntryKind.videoBook => canDeleteVideos,
-  _ => true,
-};
+}) =>
+    entry.deletability != StorageEntryDeletability.no &&
+    (entry.kind != StorageEntryKind.videoBook || canDeleteVideos);
 
 /// 按明细 kind 分流到对应删除原语（页面与控制通道共用，确认由调用方负责）。
 /// 只读明细抛 [StateError]。
@@ -490,29 +489,11 @@ String storageEntryTitle(StorageEntryUsage entry) => switch (entry.kind) {
   },
 };
 
-/// 「一键清除全部缓存」覆盖的类目（反馈 jg3XoDVISk）。
-///
-/// 判据比 [kDeletableEntryCategories]（「删了不留悬空引用」）更严：**只收纯缓存**
-/// ——根下的东西没有任何 DB 行 / 配置 / 用户产物指着，删掉后各自的生产方会按需
-/// 重新生成或重新拉取，系统本身也随时可能清掉它（iOS `Library/Caches`、沙盒 `tmp`）。
-///
-/// 刻意**不含**（它们可删，但删的是用户数据或用户要付出代价才能找回的东西，
-/// 只走存储页逐条删除、各自确认）：
-/// - covers：`video_covers` / `game_covers` 里有用户手动设置的封面（`CoverOrigin.manual`），
-///   `game_covers` 还进备份包——是用户数据，不是缓存；
-/// - web：`browser` 是浏览器登录态 / Cookie，`webArchive` 是用户存档；
-/// - exports：用户导出的文件与待回写 Anki 的卡片草稿；
-/// - backups：本地备份归档，内容就是用户数据的副本；
-/// - ocrModels / shaders：要重新下载几百 MB，`mpv_shaders` 里还混着用户自导入的着色器。
-const Set<StorageCategoryId> kClearAllCacheCategories = <StorageCategoryId>{
-  StorageCategoryId.cache,
-};
-
 /// 一键清缓存的计划：按类目分组的待删明细（确认框据此逐类列出名称与大小）。
 class StorageCacheClearPlan {
   const StorageCacheClearPlan({required this.categories});
 
-  /// 只含 [kClearAllCacheCategories] 里、且有可删明细的类目，按体积降序。
+  /// 只含有 [StorageEntryDeletability.cacheBulk] 明细的类目，按体积降序。
   final List<StorageCategoryUsage> categories;
 
   int get bytes => categories.fold<int>(
@@ -529,24 +510,26 @@ class StorageCacheClearPlan {
   bool get isEmpty => entries.isEmpty;
 }
 
-/// 从扫描结果里挑出一键清缓存要删的明细。只取
-/// [kDirectlyDeletableEntryKinds] 的明细——即便以后有人往
-/// [kClearAllCacheCategories] 里加了带只读 / 带删除链明细的类目，这里也只会裸删
-/// 「无引用的派生文件」，不会绕过书 / 词典 / 视频各自的删除原语。
+/// 从扫描结果里挑出一键清缓存要删的明细（反馈 jg3XoDVISk）：只取所有者标成
+/// [StorageEntryDeletability.cacheBulk] 的明细——**只收纯缓存**：根下的东西没有任何
+/// DB 行 / 配置 / 用户产物指着，删掉后各自的生产方会按需重新生成或重新拉取，系统本身
+/// 也随时可能清掉它（iOS `Library/Caches`、沙盒 `tmp`）。用户数据（封面、登录态、导出、
+/// 备份）和要付出代价才能找回的东西（OCR 模型）的区域不可能是 cacheBulk：区域登记表
+/// 构造期就拒绝非缓存区域声明它，条目构造期也拒绝非通用文件明细带它
+/// （`StorageEntryUsage` 断言），所以这里不会绕过书 / 词典 / 视频各自的删除原语。
 StorageCacheClearPlan buildStorageCacheClearPlan(
   Iterable<StorageCategoryUsage> usage,
 ) {
   final List<StorageCategoryUsage> categories = <StorageCategoryUsage>[
     for (final StorageCategoryUsage u in usage)
-      if (kClearAllCacheCategories.contains(u.id))
-        StorageCategoryUsage(
-          id: u.id,
-          bytes: u.bytes,
-          entries: <StorageEntryUsage>[
-            for (final StorageEntryUsage e in u.entries)
-              if (kDirectlyDeletableEntryKinds.contains(e.kind)) e,
-          ],
-        ),
+      StorageCategoryUsage(
+        id: u.id,
+        bytes: u.bytes,
+        entries: <StorageEntryUsage>[
+          for (final StorageEntryUsage e in u.entries)
+            if (e.deletability == StorageEntryDeletability.cacheBulk) e,
+        ],
+      ),
   ]..removeWhere((StorageCategoryUsage u) => u.entries.isEmpty);
   categories.sort((StorageCategoryUsage a, StorageCategoryUsage b) {
     final int byBytes = b.bytes.compareTo(a.bytes);

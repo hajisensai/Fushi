@@ -16,6 +16,7 @@
 /// ONNX 转到一半的进度不会被顶掉，切回去还在——与「换模型 = 换任务」同一条规则。
 library;
 
+import 'package:fushi_engine/foundation/storage_area.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -62,7 +63,7 @@ class AppleSpeechTranscriptionService extends AsrTranscriptionService {
     final Future<Directory> Function()? override = _jobsRootOverride;
     if (override != null) return override();
     final Directory support = await asrSupportRootDirectory();
-    return Directory(p.join(support.path, 'asr_jobs'));
+    return Directory(EngineStorageArea.asrJobs.pathUnder(support.path));
   }
 
   /// 任务目录：与父类同构（文件名 + 字节数 + 模型 id 的 SHA-1），只是模型 id 换成

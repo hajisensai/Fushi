@@ -168,7 +168,6 @@ Get-CimInstance Win32_Process |
 | `test/sync/no_hardcoded_google_secret_test.dart` | `lib` 全树 | 源码不得出现 OAuth secret 明文 |
 | `test/sync/mime_types_test.dart` | 6 个 `lib` 根 | 禁新增「扩展名 → image MIME」switch 副本 |
 | `test/sync/desktop_lookup_foreground_guard_static_test.dart` | `lib/src` 全树 | 抢前台/任务栏闪烁只能走单一封装 |
-| `test/storage/documents_whitelist_guard_test.dart` | `lib` 全树 | 新增 documents 子目录必须进迁移白名单 |
 | `test/storage/path_rebase_coverage_guard_test.dart` | `lib` 全树（pref 扫描） | 新增路径形 pref / DB 列必须双向登记 |
 | `test/focus/focus_architecture_static_test.dart` | `lib/src` 全树 | 焦点滚动必须走 `FushiFocusScroll` |
 | `test/lookup/auto_read_surface_coverage_guard_test.dart` | `lib` 全树 | 每个 `searchDictionary(` 调用点须声明接不接自动朗读 |
@@ -241,7 +240,7 @@ cd fushi && dart run tool/flutter_test_failures.dart --no-pub \
   test/database/package_schema_version_literal_guard_test.dart \
   test/sync/no_hardcoded_google_secret_test.dart test/sync/mime_types_test.dart \
   test/sync/desktop_lookup_foreground_guard_static_test.dart \
-  test/storage/documents_whitelist_guard_test.dart test/storage/path_rebase_coverage_guard_test.dart \
+  test/storage/path_rebase_coverage_guard_test.dart \
   test/focus/focus_architecture_static_test.dart test/lookup/auto_read_surface_coverage_guard_test.dart \
   test/pages/lookup_overlay_dialog_gate_guard_test.dart test/shortcuts/shortcut_channel_wiring_guard_test.dart \
   test/webview/webview_render_process_gone_guard_test.dart test/widgets/horizontal_drag_scroll_guard_test.dart \

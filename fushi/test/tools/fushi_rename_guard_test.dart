@@ -148,9 +148,6 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
     allowed: <String, String>{
       'lib/src/storage/export_directory.dart':
           'kLegacyExportDirectoryName：启动就地改名迁移的旧目录名输入。',
-      'lib/src/storage/app_paths.dart':
-          '数据根搬迁白名单的双名条目：改名失败留在旧名的存量目录仍须随迁移'
-          '搬走，否则数据分家。',
     },
   ),
   _ForbiddenPattern(
@@ -164,8 +161,6 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
     allowed: <String, String>{
       'lib/src/storage/export_directory.dart':
           'kLegacyExportDirectoryName：启动就地改名迁移的旧目录名输入。',
-      'lib/src/storage/app_paths.dart':
-          "数据根搬迁白名单的 'hibikiExport' 双名条目（同 hibikiExport 禁模式理由）。",
       'lib/src/models/audio_source_config.dart':
           "AudioSourceKind.fromWireName 的旧 wireName 兼容别名 'hibikiRemote'："
           '音频源配置以 JSON 落偏好、无版本阶梯，载入期认旧值即迁移通道。',
@@ -240,11 +235,9 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
     name: 'hoshi_books',
     regex: RegExp('hoshi_books'),
     allowed: <String, String>{
-      'lib/src/storage/books_directory.dart':
-          'kLegacyBooksDirectoryName：启动就地改名迁移的旧目录名输入。',
-      'lib/src/storage/app_paths.dart':
-          '数据根搬迁白名单的双名条目：改名失败留在旧名的存量目录仍须随迁移'
-          '搬走（同 hibikiExport 条目）。',
+      'packages/fushi_engine/lib/foundation/storage_area.dart':
+          'kLegacyBooksDirectoryName：书库区域的存量旧名（启动就地改名的输入；'
+          '改名失败留在旧名时数据根搬迁 / 存储页 / 证据探测仍须认它）。',
       'lib/src/sync/backup_service.dart':
           '_legacyBooksPrefix：旧 Hibiki 归档书树前缀的读侧回退'
           '（archiveBooksPrefix），跨版本归档契约。',

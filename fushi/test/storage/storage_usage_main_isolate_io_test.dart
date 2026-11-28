@@ -6,6 +6,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_shader_downloader.dart';
 import 'package:fushi/src/settings/storage_usage_actions.dart';
+import 'package:fushi/src/storage/app_storage_areas.dart';
 import 'package:fushi/src/storage/storage_usage_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
@@ -283,7 +284,7 @@ void main() {
       final String shadersPath = p.join(tempRoot.path, 'shaders');
       final String booksRoot = p.join(
         docsPath,
-        kStorageCategoryDocumentsChildren[StorageCategoryId.books]!.first,
+        EngineStorageArea.epubBooks.relativePath,
       );
       _writeFile(p.join(booksRoot, 'book-a', 'content.xhtml'), 300);
       _writeFile(p.join(supportPath, 'fushi.db'), 200);

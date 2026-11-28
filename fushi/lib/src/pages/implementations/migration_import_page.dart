@@ -8,6 +8,7 @@ import 'package:fushi/src/migration/migration_exporter.dart';
 import 'package:fushi/src/migration/migration_importer.dart';
 import 'package:fushi/src/migration/migration_readonly.dart';
 import 'package:fushi/src/migration/migration_target_channel.dart';
+import 'package:fushi/src/storage/app_storage_areas.dart';
 import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart'
     show backupImportRestart;
@@ -215,22 +216,20 @@ class _MigrationImportPageState extends State<MigrationImportPage>
       appModel.beginBackupImport();
       await WidgetsBinding.instance.endOfFrame;
       await appModel.closeDatabase();
-      final String booksRoot = p.join(
+      final String booksRoot = EngineStorageArea.epubBooks.pathUnder(
         appModel.appDirectory.path,
-        'fushi_books',
       );
-      final String audiobooksRoot = p.join(
+      final String audiobooksRoot = EngineStorageArea.audiobooks.pathUnder(
         appModel.appDirectory.path,
-        'audiobooks',
       );
-      final String fontsRoot = p.join(
+      final String fontsRoot = AppStorageArea.customFonts.pathUnder(
         appModel.appDirectory.path,
-        'custom_fonts',
       );
-      final String videosRoot = p.join(appModel.appDirectory.path, 'videos');
-      final String gameCoversRoot = p.join(
+      final String videosRoot = AppStorageArea.restoredVideos.pathUnder(
         appModel.appDirectory.path,
-        'game_covers',
+      );
+      final String gameCoversRoot = AppStorageArea.gameCovers.pathUnder(
+        appModel.appDirectory.path,
       );
       for (final MigrationImportBatch batch in scan.ready) {
         // **不能裸调 setState**：beginBackupImport() 上的是全屏遮罩，本页已被

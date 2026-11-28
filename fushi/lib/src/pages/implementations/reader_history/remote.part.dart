@@ -2206,8 +2206,9 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
 
   /// 本地有声书解包落盘根目录（与 [LocalLibraryHostService] 同源
   /// `<appDirectory>/audiobooks`，确保导入位置与 host 导入一致）。
-  Directory _audiobookDatabaseRoot() =>
-      Directory(p.join(appModel.appDirectory.path, 'audiobooks'));
+  Directory _audiobookDatabaseRoot() => Directory(
+    EngineStorageArea.audiobooks.pathUnder(appModel.appDirectory.path),
+  );
 
   Future<File> _remoteBookDestination(RemoteBookInfo book) async {
     final Future<File> Function(RemoteBookInfo book)? injected =

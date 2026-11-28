@@ -3,23 +3,31 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/settings/storage_usage_actions.dart';
+import 'package:fushi/src/storage/app_storage_areas.dart';
 import 'package:fushi/src/storage/storage_usage_service.dart';
 
 /// 反馈 jg3XoDVISk：存储页「清除全部缓存」的计划与执行原语。
 ///
-/// 红线是「不碰用户数据」：可删（[kDeletableEntryCategories]）≠ 缓存。封面里有手动
-/// 封面、浏览器数据里有登录态、备份包就是用户数据副本——这些只能逐条删。
+/// 红线是「不碰用户数据」：逐条可删（[StorageEntryDeletability.confirm]）≠ 缓存
+/// （[StorageEntryDeletability.cacheBulk]）。封面里有手动封面、浏览器数据里有登录态、
+/// 备份包就是用户数据副本——这些最多只能逐条删。
 void main() {
   StorageEntryUsage entry(
     String path,
     int bytes, {
     StorageEntryKind kind = StorageEntryKind.derivedFile,
+    StorageEntryDeletability? deletability,
   }) => StorageEntryUsage(
     id: path,
     label: path,
     bytes: bytes,
     paths: <String>[path],
     kind: kind,
+    deletability:
+        deletability ??
+        (kind == StorageEntryKind.derivedFile
+            ? StorageEntryDeletability.cacheBulk
+            : null),
   );
 
   StorageCategoryUsage category(
@@ -45,48 +53,47 @@ void main() {
     anime4kDelete: () async => fail('清缓存不许删 Anime4K'),
   );
 
-  group('kClearAllCacheCategories 契约', () {
-    test('只收纯缓存，且是可直接删类目的子集', () {
-      expect(
-        kDeletableEntryCategories.containsAll(kClearAllCacheCategories),
-        isTrue,
-        reason: '一键清缓存只能是逐条可删集合的子集，不能扩权',
-      );
-      expect(kClearAllCacheCategories, contains(StorageCategoryId.cache));
+  group('一键清缓存的区域契约（登记表）', () {
+    test('登记的区域里只有纯缓存区域可能进一键清缓存', () {
+      for (final StorageArea area in kAppStorageAreas.areas) {
+        if (area.entryDeletability == StorageEntryDeletability.cacheBulk) {
+          expect(area.lifecycle, StorageLifecycle.cache, reason: area.id);
+        }
+      }
     });
 
-    test('用户数据类目一律不在内（封面 / 浏览器 / 导出 / 备份 / 模型 / 着色器 / 书 / 词典…）', () {
-      for (final StorageCategoryId id in <StorageCategoryId>[
-        StorageCategoryId.books,
-        StorageCategoryId.dictionaries,
-        StorageCategoryId.videoDownloads,
-        StorageCategoryId.covers,
-        StorageCategoryId.subtitles,
-        // 任务缓存删了要从头重跑、产物是登记着的字幕：不算一键清的纯缓存。
-        StorageCategoryId.subtitleJobs,
-        StorageCategoryId.shaders,
-        StorageCategoryId.customFonts,
-        StorageCategoryId.web,
-        StorageCategoryId.exports,
-        StorageCategoryId.backups,
-        StorageCategoryId.database,
-        StorageCategoryId.ocrModels,
-        StorageCategoryId.other,
-      ]) {
-        expect(kClearAllCacheCategories.contains(id), isFalse, reason: '$id');
+    test('BUG-5613：封面与着色器区域连逐条删都不给（有库行指着、混着用户数据）', () {
+      for (final StorageArea area in kAppStorageAreas.areas) {
+        if (area.category != StorageCategoryId.covers &&
+            area.category != StorageCategoryId.shaders) {
+          continue;
+        }
+        expect(
+          area.entryDeletability,
+          StorageEntryDeletability.no,
+          reason: area.id,
+        );
       }
     });
   });
 
   group('buildStorageCacheClearPlan', () {
-    test('只挑缓存类目的可删明细；其它类目即便可删也不进计划', () {
+    test('只挑所有者标成纯缓存的明细；逐条可删的用户数据不进计划', () {
       final StorageCacheClearPlan plan = buildStorageCacheClearPlan(
         <StorageCategoryUsage>[
           category(StorageCategoryId.covers, <StorageEntryUsage>[
-            entry('/docs/video_covers/manual.jpg', 4096),
+            entry(
+              '/docs/video_covers/manual.jpg',
+              4096,
+              kind: StorageEntryKind.readOnly,
+            ),
           ]),
           category(StorageCategoryId.web, <StorageEntryUsage>[
-            entry('/docs/browser/Cookies', 2048),
+            entry(
+              '/docs/browser/Cookies',
+              2048,
+              deletability: StorageEntryDeletability.confirm,
+            ),
           ]),
           category(StorageCategoryId.backups, <StorageEntryUsage>[
             entry(

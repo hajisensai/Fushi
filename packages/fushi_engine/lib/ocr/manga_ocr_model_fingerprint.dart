@@ -26,6 +26,7 @@ import 'package:path/path.dart' as p;
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
 import 'package:fushi_engine/ocr/manga_ocr_model_manifest.dart';
 import 'package:fushi_engine/foundation/engine_paths.dart';
+import 'package:fushi_engine/foundation/storage_area.dart';
 
 /// 记忆化 sidecar 文件名（与模型同目录；删模型目录即一并清掉）。
 ///
@@ -43,7 +44,9 @@ const int kMangaOcrModelFingerprintLength = 12;
 /// parent 求得（`MangaOcrLocalModel.modelsDirectory`），启动清理也按它定位遗留文件。
 Future<Directory> defaultMangaOcrModelsDir() async {
   final Directory support = await enginePaths.supportRootDirectory();
-  return Directory(p.join(support.path, 'ocr_models', 'manga'));
+  return Directory(
+    p.join(EngineStorageArea.ocrModels.pathUnder(support.path), 'manga'),
+  );
 }
 
 /// 单个文件的 sha256（流式，不把大模型整份读进内存）。

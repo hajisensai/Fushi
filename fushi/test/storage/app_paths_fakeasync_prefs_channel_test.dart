@@ -3,13 +3,14 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/storage/app_paths.dart';
+import 'package:fushi/src/storage/app_storage_areas.dart';
 
 import '../helpers/source_guard.dart';
 
 /// BUG-1400 守卫：`AppPaths` 的路径解析在 `testWidgets` 的 **fake async 相位内**必须能
 /// 自行走完，不许把完成时机寄托在真实事件循环上。
 ///
-/// **为什么这是一条必须钉住的不变量**——[AppPaths.documentsSubdirectory] 是运行时静态
+/// **为什么这是一条必须钉住的不变量**——[AppPaths.areaDirectory] 是运行时静态
 /// 便捷层，封面抽取、字幕落点、缩略图、着色器列举等**页面级 fire-and-forget 链**都从它
 /// 派生，因此它会被 widget 测试在 `pump()` 相位大量调用。而它每次解析都要 await
 /// `SharedPreferences.getInstance()`：
@@ -74,8 +75,8 @@ void main() {
     Directory? resolved;
     // 刻意不 await：复刻页面里 fire-and-forget 的封面/字幕路径解析。
     // ignore: unawaited_futures
-    AppPaths.documentsSubdirectory(
-      'bug1400_probe',
+    AppPaths.areaDirectory(
+      AppStorageArea.customFonts,
     ).then((Directory d) => resolved = d);
 
     // 只 pump（纯 fake async，绝不进 runAsync）。解析若依赖真实事件循环，这里必然还是 null。
@@ -90,7 +91,7 @@ void main() {
           '会把进程级 SharedPreferences completer 永久钉死（BUG-1400）。'
           '套件级 harness test/flutter_test_config.dart 应当已装好进程内 prefs。',
     );
-    expect(resolved!.path, endsWith('bug1400_probe'));
+    expect(resolved!.path, endsWith('custom_fonts'));
   });
 
   testWidgets('前一个用例的解析不会毒化后续 runAsync 里的 AppPaths 解析', (
@@ -98,7 +99,7 @@ void main() {
   ) async {
     await tester.runAsync(() async {
       final Directory dir =
-          await AppPaths.documentsSubdirectory('bug1400_probe').timeout(
+          await AppPaths.areaDirectory(AppStorageArea.customFonts).timeout(
             const Duration(seconds: 5),
             onTimeout: () => throw StateError(
               'AppPaths 在 runAsync 里 5s 没解析出来 —— 进程级 prefs completer 已被'

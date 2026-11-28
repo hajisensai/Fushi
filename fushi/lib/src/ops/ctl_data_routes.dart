@@ -39,6 +39,7 @@ import 'package:fushi/src/ops/ctl_download_subscription_routes.dart';
 import 'package:fushi/src/ops/ctl_download_support.dart';
 import 'package:fushi/src/ops/op_context.dart';
 import 'package:fushi/src/storage/app_paths.dart';
+import 'package:fushi/src/storage/app_storage_areas.dart';
 import 'package:fushi/src/storage/storage_usage_service.dart';
 import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi/src/sync/backup_archive_name.dart';
@@ -145,10 +146,18 @@ BackupService _backupServiceFor(AppModel appModel) => BackupService(
   dbDirectory: appModel.databaseDirectory.path,
   dictionaryResourceDirectory: appModel.dictionaryResourceDirectory.path,
   appVersion: appModel.packageInfo.version,
-  booksRootDirectory: p.join(appModel.appDirectory.path, 'fushi_books'),
-  audiobooksRootDirectory: p.join(appModel.appDirectory.path, 'audiobooks'),
-  fontsRootDirectory: p.join(appModel.appDirectory.path, 'custom_fonts'),
-  gameCoversRootDirectory: p.join(appModel.appDirectory.path, 'game_covers'),
+  booksRootDirectory: EngineStorageArea.epubBooks.pathUnder(
+    appModel.appDirectory.path,
+  ),
+  audiobooksRootDirectory: EngineStorageArea.audiobooks.pathUnder(
+    appModel.appDirectory.path,
+  ),
+  fontsRootDirectory: AppStorageArea.customFonts.pathUnder(
+    appModel.appDirectory.path,
+  ),
+  gameCoversRootDirectory: AppStorageArea.gameCovers.pathUnder(
+    appModel.appDirectory.path,
+  ),
   srsStorage: appModel.srsStorageForBackup,
 );
 

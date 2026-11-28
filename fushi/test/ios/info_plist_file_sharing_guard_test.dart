@@ -125,7 +125,7 @@ void main() {
 
   test('复习备份目录在 documents 根下、并随数据根迁移', () {
     expect(AppPaths.fushiOwnedDocumentsEntries, contains('srs_backups'));
-    expect(paths, contains("documentsSubdirectory('srs_backups')"));
+    expect(paths, contains('areaDirectory(AppStorageArea.srsBackups)'));
   });
 
   test('数据库目录是 support 根（不在会被「文件」App 共享的 Documents 里）', () {

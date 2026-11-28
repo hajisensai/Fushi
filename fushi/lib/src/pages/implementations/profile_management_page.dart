@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/storage/app_storage_areas.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart' show ProfileMediaKind;
@@ -30,7 +31,6 @@ import 'package:fushi/src/settings/settings_schema_widgets.dart'
     show SettingsSectionFooter;
 import 'package:fushi/src/utils/misc/collection_exporter.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
-import 'package:path/path.dart' as p;
 
 /// Full-screen page for managing profiles, media-type bindings,
 /// and per-profile settings.
@@ -492,7 +492,9 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
     String profileName,
   ) async {
     final AppModel appModel = ref.read(appProvider);
-    final String fontsRoot = p.join(appModel.appDirectory.path, 'custom_fonts');
+    final String fontsRoot = AppStorageArea.customFonts.pathUnder(
+      appModel.appDirectory.path,
+    );
     String content;
     try {
       content = await vm.exportProfile(

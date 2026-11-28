@@ -1,12 +1,15 @@
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
+import 'package:fushi/src/storage/app_storage_areas.dart';
 
 /// Device-local tutorial receipts survive a backup restore and pack cleanup.
 /// They deliberately live outside both the restored database and pack directory.
 class RecommendedPackTutorialState {
   RecommendedPackTutorialState(Directory appDirectory)
-    : _directory = Directory(p.join(appDirectory.path, 'onboarding_tutorial'));
+    : _directory = Directory(
+        AppStorageArea.onboardingTutorial.pathUnder(appDirectory.path),
+      );
 
   final Directory _directory;
 

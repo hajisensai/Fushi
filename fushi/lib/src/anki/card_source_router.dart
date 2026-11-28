@@ -18,6 +18,7 @@ import 'package:fushi/src/mining/mined_origin_navigation.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_source_fingerprint.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/storage/app_storage_areas.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteVideoInfo;
@@ -456,7 +457,9 @@ Future<void> _openCardSource({
     link: link,
     repository: repository,
     draftStore: SourceReviewDraftStore(
-      Directory('${app.appDirectory.path}/card_source_drafts'),
+      Directory(
+        AppStorageArea.cardSourceDrafts.pathUnder(app.appDirectory.path),
+      ),
     ),
     onReturnToReading:
         previousReturn ??

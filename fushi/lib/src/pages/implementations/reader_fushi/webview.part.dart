@@ -157,7 +157,7 @@ extension _ReaderWebView on _ReaderFushiPageState {
       final String? safeFontPath = ReaderFushiSource.safeCustomFontPath(
         fontPath,
         allowedRoots: <String>[
-          p.join(appModel.appDirectory.path, 'custom_fonts'),
+          AppStorageArea.customFonts.pathUnder(appModel.appDirectory.path),
         ],
       );
       if (safeFontPath == null) {

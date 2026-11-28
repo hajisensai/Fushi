@@ -15,6 +15,7 @@ import 'dart:io';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary_core.dart' show FushiDicts;
 import 'package:drift/drift.dart' show Value;
+import 'package:fushi_engine/foundation/storage_area.dart';
 import 'package:fushi_engine/media/video/video_member_file.dart';
 import 'package:fushi_engine/asr/asr_host_job_runner.dart';
 import 'package:fushi_asr_core/asr_core.dart' as asr show AsrAudioProfile;
@@ -1110,7 +1111,7 @@ class HeadlessHost {
     localAudioEntriesProvider: () => localAudio.entries,
     onLocalAudioImported: localAudio.importPackage,
     removeLocalAudioEntry: localAudio.remove,
-    audioDatabaseRoot: Directory(p.join(paths.documents.path, 'audiobooks')),
+    audioDatabaseRoot: paths.area(EngineStorageArea.audiobooks),
     // 自动挑字幕的目标语言：配置 `subtitle_language`（空 = 自动）> 每个视频自己的语言链
     // > 偏好 `default_content_language`（与下载 / 补字幕同一份默认内容语言）。
     videoSubtitleExplicitLanguage: () => config.subtitleLanguage,
@@ -1119,7 +1120,7 @@ class HeadlessHost {
     // 客户端经互联发起的重刮 / 手动指定身份 / 分集排序：以前这里没接，
     // 这些请求在服务端恒返回空结果或 notPlanned。
     scrapeController: () async => _videoScrape?.controller,
-    uploadedVideoRoot: Directory(p.join(paths.documents.path, 'remote_videos')),
+    uploadedVideoRoot: paths.area(EngineStorageArea.remoteVideos),
     extractVideoCover: ({required String videoPath, required String bookUid}) =>
         extractVideoCover(videoPath: videoPath, bookUid: bookUid),
     // 互联「配置文件」搬运：服务端只寄存、不 apply（见 ServerProfileHub）。开关每次

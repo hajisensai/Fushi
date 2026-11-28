@@ -33,6 +33,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart' show FushiDicts;
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/foundation/engine_paths.dart';
+import 'package:fushi_engine/foundation/storage_area.dart';
 import 'package:fushi_engine/dictionary/dictionary_engine_hooks.dart';
 import 'package:fushi_engine/foundation/engine_platform_hooks.dart';
 import 'package:fushi_engine/media/audio/flac_encoder.dart';
@@ -49,8 +50,9 @@ import 'package:fushi_engine/ocr/ocr_host_bindings.dart';
 import 'package:fushi/src/media/manga/manga_panel_model_service.dart';
 import 'package:fushi/src/pdf/pdf_text_sections.dart';
 
-/// `AppPaths` 静态便捷层 → 引擎 [EnginePaths]。三个根逐一委派，子目录派生规则
-/// 在引擎基类里与 `AppPaths.documentsSubdirectory` 同构。
+/// `AppPaths` 静态便捷层 → 引擎 [EnginePaths]。各根逐一委派，区域目录由引擎基类
+/// 的 `areaDirectory` 按同一份登记（`StorageArea`）派生，与 `AppPaths.areaDirectory`
+/// 逐字节一致。
 class AppPathsEngineBridge extends EnginePaths {
   const AppPathsEngineBridge();
 
@@ -63,6 +65,10 @@ class AppPathsEngineBridge extends EnginePaths {
 
   @override
   Future<Directory> tempRootDirectory() => AppPaths.tempRootDirectory();
+
+  @override
+  Future<Directory> hostRootDirectory(StorageRootId root) =>
+      AppPaths.rootDirectory(root);
 
   /// iOS：file_picker 把选中文件搬进 `NSTemporaryDirectory()`（容器 `tmp/`，iOS
   /// 把 `TMPDIR` 设成它，即 [Directory.systemTemp]）。注意它**不是**

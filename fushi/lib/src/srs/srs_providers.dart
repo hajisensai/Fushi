@@ -22,7 +22,6 @@ import 'dart:io';
 import 'package:flutter/foundation.dart'
     show ChangeNotifier, ValueListenable, ValueNotifier;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path/path.dart' as p;
 import 'package:fushi_engine/srs/srs_miner.dart';
 import 'package:fushi_engine/srs/srs_collection_binding.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -51,6 +50,7 @@ import 'package:fushi/src/srs/srs_profile_stores.dart';
 import 'package:fushi/src/srs/srs_review_gestures.dart';
 import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/storage/app_paths.dart';
+import 'package:fushi/src/storage/app_storage_areas.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/srs/srs_op_ledger.dart';
@@ -212,7 +212,9 @@ final Provider<double> srsReviewZoomProvider = Provider<double>(
 final Provider<String?> srsCardFontRootProvider = Provider<String?>((Ref ref) {
   try {
     // 与字体库页 customFontsDirectory 同一个目录（`<appDirectory>/custom_fonts`）。
-    return p.join(ref.read(appProvider).appDirectory.path, 'custom_fonts');
+    return AppStorageArea.customFonts.pathUnder(
+      ref.read(appProvider).appDirectory.path,
+    );
   } catch (_) {
     return null;
   }

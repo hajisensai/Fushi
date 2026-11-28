@@ -29,6 +29,7 @@ import 'package:fushi_engine/models/content_language.dart'
 import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi/src/lookup/overlay_bridge_handlers.dart';
 import 'package:fushi/src/lookup/overlay_queued_mines.dart';
+import 'package:fushi/src/storage/app_storage_areas.dart';
 import 'package:fushi/src/utils/misc/desktop_audio_playback.dart';
 import 'package:fushi/src/mining/gal_hook_mining_coordinator.dart';
 import 'package:fushi/src/mining/gal_hook_mining_failure_text.dart';
@@ -58,7 +59,6 @@ import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
-import 'package:path/path.dart' as p;
 
 typedef GalHookPreferenceReader =
     Object? Function(String key, {required Object? defaultValue});
@@ -865,7 +865,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
     return AppFontLoader.resolveForNativeOverlay(
       settings.gameLookupFonts,
       allowedDirectories: <String>[
-        p.join(model.appDirectory.path, 'custom_fonts'),
+        AppStorageArea.customFonts.pathUnder(model.appDirectory.path),
       ],
     );
   }

@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:fushi/src/storage/app_storage_areas.dart';
 import 'package:fushi/src/utils/own_route_exit.dart';
 import 'package:fushi/src/media/source_library/add_local_folder_source.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
@@ -98,7 +99,7 @@ Future<SourceScanSummary?> importRippedAudioCd({
 /// 抓轨输出根 `<documents>/audio_cd/`（对话框与控制通道共用）。
 /// 'audio_cd' 登记在 AppPaths.fushiOwnedDocumentsEntries：数据根迁移时随根搬走。
 Future<Directory> audioCdRipOutputRoot() =>
-    AppPaths.documentsSubdirectory('audio_cd');
+    AppPaths.areaDirectory(AppStorageArea.audioCd);
 
 /// Windows 光驱要按扇区读，只有本机光驱能抓；macOS 挂载点每轨已是普通 AIFF 文件，
 /// 任何带随包统一 FFmpeg（含 aiff / flac）的桌面都能转。移动端没有光驱，不接管。

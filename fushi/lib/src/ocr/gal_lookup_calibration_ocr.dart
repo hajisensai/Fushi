@@ -7,6 +7,7 @@
 /// lookup path never calls this module.
 library;
 
+import 'package:fushi_engine/foundation/storage_area.dart';
 import 'dart:io';
 import 'dart:isolate';
 import 'dart:math' as math;
@@ -99,10 +100,10 @@ class GalCalibrationOcrModelStore {
   final List<MangaOcrModelFile> manifest;
 
   static Future<Directory> _defaultDirectory() async {
-    final Directory support = await AppPaths.supportRootDirectory();
-    final Directory manga = Directory(
-      p.join(support.path, 'ocr_models', 'manga'),
+    final Directory models = await AppPaths.areaDirectory(
+      EngineStorageArea.ocrModels,
     );
+    final Directory manga = Directory(p.join(models.path, 'manga'));
     // Installs from before the 2026-10 removal of the manga-ocr local model
     // left these PP-OCRv6 files in the legacy manga directory, and the startup
     // cleanup deliberately keeps them (kRemovedMangaOcrLegacyFileNames). Reuse
@@ -114,7 +115,7 @@ class GalCalibrationOcrModelStore {
           isMangaOcrModelFileReady(File(p.join(manga.path, model.fileName))),
     );
     if (sharedReady) return manga;
-    return Directory(p.join(support.path, 'ocr_models', 'gal_calibration'));
+    return Directory(p.join(models.path, 'gal_calibration'));
   }
 
   Future<Directory> directory() => _directoryProvider();
