@@ -259,17 +259,22 @@ class _MastheadTitleBoxState extends State<_MastheadTitleBox> {
           margin: EdgeInsetsDirectional.only(
             top: math.max(0.0, widget.anchor - inkTop),
           ),
+          // 版面高按理论行盒（字号 × 行高 × 行数），段落本身不限高、贴顶排：
+          // 引擎把段落高取整（52 × 1.05 = 54.6 排出来是 55），若再用理论行盒
+          // 卡住段落，RenderParagraph 判溢出、按自身边界裁切，0.98 / 1.05 紧
+          // 行高下伸出行盒的下伸部（g / p / y）被切掉（BUG-5611）。贴顶与
+          // [_titleInkFromTop]（从段落顶量的字面中心）同一参照。
           child: OverflowBox(
-            alignment: AlignmentDirectional.bottomStart,
+            alignment: AlignmentDirectional.topStart,
             minWidth: 0,
             maxWidth: width / fitScale,
             minHeight: 0,
-            maxHeight: lineHeight * fit.lines,
+            maxHeight: double.infinity,
             child: Transform.scale(
               scale: fitScale,
-              alignment: AlignmentDirectional.bottomStart.resolve(direction),
+              alignment: AlignmentDirectional.topStart.resolve(direction),
               child: Align(
-                alignment: AlignmentDirectional.bottomStart,
+                alignment: AlignmentDirectional.topStart,
                 child: FushiMastheadTitle(
                   title: widget.title,
                   compact: widget.compact,
