@@ -2164,6 +2164,12 @@ class ItemImages extends Table {
   /// 来源远程 URL（重下 / 诊断用；本地文件写入为 null）。
   TextColumn get sourceUrl => text().nullable()();
 
+  /// v183 来源锁：用户亲手选的图（书详情页「横幅…」、AI / 控制通道的明确写入）为
+  /// true，刮削写入（元数据刮削写回、卷封面横幅、游戏刮削）一律跳过这一组，不覆盖；
+  /// 用户换图 / 移除照常生效（移除 = 解锁，交还给下一次刮削）。存量行 false = 刮削
+  /// 来源。判据与写入口只在引擎 `ItemScrapeStore`。
+  BoolColumn get userChosen => boolean().withDefault(const Constant(false))();
+
   @override
   Set<Column> get primaryKey => {mediaType, entryKey, kind, position};
 }

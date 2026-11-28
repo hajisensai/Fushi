@@ -11,9 +11,11 @@ import 'package:fushi_engine/media/cover_file_writer.dart'
 import 'package:fushi_engine/media/item_scrape/item_scrape_store.dart';
 import 'package:fushi_engine/media/metadata/image_download.dart'
     show ImageDownloadException;
+import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/metadata/book_metadata_scrape_facade.dart'
     show itemScrapeDetailsFromJson, itemScrapeDetailsToJson;
+import 'package:fushi/src/media/metadata/undo_backup_retention.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/ops/ctl_library_entries.dart';
@@ -23,7 +25,8 @@ import 'package:fushi/src/ops/op_context.dart';
 /// `item_images`）的控制通道路由：`fushi_cli library scrape-meta get|set|clear`。
 ///
 /// 写入经 [ItemScrapeStore]（与书籍刮削写回、游戏元数据刮削同一个入口），图片走
-/// 同一个原子落盘 writer。主要用途是脚本造测试数据 / 手动补资料；书架、游戏库的
+/// 同一个原子落盘 writer。这里的图是明确的用户 / AI 写入：走用户口径、上来源锁
+/// （v183），之后的刮削不覆盖。主要用途是脚本造测试数据 / 手动补资料；书架、游戏库的
 /// 系列色块订阅表变化，写完即刷新。条目键与 `library ls` 同形（`book:` / `srt:` /
 /// `game:`；视频有自己的刮削宿主，回 422）。
 List<CtlRoute> buildLibraryScrapeCtlRoutes(OpContext context) {
@@ -173,13 +176,65 @@ Future<Map<String, Object?>> itemScrapeStateJson(
           'position': row.position,
           'path': row.path,
           if (row.sourceUrl != null) 'sourceUrl': row.sourceUrl,
+          'userChosen': row.userChosen,
         },
     ],
   };
 }
 
-/// 撤销 `set`：资料写回执行前那份（之前没有 → 删行），执行前没有的图种类清掉
-/// （执行前已有的图被同路径覆盖，无从恢复，保持现状）。
+/// `set` 的撤销快照：[itemScrapeStateJson] + 这次要写的每种图执行前那张的备份
+/// （`imageBackups`：kind → [ItemImageBackup] JSON；执行前没有 = 不出现）。图文件按
+/// 条目定名、写新图会覆盖旧文件，不先备份就无从撤销。
+Future<Map<String, Object?>> captureItemScrapeUndo(
+  AppModel app,
+  CtlCall call,
+) async {
+  final String raw = call.params['key'] ?? '';
+  final ItemScrapeKey key = await resolveLibraryItemScrapeKey(app, raw);
+  final Map<String, Object?> state = await itemScrapeStateJson(
+    app.database,
+    raw,
+    key,
+  );
+  final ItemScrapeStore store = libraryItemScrapeStoreFactory(app.database);
+  final Directory backupDir = itemScrapeUndoBackupDirectory(app);
+  final Map<String, Object?> backups = <String, Object?>{};
+  for (final (MediaImageKind kind, String pathParam, String urlParam)
+      in _imageParams) {
+    if (call.optString(pathParam) == null && call.optString(urlParam) == null) {
+      continue;
+    }
+    final ItemImageBackup? backup = await store.backupImage(
+      key,
+      kind,
+      backupDir,
+    );
+    if (backup != null) backups[kind.dbValue] = backup.toJson();
+  }
+  await pruneUndoBackups(
+    backupDir,
+    cutoff: DateTime.now().subtract(const Duration(days: 30)),
+    logTag: 'library.scrape-meta.undo',
+  );
+  return <String, Object?>{...state, 'imageBackups': backups};
+}
+
+/// 条目附加图撤销备份目录（`<thumbnails>/undo_backups/item_images/`，与书封面 /
+/// 游戏刮削撤销备份同一落点，30 天清理）。
+Directory itemScrapeUndoBackupDirectory(AppModel app) => Directory(
+  p.join(app.thumbnailsDirectory.path, 'undo_backups', 'item_images'),
+);
+
+/// `set` 能写的图：种类 + 本地路径参数 + URL 参数。
+const List<(MediaImageKind, String, String)> _imageParams =
+    <(MediaImageKind, String, String)>[
+      (MediaImageKind.backdrop, 'backdropPath', 'backdropUrl'),
+      (MediaImageKind.logo, 'logoPath', 'logoUrl'),
+    ];
+
+/// 撤销 `set`：资料写回执行前那份（之前没有 → 删行）；这次写过的图种类按
+/// [captureItemScrapeUndo] 的备份写回（连同来源锁），执行前没有的清掉。旧快照（没有
+/// `imageBackups`）沿用旧口径：执行前没有的图种类清掉，已有的保持现状。
 Future<void> restoreItemScrapeState(
   AppModel app,
   String raw,
@@ -200,11 +255,22 @@ Future<void> restoreItemScrapeState(
     for (final Object? image in (before['images'] as List<Object?>? ?? []))
       if (image is Map) '${image['kind']}',
   };
-  for (final MediaImageKind kind in <MediaImageKind>[
-    MediaImageKind.backdrop,
-    MediaImageKind.logo,
-  ]) {
-    if (!hadKinds.contains(kind.dbValue)) await store.clearImage(key, kind);
+  final Object? rawBackups = before['imageBackups'];
+  final Map<String, Object?>? backups = rawBackups is Map
+      ? Map<String, Object?>.from(rawBackups)
+      : null;
+  for (final (MediaImageKind kind, _, _) in _imageParams) {
+    final Object? backup = backups?[kind.dbValue];
+    if (backup is Map) {
+      final ItemImageBackup restored = ItemImageBackup.fromJson(
+        Map<String, Object?>.from(backup),
+      );
+      if (File(restored.path).existsSync()) {
+        await store.restoreImage(key, kind, restored);
+        continue;
+      }
+    }
+    if (!hadKinds.contains(kind.dbValue)) await store.clearUserImage(key, kind);
   }
 }
 
@@ -256,13 +322,13 @@ Future<void> _setImage(
       final File file = File(path);
       if (!file.isAbsolute) throw CtlFailure.badRequest('路径必须是绝对路径：$path');
       if (!file.existsSync()) throw CtlFailure.notFound('图片不存在：$path');
-      await store.setImageFromFile(key, kind, file);
+      await store.setUserImageFromFile(key, kind, file);
     } else if (url != null) {
       final Uri? uri = Uri.tryParse(url);
       if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
         throw CtlFailure.badRequest('url 只支持 http / https：$url');
       }
-      await store.setImageFromUrl(key, kind, url);
+      await store.setUserImageFromUrl(key, kind, url);
     }
   } on CoverImageInvalidException {
     throw CtlFailure.rejected('${kind.dbValue} 图片无法解码，没有写入');

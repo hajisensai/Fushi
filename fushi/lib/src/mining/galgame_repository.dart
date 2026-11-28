@@ -130,7 +130,7 @@ class GalgameRepository extends ChangeNotifier {
   /// 把刮削源给的横版图（VNDB 截图）下成该游戏的横版背景（v161 `item_images`，
   /// 游戏库系列色块铺在尾侧）。[replaceExisting] = 显式刮削（换条目就换背景）；
   /// false = 自动补齐，已有可用背景文件就不动。下载 / 解码失败只记日志（背景是
-  /// 锦上添花，不打断刮削落库）。
+  /// 锦上添花，不打断刮削落库）。用户亲手选的背景一律保留（v183 来源锁）。
   Future<void> applyScrapedBackdrop(
     String gameId,
     String url, {
@@ -149,7 +149,7 @@ class GalgameRepository extends ChangeNotifier {
       }
     }
     try {
-      await _itemStore.setImageFromUrl(
+      await _itemStore.writeScrapedImageFromUrl(
         ItemScrapeKey(MediaKind.game, gameId),
         MediaImageKind.backdrop,
         url,

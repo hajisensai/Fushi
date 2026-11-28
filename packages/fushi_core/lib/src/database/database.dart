@@ -3895,6 +3895,14 @@ class FushiDatabase extends _$FushiDatabase
           await purgeDanglingVideoBookRefs();
         }
       }
+      if (from < 183) {
+        // v183：item_images.user_chosen——附加图来源锁（用户亲手选的横幅不被之后的
+        // 刮削覆盖）。纯加列、存量 0 = 刮削来源；按列存在性守卫，重跑幂等。
+        if (await _tableExists('item_images') &&
+            !await _columnExists('item_images', 'user_chosen')) {
+          await m.addColumn(itemImages, itemImages.userChosen);
+        }
+      }
       // 阶梯之后（列已齐）补统计分区索引：v105 后新装的库 onCreate 曾漏建
       // （video-36i），每次升 schema 都幂等补一次。
       await _ensureStatIndexes();

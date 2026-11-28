@@ -93,15 +93,15 @@ void main() {
     expect(decodeItemScrapeTags(row.tagsJson), <String>['a']);
   });
 
-  test('setImageFromFile 落盘到目录内并登记；换扩展名回收旧文件', () async {
-    final String first = await store.setImageFromFile(
+  test('setUserImageFromFile 落盘到目录内并登记；换扩展名回收旧文件', () async {
+    final String first = await store.setUserImageFromFile(
       book,
       MediaImageKind.backdrop,
       source('a.png'),
     );
     expect(p.isWithin(dir.path, first), isTrue);
     expect(File(first).existsSync(), isTrue);
-    final String second = await store.setImageFromFile(
+    final String second = await store.setUserImageFromFile(
       book,
       MediaImageKind.backdrop,
       source('b.gif'),
@@ -118,7 +118,7 @@ void main() {
     final File bad = File(p.join(scratch.path, 'bad.jpg'))
       ..writeAsStringSync('<html>');
     await expectLater(
-      store.setImageFromFile(book, MediaImageKind.backdrop, bad),
+      store.setUserImageFromFile(book, MediaImageKind.backdrop, bad),
       throwsA(isA<CoverImageInvalidException>()),
     );
     expect(await db.getAllItemImages(), isEmpty);
@@ -140,12 +140,12 @@ void main() {
   });
 
   test('删宿主后 reclaimUnreferencedFiles 只删没人引用的文件', () async {
-    final String kept = await store.setImageFromFile(
+    final String kept = await store.setUserImageFromFile(
       ItemScrapeKey(MediaKind.game, 'keep'),
       MediaImageKind.backdrop,
       source('k.gif'),
     );
-    final String gone = await store.setImageFromFile(
+    final String gone = await store.setUserImageFromFile(
       book,
       MediaImageKind.logo,
       source('l.png'),
@@ -158,17 +158,17 @@ void main() {
 
   // BUG-5609：「获取各卷封面与横幅」把同一张系列横幅贴到每一卷：只存一份文件，
   // 各卷一行指向它；换图 / 清图时随最后一行回收，别的条目还在用就留着。
-  test('setSharedImageFromFile：同 URL 共用一个文件，最后一行撤掉才回收', () async {
+  test('writeScrapedSharedImageFromFile：同 URL 共用一个文件，最后一行撤掉才回收', () async {
     const String url = 'https://images.mangabaka.dev/banner/1';
     final ItemScrapeKey a = ItemScrapeKey(MediaKind.epub, 'uid-a');
     final ItemScrapeKey b = ItemScrapeKey(MediaKind.epub, 'uid-b');
-    final String pathA = (await store.setSharedImageFromFile(
+    final String pathA = (await store.writeScrapedSharedImageFromFile(
       a,
       MediaImageKind.backdrop,
       source('banner.gif'),
       sourceUrl: url,
     ))!;
-    final String pathB = (await store.setSharedImageFromFile(
+    final String pathB = (await store.writeScrapedSharedImageFromFile(
       b,
       MediaImageKind.backdrop,
       source('banner.gif'),
@@ -191,8 +191,8 @@ void main() {
     expect(row.path, pathA);
     expect(row.sourceUrl, url);
 
-    // a 换成自己的图：共用文件 b 还在用。
-    final String own = await store.setImageFromFile(
+    // a 换成用户自己选的图：共用文件 b 还在用。
+    final String own = await store.setUserImageFromFile(
       a,
       MediaImageKind.backdrop,
       source('own.gif'),
@@ -201,7 +201,7 @@ void main() {
     expect(own, isNot(pathA));
     expect(File(pathA).existsSync(), isTrue);
 
-    await store.clearImage(b, MediaImageKind.backdrop);
+    expect(await store.clearScrapedImage(b, MediaImageKind.backdrop), isTrue);
     expect(await store.firstImage(b, MediaImageKind.backdrop), isNull);
     expect(File(pathA).existsSync(), isFalse);
     expect(File(own).existsSync(), isTrue);
@@ -209,14 +209,14 @@ void main() {
 
   // 获取按并发 3 逐卷落盘：各卷同时贴同一张图，只复制一次，一卷都不能丢（各自
   // 「不在 → 复制 → 改名」在 Windows 上撞目标已存在，曾让并发的那几卷失败）。
-  test('setSharedImageFromFile：多卷并发贴同一张图全部成功', () async {
+  test('writeScrapedSharedImageFromFile：多卷并发贴同一张图全部成功', () async {
     const String url = 'https://images.mangabaka.dev/banner/9';
     final List<ItemScrapeKey> keys = <ItemScrapeKey>[
       for (int i = 0; i < 6; i++) ItemScrapeKey(MediaKind.epub, 'uid-$i'),
     ];
     final List<String?> paths = await Future.wait(<Future<String?>>[
       for (final ItemScrapeKey k in keys)
-        store.setSharedImageFromFile(
+        store.writeScrapedSharedImageFromFile(
           k,
           MediaImageKind.backdrop,
           source('banner_${k.entryKey}.gif'),
@@ -236,17 +236,17 @@ void main() {
     );
   });
 
-  test('setSharedImageFromFile：源不是完整图片时抛，旧图不动', () async {
+  test('writeScrapedSharedImageFromFile：源不是完整图片时抛，旧图不动', () async {
     final ItemScrapeKey a = ItemScrapeKey(MediaKind.epub, 'uid-a');
-    final String old = await store.setImageFromFile(
+    final String old = (await store.writeScrapedImageFromFile(
       a,
       MediaImageKind.backdrop,
       source('old.gif'),
-    );
+    ))!;
     final File broken = File(p.join(scratch.path, 'broken.png'))
       ..writeAsBytesSync(<int>[1, 2, 3]);
     await expectLater(
-      store.setSharedImageFromFile(
+      store.writeScrapedSharedImageFromFile(
         a,
         MediaImageKind.backdrop,
         broken,
@@ -265,8 +265,8 @@ void main() {
     final ItemScrapeKey a = ItemScrapeKey(MediaKind.epub, 'uid-a');
     final ItemScrapeKey b = ItemScrapeKey(MediaKind.epub, 'uid-b');
     for (int round = 0; round < 12; round++) {
-      await store.clearImage(b, MediaImageKind.backdrop);
-      await store.setSharedImageFromFile(
+      await store.clearScrapedImage(b, MediaImageKind.backdrop);
+      await store.writeScrapedSharedImageFromFile(
         a,
         MediaImageKind.backdrop,
         source('banner_a.gif'),
@@ -282,10 +282,13 @@ void main() {
       }
 
       await Future.wait(<Future<void>>[
-        later(round % 3, () => store.clearImage(a, MediaImageKind.backdrop)),
+        later(
+          round % 3,
+          () => store.clearScrapedImage(a, MediaImageKind.backdrop),
+        ),
         later(
           (round ~/ 3) % 2,
-          () => store.setSharedImageFromFile(
+          () => store.writeScrapedSharedImageFromFile(
             b,
             MediaImageKind.backdrop,
             reuseSource,
@@ -320,7 +323,7 @@ void main() {
 
       await Future.wait(<Future<void>>[
         later(round % 3, () async {
-          shared = await store.setSharedImageFromFile(
+          shared = await store.writeScrapedSharedImageFromFile(
             k,
             MediaImageKind.backdrop,
             source('shared_$round.gif'),
@@ -329,12 +332,12 @@ void main() {
           );
         }),
         later(round ~/ 3, () async {
-          own = await store.setImageFromFile(
+          own = (await store.writeScrapedImageFromFile(
             k,
             MediaImageKind.backdrop,
             source('own_$round.gif'),
             sourceUrl: 'https://s4.anilist.co/banner/$round.jpg',
-          );
+          ))!;
         }),
       ]);
       // 两种先后都以单本背景图收场：条件写先到则被它覆盖，后到则不写。
@@ -347,13 +350,13 @@ void main() {
       if (shared != null) expect(p.basename(shared!), startsWith('epub_'));
     }
     final ItemScrapeKey taken = ItemScrapeKey(MediaKind.epub, 'uid-taken');
-    await store.setImageFromFile(
+    await store.writeScrapedImageFromFile(
       taken,
       MediaImageKind.backdrop,
       source('taken.gif'),
     );
     expect(
-      await store.setSharedImageFromFile(
+      await store.writeScrapedSharedImageFromFile(
         taken,
         MediaImageKind.backdrop,
         source('x.gif'),
@@ -363,7 +366,7 @@ void main() {
       isNull,
     );
     expect(
-      await store.clearImage(
+      await store.clearScrapedImage(
         taken,
         MediaImageKind.backdrop,
         when: (ItemImageRow? current) => current?.sourceUrl == url,
@@ -379,13 +382,13 @@ void main() {
     const String url = 'https://images.mangabaka.dev/banner/own';
     final ItemScrapeKey a = ItemScrapeKey(MediaKind.epub, 'uid-a');
     final ItemScrapeKey b = ItemScrapeKey(MediaKind.epub, 'uid-b');
-    await store.setSharedImageFromFile(
+    await store.writeScrapedSharedImageFromFile(
       a,
       MediaImageKind.backdrop,
       source('shared.png'),
       sourceUrl: url,
     );
-    await store.setImageFromFile(
+    await store.setUserImageFromFile(
       b,
       MediaImageKind.backdrop,
       source('picked.gif'),
@@ -519,6 +522,360 @@ void main() {
       row = (await read())!;
       expect(row.summary, '快照');
       expect(row.lockedFields, isNull, reason: '快照里没锁就原样无锁');
+    });
+  });
+
+  group('v183 附加图来源锁（用户选的横幅不被刮削覆盖）', () {
+    Future<ItemImageRow> backdropRow() async => (await db.getItemImages(
+      MediaKind.epub,
+      'uid-1',
+    )).singleWhere((ItemImageRow r) => r.kind == 'backdrop');
+
+    test('刮削写入：没有用户图时照常落库，记为刮削来源', () async {
+      final String? path = await store.writeScrapedImageFromFile(
+        book,
+        MediaImageKind.backdrop,
+        source('s.gif'),
+        sourceUrl: 'https://example.invalid/s.gif',
+      );
+      expect(path, isNotNull);
+      final ItemImageRow row = await backdropRow();
+      expect(row.userChosen, isFalse);
+      expect(row.path, path);
+      expect(await store.isUserChosen(book, MediaImageKind.backdrop), isFalse);
+    });
+
+    test('用户写入替换刮削图并上锁；之后刮削写入（文件 / URL / applyScrape）全跳过', () async {
+      final String scraped = (await store.writeScrapedImageFromFile(
+        book,
+        MediaImageKind.backdrop,
+        source('s.gif'),
+      ))!;
+      final String mine = await store.setUserImageFromFile(
+        book,
+        MediaImageKind.backdrop,
+        source('mine.gif'),
+      );
+      expect(mine, isNot(scraped), reason: '用户图文件名带 _user，与刮削图分开');
+      expect(File(scraped).existsSync(), isFalse, reason: '被换掉的刮削图回收');
+      expect((await backdropRow()).userChosen, isTrue);
+
+      int downloads = 0;
+      final ItemScrapeStore counting = ItemScrapeStore(
+        db,
+        imagesDirectory: dir,
+        downloadImage: (String url) async {
+          downloads++;
+          return File(p.join(scratch.path, 'never.gif'))..writeAsBytesSync(gif);
+        },
+      );
+      expect(
+        await counting.writeScrapedImageFromFile(
+          book,
+          MediaImageKind.backdrop,
+          source('s2.gif'),
+        ),
+        isNull,
+      );
+      expect(
+        await counting.writeScrapedImageFromUrl(
+          book,
+          MediaImageKind.backdrop,
+          'https://example.invalid/new.jpg',
+        ),
+        isNull,
+      );
+      await counting.applyScrape(
+        book,
+        const ItemScrapeDetails(source: 'anilist', subjectId: '1'),
+        backdropUrl: 'https://example.invalid/banner.jpg',
+      );
+      expect(downloads, 0, reason: '锁住时连下载都省掉');
+      final ItemImageRow row = await backdropRow();
+      expect(row.path, mine);
+      expect(row.userChosen, isTrue);
+      expect(File(mine).existsSync(), isTrue);
+      expect(
+        (await db.getItemScrapeMeta(MediaKind.epub, 'uid-1'))!.subjectId,
+        '1',
+        reason: '锁只管图，资料照常写',
+      );
+      expect(
+        await store.clearScrapedImage(book, MediaImageKind.backdrop),
+        isFalse,
+        reason: '刮削写回的撤销不清用户图',
+      );
+      expect(File(mine).existsSync(), isTrue);
+    });
+
+    test('用户再换一张仍生效；移除 = 解锁，刮削可以再写', () async {
+      await store.setUserImageFromFile(
+        book,
+        MediaImageKind.backdrop,
+        source('a.gif'),
+      );
+      final String second = await store.setUserImageFromUrl(
+        book,
+        MediaImageKind.backdrop,
+        'https://example.invalid/b.gif',
+      );
+      ItemImageRow row = await backdropRow();
+      expect(row.path, second);
+      expect(row.sourceUrl, 'https://example.invalid/b.gif');
+      expect(row.userChosen, isTrue);
+
+      await store.clearUserImage(book, MediaImageKind.backdrop);
+      expect(await db.getItemImages(MediaKind.epub, 'uid-1'), isEmpty);
+      expect(File(second).existsSync(), isFalse);
+      expect(
+        await store.writeScrapedImageFromFile(
+          book,
+          MediaImageKind.backdrop,
+          source('s.gif'),
+        ),
+        isNotNull,
+      );
+      row = await backdropRow();
+      expect(row.userChosen, isFalse);
+    });
+
+    test('锁按种类：用户选了 backdrop 不挡 logo 的刮削写入', () async {
+      await store.setUserImageFromFile(
+        book,
+        MediaImageKind.backdrop,
+        source('a.gif'),
+      );
+      expect(
+        await store.writeScrapedImageFromFile(
+          book,
+          MediaImageKind.logo,
+          source('l.gif'),
+        ),
+        isNotNull,
+      );
+    });
+
+    test('数据库层：刮削口径的替换在事务里查锁，撞上用户图返回 null 不动行', () async {
+      await db.replaceItemImagesOfKind(
+        mediaType: MediaKind.epub,
+        entryKey: 'uid-1',
+        kind: MediaImageKind.backdrop,
+        images: const <({String path, String? sourceUrl})>[
+          (path: '/u.jpg', sourceUrl: null),
+        ],
+        userChosen: true,
+      );
+      expect(
+        await db.replaceScrapedItemImagesOfKind(
+          mediaType: MediaKind.epub,
+          entryKey: 'uid-1',
+          kind: MediaImageKind.backdrop,
+          images: const <({String path, String? sourceUrl})>[
+            (path: '/s.jpg', sourceUrl: null),
+          ],
+        ),
+        isNull,
+      );
+      expect((await backdropRow()).path, '/u.jpg');
+      expect(
+        await db.hasUserChosenItemImage(
+          MediaKind.epub,
+          'uid-1',
+          MediaImageKind.backdrop,
+        ),
+        isTrue,
+      );
+    });
+
+    test('撤销快照：备份 → 用户换图 → 写回原图与原来源（刮削图写回仍是刮削来源）', () async {
+      final Directory backups = Directory(p.join(scratch.path, 'undo'));
+      await store.writeScrapedImageFromFile(
+        book,
+        MediaImageKind.backdrop,
+        source('orig.gif'),
+        sourceUrl: 'https://example.invalid/orig.gif',
+      );
+      final ItemImageBackup backup = (await store.backupImage(
+        book,
+        MediaImageKind.backdrop,
+        backups,
+      ))!;
+      expect(backup.userChosen, isFalse);
+      await store.setUserImageFromFile(
+        book,
+        MediaImageKind.backdrop,
+        source('ai.gif'),
+      );
+      await store.restoreImage(
+        book,
+        MediaImageKind.backdrop,
+        ItemImageBackup.fromJson(backup.toJson()),
+      );
+      final ItemImageRow row = await backdropRow();
+      expect(row.userChosen, isFalse);
+      expect(row.sourceUrl, 'https://example.invalid/orig.gif');
+      expect(File(row.path).existsSync(), isTrue);
+      expect(File(backup.path).existsSync(), isFalse, reason: '备份写回后删掉');
+
+      expect(
+        await store.backupImage(book, MediaImageKind.logo, backups),
+        isNull,
+      );
+      await store.restoreImage(book, MediaImageKind.backdrop, null);
+      expect(await db.getItemImages(MediaKind.epub, 'uid-1'), isEmpty);
+    });
+
+    // 批量贴横幅（BUG-5609）与旧数据搬家、撤销都走刮削口径的共用写 / 条件清：用户
+    // 选的图在格锁里、`when` 之前就让路，`when` 根本看不到它，也不留下孤儿共用文件。
+    test('共用写 / 条件清（获取横幅）遇用户图整格让路，when 不被调用', () async {
+      const String url = 'https://images.mangabaka.dev/banner/locked';
+      final String mine = await store.setUserImageFromFile(
+        book,
+        MediaImageKind.backdrop,
+        source('mine.gif'),
+        sourceUrl: url,
+      );
+      int asked = 0;
+      expect(
+        await store.writeScrapedSharedImageFromFile(
+          book,
+          MediaImageKind.backdrop,
+          source('banner.gif'),
+          sourceUrl: url,
+          when: (ItemImageRow? _) {
+            asked++;
+            return true;
+          },
+        ),
+        isNull,
+      );
+      expect(
+        await store.writeScrapedSharedImageFromFile(
+          book,
+          MediaImageKind.backdrop,
+          source('banner.gif'),
+          sourceUrl: url,
+        ),
+        isNull,
+      );
+      expect(
+        await store.clearScrapedImage(
+          book,
+          MediaImageKind.backdrop,
+          when: (ItemImageRow? _) {
+            asked++;
+            return true;
+          },
+        ),
+        isFalse,
+      );
+      expect(asked, 0);
+      final ItemImageRow row = await backdropRow();
+      expect(row.path, mine);
+      expect(row.userChosen, isTrue);
+      expect(isItemSharedImageRow(row), isFalse, reason: '同 URL 的用户图不算批量贴的');
+      expect(dir.listSync().whereType<File>().map((File f) => f.path), <String>[
+        mine,
+      ]);
+    });
+
+    test('用户写入与共用条件写并发：总以用户图收场，共用文件不残留', () async {
+      const String url = 'https://images.mangabaka.dev/banner/race-user';
+      for (int round = 0; round < 6; round++) {
+        final ItemScrapeKey k = ItemScrapeKey(MediaKind.epub, 'uid-u$round');
+        late String mine;
+        Future<void> later(int ticks, Future<void> Function() body) async {
+          for (int i = 0; i < ticks; i++) {
+            await Future<void>.delayed(Duration.zero);
+          }
+          await body();
+        }
+
+        await Future.wait(<Future<void>>[
+          later(round % 3, () async {
+            await store.writeScrapedSharedImageFromFile(
+              k,
+              MediaImageKind.backdrop,
+              source('shared_$round.gif'),
+              sourceUrl: url,
+              when: (ItemImageRow? current) => true,
+            );
+          }),
+          later(round ~/ 3, () async {
+            mine = await store.setUserImageFromFile(
+              k,
+              MediaImageKind.backdrop,
+              source('mine_$round.gif'),
+            );
+          }),
+        ]);
+        final ItemImageRow row = (await store.firstImage(
+          k,
+          MediaImageKind.backdrop,
+        ))!;
+        expect(row.path, mine, reason: 'round $round');
+        expect(row.userChosen, isTrue, reason: 'round $round');
+        expect(
+          dir.listSync().whereType<File>().where(
+            (File f) => p.basename(f.path).contains('_shared_'),
+          ),
+          isEmpty,
+          reason: 'round $round',
+        );
+      }
+    });
+
+    test('撤销快照：批量贴的共用图写回同一个共用文件，仍认得是批量贴的', () async {
+      const String url = 'https://images.mangabaka.dev/banner/undo';
+      final ItemScrapeKey other = ItemScrapeKey(MediaKind.epub, 'uid-2');
+      final String shared = (await store.writeScrapedSharedImageFromFile(
+        book,
+        MediaImageKind.backdrop,
+        source('banner.gif'),
+        sourceUrl: url,
+      ))!;
+      await store.writeScrapedSharedImageFromFile(
+        other,
+        MediaImageKind.backdrop,
+        source('banner.gif'),
+        sourceUrl: url,
+      );
+      final ItemImageBackup backup = (await store.backupImage(
+        book,
+        MediaImageKind.backdrop,
+        Directory(p.join(scratch.path, 'undo')),
+      ))!;
+      expect(backup.shared, isTrue);
+      await store.setUserImageFromFile(
+        book,
+        MediaImageKind.backdrop,
+        source('ai.gif'),
+      );
+      await store.restoreImage(
+        book,
+        MediaImageKind.backdrop,
+        ItemImageBackup.fromJson(backup.toJson()),
+      );
+      final ItemImageRow row = await backdropRow();
+      expect(row.path, shared);
+      expect(row.userChosen, isFalse);
+      expect(isItemSharedImageRow(row), isTrue);
+      expect(
+        (await store.firstImage(other, MediaImageKind.backdrop))!.path,
+        shared,
+      );
+    });
+
+    test('文件名：用户图带 _user 后缀', () {
+      final File src = File('x.png');
+      expect(
+        itemImageFileName(book, MediaImageKind.backdrop, src),
+        endsWith('_backdrop.png'),
+      );
+      expect(
+        itemImageFileName(book, MediaImageKind.backdrop, src, userChosen: true),
+        endsWith('_backdrop_user.png'),
+      );
     });
   });
 }

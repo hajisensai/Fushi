@@ -178,12 +178,12 @@ void main() {
             img.Image(width: 20, height: 9)..clear(img.ColorRgb8(9, 9, 9)),
           ),
         );
-      foreign = await itemScrape.setImageFromFile(
+      foreign = (await itemScrape.writeScrapedImageFromFile(
         keys['k2']!,
         MediaImageKind.backdrop,
         other,
         sourceUrl: 'https://s4.anilist.co/banner/2.jpg',
-      );
+      ))!;
     });
 
     late BuildContext host;

@@ -95,12 +95,12 @@ void main() {
   Future<String> foreignBackdrop(ItemScrapeKey key) async {
     final File src = File(p.join(thumbs.path, 'anilist.png'))
       ..writeAsBytesSync(png(20, 9, shade: 90));
-    return itemScrape.setImageFromFile(
+    return (await itemScrape.writeScrapedImageFromFile(
       key,
       MediaImageKind.backdrop,
       src,
       sourceUrl: 'https://s4.anilist.co/banner/1.jpg',
-    );
+    ))!;
   }
 
   /// 获取的完整一步：记录认领横幅 + 贴成背景图。
@@ -396,7 +396,7 @@ void main() {
       legacy.createSync(recursive: true);
       File(p.join(legacy.path, 'mangabaka_1')).writeAsBytesSync(png(16, 9));
       // 用户在书详情页清掉了背景图。
-      await itemScrape.clearImage(a, MediaImageKind.backdrop);
+      await itemScrape.clearUserImage(a, MediaImageKind.backdrop);
 
       BookArtStore.resetForTesting();
       final BookArtStore rerun = open();
@@ -429,12 +429,12 @@ void main() {
         await Future.wait(<Future<void>>[
           later(round % 3, migrating.migrateLegacyBanners),
           later(round ~/ 3 * 2, () async {
-            foreign = await itemScrape.setImageFromFile(
+            foreign = (await itemScrape.writeScrapedImageFromFile(
               key,
               MediaImageKind.backdrop,
               src,
               sourceUrl: 'https://s4.anilist.co/banner/$round.jpg',
-            );
+            ))!;
           }),
         ]);
         expect((await backdrop(key))!.path, foreign, reason: 'round $round');
@@ -455,7 +455,7 @@ void main() {
     final Map<String, Object?> after = await store.fingerprint('a');
     final File src = File(p.join(thumbs.path, 'picked.png'))
       ..writeAsBytesSync(png(20, 9, shade: 40));
-    final String picked = await itemScrape.setImageFromFile(
+    final String picked = await itemScrape.setUserImageFromFile(
       a,
       MediaImageKind.backdrop,
       src,

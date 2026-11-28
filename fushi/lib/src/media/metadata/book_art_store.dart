@@ -24,6 +24,10 @@
 /// URL：书籍刮削 / 手选恰好用了同一个 URL 时那张图仍是它们的。清除 / 否决 / 撤销只
 /// 撤本层写的，别的来源一律不碰，获取也不覆盖它们（[applyBanner]）。所有「看一眼
 /// 当前背景图再决定写 / 撤」都经 [ItemScrapeStore] 的条件写在格锁里原子完成。
+/// 本层对背景图的写 / 撤（获取、清除、否决、撤销、旧数据搬家）一律是刮削口径
+/// （`writeScrapedSharedImageFromFile` / `clearScrapedImage`）：用户在「横幅…」里
+/// 选的图上了来源锁（v183），在格锁里先于这里的条件让路，不被覆盖、不被撤；它的
+/// 文件名带 `_user`、不是共用文件名，也永远不会被认成本层贴的。
 /// 旧版的 `scraped_banners/` 目录由 [migrateLegacyBanners] 逐条搬进去后删除。
 ///
 /// 卷封面没有新表：元数据跟着文件走，文件在则元数据在，不会出现「行在、图没了」的
@@ -477,8 +481,8 @@ class BookArtStore extends ChangeNotifier {
   /// 贴上的共用图，[_isFetched]）时写；书籍刮削 / 手选来的背景图不覆盖，返回 false。
   /// 「获取各卷封面与横幅」是整套系列的批量动作，单本已有的背景图更具体，也是用户
   /// 自己刮 / 选来的。书不在库也返回 false。判断与写入经 [ItemScrapeStore] 的条件
-  /// 写在格锁里原子完成，中间插不进书籍刮削 / 手选（之后的「用户手选背景图上锁」
-  /// 随之生效）。
+  /// 写在格锁里原子完成，中间插不进书籍刮削 / 手选；用户选的图（v183 来源锁）在
+  /// 格锁里先于这里的条件让路，同样返回 false。
   Future<bool> applyBanner(
     String bookKey,
     File banner, {
@@ -488,7 +492,7 @@ class BookArtStore extends ChangeNotifier {
     final ItemScrapeKey? key = await _itemKeyOf(bookKey);
     if (key == null) return false;
     bool alreadyThere = false;
-    final String? written = await _itemScrape.setSharedImageFromFile(
+    final String? written = await _itemScrape.writeScrapedSharedImageFromFile(
       key,
       MediaImageKind.backdrop,
       banner,
@@ -511,7 +515,7 @@ class BookArtStore extends ChangeNotifier {
   Future<bool> clearBannerFrom(String bookKey, {required String url}) async {
     final ItemScrapeKey? key = await _itemKeyOf(bookKey);
     if (key == null) return false;
-    final bool cleared = await _itemScrape.clearImage(
+    final bool cleared = await _itemScrape.clearScrapedImage(
       key,
       MediaImageKind.backdrop,
       when: (ItemImageRow? row) => _isFetched(row, url),
@@ -597,7 +601,7 @@ class BookArtStore extends ChangeNotifier {
     if (!legacy.existsSync()) return _isFetched(await _backdropOf(key), url);
     bool alreadyThere = false;
     try {
-      final String? written = await _itemScrape.setSharedImageFromFile(
+      final String? written = await _itemScrape.writeScrapedSharedImageFromFile(
         key,
         MediaImageKind.backdrop,
         legacy,
@@ -876,7 +880,7 @@ class BookArtStore extends ChangeNotifier {
       );
     }
     bool wantedThere = false;
-    final bool cleared = await _itemScrape.clearImage(
+    final bool cleared = await _itemScrape.clearScrapedImage(
       key,
       MediaImageKind.backdrop,
       when: (ItemImageRow? row) {

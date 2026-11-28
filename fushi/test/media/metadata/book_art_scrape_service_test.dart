@@ -716,12 +716,12 @@ void main() {
     await seed('k2', 'テスト漫画 2');
     final File other = File('${thumbs.path}/anilist.png')
       ..writeAsBytesSync(png(30, 10, shade: 120));
-    final String foreign = await itemScrape.setImageFromFile(
+    final String foreign = (await itemScrape.writeScrapedImageFromFile(
       ItemScrapeKey(MediaKind.epub, (await db.resolveEpubBookUid('k2'))!),
       MediaImageKind.backdrop,
       other,
       sourceUrl: 'https://s4.anilist.co/banner/2.jpg',
-    );
+    ))!;
 
     final BookArtScrapeService svc = service(mangaBakaOk);
     final BookArtRunResult result = await svc.run(<String>['k1', 'k2']);
