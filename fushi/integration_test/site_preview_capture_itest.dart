@@ -82,6 +82,8 @@ import 'support/test_app_launcher.dart';
 import 'test_helpers.dart';
 
 part 'site_preview_update_video_scenes.dart';
+part 'site_preview_uv_more.dart';
+part 'site_preview_uv_voiced.dart';
 
 const String _kOut = String.fromEnvironment('SITE_PREVIEW_OUT');
 const String _kDemo = String.fromEnvironment('SITE_PREVIEW_DEMO');
