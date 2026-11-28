@@ -1,0 +1,6 @@
+## BUG-5610 · drift-dev-codegen-mismatch
+- **报告**：2026-11-27（做 `item_images.user_chosen`（schema v183）重新生成 `database.g.dart` 时发现，非用户报告）
+- **真实性**：✅ 实测复现。根 `pubspec.lock` 锁定 `drift 2.33.0`（`packages/fushi_core/pubspec.yaml:16` 限定 `>=2.33.0 <2.34.0`）与 `drift_dev 2.35.3`（`packages/fushi_core/pubspec.yaml:22` 只写 `^2.23.0`，2026-11-13 `3b73a9e24e` 解析 3.50.0 依赖时从 2.34.0 升上去）。按锁文件跑 `build_runner` 生成的 `database.g.dart` 调用 `$_getPrefetchedDataByColumns`，该方法在 drift 2.33.0 里不存在，分析器报 61 个错误、编不过。drift_dev 2.35.2 起改走新的 prefetch 路径（changelog「Don't require getters for referencing columns」），但它的 pubspec 仍声明 `drift: >=2.30.0 <2.36.0`，pub 因此接受这组不兼容的组合（上游兼容声明错误）。develop 上现有的 `database.g.dart` 没有 `ByColumns` 调用、带显式 `readTable<…>` 泛型，与 drift_dev 2.35.0 / 2.35.1 的输出一致，说明此前的 schema 提交是用旧一些的 drift_dev 生成的；锁文件现状下任何人改表后照常重新生成都会把构建弄坏。
+- **[ ] ① 未修复** — 方向（二选一，交维护者定）：(a) 把 `drift` 升到 2.35.x，与 drift_dev 2.35.3 配套，并用锁定版本整体重新生成一次 `database.g.dart`；(b) 在 `packages/fushi_core/pubspec.yaml` 把 `drift_dev` 限定为 `>=2.35.0 <2.35.2`（与当前生成文件同源），重新解析锁文件。按类处理：两种都应让 `drift` 与 `drift_dev` 的约束写在一处、成对升级。
+- **[ ] ② 未加自动化测试** — 方向：CI 守卫在锁定依赖下跑一次 `build_runner build`，断言生成结果与已提交的 `database.g.dart` 一致（无 diff）且能通过分析；或至少断言锁文件里 drift 与 drift_dev 的次版本号匹配。
+- **备注**：临时做法见 `feat/book-banner-picker` 分支：在独立副本里固定 drift_dev 2.35.1 对 drift 2.33.0 生成，原样提交生成结果。
