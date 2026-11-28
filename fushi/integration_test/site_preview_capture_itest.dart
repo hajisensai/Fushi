@@ -52,6 +52,11 @@ import 'package:fushi/src/media/import/pasted_text_book_dialog.dart';
 import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/reader/manga_fushi_page.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
+import 'package:fushi/src/media/music/music_player_engine.dart';
+import 'package:fushi/src/media/music/server/music_server_play_item.dart';
+import 'package:fushi_engine/media/music/server/music_server.dart'
+    show MusicServerSearchResult, MusicServerTrack;
+import 'package:fushi_engine/media/music/youtube/youtube_music_client.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart'
     show singleVideoBookUid;
 import 'package:fushi/src/media/video/subtitle/video_subtitle_studio_page.dart'

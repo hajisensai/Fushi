@@ -1,6 +1,6 @@
 {
   "version": "3.4.0",
-  "scenes": "uv-home,uv-apple,uv-manga,uv-paste,uv-lyrics,uv-video",
+  "scenes": "uv-home,uv-apple,uv-manga,uv-voiced,uv-paste,uv-lyrics,uv-video,uv-subtitle,uv-srs",
   "accent": "#7C4DFF",
   "fonts": {
     "regular": "C:/Windows/Fonts/MiSans-Regular.otf",
@@ -11,13 +11,13 @@
     {"type": "clip", "file": "uv-home.mp4", "tag": "首页", "caption": "首页换成小组件网格，拖一拖就能改尺寸"},
     {"type": "clip", "file": "uv-apple.mp4", "tag": "界面", "caption": "M3E 色块大标题，Apple 外观对齐 iOS 27"},
     {"type": "clip", "file": "uv-manga.mp4", "tag": "漫画", "caption": "台词文字条 + 逐格阅读，一个气泡一个气泡读"},
+    {"type": "clip", "file": "uv-voiced.mp4", "tag": "有声漫画", "caption": "AI 标注说话人、整卷生成配音，逐句复核后边听边读"},
     {"type": "clip", "file": "uv-paste.mp4", "tag": "阅读", "caption": "复制一段日语，粘贴就能读、点词就能查"},
-    {"type": "clip", "file": "uv-lyrics.mp4", "tag": "音乐", "caption": "18 种全屏歌词动画，跟着节拍与人声动"},
+    {"type": "clip", "file": "uv-lyrics.mp4", "tag": "音乐", "caption": "在线听歌自动配歌词，18 种全屏歌词动画"},
     {"type": "clip", "file": "uv-video.mp4", "tag": "视频", "caption": "看番点字幕查词，一键制卡进 Anki", "captionPos": "top"},
+    {"type": "clip", "file": "uv-subtitle.mp4", "tag": "字幕工作台", "caption": "没有字幕的视频，本地识别生成日语字幕", "captionPos": "top"},
+    {"type": "clip", "file": "uv-srs.mp4", "tag": "复习", "caption": "新一代 Fushi 复习：统计满屏，模型校准与 UM+ 图表"},
     {"type": "flash", "secondsEach": 2.6, "items": [
-      ["有声漫画", "AI 标注说话人，整卷生成配音、逐句复核"],
-      ["字幕工作台", "生成日语字幕、拆双语、逐句对轴，五端可用"],
-      ["新一代 Fushi 复习", "自定义出卡顺序 · 模型校准与 UM+ 图表"],
       ["应用外查词", "Windows / Android / Linux 抓整句、带最后一句语音"],
       ["库管家", "补齐元数据与封面，拿不准的集中确认"],
       ["媒体追踪", "同步到 AniList · MangaBaka · Bangumi"],
