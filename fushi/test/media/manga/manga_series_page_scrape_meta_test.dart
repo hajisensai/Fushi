@@ -291,6 +291,46 @@ void main() {
     expect(find.text('热血'), findsOne);
   });
 
+  testWidgets('单本只有用户选的横幅、所属合集有作品资料：资料取合集，横幅取单本', (WidgetTester tester) async {
+    final _Fixture f = await _setUp(tester);
+    await tester.runAsync(() async {
+      final int cid = await f.db.createMediaCollection('鬼滅の刃');
+      await f.db.addToCollection(cid, MediaKind.epub, _bookUid);
+      await f.db.upsertCollectionScrapeMeta(
+        CollectionScrapeMetaCompanion.insert(
+          collectionId: Value<int>(cid),
+          source: 'bangumi',
+          subjectId: '1',
+          title: '鬼灭之刃',
+          summary: const Value<String>('作品简介'),
+          scrapedAt: DateTime(2026),
+        ),
+      );
+      // 「横幅…」只给单本写了一张用户横幅，没有单本资料行。
+      await f.db.replaceItemImagesOfKind(
+        mediaType: MediaKind.epub,
+        entryKey: _bookUid,
+        kind: MediaImageKind.backdrop,
+        images: <({String path, String? sourceUrl})>[
+          (path: f.backdropPath, sourceUrl: null),
+        ],
+        userChosen: true,
+      );
+    });
+    await tester.pumpWidget(_harness(f));
+    await _settle(
+      tester,
+      () =>
+          find.byType(MediaPosterDetailHero).evaluate().isNotEmpty &&
+          _hero(tester).summary != null,
+    );
+
+    final MediaPosterDetailHero hero = _hero(tester);
+    expect(hero.summary, '作品简介', reason: '选了横幅不该把合集的作品资料挤掉');
+    final ImageProvider inner = (hero.backdrop! as ResizeImage).imageProvider;
+    expect((inner as FileImage).file.path, f.backdropPath);
+  });
+
   testWidgets('没有刮削资料：作品页不变（封面垫底、无资料区块 / 评分 / 外链）', (
     WidgetTester tester,
   ) async {
