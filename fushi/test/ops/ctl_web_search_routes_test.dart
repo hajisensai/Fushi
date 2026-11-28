@@ -7,7 +7,6 @@ import 'package:fushi/src/ai/agent/ai_agent_toolbox.dart';
 import 'package:fushi/src/ai/ai_agent_web_search_policy.dart';
 import 'package:fushi/src/models/preference_keys.dart';
 import 'package:fushi/src/ops/ctl_web_search_routes.dart';
-import 'package:fushi/src/ops/op_descriptions_web_search.dart';
 import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/agent/agent_tool.dart';
@@ -36,29 +35,32 @@ const WebSearchConfig _brave = WebSearchConfig(
 class _Env {
   _Env() {
     cache = WebSearchResultCache(clock: () => now);
-    routes = buildWebSearchCtlRoutesFor(
-      config: () => config,
-      consent: () => consent,
-      grantConsent: () async {
-        grants++;
-        consent = kAiAgentWebSearchAllow;
-      },
-      client: (WebSearchConfig cfg) => WebSearchClient(
-        config: cfg,
-        client: MockClient((http.Request r) async {
-          searchRequests.add(r.url);
-          return http.Response(searchBody, 200);
-        }),
-        pageClient: MockClient((http.Request r) async {
-          pageRequests.add(r.url);
-          return pages[r.url.toString()] ?? http.Response('not found', 404);
-        }),
-        resolveHost: (String host) async => <InternetAddress>[
-          resolved[host] ?? InternetAddress('93.184.216.34'),
-        ],
-      ),
-      cache: cache,
-    );
+    routes = <CtlRoute>[
+      for (final FushiOp op in buildWebSearchOpsFor(
+        config: () => config,
+        consent: () => consent,
+        grantConsent: () async {
+          grants++;
+          consent = kAiAgentWebSearchAllow;
+        },
+        client: (WebSearchConfig cfg) => WebSearchClient(
+          config: cfg,
+          client: MockClient((http.Request r) async {
+            searchRequests.add(r.url);
+            return http.Response(searchBody, 200);
+          }),
+          pageClient: MockClient((http.Request r) async {
+            pageRequests.add(r.url);
+            return pages[r.url.toString()] ?? http.Response('not found', 404);
+          }),
+          resolveHost: (String host) async => <InternetAddress>[
+            resolved[host] ?? InternetAddress('93.184.216.34'),
+          ],
+        ),
+        cache: cache,
+      ))
+        op.route,
+    ];
   }
 
   WebSearchConfig? config = _brave;
@@ -90,14 +92,16 @@ class _Env {
     String query, {
     bool confirm = false,
     int? limit,
-  }) => call(kWebSearchCtlSearch, <String, Object?>{
+  }) => call(WebSearchOps.search.pattern, <String, Object?>{
     'query': query,
     'limit': ?limit,
     if (confirm) 'confirm': true,
   });
 
-  Future<Map<String, Object?>> read(String id, {int? offset}) =>
-      call(kWebSearchCtlRead, <String, Object?>{'id': id, 'offset': ?offset});
+  Future<Map<String, Object?>> read(String id, {int? offset}) => call(
+    WebSearchOps.read.pattern,
+    <String, Object?>{'id': id, 'offset': ?offset},
+  );
 }
 
 Matcher _fails(String code) =>
@@ -194,11 +198,11 @@ void main() {
       await env.search('b', limit: 50);
       expect(
         env.searchRequests[0].queryParameters['count'],
-        '$kWebSearchDefaultLimit',
+        '${WebSearchOps.defaultLimit}',
       );
       expect(
         env.searchRequests[1].queryParameters['count'],
-        '$kWebSearchMaxLimit',
+        '${WebSearchOps.maxLimit}',
       );
       await expectLater(env.search('c', limit: 0), _fails('bad_request'));
       await expectLater(env.search('  '), _fails('bad_request'));
@@ -236,9 +240,9 @@ void main() {
         200,
       );
       final Map<String, Object?> first = await env.read(id);
-      expect((first['text']! as String).length, kWebReadChunkChars);
+      expect((first['text']! as String).length, WebSearchOps.readChunkChars);
       expect(first['offset'], 0);
-      expect(first['nextOffset'], kWebReadChunkChars);
+      expect(first['nextOffset'], WebSearchOps.readChunkChars);
       expect(first['url'], 'https://example.org/long');
       final int total = first['totalChars']! as int;
       expect(total, greaterThanOrEqualTo(10000));
@@ -292,13 +296,10 @@ void main() {
       env.searchBody = _braveBody(<(String, String, String)>[
         ('T', 'https://example.org/a', 's'),
       ]);
+      // 可用性与首次确认由实现按同一份偏好现算（buildWebSearchOpsFor）。
       final OpCatalog catalog = OpCatalog.build(
         env.routes,
-        describeWebSearchOpsFor(
-          availability: () =>
-              agentWebSearchAvailability(env.config, env.consent),
-          granted: () => agentWebSearchConsentGranted(env.consent),
-        ),
+        const <OpDescription>[],
       );
       toolbox = AiAgentToolbox(
         invoker: OpInvoker(catalog),

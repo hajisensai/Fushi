@@ -19,7 +19,7 @@ class _UnusedRef implements WidgetRef {
 ///
 /// 结构约束（id 形状、read 不带撤销、写操作可撤销或 irreversible、inPath 与模式一致、
 /// remoteUrl 参数 / 装扩展必须先确认）在 [FushiOp] 构造时检查，组目录即炸，不在这里。
-const int kLegacyRouteBaseline = 473;
+const int kLegacyRouteBaseline = 471;
 
 /// 有意不进操作目录的路由前缀，值写明理由。
 const Map<String, String> kRoutePrefixesNotForAi = <String, String>{

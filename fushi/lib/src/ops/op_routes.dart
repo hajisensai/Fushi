@@ -113,7 +113,7 @@ List<CtlRoute> buildDomainOpRoutes(OpContext context) {
     ...buildDiscCtlRoutes(context),
     ..._routesOf(buildUrlImportOps(kit)),
     ...buildWebCtlRoutes(context),
-    ...buildWebSearchCtlRoutes(context),
+    ..._routesOf(buildWebSearchOps(kit)),
     ...buildFeedbackCtlRoutes(context),
     ..._routesOf(buildLeaderboardOps(kit)),
     ..._routesOf(buildAnimeDownloadOps(kit)),
