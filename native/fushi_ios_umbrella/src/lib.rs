@@ -5,9 +5,9 @@
 //! staticlib 里按 C 级导出保留（fat LTO 也不会内部化上游 crate 的 C 导出符号）；这里只需要
 //! 让它们真的被链接进来——显式 `extern crate` + 重新导出，防止「依赖没被引用就不加载」。
 //! fushi_compute 是 app 的硬依赖：伞形库缺失或不含 `ffc_*` 时 Runner 的
-//! 「Check fushi_compute (iOS umbrella)」构建阶段让构建失败；fushi_rwkv（RWKV-Instant 排程推理，
+//! 「Check native libraries (iOS umbrella)」构建阶段让构建失败；fushi_rwkv（RWKV-Instant 排程推理，
 //! AGPL-3.0-or-later——链进来后本库与 Runner 整体受 AGPL 约束，见 Cargo.toml）同为硬依赖，由
-//! 「Check fushi_rwkv (iOS umbrella)」把关。
+//! 「Check native libraries (iOS umbrella)」把关。
 //!
 //! 本 crate 不加任何自己的符号；ABI 以各子 crate 的 lib.rs 为准，核对用各自的
 //! verify_abi.sh（期望集取自 Dart 绑定的 lookup 名）。

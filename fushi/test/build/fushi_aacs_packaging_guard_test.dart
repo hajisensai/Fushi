@@ -132,8 +132,7 @@ void main() {
   test('macOS Runner bundles libaacs.dylib into Frameworks', () {
     final String project = _read('macos/Runner.xcodeproj/project.pbxproj');
     final int phases = project.indexOf(
-      'B20100000000000000000003 /* Bundle '
-      'fushi_torrent dylib */,',
+      'B20100000000000000000002 /* Bundle native libraries */,',
     );
     expect(phases, greaterThanOrEqualTo(0));
     expect(

@@ -105,7 +105,7 @@ class EmbeddedTorrentEngine {
   /// （系统路径 / `LD_LIBRARY_PATH`）。
   ///
   /// macOS 包先试 `<exe>/../Frameworks/<名>`：Runner 构建阶段
-  /// （`fushi/macos/bundle_fushi_torrent.sh`）把
+  /// （`fushi/macos/bundle_native_libs.sh`）把
   /// `prebuilt/macos/libfushi_torrent_ffi.dylib` copy-if-present 进
   /// `Contents/Frameworks`。dyld 对 dlopen 的**叶名**只查 `DYLD_*` 环境变量与当前
   /// 目录，不保证走可执行文件的 `@executable_path/../Frameworks` rpath，所以同样显式给

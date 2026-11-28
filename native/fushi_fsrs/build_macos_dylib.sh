@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # macOS 版 libfushi_fsrs.dylib（只出 Apple Silicon arm64：macOS 版不再支持 Intel Mac），
-# 给 app bundle 的 Contents/Frameworks 用（fushi/macos/bundle_fushi_fsrs.sh 在 Xcode
+# 给 app bundle 的 Contents/Frameworks 用（fushi/macos/bundle_native_libs.sh 在 Xcode
 # 构建阶段拷进去）。
 #
 # 用法: build_macos_dylib.sh
@@ -9,7 +9,7 @@
 # 环境变量 FUSHI_FSRS_ID_AUDIT_VARIANT=1（可选）：另编一份带 ID 审计的库（cargo feature `id_audit`，
 # src/store/ids.rs `audit`；外加 FUSHI_FSRS_FEATURES）到 prebuilt/macos/id_audit/libfushi_fsrs.dylib。只给本机的调试构建与测试宿主用
 # （Dart 侧 packages/fushi_srs 的 kFushiFsrsIdAuditDir：断言开着才去找它），不随包——
-# fushi/macos/bundle_fushi_fsrs.sh 只拷上一级目录里的普通库。tool/bootstrap.sh 设它；发布流水线不设，产物与以前
+# fushi/macos/bundle_native_libs.sh 只拷上一级目录里的普通库。tool/bootstrap.sh 设它；发布流水线不设，产物与以前
 # 相同。不设它重编时会删掉已有的 id_audit 目录：那份库对应的是上一次的源码，留着会被调试构建优先加载。
 #
 # 环境变量 FUSHI_FSRS_FEATURES（可选，逗号分隔）：额外的 cargo feature，只给测试用的库（dist worker、本机备库

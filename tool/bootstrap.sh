@@ -40,46 +40,41 @@ echo "==> Generating i18n (fushi/tool/gen_i18n.dart)"
 echo "==> git hooks (tool/git_hooks/install.sh)"
 sh tool/git_hooks/install.sh
 
-# Rust 原生库 native/fushi_compute / fushi_fsrs / fushi_web_core / fushi_rwkv / fushi_music / fushi_corpus 是 app 与 flutter test 的硬依赖：
-# CMake / Xcode / Gradle 缺库直接构建失败，测试成片报库不可用。按主机平台各编一次；没有 cargo 就失败。
-# （Windows 的 tool/native_libs.ps1 还会复用兄弟 worktree 的同源码产物；这里只编。与它的 crate 清单保持一致。）
-# fushi_rwkv 是 RWKV-Instant 排程推理（AGPL-3.0-or-later）。
-# fushi_fsrs 带测试专用的原始 SQL 通道（cargo feature raw_sql，native/fushi_fsrs/Cargo.toml）：这份库同时给 flutter test 与本机
-# flutter run / build 用，所以本机自己编的 app 带它（与 tool/native_libs.ps1 同口径）。出发布包的调用方（tool/linux/build_bundle.sh）
-# 设 FUSHI_RELEASE_NATIVE=1：不带，并在出包前核对（verify_raw_sql.sh absent）。
+# Rust 原生库（登记表 native/crates.json 里 `host_test_lib: true` 的 crate，经 tool/native_crates.py 读）是 app 与
+# flutter test 的硬依赖：CMake / Xcode / Gradle 缺库直接构建失败，测试成片报库不可用。按主机平台各编一次；没有 cargo 就失败。
+# （Windows 的 tool/native_libs.ps1 读同一份登记表，还会复用兄弟 worktree 的同源码产物；这里只编。）
+# 登记表的 test_features（fushi_fsrs 的 raw_sql：测试专用的原始 SQL 通道，native/fushi_fsrs/Cargo.toml）经 FUSHI_FSRS_FEATURES
+# 交给构建脚本：这份库同时给 flutter test 与本机 flutter run / build 用，所以本机自己编的 app 带它（与 tool/native_libs.ps1 同口径）。
+# 出发布包的调用方（tool/linux/build_bundle.sh）设 FUSHI_RELEASE_NATIVE=1：不带，并在出包前核对（verify_raw_sql.sh absent）。
+# `id_audit: true` 的 crate 另编一份带 ID 审计的库给调试构建 / 测试宿主（FUSHI_FSRS_ID_AUDIT_VARIANT=1，不随包，见脚本头）。
 # 显式跳过：FUSHI_BOOTSTRAP_SKIP_NATIVE_COMPUTE=1（之后手动跑对应的 build_* 脚本）。
+py=python3
+python3 -c '' >/dev/null 2>&1 || py=python
+native_crates="$("$py" tool/native_crates.py list --host-test | tr '\n' ' ')"
 if [ -n "${FUSHI_BOOTSTRAP_SKIP_NATIVE_COMPUTE:-}" ]; then
-  echo "WARNING: skipped native/fushi_compute, fushi_fsrs, fushi_web_core, fushi_rwkv, fushi_music, fushi_corpus (required); run native/<crate>/build_<platform> before flutter build/test" >&2
+  echo "WARNING: skipped native/{${native_crates% }} (required); run native/<crate>/build_<platform> before flutter build/test" >&2
 else
   if ! command -v cargo >/dev/null 2>&1; then
-    echo "error: cargo not found. native/fushi_compute, fushi_fsrs, fushi_web_core, fushi_rwkv, fushi_music, fushi_corpus (Rust) are required native dependencies;" >&2
+    echo "error: cargo not found. native/{${native_crates% }} (Rust) are required native dependencies;" >&2
     echo "       install Rust (https://rustup.rs) and re-run, or set FUSHI_BOOTSTRAP_SKIP_NATIVE_COMPUTE=1 to skip explicitly." >&2
     exit 1
   fi
-  fsrs_features=raw_sql
-  if [ "${FUSHI_RELEASE_NATIVE:-}" = 1 ]; then fsrs_features=""; fi
   case "$(uname -s)" in
-    Darwin)
-      echo "==> native Rust libraries (macOS arm64 dylib)"
-      bash native/fushi_compute/build_macos_dylib.sh
-      # 另编一份带 ID 审计的库给调试构建 / 测试宿主（不随包，见脚本头；它也带 $fsrs_features）。
-      FUSHI_FSRS_FEATURES="$fsrs_features" FUSHI_FSRS_ID_AUDIT_VARIANT=1 bash native/fushi_fsrs/build_macos_dylib.sh
-      bash native/fushi_web_core/build_macos_dylib.sh
-      bash native/fushi_rwkv/build_macos_dylib.sh
-      bash native/fushi_music/build_macos_dylib.sh
-      bash native/fushi_corpus/build_macos_dylib.sh
-      ;;
-    *)
-      echo "==> native Rust libraries (Linux x64 .so)"
-      bash native/fushi_compute/build_linux_so.sh
-      # 另编一份带 ID 审计的库给调试构建 / 测试宿主（不随包，见脚本头；它也带 $fsrs_features）。
-      FUSHI_FSRS_FEATURES="$fsrs_features" FUSHI_FSRS_ID_AUDIT_VARIANT=1 bash native/fushi_fsrs/build_linux_so.sh
-      bash native/fushi_web_core/build_linux_so.sh
-      bash native/fushi_rwkv/build_linux_so.sh
-      bash native/fushi_music/build_linux_so.sh
-      bash native/fushi_corpus/build_linux_so.sh
-      ;;
+    Darwin) platform=macos; echo "==> native Rust libraries (macOS arm64 dylib)" ;;
+    *) platform=linux; echo "==> native Rust libraries (Linux x64 .so)" ;;
   esac
+  for crate in $native_crates; do
+    script="$("$py" tool/native_crates.py get "$crate" "build.$platform")"
+    features="$("$py" tool/native_crates.py get "$crate" test_features)"
+    build_env=()
+    if [ -n "$features" ]; then
+      # 发布包不带测试 feature；显式置空，不继承调用方环境里的值。
+      if [ "${FUSHI_RELEASE_NATIVE:-}" = 1 ]; then features=""; fi
+      build_env+=("FUSHI_FSRS_FEATURES=$features")
+    fi
+    if [ "$("$py" tool/native_crates.py get "$crate" id_audit)" = true ]; then build_env+=(FUSHI_FSRS_ID_AUDIT_VARIANT=1); fi
+    env ${build_env[@]+"${build_env[@]}"} bash "native/$crate/$script"
+  done
 fi
 
 echo ""

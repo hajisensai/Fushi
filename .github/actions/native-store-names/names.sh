@@ -11,7 +11,12 @@
 # local dry run is just `bash .github/actions/native-store-names/names.sh linux`.
 #
 # A name encodes every input of the build:
-#   * source: `git ls-tree -r HEAD` of the input paths (blob ids of COMMITTED content).
+#   * source: the source key of the input paths -- `tool/native_crates.py tree-key`, the ONE
+#     implementation shared with the local stamps (tool/native_libs.ps1) and the dist workers
+#     (sha256 over `git ls-tree -r HEAD` of the paths, Markdown left out). A crate's input paths
+#     come from the registry (`tool/native_crates.py paths <crate>`: its directory, external_sources,
+#     key_extra_inputs; the iOS umbrella = its own directory plus every member's), so they cannot
+#     drift from what the crate compiles. Blob ids are COMMITTED content.
 #     Not hashFiles(): that hashes whatever is on disk at the time, so it had to run
 #     before gitignored build/ prebuilt/ target/ dist/ .anki-src/ appeared, and on
 #     Windows it hashes the autocrlf-converted checkout. Blob ids are immune to both
@@ -23,7 +28,8 @@
 #     (exported as p2p_rust; the dtolnay steps read it from here) and the job's CC/CXX.
 #     fushi-anki-sync's Rust channel and protoc pin are inside its hashed paths
 #     (native/fushi_anki_sync/rust-toolchain.toml, .github/actions/setup-fushi-anki-sync).
-# A build starts reading another directory => add it to the path lists below.
+# A crate build starts reading another directory => add it to the crate's external_sources /
+# key_extra_inputs in native/crates.json; the non-crate inputs (MIHON, baseapp) are listed below.
 set -euo pipefail
 
 platform="${1:?usage: names.sh <windows|macos|ios|linux|android|flatpak>}"
@@ -47,20 +53,33 @@ arch="$(sanitize "$(printf '%s' "${RUNNER_ARCH:-unknown-arch}" | tr 'A-Z' 'a-z')
 # the hash, so a producer that forgot to set them can never feed a consumer that did.
 toolchain_env="CC=${CC:-} CXX=${CXX:-}"
 
-# tree_hash <extra-identity> <path>... : sha256 over the committed tree of <path>s plus
-# the extra identity string. Fails when the paths match nothing (a renamed directory
-# must not silently turn the name into a constant). Markdown is left out: no build in
-# these trees reads a .md, and a README edit used to cold-rebuild every platform.
+py=python3
+python3 -c '' >/dev/null 2>&1 || py=python
+
+# tree_hash <extra-identity> <path>... : sha256 over the source key of <path>s plus the
+# extra identity string. The source key (tool/native_crates.py tree-key) fails when a path
+# matches nothing (a renamed directory must not silently turn the name into a constant)
+# and leaves Markdown out (no build reads a .md; a README edit used to cold-rebuild every
+# platform).
 tree_hash() {
   local extra="$1"
   shift
-  local listing
-  listing="$(git ls-tree -r --full-tree HEAD -- "$@" | grep -viE '\.md$' || true)"
-  if [ -z "$listing" ]; then
-    echo "::error title=native-store-names::git ls-tree matched nothing for: $*" >&2
+  local source
+  if ! source="$("$py" tool/native_crates.py tree-key "$@")"; then
+    echo "::error title=native-store-names::tool/native_crates.py tree-key failed for: $*" >&2
     exit 1
   fi
-  { printf '%s\n' "$listing"; printf 'identity: %s\n' "$extra"; } | sha256 | cut -c1-64
+  { printf 'source: %s\n' "$source"; printf 'identity: %s\n' "$extra"; } | sha256 | cut -c1-64
+}
+
+# crate_paths <crate> : the registry's input paths of a native crate, one array element each.
+crate_paths() {
+  local out
+  if ! out="$("$py" tool/native_crates.py paths "$1")"; then
+    echo "::error title=native-store-names::tool/native_crates.py paths $1 failed" >&2
+    exit 1
+  fi
+  printf '%s\n' "$out"
 }
 
 # vendored_identity <path>... : sha256 over the pinned sha256s of the prebuilt binaries
@@ -68,8 +87,7 @@ tree_hash() {
 # .github/actions/fetch-vendored-binaries), so `git ls-tree` no longer sees them; without
 # this a LunaHook / jogamp bump would keep serving the artifact built from the old bytes.
 vendored_identity() {
-  local py=python3 listing
-  python3 -c '' >/dev/null 2>&1 || py=python
+  local listing
   listing="$("$py" tool/vendored_binaries.py identity "$@")"
   if [ -z "$listing" ]; then
     echo "::error title=native-store-names::tool/vendored_binaries.json has no entry under: $*" >&2
@@ -78,17 +96,18 @@ vendored_identity() {
   printf '%s\n' "$listing" | sha256 | cut -c1-64
 }
 
-TORRENT=(native/fushi_torrent)
-P2P=(native/fushi_p2p)
+# Crate inputs come from the registry (native/crates.json via crate_paths; paths carry no spaces).
+TORRENT=($(crate_paths fushi_torrent))
+P2P=($(crate_paths fushi_p2p))
 # iOS umbrella staticlib (fushi_p2p + fushi_fsrs + fushi_compute + fushi_web_core + fushi_rwkv + fushi_music + fushi_corpus in one
 # crate, one Rust std).
-IOS_NATIVE=(native/fushi_ios_umbrella native/fushi_p2p native/fushi_fsrs native/fushi_compute native/fushi_web_core native/fushi_rwkv native/fushi_music native/fushi_corpus)
+IOS_NATIVE=($(crate_paths fushi_ios_umbrella))
 # Mihon runtime inputs: server source + overlay, jogamp repo, the offline build kit
 # (Gradle distribution, Gradle dependency cache, JDK archives; vendored, see
 # third_party/mihon_build/README.md) and the build scripts. Same list on every OS.
 MIHON=(third_party/m_extension_server third_party/jogamp third_party/mihon_build tool/mihon)
-GALGAME=(native/galgame_hook)
-ANKI_SYNC=(native/fushi_anki_sync .github/actions/setup-fushi-anki-sync)
+GALGAME=($(crate_paths galgame_hook))
+ANKI_SYNC=($(crate_paths fushi_anki_sync))
 
 names=()
 # Mihon runtime (windows / macos / flatpak): JDK and server commit are pinned inside tool/mihon

@@ -1717,8 +1717,8 @@ jobs:
             bash native/fushi_p2p/build_macos_dylib.sh
           fi
           bash native/fushi_p2p/verify_abi.sh native/fushi_p2p/prebuilt/macos/libfushi_p2p.dylib nm
-      # SRS 排程内核（fsrs-rs）arm64 dylib：Runner 的「Bundle fushi_fsrs dylib」构建阶段
-      # （fushi/macos/bundle_fushi_fsrs.sh）copy-if-present 进 Contents/Frameworks，之后由下面
+      # SRS 排程内核（fsrs-rs）arm64 dylib：Runner 的「Bundle native libraries」构建阶段
+      # （fushi/macos/bundle_native_libs.sh）copy-if-present 进 Contents/Frameworks，之后由下面
       # 的 Developer ID 签名循环随其它 Mach-O 一起签。失败口径同 p2p：构建失败即 job 失败；
       # 出包后再核对。不进原生产物持久库（与 build-multiplatform.yml macos job 同一口径），
       # 工具链版本与 fushi_p2p 同源；p2p 持久库命中时它的 Rust 安装被跳过，所以这里无条件装。
@@ -1738,8 +1738,8 @@ jobs:
           set -euo pipefail
           bash native/fushi_fsrs/build_macos_dylib.sh
           bash native/fushi_fsrs/verify_abi.sh native/fushi_fsrs/prebuilt/macos/libfushi_fsrs.dylib nm
-      # 网页内容核心（fushi_web_core，硬依赖）arm64 dylib：Runner 的「Bundle fushi_web_core dylib」构建阶段
-      # （fushi/macos/bundle_fushi_web_core.sh）拷进 Contents/Frameworks（Release 缺库失败），之后由下面
+      # 网页内容核心（fushi_web_core，硬依赖）arm64 dylib：Runner 的「Bundle native libraries」构建阶段
+      # （fushi/macos/bundle_native_libs.sh）拷进 Contents/Frameworks（Release 缺库失败），之后由下面
       # 的 Developer ID 签名循环随其它 Mach-O 一起签。失败口径同 p2p：构建失败即 job 失败；
       # 出包后再核对。不进原生产物持久库（与 build-multiplatform.yml macos job 同一口径），
       # 工具链版本与 fushi_p2p 同源；p2p 持久库命中时它的 Rust 安装被跳过，所以这里无条件装。
@@ -1760,7 +1760,7 @@ jobs:
           bash native/fushi_web_core/build_macos_dylib.sh
           bash native/fushi_web_core/verify_abi.sh native/fushi_web_core/prebuilt/macos/libfushi_web_core.dylib nm
       # 计算内核（哈希 / 图像 / 文本）arm64 dylib：**硬依赖**——Runner 的「Bundle fushi_compute
-      # dylib」构建阶段（fushi/macos/bundle_fushi_compute.sh）拷进 Contents/Frameworks，缺库时
+      # dylib」构建阶段（fushi/macos/bundle_native_libs.sh）拷进 Contents/Frameworks，缺库时
       # 那个阶段直接让 xcodebuild 失败；之后由下面的 Developer ID 签名循环随其它 Mach-O 一起签。
       # Rust 已由 fushi_fsrs 那组无条件装好（同一工具链、同一 target）。
       - name: Cache Rust build (fushi_compute)
@@ -1774,8 +1774,8 @@ jobs:
           set -euo pipefail
           bash native/fushi_compute/build_macos_dylib.sh
           bash native/fushi_compute/verify_abi.sh native/fushi_compute/prebuilt/macos/libfushi_compute.dylib nm
-      # RWKV-Instant 排程推理 arm64 dylib：**硬依赖**——Runner 的「Bundle fushi_rwkv dylib」构建阶段
-      # （fushi/macos/bundle_fushi_rwkv.sh）拷进 Contents/Frameworks，缺库时 xcodebuild 失败；
+      # RWKV-Instant 排程推理 arm64 dylib：**硬依赖**——Runner 的「Bundle native libraries」构建阶段
+      # （fushi/macos/bundle_native_libs.sh）拷进 Contents/Frameworks，缺库时 xcodebuild 失败；
       # 之后随其它 Mach-O 一起走 Developer ID 签名循环。
       - name: Cache Rust build (fushi_rwkv)
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
@@ -1803,7 +1803,7 @@ jobs:
           bash native/fushi_corpus/build_macos_dylib.sh
           bash native/fushi_corpus/verify_abi.sh native/fushi_corpus/prebuilt/macos/libfushi_corpus.dylib nm
       # 内置 torrent 引擎 bridge（libtorrent，vcpkg 静态链）arm64 dylib：Runner 的
-      # 「Bundle fushi_torrent dylib」构建阶段 copy-if-present 进 Contents/Frameworks，之后由
+      # 「Bundle native libraries」构建阶段 copy-if-present 进 Contents/Frameworks，之后由
       # 下面的 Developer ID 签名循环随其它 Mach-O 一起签。此前 macOS 包从没带过它，内置引擎
       # 在 macOS 上恒不可用（BUG-2865）。失败口径同 p2p：构建失败即 job 失败；出包后再核对。
       # 持久库与 build-multiplatform.yml macos job 同名：这里（develop push）存的件就是 PR 门
@@ -1896,7 +1896,7 @@ jobs:
         run: |
           set -euo pipefail
           dylib="fushi/build/macos/Build/Products/Release/fushi.app/Contents/Frameworks/libfushi_p2p.dylib"
-          test -f "$dylib" || { echo "::error::$dylib missing — the Runner 'Bundle fushi_p2p dylib' phase did not copy it"; exit 1; }
+          test -f "$dylib" || { echo "::error::$dylib missing — the Runner 'Bundle native libraries' phase did not copy it"; exit 1; }
           # otool -D 首行是「path:」表头，其余是 id。
           test "$(otool -D "$dylib" | grep -v ':$' | sort -u)" = "@rpath/libfushi_p2p.dylib"
           # 发布包只出 arm64：dylib 恰好是 arm64（多出 x86_64 = 还原了旧 universal 件或脚本回退）。
@@ -1908,7 +1908,7 @@ jobs:
         run: |
           set -euo pipefail
           dylib="fushi/build/macos/Build/Products/Release/fushi.app/Contents/Frameworks/libfushi_fsrs.dylib"
-          test -f "$dylib" || { echo "::error::$dylib missing — the Runner 'Bundle fushi_fsrs dylib' phase did not copy it"; exit 1; }
+          test -f "$dylib" || { echo "::error::$dylib missing — the Runner 'Bundle native libraries' phase did not copy it"; exit 1; }
           test "$(otool -D "$dylib" | grep -v ':$' | sort -u)" = "@rpath/libfushi_fsrs.dylib"
           archs="$(lipo -archs "$dylib")"
           if [ "$archs" != "arm64" ]; then echo "::error::$dylib must be arm64-only (has: $archs)"; exit 1; fi
@@ -1918,7 +1918,7 @@ jobs:
         run: |
           set -euo pipefail
           dylib="fushi/build/macos/Build/Products/Release/fushi.app/Contents/Frameworks/libfushi_web_core.dylib"
-          test -f "$dylib" || { echo "::error::$dylib missing — the Runner 'Bundle fushi_web_core dylib' phase did not copy it"; exit 1; }
+          test -f "$dylib" || { echo "::error::$dylib missing — the Runner 'Bundle native libraries' phase did not copy it"; exit 1; }
           test "$(otool -D "$dylib" | grep -v ':$' | sort -u)" = "@rpath/libfushi_web_core.dylib"
           archs="$(lipo -archs "$dylib")"
           if [ "$archs" != "arm64" ]; then echo "::error::$dylib must be arm64-only (has: $archs)"; exit 1; fi
@@ -1928,7 +1928,7 @@ jobs:
         run: |
           set -euo pipefail
           dylib="fushi/build/macos/Build/Products/Release/fushi.app/Contents/Frameworks/libfushi_compute.dylib"
-          test -f "$dylib" || { echo "::error::$dylib missing — the Runner 'Bundle fushi_compute dylib' phase did not copy it"; exit 1; }
+          test -f "$dylib" || { echo "::error::$dylib missing — the Runner 'Bundle native libraries' phase did not copy it"; exit 1; }
           test "$(otool -D "$dylib" | grep -v ':$' | sort -u)" = "@rpath/libfushi_compute.dylib"
           archs="$(lipo -archs "$dylib")"
           if [ "$archs" != "arm64" ]; then echo "::error::$dylib must be arm64-only (has: $archs)"; exit 1; fi
@@ -1950,7 +1950,7 @@ jobs:
         run: |
           set -euo pipefail
           dylib="fushi/build/macos/Build/Products/Release/fushi.app/Contents/Frameworks/libfushi_rwkv.dylib"
-          test -f "$dylib" || { echo "::error::$dylib missing — the Runner 'Bundle fushi_rwkv dylib' phase did not copy it"; exit 1; }
+          test -f "$dylib" || { echo "::error::$dylib missing — the Runner 'Bundle native libraries' phase did not copy it"; exit 1; }
           test "$(otool -D "$dylib" | grep -v ':$' | sort -u)" = "@rpath/libfushi_rwkv.dylib"
           archs="$(lipo -archs "$dylib")"
           if [ "$archs" != "arm64" ]; then echo "::error::$dylib must be arm64-only (has: $archs)"; exit 1; fi
@@ -1973,7 +1973,7 @@ jobs:
         run: |
           set -euo pipefail
           dylib="fushi/build/macos/Build/Products/Release/fushi.app/Contents/Frameworks/libfushi_music.dylib"
-          test -f "$dylib" || { echo "::error::$dylib missing — the Runner 'Bundle fushi_music dylib' phase did not copy it"; exit 1; }
+          test -f "$dylib" || { echo "::error::$dylib missing — the Runner 'Bundle native libraries' phase did not copy it"; exit 1; }
           test "$(otool -D "$dylib" | grep -v ':$' | sort -u)" = "@rpath/libfushi_music.dylib"
           archs="$(lipo -archs "$dylib")"
           if [ "$archs" != "arm64" ]; then echo "::error::$dylib must be arm64-only (has: $archs)"; exit 1; fi
@@ -1996,7 +1996,7 @@ jobs:
         run: |
           set -euo pipefail
           dylib="fushi/build/macos/Build/Products/Release/fushi.app/Contents/Frameworks/libfushi_corpus.dylib"
-          test -f "$dylib" || { echo "::error::$dylib missing — the Runner 'Bundle fushi_corpus dylib' phase did not copy it"; exit 1; }
+          test -f "$dylib" || { echo "::error::$dylib missing — the Runner 'Bundle native libraries' phase did not copy it"; exit 1; }
           test "$(otool -D "$dylib" | grep -v ':$' | sort -u)" = "@rpath/libfushi_corpus.dylib"
           archs="$(lipo -archs "$dylib")"
           if [ "$archs" != "arm64" ]; then echo "::error::$dylib must be arm64-only (has: $archs)"; exit 1; fi
@@ -2026,7 +2026,7 @@ jobs:
         run: |
           set -euo pipefail
           dylib="fushi/build/macos/Build/Products/Release/fushi.app/Contents/Frameworks/libfushi_torrent_ffi.dylib"
-          test -f "$dylib" || { echo "::error::$dylib missing — the Runner 'Bundle fushi_torrent dylib' phase did not copy it"; exit 1; }
+          test -f "$dylib" || { echo "::error::$dylib missing — the Runner 'Bundle native libraries' phase did not copy it"; exit 1; }
           test "$(otool -D "$dylib" | grep -v ':$' | sort -u)" = "@rpath/libfushi_torrent_ffi.dylib"
           # 发布包只出 arm64：dylib 恰好是 arm64（多出 x86_64 = 还原了旧 universal 件或脚本回退）。
           archs="$(lipo -archs "$dylib")"
@@ -3310,8 +3310,8 @@ jobs:
         run: flutter config --no-enable-swift-package-manager
       # iOS 伞形 Rust 静态库（device 切片）：互联 P2P 隧道（fushi_p2p，fp2p_*）+ SRS 排程内核
       # （fushi_fsrs，ffsrs_*）+ 计算内核（fushi_compute，ffc_*，硬依赖：伞形库缺失时 Runner 的
-      # 「Check fushi_compute (iOS umbrella)」构建阶段让构建失败）+ 网页内容核心（fushi_web_core，fwc_*）
-      # + RWKV 排程推理（fushi_rwkv，frwkv_*，硬依赖，由「Check fushi_rwkv (iOS umbrella)」把关；
+      # 「Check native libraries (iOS umbrella)」构建阶段让构建失败）+ 网页内容核心（fushi_web_core，fwc_*）
+      # + RWKV 排程推理（fushi_rwkv，frwkv_*，硬依赖，由「Check native libraries (iOS umbrella)」把关；
       # AGPL-3.0-or-later，链进来后 Runner 整体受 AGPL 约束）合成一个 staticlib、Rust std
       # 只有一份——多份单独的 .a 同时
       # -force_load 会撞重复 std 符号。iOS 不能加载自带 dylib，以 staticlib 经 -force_load 链进

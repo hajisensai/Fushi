@@ -1,5 +1,0 @@
-# 本 crate 经 `#[path = ...]` 编入、但不在 native/fushi_music/ 下的源码（相对仓库根，一行一个）。
-# 预编译库的戳记 / 缓存键只哈希 native/<crate> 目录，这里列出的文件也并进键里：
-# tool/native_libs.ps1、fushi/tool/dist_test/worker_prepare.sh、worker_build.sh 读它。
-# 守卫：fushi/test/build/native_external_sources_stamp_guard_test.dart。
-native/fushi_compute/src/legacy_text.rs

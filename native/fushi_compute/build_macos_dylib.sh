@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # macOS 版 libfushi_compute.dylib（只出 Apple Silicon arm64：macOS 版不再支持 Intel Mac），
-# 给 app bundle 的 Contents/Frameworks 用（fushi/macos/bundle_fushi_compute.sh 在 Xcode
+# 给 app bundle 的 Contents/Frameworks 用（fushi/macos/bundle_native_libs.sh 在 Xcode
 # 构建阶段拷进去）。
 #
 # 用法: build_macos_dylib.sh

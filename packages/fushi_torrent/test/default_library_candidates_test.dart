@@ -5,7 +5,7 @@ import 'package:test/test.dart';
 
 /// 桌面包把引擎库放在固定的包内目录：Linux `bundle/lib/`（runner CMake
 /// copy-if-present）、macOS `Contents/Frameworks/`（Runner 构建阶段
-/// `bundle_fushi_torrent.sh`）。默认加载必须先试这个绝对路径，不押在裸名
+/// `bundle_native_libs.sh`）。默认加载必须先试这个绝对路径，不押在裸名
 /// dlopen 的 RUNPATH / rpath 语义上；其余平台保持裸名。
 void main() {
   test('Linux 先试 exe 同级 lib/ 的绝对路径，再退裸名', () {

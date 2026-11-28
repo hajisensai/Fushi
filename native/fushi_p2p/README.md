@@ -49,7 +49,7 @@ Dart FFI（`packages/fushi_p2p`，纯 Dart，无 Flutter / 插件依赖）。设
 | Windows x64 | `powershell -ExecutionPolicy Bypass -File native/fushi_p2p/build_windows_dll.ps1` | `prebuilt/windows-x64/fushi_p2p.dll` | `fushi/windows/CMakeLists.txt` copy-if-present 到 exe 同级；服务端放 `bundle/lib/` |
 | Android | `build_android_so.ps1 [-NdkRoot …] [-Abis …]` / `build_android_so.sh <ndk-root> [abi…]`（cargo-ndk，API 24） | `prebuilt/android/<abi>/libfushi_p2p.so` | `fushi/android/app/build.gradle` 的 `jniLibs.srcDirs` copy-if-present |
 | Linux x64 | `build_linux_so.sh` | `prebuilt/linux-x64/libfushi_p2p.so` | `fushi/linux/CMakeLists.txt` copy-if-present 到 `bundle/lib/`；服务端放 `bundle/lib/` |
-| macOS | `build_macos_dylib.sh`（只出 arm64：macOS 版不再支持 Intel Mac；部署目标 13.4） | `prebuilt/macos/libfushi_p2p.dylib`（install name `@rpath/…`） | Runner 构建阶段「Bundle fushi_p2p dylib」（`fushi/macos/bundle_fushi_p2p.sh`）copy-if-present 到 `Contents/Frameworks` |
+| macOS | `build_macos_dylib.sh`（只出 arm64：macOS 版不再支持 Intel Mac；部署目标 13.4） | `prebuilt/macos/libfushi_p2p.dylib`（install name `@rpath/…`） | Runner 构建阶段「Bundle native libraries」（`fushi/macos/bundle_native_libs.sh`）copy-if-present 到 `Contents/Frameworks` |
 | iOS | `build_ios_staticlib.sh [device\|simulator\|all]`（staticlib，部署目标 15.1） | `prebuilt/ios/{iphoneos,iphonesimulator}/libfushi_p2p.a` + `prebuilt/ios/fushi_p2p.xcconfig` | **app 不接这份**：iOS Runner 链的是伞形库 `native/fushi_ios_umbrella`（fp2p_* + ffsrs_* 合一，std 只有一份），`fushi/ios/Flutter/{Debug,Release}.xcconfig` 可选 `#include?` 它的 xcconfig → Runner `OTHER_LDFLAGS` 的 `$(FUSHI_IOS_NATIVE_LDFLAGS)` = `-force_load <.a>` + rustc 报的系统库；Dart 侧 `DynamicLibrary.process()`。本脚本只留给单独实验 |
 
 - **缺库 = 能力不可用，不是构建失败**：五端都是「prebuilt 有则随包」，没装 Rust 的机器照常出包，
