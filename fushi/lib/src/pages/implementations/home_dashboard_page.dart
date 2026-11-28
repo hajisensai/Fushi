@@ -2599,6 +2599,7 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
     final String byline = _continueMetaLine(entry);
     final int recent = entry.recentMs;
     final FushiSeriesMeta? series = _seriesMetaFor(entry);
+    final ImageProvider? coverImage = _continueCoverImage(appModel, entry);
     Widget blockOf(FushiCoverBlockArt art, Widget cover) =>
         fushiSeriesCoverBlock(
           size: size,
@@ -2608,9 +2609,9 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
           backdrop: art == FushiCoverBlockArt.portrait
               ? fushiSeriesBackdrop(series?.backdrop)
               : null,
+          backdropFallback: coverImage,
           covers: <Widget>[cover],
-          tintImage:
-              _continueTintImage(appModel, entry) ?? fushiCoverImageOf(cover),
+          tintImage: coverImage,
           eyebrow: hero
               ? (recent > 0
                     ? formatActivityRelativeTime(recent, DateTime.now())
@@ -2840,11 +2841,15 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
     );
   }
 
-  /// 封面色块取色的图源：直接按条目取封面图（书 = 书架缩略图、视频 = 海报、
-  /// 游戏 = 本地封面）。不能靠 [fushiCoverImageOf] 从封面 widget 里扒——
-  /// [_continueCover] 外面包了 [MediaNsfwCover]，扒不到图就只剩中性灰。NSFW
-  /// 模糊中的条目不取色（色块颜色也会透出封面内容），回落中性色。
-  ImageProvider? _continueTintImage(AppModel appModel, _ContinueEntry entry) {
+  /// 封面色块的取色图源兼模糊垫底图源（[FushiCoverBlock.tintImage] /
+  /// [FushiCoverBlock.backdropFallback]，两者同一张，垫底的色调与底色一致）：
+  /// 直接按条目取封面图（书 = 书架缩略图、视频 = 海报、游戏 = 本地封面、远端 /
+  /// 服务器条目 = 与封面槽同一个网络图源），与 [_continueCover] 画的是同一个
+  /// provider、共用一条解码流，不另解一份。不能靠 [fushiCoverImageOf] 从封面
+  /// widget 里扒——[_continueCover] 外面包了 [MediaNsfwCover]，扒不到图就只剩
+  /// 中性灰。NSFW 模糊中的条目为 null（色块颜色、模糊垫底都会透出封面内容），
+  /// 回落中性色、不垫底。
+  ImageProvider? _continueCoverImage(AppModel appModel, _ContinueEntry entry) {
     if (mediaNsfwBlurOf(context, _continueNsfwTarget(entry))) return null;
     if (entry.isVideo) return _videoCoverImage(entry);
     if (entry.game case final GalgameEntry game) {
@@ -2854,7 +2859,15 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
         decodeWidth: kLocalCoverDecodePixelWidth,
       );
     }
-    if (entry.remote != null || entry.server != null) return null;
+    if (entry.server case final ServerContinueCandidate server) {
+      return _serverCoverImage(server);
+    }
+    if (entry.remote case final RemoteContinueCandidate remote) {
+      final String? url = remote.coverUrl;
+      final RemoteCoverFetcher? fetcher = _remoteCoverFetcher;
+      if (url == null || url.isEmpty || fetcher == null) return null;
+      return RemoteCoverImage(url, fetcher, cacheKey: remote.id);
+    }
     final MediaItem? book = entry.book;
     if (book == null) return null;
     final ImageProvider image = ReaderFushiSource.instance
@@ -3841,6 +3854,7 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
         ),
     ];
     final FushiSeriesMeta? seriesMeta = _seriesMetaFor(entry);
+    final ImageProvider? coverImage = _continueCoverImage(appModel, entry);
     Widget blockOf(FushiCoverBlockArt art, Widget cover) =>
         fushiSeriesCoverBlock(
           size: size,
@@ -3850,9 +3864,9 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
           backdrop: art == FushiCoverBlockArt.portrait
               ? fushiSeriesBackdrop(seriesMeta?.backdrop)
               : null,
+          backdropFallback: coverImage,
           covers: <Widget>[cover, ...series],
-          tintImage:
-              _continueTintImage(appModel, entry) ?? fushiCoverImageOf(cover),
+          tintImage: coverImage,
           subtitle: _recentSubtitle(entry, now),
         );
     final Widget block =

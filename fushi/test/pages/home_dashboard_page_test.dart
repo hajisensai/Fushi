@@ -11,6 +11,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/fushi_cover_block.dart';
 import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart';
 import 'package:fushi/src/utils/components/fushi_logo_title.dart';
+import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart' show MediaNsfwState;
+import 'package:fushi_engine/privacy/media_nsfw.dart' show MediaNsfwSnapshot;
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/utils/misc/dashboard_server_continue.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart'
@@ -1085,6 +1087,127 @@ void main() {
       blockRect.contains(logoRect.bottomRight - const Offset(1, 1)),
       isTrue,
     );
+  });
+
+  // 首页色块没有刮削背景图（未刮削的书 / 漫画、有声书、无图游戏、远端条目）时垫
+  // 一层放大模糊的自家封面，与书详情页 `backdropFallback: cover` 同一做法；NSFW
+  // 模糊中的条目不垫（垫底同样会透出封面内容）；有背景图的照旧用背景图。
+  group('色块「继续」：没有背景图时模糊封面垫底', () {
+    Finder block() =>
+        find.byKey(const ValueKey<String>('home-continue-block/0'));
+    FushiCoverBlock coverBlock(WidgetTester tester) =>
+        tester.widget<FushiCoverBlock>(
+          find.descendant(of: block(), matching: find.byType(FushiCoverBlock)),
+        );
+    Finder fallbackLayer() => find.descendant(
+      of: block(),
+      matching: find.byKey(kFushiCoverBlockBackdropFallbackKey),
+    );
+
+    /// 在看的两集合集，合集主封面是竖版海报、没有任何刮削图。
+    Future<int> seedPosterSeries() async {
+      final File poster = File('${storeDir.path}/poster.png')
+        ..writeAsBytesSync(_kOnePixelPng);
+      final int cid = await seedCollectionTwoEpisodes(
+        e1: const VideoBooksCompanion(
+          bookUid: Value('e1'),
+          title: Value('S01E01'),
+          videoPath: Value('/abs/e1.mp4'),
+          lastPositionMs: Value(60000),
+        ),
+        e2: const VideoBooksCompanion(
+          bookUid: Value('e2'),
+          title: Value('S01E02'),
+          videoPath: Value('/abs/e2.mp4'),
+        ),
+      );
+      await db.updateMediaCollectionCoverPath(cid, poster.path);
+      return cid;
+    }
+
+    testWidgets('没有背景图：自家海报模糊铺满整块，与取色同一个图源', (WidgetTester tester) async {
+      dashboardLayout = ShellContentLayout.collage;
+      useSize(tester, const Size(1280, 900));
+      await seedPosterSeries();
+      await tester.pumpWidget(buildApp());
+      await pumpDashboard(tester);
+      await settleCoverProbes(tester);
+
+      expect(tester.takeException(), isNull);
+      expect(block(), findsOneWidget);
+      final FushiCoverBlock cover = coverBlock(tester);
+      expect(cover.backdrop, isNull);
+      expect(cover.backdropFallback, isNotNull);
+      expect(cover.backdropFallback, cover.tintImage);
+      expect(fallbackLayer(), findsOneWidget);
+    });
+
+    testWidgets('NSFW 模糊中的条目：不垫模糊封面、不取色', (WidgetTester tester) async {
+      dashboardLayout = ShellContentLayout.collage;
+      useSize(tester, const Size(1280, 900));
+      await seedPosterSeries();
+      final MediaNsfwSnapshot snapshot = (await tester.runAsync(() async {
+        await db.setMediaNsfw(TagHostKind.video, 'e1', true);
+        return MediaNsfwSnapshot.load(db);
+      }))!;
+      await tester.pumpWidget(
+        MediaNsfwState(blurCovers: true, snapshot: snapshot, child: buildApp()),
+      );
+      await pumpDashboard(tester);
+      await settleCoverProbes(tester);
+
+      expect(tester.takeException(), isNull);
+      expect(block(), findsOneWidget);
+      final FushiCoverBlock cover = coverBlock(tester);
+      expect(cover.backdropFallback, isNull);
+      expect(cover.tintImage, isNull);
+      expect(fallbackLayer(), findsNothing);
+    });
+
+    testWidgets('刮削到背景图：用背景图，不垫模糊封面', (WidgetTester tester) async {
+      dashboardLayout = ShellContentLayout.collage;
+      useSize(tester, const Size(1280, 900));
+      final File backdrop = File('${storeDir.path}/backdrop.png')
+        ..writeAsBytesSync(_kLandscapePng);
+      final int cid = await seedPosterSeries();
+      await db.replaceMediaImagesForCollection(cid, <MediaImagesCompanion>[
+        MediaImagesCompanion.insert(
+          collectionId: Value<int?>(cid),
+          kind: MediaImageKind.backdrop.dbValue,
+          path: backdrop.path,
+        ),
+      ]);
+      await tester.pumpWidget(buildApp());
+      await pumpDashboard(tester);
+      expect(block(), findsOneWidget);
+      // 元数据是画到时后台单查（DB + 文件存在性），给真实事件循环几跳。
+      for (int i = 0; i < 20 && coverBlock(tester).backdrop == null; i++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 50)),
+        );
+        await tester.pump();
+      }
+      await settleCoverProbes(tester);
+
+      expect(tester.takeException(), isNull);
+      expect(coverBlock(tester).backdrop, isNotNull);
+      expect(fallbackLayer(), findsNothing);
+      String? pathOf(Image i) {
+        ImageProvider p = i.image;
+        if (p is ResizeImage) p = p.imageProvider;
+        return p is FileImage ? p.file.path : null;
+      }
+
+      expect(
+        tester
+            .widgetList<Image>(
+              find.descendant(of: block(), matching: find.byType(Image)),
+            )
+            .map(pathOf),
+        contains(backdrop.path),
+        reason: '背景槽画的是刮削背景图',
+      );
+    });
   });
 
   // 设计稿 H8：「最近添加」里同一合集新加的几卷合成一张卡，点开进合集详情页

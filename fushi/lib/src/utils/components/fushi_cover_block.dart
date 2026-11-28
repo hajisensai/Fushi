@@ -14,6 +14,7 @@ import 'package:fushi/src/utils/components/fushi_logo_title.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/nsfw_cover_blur.dart';
+import 'package:fushi/src/utils/components/prebaked_blur_image.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 
@@ -28,7 +29,9 @@ import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 // 进度条。给了 [FushiCoverBlock.disc] 时换成「唱片从封套里滑出半张」摆法（文字区
 // 与原摆法同一套）。海报元数据层（设计稿 `.vb` 的背景图 / logo /
 // 状态 chip / 概览 / 信息 chip / 波浪进度 + 主按钮，书的署名，游戏 / 漫画的大数字）
-// 都是可选参数：调用点只传库里已有的数据，没有的那一项整行不画。
+// 都是可选参数：调用点只传库里已有的数据，没有的那一项整行不画。没有背景图时
+// 调用方可给 [FushiCoverBlock.backdropFallback]，整块垫一层放大模糊的自家封面
+// （与详情页「没有背景图就封面模糊垫底」同一做法），大字水印让位给它。
 // 鼠标悬停时水印沿 X 轻移、封面各自换到悬停姿态，
 // 离开弹回（弹簧）；触屏没有悬停。
 //
@@ -392,7 +395,15 @@ OutlinedBorder fushiCoverBlockShape(
   smooth: shellThemeOf(context).smoothCorners,
 );
 
+/// [FushiCoverBlock.backdropFallback] 那层模糊封面垫底的 key（测试按它找）。
+const ValueKey<String> kFushiCoverBlockBackdropFallbackKey = ValueKey<String>(
+  'fushi-cover-block-backdrop-fallback',
+);
+
 /// 封面色块卡。见文件头。
+///
+/// 与设计系统无关：MD3 / Apple 两套下画法相同（底色取封面色、圆角走 [shellShape]，
+/// 不渲染任何系统控件外观），模糊垫底（[backdropFallback]）同样两套共用。
 class FushiCoverBlock extends StatefulWidget {
   const FushiCoverBlock({
     required this.title,
@@ -412,6 +423,7 @@ class FushiCoverBlock extends StatefulWidget {
     this.selected,
     this.hoverEnabled = true,
     this.backdrop,
+    this.backdropFallback,
     this.logo,
     this.eyebrow,
     this.byline,
@@ -435,6 +447,14 @@ class FushiCoverBlock extends StatefulWidget {
   /// （`.vb .ps`，只画 [covers] 首个），文字排在封面右侧、压在背景图上。null =
   /// 原摆法（封面斜放在右）。
   final Widget? backdrop;
+
+  /// 没有 [backdrop] 时的模糊封面垫底（通常与 [tintImage] 同一个图源）：封面放大
+  /// 铺满整块、预烘焙模糊，上面压一层自起始侧（文字区）往结束侧变淡的底色，
+  /// 文字落在底色上、对比度不降；画了它就不画大字水印（模糊画面上再叠一层淡色大字
+  /// 只会和前景标题抢）。[backdrop] 生效、横版摆法（首个封面本身就铺满）、唱片
+  /// 摆法、墨水屏下不画。NSFW 模糊中的条目调用方必须传 null——模糊垫底也会透出
+  /// 封面内容。null = 只有封面色底色。
+  final ImageProvider? backdropFallback;
 
   /// 标题 logo（透明底 PNG，`.vb .lg`）：有就代替标题文字放在标题位，左下对齐、
   /// 按尺寸档限高；解码失败回落标题文字。语义标签仍是 [title]。
@@ -561,6 +581,15 @@ class _FushiCoverBlockState extends State<FushiCoverBlock>
   /// 唱片摆法（[FushiCoverBlock.disc]）。
   bool get _hasDisc => widget.disc != null;
 
+  /// 画模糊封面垫底（[FushiCoverBlock.backdropFallback]）：没有生效的背景图、
+  /// 不是横版 / 唱片摆法、不是墨水屏（墨水屏同样不画照片背景）。
+  bool get _hasBackdropFallback =>
+      widget.backdropFallback != null &&
+      !_hasBackdrop &&
+      !_hasDisc &&
+      widget.art != FushiCoverBlockArt.landscape &&
+      !isEinkTheme(context);
+
   /// 单张竖海报（没有叠层）走「海报完整立在起始侧」的几何，有没有背景图都一样：
   /// 旧的「尾侧斜放、上下出血」摆法在没有剧照时把海报上下裁掉一截（用户
   /// 2026-11-16「组件有点问题」截图：今日放送 / 无剧照条目）。多成员叠层仍走
@@ -571,8 +600,9 @@ class _FushiCoverBlockState extends State<FushiCoverBlock>
           !_hasDisc &&
           widget.covers.length <= 1);
 
-  /// 画大字水印：开关打开、有真封面（生成封面不算）。
-  bool get _showWatermark => widget.watermark && widget.covers.isNotEmpty;
+  /// 画大字水印：开关打开、有真封面（生成封面不算）、没垫模糊封面。
+  bool get _showWatermark =>
+      widget.watermark && widget.covers.isNotEmpty && !_hasBackdropFallback;
 
   FushiSpringSpec _spec(FushiSpringSpec spec) =>
       fushiMotionEnabled(context) ? spec : spec.reduced;
@@ -809,11 +839,54 @@ class _FushiCoverBlockState extends State<FushiCoverBlock>
         ? ltrGeo.mirrored(size.width)
         : ltrGeo;
     return <Widget>[
+      if (_hasBackdropFallback) ..._buildBackdropFallback(colors),
       if (_showWatermark) _buildWatermark(colors, size, ltrGeo.text, direction),
       ..._buildArt(context, colors, geo, direction),
       _buildText(context, colors, size, geo.text, geo.titleLines),
     ];
   }
+
+  /// 模糊封面垫底（[FushiCoverBlock.backdropFallback]）：封面放大 1.25 倍铺满
+  /// 整块再模糊（放大把模糊边缘的透明晕圈推到块外），上面压一层封面色底色——
+  /// 起始侧（文字区）最浓、往结束侧（斜放的封面）变淡，封面色调透出来、文字仍
+  /// 落在实底上。模糊走 [PrebakedBlurImage]：只在图 / 尺寸变化时按 sigma 降采样烘
+  /// 一次（同一张封面跨卡共用缓存），之后每帧只画一张小纹理；渲染期
+  /// [ImageFiltered] 在 Impeller 上每帧重卷积，首页一屏好几块会掉帧。sigma 按
+  /// 放大前给（屏上等效约 25）。烘好前透明，底色兜底，烘好淡入。
+  List<Widget> _buildBackdropFallback(FushiCoverBlockColors colors) => <Widget>[
+    Positioned.fill(
+      child: IgnorePointer(
+        child: KeyedSubtree(
+          key: kFushiCoverBlockBackdropFallbackKey,
+          child: Transform.scale(
+            scale: 1.25,
+            child: PrebakedBlurImage(
+              image: widget.backdropFallback!,
+              sigma: 20,
+            ),
+          ),
+        ),
+      ),
+    ),
+    Positioned.fill(
+      child: IgnorePointer(
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: AlignmentDirectional.centerStart,
+              end: AlignmentDirectional.centerEnd,
+              colors: <Color>[
+                colors.container.withValues(alpha: 0.88),
+                colors.container.withValues(alpha: 0.66),
+                colors.container.withValues(alpha: 0.4),
+              ],
+              stops: const <double>[0, 0.5, 1],
+            ),
+          ),
+        ),
+      ),
+    ),
+  ];
 
   /// 文字区（标题 / 副行 / 进度 / chip 等，[_BlockText]），原摆法与唱片摆法共用。
   Widget _buildText(

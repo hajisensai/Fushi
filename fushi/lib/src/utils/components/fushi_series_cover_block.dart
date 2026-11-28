@@ -231,12 +231,16 @@ Widget? fushiSeriesBackdrop(ImageProvider? image) => image == null
 /// [backdropHasText]：画出来的 [backdrop] 是否自带片名（自带时不叠 logo）；null =
 /// 按 [FushiSeriesMeta.backdropHasText]（[backdrop] 就是 `meta.backdrop` 的常见
 /// 情形）。[backdrop] 换成了别的图时调用方显式给。
+///
+/// [backdropFallback]：没有 [backdrop] 时的模糊封面垫底，见
+/// [FushiCoverBlock.backdropFallback]（NSFW 模糊中的条目传 null）。
 Widget fushiSeriesCoverBlock({
   required FushiCoverBlockSize size,
   required String title,
   required List<Widget> covers,
   required FushiSeriesMeta? meta,
   required Widget? backdrop,
+  ImageProvider? backdropFallback,
   FushiCoverBlockArt art = FushiCoverBlockArt.portrait,
   String? eyebrow,
   String? byline,
@@ -261,6 +265,7 @@ Widget fushiSeriesCoverBlock({
   title: title,
   covers: covers,
   backdrop: backdrop,
+  backdropFallback: backdropFallback,
   logo: (backdropHasText ?? meta?.backdropHasText ?? false) ? null : meta?.logo,
   eyebrow: eyebrow,
   byline: byline,
