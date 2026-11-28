@@ -506,7 +506,10 @@ void main() {
       ),
     );
     expect(item.path, 'fushi-music-youtube://video/dQw4w9WgXcQ');
-    expect(item.coverPath, 'https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg');
+    expect(
+      item.coverPath,
+      'https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg',
+    );
     await prefs.setMusicYoutubeEnabled(false);
     expect(
       (await loadMusicServerBrowsers(app)).whereType<YoutubeMusicClient>(),

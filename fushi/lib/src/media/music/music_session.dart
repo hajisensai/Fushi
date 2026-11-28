@@ -9,6 +9,8 @@ import 'dart:io';
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
+    show youtubeThumbnailFallbackUrl;
 import 'package:fushi_engine/privacy/media_nsfw.dart';
 
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
@@ -48,6 +50,17 @@ Duration? musicMediaSessionDuration(
   MusicPlayItem item,
   Duration? engineDuration,
 ) => item.isPreview ? engineDuration : item.playbackDuration;
+
+/// 系统媒体卡片的封面地址：`http(s)://` 原样交给系统（audio_service 等自己下载），本地封面
+/// 是存在的文件才给。系统下载器没有 404 回退，所以可能 404 的 YouTube 高清缩略图
+/// （`maxresdefault`）换成恒存在的 `mqdefault`（[youtubeThumbnailFallbackUrl]，BUG-5614）。
+Uri? musicMediaSessionArtUri(String? cover) {
+  if (cover == null) return null;
+  if (cover.startsWith('http://') || cover.startsWith('https://')) {
+    return Uri.parse(youtubeThumbnailFallbackUrl(cover) ?? cover);
+  }
+  return File(cover).existsSync() ? Uri.file(cover) : null;
+}
 
 /// 播放失败的提示文字。
 String musicPlaybackFailureText(MusicBackendFailed failure) =>
@@ -672,11 +685,7 @@ class MusicSession extends ChangeNotifier {
       artist: item.artist,
       duration: musicMediaSessionDuration(item, engine.duration),
       // 服务器曲库的封面是 http(s) 地址（audio_service 自己下载），本地封面是文件。
-      artUri: cover == null
-          ? null
-          : (cover.startsWith('http://') || cover.startsWith('https://'))
-          ? Uri.parse(cover)
-          : (File(cover).existsSync() ? Uri.file(cover) : null),
+      artUri: musicMediaSessionArtUri(cover),
       subtitle: mediaSessionLyricLine?.call(),
     );
     handler.updatePlaybackState(

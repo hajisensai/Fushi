@@ -7,6 +7,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:http/http.dart' as http;
 
+import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
+    show youtubeThumbnailFallbackUrl;
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_engine/utils/net/redirect_headers.dart';
 import 'package:fushi/src/utils/net/transient_fetch_retry.dart';
@@ -182,22 +184,46 @@ const Duration kAppImageIdleTimeout = Duration(seconds: 60);
 ///
 /// 超时 / socket 错误 / 5xx 按 [retryBackoff] 自动退避重试（`retryTransient`）；
 /// 4xx 与其它结构性错误照旧一次交给 CacheManager 落到 errorBuilder。
+///
+/// 404 时按 [fallbackUrlOf] 换一个地址再取一次（磁盘缓存仍记在原 URL 下）：YouTube 高清
+/// 缩略图（`maxresdefault`）对没高清源的视频回 404，换恒存在的 `mqdefault`（BUG-5614：音乐
+/// 封面同步给高清 URL，又不能因 404 落到无封面）。
 class AppImageFileService extends FileService {
   AppImageFileService({
     this.retryBackoff = kCoverFetchRetryBackoff,
     this.retryWait = retryWaitReal,
+    this.fallbackUrlOf = youtubeThumbnailFallbackUrl,
   });
 
   final List<Duration> retryBackoff;
   final RetryWait retryWait;
 
+  /// 原地址 404 时该改取的地址（没有回 null）。生产恒为 [youtubeThumbnailFallbackUrl]。
+  final String? Function(String url) fallbackUrlOf;
+
   @override
-  Future<FileServiceResponse> get(String url, {Map<String, String>? headers}) =>
-      retryTransient<FileServiceResponse>(
-        () => _getOnce(url, headers: headers),
-        backoff: retryBackoff,
-        wait: retryWait,
-      );
+  Future<FileServiceResponse> get(
+    String url, {
+    Map<String, String>? headers,
+  }) async {
+    final FileServiceResponse response = await _getRetrying(
+      url,
+      headers: headers,
+    );
+    if (response.statusCode != 404) return response;
+    final String? fallback = fallbackUrlOf(url);
+    if (fallback == null) return response;
+    return _getRetrying(fallback, headers: headers);
+  }
+
+  Future<FileServiceResponse> _getRetrying(
+    String url, {
+    Map<String, String>? headers,
+  }) => retryTransient<FileServiceResponse>(
+    () => _getOnce(url, headers: headers),
+    backoff: retryBackoff,
+    wait: retryWait,
+  );
 
   Future<FileServiceResponse> _getOnce(
     String url, {

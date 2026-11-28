@@ -154,11 +154,13 @@ class YoutubeMusicClient implements MusicServerBrowser {
         transcoded: false,
       );
 
+  /// 高清 16:9 缩略图（`maxresdefault`，无黑边，BUG-5614）。没高清源的视频它会 404，取字节层
+  /// 按 [youtubeThumbnailFallbackUrl] 退到恒存在的 `mqdefault`（图片磁盘缓存、下载封面都接了）。
   @override
   Uri? coverUri(String? coverRef, {int size = kMusicServerCoverSize}) =>
       coverRef == null || !_videoIdPattern.hasMatch(coverRef)
       ? null
-      : Uri.parse(youtubeThumbnailUrl(coverRef));
+      : Uri.parse(youtubeHdThumbnailUrl(coverRef));
 
   @override
   Future<MusicServerPage<MusicServerAlbum>> listAlbums({
