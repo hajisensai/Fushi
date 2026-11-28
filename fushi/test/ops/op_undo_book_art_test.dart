@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/collections/book_series_key.dart';
+import 'package:fushi_engine/media/item_scrape/item_scrape_store.dart';
 import 'package:fushi_engine/media/metadata/mangabaka/mangabaka_client.dart';
 import 'package:fushi_engine/media/metadata/mangabaka/mangabaka_rate_gates.dart';
 import 'package:http/http.dart' as http;
@@ -119,7 +120,10 @@ Future<http.Response> _offline(http.Request req) async {
     final bool banner = req.url.queryParameters['type'] == 'banner';
     return _json(<String, Object?>{
       'data': banner
-          ? <Object?>[_img('banner', '1', 1920, 600)]
+          // 两个系列的横幅 URL 不同（/banner/1、/banner/2），换系列才看得出换图。
+          ? <Object?>[
+              _img('banner', path.contains('200') ? '2' : '1', 1920, 600),
+            ]
           : <Object?>[
               _img('volume', '1', 1200, 1800),
               _img('volume', '2', 1200, 1800),
@@ -135,6 +139,7 @@ void main() {
 
   late FushiDatabase db;
   late Directory thumbs;
+  late ItemScrapeStore itemScrape;
   late BookMetaTestModel model;
   late OpCatalog catalog;
   late OpInvoker invoker;
@@ -148,11 +153,18 @@ void main() {
     thumbs = await Directory.systemTemp.createTemp('fushi_book_art_undo_');
     model = BookMetaTestModel(db, prefs, thumbs);
     MediaSource.setDatabase(db);
+    // 横幅 = 书的背景图（item_images）：附加图目录指到临时目录，之后按同一目录 +
+    // 同一个库取的存储都沿用这份绑定。
+    itemScrape = ItemScrapeStore(
+      db,
+      imagesDirectory: Directory('${thumbs.path}/items'),
+    );
+    BookArtStore.of(thumbs, database: db, itemScrape: itemScrape);
     bookArtServiceFactory = (AppModel app) {
       final MockClient client = MockClient(_offline);
       return BookArtScrapeService(
         database: app.database,
-        store: BookArtStore.of(app.thumbnailsDirectory),
+        store: BookArtStore.of(app.thumbnailsDirectory, database: app.database),
         client: client,
         mangaBaka: MangaBakaClient(
           client: client,
@@ -187,14 +199,24 @@ void main() {
   tearDown(() async {
     bookArtServiceFactory = (AppModel app) => BookArtScrapeService(
       database: app.database,
-      store: BookArtStore.of(app.thumbnailsDirectory),
+      store: BookArtStore.of(app.thumbnailsDirectory, database: app.database),
     );
     BookArtStore.resetForTesting();
     await db.close();
     if (thumbs.existsSync()) await thumbs.delete(recursive: true);
   });
 
-  BookArtStore store() => BookArtStore.of(thumbs);
+  BookArtStore store() => BookArtStore.of(thumbs, database: db);
+
+  const String banner1 = 'https://images.mangabaka.dev/banner/1';
+  const String banner2 = 'https://images.mangabaka.dev/banner/2';
+
+  /// 书的横版背景图（BUG-5609：获取的横幅只存这一份）。
+  Future<ItemImageRow?> backdropOf(String bookKey) async =>
+      itemScrape.firstImage(
+        ItemScrapeKey(MediaKind.epub, (await db.resolveEpubBookUid(bookKey))!),
+        MediaImageKind.backdrop,
+      );
 
   Future<OpInvocation> run(String id, Map<String, Object?> args) =>
       invoker.invoke(
@@ -246,14 +268,18 @@ void main() {
     });
     final Map<Object?, Object?> result = scraped.result! as Map;
     expect(result['usesMangaBaka'], isTrue);
-    expect(File(store().bannerPathFor('mangabaka_100')).existsSync(), isTrue);
+    final ItemImageRow banner = (await backdropOf('k1'))!;
+    expect(banner.sourceUrl, banner1);
+    expect(File(banner.path).existsSync(), isTrue);
     expect(store().hasCover('k1'), isTrue);
     expect(store().hasCover('k2'), isTrue);
     expect(await undo(scraped), OpUndoStatus.done);
     expect(store().hasCover('k1'), isFalse);
     expect(store().recordFor('k2'), isNull);
-    // 这次刮削写的横幅已无人引用：撤销时当场回收，不留孤儿文件。
-    expect(File(store().bannerPathFor('mangabaka_100')).existsSync(), isFalse);
+    // 这次刮削贴的横幅从两卷背景图撤掉，共用文件随最后一行回收。
+    expect(await backdropOf('k1'), isNull);
+    expect(await backdropOf('k2'), isNull);
+    expect(File(banner.path).existsSync(), isFalse);
   });
 
   test('单本移除 → 撤销恢复；之后又被改过 → superseded', () async {
@@ -287,13 +313,18 @@ void main() {
 
   test('清除 → 撤销：横幅一起回来；单本移除后重刮不写回同一张', () async {
     await run('book.art.scrape', <String, Object?>{'id': '$collectionId'});
-    expect(store().backdropForCollection(<String>['k1', 'k2']), isNotNull);
+    expect((await backdropOf('k1'))!.sourceUrl, banner1);
     final OpInvocation cleared = await run('book.art.clear', <String, Object?>{
       'id': '$collectionId',
     });
-    expect(store().backdropForCollection(<String>['k1', 'k2']), isNull);
+    expect(await backdropOf('k1'), isNull);
+    expect(await backdropOf('k2'), isNull);
     expect(await undo(cleared), OpUndoStatus.done);
-    expect(store().backdropForCollection(<String>['k1', 'k2']), isNotNull);
+    for (final String key in <String>['k1', 'k2']) {
+      final ItemImageRow row = (await backdropOf(key))!;
+      expect(row.sourceUrl, banner1, reason: key);
+      expect(File(row.path).existsSync(), isTrue, reason: key);
+    }
 
     await run('book.art.remove', <String, Object?>{'key': 'book:k1'});
     await run('book.art.scrape', <String, Object?>{'id': '$collectionId'});
@@ -303,6 +334,7 @@ void main() {
 
   test('改钉另一个系列 → 撤销：旧系列与旧横幅回来，新横幅当场回收', () async {
     await run('book.art.scrape', <String, Object?>{'id': '$collectionId'});
+    final String oldPath = (await backdropOf('k2'))!.path;
     final OpInvocation repinned =
         await run('book.art.scrape', <String, Object?>{
           'id': '$collectionId',
@@ -311,14 +343,18 @@ void main() {
           'seriesId': '200',
         });
     expect(store().recordFor('k1')!.seriesId, '200');
-    expect(File(store().bannerPathFor('mangabaka_200')).existsSync(), isTrue);
-    // 换系列后旧横幅无人引用，本轮结束已回收。
-    expect(File(store().bannerPathFor('mangabaka_100')).existsSync(), isFalse);
+    expect(store().recordFor('k1')!.bannerKey, 'mangabaka_200');
+    expect((await backdropOf('k1'))!.sourceUrl, banner2);
+    // 换系列后旧横幅不再被任何一卷引用：随最后一行回收。
+    expect(File(oldPath).existsSync(), isFalse);
 
     expect(await undo(repinned), OpUndoStatus.done);
     expect(store().recordFor('k1')!.seriesId, '100');
-    expect(File(store().bannerPathFor('mangabaka_100')).existsSync(), isTrue);
-    expect(File(store().bannerPathFor('mangabaka_200')).existsSync(), isFalse);
+    expect(store().recordFor('k1')!.bannerKey, 'mangabaka_100');
+    final ItemImageRow restored = (await backdropOf('k1'))!;
+    expect(restored.sourceUrl, banner1);
+    expect(File(restored.path).existsSync(), isTrue);
+    expect((await backdropOf('k2'))!.sourceUrl, banner1);
   });
 
   test('钉死系列：seriesId 不是数字 400；系列键不在合集里 404', () async {

@@ -354,7 +354,10 @@ Future<Map<String, Object?>> _removeArt(
   void Function() invalidate, {
   required bool reject,
 }) async {
-  final BookArtStore store = BookArtStore.of(app.thumbnailsDirectory);
+  final BookArtStore store = BookArtStore.of(
+    app.thumbnailsDirectory,
+    database: app.database,
+  );
   final List<BookArtSnapshot> snapshots = <BookArtSnapshot>[];
   for (final String key in bookKeys) {
     if (!store.hasCover(key) && store.recordFor(key) == null) continue;
@@ -377,7 +380,10 @@ Future<Map<String, Object?>> _undoState(
   AppModel app,
   List<BookArtSnapshot> snapshots,
 ) async {
-  final BookArtStore store = BookArtStore.of(app.thumbnailsDirectory);
+  final BookArtStore store = BookArtStore.of(
+    app.thumbnailsDirectory,
+    database: app.database,
+  );
   return <String, Object?>{
     'undo': <String, Object?>{
       'snapshots': <Map<String, Object?>>[
@@ -396,7 +402,7 @@ Future<Map<String, Object?>> _undoState(
 BookArtScrapeService Function(AppModel app) bookArtServiceFactory =
     (AppModel app) => BookArtScrapeService(
       database: app.database,
-      store: BookArtStore.of(app.thumbnailsDirectory),
+      store: BookArtStore.of(app.thumbnailsDirectory, database: app.database),
     );
 
 /// 合集每卷封面路由根（`/:id/scrape-art`）。

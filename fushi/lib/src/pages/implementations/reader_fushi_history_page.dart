@@ -1105,7 +1105,10 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   }
 
   /// 合集详情页成员信息（最后阅读 / 进度 / 读完）的版本号：源数据 provider 刷新、
-  /// 本页重建完之后 +1，详情页订阅它重算「继续阅读」（4h4uGUck4k）。
+  /// 本页重建完之后 +1，详情页订阅它重算「继续阅读」（4h4uGUck4k）。书架映射重载
+  /// 完（[_loadShelfMaps]）也 +1：详情页 hero 借的成员刮削资料 / 背景图
+  /// （`collectionSeriesFallback`，含「获取各卷封面与横幅」贴上的横幅，BUG-5609）
+  /// 读的就是这些映射。
   final ValueNotifier<int> _memberInfoRevision = ValueNotifier<int>(0);
 
   void _bumpMemberInfoRevision() {
@@ -1889,6 +1892,8 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       for (final MediaCollectionRow c in collections) c.id: c,
     };
     _primaryCollectionByEntry = primaryMap;
+    // 打开着的合集详情页借的成员背景图 / 刮削资料变了：通知它重算 hero。
+    _bumpMemberInfoRevision();
   }
 
   /// [collectionIds] 里各合集附加图组中 [kind] 种类、position 最小且文件还在的
@@ -3587,7 +3592,8 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 只读 [_loadShelfMaps] 已批量预取的映射，零查询 / 零 IO。
   ///
   /// 合集自己没刮削过时借成员的（[_borrowedCollectionSeries]，2026-11-16 用户
-  /// 拍板）：最前那卷的横版海报 / 类型 / 评分画成系列块。
+  /// 拍板）：最前那卷的横版海报 / 类型 / 评分画成系列块；合集有资料行但没有背景图
+  /// 时只借背景图（[fushiCollectionSeriesInfo]，与合集详情页 / 首页同一口径）。
   FushiSeriesMeta? _shelfCollectionSeriesMeta(
     CollectionGroup<_ShelfBookSlot> group,
   ) {
@@ -3595,13 +3601,16 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     if (collection == null) return null;
     final String? backdrop = _collectionBackdropPathById[collection.id];
     final String? logo = _collectionLogoPathById[collection.id];
-    return collectionSeriesMeta(
-          scrape: _collectionScrapeMetaById[collection.id],
-          backdrop: backdrop == null ? null : resizedFileImage(File(backdrop)),
-          logo: logo == null ? null : resizedFileImage(File(logo)),
-          countLabel: t.shelf_collection_volume_count(n: group.items.length),
-        ) ??
-        _borrowedCollectionSeries(group)?.meta;
+    final FushiSeriesMeta? own = collectionSeriesMeta(
+      scrape: _collectionScrapeMetaById[collection.id],
+      backdrop: backdrop == null ? null : resizedFileImage(File(backdrop)),
+      logo: logo == null ? null : resizedFileImage(File(logo)),
+      countLabel: t.shelf_collection_volume_count(n: group.items.length),
+    );
+    return fushiCollectionSeriesInfo(
+      own: own == null ? null : (meta: own, summary: null),
+      borrowed: () => _borrowedCollectionSeries(group),
+    )?.meta;
   }
 
   /// 合集借用的成员刮削资料：先看「继续」会打开的那卷（[_collectionContinueIndex]），

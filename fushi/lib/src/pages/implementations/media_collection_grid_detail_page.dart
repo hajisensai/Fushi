@@ -278,14 +278,6 @@ class _MediaCollectionGridDetailPageState
   String? _backdropPath;
   String? _logoPath;
 
-  /// 「获取各卷封面与横幅」下到的系列横幅（[BookArtStore.backdropForCollection]，
-  /// 成员多数票那张；只有书 / 漫画合集、且确实下到过才非 null）。合集自己没有
-  /// 背景图时它顶上 hero 背景带。[_reload] 与刮削层变更时重算，build 零 IO。
-  String? _artBannerPath;
-
-  /// 正在监听的刮削层变更（[CollectionArtScrape.changes]）；没传 [artScrape] 为 null。
-  Listenable? _artChanges;
-
   /// 全部标签（筛选面板取名 / 色）与合集自身的标签（hero）。
   List<BookTagRow> _allTags = const <BookTagRow>[];
   List<BookTagRow> _collectionTags = const <BookTagRow>[];
@@ -321,26 +313,8 @@ class _MediaCollectionGridDetailPageState
     _name = widget.collection.name;
     _scroll.addListener(_onScroll);
     widget.memberInfoRefresh?.addListener(_onMemberInfoChanged);
-    _artChanges = widget.artScrape?.changes;
-    _artChanges?.addListener(_onArtStoreChanged);
     _reload();
   }
-
-  /// 刮削层写入 / 清除（本页按钮、ops 路由、单本编辑弹窗都走它）后重算横幅。
-  void _onArtStoreChanged() => unawaited(_refreshArtBanner());
-
-  /// 按当前成员重算横幅；算完时成员已被 [_reload] 换掉就丢弃（那次 reload 自带横幅）。
-  Future<void> _refreshArtBanner() async {
-    if (!mounted) return;
-    final List<MediaCollectionItemRow> rows = _rows;
-    final String? next = await _artBannerFor(rows);
-    if (!mounted || !identical(rows, _rows)) return;
-    if (next != _artBannerPath) setState(() => _artBannerPath = next);
-  }
-
-  /// [rows] 里书成员的合集横幅路径；没有刮削层 / 没下到为 null。
-  Future<String?> _artBannerFor(List<MediaCollectionItemRow> rows) async =>
-      (await widget.artScrape?.bannerFor(rows))?.path;
 
   void _onMemberInfoChanged() {
     if (mounted) setState(() {});
@@ -353,19 +327,11 @@ class _MediaCollectionGridDetailPageState
       oldWidget.memberInfoRefresh?.removeListener(_onMemberInfoChanged);
       widget.memberInfoRefresh?.addListener(_onMemberInfoChanged);
     }
-    final Listenable? changes = widget.artScrape?.changes;
-    if (!identical(changes, _artChanges)) {
-      _artChanges?.removeListener(_onArtStoreChanged);
-      _artChanges = changes;
-      _artChanges?.addListener(_onArtStoreChanged);
-      unawaited(_refreshArtBanner());
-    }
   }
 
   @override
   void dispose() {
     widget.memberInfoRefresh?.removeListener(_onMemberInfoChanged);
-    _artChanges?.removeListener(_onArtStoreChanged);
     _scroll.removeListener(_onScroll);
     _scroll.dispose();
     _search.dispose();
@@ -410,7 +376,6 @@ class _MediaCollectionGridDetailPageState
       images,
       MediaImageKind.logo,
     );
-    final String? artBannerPath = await _artBannerFor(rows);
     CollectionMemberSort? savedSort;
     if (!_sortPrefLoaded) {
       final String? raw = await db.getPref(
@@ -440,7 +405,6 @@ class _MediaCollectionGridDetailPageState
       _scrapeMeta = scrapeMeta;
       _backdropPath = backdropPath;
       _logoPath = logoPath;
-      _artBannerPath = artBannerPath;
       _loading = false;
       _selected.retainWhere(
         (String key) => rows.any(
@@ -1650,16 +1614,14 @@ class _MediaCollectionGridDetailPageState
   /// 会打开的那本）的刮削资料与横版海报；都没有为 null（头部保持原样）。只读
   /// [_reload] 预取的字段，零 IO。
   ///
-  /// 背景带优先级：合集自己的背景图 > 「获取各卷封面与横幅」下到的系列横幅
-  /// （[_artBannerPath]，用户在本合集上主动取的、系列级）> 借来那卷的背景图 >
-  /// 没有（hero 用封面模糊垫底）。
+  /// 背景带优先级：合集自己的背景图 > 借来那卷的背景图 > 没有（hero 用封面模糊
+  /// 垫底）；合集有资料行但没有背景图时文字资料用自己的、背景图照样借
+  /// （[fushiCollectionSeriesInfo]，与书架 / 首页同一口径）。「获取各卷封面与横幅」
+  /// 的系列横幅就贴在每卷的背景图上（BUG-5609），经借来那卷显示，与书详情页 /
+  /// 首页 / 书架同一份，本页不另读第二处。
   ({FushiSeriesMeta meta, String? summary})? _collectionSeries() {
     final String? backdropPath = _backdropPath;
     final String? logoPath = _logoPath;
-    final String? bannerPath = _artBannerPath;
-    final ImageProvider? banner = bannerPath == null
-        ? null
-        : resizedFileImage(File(bannerPath));
     final FushiSeriesMeta? own = collectionSeriesMeta(
       scrape: _scrapeMeta,
       backdrop: backdropPath == null
@@ -1668,26 +1630,14 @@ class _MediaCollectionGridDetailPageState
       logo: logoPath == null ? null : resizedFileImage(File(logoPath)),
       countLabel: null,
     );
-    if (own != null) {
-      final String? summary = _scrapeMeta?.summary?.trim();
-      return (
-        meta: own.backdrop == null && banner != null
-            ? own.withBackdrop(banner)
-            : own,
-        summary: summary == null || summary.isEmpty ? null : summary,
-      );
-    }
-    final ({FushiSeriesMeta meta, String? summary})? borrowed = widget
-        .collectionSeriesFallback
-        ?.call();
-    if (borrowed == null) {
-      return banner == null
-          ? null
-          : (meta: FushiSeriesMeta(backdrop: banner), summary: null);
-    }
-    final String? summary = borrowed.summary?.trim();
+    final FushiSeriesInfo? series = fushiCollectionSeriesInfo(
+      own: own == null ? null : (meta: own, summary: _scrapeMeta?.summary),
+      borrowed: () => widget.collectionSeriesFallback?.call(),
+    );
+    if (series == null) return null;
+    final String? summary = series.summary?.trim();
     return (
-      meta: banner == null ? borrowed.meta : borrowed.meta.withBackdrop(banner),
+      meta: series.meta,
       summary: summary == null || summary.isEmpty ? null : summary,
     );
   }
