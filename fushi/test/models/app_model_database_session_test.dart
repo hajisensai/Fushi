@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:drift/drift.dart' show QueryExecutor;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -6,6 +8,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/dictionary_repository.dart';
 import 'package:fushi/src/startup/database_session.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
+import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -36,6 +39,15 @@ class _GenerationAppModel extends AppModel {
   }
 }
 
+/// 每条真的关连接的路径（生产代码）。
+final Map<String, Future<void> Function(AppModel model)> _closeBoundaries =
+    <String, Future<void> Function(AppModel model)>{
+      'closeDatabase': (AppModel model) => model.closeDatabase(),
+      'closeForPopup': (AppModel model) => model.closeForPopup(),
+      'closeForSrsWriteHost': (AppModel model) => model.closeForSrsWriteHost(),
+      'retryInitialise': (AppModel model) => model.retryInitialise(),
+    };
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -57,11 +69,7 @@ void main() {
       expect(model.isDatabaseReady, isTrue);
       expect(model.isDictionaryRepoReady, isTrue);
 
-      await switch (boundary) {
-        'closeDatabase' => model.closeDatabase(),
-        'closeForPopup' => model.closeForPopup(),
-        _ => model.closeForSrsWriteHost(),
-      };
+      await _closeBoundaries[boundary]!(model);
 
       expect(db.closeCalls, 1);
       expect(closeSignals, 1);
@@ -85,6 +93,114 @@ void main() {
     });
   }
 
+  for (final MapEntry<String, Future<void> Function(AppModel)> boundary
+      in _closeBoundaries.entries) {
+    test('${boundary.key}：关库前等登记的写手，等的时候「已初始化」与「库可用」都已经是 false、'
+        '连接还开着', () async {
+      final _CountingDatabase db = _CountingDatabase(NativeDatabase.memory());
+      final _GenerationAppModel model = _GenerationAppModel()
+        ..wireDatabaseForTesting(db)
+        ..markInitialisedForTesting();
+      final List<String> seen = <String>[];
+      Future<void> quiesce() async {
+        // 登记方（SRS 同步的 canRun）据这两个门闩不开新一轮。
+        seen.add(
+          'initialised=${model.isInitialised} '
+          'ready=${model.isDatabaseReady} '
+          'connectionClosed=${db.closeCalls > 0}',
+        );
+      }
+
+      model.addDatabaseCloseQuiescer(quiesce);
+      await boundary.value(model);
+      model.removeDatabaseCloseQuiescer(quiesce);
+
+      expect(seen, <String>[
+        'initialised=false ready=false connectionClosed=false',
+      ]);
+      expect(db.closeCalls, 1);
+    });
+
+    test('${boundary.key}：合集观察者随这一代撤掉（BUG-1569②）', () async {
+      final _CountingDatabase db = _CountingDatabase(NativeDatabase.memory());
+      final _GenerationAppModel model = _GenerationAppModel()
+        ..wireDatabaseForTesting(db);
+      installCollectionsSyncWatcher(db: db);
+      addTearDown(uninstallCollectionsSyncWatcher);
+      expect(collectionsSyncWatcherInstalledForTest, isTrue);
+
+      await boundary.value(model);
+
+      expect(collectionsSyncWatcherInstalledForTest, isFalse);
+    });
+  }
+
+  test('关闭途中「库可用」门闩已经关上，懒建的绑库服务不会再被建出来', () async {
+    final _CountingDatabase db = _CountingDatabase(NativeDatabase.memory());
+    final _GenerationAppModel model = _GenerationAppModel()
+      ..wireDatabaseForTesting(db);
+    final Completer<void> gate = Completer<void>();
+    Future<void> quiesce() => gate.future;
+    model.addDatabaseCloseQuiescer(quiesce);
+
+    final Future<void> closing = model.closeDatabase();
+    await pumpEventQueue();
+
+    expect(db.closeCalls, 0, reason: '还卡在等写手，连接没关');
+    expect(model.isDatabaseReady, isFalse);
+    expect(
+      () => model.videoSpecsService,
+      throwsA(isA<DatabaseSessionClosedException>()),
+    );
+    expect(
+      () => model.galgameRepo,
+      throwsA(isA<DatabaseSessionClosedException>()),
+    );
+    expect(
+      model.databaseSessionForTesting!.debugOwnedLabels.withSession,
+      isEmpty,
+      reason: '被拒的懒建没有在正在关的这一代上留下任何东西',
+    );
+
+    gate.complete();
+    await closing;
+    model.removeDatabaseCloseQuiescer(quiesce);
+    expect(db.closeCalls, 1);
+  });
+
+  test('懒建的绑库服务登记在当前这一代上，关库后槽位清空', () async {
+    final _CountingDatabase db = _CountingDatabase(NativeDatabase.memory());
+    final _GenerationAppModel model = _GenerationAppModel()
+      ..wireDatabaseForTesting(db);
+    model
+      ..videoSpecsService
+      ..galgameRepo
+      ..onlineMangaReshelf
+      ..mangaDownloadService;
+
+    expect(
+      model.databaseSessionForTesting!.debugOwnedLabels.withSession,
+      containsAll(<String>[
+        'videoSpecsService',
+        'galgameRepo',
+        'onlineMangaReshelf',
+        'mangaDownloadService',
+      ]),
+    );
+    expect(
+      model.databaseSessionForTesting!.debugOwnedLabels.withConnection,
+      <String>['databaseCloseQuiescers'],
+    );
+
+    await model.closeDatabase();
+
+    final ({List<String> withConnection, List<String> withSession}) left =
+        model.databaseSessionForTesting!.debugOwnedLabels;
+    expect(left.withSession, isEmpty);
+    expect(left.withConnection, isEmpty);
+    expect(model.animeDownloadService, isNull);
+  });
+
   test('重试开库后拿到的是新一代的资源，旧一代的连接只关一次', () async {
     final _CountingDatabase db = _CountingDatabase(NativeDatabase.memory());
     final _GenerationAppModel model = _GenerationAppModel()
@@ -95,6 +211,7 @@ void main() {
     final VideoSpecsService oldSpecs = model.videoSpecsService;
     final DictionaryRepository oldRepo = model.dictRepo;
     final Object oldGalgame = model.galgameRepo;
+    final Object oldReshelf = model.onlineMangaReshelf;
 
     await model.retryInitialise();
 
@@ -105,7 +222,9 @@ void main() {
     expect(identical(model.videoSpecsService, oldSpecs), isFalse);
     expect(identical(model.dictRepo, oldRepo), isFalse);
     expect(identical(model.galgameRepo, oldGalgame), isFalse);
+    expect(identical(model.onlineMangaReshelf, oldReshelf), isFalse);
     expect(model.isDictionaryRepoReady, isTrue);
+    expect(model.isDatabaseReady, isTrue);
     expect(next.closeCalls, 0);
 
     await model.closeDatabase();
@@ -118,40 +237,56 @@ void main() {
     final _GenerationAppModel model = _GenerationAppModel()
       ..wireDatabaseForTesting(db);
     int quiesced = 0;
-    bool connectionOpenWhileQuiescing = false;
-    Future<void> quiesce() async {
-      quiesced++;
-      connectionOpenWhileQuiescing = db.closeCalls == 0;
-    }
+    Future<void> quiesce() async => quiesced++;
 
     model.addDatabaseCloseQuiescer(quiesce);
     await model.retryInitialise();
     expect(quiesced, 1);
-    expect(connectionOpenWhileQuiescing, isTrue);
 
     await model.closeDatabase();
     expect(quiesced, 2, reason: '登记表是进程级的：下一代关闭时同样要等');
     model.removeDatabaseCloseQuiescer(quiesce);
   });
 
-  test('dispose 收尾这一代的资源，但连接留给持有方', () async {
+  test('dispose 收尾这一代的模型侧资源；连接、它名下的后台工作、关库信号都不动', () async {
     final _CountingDatabase db = _CountingDatabase(NativeDatabase.memory());
     final _GenerationAppModel model = _GenerationAppModel()
       ..wireDatabaseForTesting(
         db,
         dictionaryRepository: DictionaryRepository(db),
-      );
+      )
+      ..markInitialisedForTesting();
     int quiesced = 0;
     Future<void> quiesce() async => quiesced++;
     model.addDatabaseCloseQuiescer(quiesce);
+    int closeSignals = 0;
+    model.databaseCloseNotifier.addListener(() => closeSignals++);
+    model.videoSpecsService;
+    installCollectionsSyncWatcher(db: db);
+    addTearDown(uninstallCollectionsSyncWatcher);
 
     model.dispose();
     await pumpEventQueue();
 
-    expect(quiesced, 1);
     expect(model.isDictionaryRepoReady, isFalse);
     expect(ExitFlushRegistry.instance.callbackCount, 0);
+    expect(collectionsSyncWatcherInstalledForTest, isFalse);
+    expect(
+      model.databaseSessionForTesting!.debugOwnedLabels.withSession,
+      isEmpty,
+    );
+    expect(model.isDatabaseReady, isFalse);
+    expect(quiesced, 0, reason: '关库前要等的写手只属于「关连接」，销毁模型不关连接');
+    expect(closeSignals, 0);
     expect(db.closeCalls, 0);
+    expect(
+      await db.runBackgroundWork<int>(
+        'after-dispose',
+        (DatabaseWorkToken _) async => 1,
+      ),
+      1,
+      reason: '销毁模型不让这个连接的后台工作进入关闭态',
+    );
     await db.close();
   });
 }

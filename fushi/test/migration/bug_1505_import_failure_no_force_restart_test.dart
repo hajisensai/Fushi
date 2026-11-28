@@ -16,8 +16,10 @@ import 'package:test/test.dart';
 /// 3. 当天日志里 8 条 drift `connection was closed`，全来自
 ///    `VideoDownloadPipelineService._drain`——`closeDatabase()` 只关连接、不停任何人，
 ///    合并导入正在直接操作同一个库文件时还放着第二个写手在跑。第 3 条现由
-///    `DatabaseSession`（后台写手登记在库的这一代上、关连接前逆序收尾）在结构上保证，
-///    见 `test/startup/database_session_test.dart`。
+///    `DatabaseSession` 在结构上保证：后台写手只能经 `OwnedSlot.obtain` 建出来，建出来就
+///    登记在库的这一代上、关连接前逆序收尾（`test/startup/database_session_test.dart`、
+///    `test/models/app_model_database_session_test.dart`）；关库路径里不许手写收尾、不许把
+///    排空上界写死（`test/startup/app_model_dispose_ratchet_test.dart`）。
 void main() {
   final String importPage = File(
     'lib/src/pages/implementations/migration_import_page.dart',
@@ -73,6 +75,37 @@ void main() {
         occurrences,
         greaterThanOrEqualTo(2),
         reason: 'verifyCounts 与 catch 两条失败路径都要等落盘',
+      );
+    });
+  });
+
+  group('BUG-1505 关库前停后台写手', () {
+    test('管线收尾的上界是可选的：只有退出路径给，迁移路径必须等到真收尾', () {
+      // 把上界写死成 stop() 的全局语义，迁移 / 备份导入 / 数据根迁移这三条**也走
+      // closeDatabase** 的路径就会放行一个在飞的 `_process`——它随后被后端 close 抽掉句柄，
+      // 并在关连接之后继续打已关闭的连接；而它们关库后紧接着要在**文件层**合并 / 替换整个
+      // DB 目录。上界由 closeDatabase 的调用方给，经 `DatabaseSession.drainTimeout` 传到
+      // 管线的收尾（行为断言在 app_model_database_session_test.dart）。
+      final String pipeline = File(
+        '../packages/fushi_engine/lib/media/video/download/video_download_pipeline_service.dart',
+      ).readAsStringSync();
+      expect(
+        pipeline,
+        contains('Future<void> stop({Duration? drainTimeout}) async {'),
+        reason: '上界必须是可选参数，不能是 stop() 的全局语义',
+      );
+      expect(
+        pipeline,
+        contains('Future<void> dispose({Duration? drainTimeout}) async {'),
+        reason: 'dispose 要能把「不设上界」传下去',
+      );
+      final String appModel = File(
+        'lib/src/models/app_model.dart',
+      ).readAsStringSync();
+      expect(
+        appModel,
+        contains('pipelineDrainTimeout: session.drainTimeout,'),
+        reason: '管线运行时的收尾现读这一代关闭时调用方给的上界',
       );
     });
   });
