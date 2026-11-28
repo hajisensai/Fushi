@@ -1,12 +1,58 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-28T08:28:01Z",
+ "generatedAt": "2026-11-28T09:17:35Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "4d853cf79195e335c36454886fed25e9ec0d235e",
   "seq": 33053
  },
  "builds": [
+  {
+   "seq": 33053,
+   "version": "3.4.1",
+   "sha": "4d853cf79195e335c36454886fed25e9ec0d235e",
+   "unknown": false,
+   "publishedAt": "2026-11-28T09:17:22Z",
+   "testflight": false,
+   "baseSeq": 33039,
+   "prs": [
+    4612,
+    4610,
+    4602
+   ],
+   "direct": [
+    {
+     "sha": "a166cd9af8d41fe61407c43b60ea55713e2b08b7",
+     "subject": "chore(readme): refresh development activity chart [skip ci]"
+    },
+    {
+     "sha": "3402e7d86f522b17e3f162a59806c0151c39d56a",
+     "subject": "chore(readme): refresh star history chart (TODO-1294) [skip ci]"
+    },
+    {
+     "sha": "efce8c85a9068b88a8184b9abc8ad457a7f9618b",
+     "subject": "chore(bugs): settle BUG number collisions on 09ad1eb30"
+    }
+   ],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/46125697711"
+    },
+    "macos": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/46125697711"
+    },
+    "ios": {
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/46125697711"
+    }
+   }
+  },
   {
    "seq": 33039,
    "version": "3.4.0",
@@ -533,7 +579,8 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45878377342"
     },
     "windows": {
      "state": "ok"
@@ -547,48 +594,7 @@
    }
   }
  ],
- "pending": {
-  "headSha": "4d853cf79195e335c36454886fed25e9ec0d235e",
-  "headSeq": 33053,
-  "prs": [
-   4612,
-   4610,
-   4602
-  ],
-  "direct": [
-   {
-    "sha": "a166cd9af8d41fe61407c43b60ea55713e2b08b7",
-    "subject": "chore(readme): refresh development activity chart [skip ci]"
-   },
-   {
-    "sha": "3402e7d86f522b17e3f162a59806c0151c39d56a",
-    "subject": "chore(readme): refresh star history chart (TODO-1294) [skip ci]"
-   },
-   {
-    "sha": "efce8c85a9068b88a8184b9abc8ad457a7f9618b",
-    "subject": "chore(bugs): settle BUG number collisions on 09ad1eb30"
-   }
-  ],
-  "truncated": false,
-  "platforms": {
-   "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/46125697638"
-   },
-   "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/46125697711"
-   },
-   "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/46125697711"
-   },
-   "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/46125697711"
-   }
-  }
- },
+ "pending": null,
  "prs": {
   "4534": {
    "number": 4534,
