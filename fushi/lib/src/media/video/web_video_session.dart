@@ -66,11 +66,10 @@ const int kWebVideoMinPersistPositionMs = 5000;
 
 // ── WebView2 环境 ─────────────────────────────────────────────────────────────
 
-/// 可捕获 WebView2 环境单例：`--disable-direct-composition`。fork 的显示链路本身就是 WGC 捕获，
-/// Chromium 把 DRM 视频放进 DComp overlay 时纹理里是黑的（真机：默认环境视频区纯黑、加该参数
-/// 清晰可见）。environment 级参数不能运行期切换，且同 user data folder 的多个 env 参数必须逐字
-/// 一致，故用独立目录（独立 cookie 罐）：登录态开页时从共享罐按需抄
-/// （[copyWebVideoLoginCookies]），页面关掉时抄回（[syncWebVideoLoginToBrowser]）。
+/// 可捕获 WebView2 环境单例（参数见 [kWebVideoCapturableBrowserArguments]）。environment 级参数
+/// 不能运行期切换，且同 user data folder 的多个 env 参数必须逐字一致，故用独立目录（独立 cookie
+/// 罐）：登录态开页时从共享罐按需抄（[copyWebVideoLoginCookies]），页面关掉时抄回
+/// （[syncWebVideoLoginToBrowser]）。
 Future<WebViewEnvironment>? _capturableEnv;
 
 /// 目录：测试 runner 给了 `FUSHI_WEBVIEW2_USER_DATA_FOLDER` 就放它旁边（隔离），否则
@@ -85,12 +84,27 @@ String webVideoCapturableUserDataFolder() {
   return '$base\\Fushi\\WebVideoWebView2';
 }
 
+/// 可捕获档（「制卡优先」）环境的浏览器参数。
+///
+/// fork 的显示链路是 composition 宿主：WebView2 把画面交进 fork 自建的 visual，再由 WGC 从这个
+/// visual 截进 Flutter 纹理。**不能带 `--disable-direct-composition`**（BUG-5611）：在 WebView2
+/// 158 运行时上（2026-11 实测），关掉 DirectComposition 后浏览器进程不再往宿主 visual 里出画面，
+/// WGC 截不到任何帧，播放页只剩纹理下面的底色（整片白），网页里的视频照常在播、字幕照常出。
+/// 2026-08 在旧运行时上实测时它还能出画面（当时用来让 Widevine 软件解密的视频不进 DComp
+/// overlay、可被截取，见 `docs/plans/2026-08-29-web-video-player-anime4k.md` §5）。
+///
+/// 现在只关「视频 overlay」：视频照常合成进主画面再交给宿主 visual，WGC 能截到。注意它在
+/// WebView2 158 上救不回加密视频——Widevine 软件解密的画面在 composition 宿主下仍是黑的
+/// （BUG-5611 备注），那是另一层限制，不靠把整条显示链路关掉来换。
+const String kWebVideoCapturableBrowserArguments =
+    '--autoplay-policy=no-user-gesture-required '
+    '--disable-direct-composition-video-overlays';
+
 Future<WebViewEnvironment> webVideoCapturableEnvironment() {
   return _capturableEnv ??= WebViewEnvironment.create(
     settings: WebViewEnvironmentSettings(
       userDataFolder: webVideoCapturableUserDataFolder(),
-      additionalBrowserArguments:
-          '--autoplay-policy=no-user-gesture-required --disable-direct-composition',
+      additionalBrowserArguments: kWebVideoCapturableBrowserArguments,
     ),
   );
 }
@@ -155,8 +169,8 @@ bool webVideoTrackUpdateNeedsReload({
   required String? nextActiveKey,
 }) => nextActiveKey != previousActiveKey || updatedKey == nextActiveKey;
 
-/// 窗口宿主档（4K）环境：**不带** `--disable-direct-composition`（硬件 PlayReady 的受保护输出
-/// 要走 DComp overlay），带 fork 的窗口宿主哨兵。与 app 内浏览器**同一 user data folder、同一
+/// 窗口宿主档（4K）环境：不关 DirectComposition（硬件 PlayReady 的受保护输出要走 DComp
+/// overlay），带 fork 的窗口宿主哨兵。与 app 内浏览器**同一 user data folder、同一
 /// 套 Chromium 参数**（fork 把哨兵剥掉再交给 WebView2），所以是同一个 cookie 罐：浏览器里登录
 /// 的站点播放页直接是登录态，反之亦然。环境由 [MangaWebViewEnvironment.obtainWindowedHosting]
 /// 统一提供（代理设置变化时随浏览器环境一起换）。
@@ -265,8 +279,8 @@ Future<UnmodifiableListView<UserScript>> loadWebVideoUserScripts({
 const List<Future<WebViewEnvironment?> Function()> kWebVideoLoginCookieSources =
     <Future<WebViewEnvironment?> Function()>[MangaWebViewEnvironment.obtain];
 
-/// 可捕获档是独立 cookie 罐（`--disable-direct-composition` 与共享罐参数不同 → 独立 user data
-/// folder）：把 [sources]（默认 [kWebVideoLoginCookieSources]）里已登录的站点 cookie 复制到
+/// 可捕获档是独立 cookie 罐（[kWebVideoCapturableBrowserArguments] 与共享罐参数不同 → 独立 user
+/// data folder）：把 [sources]（默认 [kWebVideoLoginCookieSources]）里已登录的站点 cookie 复制到
 /// [to]，用户不用登录两次。目标是共享罐（浏览器 / 窗口宿主档）时不要调——同一个罐。
 /// 尽力而为：单个来源失败只记日志、不挡其它来源（最坏是站点要求登录）。不回报「新加了几条」：
 /// 没有调用方用得上（浏览器侧自己比 cookie 名集合，见 [webBrowserSiteCookieNames]），为它预读
