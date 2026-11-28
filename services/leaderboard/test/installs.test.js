@@ -18,6 +18,7 @@ import {
   retentionCohorts,
   versionAdoption,
   versionIncludes,
+  versionsByTrack,
 } from '../src/installs.js';
 import {
   archLabel, countryLabel, localeLabel, osVersionLabel, sourceLabel,
@@ -549,12 +550,45 @@ describe('留存 / 版本升级进度 / 分国家趋势', () => {
     seedPing(env, dbg, { version: '2.12.0-debug.4', channel: 'debug' });
     // 已经 8 天没出现的安装不进分母。
     seedPing(env, seedId(), { version: '2.9.0', at: NOW - 8 * DAY });
-    const rows = await versionAdoption(env, NOW);
-    const by = Object.fromEntries(rows.map((r) => [r.version, r]));
-    expect(by['2.11.0']).toMatchObject({ track: '', peers: 3, reached: 2, exact: 1, firstDay: utcDay(NOW - 2 * DAY) });
-    expect(by['2.10.0']).toMatchObject({ peers: 3, reached: 3, exact: 1 });
-    expect(by['2.12.0-debug.4']).toMatchObject({ track: 'debug', peers: 1, reached: 1, exact: 1 });
-    expect(rows[0].firstDay >= rows[rows.length - 1].firstDay).toBe(true);
+    const groups = await versionAdoption(env, NOW);
+    expect(groups.map((g) => [g.track, g.peers])).toEqual([['', 3], ['debug', 1]]);
+    const by = Object.fromEntries(groups.flatMap((g) => g.rows).map((r) => [r.version, r]));
+    expect(by['2.11.0']).toMatchObject({ reached: 2, exact: 1, firstDay: utcDay(NOW - 2 * DAY) });
+    expect(by['2.10.0']).toMatchObject({ reached: 3, exact: 1 });
+    expect(by['2.12.0-debug.4']).toMatchObject({ reached: 1, exact: 1 });
+    // 正式轨道按版本号从新到旧：2.12.0 > 2.11.0 > 2.10.0 > 2.9.0。
+    expect(groups[0].rows.map((r) => r.version)).toEqual(['2.12.0+300', '2.11.0', '2.10.0', '2.9.0']);
+  });
+
+  it('版本升级进度：调试包天天出新号也挤不掉正式 / 测试版，每轨道各取最新 N 个', async () => {
+    const env = makeEnv();
+    seedPing(env, seedId(), { version: '3.3.0', at: NOW - 20 * DAY });
+    // 旁支客户端报的低版本号后出现，也不该排到 3.3.0 前面。
+    seedPing(env, seedId(), { version: '1.5.10', at: NOW - DAY });
+    seedPing(env, seedId(), { version: '3.4.0-beta.10', channel: 'beta', at: NOW - 3 * DAY });
+    seedPing(env, seedId(), { version: '3.4.0-iku.1', at: NOW - DAY });
+    const debugCount = INSTALL_LIMITS.adoptionVersionsPerTrack + 5;
+    for (let i = 0; i < debugCount; i += 1) {
+      seedPing(env, seedId(), { version: `3.4.0-debug.${100 + i}`, channel: 'debug', at: NOW - i * 3600 * 1000 });
+    }
+    const groups = await versionAdoption(env, NOW);
+    expect(groups.map((g) => g.track)).toEqual(['', 'beta', 'debug']);
+    expect(groups[0].rows.map((r) => r.version)).toEqual(['3.3.0', '1.5.10']);
+    expect(groups[1].rows.map((r) => r.version)).toEqual(['3.4.0-beta.10']);
+    expect(groups[2].rows).toHaveLength(INSTALL_LIMITS.adoptionVersionsPerTrack);
+    expect(groups[2].rows[0].version).toBe(`3.4.0-debug.${100 + debugCount - 1}`);
+  });
+
+  it('版本分布按轨道各取前 N，其余并成 other，认不出轨道的单列', () => {
+    const N = INSTALL_LIMITS.topVersionsPerTrack;
+    const debug = Array.from({ length: N + 3 }, (_, i) => ({ version: `3.4.0-debug.${i}`, n: 50 - i }));
+    const groups = versionsByTrack([...debug, { version: '3.3.0', n: 7 }, { version: '3.0.0', n: 5 },
+      { version: '3.4.0-iku.1', n: 1 }].sort((a, b) => b.n - a.n));
+    expect(groups.map((g) => g.track)).toEqual(['', 'debug', null]);
+    expect(groups[0]).toEqual({ track: '', total: 12, rows: [{ key: '3.3.0', n: 7 }, { key: '3.0.0', n: 5 }], other: 0 });
+    expect(groups[1].rows).toHaveLength(N);
+    expect(groups[1].other).toBe(debug.slice(N).reduce((a, r) => a + r.n, 0));
+    expect(groups[2]).toMatchObject({ total: 1, rows: [{ key: '3.4.0-iku.1', n: 1 }] });
   });
 
   it('分国家日活趋势：前几个国家逐日计数，其余并进 other', async () => {
@@ -641,7 +675,10 @@ describe('统计', () => {
     expect(st.daily.find((d) => d.day === '2026-10-14')).toMatchObject({ n: 1, fresh: 1, platforms: { android: 1 } });
     expect(st.platforms).toEqual([{ key: 'android', n: 1 }, { key: 'windows', n: 1 }]);
     expect(st.channels).toEqual([{ key: 'debug', n: 1 }, { key: 'stable', n: 1 }]);
-    expect(st.versions.map((v) => v.key).sort()).toEqual(['2.11.0', '2.11.0-debug.9']);
+    expect(st.versions).toEqual([
+      { track: '', total: 1, rows: [{ key: '2.11.0', n: 1 }], other: 0 },
+      { track: 'debug', total: 1, rows: [{ key: '2.11.0-debug.9', n: 1 }], other: 0 },
+    ]);
   });
 
   it('定时任务清掉超出保留期的记录', async () => {
@@ -696,6 +733,16 @@ describe('安装统计快照（迁移 0021）', () => {
     expect(later.data.dau).toBe(1);
     expect(later.data.computedAt).toBe(NOW);
     expect((await devPage(env, '/dev/stats')).data).toContain('快照算于 2026-10-17 12:00 UTC');
+  });
+
+  it('快照是旧结构时处理台现场重算，不受冷却约束', async () => {
+    const env = makeEnv();
+    await signedPing(env, await makeInstall());
+    env.DB.raw.prepare('INSERT INTO install_stats_snapshot (id, computed_at, data) VALUES (1, ?, ?)')
+      .run(NOW - 1000, JSON.stringify({ dau: 0, versions: [{ key: '1.0.0', n: 1 }] }));
+    const page = await devPage(env, '/dev/stats.json');
+    expect(page.data).toMatchObject({ dau: 1, computedAt: NOW });
+    expect((await devPage(env, '/dev/stats')).status).toBe(200);
   });
 
   it('定时重算按 snapshotEveryMs 节流，手动刷新按冷却节流', async () => {
