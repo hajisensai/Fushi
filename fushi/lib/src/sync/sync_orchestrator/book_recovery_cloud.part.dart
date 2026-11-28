@@ -50,10 +50,6 @@ extension _CloudBookContentRecovery on SyncOrchestrator {
           (folders[folder.name] ??= <SyncFileRef>[]).add(folder);
         }
       }
-    } on SyncAuthError {
-      rethrow;
-    } on SyncCancelledException {
-      rethrow;
     } catch (error) {
       _noteDimensionError(report, 'list cloud books for recovery', error);
       return;
@@ -100,10 +96,6 @@ extension _CloudBookContentRecovery on SyncOrchestrator {
         )) {
           report.booksRecovered++;
         }
-      } on SyncAuthError {
-        rethrow;
-      } on SyncCancelledException {
-        rethrow;
       } catch (error) {
         _noteDimensionError(
           report,

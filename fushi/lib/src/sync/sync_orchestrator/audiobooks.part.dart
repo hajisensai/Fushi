@@ -112,6 +112,7 @@ extension _SyncOrchestratorAudiobooks on SyncOrchestrator {
               localAt,
             );
           } catch (e) {
+            _rethrowIfAbortsRound(e);
             debugPrint(
               '[SyncOrchestrator] audiobook delay push "$identity" failed: $e',
             );

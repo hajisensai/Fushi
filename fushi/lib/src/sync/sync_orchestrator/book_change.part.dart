@@ -83,6 +83,7 @@ extension _SyncOrchestratorBookChange on SyncOrchestrator {
             peers.add(m);
           }
         } catch (err) {
+          _rethrowIfAbortsRound(err);
           if (device == deviceId) {
             // 本机那份坏了：收尾时强制重发即可自愈，本轮全扫。
             ownStale = true;
@@ -127,8 +128,6 @@ extension _SyncOrchestratorBookChange on SyncOrchestrator {
           reasons.add('legacy writer $device active');
         }
       }
-    } on SyncAuthError {
-      rethrow;
     } catch (e) {
       _noteDimensionError(report, 'book manifests', e);
       reasons.add('manifest read failed');
@@ -193,8 +192,6 @@ extension _SyncOrchestratorBookChange on SyncOrchestrator {
         storageDimension: gate.storageDimension,
         force: gate.ownManifestStale,
       );
-    } on SyncAuthError {
-      rethrow;
     } catch (e) {
       _noteDimensionError(report, 'publish book manifest', e);
     }

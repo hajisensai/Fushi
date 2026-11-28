@@ -88,10 +88,6 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
             },
           );
           if (restored) report.booksRecovered++;
-        } on SyncCancelledException {
-          rethrow;
-        } on SyncAuthError {
-          rethrow;
         } on InterconnectHostChangedException {
           rethrow;
         } on Exception catch (e) {
