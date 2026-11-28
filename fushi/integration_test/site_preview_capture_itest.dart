@@ -16,6 +16,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:drift/drift.dart' show Value;
@@ -27,6 +28,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart'
     show InAppWebView;
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/asr_host/asr_host.dart'
+    show isAsrSupported, openAsrModelStore, saveAsrModelCatalog;
+import 'package:fushi/src/asr_host/asr_model_catalog.dart' show AsrModelCatalog;
 import 'package:fushi/src/lookup/sentence_extraction.dart'
     show lookupQueryFromIndex;
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
@@ -50,6 +54,8 @@ import 'package:fushi/src/media/manga/reader/manga_fushi_page.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart'
     show singleVideoBookUid;
+import 'package:fushi/src/media/video/subtitle/video_subtitle_studio_page.dart'
+    show VideoSubtitleStudioPage;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/home_tab.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
@@ -65,6 +71,16 @@ import 'package:fushi/src/pages/implementations/home_video_page.dart'
     show HomeVideoPage;
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
+import 'package:fushi/src/pages/implementations/srs_statistics_page.dart'
+    show SrsStatisticsTab;
+import 'package:fushi/src/pages/implementations/stat_shared.dart'
+    show StatCenterTabScope;
+import 'package:fushi/src/pages/implementations/statistics_center_page.dart'
+    show StatsCenterTab;
+import 'package:fushi/src/pages/shared/library_section_tabs.dart'
+    show LibrarySectionTabs;
+import 'package:fushi/src/srs/srs_providers.dart'
+    show srsEngineProvider, srsStoreProvider;
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart'
     show VideoFushiPage, VideoFushiTestHooks;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
@@ -73,14 +89,35 @@ import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
     show kFushiToolbarOverflowKey;
+import 'package:fushi/src/utils/components/fushi_material_components.dart'
+    show FushiPageScaffold;
+import 'package:fushi/src/utils/components/library_section_tab.dart'
+    show LibrarySectionTab;
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/utils/misc/update_checker.dart';
 import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_asr_core/asr_core.dart'
+    show AsrAudioProfile, AsrLanguage, AsrModelStore;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart'
     show MokuroBlock, MokuroPayload, parseMangaJson;
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart'
+    show VideoSubtitleSegmenterMode;
+import 'package:fushi_engine/srs/srs_builtin.dart' show srsLapisFieldId;
+import 'package:fushi_engine/srs/srs_calibration.dart'
+    show
+        SrsCalibrationBin,
+        SrsCalibrationData,
+        SrsCalibrationPhase,
+        SrsCalibrationProgress,
+        SrsCalibrationReport,
+        SrsCalibrationSeries,
+        SrsUmPlus,
+        SrsUmPlusBin;
+import 'package:fushi_engine/srs/srs_db_store.dart' show SrsDbStore;
+import 'package:fushi_engine/srs/srs_storage.dart' show SrsStorage;
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart'
     show MangaRenderManifest, MangaRenderedLine;
 import 'package:fushi_engine/tts/manga_audio/manga_audio_script.dart'
@@ -89,6 +126,8 @@ import 'package:fushi_engine/tts/manga_audio/manga_audio_validate.dart'
     show mangaPayloadOcrSignature;
 import 'package:fushi_engine/tts/render/tts_cast.dart' show TtsCastCharacter;
 import 'package:fushi_engine/tts/tts_voice_preset.dart' show TtsVoicePreset;
+import 'package:fushi_srs/fushi_srs.dart'
+    show SrsSourceKind, SrsSourceRef, SrsTrustedClock;
 import 'package:integration_test/integration_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
@@ -1262,6 +1301,8 @@ void main() {
       if (uv('uv-video')) await _sceneUvVideo(c);
       if (uv('uv-lyrics')) await _sceneUvLyrics(c);
       if (uv('uv-voiced')) await _sceneUvVoiced(c);
+      if (uv('uv-subtitle')) await _sceneUvSubtitle(c);
+      if (uv('uv-srs')) await _sceneUvSrs(c);
       debugPrint(
         '[site-preview] done notes=${anki.notes.length} errors=${errors.length}',
       );
