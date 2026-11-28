@@ -243,6 +243,84 @@ class Repo {
     );
   });
 
+  test('默认值只有一个：调用点写的字面量默认值必须等于登记表里的 defaultValue', () {
+    // 读写还没改成 `prefs.get(PrefKey)`（F2）之前，默认值同时写在登记表和调用点两处。
+    // 这条把两处绑死：调用点的字面量默认值与登记的不一致就红，漂不开。
+    final RegExp defaultCallPattern = RegExp(
+      r'getPref\w*(?:<[^>()]*>)?\(\s*'
+      r"""(?:'([^'$]*)'|"([^"$]*)"|([A-Za-z_][\w.]*))\s*,\s*"""
+      r'defaultValue:\s*'
+      r"""(true|false|-?\d+(?:\.\d+)?|'[^'$\\]*'|"[^"$\\]*")\s*,?\s*\)""",
+    );
+    final List<File> files = libDartFiles();
+    final Map<String, String> masked = <String, String>{
+      for (final File f in files) f.path: maskComments(f.readAsStringSync()),
+    };
+    final Map<String, Map<String, Set<String>>> constsByFile =
+        <String, Map<String, Set<String>>>{
+          for (final MapEntry<String, String> e in masked.entries)
+            e.key: extractStringConsts(e.value),
+        };
+    final Map<String, Set<String>> globalConsts = <String, Set<String>>{};
+    for (final Map<String, Set<String>> consts in constsByFile.values) {
+      consts.forEach((String name, Set<String> values) {
+        globalConsts.putIfAbsent(name, () => <String>{}).addAll(values);
+      });
+    }
+
+    bool sameDefault(Object? declared, String literal) => switch (declared) {
+      final bool v => literal == '$v',
+      final num v => num.tryParse(literal) == v,
+      final String v =>
+        literal.length >= 2 &&
+            (literal.startsWith("'") || literal.startsWith('"')) &&
+            literal.substring(1, literal.length - 1) == v,
+      _ => false,
+    };
+
+    int checked = 0;
+    final List<String> mismatches = <String>[];
+    for (final File f in files) {
+      final String source = masked[f.path]!;
+      for (final RegExpMatch m in defaultCallPattern.allMatches(source)) {
+        final List<String> keys = switch ((
+          m.group(1) ?? m.group(2),
+          m.group(3),
+        )) {
+          (final String literalKey, _) => <String>[literalKey],
+          (_, final String expr) => resolveNamedPrefKeys(
+            'getPref($expr)',
+            fileConsts: constsByFile[f.path]!,
+            globalConsts: globalConsts,
+          ),
+          _ => const <String>[],
+        };
+        for (final String key in keys) {
+          final PrefKey<Object?>? def = kFushiPrefRegistry.keyNamed(key);
+          if (def == null || def.isUntyped || def.defaultValue == null) {
+            continue;
+          }
+          checked++;
+          if (!sameDefault(def.defaultValue, m.group(4)!)) {
+            mismatches.add(
+              '  $key：登记 ${def.defaultValue}，调用点 ${m.group(4)} ← ${f.path}',
+            );
+          }
+        }
+      }
+    }
+    expect(
+      checked,
+      greaterThan(_kDefaultBindingMinChecked),
+      reason: '对账面塌了守卫就是假绿',
+    );
+    expect(
+      mismatches,
+      isEmpty,
+      reason: '登记表的 defaultValue 与调用点的默认值不一致：\n${mismatches.join('\n')}',
+    );
+  });
+
   test('名字登记表纪律：按字母序、无空键、与偏好键登记表不相交', () {
     final List<String> keys = kKnownPreferenceKeys.toList();
     final List<String> sorted = List<String>.of(keys)..sort();
@@ -384,3 +462,7 @@ const int _kInterconnectSharedPrefKeysCeiling = 15;
 
 /// 服务端字幕来源照抄的键常量条数上限（2026-11-28 现值）。
 const int _kServerSubtitlePrefConstsCeiling = 8;
+
+/// 默认值对账至少要核到的「登记 × 调用点」对数（2026-11-28 实测 96，防扫描面塌掉；调用点
+/// 迁到 `prefs.get(PrefKey)` 后自然变少，届时跟着调低）。
+const int _kDefaultBindingMinChecked = 90;
