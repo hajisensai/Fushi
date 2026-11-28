@@ -5,6 +5,8 @@ import 'package:drift/native.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/item_scrape/item_scrape_store.dart';
+import 'package:image/image.dart' as img;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
@@ -20,6 +22,7 @@ void main() {
   late FushiDatabase db;
   late Directory thumbs;
   late BookMetaTestModel model;
+  late ItemScrapeStore itemScrape;
   late BookArtStore store;
 
   setUp(() async {
@@ -29,7 +32,11 @@ void main() {
     await prefs.loadFromDb();
     thumbs = await Directory.systemTemp.createTemp('fushi_art_clear_');
     model = BookMetaTestModel(db, prefs, thumbs);
-    store = BookArtStore.of(thumbs);
+    itemScrape = ItemScrapeStore(
+      db,
+      imagesDirectory: Directory('${thumbs.path}/items'),
+    );
+    store = BookArtStore.of(thumbs, database: db, itemScrape: itemScrape);
     await store.write(
       record: const BookArtRecord(
         bookKey: 'k1',
@@ -130,5 +137,101 @@ void main() {
 
     expect(changed, isTrue);
     expect(store.recordFor('k1'), isNull);
+  });
+
+  // BUG-5609：横幅贴在书的背景图上（item_images，与书籍刮削同一份）。「清除已获取
+  // 的封面和横幅」只撤获取贴上的那张：书籍刮削写的背景图哪怕记录里也记着横幅，
+  // 也原样保留。
+  testWidgets('清除只撤获取贴上的横幅，别处来的背景图不动', (WidgetTester tester) async {
+    const String bannerUrl = 'https://images.mangabaka.dev/banner/1';
+    final int collectionId = await db.createMediaCollection('Series');
+    final Map<String, ItemScrapeKey> keys = <String, ItemScrapeKey>{};
+    for (final String bookKey in <String>['k1', 'k2']) {
+      await seedBook(db, bookKey);
+      final String uid = (await db.resolveEpubBookUid(bookKey))!;
+      await db.addToCollection(collectionId, MediaKind.epub, uid);
+      keys[bookKey] = ItemScrapeKey(MediaKind.epub, uid);
+    }
+    late String foreign;
+    await tester.runAsync(() async {
+      final File banner = File('${thumbs.path}/banner.png')
+        ..writeAsBytesSync(
+          img.encodePng(img.Image(width: 16, height: 9)..clear()),
+        );
+      expect(await store.applyBanner('k1', banner, url: bannerUrl), isTrue);
+      for (final String bookKey in <String>['k1', 'k2']) {
+        await store.write(
+          record: BookArtRecord(
+            bookKey: bookKey,
+            source: 'mangabaka',
+            seriesId: '1',
+            seriesTitle: 'Series',
+            bannerKey: 'mangabaka_1',
+            bannerUrl: bannerUrl,
+            scrapedAt: 1,
+          ),
+        );
+      }
+      final File other = File('${thumbs.path}/anilist.png')
+        ..writeAsBytesSync(
+          img.encodePng(
+            img.Image(width: 20, height: 9)..clear(img.ColorRgb8(9, 9, 9)),
+          ),
+        );
+      foreign = (await itemScrape.writeScrapedImageFromFile(
+        keys['k2']!,
+        MediaImageKind.backdrop,
+        other,
+        sourceUrl: 'https://s4.anilist.co/banner/2.jpg',
+      ))!;
+    });
+
+    late BuildContext host;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(useMaterial3: true),
+        home: Scaffold(
+          body: Builder(
+            builder: (BuildContext context) {
+              host = context;
+              return const SizedBox.expand();
+            },
+          ),
+        ),
+      ),
+    );
+
+    final Future<void> done = CollectionArtScrape(
+      database: db,
+      thumbnailsDirectory: thumbs,
+      servicesEnabled: () => true,
+      migrationReadonly: () => model.isMigrationReadonly,
+    ).clear(host, collectionId: collectionId, onChanged: () {});
+    await tester.pumpAndSettle();
+    bool finished = false;
+    unawaited(done.then((_) => finished = true));
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    for (int i = 0; i < 100 && !finished; i++) {
+      await tester.pump(const Duration(milliseconds: 20));
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+    }
+    expect(finished, isTrue);
+
+    await tester.runAsync(() async {
+      expect(
+        await itemScrape.firstImage(keys['k1']!, MediaImageKind.backdrop),
+        isNull,
+      );
+      final ItemImageRow? kept = await itemScrape.firstImage(
+        keys['k2']!,
+        MediaImageKind.backdrop,
+      );
+      expect(kept?.path, foreign);
+      expect(File(foreign).existsSync(), isTrue);
+    });
+    expect(store.recordFor('k1'), isNull);
+    expect(store.recordFor('k2'), isNull);
   });
 }

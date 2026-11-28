@@ -51,7 +51,7 @@ void main() {
     final ReaderFushiSource source = ReaderFushiSource.instance;
     final String embedded = source.getThumbnailUri(appModel: model, item: item);
 
-    final BookArtStore store = BookArtStore.of(thumbs);
+    final BookArtStore store = BookArtStore.of(thumbs, database: db);
     await store.write(
       record: const BookArtRecord(
         bookKey: '猫',
@@ -110,7 +110,7 @@ void main() {
         .mediaItemForBookKey('犬'))!;
     final ReaderFushiSource source = ReaderFushiSource.instance;
 
-    final BookArtStore store = BookArtStore.of(thumbs);
+    final BookArtStore store = BookArtStore.of(thumbs, database: db);
     await store.write(
       record: const BookArtRecord(
         bookKey: '犬',

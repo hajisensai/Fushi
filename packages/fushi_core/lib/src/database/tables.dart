@@ -2047,6 +2047,13 @@ class MediaImages extends Table {
   /// 来源远程 URL（重下/诊断用；手动设置的图为 null）。
   TextColumn get sourceUrl => text().nullable()();
 
+  /// v184 来源锁（与 [ItemImages.userChosen] 同一口径）：用户亲手选的图（视频作品 /
+  /// 合集详情页「横幅…」）为 true。刮削整组重写（[FushiDatabase.replaceMediaImagesForCollection]
+  /// / [FushiDatabase.replaceMediaImagesForBook]）与全量清理一律跳过这一种图、不删不换；
+  /// 用户换图 / 移除照常生效（移除 = 解锁，交还给下一次刮削）。存量行 false = 刮削来源。
+  /// 读侧（详情页 hero、系列色块）用户选的那张压过刮削图组与作品图组。
+  BoolColumn get userChosen => boolean().withDefault(const Constant(false))();
+
   /// 单一归属：合集与视频二选一，恰好一个非空。
   @override
   List<String> get customConstraints => <String>[
@@ -2163,6 +2170,12 @@ class ItemImages extends Table {
 
   /// 来源远程 URL（重下 / 诊断用；本地文件写入为 null）。
   TextColumn get sourceUrl => text().nullable()();
+
+  /// v183 来源锁：用户亲手选的图（书详情页「横幅…」、AI / 控制通道的明确写入）为
+  /// true，刮削写入（元数据刮削写回、卷封面横幅、游戏刮削）一律跳过这一组，不覆盖；
+  /// 用户换图 / 移除照常生效（移除 = 解锁，交还给下一次刮削）。存量行 false = 刮削
+  /// 来源。判据与写入口只在引擎 `ItemScrapeStore`。
+  BoolColumn get userChosen => boolean().withDefault(const Constant(false))();
 
   @override
   Set<Column> get primaryKey => {mediaType, entryKey, kind, position};

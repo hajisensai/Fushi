@@ -198,7 +198,10 @@ List<OpDescription> describeBookMetadataOps(
         'collection: MangaBaka first (sharpest image wins), Bangumi '
         'tankobon covers as fallback; only replaces a volume when the new '
         'image is sharper than the embedded cover. Stored apart from the '
-        'user\'s own cover override. Series with no confident match come '
+        'user\'s own cover override. The series banner becomes each '
+        'book\'s backdrop (the one the book page, home and the collection '
+        'page show), except on books that already have a backdrop from '
+        'another source, which is kept. Series with no confident match come '
         'back as needsConfirm with options; call again with seriesKey + '
         'source + seriesId to use one (remembered for later runs). Never '
         'replaces an already fetched cover of the same series with a smaller '
@@ -238,10 +241,11 @@ List<OpDescription> describeBookMetadataOps(
     method: 'DELETE',
     pattern: '$kBookArtCtlCollections/:id/scrape-art',
     summary:
-        'Remove the fetched per-volume covers (and banners no book uses '
-        'any more) from every local book of a collection, including series '
-        'the user pinned earlier. The user\'s own cover overrides are '
-        'untouched. Works offline (no online-services gate).',
+        'Remove the fetched per-volume covers and the banner the fetch put '
+        'on each book\'s backdrop from every local book of a collection, '
+        'including series the user pinned earlier. The user\'s own cover '
+        'overrides and backdrops from other sources are untouched. Works '
+        'offline (no online-services gate).',
     risk: OpRisk.write,
     params: const <OpParam>[
       OpParam.string(
@@ -296,6 +300,7 @@ OpUndo _artUndo(OpDescribeKit kit) => opCustomUndo(
   revert: (Map<String, Object?> payload) async {
     final BookArtStore store = BookArtStore.of(
       kit.context.appModel.thumbnailsDirectory,
+      database: kit.context.appModel.database,
     );
     final List<BookArtSnapshot> snapshots = <BookArtSnapshot>[
       for (final Object? s
@@ -314,10 +319,12 @@ OpUndo _artUndo(OpDescribeKit kit) => opCustomUndo(
       }
     }
     // 先逐本确认备份都在，再动手：不留「恢复了一半」的状态。
-    if (snapshots.any((BookArtSnapshot s) => !store.canRestore(s))) {
-      return OpUndoOutcome.failed(
-        '封面备份已不在（超过 ${BookArtStore.backupRetention.inDays} 天会被清理）',
-      );
+    for (final BookArtSnapshot s in snapshots) {
+      if (!await store.canRestore(s)) {
+        return OpUndoOutcome.failed(
+          '封面备份已不在（超过 ${BookArtStore.backupRetention.inDays} 天会被清理）',
+        );
+      }
     }
     try {
       for (final BookArtSnapshot s in snapshots.reversed) {
@@ -326,8 +333,6 @@ OpUndo _artUndo(OpDescribeKit kit) => opCustomUndo(
     } on StateError catch (e) {
       return OpUndoOutcome.failed(e.message);
     }
-    // 撤销一次刮削后，那次新写的横幅已无人引用：当场回收，不留到下一次删除。
-    await store.collectOrphanBanners();
     kit.context.ref
       ..invalidate(fushiBooksProvider(JapaneseLanguage.instance))
       ..invalidate(srtBooksProvider);

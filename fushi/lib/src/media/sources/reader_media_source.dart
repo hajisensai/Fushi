@@ -117,7 +117,10 @@ abstract class ReaderMediaSource extends MediaSource {
       item.mediaIdentifier,
     );
     if (bookKey != null) {
-      await BookArtStore.of(appModel.thumbnailsDirectory).remove(bookKey);
+      await BookArtStore.of(
+        appModel.thumbnailsDirectory,
+        database: appModel.database,
+      ).remove(bookKey);
     }
   }
 

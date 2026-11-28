@@ -5,7 +5,8 @@ import 'package:fushi/src/ops/op_describe_kit.dart';
 import 'package:fushi/src/ops/op_descriptions_library.dart' show opUndoDisplay;
 
 /// 单本书 / 漫画 / 字幕书 / 游戏刮削资料（v155）的操作描述。`set` 可撤销（执行前
-/// 快照：资料写回旧值、执行前没有的图清掉）；`clear` 会删图片文件，标不可撤销。
+/// 快照：资料写回旧值；这次写的图先备份，撤销时连同来源锁写回，执行前没有的清掉）；
+/// `clear` 会删图片文件，标不可撤销。
 List<OpDescription> describeLibraryScrapeOps(
   OpDescribeKit kit,
 ) => <OpDescription>[
@@ -27,7 +28,9 @@ List<OpDescription> describeLibraryScrapeOps(
         'Set scrape details and/or a landscape backdrop / logo for a book, '
         'manga, audiobook or game (drives the series block on the shelf and '
         'game library). Fields not given are kept unless replace=true. Values '
-        'given here are written even on user-locked fields; the lock stays.',
+        'given here are written even on user-locked fields; the lock stays. '
+        'A backdrop / logo set here counts as user-chosen: later scrapes keep '
+        'it.',
     risk: OpRisk.write,
     // backdropUrl / logoUrl 会让 app 去请求模型给的地址：先让用户确认（spec §5.2）。
     confirm: true,
@@ -60,14 +63,8 @@ List<OpDescription> describeLibraryScrapeOps(
       ),
     ],
     undo: opCustomUndo(
-      capture: (CtlCall call) async => itemScrapeStateJson(
-        kit.context.appModel.database,
-        call.params['key']!,
-        await resolveLibraryItemScrapeKey(
-          kit.context.appModel,
-          call.params['key']!,
-        ),
-      ),
+      capture: (CtlCall call) async =>
+          captureItemScrapeUndo(kit.context.appModel, call),
       payloadOf: (CtlCall call, Map<String, Object?> before, Object? _) =>
           <String, Object?>{'key': call.params['key'], 'before': before},
       describe: (Map<String, Object?> payload) =>

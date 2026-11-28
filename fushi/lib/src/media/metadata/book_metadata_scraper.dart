@@ -22,7 +22,7 @@ import 'package:fushi/src/media/metadata/bangumi_cover_url.dart';
 import 'package:fushi_engine/media/metadata/book_art/bangumi_tankobon.dart'
     show bangumiInfoboxAuthors, seriesFirst;
 import 'package:fushi_engine/media/metadata/book_art/book_art_plan.dart'
-    show pickMangaBakaVolumeImages;
+    show listMangaBakaBanners, pickMangaBakaVolumeImages;
 import 'package:fushi_engine/media/metadata/books/anilist_books.dart';
 import 'package:fushi_engine/models/content_language.dart'
     show contentLanguageKey;
@@ -660,6 +660,32 @@ class BookMetadataScraper {
   }) async =>
       (await fetchMangaBakaVolumeCoverSet(seriesId, language: language)).covers;
 
+  /// MangaBaka 系列 [seriesId] 能当横幅的**全部**图（[listMangaBakaBanners] 同一组
+  /// 判据，按面积降序；「横幅…」面板的在线候选）。id 不是数字为空表；失败抛
+  /// [BookScrapeException]。
+  Future<List<BookBannerImage>> fetchMangaBakaBanners(String seriesId) async {
+    final int? id = int.tryParse(seriesId.trim());
+    if (id == null) return const <BookBannerImage>[];
+    final List<MangaBakaImage> images;
+    try {
+      images = await _mangaBaka.fetchSeriesImages(id, type: 'banner');
+    } on MangaBakaException catch (e) {
+      throw BookScrapeException(
+        'MangaBaka banners ${e.message}',
+        statusCode: e.statusCode,
+      );
+    }
+    return <BookBannerImage>[
+      for (final MangaBakaImage image in listMangaBakaBanners(images))
+        BookBannerImage(
+          url: image.raw.url,
+          width: image.raw.width,
+          height: image.raw.height,
+          thumbnailUrl: image.thumbnailUrl,
+        ),
+    ];
+  }
+
   /// 关闭内部 client（若为默认自建）。
   void close() {
     _api.close();
@@ -672,6 +698,23 @@ class BookMetadataScraper {
 /// 一部系列的每卷封面 + 实际用的版本语言（主子标签，`ja` / `zh` / `ko`…；与书的
 /// 语言不同 = 本语言没有卷封面、回落了日文版）。
 typedef BookVolumeCoverSet = ({List<BookVolumeCover> covers, String language});
+
+/// 一张在线横幅（MangaBaka 系列横幅；[fetchMangaBakaBanners] 的结果）。
+class BookBannerImage {
+  const BookBannerImage({
+    required this.url,
+    this.width,
+    this.height,
+    this.thumbnailUrl,
+  });
+
+  final String url;
+  final int? width;
+  final int? height;
+
+  /// 源站缩略图（面板预览用）；没有时预览退回 [url]。
+  final String? thumbnailUrl;
+}
 
 /// 一卷封面（MangaBaka 每卷封面网格用）。
 class BookVolumeCover {

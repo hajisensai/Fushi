@@ -10,7 +10,9 @@
 ///    或那张不够清晰时用。
 ///
 /// 每卷取面积最大的那张，且要比本地内嵌封面大 1.2 倍、比刮削层里已有的同系列那张大
-/// 才写（不降清晰度）；横幅只来自 MangaBaka，本次没拿到时同系列沿用旧横幅。
+/// 才写（不降清晰度）；横幅只来自 MangaBaka，贴成每卷的横版背景图（`item_images`，
+/// 书详情页 / 首页 / 书架 / 合集页读的同一份；书已有别处来的背景图时不覆盖，
+/// BUG-5609），本次没拿到时同系列沿用旧横幅。
 /// MangaBaka 判待确认时整组待确认（不让 Bangumi 自动采用接管）；Bangumi 补卷要求种类
 /// 与 MangaBaka 系列一致。用户钉死的系列记进刮削层，之后重刮沿用；单本移除的贴错封面
 /// 记为否决，重刮不再选。
@@ -27,6 +29,8 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/collections/book_series_key.dart';
+import 'package:fushi_engine/media/cover_file_writer.dart'
+    show isDecodableImageBytes;
 import 'package:fushi_engine/media/metadata/book_art/bangumi_tankobon.dart';
 import 'package:fushi_engine/media/metadata/book_art/book_art_matcher.dart';
 import 'package:fushi_engine/media/metadata/book_art/book_art_plan.dart';
@@ -40,6 +44,7 @@ import 'package:fushi_engine/media/tracking/media_tracking_repository.dart';
 import 'package:fushi_engine/models/content_language.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:http/http.dart' as http;
+import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/metadata/bangumi_api_client.dart';
 import 'package:fushi/src/media/metadata/book_art_store.dart';
@@ -387,6 +392,8 @@ class BookArtScrapeService {
     bool onlyPinnedGroups = false,
     bool recordUndo = true,
   }) async {
+    // 旧版单独存的横幅先搬进书的背景图，之后的判定只看那一份（BUG-5609）。
+    if (!dryRun) await store.migrateLegacyBanners();
     final Map<String, List<EpubBookRow>> groups = <String, List<EpubBookRow>>{};
     final Map<String, String> groupTitles = <String, String>{};
     // 同名、不同语言的版本（日文版与台版《化物語》）分成各自的组（BUG-5287，与书籍
@@ -436,9 +443,6 @@ class BookArtScrapeService {
       );
       plans.add(plan);
     }
-    // 换系列 / 换横幅后旧横幅已无人引用：本轮结束统一回收（进行中的别的运行持有的
-    // 横幅由 holdBanner 保护）。
-    if (!dryRun) await store.collectOrphanBanners();
     return BookArtRunResult(
       dryRun: dryRun,
       series: plans,
@@ -800,22 +804,31 @@ class BookArtScrapeService {
     }
 
     // ── 下载与写入 ──
+    // 横幅下一次、落到临时文件，各卷经 [BookArtStore.applyBanner] 贴成书的背景图
+    // （item_images，同 URL 只存一份），本组写完删临时文件（BUG-5609）。
     String? bannerKey;
-    void Function()? releaseBanner;
+    File? bannerFile;
+    Directory? bannerTemp;
     final Map<String, BookArtBookPlan> committed = <String, BookArtBookPlan>{};
     try {
       if (banner != null && mb != null) {
-        final String key = '${BookArtSource.mangabaka.wire}_${mb.series.id}';
-        // 记录要等卷封面下完才落盘：期间持有横幅，别处删除触发的回收不删它。
-        releaseBanner = store.holdBanner(key);
         try {
-          await store.writeBanner(key, await _download(banner.url));
-          bannerKey = key;
+          final List<int> bytes = await _download(banner.url);
+          if (!isDecodableImageBytes(bytes)) {
+            throw const _DownloadException('not a complete image');
+          }
+          bannerTemp = await Directory.systemTemp.createTemp(
+            'fushi_book_banner_',
+          );
+          final File file = File(p.join(bannerTemp.path, 'banner'));
+          await file.writeAsBytes(bytes, flush: true);
+          bannerFile = file;
+          bannerKey = '${BookArtSource.mangabaka.wire}_${mb.series.id}';
         } on _DownloadException catch (e) {
           errors.add('banner: ${e.message}');
           banner = null;
-        } on Exception catch (e) {
-          // 解码失败（CoverImageInvalidException）/ 写盘失败：只丢横幅，不中断整组。
+        } on FileSystemException catch (e) {
+          // 临时文件写不下：只丢横幅，不中断整组。
           errors.add('banner: $e');
           banner = null;
         }
@@ -830,16 +843,26 @@ class BookArtScrapeService {
         pinned: pinned,
         bannerKey: bannerKey,
         banner: banner,
+        bannerFile: bannerFile,
         rejected: rejected,
         snapshots: snapshots,
         originalEdition: originalEdition,
+        errors: errors,
       );
       // 每本下完立刻写盘（并发 [downloadConcurrency]），不把整组图攒在内存里。
       await _pool<BookArtBookPlan>(plans, (BookArtBookPlan plan) async {
         committed[plan.bookKey] = await _commit(plan, ctx);
       });
     } finally {
-      releaseBanner?.call();
+      final Directory? temp = bannerTemp;
+      if (temp != null) {
+        try {
+          await temp.delete(recursive: true);
+        } on FileSystemException catch (e) {
+          // 系统临时目录：删不掉由系统清理。
+          ErrorLogService.instance.logDiagnostic('BookArtScrape.banner', '$e');
+        }
+      }
     }
     return BookArtSeriesPlan(
       seriesKey: groupKey,
@@ -933,18 +956,47 @@ class BookArtScrapeService {
     final bool keepsOldCover = !writesCover && !removeCover && hadCover;
     final bool choiceChanges =
         (previous?.originalEditionCovers ?? false) != ctx.originalEdition;
-    // 本次没拿到横幅（CDN 抖动 / 本系列没有）：同一系列沿用旧横幅，不抹掉引用。
-    final bool keepOldBanner =
-        ctx.bannerKey == null &&
-        (relation == _Relation.same || relation == _Relation.ambiguous);
-    final String? bannerKey =
-        ctx.bannerKey ?? (keepOldBanner ? previous?.bannerKey : null);
+    // ── 横幅 = 书的背景图（item_images，只有一份；BUG-5609）──
+    // 获取只动自己贴上去的那张（source_url == 记录里的 bannerUrl）：书没有背景图或
+    // 背景图是之前获取贴的才贴新横幅；书籍刮削 / 手选来的不覆盖，记录也不认领它。
+    final BookArtBannerState bannerState = await store.bannerStateOf(bookKey);
+    final String? ownedUrl = bannerState == BookArtBannerState.fetched
+        ? previous?.appliedBannerUrl
+        : null;
+    final BookArtRecord? bannerTarget;
+    if (ctx.bannerKey != null && bannerState != BookArtBannerState.other) {
+      bannerTarget = BookArtRecord(
+        bookKey: bookKey,
+        source: '',
+        seriesId: '',
+        seriesTitle: '',
+        scrapedAt: 0,
+        bannerKey: ctx.bannerKey,
+        bannerUrl: ctx.banner!.url,
+        bannerWidth: ctx.banner!.width,
+        bannerHeight: ctx.banner!.height,
+      );
+    } else if (ctx.bannerKey == null &&
+        ownedUrl != null &&
+        (relation == _Relation.same || relation == _Relation.ambiguous)) {
+      // 本次没拿到横幅（CDN 抖动 / 本系列没有）：同一系列沿用已贴上的旧横幅。
+      bannerTarget = previous;
+    } else {
+      // 换了系列（旧横幅不属于它，撤掉）/ 书已有别处来的背景图（不认领）。
+      bannerTarget = null;
+    }
+    final String? targetUrl = bannerTarget?.appliedBannerUrl;
+    final bool appliesBanner = targetUrl != null && targetUrl != ownedUrl;
+    final bool dropsBanner = ownedUrl != null && targetUrl == null;
     final bool pinChanges =
         ctx.pinned &&
         !(previous != null && previous.pinned && relation == _Relation.same);
     if (!writesCover &&
         !removeCover &&
-        bannerKey == previous?.bannerKey &&
+        !appliesBanner &&
+        !dropsBanner &&
+        bannerTarget?.bannerKey == previous?.bannerKey &&
+        targetUrl == previous?.appliedBannerUrl &&
         !pinChanges &&
         !choiceChanges) {
       return plan;
@@ -955,67 +1007,75 @@ class BookArtScrapeService {
     final BookArtSnapshot? snapshot = ctx.snapshots == null
         ? null
         : await store.snapshot(bookKey);
+    final BookArtRecord record = BookArtRecord(
+      bookKey: bookKey,
+      source: ctx.source.wire,
+      seriesId: ctx.seriesId,
+      seriesTitle: ctx.matchedTitle,
+      seriesUrl: ctx.seriesUrl,
+      volume: plan.volume,
+      coverSource: writesCover
+          ? plan.option!.source.wire
+          : keepsOldCover
+          ? previous?.coverSource
+          : null,
+      coverUrl: writesCover
+          ? plan.option!.url
+          : keepsOldCover
+          ? previous?.coverUrl
+          : null,
+      coverWidth: writesCover
+          ? dims?.width ?? plan.option!.width
+          : keepsOldCover
+          ? previous?.coverWidth
+          : null,
+      coverHeight: writesCover
+          ? dims?.height ?? plan.option!.height
+          : keepsOldCover
+          ? previous?.coverHeight
+          : null,
+      matchScore: ctx.score,
+      scrapedAt: _now().millisecondsSinceEpoch,
+      pinned: ctx.pinned,
+      rejectedCoverUrls: ctx.rejected[bookKey]!.toList(),
+      originalEditionCovers: ctx.originalEdition,
+      coverFromOriginalEdition: writesCover
+          ? plan.fromOriginalEdition
+          : keepsOldCover && (previous?.coverFromOriginalEdition ?? false),
+    ).withBannerOf(bannerTarget);
     try {
+      // 记录先落（卷封面校验不过时整本不动，背景图也不动）；再改背景图。
       await store.write(
         coverBytes: bytes,
         removeCover: removeCover,
-        record: BookArtRecord(
-          bookKey: bookKey,
-          source: ctx.source.wire,
-          seriesId: ctx.seriesId,
-          seriesTitle: ctx.matchedTitle,
-          seriesUrl: ctx.seriesUrl,
-          volume: plan.volume,
-          coverSource: writesCover
-              ? plan.option!.source.wire
-              : keepsOldCover
-              ? previous?.coverSource
-              : null,
-          coverUrl: writesCover
-              ? plan.option!.url
-              : keepsOldCover
-              ? previous?.coverUrl
-              : null,
-          coverWidth: writesCover
-              ? dims?.width ?? plan.option!.width
-              : keepsOldCover
-              ? previous?.coverWidth
-              : null,
-          coverHeight: writesCover
-              ? dims?.height ?? plan.option!.height
-              : keepsOldCover
-              ? previous?.coverHeight
-              : null,
-          bannerKey: bannerKey,
-          bannerUrl: ctx.bannerKey != null
-              ? ctx.banner?.url
-              : keepOldBanner
-              ? previous?.bannerUrl
-              : null,
-          bannerWidth: ctx.bannerKey != null
-              ? ctx.banner?.width
-              : keepOldBanner
-              ? previous?.bannerWidth
-              : null,
-          bannerHeight: ctx.bannerKey != null
-              ? ctx.banner?.height
-              : keepOldBanner
-              ? previous?.bannerHeight
-              : null,
-          matchScore: ctx.score,
-          scrapedAt: _now().millisecondsSinceEpoch,
-          pinned: ctx.pinned,
-          rejectedCoverUrls: ctx.rejected[bookKey]!.toList(),
-          originalEditionCovers: ctx.originalEdition,
-          coverFromOriginalEdition: writesCover
-              ? plan.fromOriginalEdition
-              : keepsOldCover && (previous?.coverFromOriginalEdition ?? false),
-        ),
+        record: record,
       );
     } on Exception catch (e) {
       // 写盘被拒（CoverImageInvalidException 等）：这一卷算失败，旧刮削层未动。
       if (snapshot != null) await store.discardSnapshot(snapshot);
       return plan.copyWith(outcome: BookArtBookOutcome.failed, error: '$e');
+    }
+    if (appliesBanner) {
+      bool applied = false;
+      try {
+        applied = await store.applyBanner(
+          bookKey,
+          ctx.bannerFile!,
+          url: targetUrl,
+          ownedUrl: ownedUrl,
+        );
+      } on Exception catch (e) {
+        ctx.errors.add('banner ($bookKey): $e');
+      }
+      if (!applied) {
+        // 没贴上（写盘失败 / 期间书有了别处来的背景图）：记录改回书上实际的横幅，
+        // 不认领不是本层写的背景图。
+        await store.write(
+          record: record.withBannerOf(ownedUrl == null ? null : previous),
+        );
+      }
+    } else if (dropsBanner) {
+      await store.clearBannerFrom(bookKey, url: ownedUrl);
     }
     if (snapshot != null) ctx.snapshots!.add(snapshot);
     return plan;
@@ -1472,9 +1532,11 @@ class _GroupWrite {
     required this.pinned,
     required this.bannerKey,
     required this.banner,
+    required this.bannerFile,
     required this.rejected,
     required this.snapshots,
     required this.originalEdition,
+    required this.errors,
   });
 
   final BookArtSource source;
@@ -1484,13 +1546,21 @@ class _GroupWrite {
   final double? score;
   final bool authoritative;
   final bool pinned;
+
+  /// 本次下到的系列横幅键；null = 没拿到（沿用 / 撤掉旧的按关系判）。
   final String? bannerKey;
   final BookArtImageOption? banner;
+
+  /// 本次下到的横幅临时文件（[bannerKey] 非 null 时有），各卷贴背景图用。
+  final File? bannerFile;
   final Map<String, Set<String>> rejected;
   final List<BookArtSnapshot>? snapshots;
 
   /// 系列当前的「用 MangaBaka 封面」选择（写进每本的记录）。
   final bool originalEdition;
+
+  /// 本组的降级 / 错误摘要（单卷贴横幅失败也记进来）。
+  final List<String> errors;
 }
 
 class _BangumiHttpException implements Exception {

@@ -70,6 +70,10 @@ class VideoSeriesImageSlot {
 @immutable
 class VideoSeriesMetaPlan {
   const VideoSeriesMetaPlan({
+    this.userBackdrop = const VideoSeriesImageSlot(
+      decodeWidth: kMetadataBackdropDecodePixelWidth,
+    ),
+    this.userBackdropHasText = false,
     required this.textlessBackdrop,
     required this.textBackdrop,
     required this.logo,
@@ -98,6 +102,12 @@ class VideoSeriesMetaPlan {
     rating: null,
   );
 
+  /// 用户在「横幅…」里选的背景（v184 `media_images.user_chosen`）：压过下面两组
+  /// 刮削背景，不论有没有字；文件不在了才回落刮削图。
+  final VideoSeriesImageSlot userBackdrop;
+
+  /// [userBackdrop] 是刮削图组里带片名的那张（按原地址对回作品图组的语言标签）。
+  final bool userBackdropHasText;
   final VideoSeriesImageSlot textlessBackdrop;
   final VideoSeriesImageSlot textBackdrop;
   final VideoSeriesImageSlot logo;
@@ -153,7 +163,8 @@ VideoSeriesMetaPlan videoSeriesMetaPlan(VideoSeriesMetaInput input) {
       VideoSeriesImageSlot(
         mediaPaths: mediaPaths(
           MediaImageKind.backdrop,
-          where: (MediaImageRow row) => textless(row.sourceUrl) != withText,
+          where: (MediaImageRow row) =>
+              !row.userChosen && textless(row.sourceUrl) != withText,
         ),
         workRows: workRows(
           const <String>['backdrop'],
@@ -163,7 +174,23 @@ VideoSeriesMetaPlan videoSeriesMetaPlan(VideoSeriesMetaInput input) {
         decodeWidth: kMetadataBackdropDecodePixelWidth,
       );
 
+  final List<MediaImageRow> userBackdrops = <MediaImageRow>[
+    for (final MediaImageRow row in mediaImages)
+      if (row.userChosen &&
+          row.kind == MediaImageKind.backdrop.dbValue &&
+          row.path.isNotEmpty)
+        row,
+  ];
   return VideoSeriesMetaPlan(
+    userBackdrop: VideoSeriesImageSlot(
+      mediaPaths: <String>[
+        for (final MediaImageRow row in userBackdrops) row.path,
+      ],
+      decodeWidth: kMetadataBackdropDecodePixelWidth,
+    ),
+    userBackdropHasText: userBackdrops.any(
+      (MediaImageRow row) => !textless(row.sourceUrl),
+    ),
     textlessBackdrop: backdrop(withText: false),
     textBackdrop: backdrop(withText: true),
     logo: VideoSeriesImageSlot(
@@ -188,7 +215,8 @@ VideoSeriesMetaPlan videoSeriesMetaPlan(VideoSeriesMetaInput input) {
 
 /// 按 [plan] 的候选拼出 [FushiSeriesMeta]（UI 侧，只查本地文件存在性）。
 ///
-/// - 背景图：先取**无字**的（附加图组 backdrop → 作品图组 backdrop，语言标签为空
+/// - 背景图：用户在「横幅…」里选的那张（v184 来源锁）最先，不论有没有字；没有再
+///   先取**无字**的（附加图组 backdrop → 作品图组 backdrop，语言标签为空
 ///   的优先）；只有带字的才退而用它，并置 [FushiSeriesMeta.backdropHasText]——原图
 ///   的字就是标题，色块不再叠 logo（2026-11-20 用户拍板设计稿 #3 ① ②）；
 /// - logo：附加图组 logo → 作品图组 logo；
@@ -237,11 +265,22 @@ FushiSeriesMeta resolveVideoSeriesMeta(
   ImageProvider? slotImage(VideoSeriesImageSlot slot) =>
       settled(mediaImage(slot)) ?? workImage(slot);
 
-  ImageProvider? backdrop = slotImage(plan.textlessBackdrop);
+  // 用户选的那张压过刮削背景；它还在探测存在性时先不落到刮削图（等探测完重建），
+  // 免得先闪一张刮削图。
+  final ImageProvider? user = mediaImage(plan.userBackdrop);
+  ImageProvider? backdrop;
   bool backdropHasText = false;
-  if (backdrop == null) {
-    backdrop = slotImage(plan.textBackdrop);
-    backdropHasText = backdrop != null;
+  if (user == kPendingCoverImage) {
+    backdrop = null;
+  } else if (user != null) {
+    backdrop = user;
+    backdropHasText = plan.userBackdropHasText;
+  } else {
+    backdrop = slotImage(plan.textlessBackdrop);
+    if (backdrop == null) {
+      backdrop = slotImage(plan.textBackdrop);
+      backdropHasText = backdrop != null;
+    }
   }
   final ImageProvider? logo = slotImage(plan.logo);
   final ImageProvider? poster = settled(ownPoster) ?? workImage(plan.poster);

@@ -14,6 +14,11 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/media/banner/banner_picker_sheet.dart'
+    show BannerPickerTarget, showBannerPickerSheet;
+import 'package:fushi/src/media/banner/game_banner_sources.dart'
+    show loadGameBannerPickerTarget;
 import 'package:fushi/src/media/collections/add_to_collection_dialog.dart';
 import 'package:fushi/src/media/detail/item_scrape_detail.dart';
 import 'package:fushi/src/media/detail/media_detail_kit.dart';
@@ -797,6 +802,13 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
           onSelected: () => unawaited(_scrapeFromHero(game)),
         ),
         MediaDetailMenuItem(
+          key: const ValueKey<String>('galgame_detail_banner'),
+          icon: FushiIcons.image,
+          label: t.media_banner_action,
+          enabled: !_bannerOpen,
+          onSelected: () => unawaited(_openBanner(game)),
+        ),
+        MediaDetailMenuItem(
           icon: FushiIcons.edit,
           label: t.game_detail_tab_edit,
           onSelected: () => _showTab(2),
@@ -808,6 +820,30 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
         ),
       ],
     );
+  }
+
+  bool _bannerOpen = false;
+
+  /// Hero「更多 › 横幅…」：给游戏挑横版背景（`item_images`，用户选的上来源锁，之后
+  /// 的游戏刮削不覆盖）。在线来源跟刮削同一道「在线服务」模块门。
+  Future<void> _openBanner(GalgameEntry game) async {
+    if (_bannerOpen) return;
+    setState(() => _bannerOpen = true);
+    try {
+      final BannerPickerTarget target = await loadGameBannerPickerTarget(
+        db: _appModel.database,
+        gameId: game.id,
+        onlineEnabled: _appModel.moduleVisibility.isEnabled(ModuleId.services),
+      );
+      if (!mounted) return;
+      final bool changed = await showBannerPickerSheet(
+        context: context,
+        target: target,
+      );
+      if (changed && mounted) await _load();
+    } finally {
+      if (mounted) setState(() => _bannerOpen = false);
+    }
   }
 
   /// Hero「更多 › 刮削元数据」：与编辑 tab、库页卡菜单同一个统一刮削弹窗。

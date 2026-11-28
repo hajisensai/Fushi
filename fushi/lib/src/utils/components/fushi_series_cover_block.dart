@@ -170,6 +170,37 @@ FushiSeriesMeta? collectionSeriesMeta({
   countLabel: countLabel,
 );
 
+/// 合集的系列资料（色块元数据 + 简介）。
+typedef FushiSeriesInfo = ({FushiSeriesMeta meta, String? summary});
+
+/// 合集自己的系列资料 [own] 与借来的成员资料（[borrowed]，通常是最前那卷的
+/// [itemSeriesMeta]）的合并——书架合集块、合集详情页 hero、首页系列合并卡共用这
+/// 一个口径，不各写一份：
+/// - [own] 为 null（合集没刮削过、也没有背景图）：整份用借来的；
+/// - [own] 有背景图：只用 [own]；
+/// - [own] 有资料行但没有背景图（例如 Bangumi 刮过的合集）：文字资料 / logo / 简介
+///   仍是 [own] 的，背景图借成员的——「获取各卷封面与横幅」的系列横幅就贴在每卷的
+///   背景图上（BUG-5609），合集有资料行不能让它消失。
+///
+/// [borrowed] 只在需要时调用一次。
+FushiSeriesInfo? fushiCollectionSeriesInfo({
+  required FushiSeriesInfo? own,
+  required FushiSeriesInfo? Function() borrowed,
+}) {
+  if (own == null) return borrowed();
+  if (own.meta.backdrop != null) return own;
+  final FushiSeriesMeta? lent = borrowed()?.meta;
+  final ImageProvider? backdrop = lent?.backdrop;
+  if (lent == null || backdrop == null) return own;
+  return (
+    meta: own.meta.withBackdrop(
+      backdrop,
+      backdropHasText: lent.backdropHasText,
+    ),
+    summary: own.summary,
+  );
+}
+
 /// 单个条目（书 / 漫画 / 字幕书 / 游戏，`item_scrape_meta` + `item_images`）的
 /// 系列元数据，与 [collectionSeriesMeta] 同一口径：有刮削资料行或横版背景图时
 /// 非 null，否则 null（调用方保持原摆法）。

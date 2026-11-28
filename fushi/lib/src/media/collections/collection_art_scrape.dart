@@ -51,16 +51,10 @@ class CollectionArtScrape {
   /// 「在线服务」模块开着才出入口、才发请求。
   bool get enabled => servicesEnabled();
 
-  BookArtStore get store => BookArtStore.of(thumbnailsDirectory);
-
-  /// 刮削层变更通知（写入 / 清除 / 撤销后合集详情页重算横幅）。
-  Listenable get changes => store;
-
-  /// [rows] 里书成员的合集横幅（[BookArtStore.backdropForCollection]，成员多数票
-  /// 那张）；没下到为 null。只读刮削层，不受「在线服务」门约束：图已在本地。
-  /// 成员行键是书 uid，刮削层按 bookKey 记，先换算（[epubMemberBookKeys]）。
-  Future<File?> bannerFor(Iterable<MediaCollectionItemRow> rows) async =>
-      store.backdropForCollection(await epubMemberBookKeys(database, rows));
+  /// 刮削层（卷封面 + 来源记录）。横幅不在这里读：获取把它贴成每卷的背景图
+  /// （`item_images`），合集页与书详情页 / 首页 / 书架一样只读那一份（BUG-5609）。
+  BookArtStore get store =>
+      BookArtStore.of(thumbnailsDirectory, database: database);
 
   BookArtScrapeService _service() =>
       serviceFactory?.call() ??
@@ -115,7 +109,8 @@ class CollectionArtScrape {
     return true;
   }
 
-  /// 清除合集各成员的刮削层（用户 override 不动）。先确认：界面路径没有撤销，
+  /// 清除合集各成员的刮削层与获取贴上的横幅（用户 override、别处来的背景图都不动，
+  /// [BookArtStore.remove]）。先确认：界面路径没有撤销，
   /// 重新获取要再联网、受限流约束，待确认时手选的系列也会一起丢。
   Future<void> clear(
     BuildContext context, {

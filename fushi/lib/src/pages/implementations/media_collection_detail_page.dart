@@ -201,6 +201,7 @@ class MediaCollectionDetailPage extends StatefulWidget {
     this.onChooseTmdbOrdering,
     this.onPickOnlineCover,
     this.onOrganizeFilenames,
+    this.onPickBanner,
     this.collectionAiSettings,
     this.aiClientFactory,
     this.discMenuProbe,
@@ -282,6 +283,11 @@ class MediaCollectionDetailPage extends StatefulWidget {
   /// 单集菜单的「整理文件名」（反馈 ZDYNkAP3Ln）：由库页注入同一条实现（预览、
   /// 做种联动、撤销都在那边）。null = 菜单项不渲染。
   final Future<void> Function(List<String> bookUids)? onOrganizeFilenames;
+
+  /// 「横幅…」：弹面板给这部剧挑横版背景（合集附加图组 backdrop，用户选的上来源锁，
+  /// 之后重刮不覆盖），返回横幅是否变了。由库页注入（在线来源要刮削 controller）。
+  /// null = 菜单项不渲染。
+  final Future<bool> Function(MediaCollectionRow collection)? onPickBanner;
 
   @override
   State<MediaCollectionDetailPage> createState() =>
@@ -747,18 +753,29 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           )
           .map((VideoMetadataImageRow row) => row.remoteUrl)
           .firstOrNull;
-      _backdropSources = <String>{
-        for (final VideoMetadataImageRow row in canonicalImages)
-          if (row.kind == VideoMetadataImageKind.backdrop.name &&
-              row.localPath?.isNotEmpty == true)
-            row.localPath!,
+      // 用户在「横幅…」里选的那张（v184 来源锁）独占背景、不轮换；没有才走刮削的
+      // 作品图组 → 附加图组 → 远程图（轮换序）。
+      final List<String> userBackdrops = <String>[
         for (final MediaImageRow row in imageRows)
-          if (row.kind == MediaImageKind.backdrop.dbValue) row.path,
-        for (final VideoMetadataImageRow row in canonicalImages)
-          if (row.kind == VideoMetadataImageKind.backdrop.name &&
-              row.remoteUrl.isNotEmpty)
-            row.remoteUrl,
-      }.toList(growable: false);
+          if (row.userChosen &&
+              row.kind == MediaImageKind.backdrop.dbValue &&
+              row.path.isNotEmpty)
+            row.path,
+      ];
+      _backdropSources = userBackdrops.isNotEmpty
+          ? userBackdrops
+          : <String>{
+              for (final VideoMetadataImageRow row in canonicalImages)
+                if (row.kind == VideoMetadataImageKind.backdrop.name &&
+                    row.localPath?.isNotEmpty == true)
+                  row.localPath!,
+              for (final MediaImageRow row in imageRows)
+                if (row.kind == MediaImageKind.backdrop.dbValue) row.path,
+              for (final VideoMetadataImageRow row in canonicalImages)
+                if (row.kind == VideoMetadataImageKind.backdrop.name &&
+                    row.remoteUrl.isNotEmpty)
+                  row.remoteUrl,
+            }.toList(growable: false);
       _logoPath = canonicalImages
           .where(
             (VideoMetadataImageRow row) =>
@@ -3766,6 +3783,13 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       case _CollectionManageAction.resetCover:
         await _resetCover();
         return;
+      case _CollectionManageAction.banner:
+        final bool changed =
+            await widget.onPickBanner?.call(_collection) ?? false;
+        if (!changed || !mounted) return;
+        widget.onChanged();
+        await _reload();
+        return;
       case _CollectionManageAction.rescrape:
         await widget.onRescrapeCollection?.call(_collection);
         if (mounted) await _reload();
@@ -3951,6 +3975,12 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           _CollectionManageAction.resetCover,
           FushiIcons.undo,
           t.collection_cover_reset,
+        ),
+      if (widget.onPickBanner != null)
+        action(
+          _CollectionManageAction.banner,
+          FushiIcons.image,
+          t.media_banner_action,
         ),
       // 重刮入口只在库页注入了 controller 时存在（详情页不自造 controller）。
       if (widget.onRescrapeCollection != null)
@@ -4506,6 +4536,7 @@ enum _CollectionManageAction {
   setCover,
   setCoverOnline,
   resetCover,
+  banner,
   rescrape,
   tmdbOrdering,
   tmdbOrderingOnHost,

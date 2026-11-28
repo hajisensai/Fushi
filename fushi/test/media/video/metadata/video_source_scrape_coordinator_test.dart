@@ -8,6 +8,7 @@ import 'package:test/test.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart' show AiChatFailure;
 import 'package:fushi_engine/foundation/engine_platform_hooks.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
+import 'package:fushi_engine/media/video/media_image_user_store.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_database_store.dart';
@@ -1299,6 +1300,92 @@ void main() {
       await File(p.join(root.path, 'Movie (2024)-fanart.jpg')).readAsBytes(),
       expected,
     );
+  });
+
+  // v184 来源锁：用户在「横幅…」里给作品选的横幅（media_images.user_chosen）不被
+  // 重刮覆盖；移除（解锁）后下一次刮削照常写回刮削背景。
+  test('重刮保留用户选的横幅；移除后重刮写回刮削背景', () async {
+    final Future<void> Function(File) hostEvict = evictImageCacheForFile;
+    evictImageCacheForFile = (File _) async {};
+    addTearDown(() => evictImageCacheForFile = hostEvict);
+    final SourceLibraryRow source = await _createMovieSource(
+      db,
+      root,
+      provider: VideoMetadataProviderKind.anidb,
+    );
+    await db.upsertVideoSourceScrapeSettings(
+      VideoSourceScrapeSettingsCompanion.insert(
+        sourceId: Value<int>(source.id),
+        providerOverride: const Value<String?>('anidb'),
+        writeNfo: const Value<bool>(false),
+        writeImages: const Value<bool>(true),
+        // 覆盖策略：每次重刮都真的写回图组（默认「只补缺失」第二次起整组跳过，
+        // 锁就没被走到）。
+        imagePolicy: const Value<String>('overwrite'),
+        fanartEnabled: const Value<bool>(false),
+        updatedAt: 2,
+      ),
+    );
+    VideoSourceScrapeCoordinator coordinator() => VideoSourceScrapeCoordinator(
+      primaryProvider: VideoMetadataProviderKind.anidb,
+      database: db,
+      config: const VideoSourceScrapeGlobalConfig(),
+      registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+        _ImageAniDbProvider(),
+        _TwoBackdropTmdbProvider(),
+      ]),
+      assetDownloader: _RecordingAssetDownloader(),
+    );
+    Future<void> scrape() async {
+      final SourceScrapeReport report = await coordinator().scrapeSource(
+        source,
+        cancellationToken: VideoSourceScrapeCancellationToken(),
+        onProgress: (_) {},
+      );
+      expect(report.succeededWorks, 1, reason: '${report.errors}');
+    }
+
+    Future<List<MediaImageRow>> backdrops() async => <MediaImageRow>[
+      for (final MediaImageRow row in await db.getMediaImagesForBook(
+        'movie-book',
+      ))
+        if (row.kind == MediaImageKind.backdrop.dbValue) row,
+    ];
+
+    // 先刮一次：刮削背景落进附加图组（对照：没有锁时刮削确实会写这一种）。
+    await scrape();
+    expect((await backdrops()).single.userChosen, isFalse);
+
+    final Directory userDir = Directory(p.join(root.path, 'user_images'));
+    final MediaImageUserStore store = MediaImageUserStore(
+      db,
+      videosDirectory: userDir,
+      collectionsDirectory: userDir,
+    );
+    final File pick = File(p.join(root.path, 'pick.gif'))
+      ..writeAsBytesSync(<int>[
+        0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 1, 0, 1, 0, 0, 0, 0, 0x3B, //
+      ]);
+    const MediaImageOwner movie = MediaImageOwner.book('movie-book');
+    final String dest = await store.setUserImageFromFile(
+      movie,
+      MediaImageKind.backdrop,
+      pick,
+      sourceUrl: 'https://images.test/user-pick.jpg',
+    );
+
+    await scrape();
+    final MediaImageRow kept = (await backdrops()).single;
+    expect(kept.path, dest);
+    expect(kept.userChosen, isTrue);
+    expect(kept.sourceUrl, 'https://images.test/user-pick.jpg');
+    expect(File(dest).existsSync(), isTrue);
+
+    await store.clearUserImage(movie, MediaImageKind.backdrop);
+    await scrape();
+    final MediaImageRow rescraped = (await backdrops()).single;
+    expect(rescraped.userChosen, isFalse);
+    expect(rescraped.path, isNot(dest));
   });
 
   // 拍板台 gtpgyff3l7-oneshot-scrape 方案 b：「仅此一次」导入扫完删掉临时来源行后，

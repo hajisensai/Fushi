@@ -7,6 +7,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:fushi/src/media/banner/banner_picker_sheet.dart'
+    show BannerPickerSheet;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_draft.dart';
@@ -451,5 +453,24 @@ void main() {
     expect(parseGalgameRating('8.5'), 8.5);
     expect(parseGalgameRating('99'), 10);
     expect(parseGalgameRating('-3'), 0);
+  });
+
+  testWidgets('「⋯ › 横幅…」打开横幅面板（游戏横版背景，用户选的上来源锁）', (WidgetTester tester) async {
+    await pumpPage(tester, await buildModel(withSessions: false));
+    Finder entry = find.byTooltip(t.media_banner_action);
+    if (entry.evaluate().isEmpty) {
+      await tester.tap(
+        find.byKey(const ValueKey<String>('galgame_detail_more')),
+      );
+      await tester.pumpAndSettle();
+      entry = find.text(t.media_banner_action);
+    }
+    expect(entry, findsOneWidget);
+    await tester.tap(entry);
+    await tester.pumpAndSettle();
+    expect(find.byType(BannerPickerSheet), findsOneWidget);
+    expect(find.text(t.media_banner_title), findsWidgets);
+    // 游戏没有「游戏中」分段。
+    expect(find.text(t.media_banner_source_from_book), findsNothing);
   });
 }

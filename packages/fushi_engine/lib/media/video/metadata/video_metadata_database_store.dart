@@ -115,6 +115,16 @@ class VideoMetadataDatabaseStore {
             localWork.collection!.id,
           );
     if (row == null) return const <VideoMetadataLookup>[];
+    return lookupsForWorkRow(row, primaryOnly: primaryOnly);
+  }
+
+  /// [row] 这部已落库作品的全部可联网身份（主身份在前；[primaryOnly] 只要主身份）。
+  /// 本地 / 媒体服务器 / fanart 身份不算（没有可再拉的源）。「横幅…」面板按它找
+  /// TMDB 身份去列全部背景图。
+  Future<List<VideoMetadataLookup>> lookupsForWorkRow(
+    VideoMetadataWorkRow row, {
+    bool primaryOnly = false,
+  }) async {
     final VideoMetadataMediaKind? kind = VideoMetadataMediaKind.values
         .asNameMap()[row.mediaType];
     if (kind == null) return const <VideoMetadataLookup>[];

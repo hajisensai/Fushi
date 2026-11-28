@@ -43,6 +43,10 @@ import 'package:fushi/src/utils/components/fushi_bottom_action_bar.dart';
 import 'package:fushi/src/media/online/online_shelf_removal.dart';
 import 'package:fushi/src/media/online/online_source_error_text.dart';
 import 'package:fushi/src/media/online/online_work_detail.dart';
+import 'package:fushi/src/media/banner/banner_picker_sheet.dart'
+    show BannerPickerTarget, showBannerPickerSheet;
+import 'package:fushi/src/media/banner/book_banner_sources.dart'
+    show loadBookBannerPickerTarget;
 import 'package:fushi/src/media/detail/item_scrape_detail.dart';
 import 'package:fushi/src/media/detail/item_scrape_detail_view.dart';
 import 'package:fushi_engine/media/item_scrape/item_scrape_store.dart'
@@ -313,6 +317,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   StreamSubscription<void>? _scrapeChanges;
   int _scrapeGeneration = 0;
   bool _scraping = false;
+  bool _bannerOpen = false;
 
   AppModel get _appModel => ref.read(appProvider);
 
@@ -2953,14 +2958,46 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       SourceMangaSeriesTarget() => null,
     };
     final ItemScrapeDetailView view = _scrapeView;
+    final EpubBookRow? row = _row;
     return <MediaDetailMenuItem>[
-      if (scrape != null && _row != null)
+      if (scrape != null && row != null)
         view.scrapeAction(
           enabled: !_scraping && !_busy,
           onSelected: () => unawaited(_scrape(scrape)),
         ),
+      // 本地卷的「横幅…」：与书详情页同一个面板（在线 / 书中跨页 / 文件或链接）。
+      if (_isLocal && row != null && row.uid.isNotEmpty)
+        MediaDetailMenuItem(
+          key: const ValueKey<String>('manga_series_banner'),
+          icon: FushiIcons.image,
+          label: t.media_banner_action,
+          enabled: !_bannerOpen && !_busy,
+          onSelected: () => unawaited(_openBanner(row)),
+        ),
       ?view.sourceLinkAction(launch: widget.openExternal),
     ];
+  }
+
+  /// 「横幅…」面板：写进这一卷自己的 `item_images`（用户口径，之后刮削不覆盖）；
+  /// 在线来源跟刮削同一道「在线服务」模块门。
+  Future<void> _openBanner(EpubBookRow row) async {
+    final AppModel? appModel = _appModelOrNull;
+    if (appModel == null || _bannerOpen) return;
+    setState(() => _bannerOpen = true);
+    try {
+      final BannerPickerTarget target = await loadBookBannerPickerTarget(
+        db: appModel.database,
+        key: ItemScrapeKey(MediaKind.epub, row.uid),
+        title: _displayTitle,
+        onlineEnabled: appModel.moduleVisibility.isEnabled(ModuleId.services),
+        thumbnailsDirectory: appModel.thumbnailsDirectory,
+      );
+      if (!mounted) return;
+      await showBannerPickerSheet(context: context, target: target);
+    } finally {
+      if (mounted) setState(() => _bannerOpen = false);
+    }
+    await _reloadScrapeDetail();
   }
 
   /// 追踪的操作项（本地卷那一排图标钮用；在线作品仍是 [_trackButton]）。

@@ -183,6 +183,18 @@ void main() {
     expect(pickMangaBakaBanner(const <MangaBakaImage>[]), isNull);
   });
 
+  test('横幅全集（「横幅…」面板）：同一组判据下全部够格的，按面积降序', () {
+    final List<MangaBakaImage> all = listMangaBakaBanners(<MangaBakaImage>[
+      _img(1, 1, type: 'banner', width: 800, height: 450, note: 'Kadocomi'),
+      _img(2, 1, type: 'banner', width: 2000, height: 800),
+      _img(3, 1, type: 'banner', width: 3000, height: 3000),
+      _img(4, 1, type: 'banner', width: 4000, height: 1600, rating: 'erotica'),
+      _img(5, 1, width: 5000, height: 2000),
+      _img(6, 1, type: 'banner', width: 1600, height: 900),
+    ]);
+    expect(<int>[for (final MangaBakaImage i in all) i.id], <int>[2, 6, 1]);
+  });
+
   test('从文件头读宽高（PNG / JPEG），非图片为 null', () {
     final Uint8List png = img.encodePng(img.Image(width: 30, height: 20));
     expect(bookArtImageDimensions(png), (width: 30, height: 20));

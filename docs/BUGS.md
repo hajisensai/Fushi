@@ -36,10 +36,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4879 条。点号进各自文件。
+> 共 4880 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5609](bugs/BUG-5609-book-banner-two-stores.md) | ✅ | ✅ | 获取的 MangaBaka 横幅只在合集页显示，书详情页与首页卡片看不到 |
 | [BUG-5607](bugs/BUG-5607-torrent-dht-test-default-timeout.md) | ✅ | ✅ | torrent-dht-test-default-timeout |
 | [BUG-5606](bugs/BUG-5606-host-isolate-offload.md) | ✅ | ✅ | 电脑当互联 host，iPhone 连过来同步时电脑界面一卡一卡 |
 | [BUG-5605](bugs/BUG-5605-video-network-mount-sync-stat-freeze.md) | ✅ | ✅ | video-network-mount-sync-stat-freeze |

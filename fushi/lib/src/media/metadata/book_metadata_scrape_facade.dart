@@ -592,19 +592,20 @@ class BookMetadataScrapeFacade {
     }
     if (details != null && itemKey != null) {
       // 资料先落（简介 / 评分 / 标签本身就够画系列色块）；横版图下载失败只记日志，
-      // 不让整次写回失败——封面 / 书名已经写进去了。
+      // 不让整次写回失败——封面 / 书名已经写进去了。横版图走刮削口径：用户在
+      // 「横幅…」里选过的不被覆盖（v183 来源锁）。
       final ItemScrapeStore store = _itemStore(appModel.database);
       await store.writeMeta(itemKey, itemScrapeDetailsOfCandidate(details));
       try {
         if (backdrop != null) {
-          await store.setImageFromFile(
+          await store.writeScrapedImageFromFile(
             itemKey,
             MediaImageKind.backdrop,
             backdrop,
             sourceUrl: details.backdropUrl,
           );
         } else if (details.backdropUrl != null) {
-          await store.setImageFromUrl(
+          await store.writeScrapedImageFromUrl(
             itemKey,
             MediaImageKind.backdrop,
             details.backdropUrl!,
@@ -725,10 +726,11 @@ class BookMetadataScrapeFacade {
             appModel.database,
           ).restoreMeta(itemKey, itemScrapeDetailsFromJson(previous));
         }
+        // 撤销的是刮削写回：只清刮削来的横版图，用户之后选的横幅保留。
         if (!snapshot.hadBackdrop) {
           await _itemStore(
             appModel.database,
-          ).clearImage(itemKey, MediaImageKind.backdrop);
+          ).clearScrapedImage(itemKey, MediaImageKind.backdrop);
         }
       }
     }

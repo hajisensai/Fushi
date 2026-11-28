@@ -7,6 +7,8 @@ import 'package:fushi/src/utils/components/fushi_cover_block.dart';
 import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart';
 import 'package:fushi/src/utils/components/fushi_series_cover_block.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
+import 'package:fushi/src/media/banner/collection_banner_sources.dart'
+    show pickCollectionBanner;
 import 'package:fushi/src/media/collections/library_organize_runner.dart';
 import 'package:fushi/src/media/identity/app_pending_identity.dart';
 import 'package:fushi/src/media/identity/pending_identity_widgets.dart';
@@ -76,6 +78,7 @@ import 'package:fushi/src/pages/implementations/games/galgame_play_status_style.
 // 详情 / 条目菜单等既有调用点照旧从这里拿。
 export 'package:fushi/src/pages/implementations/games/galgame_play_status_style.dart'
     show galgamePlayStatusLabel;
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/models/module_registry.dart' show isAiModuleEnabled;
 import 'package:fushi/src/mining/galgame_library_query.dart';
@@ -779,6 +782,16 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
           collectionAiSettings: isAiModuleEnabled(_appModel.moduleVisibility)
               ? _appModel.prefsRepo
               : null,
+          // 「横幅…」：合集自己的横版背景（附加图组，用户选的上来源锁）。
+          onPickBanner: () => pickCollectionBanner(
+            context: context,
+            db: _appModel.database,
+            collection: collection,
+            onlineEnabled: _appModel.moduleVisibility.isEnabled(
+              ModuleId.services,
+            ),
+            thumbnailsDirectory: _appModel.thumbnailsDirectory,
+          ),
         ),
       ),
     );

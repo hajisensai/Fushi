@@ -2804,8 +2804,10 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
       );
     }
 
-    // 最近添加里合成一项的同合集书：先认合集自己的刮削资料。
+    // 最近添加里合成一项的同合集书：先认合集自己的刮削资料；合集没有背景图时借
+    // 这一卷的（[fushiCollectionSeriesInfo]，与书架合集块 / 合集详情页同一口径）。
     final int? cid = entry.seriesCount > 0 ? entry.collectionId : null;
+    FushiSeriesMeta? own;
     if (cid != null) {
       final CollectionScrapeMetaRow? scrape = await db.getCollectionScrapeMeta(
         cid,
@@ -2817,12 +2819,12 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
             ))
               (kind: r.kind, position: r.position, path: r.path),
           ]);
-      final FushiSeriesMeta? own = collectionSeriesMeta(
+      own = collectionSeriesMeta(
         scrape: scrape,
         backdrop: art.backdrop,
         logo: art.logo,
       );
-      if (own != null) return own;
+      if (own?.backdrop != null) return own;
     }
     final ItemScrapeMetaRow? scrape = await db.getItemScrapeMeta(
       kind,
@@ -2833,11 +2835,16 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
           for (final ItemImageRow r in await db.getItemImages(kind, entryKey))
             (kind: r.kind, position: r.position, path: r.path),
         ]);
-    return itemSeriesMeta(
+    final FushiSeriesMeta? item = itemSeriesMeta(
       scrape: scrape,
       backdrop: art.backdrop,
       logo: art.logo,
     );
+    if (cid == null) return item;
+    return fushiCollectionSeriesInfo(
+      own: own == null ? null : (meta: own, summary: null),
+      borrowed: () => item == null ? null : (meta: item, summary: null),
+    )?.meta;
   }
 
   /// 封面色块取色的图源：直接按条目取封面图（书 = 书架缩略图、视频 = 海报、
