@@ -900,8 +900,8 @@ void main() {
     final String material = File(
       'lib/src/settings/material_settings_renderer.dart',
     ).readAsStringSync();
-    final String cupertino = File(
-      'lib/src/settings/cupertino_settings_renderer.dart',
+    final String glass = File(
+      'lib/src/settings/glass_settings_renderer.dart',
     ).readAsStringSync();
     // schema section/item/footer 的渲染收口在共享 settings_schema_widgets，行控件
     // 全部走 settings_shared 的自适应组件（不再两个渲染器各复制一份）。
@@ -921,7 +921,7 @@ void main() {
     }
 
     // 两渲染器复用共享 SettingsSchemaSection/Item，不再各自渲染行。
-    for (final String src in <String>[material, cupertino]) {
+    for (final String src in <String>[material, glass]) {
       expect(src, contains('SettingsSchemaSection('));
       expect(src, contains('SettingsSchemaItem('));
     }
@@ -929,7 +929,7 @@ void main() {
     // segmented 派发用类型安全的 SettingsSegmentedItem.dispatchChange（在共享 widget
     // 里），renderer / 共享文件都不再用 `(segmented as dynamic).onChanged` 绕过泛型逆变。
     expect(shared, contains('.dispatchChange('));
-    for (final String src in <String>[material, cupertino, shared]) {
+    for (final String src in <String>[material, glass, shared]) {
       expect(src, isNot(contains('as dynamic).onChanged')));
       expect(src, isNot(contains('segmented.onChanged as Function')));
       expect(

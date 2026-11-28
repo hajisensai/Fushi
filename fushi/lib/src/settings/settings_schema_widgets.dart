@@ -19,14 +19,14 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
-/// 把一个父级 [WidgetBuilder] 包成平台对应的页面路由（Material/Cupertino）。
+/// 把一个父级 [WidgetBuilder] 包成设计系统对应的页面路由（MD3 / 玻璃）。
 /// 两个渲染器各自提供工厂，是它们之间唯一的导航差异。
 typedef SettingsRouteBuilder =
     Route<void> Function(BuildContext context, WidgetBuilder builder);
 
 /// 渲染单个 schema [SettingsSection]：一组 [SettingsSchemaItem] + 可选 footer。
 ///
-/// 收口自 material_settings_renderer 与 cupertino_settings_renderer 此前逐字节复制的
+/// 收口自各设置渲染器此前逐字节复制的
 /// 同名私有类（~210 行），平台差异（PageRoute 工厂、footer 文字样式）经
 /// [routeBuilder] / [footerStyle] 参数注入。底层行控件本就是 settings_shared 的
 /// 自适应组件，dispatch 层没有任何平台理由复制两份。

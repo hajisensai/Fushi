@@ -48,7 +48,6 @@ void main() {
     ).readAsStringSync();
 
     expect(source, contains('tokens.radii.groupRadius'));
-    expect(source, contains('tokens.radii.controlRadius'));
     expect(source, contains('tokens.type.metadata'));
     expect(source, isNot(contains('BorderRadius.circular(12)')));
     expect(source, isNot(contains('BorderRadius.circular(7)')));

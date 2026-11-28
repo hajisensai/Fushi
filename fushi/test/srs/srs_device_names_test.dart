@@ -210,13 +210,10 @@ void main() {
         ValueKey<String>('srs_timeline_device_$aId'),
       );
       await _pumpUntil(tester, row);
-      // Apple 分组标题按平台惯例转大写。
-      expect(
-        find.text(
-          apple ? t.srs_devices_section.toUpperCase() : t.srs_devices_section,
-        ),
-        findsOneWidget,
-      );
+      // 两套设计系统的分组标题都照原文显示：Apple（玻璃）分组标题不做大写
+      // 变换（settings_shared 的 _buildContainedTitle）；转大写的是已删的隐藏
+      // Cupertino 渲染分支。
+      expect(find.text(t.srs_devices_section), findsOneWidget);
       expect(
         find.descendant(
           of: row,

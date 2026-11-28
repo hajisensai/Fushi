@@ -3762,8 +3762,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                             navigation = ListenableBuilder(
                               // The home rail is only on screen while the home
                               // shell is the top route; opening a media item
-                              // covers it — the same signal the macOS shell uses
-                              // to drop its sidebar — so the title has to
+                              // covers it, so the title has to
                               // un-indent with it. `navigation` is passed through
                               // as the unchanging `child`, so flipping this never
                               // rebuilds the navigator subtree.

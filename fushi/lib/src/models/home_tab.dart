@@ -29,9 +29,8 @@ enum HomeTab {
 }
 
 /// 顶层 home-shell 选中 tab 的共享真值（[HomeTab] 身份，不用整数位置——插入 video /
-/// games 条件 tab 不再打乱索引）。macOS 根 [MacosWindow] 的原生侧栏在 main.dart
-/// 的 builder 里（Approach B，让 MacosWindow 包住整个 navigator，pushed 路由也拿到
-/// MacosWindowScope）构建，与 HomePage 自绘的 rail / 底栏驱动**同一个**选中身份。
+/// games 条件 tab 不再打乱索引）。HomePage 自绘的 rail / 底栏与桌面自绘标题栏
+/// 驱动**同一个**选中身份。
 ///
 /// 放在本文件（而不是 `home_page.dart`）是为了让路由层页面背景
 /// （`fushi_page_backdrop.dart`，按模块取背景，反馈 DYI1IOZxSM）读它时不反向 import

@@ -145,7 +145,6 @@ void main() {
     ],
     'lib/src/settings/settings_home_page.dart': <String>[
       'class SettingsHomePage',
-      'DesktopContentKind.settings',
       // 旧锚点是散文词 'master-detail'，它在本文件里**只出现在一条注释**里
       // （`false, // master-detail keeps selection in-pane.`）——掩掉注释后当场
       // 露馅。主从布局的真实结构证据是它会把 destination 推进详情页。
@@ -788,14 +787,8 @@ void main() {
     expect(shared, contains('kSettingsPickerDefaultWidth'));
     expect(shared, contains('kSettingsPickerMinInlineWidth'));
     // 紧凑档（SettingsCompactRowsScope）的「值 ▾」是自尺寸控件，不参与 flex。
-    expect(
-      shared,
-      contains('final bool below = !cupertino && controlBelow && !compact;'),
-    );
-    expect(
-      shared,
-      contains('trailingFlexible: !cupertino && !below && !compact'),
-    );
+    expect(shared, contains('final bool below = controlBelow && !compact;'));
+    expect(shared, contains('trailingFlexible: !below && !compact'));
     expect(
       containsIdentifierCall(shared, 'LayoutBuilder'),
       isTrue,

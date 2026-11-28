@@ -120,7 +120,7 @@ class FushiFloatingChromeController extends ChangeNotifier {
   /// 工具栏此刻应当显示。钉住（[pinned]）时恒为 true。
   bool get visible => _visible || _pinned;
 
-  /// 钉住：工具栏常驻、不随滚动收起（Apple / Cupertino 设计系统：iOS 大标题
+  /// 钉住：工具栏常驻、不随滚动收起（Apple（玻璃）设计系统：iOS 大标题
   /// 导航栏与 macOS 工具栏都不下滑隐藏，2026-11 用户拍板）。由
   /// [FushiFloatingChromeOverlay] 按设计系统在依赖变化时写入；写入不通知
   /// （发生在 build 期），[visible] 读取时立即生效。

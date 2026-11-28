@@ -476,9 +476,7 @@ const double kFushiSettingsWideMinHeight = 440.0;
 ///
 /// 600 时右详情的下限按分支各不相同：MD3 与玻璃左栏定宽 240
 /// （`MaterialSettingsRenderer.navPaneWidth` / `GlassSettingsRenderer.sidebarWidth`），
-/// 右详情 ≥ 360dp；隐藏的 Cupertino 设计系统左栏走 [supportingPaneWidthForLayout]
-/// （`(width * 0.3).clamp(280, 360)`，与 iPad 横屏的系统设置侧栏同量级），600 时
-/// 右详情 320dp。手机竖屏（≤ 430dp）不受影响。
+/// 右详情 ≥ 360dp。手机竖屏（≤ 430dp）不受影响。
 const double kFushiSettingsHomeTwoPaneMinWidth = 600.0;
 
 /// 桌面宽窗下书籍 / 视频 / 阅读器快捷设置弹窗（[FushiDialogFrame]）的最大内容宽度。

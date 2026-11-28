@@ -1,4 +1,3 @@
-import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 
@@ -11,8 +10,8 @@ import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 /// 设置子页（push 进去的二级页）顶部的返回页头：左侧返回按钮 + 标题。
 ///
-/// 平台自适应：Cupertino 用 [CupertinoButton] + `chevron_back`，其余平台用共享的
-/// [FushiIconButton] + `arrow_back`，标题用主题排版（不写死字号）。
+/// 返回按钮是共享的 [FushiIconButton] + `arrow_back`，标题用主题排版（不写死
+/// 字号）。
 ///
 /// 由阅读器（[ReaderQuickSettingsSheet]）与视频（[VideoQuickSettingsSheet]）的窄窗
 /// push 子页共用——两边原本各有一份逐字符相同的私有 `_InBookSettingsHeader` /

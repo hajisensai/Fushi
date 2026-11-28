@@ -978,21 +978,21 @@ class _DictionaryDialogPageState extends BasePageState {
 
   @override
   Widget build(BuildContext context) {
-    // Apple 设计系统（iOS 26 / macOS 26）与 Cupertino 渲染一样把导入 / 更新 / 清空
+    // Apple（玻璃）设计系统（iOS 26 / macOS 26）把导入 / 更新 / 清空
     // 放进标题栏动作，不再在内容层铺一排 MD3 tonal 按钮——iOS 的「添加」类动作
     // 住在导航栏，内容层只放列表。各宽度给同一份平铺动作，放不下由导航栏统一
     // 收进「⋯」；以前窄屏自带一个「⋮」菜单，被导航栏再收一层就成了「⋮」「⋯」
     // 两颗溢出钮并排。
-    final bool cupertino = isGlassDesign(context);
+    final bool glass = isGlassDesign(context);
     final double width = MediaQuery.sizeOf(context).width;
     final bool compact = MediaQuery.sizeOf(context).width < 480;
     // 宽屏（PC）= 列表 + 右侧详情侧板两栏；窄屏 = 单列卡片列表 + 底部 sheet。
     final bool split = dictionaryManagerUsesSplitLayout(width);
-    final List<Widget> actions = cupertino
+    final List<Widget> actions = glass
         ? _buildApplePageActions()
         : const <Widget>[];
     final List<Widget> listChildren = <Widget>[
-      if (!cupertino) _buildActionBar(compact: compact),
+      if (!glass) _buildActionBar(compact: compact),
       // 收进后台的下载/更新任务的回程入口（BUG-1499）；无任务时是零高度。
       _buildDownloadStatusRow(),
       // 还停在旧磁盘格式的词典的升级入口（拍板台 pr3554：升级前先问；启动期点了
