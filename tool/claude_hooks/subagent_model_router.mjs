@@ -7,7 +7,7 @@
 //
 // Why the redirect: built-in general-purpose carries every tool schema, the skills list and the
 // MCP / session prompt sections (~54k baseline tokens re-read on every turn). `general` is the
-// same Opus role with only the tools subagents actually use (2026-11-05 audit: first-turn
+// same role with only the tools subagents actually use (2026-11-05 audit: first-turn
 // baseline 51.9k -> 34.3k in this repo). Same logic as ~/.claude/hooks/subagent_model_router.py
 // on the maintainer's machine; keep both in sync.
 
@@ -16,17 +16,20 @@ import { pathToFileURL } from 'node:url';
 /** @type {ReadonlySet<string>} */
 export const SONNET_TYPES = new Set(['scout', 'worker']);
 /** @type {ReadonlySet<string>} */
-export const OPUS_TYPES = new Set(['reviewer', 'general', 'general-purpose', 'claude', 'Plan']);
+export const FABLE_TYPES = new Set(['reviewer', 'general', 'general-purpose']);
+/** @type {ReadonlySet<string>} */
+export const OPUS_TYPES = new Set(['claude', 'Plan']);
 /** @type {Readonly<Record<string, string>>} */
 export const REDIRECT_TYPES = { 'general-purpose': 'general' };
 
 /**
  * @param {string | undefined | null} subagentType
- * @returns {'sonnet' | 'opus' | null}
+ * @returns {'sonnet' | 'opus' | 'fable' | null}
  */
 export function pinnedModel(subagentType) {
   const kind = subagentType || 'general-purpose';
   if (SONNET_TYPES.has(kind)) return 'sonnet';
+  if (FABLE_TYPES.has(kind)) return 'fable';
   if (OPUS_TYPES.has(kind)) return 'opus';
   return null;
 }

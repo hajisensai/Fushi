@@ -23,18 +23,18 @@ return [r, rs, t]
 `;
 
 test('router pins model by type and redirects general-purpose to general', () => {
-  assert.deepEqual(routeAgentInput({ prompt: 'x' }), { prompt: 'x', subagent_type: 'general', model: 'opus' });
+  assert.deepEqual(routeAgentInput({ prompt: 'x' }), { prompt: 'x', subagent_type: 'general', model: 'fable' });
   assert.deepEqual(routeAgentInput({ subagent_type: 'general-purpose', prompt: 'x' }), {
-    subagent_type: 'general', prompt: 'x', model: 'opus',
+    subagent_type: 'general', prompt: 'x', model: 'fable',
   });
   assert.deepEqual(routeAgentInput({ subagent_type: 'worker', model: 'opus' }), { subagent_type: 'worker', model: 'sonnet' });
   assert.deepEqual(routeAgentInput({ subagent_type: 'scout' }), { subagent_type: 'scout', model: 'sonnet' });
-  assert.equal(routeAgentInput({ subagent_type: 'reviewer', model: 'opus' }), null);
+  assert.equal(routeAgentInput({ subagent_type: 'reviewer', model: 'fable' }), null);
   assert.equal(routeAgentInput({ subagent_type: 'fork' }), null);
   assert.equal(routeAgentInput({ subagent_type: 'Explore' }), null);
   // named teammates keep general-purpose
   assert.deepEqual(routeAgentInput({ subagent_type: 'general-purpose', name: 'a' }), {
-    subagent_type: 'general-purpose', name: 'a', model: 'opus',
+    subagent_type: 'general-purpose', name: 'a', model: 'fable',
   });
   assert.equal(routeHandle('{"tool_name":"Bash","tool_input":{}}'), '');
   assert.equal(routeHandle('not json'), '');
@@ -65,12 +65,12 @@ test('rewritten script defaults agentType and pins model by type at runtime', as
   const fn = new Function('agent', 'parallel', 'phase', 'xs', 'obj', 'S', 'ok', `return (async () => {${body}})()`);
   await fn(agent, parallel, () => {}, ['a', 'b'], { agent: () => 'm' }, {}, true);
   assert.deepEqual(calls, [
-    { agentType: 'general', schema: {}, model: 'opus' },
-    { agentType: 'general', label: 'a', model: 'opus' },
-    { agentType: 'general', label: 'b', model: 'opus' },
+    { agentType: 'general', schema: {}, model: 'fable' },
+    { agentType: 'general', label: 'a', model: 'fable' },
+    { agentType: 'general', label: 'b', model: 'fable' },
     { agentType: 'scout', model: 'sonnet' },
-    { agentType: 'general', model: 'opus' },
-    { agentType: 'general', model: 'opus' },
+    { agentType: 'general', model: 'fable' },
+    { agentType: 'general', model: 'fable' },
   ]);
 });
 

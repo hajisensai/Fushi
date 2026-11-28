@@ -22,7 +22,7 @@ import { pathToFileURL } from 'node:url';
 export const DEFAULT_TYPE = 'general';
 export const MARKER = '/*wf-agent-default*/';
 /** Kept as a literal so the output matches the Python twin (json.dumps spacing). */
-const TYPE_MODEL_JSON = '{"scout": "sonnet", "worker": "sonnet", "general": "opus", "reviewer": "opus"}';
+const TYPE_MODEL_JSON = '{"scout": "sonnet", "worker": "sonnet", "general": "fable", "reviewer": "fable"}';
 export const HELPER =
   `${MARKER} const __wfAgent = (p, o) => { const q = Object.assign({agentType: '${DEFAULT_TYPE}'}, o || {}); ` +
   `const m = ${TYPE_MODEL_JSON}[q.agentType]; if (m) q.model = m; return agent(p, q); };\n`;
