@@ -53,7 +53,7 @@ import {
   feedbackById,
   newSessionToken,
 } from './feedback.js';
-import { PING_PLATFORMS, loadInstallStats, refreshInstallStatsSnapshot, versionIncludes } from './installs.js';
+import { INSTALL_LIMITS, PING_PLATFORMS, loadInstallStats, refreshInstallStatsSnapshot, versionIncludes } from './installs.js';
 import { RELEASE_PLATFORMS, projectStats, refreshProjectStats } from './project_stats.js';
 import {
   DECISIONS_STYLE, DECISION_LIMITS, decisionItem, decisionStageParam, decisionsPayload, decisionsSig, getDecision,
@@ -568,14 +568,26 @@ ${rows.map((r) => `<tr><td>${esc(r.day)}${r.seeded ? ' <span class="muted">起�
 }
 
 const TRACK_LABEL = { '': '正式', beta: '测试', debug: '调试' };
+const trackLabel = (t) => (t === null ? '认不出轨道' : TRACK_LABEL[t] ?? t);
 
-/** 版本升级进度：该版本在同轨道 7 日活跃里的覆盖率。 */
-function adoptionTable(rows) {
-  if (!rows.length) return '<p class="muted">还没有数据。</p>';
-  return `<table class="grid"><tr><th>版本</th><th>轨道</th><th>首次出现</th><th>已装到该版本或更新</th><th>正好在该版本</th></tr>
-${rows.map((r) => `<tr><td>${esc(r.version)}</td><td>${esc(r.track === null ? '?' : TRACK_LABEL[r.track] ?? r.track)}</td>`
-    + `<td>${esc(r.firstDay)}</td><td>${pctText(r.reached, r.peers)} <span class="muted">${r.reached}/${r.peers}</span></td>`
-    + `<td>${pctText(r.exact, r.peers)} <span class="muted">${r.exact}</span></td></tr>`).join('')}</table>`;
+/** 版本分布：每个发布轨道一张表，组内比例，超出前 N 的并成「其余版本」一行。 */
+function versionGroups(groups) {
+  if (!groups.length) return '<div class="card"><p class="muted">还没有数据。</p></div>';
+  return groups.map((g) => {
+    const rows = g.other ? [...g.rows, { key: '其余版本', n: g.other }] : g.rows;
+    return `<h3>${esc(trackLabel(g.track))} <span class="muted">${g.total} 个安装</span></h3>`
+      + `<div class="card">${distTable(rows)}</div>`;
+  }).join('\n');
+}
+
+/** 版本升级进度：每个轨道一张表，该版本在同轨道 7 日活跃里的覆盖率。 */
+function adoptionTables(groups) {
+  if (!groups.length) return '<div class="card"><p class="muted">还没有数据。</p></div>';
+  return groups.map((g) => `<h3>${esc(trackLabel(g.track))} <span class="muted">7 日活跃 ${g.peers}</span></h3>
+<div class="card"><table class="grid"><tr><th>版本</th><th>首次出现</th><th>已装到该版本或更新</th><th>正好在该版本</th></tr>
+${g.rows.map((r) => `<tr><td>${esc(r.version)}</td><td>${esc(r.firstDay)}</td>`
+    + `<td>${pctText(r.reached, g.peers)} <span class="muted">${r.reached}/${g.peers}</span></td>`
+    + `<td>${pctText(r.exact, g.peers)} <span class="muted">${r.exact}</span></td></tr>`).join('')}</table></div>`).join('\n');
 }
 
 /** 分国家日活趋势：日期 × 前几个国家 + 其它。 */
@@ -631,7 +643,9 @@ async function statsPage(env, now) {
 <div class="card">${daily ? `<table class="grid">${head}${daily}</table>` : '<p class="muted">还没有心跳。</p>'}</div>
 <h2>平台</h2><div class="card">${distTable(st.platforms)}</div>
 <h2>通道</h2><div class="card">${distTable(st.channels, (k) => CHANNEL_LABEL[k] || k)}</div>
-<h2>版本（前 20）</h2><div class="card">${distTable(st.versions)}</div>
+<h2>版本</h2>
+<p class="muted">按发布轨道分开，各列人数最多的前 ${INSTALL_LIMITS.topVersionsPerTrack} 个版本，比例按轨道内算（调试包每天一个版本号，混排会把正式版挤掉）。</p>
+${versionGroups(st.versions)}
 <h2>国家 / 地区</h2>
 <p class="muted">Cloudflare 按心跳连接 IP 判出的国家 / 地区（只存两位码，不存 IP）；走代理 / VPN 的安装记到出口所在地。</p>
 <div class="card">${distTable(st.countries, countryLabel)}</div>
@@ -642,8 +656,8 @@ async function statsPage(env, now) {
 心跳只在 App 打开时发，留存反映的是「还在打开」，不是「还装着」。</p>
 <div class="card">${retentionTable(st.retention)}</div>
 <h2>版本升级进度</h2>
-<p class="muted">分母是同一发布轨道（正式 / 测试 / 调试）近 7 日活跃的已验证安装；「已装到该版本或更新」按与修复追踪相同的版本判据。</p>
-<div class="card">${adoptionTable(st.adoption)}</div>
+<p class="muted">每个发布轨道列版本号最新的 ${INSTALL_LIMITS.adoptionVersionsPerTrack} 个版本；分母是该轨道近 7 日活跃的已验证安装；「已装到该版本或更新」按与修复追踪相同的版本判据。</p>
+${adoptionTables(st.adoption)}
 <h2>CPU 架构</h2><div class="card">${distTable(byPlatform(st.archs, archLabel))}</div>
 <h2>系统版本</h2><div class="card">${distTable(byPlatform(st.osVersions, osVersionLabel))}</div>
 <h2>安装来源</h2><div class="card">${distTable(byPlatform(st.sources, sourceLabel))}</div>`, { signedIn: true }));

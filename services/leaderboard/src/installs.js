@@ -63,8 +63,8 @@ export const INSTALL_LIMITS = {
   snapshotRefreshCooldownMs: 15 * 60 * 1000,
   /** 统计页的日活表显示多少天。 */
   dailyRows: 30,
-  /** 版本分布最多列多少个版本。 */
-  topVersions: 20,
+  /** 版本分布每个发布轨道（正式 / 测试 / 调试 / 认不出）最多列多少个版本，其余并成一行。 */
+  topVersionsPerTrack: 10,
   /** 国家 / 地区分布最多列多少个。 */
   topCountries: 60,
   /** 界面语言分布最多列多少个（客户端只有 17 种界面语言，留余量给地区变体）。 */
@@ -73,8 +73,8 @@ export const INSTALL_LIMITS = {
   topDimension: 40,
   /** 留存表列多少个新增日（按首次心跳的 UTC 日）。 */
   retentionCohorts: 60,
-  /** 版本升级进度表列多少个最近出现的版本。 */
-  adoptionVersions: 15,
+  /** 版本升级进度表每个发布轨道列多少个最新版本。 */
+  adoptionVersionsPerTrack: 6,
   /** 分国家日活趋势列多少个国家（其余并进「其它」）。 */
   trendCountries: 8,
   /** 反馈详情里同一安装的其它反馈最多列多少条。 */
@@ -318,12 +318,16 @@ export async function refreshInstallStatsSnapshot(env, now, { force = false } = 
     const minAge = force ? INSTALL_LIMITS.snapshotRefreshCooldownMs : INSTALL_LIMITS.snapshotEveryMs;
     if (age >= 0 && age < minAge) return false;
   }
+  await writeInstallStatsSnapshot(env, now);
+  return true;
+}
+
+async function writeInstallStatsSnapshot(env, now) {
   const stats = await installStats(env, now);
   await env.DB.prepare(
     `INSERT INTO install_stats_snapshot (id, computed_at, data) VALUES (1, ?1, ?2)
      ON CONFLICT (id) DO UPDATE SET computed_at = excluded.computed_at, data = excluded.data`,
   ).bind(now, JSON.stringify(stats)).run();
-  return true;
 }
 
 /**
@@ -332,14 +336,22 @@ export async function refreshInstallStatsSnapshot(env, now, { force = false } = 
  */
 export async function loadInstallStats(env, now) {
   const snap = await installStatsSnapshot(env);
-  if (snap) return snap;
-  await refreshInstallStatsSnapshot(env, now, { force: true });
+  if (snap && snap.stats?.shape === INSTALL_STATS_SHAPE) return snap;
+  // 没有快照，或快照是旧结构（刚部署了改结构的版本、定时任务还没跑）：现场重算，不受冷却约束——
+  // 旧结构喂给新页面只会 500。
+  await writeInstallStatsSnapshot(env, now);
   return installStatsSnapshot(env);
 }
 
 function countBy(rows, key) {
   return rows.map((r) => ({ key: r[key], n: r.n }));
 }
+
+/**
+ * 快照结构版本：installStats 返回值的形状一变就加一，loadInstallStats 见到旧形状就现场重算。
+ * 2 = versions / adoption 改成按发布轨道分组。
+ */
+export const INSTALL_STATS_SHAPE = 2;
 
 /**
  * 统计页数据。日活按 UTC 日；「活跃安装」= 窗口内至少发过一次心跳的安装。
@@ -382,6 +394,7 @@ export async function installStats(env, now) {
   ).bind(verified).first()).n;
   const todayRow = daily.find((r) => r.day === today);
   return {
+    shape: INSTALL_STATS_SHAPE,
     today,
     dau: todayRow?.n ?? 0,
     wau: await distinct(7, 1),
@@ -402,7 +415,10 @@ export async function installStats(env, now) {
     })),
     platforms: await dist('platform', PING_PLATFORMS.length),
     channels: await dist('channel', PING_CHANNELS.length),
-    versions: await dist('version', INSTALL_LIMITS.topVersions),
+    versions: versionsByTrack((await env.DB.prepare(
+      `SELECT version, COUNT(*) AS n FROM installs WHERE last_seen >= ?1 AND verified = 1
+       GROUP BY version ORDER BY n DESC, version`,
+    ).bind(activeSince).all()).results),
     countries: await dist('country', INSTALL_LIMITS.topCountries),
     locales: await dist('locale', INSTALL_LIMITS.topLocales),
     archs: await distByPlatform('arch'),
@@ -451,37 +467,77 @@ export async function retentionCohorts(env, now) {
 }
 
 /** 版本串的发布轨道：'' = 正式，'beta' / 'debug' = 预发布；认不出 → null。 */
-function versionTrack(v) {
+export function versionTrack(v) {
   const m = VERSION_PARTS_RE.exec(String(v || '').trim().replace(/\+.*$/, ''));
   return m ? (m[4] || '') : null;
 }
 
+/** 统计页分组展示的轨道顺序；认不出的版本（null）排最后。 */
+export const VERSION_TRACKS = ['', 'beta', 'debug', null];
+
 /**
- * 版本升级进度：最近出现的若干版本，各自在「同一发布轨道的近 7 日活跃已验证安装」里有多少已装到
- * 该版本或更新（reached，判据同 versionIncludes）、多少正好停在这个版本（exact）。
- * firstDay 是该版本第一次出现在已验证心跳里的日子（≈ 发布日），用来读「发布几天后覆盖了多少」。
+ * 版本分布按发布轨道分组：每组 {track, total, rows: 前 topVersionsPerTrack 个 {key, n}, other: 其余合计}。
+ * 调试包一天一个版本号，混在一张「前 N」里会把正式版挤出去，所以各轨道各取前 N、比例按组内算。
+ * [rows] 是 {version, n}，已按人数降序；没有安装的轨道不出组。
+ */
+export function versionsByTrack(rows) {
+  const sum = (xs) => xs.reduce((a, r) => a + r.n, 0);
+  return VERSION_TRACKS.map((track) => {
+    const own = rows.filter((r) => versionTrack(r.version) === track);
+    const top = own.slice(0, INSTALL_LIMITS.topVersionsPerTrack);
+    return {
+      track,
+      total: sum(own),
+      rows: top.map((r) => ({ key: r.version, n: r.n })),
+      other: sum(own) - sum(top),
+    };
+  }).filter((g) => g.total > 0);
+}
+
+/** 同轨道两个版本串谁新：正数 = a 更新；认不出的按字符串比，只用于排序。 */
+function compareVersions(a, b) {
+  const strip = (v) => String(v || '').trim().replace(/\+.*$/, '');
+  const pa = VERSION_PARTS_RE.exec(strip(a));
+  const pb = VERSION_PARTS_RE.exec(strip(b));
+  if (!pa || !pb) return strip(a) < strip(b) ? -1 : strip(a) > strip(b) ? 1 : 0;
+  for (const i of [1, 2, 3, 5]) {
+    const d = Number(pa[i] ?? -1) - Number(pb[i] ?? -1);
+    if (d) return d;
+  }
+  return 0;
+}
+
+/**
+ * 版本升级进度，按发布轨道分组：每组 {track, peers, rows}。rows 是该轨道近 30 天出现过的版本里
+ * 最新的 adoptionVersionsPerTrack 个（按版本号从新到旧，不按首次出现日——调试包天天出新号，
+ * 按日期混排会把正式 / 测试版挤出表；旁支客户端报的低版本号也不该排到前面），各自在「同一轨道的
+ * 近 7 日活跃已验证安装」（peers）里有多少已装到该版本或更新（reached，判据同 versionIncludes）、
+ * 多少正好停在这个版本（exact）。firstDay 是该版本第一次出现在已验证心跳里的日子（≈ 发布日）。
+ * 认不出轨道的版本没有可比的分母，不进这张表（版本分布里另列）。
  */
 export async function versionAdoption(env, now) {
   const versions = (await env.DB.prepare(
     `SELECT version, MIN(day) AS first_day FROM install_days WHERE verified = 1
-     GROUP BY version HAVING MAX(day) >= ?1 ORDER BY first_day DESC, version DESC LIMIT ?2`,
-  ).bind(utcDateKey(now - 29 * DAY_MS), INSTALL_LIMITS.adoptionVersions).all()).results;
+     GROUP BY version HAVING MAX(day) >= ?1`,
+  ).bind(utcDateKey(now - 29 * DAY_MS)).all()).results;
   const active = (await env.DB.prepare(
     'SELECT version FROM installs WHERE verified = 1 AND last_seen >= ?1',
   ).bind(now - 7 * DAY_MS).all()).results;
   const strip = (v) => String(v || '').trim().replace(/\+.*$/, '');
-  return versions.map((v) => {
-    const track = versionTrack(v.version);
-    const peers = track === null ? [] : active.filter((a) => versionTrack(a.version) === track);
-    return {
-      version: v.version,
-      firstDay: v.first_day,
-      track,
-      peers: peers.length,
-      reached: peers.filter((a) => versionIncludes(a.version, v.version) === true).length,
-      exact: peers.filter((a) => strip(a.version) === strip(v.version)).length,
-    };
-  });
+  return VERSION_TRACKS.filter((t) => t !== null).map((track) => {
+    const peers = active.filter((a) => versionTrack(a.version) === track);
+    const rows = versions
+      .filter((v) => versionTrack(v.version) === track)
+      .sort((a, b) => compareVersions(b.version, a.version))
+      .slice(0, INSTALL_LIMITS.adoptionVersionsPerTrack)
+      .map((v) => ({
+        version: v.version,
+        firstDay: v.first_day,
+        reached: peers.filter((a) => versionIncludes(a.version, v.version) === true).length,
+        exact: peers.filter((a) => strip(a.version) === strip(v.version)).length,
+      }));
+    return { track, peers: peers.length, rows };
+  }).filter((g) => g.rows.length > 0);
 }
 
 /**
