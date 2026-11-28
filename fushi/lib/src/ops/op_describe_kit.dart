@@ -10,8 +10,12 @@ import 'package:fushi/src/ops/op_context.dart';
 /// 通用撤销形态与可用性谓词。只拼现有实现，不写业务逻辑（spec §4）。
 ///
 /// 调别的操作有两条路：已迁到 [OpSpec] 的用 [invoke]（按声明对象找，参数照声明校验）；
-/// 还在旧路径上的域只能用 [callRoute] / [route]（按 `METHOD pattern` 字符串找，
-/// 剩余调用数由 `op_catalog_ratchet_guard_test.dart` 只减不增地卡住）。
+/// 还在旧路径上的域只能用字符串引用（[callRoute] / [route] / [readBackUndo] /
+/// [readListField]，按 `METHOD pattern` 找）。字符串引用由
+/// `fushi/test/ops/op_catalog_ratchet_guard_test.dart` 卡住：每个文件的引用处数只减
+/// 不增（基线 `test/ops/goldens/op_legacy_surface.json`），且不许出现已迁操作的路由
+/// 模式。目标已迁到 [OpSpec] 的字符串引用在 [route] 里抛错；其中声明式的
+/// （[readBackUndo] 的读 / 写路由）在组目录时就查，不等到执行撤销那一刻。
 class OpDescribeKit {
   /// [routes] 可以后给（[attach]）：[OpSpec] 来路的操作要先拿到 kit 才能构造，
   /// 路由表由它们派生。撤销 / 组合闭包都是执行时才查表。
@@ -22,8 +26,13 @@ class OpDescribeKit {
   final OpContext context;
   Map<String, CtlRoute> _routes = const <String, CtlRoute>{};
   Map<OpSpec, FushiOp> _ops = Map<OpSpec, FushiOp>.identity();
+  bool _attached = false;
 
-  /// 装上整张路由表（含 [OpSpec] 派生的路由）。
+  /// 路由表装上之前声明的字符串引用，装上时一并查。
+  final List<(String, String)> _pendingRefs = <(String, String)>[];
+
+  /// 装上整张路由表（含 [OpSpec] 派生的路由）。之前声明的字符串引用
+  /// （[readBackUndo]）当场查：路由不存在或已迁到 [OpSpec] 就抛 [StateError]。
   void attach(List<CtlRoute> routes) {
     _routes = <String, CtlRoute>{
       for (final CtlRoute route in routes)
@@ -34,6 +43,20 @@ class OpDescribeKit {
         for (final CtlRoute route in routes)
           if (route.op case final FushiOp op) op.decl: op,
       });
+    _attached = true;
+    for (final (String method, String pattern) in _pendingRefs) {
+      route(method, pattern);
+    }
+    _pendingRefs.clear();
+  }
+
+  /// 声明一处字符串引用：路由表已装上就当场查，否则记下等 [attach]。
+  void _declareRouteRef(String method, String pattern) {
+    if (_attached) {
+      route(method, pattern);
+    } else {
+      _pendingRefs.add((method, pattern));
+    }
   }
 
   /// 调另一个已迁到 [OpSpec] 的操作（撤销、组合）：按声明对象找；[pathArgs] 代入
@@ -160,29 +183,33 @@ class OpDescribeKit {
     String? writeField,
     Map<String, Object?> extraWriteBody = const <String, Object?>{},
     List<Map<String, String>> Function(Map<String, String> params)? linked,
-  }) => snapshotUndo(
-    linked: linked,
-    read: (Map<String, String> params) async {
-      final Object? current = await callRoute(
-        readMethod,
-        readPattern,
-        params: params,
-      );
-      return current is Map ? current[field] : null;
-    },
-    write: (Map<String, String> params, Object? old) async {
-      await callRoute(
-        writeMethod,
-        writePattern,
-        params: params,
-        body: <String, Object?>{...extraWriteBody, writeField ?? field: old},
-      );
-    },
-    newValue: (CtlCall call, Object? result) =>
-        result is Map && result.containsKey(field)
-        ? result[field]
-        : call.body[writeField ?? field],
-  );
+  }) {
+    _declareRouteRef(readMethod, readPattern);
+    _declareRouteRef(writeMethod, writePattern);
+    return snapshotUndo(
+      linked: linked,
+      read: (Map<String, String> params) async {
+        final Object? current = await callRoute(
+          readMethod,
+          readPattern,
+          params: params,
+        );
+        return current is Map ? current[field] : null;
+      },
+      write: (Map<String, String> params, Object? old) async {
+        await callRoute(
+          writeMethod,
+          writePattern,
+          params: params,
+          body: <String, Object?>{...extraWriteBody, writeField ?? field: old},
+        );
+      },
+      newValue: (CtlCall call, Object? result) =>
+          result is Map && result.containsKey(field)
+          ? result[field]
+          : call.body[writeField ?? field],
+    );
+  }
 
   /// 从列表路由（`{listKey: [{idField: …, field: …}]}`）里读一项的一个字段。
   Future<Object?> readListField({

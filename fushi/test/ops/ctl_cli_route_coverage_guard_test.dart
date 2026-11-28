@@ -19,7 +19,8 @@ const Map<String, String> kRoutesWithoutCliCommand = <String, String>{};
 
 /// CLI 请求路径与 app 路由双向对得上：
 /// - 每条 app 路由至少被一条 CLI 命令引用（否则是 CLI 漏接的操作）；
-/// - 每条 CLI 请求路径都能落到某条 app 路由（否则是指向死路由的命令）。
+/// - 每条 CLI 请求路径字面量都能落到某条**旧路径**上的 app 路由（否则是指向死路由的
+///   命令，或给已迁到 [OpSpec] 的操作又写了一份路径字面量）。
 ///
 /// 已迁到 [OpSpec] 的操作按对象比对（命令的 `op` 是不是那条路由的声明），不扫文本；
 /// 还在旧路径上的，做法是扫 `packages/fushi_cli/lib/src/commands/` 下的字符串字面量：代入
@@ -65,13 +66,21 @@ void main() {
     }
   });
 
-  test('每条 CLI 请求路径都落到某条 app 路由', () {
+  test('每条 CLI 请求路径字面量都落到某条旧路径上的 app 路由', () {
+    // 只跟旧路径的手写路由比：已迁到 OpSpec 的操作，CLI 一律按声明对象调
+    // （CtlCommandSpec(op:, call:)），再给它写路径字面量就是新的双轨。
+    final List<CtlRoute> legacy = <CtlRoute>[
+      for (final CtlRoute route in routes)
+        if (route.op == null) route,
+    ];
     final List<String> dead = <String>[
       for (final _Template t in cli.validated)
-        if (!routes.any((CtlRoute r) => _matches(t, r.pattern)))
-          '${t.file}: ${t.path}',
+        if (!legacy.any((CtlRoute r) => _matches(t, r.pattern)))
+          routes.any((CtlRoute r) => _matches(t, r.pattern))
+              ? '${t.file}: ${t.path}（已迁到 OpSpec：用 CtlCommandSpec(op:, call:)）'
+              : '${t.file}: ${t.path}',
     ];
-    expect(dead, isEmpty, reason: '这些 CLI 请求路径没有对应路由：\n${dead.join('\n')}');
+    expect(dead, isEmpty, reason: '这些 CLI 请求路径没有对应的手写路由：\n${dead.join('\n')}');
   });
 
   test('扫描器：插值里的嵌套引号不打断字面量', () {
