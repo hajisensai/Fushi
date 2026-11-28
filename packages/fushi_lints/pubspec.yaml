@@ -1,0 +1,23 @@
+name: fushi_lints
+resolution: workspace
+description: >-
+  Fushi 仓库自己的 analyzer 插件：把「纯语法 / 纯 import / 纯调用形状」的代码
+  不变式写成 lint 规则，随 `flutter analyze` / `dart analyze` 与 IDE 一起报，
+  取代 fushi/test 下读源码文本的守卫测试。
+publish_to: none
+
+# 版本下限由分析服务器定：它为插件生成的入口包要求
+# `analysis_server_plugin: ^0.3.21-dev`（Flutter 3.50 / Dart 3.14 实测），低于它
+# 插件装不上、诊断静默消失。analysis_server_plugin 与 analyzer_testing 都把
+# analyzer 钉成精确版本，workspace 统一解析时 analyzer 又跟 build_runner 一族
+# 共用一个版本，所以升级时三者一起挪。
+environment:
+  sdk: ">=3.13.0 <4.0.0"
+
+dependencies:
+  analysis_server_plugin: ^0.3.26
+  analyzer: ^14.7.0
+
+dev_dependencies:
+  analyzer_testing: ^0.4.5
+  test: ^1.24.0

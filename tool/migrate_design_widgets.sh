@@ -27,7 +27,7 @@
 # 少数 fushi 源码文件确需同时引用旧 SDK Material 类型（给未迁移的第三方包
 # 传 flutter/material 的 ThemeData 等），它们用 `as legacy` 前缀导入，
 # 本脚本只替换不带前缀的 import，所以不会碰它们（见
-# fushi/test/build/design_widgets_import_guard_test.dart 白名单）。
+# analyzer 规则 fushi_no_legacy_design_import 的豁免表，packages/fushi_lints）。
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

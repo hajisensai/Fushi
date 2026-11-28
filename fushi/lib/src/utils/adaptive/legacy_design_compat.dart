@@ -23,8 +23,8 @@
 //     降级不是崩溃。
 // 清理条件：上面这些依赖都迁到 material_ui / cupertino_ui（或被替换）后整文件
 // 删除，并把三个 entry point（main / popup_main / floating_dict_main）的包裹
-// 一并去掉。守卫 test/build/design_widgets_import_guard_test.dart 的白名单
-// 同步收缩。
+// 一并去掉。analyzer 规则 fushi_no_legacy_design_import（packages/fushi_lints）
+// 的豁免表同步收缩。
 import 'package:cupertino_ui/cupertino_ui.dart'
     show CupertinoUiCompatibilityBridge;
 import 'package:flutter/material.dart' as legacy show Material, MaterialType;

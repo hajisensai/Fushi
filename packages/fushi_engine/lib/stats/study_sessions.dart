@@ -1,7 +1,7 @@
 import 'package:drift/drift.dart' show Value;
 // 引擎只准 import 纯 Dart 子 barrel：全 barrel 会导出 just_audio /
 // shared_preferences / file_picker，把 Flutter 拖进无头服务端的 AOT 编译
-// （守卫 fushi/test/build/fushi_engine_purity_guard_test.dart）。
+// （analyzer 规则 fushi_pure_dart_package_imports，packages/fushi_lints）。
 // StudyClock 就在子 barrel 里（fushi_audio_core.dart 导出 src/audiobook/study_clock.dart）。
 import 'package:fushi_audio/fushi_audio_core.dart';
 import 'package:fushi_core/fushi_core.dart';

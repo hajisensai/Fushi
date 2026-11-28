@@ -1,0 +1,5 @@
+# 本包此前没有 analysis_options（沿用分析器默认规则），这里只挂仓库自己的
+# analyzer 插件（packages/fushi_lints）：无头服务端闭包的 import 纯度等规则。
+plugins:
+  fushi_lints:
+    path: ../fushi_lints

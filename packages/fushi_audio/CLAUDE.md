@@ -4,7 +4,7 @@
 
 ## 模块职责
 
-有声书匹配模块（**纯 Dart，零 Flutter**，2026-09-30 起）：提供字幕解析器（SRT/VTT/LRC/ASS/SMIL/JSON alignment）、有声书仓储、音频-文本对齐匹配算法、阅读位置管理和统计追踪。被 app 与无头服务端共同消费；pubspec 不得声明 `sdk: flutter` / method-channel 插件（守卫 `fushi/test/build/fushi_engine_purity_guard_test.dart`）。
+有声书匹配模块（**纯 Dart，零 Flutter**，2026-09-30 起）：提供字幕解析器（SRT/VTT/LRC/ASS/SMIL/JSON alignment）、有声书仓储、音频-文本对齐匹配算法、阅读位置管理和统计追踪。被 app 与无头服务端共同消费；pubspec 不得声明 `sdk: flutter` / method-channel 插件（守卫 `fushi/test/build/fushi_engine_purity_guard_test.dart`），源码 import 纯度由 analyzer 规则 `fushi_pure_dart_package_imports`（`packages/fushi_lints`）判定。
 
 ## 入口与启动
 

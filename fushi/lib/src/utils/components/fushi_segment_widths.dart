@@ -91,7 +91,7 @@ double _lowerCapTo(List<double> values, double target) {
 ///
 /// 全仓横排分段的唯一排布实现（BUG-4205）。别再在别处写「各段取最宽段、
 /// 放不下整体等比缩窄」——那正是最长段先被截断的根因（守卫：
-/// `test/build/segmented_button_m3e_guard_test.dart`）。
+/// `test/build/segment_widths_allocator_guard_test.dart`）。
 ///
 /// [extras] 与 children 同序：每段首选内边距超出最小内边距的那部分宽度（放不下
 /// 时先收它，见 [fushiSegmentWidths] 第 3 级）。默认 children 的固有宽是**最小**
