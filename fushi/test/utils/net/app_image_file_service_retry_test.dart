@@ -6,9 +6,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
+import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
+    show youtubeThumbnailFallbackUrl;
 
 /// BUG-2450：磁盘缓存图片的文件服务层对 5xx / 连接错误退避重试。走真实 loopback HttpServer（`HttpOverrides` 置空，与
-/// app_http_image_proxy_test 同款装配）。
+/// app_http_image_proxy_test 同款装配）。BUG-5614：404 时按回退地址再取一次。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   const String png =
@@ -17,6 +19,7 @@ void main() {
   late Directory temp;
   late HttpServer server;
   final List<int> statuses = <int>[];
+  final List<String> paths = <String>[];
   int requests = 0;
 
   setUpAll(() async {
@@ -30,6 +33,7 @@ void main() {
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     server.listen((HttpRequest request) async {
       requests++;
+      paths.add(request.uri.path);
       final int status = statuses.isEmpty ? 200 : statuses.removeAt(0);
       request.response.statusCode = status;
       request.response.headers.set('content-type', 'image/png');
@@ -61,6 +65,7 @@ void main() {
   setUp(() {
     requests = 0;
     statuses.clear();
+    paths.clear();
     PaintingBinding.instance.imageCache.clear();
   });
 
@@ -109,5 +114,46 @@ void main() {
     final FileServiceResponse response = await service.get(url('missing'));
     expect(response.statusCode, 404);
     expect(requests, 1);
+  });
+
+  test('BUG-5614：404 且有回退地址时改取回退地址（YouTube maxres → mqdefault）', () async {
+    final AppImageFileService service = AppImageFileService(
+      retryBackoff: const <Duration>[Duration(milliseconds: 5)],
+      retryWait: (Duration delay) async => fail('404 不该退避'),
+      fallbackUrlOf: (String u) =>
+          u == url('maxresdefault') ? url('mqdefault') : null,
+    );
+    statuses.addAll(<int>[404, 200]);
+    final FileServiceResponse response = await service.get(
+      url('maxresdefault'),
+    );
+    expect(response.statusCode, 200);
+    expect(await response.content.toList(), isNotEmpty);
+    expect(paths, <String>['/maxresdefault.png', '/mqdefault.png']);
+  });
+
+  test('BUG-5614：回退地址也 404 时照旧交出 404，不无限回退', () async {
+    final AppImageFileService service = AppImageFileService(
+      retryBackoff: const <Duration>[Duration(milliseconds: 5)],
+      retryWait: (Duration delay) async => fail('404 不该退避'),
+      fallbackUrlOf: (String u) =>
+          u == url('maxresdefault') ? url('mqdefault') : null,
+    );
+    statuses.addAll(<int>[404, 404]);
+    final FileServiceResponse response = await service.get(
+      url('maxresdefault'),
+    );
+    expect(response.statusCode, 404);
+    expect(requests, 2);
+  });
+
+  test('BUG-5614：200 不走回退；生产回退规则是 YouTube 缩略图回退', () async {
+    final AppImageFileService service = AppImageFileService(
+      fallbackUrlOf: (String u) => fail('200 不该查回退'),
+    );
+    final FileServiceResponse response = await service.get(url('ok'));
+    expect(response.statusCode, 200);
+    expect(requests, 1);
+    expect(AppImageFileService().fallbackUrlOf, youtubeThumbnailFallbackUrl);
   });
 }

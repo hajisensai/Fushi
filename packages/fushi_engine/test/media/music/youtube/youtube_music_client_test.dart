@@ -118,7 +118,7 @@ void main() {
       expect(c.streamFor(t).transcoded, isFalse);
       expect(
         c.coverUri(t.coverRef).toString(),
-        'https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg',
+        'https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg',
       );
     });
 

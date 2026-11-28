@@ -10,6 +10,8 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart';
 import 'package:fushi_engine/media/video/scraper/title_normalizer.dart';
+import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
+    show youtubeThumbnailUrl;
 import 'package:http/http.dart' as http;
 
 /// TMDB changes API 能回看的最大跨度（Shoko `IncrementalChangesWindowDays` 同为
@@ -680,7 +682,7 @@ class TmdbVideoMetadataProvider
           site: site,
           remoteUrl: url,
           thumbnailUrl: normalizedSite == 'youtube'
-              ? 'https://i.ytimg.com/vi/$key/hqdefault.jpg'
+              ? youtubeThumbnailUrl(key)
               : null,
           official: item?['official'] == true,
           language: metadataString(item?['iso_639_1']),

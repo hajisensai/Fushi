@@ -13,7 +13,7 @@ import '../../helpers/fake_image_bytes.dart';
 /// TODO-1281：YouTube 导入时「视频名不对（恒 "watch"）+ 无封面」的守卫。
 ///
 /// 覆盖两块可离线单测的纯逻辑 / IO 分支：
-/// - [youtubeThumbnailUrl]：由 videoId 拼 hqdefault 缩略图 URL（导入封面源）；
+/// - [youtubeThumbnailUrl]：由 videoId 拼 mqdefault 缩略图 URL（导入封面兜底源）；
 /// - [downloadVideoCoverToPath]：把缩略图 URL 下载到指定路径（注入 MockClient，
 ///   不碰真网络 / path_provider），断言 2xx 写文件、非 2xx / 空体 / 非图片 / 非法 URL
 ///   返回 null，以及**覆盖写走统一收口**（原子 `.tmp`+rename，BUG-1394）。
@@ -25,17 +25,19 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('youtubeThumbnailUrl', () {
-    test('builds hqdefault url from video id', () {
+    test('builds mqdefault url from video id', () {
       expect(
         youtubeThumbnailUrl('dQw4w9WgXcQ'),
-        'https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg',
+        'https://i.ytimg.com/vi/dQw4w9WgXcQ/mqdefault.jpg',
       );
     });
 
-    test('uses hqdefault (always exists) not maxresdefault', () {
-      // maxresdefault 对未上传高清源的视频会 404；hqdefault 恒存在。
-      expect(youtubeThumbnailUrl('abc').contains('hqdefault'), isTrue);
+    test('uses mqdefault (always exists, 16:9) not maxres / 4:3 hq', () {
+      // maxresdefault 对未上传高清源的视频会 404；hqdefault / sddefault 是 4:3 画布，
+      // 16:9 视频带上下黑边（BUG-5614）。mqdefault 恒存在且是 16:9。
+      expect(youtubeThumbnailUrl('abc').contains('mqdefault'), isTrue);
       expect(youtubeThumbnailUrl('abc').contains('maxresdefault'), isFalse);
+      expect(youtubeThumbnailUrl('abc').contains('hqdefault'), isFalse);
     });
   });
 

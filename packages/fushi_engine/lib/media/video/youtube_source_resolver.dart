@@ -241,31 +241,57 @@ String? youtubeVideoIdOrNull(String url) {
   }
 }
 
-/// 纯函数：由 YouTube [videoId] 拼缩略图 URL（TODO-1281 导入封面用）。
+/// 纯函数：由 YouTube [videoId] 拼**恒存在**的缩略图 URL（导入封面 / 音乐封面的兜底）。
 ///
-/// 用 `hqdefault.jpg`——它对**所有**视频都存在（480x360，YouTube 保证生成），不像
-/// `maxresdefault.jpg` 对未上传高清源的视频会 404。导入时据此下载书架封面（流媒体书
-/// videoPath 是 watch URL、ffmpeg 抽帧不适用，故走缩略图 URL）。
+/// 用 `mqdefault.jpg`（320x180）：它与 `hqdefault` 一样对**所有**视频都存在，但画布是
+/// 16:9。`hqdefault`（480x360）/ `sddefault`（640x480）是 4:3 画布，16:9 视频会被
+/// YouTube 上下补黑边（letterbox），封面框（方形 / 16:9）按 `BoxFit.cover` 居中裁切后黑边
+/// 就进了画面（BUG-5614）。`mqdefault` 上 16:9 视频满画布；4:3 老视频左右留边，但方形
+/// 居中裁切恰好裁掉。更清晰的版本见 [youtubeHdThumbnailUrl]（可能 404）。
 String youtubeThumbnailUrl(String videoId) =>
-    'https://i.ytimg.com/vi/$videoId/hqdefault.jpg';
+    'https://i.ytimg.com/vi/$videoId/mqdefault.jpg';
+
+/// 纯函数：由 [videoId] 拼**高清**缩略图 URL `maxresdefault.jpg`（1280x720，16:9，无黑边）。
+///
+/// **对未上传高清源的视频会 404**：同步拼 URL 的消费方（音乐封面 `coverUri`）必须配
+/// [youtubeThumbnailFallbackUrl] 在 404 时退到 [youtubeThumbnailUrl]，绝不落到无封面。
+String youtubeHdThumbnailUrl(String videoId) =>
+    'https://i.ytimg.com/vi/$videoId/maxresdefault.jpg';
+
+final RegExp _ytimgThumbnailPath = RegExp(
+  r'^/vi(?:_webp)?/([A-Za-z0-9_-]{11})/[A-Za-z0-9_]+\.(?:jpg|webp)$',
+);
+
+/// 纯函数：YouTube 缩略图 URL 取不到（404）时该退到的 URL；不是 i.ytimg.com 的视频缩略图、
+/// 或已经是恒存在的 [youtubeThumbnailUrl] 时回 null（没有更低一级可退）。
+///
+/// 让「同步给出高清封面 URL」（[youtubeHdThumbnailUrl]）与「绝不无封面」两全：封面的取字节
+/// 层（图片磁盘缓存、下载封面）遇 404 按它换一次地址即可，不必知道 videoId。
+String? youtubeThumbnailFallbackUrl(String url) {
+  final Uri? uri = Uri.tryParse(url);
+  if (uri == null || uri.host != 'i.ytimg.com') return null;
+  final RegExpMatch? m = _ytimgThumbnailPath.firstMatch(uri.path);
+  if (m == null) return null;
+  final String fallback = youtubeThumbnailUrl(m.group(1)!);
+  return fallback == url ? null : fallback;
+}
 
 /// TODO-1314（C7，借鉴 yt-dlp 多缩略图回退）：由 [videoId] 拼**降序分辨率候选**缩略图 URL，
-/// 高清优先、末位恒是 [youtubeThumbnailUrl]（hqdefault，YouTube 对所有视频保证生成）。
+/// 高清优先、末位恒是 [youtubeThumbnailUrl]（mqdefault，YouTube 对所有视频保证生成）。
 ///
-/// - `maxresdefault.jpg`（1280x720，源级、无 4:3 黑边）——**对未上传高清源的视频会 404**；
-/// - `sddefault.jpg`（640x480）——多数视频有；
-/// - `hqdefault.jpg`（480x360）——**恒存在**的最终兜底。
+/// - `maxresdefault.jpg`（1280x720，源级、无黑边）——**对未上传高清源的视频会 404**；
+/// - `mqdefault.jpg`（320x180，16:9）——**恒存在**的最终兜底。
 ///
-/// 配合 [resolveBestThumbnailUrl] 逐个探测存在性、取首个可用者：高清缺失自动退次高，
-/// 收益是导入封面尽量取到无黑边的高清图，且绝不因 maxres 404 落到无封面。纯函数，便于单测。
+/// 不列 `sddefault` / `hqdefault`：二者是 4:3 画布，16:9 视频带上下黑边（BUG-5614），
+/// 分辨率高一点也换不回进了封面的黑条。配合 [resolveBestThumbnailUrl] 逐个探测存在性、
+/// 取首个可用者，绝不因 maxres 404 落到无封面。纯函数，便于单测。
 List<String> youtubeThumbnailCandidates(String videoId) => <String>[
-  'https://i.ytimg.com/vi/$videoId/maxresdefault.jpg',
-  'https://i.ytimg.com/vi/$videoId/sddefault.jpg',
+  youtubeHdThumbnailUrl(videoId),
   youtubeThumbnailUrl(videoId),
 ];
 
 /// TODO-1314（C7）：按 [youtubeThumbnailCandidates] 降序探测缩略图存在性，返回**首个可用**的
-/// URL；全部探测失败仍返回 [youtubeThumbnailUrl]（hqdefault 恒存在，= 旧行为，绝不无封面）。
+/// URL；全部探测失败仍返回 [youtubeThumbnailUrl]（mqdefault 恒存在，绝不无封面）。
 ///
 /// [probe] 注入「某 URL 是否存在」的判定（生产走 HTTP HEAD，测试注入假件），把纯回退逻辑与
 /// 网络 IO 解耦，便于离线单测。单个 [probe] 抛异常视为「不存在」继续下一候选（best-effort）。
@@ -306,7 +332,7 @@ class YoutubeMetadata {
   /// 视频真实标题（`videoDetails.title`，经 youtube_explode）。
   final String title;
 
-  /// 缩略图 URL（[youtubeThumbnailUrl]，hqdefault）。
+  /// 缩略图 URL（[resolveBestThumbnailUrl] 选出的 maxres，或兜底 [youtubeThumbnailUrl]）。
   final String thumbnailUrl;
 }
 
@@ -327,9 +353,9 @@ Future<YoutubeMetadata> resolveYoutubeMetadata(
   final yt.YoutubeExplode client = yt.YoutubeExplode(createYoutubeHttpClient());
   try {
     final yt.Video video = await client.videos.get(url).timeout(timeout);
-    // TODO-1314（C7）：多分辨率缩略图回退——HEAD 探测 maxres→sd→hq，取首个可用者作导入封面
-    // 源（高清缺失自动退次高，绝不因 maxres 404 落到无封面）。best-effort：探测失败退 hqdefault
-    // （恒存在，= 旧行为）。探测在导入路径、一次性、有界（每候选 6s），换更清晰的书架封面。
+    // TODO-1314（C7）：多分辨率缩略图回退——HEAD 探测 maxres→mq，取首个可用者作导入封面
+    // 源（高清缺失自动退 16:9 的 mqdefault，绝不因 maxres 404 落到无封面）。best-effort：探测
+    // 失败退 mqdefault（恒存在）。探测在导入路径、一次性、有界（每候选 6s），换更清晰的书架封面。
     final http.Client probeClient =
         thumbnailProbeClient ?? createAppHttpIoClient();
     try {
