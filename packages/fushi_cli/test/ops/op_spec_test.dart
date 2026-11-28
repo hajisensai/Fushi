@@ -537,6 +537,65 @@ void main() {
       );
     });
 
+    test('必填的 spread 参数：传了对象就铺进 body 顶层并执行，不传才报缺失（BUG-5616）', () async {
+      // 与 video.subtitle.glossary.set 同形：旧描述 + 手写路由按动态键名读 body。
+      final List<Map<String, Object?>> bodies = <Map<String, Object?>>[];
+      final OpCatalog catalog = OpCatalog.build(
+        <CtlRoute>[
+          CtlRoute.put('/api/admin/table', (CtlCall call) async {
+            bodies.add(call.body);
+            return null;
+          }),
+        ],
+        <OpDescription>[
+          OpDescription(
+            id: 'thing.table.set',
+            method: 'PUT',
+            pattern: '/api/admin/table',
+            summary: 'Replace the table.',
+            risk: OpRisk.write,
+            params: const <OpParam>[
+              OpParam.string('scope', description: 'Scope.'),
+              OpParam.object(
+                'table',
+                description: 'The full new table.',
+                required: true,
+                spread: true,
+              ),
+            ],
+            undo: OpUndo(
+              record: (OpArgs c, Map<String, Object?> b, Object? r) =>
+                  const OpUndoRecord(payload: <String, Object?>{}),
+              revert: (Map<String, Object?> p) async =>
+                  const OpUndoOutcome.done(),
+            ),
+          ),
+        ],
+      );
+      final OpInvoker invoker = OpInvoker(catalog);
+      await invoker.invoke('thing.table.set', <String, Object?>{
+        'scope': 's',
+        'table': <String, Object?>{
+          'entries': <Object?>[1, 2],
+        },
+      }, caller: OpCaller.model);
+      expect(bodies.single, <String, Object?>{
+        'scope': 's',
+        'entries': <Object?>[1, 2],
+      });
+      await expectLater(
+        invoker.invoke('thing.table.set', <String, Object?>{'scope': 's'}),
+        _bad('table 缺失'),
+      );
+      await expectLater(
+        invoker.invoke('thing.table.set', <String, Object?>{
+          'table': <String, Object?>{'scope': 'x'},
+        }),
+        _bad('table.scope 与参数重名'),
+      );
+      expect(bodies, hasLength(1));
+    });
+
     test('旧描述挂不到 OpSpec 派生的路由上（一个操作只声明一次）', () {
       final FushiOp op = _get.bind(handler: (OpArgs args) async => null);
       expect(
