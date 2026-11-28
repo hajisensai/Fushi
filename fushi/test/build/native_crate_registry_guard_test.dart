@@ -24,13 +24,15 @@ void main() {
   // 测试 cwd 是 `fushi/`。
   final String repo = p.normalize(p.absolute('..'));
   String read(String rel) {
+    // 也在 group 体里（测试声明期）调用，那里不能 expect：缺文件直接抛。
     final File f = File(p.join(repo, rel));
-    expect(f.existsSync(), isTrue, reason: '$rel 不存在');
+    if (!f.existsSync()) throw StateError('$rel 不存在');
     return f.readAsStringSync().replaceAll('\r\n', '\n');
   }
 
   final Map<String, Object?> registry =
-      jsonDecode(read('native/crates.json')) as Map<String, Object?>;
+      jsonDecode(File(p.join(repo, 'native', 'crates.json')).readAsStringSync())
+          as Map<String, Object?>;
   final List<_Crate> crates = <_Crate>[
     for (final Object? raw in registry['crates']! as List<Object?>)
       _Crate(raw! as Map<String, Object?>),
@@ -83,7 +85,11 @@ void main() {
     ]) {
       test(rel, () {
         final String code = maskHashComments(read(rel));
-        expect(code, contains('native_crates'), reason: '$rel 不读登记表');
+        expect(
+          code.contains('native_crates.py') || code.contains('crates.json'),
+          isTrue,
+          reason: '$rel 不读登记表',
+        );
         expect(
           handList.firstMatch(code)?.group(0),
           isNull,
@@ -474,6 +480,7 @@ void main() {
             c.name: _abisAfter(job.value, 'setup-${c.dashed}'),
         };
         if (uses.values.every((List<String> u) => u.isEmpty)) continue;
+        if (_serverOnlyJobs.contains('$name/${job.key}')) continue;
         jobs++;
         test('$name/${job.key}', () {
           final List<String> first = uses.values.firstWhere(
@@ -492,7 +499,7 @@ void main() {
     }
     test(
       '至少找到 main / release / golden 的 app job',
-      () => expect(jobs, greaterThanOrEqualTo(4)),
+      () => expect(jobs, greaterThanOrEqualTo(3)),
     );
   });
 }
@@ -592,3 +599,8 @@ Map<String, String> _jobs(String workflow) {
   flush();
   return jobs;
 }
+
+/// 只编无头服务端的 job：服务端随包的原生库是 app 的子集（packages/fushi_server/tool/build_linux_bundle.sh），
+/// 不带 fushi_music / fushi_corpus。登记表还没有「服务端」这一列（见 PR 剩余清单），先按现存的 job 放行；
+/// 只减不增——新的服务端 job 要么备齐，要么等登记表有了服务端列再说。
+const Set<String> _serverOnlyJobs = <String>{'server-gate.yml/server'};

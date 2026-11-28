@@ -163,8 +163,8 @@ void main() {
           'tree_hash 的源码键必须走 tool/native_crates.py tree-key，不在 names.sh 里另算',
     );
     expect(
-      script,
-      isNot(contains('git ls-tree')),
+      RegExp(r'^[^#\n]*git ls-tree', multiLine: true).hasMatch(script),
+      isFalse,
       reason: 'names.sh 不另写一份源码哈希',
     );
   });

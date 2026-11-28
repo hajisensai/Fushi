@@ -24,15 +24,37 @@ void main() {
   test('打包文件只认普通库，不提 id_audit', () {
     // 每个平台把 fushi_fsrs 带进包的那个文件。它们都必须提到 fushi_fsrs（否则清单过期了），且不提审计那份。
     const List<String> bundlers = <String>[
-      'windows/CMakeLists.txt',
-      'linux/CMakeLists.txt',
-      'macos/bundle_native_libs.sh',
       'android/app/build.gradle',
       '../native/fushi_ios_umbrella/build_ios_staticlib.sh',
       '../native/fushi_fsrs/build_ios_staticlib.sh',
       '../native/fushi_fsrs/build_android_so.sh',
       '../native/fushi_fsrs/build_android_so.ps1',
     ];
+    // Windows / Linux CMake 与 macOS 阶段按登记表随包（native/crates.json 里 fushi_fsrs 在这三端
+    // bundled_by=app），实现里不写 crate 名，只查它们不提审计那份。
+    for (final String path in <String>[
+      'windows/CMakeLists.txt',
+      'linux/CMakeLists.txt',
+      '../native/fushi_native_libs.cmake',
+      'macos/bundle_native_libs.sh',
+    ]) {
+      final String text = read(path);
+      expect(text, isNot(contains('id_audit')), reason: path);
+      expect(text, isNot(contains('ID_AUDIT')), reason: path);
+    }
+    final String registry = read('../native/crates.json');
+    final int fsrs = registry.indexOf('"name": "fushi_fsrs"');
+    final String entry = registry.substring(
+      fsrs,
+      registry.indexOf('\n    },', fsrs),
+    );
+    for (final String platform in <String>['windows', 'linux', 'macos']) {
+      expect(
+        RegExp('"$platform": \\{[^}]*"bundled_by": "app"').hasMatch(entry),
+        isTrue,
+        reason: 'native/crates.json：fushi_fsrs 在 $platform 上应由登记表随包',
+      );
+    }
     for (final String path in bundlers) {
       final String text = read(path);
       expect(text, contains('fushi_fsrs'), reason: path);

@@ -164,7 +164,7 @@ void main() {
     expect(script, contains('FUSHI_IOS_NATIVE_LDFLAGS'));
     // 查哪些 crate、各查哪个 ABI 符号取自登记表（ios-checks）；fushi_compute 在其中由
     // native_crate_registry_guard_test 钉住。
-    expect(script, contains("tool/native_crates.py\" ios-checks"));
+    expect(script, contains('tool/native_crates.py" ios-checks'));
     expect(script, contains('exit 1'));
   });
 }

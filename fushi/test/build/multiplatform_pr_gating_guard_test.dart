@@ -653,8 +653,9 @@ List<String> _registryPaths(String crate) {
     'paths',
     crate,
   ]);
-  if (r.exitCode != 0)
+  if (r.exitCode != 0) {
     throw StateError('native_crates.py paths $crate: ${r.stderr}');
+  }
   return '${r.stdout}'
       .split(RegExp(r'\s+'))
       .where((String s) => s.isNotEmpty)
