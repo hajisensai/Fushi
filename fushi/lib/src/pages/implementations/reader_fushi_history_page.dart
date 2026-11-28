@@ -135,6 +135,8 @@ import 'package:fushi/src/media/metadata/book_metadata_scrape_facade.dart';
 import 'package:fushi/src/media/detail/item_scrape_detail.dart';
 import 'package:fushi/src/media/banner/banner_picker_sheet.dart'
     show BannerPickerTarget, showBannerPickerSheet;
+import 'package:fushi/src/media/banner/collection_banner_sources.dart'
+    show pickCollectionBanner;
 import 'package:fushi/src/media/banner/book_banner_sources.dart'
     show loadBookBannerPickerTarget;
 import 'package:fushi/src/pages/implementations/book_detail_page.dart';
@@ -4014,6 +4016,14 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
             servicesEnabled: () =>
                 appModel.moduleVisibility.isEnabled(ModuleId.services),
             migrationReadonly: () => appModel.isMigrationReadonly,
+          ),
+          // 「横幅…」：合集自己的横版背景（附加图组，用户选的上来源锁）。
+          onPickBanner: () => pickCollectionBanner(
+            context: context,
+            db: appModel.database,
+            collection: collection,
+            onlineEnabled: _moduleVisibility.isEnabled(ModuleId.services),
+            thumbnailsDirectory: appModel.thumbnailsDirectory,
           ),
           // 系列关联（一个关联计入每一卷）在系列卡的「追踪」区管理。
           trackingSection: isMediaTrackingEnabled(appModel.moduleVisibility)

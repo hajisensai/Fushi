@@ -326,9 +326,10 @@ class VideoScrapeCleanupService {
             ))
           _pathKey(path),
       // sourceUrl=null 是表级契约中的手动附加图，即使存在陈旧 artifact ledger
-      // 也不能按旧 SHA 删除其当前文件。
+      // 也不能按旧 SHA 删除其当前文件；用户在「横幅…」里选的图（v184 来源锁，
+      // 可能带在线原地址）同理。
       for (final MediaImageRow image in mediaImages)
-        if (image.sourceUrl == null) _pathKey(image.path),
+        if (image.sourceUrl == null || image.userChosen) _pathKey(image.path),
     };
     final _ArtifactCleanupSummary artifactSummary =
         await _deleteGeneratedArtifacts(

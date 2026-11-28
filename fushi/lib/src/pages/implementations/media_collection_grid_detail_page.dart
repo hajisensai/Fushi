@@ -127,8 +127,13 @@ class MediaCollectionGridDetailPage extends StatefulWidget {
     this.aiClientFactory,
     this.artScrape,
     this.trackingSection,
+    this.onPickBanner,
     super.key,
   });
+
+  /// 「横幅…」：弹面板给合集挑横版背景（附加图组 backdrop，用户选的上来源锁），
+  /// 返回横幅是否变了。null = 不出入口（宿主没装配）。
+  final Future<bool> Function()? onPickBanner;
 
   /// The card's "Tracking" section under its members (series links of book
   /// and manga cards: one link counts every volume). Null = none (tracking
@@ -414,7 +419,8 @@ class _MediaCollectionGridDetailPageState
     });
   }
 
-  /// [images] 里 [kind] 种类、position 最小且文件还在的那张的路径；没有为 null。
+  /// [images] 里 [kind] 种类、文件还在的第一张（用户选的优先，再按 position）的
+  /// 路径；没有为 null。
   static Future<String?> _firstExistingImage(
     List<MediaImageRow> images,
     MediaImageKind kind,
@@ -425,10 +431,11 @@ class _MediaCollectionGridDetailPageState
               (MediaImageRow r) => r.kind == kind.dbValue && r.path.isNotEmpty,
             )
             .toList()
-          ..sort(
-            (MediaImageRow a, MediaImageRow b) =>
-                a.position.compareTo(b.position),
-          );
+          ..sort((MediaImageRow a, MediaImageRow b) {
+            // 用户在「横幅…」里选的那张（v184 来源锁）先于刮削的。
+            if (a.userChosen != b.userChosen) return a.userChosen ? -1 : 1;
+            return a.position.compareTo(b.position);
+          });
     for (final MediaImageRow row in rows) {
       if (await File(row.path).exists()) return row.path;
     }
@@ -845,6 +852,13 @@ class _MediaCollectionGridDetailPageState
               tooltip: t.collection_detail_save_order,
               onTap: () => _saveViewOrder(arranged),
             ),
+          if (widget.onPickBanner != null)
+            FushiIconButton(
+              key: const ValueKey<String>('collection_detail_banner'),
+              icon: FushiIcons.image,
+              tooltip: t.media_banner_action,
+              onTap: _pickBanner,
+            ),
           if (_artScrapeAvailable) ...<Widget>[
             FushiIconButton(
               icon: FushiIcons.imageSearch,
@@ -1042,6 +1056,13 @@ class _MediaCollectionGridDetailPageState
           icon: FushiIcons.download,
           onTap: () => _saveViewOrder(arranged),
         ),
+      if (widget.onPickBanner != null)
+        FushiIconButton(
+          key: const ValueKey<String>('collection_detail_header_banner'),
+          tooltip: t.media_banner_action,
+          icon: FushiIcons.image,
+          onTap: _pickBanner,
+        ),
       if (_artScrapeAvailable) ...<Widget>[
         FushiIconButton(
           key: const ValueKey<String>('collection_detail_art_scrape'),
@@ -1063,6 +1084,22 @@ class _MediaCollectionGridDetailPageState
         onTap: _delete,
       ),
     ];
+  }
+
+  bool _bannerOpen = false;
+
+  /// 「横幅…」：换了 / 移除了就重读合集图组（hero 背景）并通知宿主刷新书架色块。
+  Future<void> _pickBanner() async {
+    final Future<bool> Function()? pick = widget.onPickBanner;
+    if (pick == null || _bannerOpen) return;
+    _bannerOpen = true;
+    try {
+      if (!await pick() || !mounted) return;
+      widget.onChanged();
+      await _reload();
+    } finally {
+      _bannerOpen = false;
+    }
   }
 
   bool get _artScrapeAvailable {

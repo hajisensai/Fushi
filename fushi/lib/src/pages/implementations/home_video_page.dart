@@ -63,6 +63,12 @@ import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/drop_decision.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/media/banner/banner_picker_sheet.dart'
+    show BannerPickerTarget, showBannerPickerSheet;
+import 'package:fushi/src/media/banner/video_banner_sources.dart'
+    show loadVideoBannerPickerTarget;
+import 'package:fushi_engine/media/video/media_image_user_store.dart'
+    show MediaImageOwner;
 import 'package:fushi/src/models/video_collection_open_request.dart';
 import 'package:fushi/src/media/video/remote_video_source_resolver.dart';
 import 'package:fushi/src/media/video/remote_video_sources.dart';
@@ -5962,6 +5968,22 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     final File? picked = await _pickOnlineCollectionCoverFile(collection.name);
     if (picked == null || !mounted) return;
     await _applyCollectionCoverFile(collection, picked);
+  }
+
+  /// 作品详情页的「横幅…」：装配来源（在线来源跟刮削同一道「在线服务」模块门；
+  /// 有刮削 controller 时再现拉 TMDB 的全部背景图）后弹面板。返回横幅是否变了，
+  /// 详情页据此重读并回调 [_refresh]。
+  Future<bool> _pickVideoBanner(MediaImageOwner owner) async {
+    final AppModel app = ref.read(appProvider);
+    final VideoSourceScrapeTaskController? controller = _onlineCoverController;
+    final BannerPickerTarget target = await loadVideoBannerPickerTarget(
+      db: app.database,
+      owner: owner,
+      onlineEnabled: app.moduleVisibility.isEnabled(ModuleId.services),
+      fetchWork: controller?.fetchWorkForLookup,
+    );
+    if (!mounted) return false;
+    return showBannerPickerSheet(context: context, target: target);
   }
 
   /// 给合集详情页注入的在线选图回调（详情页不持刮削 controller）。
@@ -12588,6 +12610,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
               : _pickOnlineCollectionCoverFile,
           // 单集菜单「整理文件名」（ZDYNkAP3Ln）：与库页同一条实现。
           onOrganizeFilenames: _organizeVideoFilenames,
+          onPickBanner: _pickVideoBanner,
         ),
       ),
     );
@@ -12604,6 +12627,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           repository: widget.repo,
           workRef: VideoWorkRef.book(book.bookUid),
           onChanged: _refresh,
+          onPickBanner: _pickVideoBanner,
         ),
       ),
     );

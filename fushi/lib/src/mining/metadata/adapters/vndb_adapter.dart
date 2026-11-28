@@ -26,6 +26,13 @@ const String kVndbDetailFields =
 const String kVndbSearchFields =
     'id,titles{title,lang,main},image{url},released,description';
 
+/// 截图请求（「横幅…」面板的在线候选）要的字段：原图、缩略图、尺寸与两项内容分级。
+const String kVndbScreenshotFields =
+    'id,screenshots{url,thumbnail,dims,sexual,violence}';
+
+/// 截图的成人 / 暴力分级（VNDB 投票均值 0 安全、1 擦边、2 露骨）不高于它才给。
+const double kVndbScreenshotMaxRating = 0.5;
+
 /// 标签保留上限。
 const int kVndbMaxTags = 30;
 
@@ -87,6 +94,24 @@ class VndbMetadataAdapter implements GalgameMetadataAdapter {
       return null;
     }
     return parseVndbVisualNovel(Map<Object?, Object?>.from(first));
+  }
+
+  /// 这部 VN 的截图（横版实机画面），只留成人 / 暴力分级都不高于
+  /// [kVndbScreenshotMaxRating] 的。用户在「横幅…」面板里自己挑——截图带 UI，
+  /// 刮削不自动拿它当横版背景（见 `galgame_metadata_merge.dart`）。
+  Future<List<VndbScreenshot>> fetchScreenshots(String id) async {
+    final String trimmed = id.trim();
+    if (!validateId(trimmed)) {
+      throw GalgameMetadataException('invalid VNDB id: "$id"', source: source);
+    }
+    final List<Object?> results = await _queryVn(<String, Object?>{
+      'filters': <Object?>['id', '=', trimmed],
+      'fields': kVndbScreenshotFields,
+      'results': 1,
+    }, what: 'screenshots $trimmed');
+    final Object? first = results.firstOrNull;
+    if (first is! Map) return const <VndbScreenshot>[];
+    return parseVndbScreenshots(first['screenshots']);
   }
 
   @override
@@ -183,6 +208,47 @@ class VndbMetadataAdapter implements GalgameMetadataAdapter {
       return response;
     });
   }
+}
+
+/// 一张 VNDB 截图。
+typedef VndbScreenshot = ({
+  String url,
+  String? thumbnail,
+  int? width,
+  int? height,
+});
+
+/// 纯函数：`screenshots: [{url, thumbnail, dims: [w, h], sexual, violence}]` →
+/// 截图表；缺 url、或成人 / 暴力分级高于 [kVndbScreenshotMaxRating]（缺省当最高，
+/// 不确定就不给）的丢掉。
+List<VndbScreenshot> parseVndbScreenshots(Object? value) {
+  if (value is! List) return const <VndbScreenshot>[];
+  final List<VndbScreenshot> out = <VndbScreenshot>[];
+  for (final Object? item in value) {
+    if (item is! Map) continue;
+    final String? url = draftString(item['url']);
+    if (url == null) continue;
+    final double sexual = draftDouble(item['sexual']) ?? 2;
+    final double violence = draftDouble(item['violence']) ?? 2;
+    if (sexual > kVndbScreenshotMaxRating ||
+        violence > kVndbScreenshotMaxRating) {
+      continue;
+    }
+    final Object? dims = item['dims'];
+    final int? width = dims is List && dims.length == 2
+        ? draftInt(dims[0])
+        : null;
+    final int? height = dims is List && dims.length == 2
+        ? draftInt(dims[1])
+        : null;
+    out.add((
+      url: url,
+      thumbnail: draftString(item['thumbnail']),
+      width: width,
+      height: height,
+    ));
+  }
+  return out;
 }
 
 /// 纯函数：把一条 VN 记录映射成 draft。

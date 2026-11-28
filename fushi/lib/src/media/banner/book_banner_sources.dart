@@ -31,12 +31,12 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/banner/banner_book_scan.dart';
 import 'package:fushi/src/media/banner/banner_picker_sheet.dart';
+import 'package:fushi/src/media/banner/banner_target_writes.dart';
 import 'package:fushi/src/media/metadata/book_art_store.dart';
 import 'package:fushi/src/media/metadata/book_metadata_scraper.dart';
 import 'package:fushi/src/reader/reader_collection_volumes.dart'
     show parseVolumeBookForPeekOffUi;
-import 'package:fushi/src/utils/cover_image.dart'
-    show evictLocalCoverCache, resizedFileImage;
+import 'package:fushi/src/utils/cover_image.dart' show resizedFileImage;
 import 'package:fushi/src/utils/net/app_http_image.dart';
 
 /// 追踪映射 / 刮削来源里 AniList 与 MangaBaka 的名字（`media_tracking_mappings.provider`
@@ -248,6 +248,12 @@ Future<List<BannerCandidate>> loadBookBannerFromBook(EpubBookRow row) async {
   ];
 }
 
+/// 书的在线候选里有 MangaBaka 的图时要显示的署名（数据源许可要求）；没有为 null。
+String? bookBannerAttribution(List<BannerCandidate> online) =>
+    online.any((BannerCandidate c) => c.id.startsWith('mangabaka-'))
+    ? t.book_scrape_mangabaka_attribution
+    : null;
+
 /// 装配一本书 / 漫画（/ 字幕书）的面板：读当前横幅与来源锁，接上在线 / 书中来源与
 /// [ItemScrapeStore] 用户口径的写入口。
 ///
@@ -265,15 +271,7 @@ Future<BannerPickerTarget> loadBookBannerPickerTarget({
 }) async {
   final ItemScrapeStore writer =
       store ?? ItemScrapeStore(db, downloadImage: download);
-  ItemImageRow? current;
-  for (final ItemImageRow row in await db.getItemImages(
-    key.mediaType,
-    key.entryKey,
-  )) {
-    if (row.kind != MediaImageKind.backdrop.dbValue) continue;
-    if (current != null && row.position >= current.position) continue;
-    if (await File(row.path).exists()) current = row;
-  }
+  final ItemImageRow? current = await currentItemBackdrop(db, key);
   final EpubBookRow? book = key.mediaType == MediaKind.epub
       ? await db.getEpubBookByUid(key.entryKey)
       : null;
@@ -307,22 +305,10 @@ Future<BannerPickerTarget> loadBookBannerPickerTarget({
           }
         : null,
     loadFromWork: fromBook ? () => loadBookBannerFromBook(book) : null,
-    attribution: (List<BannerCandidate> online) =>
-        online.any((BannerCandidate c) => c.id.startsWith('mangabaka-'))
-        ? t.book_scrape_mangabaka_attribution
-        : null,
+    attribution: bookBannerAttribution,
     download: download,
-    apply: (File file, {String? sourceUrl}) async {
-      final String dest = await writer.setUserImageFromFile(
-        key,
-        MediaImageKind.backdrop,
-        file,
-        sourceUrl: sourceUrl,
-      );
-      // 用户再换一张同扩展名的图会落在同一路径：清掉图片缓存，详情页 / 首页立刻
-      // 画新图。
-      await evictLocalCoverCache(dest);
-    },
+    apply: (File file, {String? sourceUrl}) =>
+        applyItemBannerFile(writer, key, file, sourceUrl: sourceUrl),
     clear: () => writer.clearUserImage(key, MediaImageKind.backdrop),
   );
 }

@@ -3,8 +3,10 @@
 ///
 /// 面板本身与媒体种类无关：来源与写入全在 [BannerPickerTarget] 里——书 / 漫画由
 /// `book_banner_sources.dart` 装配（在线 = AniList / MangaBaka 的系列横幅，书中 =
-/// 漫画跨页 / EPUB 彩页）；之后视频作品、游戏、合集换一组来源与写入口即可复用，
-/// 不动这里。三个来源用分段切换（在线 / 书中 / 文件或链接），没给的来源不出分段。
+/// 漫画跨页 / EPUB 彩页）；视频作品（`video_banner_sources.dart`）、游戏
+/// （`game_banner_sources.dart`）、书 / 游戏合集（`collection_banner_sources.dart`）
+/// 各换一组来源与写入口。三个来源用分段切换（在线 / 书中 / 文件或链接），没给的
+/// 来源不出分段。
 ///
 /// 选中一张后：拿到本地文件（在线图先下载）→ 比 16:9 窄的图先进裁剪框框一块 16:9
 /// （复用制卡的 [showCropImageDialog]），够宽的原样用 → 交给 [BannerPickerTarget.apply]
@@ -91,9 +93,9 @@ class BannerCandidate {
 @immutable
 class BannerPickerTarget {
   const BannerPickerTarget({
-    required this.fromWorkLabel,
+    this.fromWorkLabel,
     required this.apply,
-    required this.clear,
+    this.clear,
     this.current,
     this.currentUserChosen = false,
     this.loadOnline,
@@ -103,16 +105,23 @@ class BannerPickerTarget {
     this.pickFile = pickGalleryImageFile,
     this.crop,
     this.probeSize,
-  });
+    this.onlineEmptyMessage,
+    this.fromWorkEmptyMessage,
+    this.fromWorkFailedMessage,
+  }) : assert(
+         loadFromWork == null || fromWorkLabel != null,
+         'loadFromWork needs a fromWorkLabel',
+       );
 
-  /// 「书中」分段的名字（之后视频 / 游戏换成各自的说法）。
-  final String fromWorkLabel;
+  /// 「书中」分段的名字（视频「片中」、合集「合集内」）；没有 [loadFromWork] 时可空。
+  final String? fromWorkLabel;
 
   /// 写入用户选的图（[sourceUrl] = 在线图 / 链接的原地址）。
   final Future<void> Function(File file, {String? sourceUrl}) apply;
 
-  /// 移除横幅。
-  final Future<void> Function() clear;
+  /// 移除横幅；null = 不出「移除」（当前那张不是能在这里移除的：视频作品的刮削图
+  /// 归作品图组管，这里只移除用户选的那张）。
+  final Future<void> Function()? clear;
 
   /// 当前横幅；null = 没有（不出预览与「移除」）。
   final ImageProvider? current;
@@ -140,6 +149,13 @@ class BannerPickerTarget {
 
   /// 量图尺寸接缝（测试注入）；null = 后台 isolate 读文件头。
   final Future<ImagePixelSize?> Function(File file)? probeSize;
+
+  /// 「在线」没有候选时的说明；null = 书的说法（先刮削资料好认出系列）。
+  final String? onlineEmptyMessage;
+
+  /// 「书中」（各媒体自己的那一段）没有候选 / 读失败时的说明；null = 书的说法。
+  final String? fromWorkEmptyMessage;
+  final String? fromWorkFailedMessage;
 
   List<BannerPickerSource> get sources => <BannerPickerSource>[
     if (loadOnline != null) BannerPickerSource.online,
@@ -274,7 +290,7 @@ class _BannerPickerSheetState extends State<BannerPickerSheet> {
   }
 
   Future<void> _remove() => _run('remove', () async {
-    await _target.clear();
+    await _target.clear?.call();
     FushiToast.show(msg: t.media_banner_removed);
     return true;
   });
@@ -329,7 +345,7 @@ class _BannerPickerSheetState extends State<BannerPickerSheet> {
         ),
       ],
     );
-    final Widget? remove = _target.current == null
+    final Widget? remove = _target.current == null || _target.clear == null
         ? null
         : FushiTextButton(
             key: const ValueKey<String>('banner-picker-remove'),
@@ -366,7 +382,7 @@ class _BannerPickerSheetState extends State<BannerPickerSheet> {
 
   String _sourceLabel(BannerPickerSource source) => switch (source) {
     BannerPickerSource.online => t.media_banner_source_online,
-    BannerPickerSource.fromWork => _target.fromWorkLabel,
+    BannerPickerSource.fromWork => _target.fromWorkLabel ?? '',
     BannerPickerSource.fileOrLink => t.media_banner_source_file,
   };
 
@@ -385,7 +401,8 @@ class _BannerPickerSheetState extends State<BannerPickerSheet> {
                 tone: FushiPlaceholderTone.error,
                 message: source == BannerPickerSource.online
                     ? t.media_banner_online_failed
-                    : t.media_banner_book_failed,
+                    : _target.fromWorkFailedMessage ??
+                          t.media_banner_book_failed,
                 detail: '${snap.error}',
               );
             }
@@ -396,8 +413,8 @@ class _BannerPickerSheetState extends State<BannerPickerSheet> {
                 key: ValueKey<String>('banner-picker-${source.name}-empty'),
                 icon: FushiIcons.image,
                 message: source == BannerPickerSource.online
-                    ? t.media_banner_online_empty
-                    : t.media_banner_book_empty,
+                    ? _target.onlineEmptyMessage ?? t.media_banner_online_empty
+                    : _target.fromWorkEmptyMessage ?? t.media_banner_book_empty,
               );
             }
             final String? attribution = source == BannerPickerSource.online

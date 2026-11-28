@@ -25,7 +25,10 @@ import 'package:fushi/src/media/video/cover_ui/video_specs_panel.dart';
 import 'package:fushi/src/media/video/video_specs_service.dart';
 import 'package:fushi/src/media/video/stream_video_launch.dart';
 import 'package:fushi_engine/ai/ai_settings.dart';
+import 'package:fushi_engine/media/video/media_image_user_store.dart'
+    show MediaImageOwner;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi/src/utils/cover_image.dart' show resizedFileImage;
 import 'package:fushi/src/pages/implementations/media_collection_detail_page.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -87,6 +90,7 @@ class VideoWorkDetailPage extends StatefulWidget {
     this.onChooseTmdbOrdering,
     this.onPickOnlineCover,
     this.onOrganizeFilenames,
+    this.onPickBanner,
     this.collectionAiSettings,
     super.key,
   });
@@ -135,6 +139,10 @@ class VideoWorkDetailPage extends StatefulWidget {
 
   /// 透传给合集详情页单集菜单的「整理文件名」。null = 不渲染该菜单项。
   final Future<void> Function(List<String> bookUids)? onOrganizeFilenames;
+
+  /// 「横幅…」：弹面板给作品（剧集合集 / 散装电影，[owner]）挑横版背景，返回横幅是否
+  /// 变了。由库页注入（在线来源要刮削 controller）。null = 不出入口。
+  final Future<bool> Function(MediaImageOwner owner)? onPickBanner;
 
   @override
   State<VideoWorkDetailPage> createState() => _VideoWorkDetailPageState();
@@ -235,6 +243,11 @@ class _VideoWorkDetailPageState extends State<VideoWorkDetailPage> {
                 onChooseTmdbOrdering: widget.onChooseTmdbOrdering,
                 onPickOnlineCover: widget.onPickOnlineCover,
                 onOrganizeFilenames: widget.onOrganizeFilenames,
+                onPickBanner: widget.onPickBanner == null
+                    ? null
+                    : (MediaCollectionRow c) => widget.onPickBanner!(
+                        MediaImageOwner.collection(c.id),
+                      ),
               );
             },
       );
@@ -245,6 +258,11 @@ class _VideoWorkDetailPageState extends State<VideoWorkDetailPage> {
       repository: widget.repository,
       bookUid: widget.workRef.bookUid!,
       onChanged: widget.onChanged,
+      onPickBanner: widget.onPickBanner == null
+          ? null
+          : () => widget.onPickBanner!(
+              MediaImageOwner.book(widget.workRef.bookUid!),
+            ),
     );
   }
 }
@@ -256,6 +274,7 @@ class _StandaloneVideoWorkDetail extends StatefulWidget {
     required this.repository,
     required this.bookUid,
     required this.onChanged,
+    this.onPickBanner,
   });
 
   final FushiDatabase database;
@@ -263,6 +282,7 @@ class _StandaloneVideoWorkDetail extends StatefulWidget {
   final VideoBookRepository repository;
   final String bookUid;
   final VoidCallback onChanged;
+  final Future<bool> Function()? onPickBanner;
 
   @override
   State<_StandaloneVideoWorkDetail> createState() =>
@@ -282,7 +302,12 @@ class _StandaloneVideoWorkDetailState
   /// 海报 / 背景图作为 sidecar 写在视频旁边，常在网络盘上，build 里同步 stat 会冻结
   /// UI 与同 isolate 的互联 host（BUG-3756）。
   Set<String> _existingImagePaths = const <String>{};
+
+  /// 用户在「横幅…」里选的背景（v184 `media_images.user_chosen`，文件已探过存在）；
+  /// 压过作品图组的刮削背景。null = 没选过。
+  String? _userBackdropPath;
   bool _loading = true;
+  bool _bannerOpen = false;
 
   /// 这部作品是一张原盘（成员路径能反推出盘根）时的那张盘；null = 普通文件。
   DiscRef? _disc;
@@ -337,6 +362,17 @@ class _StandaloneVideoWorkDetailState
             when path.isNotEmpty && await File(path).exists())
           path,
     };
+    String? userBackdropPath;
+    for (final MediaImageRow row in await widget.database.getMediaImagesForBook(
+      widget.bookUid,
+    )) {
+      if (row.userChosen &&
+          row.kind == MediaImageKind.backdrop.dbValue &&
+          await File(row.path).exists()) {
+        userBackdropPath = row.path;
+        break;
+      }
+    }
     final DiscRef? disc = book == null
         ? null
         : collectDiscRefs(<VideoBookRow>[book]).firstOrNull;
@@ -354,6 +390,7 @@ class _StandaloneVideoWorkDetailState
       _extras = extras;
       _images = images;
       _existingImagePaths = existingImagePaths;
+      _userBackdropPath = userBackdropPath;
       _loading = false;
     });
   }
@@ -375,6 +412,20 @@ class _StandaloneVideoWorkDetailState
     FushiToast.show(msg: t.video_work_edit_metadata_saved);
     widget.onChanged();
     await _loadGuarded();
+  }
+
+  /// 「横幅…」：换了 / 移除了就重读（hero 背景）并通知库页刷新系列色块。
+  Future<void> _pickBanner() async {
+    final Future<bool> Function()? pick = widget.onPickBanner;
+    if (pick == null || _bannerOpen) return;
+    setState(() => _bannerOpen = true);
+    try {
+      if (!await pick() || !mounted) return;
+      widget.onChanged();
+      await _loadGuarded();
+    } finally {
+      if (mounted) setState(() => _bannerOpen = false);
+    }
   }
 
   /// 本地图 / 远程图都按种类封顶解码（#3722 video-18，见 [videoMetadataRowImage]）。
@@ -415,7 +466,9 @@ class _StandaloneVideoWorkDetailState
           kind: MediaKind.video,
           localPath: book.coverPath,
         );
-    final ImageProvider? fanart = _image('backdrop');
+    final ImageProvider? fanart = _userBackdropPath != null
+        ? resizedFileImage(File(_userBackdropPath!))
+        : _image('backdrop');
     final String title = work?.title ?? book.title;
     final String? originalTitle = work?.originalTitle;
     final String? status = work?.status?.trim();
@@ -464,6 +517,13 @@ class _StandaloneVideoWorkDetailState
         label: t.video_work_edit_metadata,
         onPressed: () => unawaited(_editMetadata(book)),
       ),
+      if (widget.onPickBanner != null)
+        MediaDetailSecondaryButton(
+          buttonKey: const ValueKey<String>('video-work-banner'),
+          icon: FushiIcons.image,
+          label: t.media_banner_action,
+          onPressed: _bannerOpen ? null : () => unawaited(_pickBanner()),
+        ),
     ];
     final String playLabel = discPrimary
         ? t.video_disc_play
