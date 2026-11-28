@@ -2,15 +2,14 @@ import 'package:flutter/widgets.dart';
 import 'package:fushi/src/pages/base_page.dart';
 import 'package:fushi/src/second_screen/companion/companion_context.dart';
 import 'package:fushi/src/second_screen/companion/companion_protocol.dart';
-import 'package:fushi/src/settings/glass_settings_renderer.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_renderer.dart';
 import 'package:fushi/src/settings/settings_schema.dart';
 
-/// Renders [destination] through the active platform's settings detail shell
-/// (Material → [FushiPageScaffold] + 24px padding + [AdaptiveSettingsSection];
-/// Cupertino → grouped sliver list). This is the SAME chrome the master-detail
+/// Renders [destination] through the active design system's settings detail
+/// shell (MD3 → [FushiPageScaffold] + 24px padding + [AdaptiveSettingsSection];
+/// glass → grouped list). This is the SAME chrome the master-detail
 /// renderer uses, so any pushed settings sub-page built on top of it is visually
 /// indistinguishable from a real schema destination — no scaffold/padding/card
 /// drift between the unified detail pane and the pages it links to.

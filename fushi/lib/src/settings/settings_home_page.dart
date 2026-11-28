@@ -13,6 +13,7 @@ import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_kit.dart';
 import 'package:fushi/src/settings/settings_kit_core.dart';
 import 'package:fushi/src/settings/settings_recent_destinations.dart';
+import 'package:fushi/src/settings/settings_renderer.dart';
 import 'package:fushi/src/settings/settings_schema.dart';
 import 'package:fushi/src/settings/settings_search.dart';
 import 'package:fushi/src/settings/settings_search_sheet.dart';
@@ -337,7 +338,8 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
           destination.id == selectedDestinationId,
     );
     final EdgeInsets mediaPadding = MediaQuery.of(context).padding;
-    const GlassSettingsRenderer renderer = GlassSettingsRenderer(
+    final SettingsRenderer renderer = resolveSettingsRenderer(
+      context,
       showDetailHeader: true,
     );
     final bool searching = _searchQuery.trim().isNotEmpty;
@@ -419,7 +421,7 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     required SettingsContext settingsContext,
     required List<SettingsDestination> destinations,
   }) {
-    const GlassSettingsRenderer renderer = GlassSettingsRenderer();
+    final SettingsRenderer renderer = resolveSettingsRenderer(context);
     final double inset = GlassSettingsRenderer.detailHorizontalInset(context);
     final double band = fushiAppleLargeTitleBand(context);
     final ScrollController controller = _glassScrollController;
@@ -594,7 +596,8 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     );
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final EdgeInsets mediaPadding = MediaQuery.of(context).padding;
-    const MaterialSettingsRenderer renderer = MaterialSettingsRenderer(
+    final SettingsRenderer renderer = resolveSettingsRenderer(
+      context,
       showDetailHeader: true,
     );
     return MaterialSupportingPaneLayout(
@@ -681,7 +684,7 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     required List<SettingsDestination> destinations,
   }) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    const MaterialSettingsRenderer renderer = MaterialSettingsRenderer();
+    final SettingsRenderer renderer = resolveSettingsRenderer(context);
     final bool showHeader =
         (!widget.embedded || !FushiDesktopTitleBar.isEnabled) &&
         !_mastheadHeader;

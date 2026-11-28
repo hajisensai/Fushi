@@ -7,7 +7,6 @@ import 'package:fushi/src/media/video/video_web_playback_mode_panel.dart';
 import 'package:fushi/src/media/video/video_settings_actions.dart'
     show videoQuickSettingsHostOf;
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/settings/glass_settings_renderer.dart';
 import 'package:fushi/src/settings/master_detail_settings_sheet.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';

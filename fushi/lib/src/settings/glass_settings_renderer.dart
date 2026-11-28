@@ -2,7 +2,6 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
-import 'package:fushi/src/settings/material_settings_renderer.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_destination_id.dart';
@@ -14,22 +13,12 @@ import 'package:fushi/src/settings/settings_navigation_groups.dart';
 import 'package:fushi/src/settings/settings_renderer.dart';
 import 'package:fushi/src/settings/settings_schema_widgets.dart';
 import 'package:fushi/src/settings/settings_page_reset.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
-
-/// 设置渲染器选择的**唯一**判据：玻璃 → [GlassSettingsRenderer]，其余 → MD3
-/// [MaterialSettingsRenderer]。设置主页、详情页、模块设置页签、快捷设置弹窗都
-/// 调这里，不各自再判设计系统。
-SettingsRenderer resolveSettingsRenderer(BuildContext context) {
-  return isGlassDesign(context)
-      ? const GlassSettingsRenderer()
-      : const MaterialSettingsRenderer();
-}
 
 /// 「玻璃」设计系统的设置渲染器：桌面 / 宽屏是 macOS 26「系统设置」，窄屏 /
 /// 触屏是 iOS 26「设置」。
@@ -124,6 +113,7 @@ class GlassSettingsRenderer implements SettingsRenderer {
   /// 卡，行 = 标题 + chevron（不带行首图标，用户 2026-11-24「这排图标好丑」），
   /// 点进去 push 详情页。设置主页的
   /// 窄屏布局把它和大标题、搜索框放进同一个滚动视图。
+  @override
   Widget buildDestinationGroups({
     required SettingsContext settingsContext,
     required List<SettingsDestination> destinations,

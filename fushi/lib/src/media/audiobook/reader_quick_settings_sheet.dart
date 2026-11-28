@@ -41,7 +41,6 @@ import 'package:fushi/src/reader/reader_desktop_chrome.dart'
     show ReaderSideSheet;
 import 'package:fushi/src/reader/ttu_toc_flatten.dart'
     show resolveCurrentTocEntry;
-import 'package:fushi/src/settings/glass_settings_renderer.dart';
 import 'package:fushi/src/settings/master_detail_settings_sheet.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
@@ -1650,8 +1649,8 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     SettingsContext settingsContext,
     SettingsDestination destination,
   ) {
-    // 按设计系统选渲染器（Apple → GlassSettingsRenderer、MD3 →
-    // MaterialSettingsRenderer、Cupertino 照旧），与设置主页 / 视频面板同一判据。
+    // 按设计系统选渲染器（Apple（玻璃）→ GlassSettingsRenderer、MD3 →
+    // MaterialSettingsRenderer），与设置主页 / 视频面板同一判据。
     final SettingsRenderer renderer = resolveSettingsRenderer(context);
     return renderer.buildDetailContent(
       settingsContext: settingsContext,

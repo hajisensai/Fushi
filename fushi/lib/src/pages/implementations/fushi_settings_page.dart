@@ -1,6 +1,5 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/pages/base_page.dart';
-import 'package:fushi/src/settings/glass_settings_renderer.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_home_page.dart';

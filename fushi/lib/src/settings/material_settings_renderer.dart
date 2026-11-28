@@ -122,6 +122,7 @@ class MaterialSettingsRenderer implements SettingsRenderer {
   /// Android 16「设置」首页的分类列表（不含滚动容器）：每组一个分段分组列表，
   /// 行 = 单色图标 + 标题（不显示摘要，用户 2026-10-04），点进去 push 详情页。
   /// 设置主页的窄屏布局把它放进带大标题顶栏的滚动视图。
+  @override
   Widget buildDestinationGroups({
     required SettingsContext settingsContext,
     required List<SettingsDestination> destinations,
@@ -307,8 +308,7 @@ class MaterialSettingsRenderer implements SettingsRenderer {
     // insetHorizontally:false (it applies its own widePrimaryPadding /
     // narrowPadding), so its schema-projected sub-pages line up with the
     // pane's bespoke 导航 / 有声书 sub-pages instead of double-indenting and
-    // rendering narrower (TODO-1321). Mirrors the Cupertino renderer, whose
-    // detail body never owns a horizontal inset.
+    // rendering narrower (TODO-1321).
     final EdgeInsets horizontal = insetHorizontally
         ? detailHorizontalInsets(tokens)
         : EdgeInsets.zero;
