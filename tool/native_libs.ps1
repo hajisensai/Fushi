@@ -19,14 +19,14 @@
   宿主加载它（packages/fushi_srs 的 kFushiFsrsIdAuditDir），不随包。它与普通库同一次构建脚本调用编出、各有
   各的戳记，复用规则相同。
 
-  新增一个 app / 测试硬依赖的 crate：往 $NativeTestCrates 加一行；它必须自带
-  build_{windows_dll.ps1,linux_so.sh,macos_dylib.sh}、产物落 prebuilt/<平台>/。戳记哈希
-  native/<crate> 目录；经 `#[path = ...]` 编入的目录外源码必须列进
-  native/<crate>/external_sources.txt（一行一个，相对仓库根），它们的 blob 并进戳记
-  （与 tool/native_source_key.sh 同一算法；守卫 native_external_sources_stamp_guard_test）。
+  备哪些 crate、带什么 feature、要不要 id_audit 那份，全部取自登记表 native/crates.json
+  （经 tool/native_crates.py 读；新增 crate 只改登记表，本脚本不列名字）：主机平台备
+  `host_test_lib: true` 的，-Android 备 Android 上 `required: always` 的 Rust crate。它们必须自带
+  登记表 build.<平台> 写的构建脚本、产物落 prebuilt/<平台>/。戳记的源码键也由
+  tool/native_crates.py 算（`key`：native/<crate> 加登记表 external_sources 等输入的已提交内容，
+  与 dist worker、CI 原生产物库同一个函数；tool/native_crates_test.py 钉住）。
 
-  -Android：改为备 Android 出包硬依赖的 .so（fushi_compute / fushi_rwkv / fushi_music / fushi_corpus /
-  fushi_web_core，`fushi/android/app/build.gradle` 的 checkFushi*Native 查的那五个），落在
+  -Android：改为备 Android 出包硬依赖的 .so（`fushi/android/app/build.gradle` 的 checkFushi*Native 查的那几个），落在
   native/<crate>/prebuilt/android/<abi>/。新 worktree 不带它们，bootstrap 也不编（多数 worktree 从不出
   Android 包，五个 crate × 三个 ABI 的 release 交叉编译要几十分钟）；需要时由 gradle 的
   ensureFushiAndroidNative 任务自动调用本模式，也可手动跑：
@@ -44,6 +44,9 @@
 .PARAMETER Android
   备 Android 的 .so 而不是主机平台的库。
 
+.PARAMETER PrintKeys
+  只打印各主机测试库 crate 的源码键（不带 feature 后缀）后退出，不备库。
+
 .PARAMETER Abis
   -Android 时要备的 ABI，默认三个（与 split-per-abi 发布包一致）。
 #>
@@ -51,6 +54,7 @@
 param(
     [string]$GitBash = 'bash',
     [switch]$Android,
+    [switch]$PrintKeys,
     [string[]]$Abis = @('arm64-v8a', 'armeabi-v7a', 'x86_64')
 )
 
@@ -59,20 +63,63 @@ try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch { }
 
 $root = Split-Path -Parent $PSScriptRoot
 
+. (Join-Path $PSScriptRoot 'python3.ps1')
+# 登记表读取与源码键的唯一实现（tool/native_crates.py）；缺 Python 时 Resolve-Python3 直接抛错，不静默降级。
+$NativePython = Resolve-Python3
+$NativeCratesPy = Join-Path $PSScriptRoot 'native_crates.py'
+
+# 跑一次 tool/native_crates.py，返回退出码与 stdout 各行。stderr 原样转给用户（PS 5.1 在
+# ErrorActionPreference=Stop 下会把原生命令的 stderr 变成终止性错误，所以本函数内放宽到 Continue）。
+function Invoke-NativeCrates {
+    [OutputType([hashtable])]
+    param([string[]]$Arguments)
+
+    $ErrorActionPreference = 'Continue'
+    $global:LASTEXITCODE = 0
+    $lines = @()
+    $prefix = @($NativePython | Select-Object -Skip 1)
+    & $NativePython[0] @prefix $NativeCratesPy @Arguments 2>&1 | ForEach-Object {
+        if ($_ -is [System.Management.Automation.ErrorRecord]) {
+            Write-Host $_.Exception.Message -ForegroundColor Yellow
+        }
+        else {
+            $lines += [string]$_
+        }
+    }
+    return @{ Code = [int]$LASTEXITCODE; Lines = $lines }
+}
+
+function Get-NativeCrateList {
+    [OutputType([string[]])]
+    param([string[]]$Filter)
+
+    $r = Invoke-NativeCrates -Arguments (@('list') + $Filter)
+    if ($r.Code -ne 0 -or $r.Lines.Count -eq 0) {
+        throw "tool/native_crates.py list $($Filter -join ' ') 失败（exit $($r.Code)）：native/crates.json 读不了或筛出零个 crate。"
+    }
+    return , $r.Lines
+}
+
+function Get-NativeCrateField {
+    [OutputType([string])]
+    param([string]$Crate, [string]$Field)
+
+    $r = Invoke-NativeCrates -Arguments @('get', $Crate, $Field)
+    if ($r.Code -ne 0) { throw "tool/native_crates.py get $Crate $Field 失败（exit $($r.Code)）。" }
+    return (($r.Lines -join "`n").Trim())
+}
+
 # 缺 cargo 时（需要编的那一刻）直接失败而不是跳过：跳过的结果是之后 flutter build / test
 # 在 CMake / Gradle / 加载器里才报错，离原因更远。
-$NativeTestCrates = @('fushi_compute', 'fushi_fsrs', 'fushi_web_core', 'fushi_rwkv', 'fushi_music', 'fushi_corpus')
-# 另备一份带 ID 审计的库（prebuilt/<平台>/id_audit/<产物>）的 crate：构建脚本认 -IdAudit（.ps1）/
+# 带 `id_audit: true` 的 crate 另备一份带 ID 审计的库（prebuilt/<平台>/id_audit/<产物>）：构建脚本认 -IdAudit（.ps1）/
 # FUSHI_FSRS_ID_AUDIT_VARIANT=1（.sh），一次调用把两份都编出来。
-$NativeIdAuditCrates = @('fushi_fsrs')
 $NativeIdAuditDir = 'id_audit'
 
-# 测试用的库要带的 cargo feature（经 FUSHI_FSRS_FEATURES 交给 build_* 脚本）：fushi_fsrs 的 `raw_sql` 是测试专用的原始
-# SQL 通道（native/fushi_fsrs/Cargo.toml），fushi_engine / fushi 的测试靠它直接改库造场景。feature 记进戳记（树哈希后接
-# `+<features>`）：不带它编出的旧产物不会被当成这棵树的、也不会被兄弟 worktree 拷走。
-# 注意：这里备的库同时是本机 `flutter run` / 本机 `flutter build` 随包的那一份，所以本机自己编的 app 带原始通道；
-# CI 出的发布包不带（verify_abi.sh / build_windows_dll.ps1 核对）。
-$NativeTestFeatures = @{ 'fushi_fsrs' = 'raw_sql' }
+# 测试用的库要带的 cargo feature 是登记表的 test_features（经 FUSHI_FSRS_FEATURES 交给 build_* 脚本）：fushi_fsrs 的
+# `raw_sql` 是测试专用的原始 SQL 通道（native/fushi_fsrs/Cargo.toml），fushi_engine / fushi 的测试靠它直接改库造场景。
+# feature 记进戳记（源码键后接 `+<features>`，`key --features`）：不带它编出的旧产物不会被当成这棵树的、也不会被兄弟
+# worktree 拷走。注意：这里备的库同时是本机 `flutter run` / 本机 `flutter build` 随包的那一份，所以本机自己编的 app 带
+# 原始通道；CI 出的发布包不带（verify_abi.sh / build_windows_dll.ps1 核对）。
 
 function Get-NativeHostLayout {
     [OutputType([hashtable])]
@@ -88,56 +135,19 @@ function Get-NativeHostLayout {
     return @{ Dir = 'linux-x64'; Prefix = 'lib'; Ext = '.so'; Script = 'build_linux_so.sh' }
 }
 
-# native/<crate> 的源码内容键：HEAD 的 git 树哈希；有 external_sources.txt 时把列出的
-# crate 外源码在 HEAD 的 blob 一起并成一个 git blob 对象 id（与 tool/native_source_key.sh
-# 逐字节同一算法：「tree <树>」与每个「<路径> <blob>」各占一行，整段交给 `git hash-object --stdin`）。
-# 该目录或列出的外部源码有未提交改动（含未跟踪文件，不含 target/ prebuilt/ 这些 ignored）时
-# 返回 $null —— 产物对应的源码说不清，不写戳记、不复用。
+# native/<crate> 的源码内容键：tool/native_crates.py `key`（dist worker 与 CI 原生产物库调的同一个函数）。
+# -WithFeatures 时后接 `+<test_features>`。该 crate 的任一输入有未提交改动（含未跟踪文件，不含
+# target/ prebuilt/ 这些 ignored）时返回 $null —— 产物对应的源码说不清，不写戳记、不复用；
+# 算键本身失败（git 不可用等）也返回 $null，只意味着「不复用、照常编」。
 function Get-NativeSourceTree {
     [OutputType([string])]
-    param([string]$RepoRoot, [string]$Crate)
+    param([string]$Crate, [switch]$WithFeatures)
 
-    # PS 5.1 + ErrorActionPreference=Stop 下原生命令写 stderr 会变成终止性错误，
-    # 拿不到树哈希只意味着「不复用、照常编」，所以整段兜住。
-    try {
-        $extra = @()
-        $listPath = Join-Path $RepoRoot "native/$Crate/external_sources.txt"
-        if (Test-Path -LiteralPath $listPath) {
-            # 读工作区这份（UTF-8，注释是中文）而不是 `git show` 的输出：PS 5.1 按控制台代码页
-            # 解原生命令输出，中文注释会把换行一起吃掉。下面的 status 检查覆盖 native/$Crate，
-            # 这份文件有未提交改动时整段返回 $null，所以它与 HEAD 一致。
-            $extra = @([IO.File]::ReadAllLines($listPath, [Text.Encoding]::UTF8) |
-                ForEach-Object { $_.Trim() } |
-                Where-Object { $_ -and -not $_.StartsWith('#') })
-        }
-        $dirty = (& git -C $RepoRoot status --porcelain --untracked-files=all -- "native/$Crate" @extra | Out-String).Trim()
-        if ($dirty) { return $null }
-        $tree = (& git -C $RepoRoot rev-parse "HEAD:native/$Crate" | Out-String).Trim()
-        if ($LASTEXITCODE -ne 0 -or -not $tree) { return $null }
-        if ($extra.Count -eq 0) { return $tree }
-        $lines = @("tree $tree")
-        foreach ($src in $extra) {
-            $blob = (& git -C $RepoRoot rev-parse "HEAD:$src" | Out-String).Trim()
-            if ($LASTEXITCODE -ne 0 -or -not $blob) { return $null }
-            $lines += "$src $blob"
-        }
-        # git blob 对象 id = SHA-1("blob <长度>\0" + 内容)，即 `git hash-object --stdin`。
-        $body = [Text.Encoding]::UTF8.GetBytes(($lines -join "`n") + "`n")
-        $header = [Text.Encoding]::ASCII.GetBytes("blob $($body.Length)")
-        $bytes = New-Object byte[] ($header.Length + 1 + $body.Length)
-        [Array]::Copy($header, 0, $bytes, 0, $header.Length)
-        [Array]::Copy($body, 0, $bytes, $header.Length + 1, $body.Length)
-        $sha1 = [Security.Cryptography.SHA1]::Create()
-        try {
-            return (($sha1.ComputeHash($bytes) | ForEach-Object { $_.ToString('x2') }) -join '')
-        }
-        finally {
-            $sha1.Dispose()
-        }
-    }
-    catch {
-        return $null
-    }
+    $arguments = @('key', $Crate, '--require-clean')
+    if ($WithFeatures) { $arguments += '--features' }
+    $r = Invoke-NativeCrates -Arguments $arguments
+    if ($r.Code -ne 0 -or $r.Lines.Count -ne 1) { return $null }
+    return $r.Lines[0].Trim()
 }
 
 # 戳记文件的位置：主机平台的库是 <产物>.source；Android 的 .so 所在目录（prebuilt/android/）整个是 gradle 的
@@ -266,8 +276,8 @@ function Invoke-NativeCrateBuild {
             Write-Host "  未装 sccache：依赖每个 worktree 都要从零编。装上（winget install Mozilla.sccache）后自动跨 worktree 共用缓存。" -ForegroundColor DarkYellow
         }
     }
-    # 两份库（普通 / id_audit）都带 $NativeTestFeatures 的 feature：构建脚本把 FUSHI_FSRS_FEATURES 并进审计那份。
-    $features = $NativeTestFeatures[$Crate]
+    # 两份库（普通 / id_audit）都带登记表 test_features 的 feature：构建脚本把 FUSHI_FSRS_FEATURES 并进审计那份。
+    $features = Get-NativeCrateField -Crate $Crate -Field 'test_features'
     $previousFeatures = $env:FUSHI_FSRS_FEATURES
     if ($features) { $env:FUSHI_FSRS_FEATURES = $features }
     Write-Host "Building native/$Crate (cargo: $($cargo.Source))$(if ($features) { " features $features" })..." -ForegroundColor Cyan
@@ -308,12 +318,11 @@ function Install-NativeTestCrate {
 
     $layout = Get-NativeHostLayout
     $name = "$($layout.Prefix)$Crate$($layout.Ext)"
-    $idAudit = $NativeIdAuditCrates -contains $Crate
+    $idAudit = (Get-NativeCrateField -Crate $Crate -Field 'id_audit') -eq 'true'
     # 这个 crate 要备的全部产物（相对仓库根）：普通库，加上带 ID 审计的那份（如有）。
     $relLibs = @("native/$Crate/prebuilt/$($layout.Dir)/$name")
     if ($idAudit) { $relLibs += "native/$Crate/prebuilt/$($layout.Dir)/$NativeIdAuditDir/$name" }
-    $tree = Get-NativeSourceTree -RepoRoot $RepoRoot -Crate $Crate
-    if ($tree -and $NativeTestFeatures[$Crate]) { $tree = "$tree+$($NativeTestFeatures[$Crate])" }
+    $tree = Get-NativeSourceTree -Crate $Crate -WithFeatures
 
     $missing = @($relLibs | Where-Object { -not (Test-NativeStamp -Lib (Join-Path $RepoRoot $_) -Tree $tree) })
     if ($missing.Count -eq 0) {
@@ -354,9 +363,6 @@ function Install-NativeTestCrate {
 
 # --- Android 出包硬依赖的 .so（-Android） ------------------------------------------------------
 
-# fushi/android/app/build.gradle 的 checkFushi{Compute,Rwkv,Music,Corpus,WebCore}Native 查的五个 crate
-# （与 fushi/tool/dist_test/worker_build.sh 远端备的同一组）。
-$NativeAndroidCrates = @('fushi_compute', 'fushi_rwkv', 'fushi_music', 'fushi_corpus', 'fushi_web_core')
 # 本机缓存里每个产物保留最近用过的几棵源码树。
 $NativeCacheKeepTrees = 4
 
@@ -418,7 +424,7 @@ function Install-NativeAndroidCrate {
     param([string]$RepoRoot, [string]$Crate, [string[]]$Abis)
 
     $relLibs = @($Abis | ForEach-Object { "native/$Crate/prebuilt/android/$_/lib$Crate.so" })
-    $tree = Get-NativeSourceTree -RepoRoot $RepoRoot -Crate $Crate
+    $tree = Get-NativeSourceTree -Crate $Crate
     $missing = @($relLibs | Where-Object { -not (Test-NativeStamp -Lib (Join-Path $RepoRoot $_) -Tree $tree) })
     if ($missing.Count -eq 0) {
         Write-Host "OK native/$Crate (android) 已是 HEAD 源码编出的产物，跳过。" -ForegroundColor DarkGray
@@ -476,12 +482,24 @@ function Install-NativeAndroidCrate {
 if ($Android) {
     # `powershell -File ... -Abis a,b` 把整串当成一个元素传进来，这里统一拆开。
     $Abis = @($Abis | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-    foreach ($crate in $NativeAndroidCrates) {
+    # fushi/android/app/build.gradle 的 checkFushi*Native 查的那一组（与 fushi/tool/dist_test/worker_build.sh 远端备的
+    # 同一组）：登记表里 Android 上 `required: always` 的 Rust crate。
+    foreach ($crate in (Get-NativeCrateList -Filter @('--android-local'))) {
         Install-NativeAndroidCrate -RepoRoot $root -Crate $crate -Abis $Abis
     }
     return
 }
 
-foreach ($crate in $NativeTestCrates) {
+if ($PrintKeys) {
+    # 只打印戳记用的源码键（`<crate> <键>`，有未提交改动的打印 `-`），不备库：核对本机、dist worker、
+    # CI 产物库对同一棵源码算出同一个键时用（tool/native_crates_test.py 的说明）。
+    foreach ($crate in (Get-NativeCrateList -Filter @('--host-test'))) {
+        $key = Get-NativeSourceTree -Crate $crate
+        Write-Output "$crate $(if ($key) { $key } else { '-' })"
+    }
+    return
+}
+
+foreach ($crate in (Get-NativeCrateList -Filter @('--host-test'))) {
     Install-NativeTestCrate -RepoRoot $root -GitBash $GitBash -Crate $crate
 }

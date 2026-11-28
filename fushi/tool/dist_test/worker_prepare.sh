@@ -86,26 +86,22 @@ else
   python tool/vendored_binaries.py fetch
 fi
 
-# Rust test hard dependencies (same crate list as tool/bootstrap.sh and
-# tool/native_libs.ps1), keyed by the crate's tree hash in this snapshot.
-#
-# Same crate set as tool/native_libs.ps1 / tool/bootstrap.sh: a crate missing here
-# leaves its dylib/so absent on mac/linux workers, and every test that loads it
-# goes red only there (fushi_music → op_undo_music_test, fushi_corpus →
-# library_corpus_service_test).
-native_crates="fushi_compute fushi_fsrs fushi_web_core fushi_rwkv fushi_music fushi_corpus"
-# fushi_fsrs is built with its test-only cargo feature `raw_sql` (the raw SQL
-# channel that fushi_engine / fushi tests use to poke the database; release
-# builds leave it out). The feature set is part of the key, so a library
-# built without it (an older worker state) is rebuilt.
+# Rust test hard dependencies: the registry's `host_test_lib` crates
+# (native/crates.json via tool/native_crates.py -- the same list and the same
+# source key as tool/native_libs.ps1 / tool/bootstrap.sh), keyed by the crate's
+# source key in this snapshot.
+py=python3
+python3 -c '' >/dev/null 2>&1 || py=python
+native_crates="$("$py" tool/native_crates.py list --host-test | tr '\n' ' ')"
+# A crate's registry `test_features` (fushi_fsrs: `raw_sql`, the raw SQL channel
+# that fushi_engine / fushi tests use to poke the database; release builds leave
+# it out) are part of the key (`key --features`), so a library built without
+# them (an older worker state) is rebuilt. The key covers the crate directory
+# and the sources it pulls in from outside it (registry external_sources:
+# fushi_music compiles native/fushi_compute/src/legacy_text.rs in, BUG-4988).
 native_key() {
-  features=""
-  if [ "$1" = fushi_fsrs ]; then features=raw_sql; fi
-  # The crate's tree hash, folded with the sources it pulls in from outside
-  # native/<crate> (external_sources.txt): fushi_music compiles
-  # native/fushi_compute/src/legacy_text.rs in (BUG-4988).
-  key=$(bash tool/native_source_key.sh "$1")
-  if [ -n "$features" ]; then key="$key+$features"; fi
+  features="$("$py" tool/native_crates.py get "$1" test_features)"
+  key="$("$py" tool/native_crates.py key "$1" --features)"
 }
 # Each library set is kept under its key (worker_cache.sh): two runs that
 # take turns on this checkout batch by batch (worker_slot.sh) with different

@@ -219,9 +219,14 @@ if [ "$need" = android ]; then
       android-x64) abis="$abis x86_64" ;;
     esac
   done
-  for crate in fushi_compute fushi_rwkv fushi_music fushi_corpus fushi_web_core; do
-    # Folds in external_sources.txt (BUG-4988), same key as worker_prepare.sh.
-    key="$(bash tool/native_source_key.sh "$crate")$abis"
+  # The registry's Android-required Rust crates (native/crates.json, same list
+  # as tool/native_libs.ps1 -Android); the source key folds in the registry's
+  # external_sources (BUG-4988), same function as worker_prepare.sh.
+  py=python3
+  python3 -c '' >/dev/null 2>&1 || py=python
+  android_crates="$("$py" tool/native_crates.py list --android-local | tr '\n' ' ')" || finish 3
+  for crate in $android_crates; do
+    key="$("$py" tool/native_crates.py key "$crate")$abis" || finish 3
     stamp="$state/android-$crate.key"
     have=1
     for abi in $abis; do

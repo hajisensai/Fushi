@@ -1,0 +1,239 @@
+{
+  "$comment": [
+    "Native library registry: the ONE list of native libraries (Rust crates and the C/C++ modules) and how each is wired.",
+    "Read it, do not copy it: tool/native_crates.py (crate lists, source keys, registry validation; tool/native_libs.ps1,",
+    "tool/bootstrap.sh, fushi/tool/dist_test/worker_*.sh, .github/actions/native-store-names/names.sh, the macOS / iOS",
+    "Xcode phases call it), native/fushi_native_libs.cmake (Windows / Linux CMake, string(JSON)), and the guard",
+    "fushi/test/build/native_crate_registry_guard_test.dart (every consumer that still hand-writes wiring must match this file).",
+    "Fields: see tool/native_crates.py (Crate / PlatformEntry). platforms.<p>.required: always = missing artifact fails every",
+    "build; release = Debug only warns, Profile/Release fails; optional = copy-if-present, with `fallback` describing the",
+    "degradation (docs/agent/build.md). bundled_by: app = packaged by the registry-driven app wiring; anything else names the",
+    "hand-written owner (left as is, checked by the guard)."
+  ],
+  "schema": 1,
+  "crates": [
+    {
+      "name": "fushi_compute",
+      "language": "rust",
+      "dart_package": "packages/fushi_compute",
+      "abi_symbol": "ffc_abi_version",
+      "host_test_lib": true,
+      "build": {
+        "windows": "build_windows_dll.ps1",
+        "linux": "build_linux_so.sh",
+        "macos": "build_macos_dylib.sh",
+        "android": "build_android_so.sh"
+      },
+      "platforms": {
+        "windows": { "artifact": "fushi_compute.dll", "required": "always", "bundled_by": "app" },
+        "linux": { "artifact": "libfushi_compute.so", "required": "always", "bundled_by": "app" },
+        "macos": { "artifact": "libfushi_compute.dylib", "required": "always", "bundled_by": "app" },
+        "android": { "artifact": "libfushi_compute.so", "required": "always", "bundled_by": "fushi/android/app/build.gradle" },
+        "ios": { "via": "fushi_ios_umbrella", "required": "always" }
+      }
+    },
+    {
+      "name": "fushi_fsrs",
+      "language": "rust",
+      "dart_package": "packages/fushi_srs",
+      "abi_symbol": "ffsrs_abi_version",
+      "host_test_lib": true,
+      "test_features": "raw_sql",
+      "id_audit": true,
+      "build": {
+        "windows": "build_windows_dll.ps1",
+        "linux": "build_linux_so.sh",
+        "macos": "build_macos_dylib.sh",
+        "android": "build_android_so.sh"
+      },
+      "platforms": {
+        "windows": { "artifact": "fushi_fsrs.dll", "required": "optional", "bundled_by": "app", "fallback": "SRS native kernel reported unavailable (docs/agent/build.md fushi_fsrs)" },
+        "linux": { "artifact": "libfushi_fsrs.so", "required": "optional", "bundled_by": "app", "fallback": "SRS native kernel reported unavailable (docs/agent/build.md fushi_fsrs)" },
+        "macos": { "artifact": "libfushi_fsrs.dylib", "required": "optional", "bundled_by": "app", "fallback": "SRS native kernel reported unavailable (docs/agent/build.md fushi_fsrs)" },
+        "android": { "artifact": "libfushi_fsrs.so", "required": "optional", "bundled_by": "fushi/android/app/build.gradle", "fallback": "SRS native kernel reported unavailable (docs/agent/build.md fushi_fsrs)" },
+        "ios": { "via": "fushi_ios_umbrella", "required": "optional", "fallback": "linked unconditionally by the umbrella; no separate pre-compile check" }
+      }
+    },
+    {
+      "name": "fushi_web_core",
+      "language": "rust",
+      "dart_package": "packages/fushi_web_core",
+      "abi_symbol": null,
+      "host_test_lib": true,
+      "build": {
+        "windows": "build_windows_dll.ps1",
+        "linux": "build_linux_so.sh",
+        "macos": "build_macos_dylib.sh",
+        "android": "build_android_so.sh"
+      },
+      "platforms": {
+        "windows": { "artifact": "fushi_web_core.dll", "required": "release", "bundled_by": "app" },
+        "linux": { "artifact": "libfushi_web_core.so", "required": "release", "bundled_by": "app" },
+        "macos": { "artifact": "libfushi_web_core.dylib", "required": "release", "bundled_by": "app" },
+        "android": { "artifact": "libfushi_web_core.so", "required": "always", "bundled_by": "fushi/android/app/build.gradle" },
+        "ios": { "via": "fushi_ios_umbrella", "required": "optional", "fallback": "linked unconditionally by the umbrella; no ABI handshake symbol to check yet" }
+      }
+    },
+    {
+      "name": "fushi_rwkv",
+      "language": "rust",
+      "dart_package": "packages/fushi_rwkv",
+      "abi_symbol": "frwkv_abi_version",
+      "host_test_lib": true,
+      "build": {
+        "windows": "build_windows_dll.ps1",
+        "linux": "build_linux_so.sh",
+        "macos": "build_macos_dylib.sh",
+        "android": "build_android_so.sh"
+      },
+      "platforms": {
+        "windows": { "artifact": "fushi_rwkv.dll", "required": "always", "bundled_by": "app" },
+        "linux": { "artifact": "libfushi_rwkv.so", "required": "always", "bundled_by": "app" },
+        "macos": { "artifact": "libfushi_rwkv.dylib", "required": "always", "bundled_by": "app" },
+        "android": { "artifact": "libfushi_rwkv.so", "required": "always", "bundled_by": "fushi/android/app/build.gradle" },
+        "ios": { "via": "fushi_ios_umbrella", "required": "always" }
+      }
+    },
+    {
+      "name": "fushi_music",
+      "language": "rust",
+      "dart_package": "packages/fushi_music",
+      "abi_symbol": "ffm_abi_version",
+      "host_test_lib": true,
+      "external_sources": ["native/fushi_compute/src/legacy_text.rs"],
+      "build": {
+        "windows": "build_windows_dll.ps1",
+        "linux": "build_linux_so.sh",
+        "macos": "build_macos_dylib.sh",
+        "android": "build_android_so.sh"
+      },
+      "platforms": {
+        "windows": { "artifact": "fushi_music.dll", "required": "always", "bundled_by": "app" },
+        "linux": { "artifact": "libfushi_music.so", "required": "always", "bundled_by": "app" },
+        "macos": { "artifact": "libfushi_music.dylib", "required": "always", "bundled_by": "app" },
+        "android": { "artifact": "libfushi_music.so", "required": "always", "bundled_by": "fushi/android/app/build.gradle" },
+        "ios": { "via": "fushi_ios_umbrella", "required": "always" }
+      }
+    },
+    {
+      "name": "fushi_corpus",
+      "language": "rust",
+      "dart_package": "packages/fushi_corpus",
+      "abi_symbol": "fcorp_abi_version",
+      "host_test_lib": true,
+      "build": {
+        "windows": "build_windows_dll.ps1",
+        "linux": "build_linux_so.sh",
+        "macos": "build_macos_dylib.sh",
+        "android": "build_android_so.sh"
+      },
+      "platforms": {
+        "windows": { "artifact": "fushi_corpus.dll", "required": "always", "bundled_by": "app" },
+        "linux": { "artifact": "libfushi_corpus.so", "required": "always", "bundled_by": "app" },
+        "macos": { "artifact": "libfushi_corpus.dylib", "required": "always", "bundled_by": "app" },
+        "android": { "artifact": "libfushi_corpus.so", "required": "always", "bundled_by": "fushi/android/app/build.gradle" },
+        "ios": { "via": "fushi_ios_umbrella", "required": "always" }
+      }
+    },
+    {
+      "name": "fushi_p2p",
+      "language": "rust",
+      "dart_package": "packages/fushi_p2p",
+      "abi_symbol": null,
+      "build": {
+        "windows": "build_windows_dll.ps1",
+        "linux": "build_linux_so.sh",
+        "macos": "build_macos_dylib.sh",
+        "android": "build_android_so.sh"
+      },
+      "platforms": {
+        "windows": { "artifact": "fushi_p2p.dll", "required": "optional", "bundled_by": "app", "fallback": "P2P capability hidden; the rest of interconnect works (docs/specs/2026-09-28-interconnect-remote-reach.md)" },
+        "linux": { "artifact": "libfushi_p2p.so", "required": "optional", "bundled_by": "app", "fallback": "P2P capability hidden; the rest of interconnect works" },
+        "macos": { "artifact": "libfushi_p2p.dylib", "required": "optional", "bundled_by": "app", "fallback": "P2P capability hidden; the rest of interconnect works" },
+        "android": { "artifact": "libfushi_p2p.so", "required": "optional", "bundled_by": "fushi/android/app/build.gradle", "fallback": "P2P capability hidden; the rest of interconnect works" },
+        "ios": { "via": "fushi_ios_umbrella", "required": "optional", "fallback": "linked unconditionally by the umbrella; no ABI handshake symbol to check yet" }
+      }
+    },
+    {
+      "name": "fushi_ios_umbrella",
+      "language": "rust",
+      "dart_package": null,
+      "abi_symbol": null,
+      "aggregate": "ios",
+      "build": { "ios": "build_ios_staticlib.sh" },
+      "platforms": {
+        "ios": { "artifact": "libfushi_ios_umbrella.a", "required": "always", "bundled_by": "fushi/ios/Runner.xcodeproj (FUSHI_IOS_NATIVE_LDFLAGS)" }
+      }
+    },
+    {
+      "name": "fushi_shell_thumbs",
+      "language": "rust",
+      "dart_package": null,
+      "abi_symbol": null,
+      "build": { "windows": "build_windows_dll.ps1" },
+      "platforms": {
+        "windows": { "artifact": "fushi_shell_thumbs.dll", "required": "optional", "bundled_by": "fushi/windows/installer/fushi.iss", "fallback": "Explorer cover thumbnails not registered (installer skipifsourcedoesntexist)" }
+      }
+    },
+    {
+      "name": "fushi_anki_sync",
+      "language": "rust",
+      "dart_package": null,
+      "abi_symbol": null,
+      "toolchain_file": "native/fushi_anki_sync/rust-toolchain.toml",
+      "key_extra_inputs": [".github/actions/setup-fushi-anki-sync"],
+      "build": { "windows": "build.ps1", "linux": "build.sh", "macos": "build.sh" },
+      "platforms": {}
+    },
+    {
+      "name": "fushi_torrent",
+      "language": "cpp",
+      "dart_package": "packages/fushi_torrent",
+      "abi_symbol": null,
+      "build": {
+        "windows": "build_windows_dll.ps1",
+        "linux": "build_linux_so.sh",
+        "macos": "build_macos_dylib.sh",
+        "android": "build_android_so.sh"
+      },
+      "platforms": {
+        "windows": { "artifact": "fushi_torrent_ffi.dll", "required": "release", "bundled_by": "fushi/windows/CMakeLists.txt (fushi_torrent block: bridge + vcpkg runtime DLLs)" },
+        "linux": { "artifact": "libfushi_torrent_ffi.so", "required": "optional", "bundled_by": "fushi/linux/CMakeLists.txt (fushi_torrent block)", "fallback": "embedded torrent engine unavailable; falls back to external qBittorrent" },
+        "macos": { "artifact": "libfushi_torrent_ffi.dylib", "required": "optional", "bundled_by": "app", "fallback": "embedded torrent engine unavailable; falls back to external qBittorrent" },
+        "android": { "artifact": "libfushi_torrent_ffi.so", "required": "optional", "bundled_by": "fushi/android/app/build.gradle", "fallback": "embedded torrent engine unavailable; falls back to external qBittorrent" }
+      }
+    },
+    {
+      "name": "fushidicts",
+      "language": "cpp",
+      "dart_package": "packages/fushi_dictionary",
+      "abi_symbol": null,
+      "build": { "linux": "build_linux_so.sh" },
+      "platforms": {
+        "windows": { "artifact": "fushidicts_ffi.dll", "required": "always", "bundled_by": "fushi/windows/CMakeLists.txt (add_subdirectory)" },
+        "linux": { "artifact": "libfushidicts_ffi.so", "required": "always", "bundled_by": "fushi/linux/CMakeLists.txt (add_subdirectory)" }
+      }
+    },
+    {
+      "name": "fushi_aacs",
+      "language": "c",
+      "dart_package": null,
+      "abi_symbol": null,
+      "build": {},
+      "platforms": {
+        "windows": { "artifact": "libaacs.dll", "required": "always", "bundled_by": "fushi/windows/CMakeLists.txt (add_subdirectory)" },
+        "macos": { "artifact": "libaacs.dylib", "required": "always", "bundled_by": "fushi/macos/bundle_fushi_aacs.sh (built from source in the Xcode phase)" }
+      }
+    },
+    {
+      "name": "galgame_hook",
+      "language": "cpp",
+      "dart_package": null,
+      "abi_symbol": null,
+      "build": {},
+      "platforms": {
+        "windows": { "artifact": "galgame helper dist", "required": "optional", "bundled_by": "release workflows (docs/agent/galgame-hooking.md)", "fallback": "Galgame hook unavailable" }
+      }
+    }
+  ]
+}
