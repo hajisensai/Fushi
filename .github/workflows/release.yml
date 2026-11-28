@@ -131,13 +131,13 @@ jobs:
     # 发布时不许整套构建、把安装包挂到它们身上。表达式没有正则，只能逐个列 v0..v9；
     # 守卫 fushi/test/build/release_event_app_tag_guard_test.dart 钉住每个 job 都带它。
     #
-    # 暂停调试版自动发布（2026-11-27）：仓库变量 FUSHI_PAUSE_DEBUG_RELEASE = 'true' 时，push
-    # 事件（= 滚动 debug 通道）的 build / publish-android 在 job 级直接跳过，连 runner 都不占；
-    # workflow_dispatch（debug / beta / formal）与 release 事件不看这个变量。只挡这两个 job：
+    # 暂停调试版发布（2026-11-27；2026-11-28 扩到手动 debug）：仓库变量 FUSHI_PAUSE_DEBUG_RELEASE = 'true'
+    # 时，debug 通道的两个入口（push 事件、workflow_dispatch channel=debug）的 build / publish-android
+    # 在 job 级直接跳过，连 runner 都不占；dispatch 的 beta / formal 与 release 事件不看这个变量。只挡这两个 job：
     # 下面的 web-core-linux / test-native-linux / fushidicts-linux / tests 是 develop 上唯一的
     # app 全量单测门，与发包无关，暂停期间照跑。恢复 = 删变量或改成别的值。
     # 守卫 fushi/test/build/release_debug_pause_guard_test.dart；说明见 docs/agent/build.md「暂停调试版自动发布」。
-    if: ${{ !(github.event_name == 'push' && vars.FUSHI_PAUSE_DEBUG_RELEASE == 'true') && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
+    if: ${{ !(vars.FUSHI_PAUSE_DEBUG_RELEASE == 'true' && (github.event_name == 'push' || github.event.inputs.channel == 'debug')) && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
     runs-on: ubuntu-latest
     # 120：split-per-abi 逐 ABI 串行后要编三遍 kernel + AOT（ubuntu-26.04 上单 ABI
     # kernel ~170 s、AOT ~285 s），formal 在构建前的原生步骤已占 ~30 min，90 不够余量。
@@ -1551,7 +1551,7 @@ jobs:
   # 「正式版预构建与审批发布」；守卫 fushi/test/build/release_publish_gate_guard_test.dart。
   publish-android:
     needs: build
-    if: ${{ !(github.event_name == 'push' && vars.FUSHI_PAUSE_DEBUG_RELEASE == 'true') && (github.event_name == 'release' || needs.build.outputs.publish_managed_release == 'true' || needs.build.outputs.publish_manifest == 'true') && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
+    if: ${{ !(vars.FUSHI_PAUSE_DEBUG_RELEASE == 'true' && (github.event_name == 'push' || github.event.inputs.channel == 'debug')) && (github.event_name == 'release' || needs.build.outputs.publish_managed_release == 'true' || needs.build.outputs.publish_manifest == 'true') && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
     environment: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.channel == 'formal' || github.event.inputs.channel == 'beta')) && 'release-publish' || 'release-auto' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
