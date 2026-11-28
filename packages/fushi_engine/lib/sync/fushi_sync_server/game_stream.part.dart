@@ -43,8 +43,7 @@ extension _FushiSyncServerGameStream on FushiSyncServer {
         .convert(utf8.encode(peerPassword))
         .toString();
     shelf.Request routed = request;
-    if (method == 'POST' &&
-        (reqPath == '/api/game-stream/mine' || reqPath.endsWith('/mine'))) {
+    if (method == 'POST' && GameStreamEndpoint.carriesMineBody(reqPath)) {
       final shelf.Request? rewritten = await _resolveGameStreamMineAudio(
         request,
       );

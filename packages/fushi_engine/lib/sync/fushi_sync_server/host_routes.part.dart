@@ -74,6 +74,12 @@ InterconnectRoute _route(
 InterconnectCapability _live(String key, FutureOr<Object?> Function() value) =>
     InterconnectCapability.member(_kLiveLibraryGroup, key, value);
 
+/// 同有同无的几个 `liveLibrary` 键：一次求值写进每一个。
+InterconnectCapability _liveAll(
+  List<String> keys,
+  FutureOr<Object?> Function() value,
+) => InterconnectCapability.members(_kLiveLibraryGroup, keys, value);
+
 const Set<String> _kGet = <String>{'GET'};
 const Set<String> _kGetHead = <String>{'GET', 'HEAD'};
 const Set<String> _kPost = <String>{'POST'};
@@ -208,20 +214,11 @@ extension _FushiSyncServerHostRoutes on FushiSyncServer {
             () => _gameStreamService != null,
           ),
         ],
+        // 路径只登记在 [GameStreamEndpoint]（串流服务按同一个枚举分发）：这里不另抄一份。
         routes: <InterconnectRoute>[
-          for (final InterconnectPath path in const <InterconnectPath>[
-            InterconnectPath.subtree('/api/game-stream/sessions'),
-            InterconnectPath.exact('/api/game-stream/join'),
-            InterconnectPath.exact('/api/game-stream/signal'),
-            InterconnectPath.exact('/api/game-stream/stop'),
-            InterconnectPath.exact('/api/game-stream/mine'),
-            InterconnectPath.exact('/api/game-stream/library'),
-            InterconnectPath.exact('/api/game-stream/library/cover'),
-            InterconnectPath.exact('/api/game-stream/launch'),
-            InterconnectPath.exact('/api/game-stream/launch/status'),
-          ])
+          for (final GameStreamEndpoint endpoint in GameStreamEndpoint.values)
             _route(
-              path,
+              endpoint.pattern,
               (InterconnectRequest r) =>
                   _handleGameStream(r.raw, r.upperMethod, r.path),
             ),
@@ -292,9 +289,11 @@ extension _FushiSyncServerHostRoutes on FushiSyncServer {
       _HostModule(
         'libraryLocalAudio',
         capabilities: <InterconnectCapability>[
-          _live('audio', lib),
-          // 本地音频清单带内容身份 contentId、单项端点认 contentId（拍板 pr3481）。
-          _live(kLiveLibraryLocalAudioContentIdCapability, lib),
+          // `localAudioContentIdV2`：本地音频清单带内容身份 contentId、单项端点认 contentId（拍板 pr3481）。
+          _liveAll(const <String>[
+            'audio',
+            kLiveLibraryLocalAudioContentIdCapability,
+          ], lib),
         ],
         routes: <InterconnectRoute>[
           _route(
@@ -331,16 +330,12 @@ extension _FushiSyncServerHostRoutes on FushiSyncServer {
           // 弱网实时转码：随用户开关与本机 ffmpeg 可用性实时变化；最终真相仍是 `/streamurl` 的 `transcoded`。
           _live('videoTranscode', () => lib() && _videoTranscodeEnabled),
           // 「设为这一集的默认字幕」（`X-Fushi-Subtitle-Default: 1`）。老 host 无此字段 → client 不上传
-          // （BUG-2728）。
-          _live(
+          // （BUG-2728）。`videoSubtitleDefaultEpisode` 是同一端点带 `?episode=N`：老 host 无此字段 →
+          // client 对第 N 集不上传。
+          _liveAll(const <String>[
             'videoSubtitleDefault',
-            () => _libraryService is VideoSubtitleDefaultHost,
-          ),
-          // 同一端点带 `?episode=N`。老 host 无此字段 → client 对第 N 集不上传。
-          _live(
             'videoSubtitleDefaultEpisode',
-            () => _libraryService is VideoSubtitleDefaultHost,
-          ),
+          ], () => _libraryService is VideoSubtitleDefaultHost),
           // `DELETE .../subtitle?which=` 与 `POST .../subtitle/backfill`。
           _live(
             'videoSubtitleClear',
@@ -362,13 +357,12 @@ extension _FushiSyncServerHostRoutes on FushiSyncServer {
             () => _libraryService is VideoClipExportHost,
           ),
           // `clipaudio?discTitle=`：按（盘, title）裁音频；角度成员路径、DVD title、DVD 角度三项同一实现。
-          for (final String key in const <String>[
+          _liveAll(const <String>[
             kVideoClipAudioDiscTitleCapability,
             kVideoClipAudioDiscTitleAngleCapability,
             kVideoClipAudioDiscTitleDvdCapability,
             kVideoClipAudioDiscTitleDvdAngleCapability,
-          ])
-            _live(key, () => _libraryService is VideoDiscTitleAudioHost),
+          ], () => _libraryService is VideoDiscTitleAudioHost),
           _live(
             'videoSubtitleBackfill',
             () => lib() && videoSubtitleBackfill != null,
@@ -728,18 +722,15 @@ extension _FushiSyncServerHostRoutes on FushiSyncServer {
           ),
         ],
       ),
-      // 远程复习库：已配对设备不下载卡组，直接在本机的复习库上复习。
+      // 远程复习库：已配对设备不下载卡组，直接在本机的复习库上复习。两代能力名同有同无（V2 是真端点，
+      // V1 只是拒绝桩）：一项声明、provider 只取一次。
       _HostModule(
         'srsRemoteStore',
         capabilities: <InterconnectCapability>[
-          InterconnectCapability(
+          InterconnectCapability.keys(const <String>[
             kSrsRemoteStoreCapabilityV2,
-            () => _trueOrAbsent(srsRemoteStoreProvider?.call() != null),
-          ),
-          InterconnectCapability(
             kSrsRemoteStoreCapability,
-            () => _trueOrAbsent(srsRemoteStoreProvider?.call() != null),
-          ),
+          ], () => _trueOrAbsent(srsRemoteStoreProvider?.call() != null)),
         ],
         routes: <InterconnectRoute>[
           for (final String prefix in const <String>[

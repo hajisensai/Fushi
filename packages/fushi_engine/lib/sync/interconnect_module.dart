@@ -25,7 +25,8 @@ abstract class InterconnectHostModule {
   String get name;
 
   /// 本模块的端点，按声明顺序匹配：同一模块里可以先写窄的（如免 Basic 的取流子路径）再写宽的子树。
-  /// 不同模块的路径模式不得相交（[InterconnectModuleTable] 构造时就报错）。
+  /// 不同模块的路径模式不得相交；同一模块里，一条路由声明的每个方法都必须到得了——被前面的路由整条盖住
+  /// （宽的写在了窄的前面）即报错。两样都在 [InterconnectModuleTable] 构造时查。
   List<InterconnectRoute> get routes;
 
   /// 本模块写进 `/api/capabilities` 的能力位，按声明顺序。
@@ -104,6 +105,10 @@ sealed class InterconnectPath {
   /// 本模式可能匹配的路径都落在这棵子树里（冲突检测用）；只匹配单条路径的模式为 null。
   String? get region;
 
+  /// [other] 能匹配的路径本模式是否**全部**匹配（模块内遮蔽检测用）。只在能证明时回 true：
+  /// [InterconnectPath.where] 的谓词不透明，除「同一棵子树、同一个谓词」外一律当作盖不住别人。
+  bool covers(InterconnectPath other);
+
   void _validate();
 }
 
@@ -117,6 +122,10 @@ final class InterconnectExactPath extends InterconnectPath {
 
   @override
   String? get region => null;
+
+  @override
+  bool covers(InterconnectPath other) =>
+      other is InterconnectExactPath && other.path == path;
 
   @override
   void _validate() {
@@ -141,6 +150,17 @@ final class InterconnectSubtreePath extends InterconnectPath {
   String get region => prefix;
 
   @override
+  bool covers(InterconnectPath other) => switch (other) {
+    InterconnectExactPath(:final String path) => matches(path),
+    InterconnectSubtreePath(prefix: final String theirs) => matches(theirs),
+    // under 匹配「以 `theirs`（带尾 `/`）开头」的一切，含 `theirs` 本身。
+    InterconnectUnderPath(prefix: final String theirs) => theirs.startsWith(
+      '$prefix/',
+    ),
+    InterconnectWherePath(:final String within) => matches(within),
+  };
+
+  @override
   void _validate() {
     if (!prefix.startsWith('/') || prefix.endsWith('/')) {
       throw ArgumentError('互联路由前缀须以 / 开头、不以 / 结尾：$prefix');
@@ -161,6 +181,15 @@ final class InterconnectUnderPath extends InterconnectPath {
 
   @override
   String get region => prefix.substring(0, prefix.length - 1);
+
+  @override
+  bool covers(InterconnectPath other) => switch (other) {
+    InterconnectExactPath(:final String path) => matches(path),
+    // 子树 / where 的根自己也是它们能匹配的路径，所以根就得在本前缀之下。
+    InterconnectSubtreePath(prefix: final String theirs) => matches(theirs),
+    InterconnectUnderPath(prefix: final String theirs) => matches(theirs),
+    InterconnectWherePath(:final String within) => matches(within),
+  };
 
   @override
   void _validate() {
@@ -187,6 +216,14 @@ final class InterconnectWherePath extends InterconnectPath {
   String get region => within;
 
   @override
+  bool covers(InterconnectPath other) => switch (other) {
+    InterconnectExactPath(:final String path) => matches(path),
+    InterconnectWherePath(within: final String theirs, test: final theirTest) =>
+      identical(theirTest, test) && interconnectPathUnder(theirs, within),
+    InterconnectSubtreePath() || InterconnectUnderPath() => false,
+  };
+
+  @override
   void _validate() {
     if (!within.startsWith('/') || within.endsWith('/')) {
       throw ArgumentError('互联路由的 where 子树须以 / 开头、不以 / 结尾：$within');
@@ -208,8 +245,12 @@ bool _pathsOverlap(InterconnectPath a, InterconnectPath b) {
 
 /// 路由的信任级：鉴权中间件据此决定这条请求要不要先过 Basic。
 ///
-/// 只有 [InterconnectTrust.credential] 要求 Basic；其余几种都是「不带 Authorization 也能进 handler」的面，
-/// 各自写明门在哪里——新开一个免 Basic 的面必须选一种并给出它的门，写不出「随便放行」。
+/// 只有 [InterconnectTrust.credential] 要求 Basic；其余几种都是「不带 Authorization 也能进 handler」的面。
+/// 类型只保证「免 Basic 必须显式选一种信任级」：[InterconnectTrust.queryTicketOrCredential] 的门由中间件
+/// 执行，而 [pairingBootstrap] / [reachabilityProbe] / [InterconnectTrust.urlTicket] 的门仍在各自的 handler
+/// 里（[InterconnectUrlTicketTrust.ticket] 只是说明文字，不是校验器）——这三种**不是**结构保证。把票据
+/// 校验收进路由声明要连判门顺序一起动，属于下一阶段 A2（统一判门）；在那之前由
+/// `interconnect_module_layer_test.dart` 的「免 Basic 的面」名单卡住：多开一个免 Basic 的面即红。
 sealed class InterconnectTrust {
   const InterconnectTrust();
 
@@ -236,14 +277,23 @@ sealed class InterconnectTrust {
 
 final class InterconnectCredentialTrust extends InterconnectTrust {
   const InterconnectCredentialTrust._();
+
+  @override
+  String toString() => 'credential';
 }
 
 final class InterconnectPairingBootstrapTrust extends InterconnectTrust {
   const InterconnectPairingBootstrapTrust._();
+
+  @override
+  String toString() => 'pairingBootstrap';
 }
 
 final class InterconnectProbeTrust extends InterconnectTrust {
   const InterconnectProbeTrust._();
+
+  @override
+  String toString() => 'reachabilityProbe';
 }
 
 final class InterconnectUrlTicketTrust extends InterconnectTrust {
@@ -251,30 +301,62 @@ final class InterconnectUrlTicketTrust extends InterconnectTrust {
 
   /// 校验的是哪种票据（流 token、原盘会话 token、查词音频 id……）。
   final String ticket;
+
+  @override
+  String toString() => 'urlTicket($ticket)';
 }
 
 final class InterconnectQueryTicketTrust extends InterconnectTrust {
   const InterconnectQueryTicketTrust(this.validate);
 
   final Future<bool> Function(shelf.Request request) validate;
+
+  @override
+  String toString() => 'queryTicketOrCredential';
 }
 
-/// `/api/capabilities` 里的一个能力位。值每次请求现算；null = 此刻不提供（键不出现）——与回 `false`
-/// 是两种不同的线上形态，按键原样保留。
+/// `/api/capabilities` 里的一项能力声明：**一次求值**，写进一个或多个键。值每次请求现算；null = 此刻不
+/// 提供（键不出现）——与回 `false` 是两种不同的线上形态，按键原样保留。
+///
+/// 线上要求「同有同无」的几个键（新旧两代能力名、同一实现的几种形态）必须写成一项（[InterconnectCapability.keys]
+/// / [InterconnectCapability.members]），不要各写一项各求一次值：那样两次求值之间状态一变，回包里就只剩其中
+/// 一个。[InterconnectModuleTable.capabilities] 另外保证整份文档的求值在同一个同步段里发起。
 final class InterconnectCapability {
   /// 顶层键。
-  const InterconnectCapability(this.key, this.value) : group = null;
+  InterconnectCapability(String key, this.value)
+    : group = null,
+      keys = List<String>.unmodifiable(<String>[key]);
+
+  /// 同一次求值写进多个顶层键（按 [keys] 的顺序相邻出现）。
+  InterconnectCapability.keys(Iterable<String> keys, this.value)
+    : group = null,
+      keys = _nonEmptyKeys(keys);
 
   /// [group] 分组（如 `liveLibrary`）里的一个键。
-  const InterconnectCapability.member(
+  InterconnectCapability.member(
     InterconnectCapabilityGroup this.group,
-    this.key,
+    String key,
     this.value,
-  );
+  ) : keys = List<String>.unmodifiable(<String>[key]);
+
+  /// 同一次求值写进 [group] 分组里的多个键（线上位置由分组的成员序决定）。
+  InterconnectCapability.members(
+    InterconnectCapabilityGroup this.group,
+    Iterable<String> keys,
+    this.value,
+  ) : keys = _nonEmptyKeys(keys);
 
   final InterconnectCapabilityGroup? group;
-  final String key;
+
+  /// 本项写进的键；同一次求值的结果原样写进每一个。
+  final List<String> keys;
   final FutureOr<Object?> Function() value;
+
+  static List<String> _nonEmptyKeys(Iterable<String> keys) {
+    final List<String> out = List<String>.unmodifiable(keys);
+    if (out.isEmpty) throw ArgumentError('互联能力声明至少要有一个键');
+    return out;
+  }
 }
 
 /// 由多个模块共同填写的能力分组（顶层一个对象）。[members] 就是线上键序；分组里的每个键必须恰好由一个
@@ -327,7 +409,7 @@ class InterconnectModuleTable {
       if (!names.add(m.name)) throw ArgumentError('互联模块名重复：${m.name}');
       final List<InterconnectRoute> routes =
           List<InterconnectRoute>.unmodifiable(m.routes);
-      for (final InterconnectRoute r in routes) {
+      for (final (int index, InterconnectRoute r) in routes.indexed) {
         r.path._validate();
         for (final (InterconnectPath other, InterconnectHostModule owner)
             in seen) {
@@ -338,34 +420,37 @@ class InterconnectModuleTable {
           }
         }
         seen.add((r.path, m));
+        _checkReachable(m, routes, index);
       }
       _routes.add((m, routes));
       final List<InterconnectCapability> caps =
           List<InterconnectCapability>.unmodifiable(m.capabilities);
       for (final InterconnectCapability c in caps) {
         final InterconnectCapabilityGroup? g = c.group;
-        if (g == null) {
-          if (!topKeys.add(c.key)) {
-            throw ArgumentError('互联能力键重复：${c.key}（${m.name}）');
+        for (final String key in c.keys) {
+          if (g == null) {
+            if (!topKeys.add(key)) {
+              throw ArgumentError('互联能力键重复：$key（${m.name}）');
+            }
+            continue;
           }
-          continue;
-        }
-        if (!g.members.contains(c.key)) {
-          throw ArgumentError('能力分组 ${g.key} 没有声明成员 ${c.key}（${m.name}）');
-        }
-        final Map<String, String> owners = groupOwners.putIfAbsent(
-          g,
-          () => <String, String>{},
-        );
-        final String? previous = owners[c.key];
-        if (previous != null) {
-          throw ArgumentError(
-            '能力分组 ${g.key}.${c.key} 重复提供：$previous 与 ${m.name}',
+          if (!g.members.contains(key)) {
+            throw ArgumentError('能力分组 ${g.key} 没有声明成员 $key（${m.name}）');
+          }
+          final Map<String, String> owners = groupOwners.putIfAbsent(
+            g,
+            () => <String, String>{},
           );
+          final String? previous = owners[key];
+          if (previous != null) {
+            throw ArgumentError(
+              '能力分组 ${g.key}.$key 重复提供：$previous 与 ${m.name}',
+            );
+          }
+          owners[key] = m.name;
         }
-        owners[c.key] = m.name;
       }
-      _capabilities.add(caps);
+      _capabilities.addAll(caps);
     }
     for (final MapEntry<InterconnectCapabilityGroup, Map<String, String>> e
         in groupOwners.entries) {
@@ -383,8 +468,49 @@ class InterconnectModuleTable {
   final List<InterconnectHostModule> modules;
   final List<(InterconnectHostModule, List<InterconnectRoute>)> _routes =
       <(InterconnectHostModule, List<InterconnectRoute>)>[];
-  final List<List<InterconnectCapability>> _capabilities =
-      <List<InterconnectCapability>>[];
+  final List<InterconnectCapability> _capabilities = <InterconnectCapability>[];
+
+  /// 表里的全部路由，按模块注册顺序、模块内按声明顺序（诊断与从表派生的守卫用）。
+  Iterable<(InterconnectHostModule, InterconnectRoute)> get routes sync* {
+    for (final (InterconnectHostModule m, List<InterconnectRoute> routes)
+        in _routes) {
+      for (final InterconnectRoute r in routes) {
+        yield (m, r);
+      }
+    }
+  }
+
+  /// 模块内遮蔽：[routes] 的第 [index] 条声明的每个方法都必须到得了。同一模块按声明顺序匹配，前面一条
+  /// 路径模式盖住它（[InterconnectPath.covers]）又受理同一方法的路由会先命中——那个方法在本条上就是死的，
+  /// 它声明的信任级、方法集、handler 都不生效（把免 Basic 的取流子路径写到宽子树后面，取流就悄悄变成
+  /// 要 Basic）。「先窄后宽」「同路径、前一条只收部分方法、后一条不限方法兜底」都合法。
+  static void _checkReachable(
+    InterconnectHostModule m,
+    List<InterconnectRoute> routes,
+    int index,
+  ) {
+    final InterconnectRoute later = routes[index];
+    for (final InterconnectRoute earlier in routes.take(index)) {
+      if (!earlier.path.covers(later.path)) continue;
+      final Set<String>? earlierMethods = earlier.methods;
+      final Set<String>? laterMethods = later.methods;
+      final String dead;
+      if (earlierMethods == null) {
+        dead = laterMethods == null ? '全部方法' : laterMethods.join(' / ');
+      } else if (laterMethods == null) {
+        // 后一条不限方法：它收的是前一条没受理的那些方法。
+        continue;
+      } else {
+        final Set<String> shadowed = laterMethods.intersection(earlierMethods);
+        if (shadowed.isEmpty) continue;
+        dead = shadowed.join(' / ');
+      }
+      throw ArgumentError(
+        '互联模块 ${m.name} 的路由 ${later.path} 被前面的 ${earlier.path} 遮住（$dead 永远到不了）：'
+        '窄的路由要写在宽的前面',
+      );
+    }
+  }
 
   /// [path]（规范化路径）上的 [upperMethod] 请求归哪条路由。跨模块的模式互不相交，所以至多一个模块命中。
   InterconnectRouteLookup lookup(String path, String upperMethod) {
@@ -402,25 +528,40 @@ class InterconnectModuleTable {
   }
 
   /// 按注册顺序现算能力文档。顶层键按模块注册顺序、模块内按声明顺序；分组出现在第一个提供者的位置，
-  /// 组内按 [InterconnectCapabilityGroup.members] 排。值为 null 的键不出现。
+  /// 组内按 [InterconnectCapabilityGroup.members] 排。值为 null 的键不出现。全部值在同一个同步段里发起
+  /// 求值（见函数体），一项声明只求值一次。
   Future<Map<String, Object?>> capabilities() async {
     final Map<String, Object?> out = <String, Object?>{};
     final Map<InterconnectCapabilityGroup, Map<String, Object?>> groups =
         <InterconnectCapabilityGroup, Map<String, Object?>>{};
-    for (final List<InterconnectCapability> caps in _capabilities) {
-      for (final InterconnectCapability c in caps) {
-        final Object? value = await c.value();
-        final InterconnectCapabilityGroup? g = c.group;
-        if (g == null) {
-          if (value != null) out[c.key] = value;
-          continue;
+    // 所有能力值在同一个同步段里发起求值，中间不让出事件循环：同步的值函数看到的是同一时刻的 host
+    // 状态。逐项 `await` 会在每两项之间让出一次，两项读同一个开关时可能读到一前一后两个值。
+    final List<FutureOr<Object?>> evaluating = <FutureOr<Object?>>[
+      for (final InterconnectCapability c in _capabilities) c.value(),
+    ];
+    final List<Object?> values = await Future.wait(<Future<Object?>>[
+      for (final FutureOr<Object?> v in evaluating) Future<Object?>.value(v),
+    ]);
+    for (final (int i, InterconnectCapability c) in _capabilities.indexed) {
+      final Object? value = values[i];
+      final InterconnectCapabilityGroup? g = c.group;
+      if (g == null) {
+        if (value != null) {
+          for (final String key in c.keys) {
+            out[key] = value;
+          }
         }
-        final Map<String, Object?> members = groups.putIfAbsent(g, () {
-          final Map<String, Object?> fresh = <String, Object?>{};
-          out[g.key] = fresh;
-          return fresh;
-        });
-        if (value != null) members[c.key] = value;
+        continue;
+      }
+      final Map<String, Object?> members = groups.putIfAbsent(g, () {
+        final Map<String, Object?> fresh = <String, Object?>{};
+        out[g.key] = fresh;
+        return fresh;
+      });
+      if (value != null) {
+        for (final String key in c.keys) {
+          members[key] = value;
+        }
       }
     }
     for (final MapEntry<InterconnectCapabilityGroup, Map<String, Object?>> e

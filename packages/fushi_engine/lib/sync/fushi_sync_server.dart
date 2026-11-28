@@ -658,6 +658,10 @@ class FushiSyncServer {
     _hostModules(_injectedModules),
   );
 
+  /// 端点表本身，供从表派生的守卫读（哪些路由免 Basic、某条路径归谁）。
+  @visibleForTesting
+  InterconnectModuleTable get endpointTable => _modules;
+
   /// 截屏识字（`/api/ocr/screen` + capabilities `screenOcrV1`）。null = host 不提供，端点 404。
   final ScreenOcrHost? _screenOcr;
 
