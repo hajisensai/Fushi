@@ -15,7 +15,6 @@ import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/utils/components/section_visibility.dart'
     show ModuleRootAwayReporter;
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
@@ -253,9 +252,7 @@ class _MediaServerBrowsePageState extends State<MediaServerBrowsePage> {
         child: Column(
           children: <Widget>[
             // 与兄弟分区（设置 / 来源 / 发现）同一种页头，切分区时顶栏不跳位。
-            // Cupertino 渲染下页签另有归宿，与其余分区一样不画。
-            if (!isCupertinoPlatform(context))
-              FushiPageHeader.customTitle(title: widget.navigation),
+            FushiPageHeader.customTitle(title: widget.navigation),
             Expanded(
               child: ModuleRootAwayReporter(
                 away: widget.systemBackActive && _nestedCanPop,

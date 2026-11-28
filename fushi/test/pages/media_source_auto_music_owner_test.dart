@@ -1,6 +1,6 @@
 // v145（反馈 QAondMh4M5）：视频来源自动登记的音乐来源在来源页上要看得出是谁加的、能
 // 转成自己的来源；删视频来源时确认框说清会一并移除几个自动添加的音乐文件夹。
-// Material 与 Apple 两套（FushiAlertDialog.adaptive / 菜单）各跑一遍。
+// Material 与 Apple 两套（FushiAlertDialog / 菜单）各跑一遍。
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

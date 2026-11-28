@@ -1,8 +1,5 @@
-import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:fushi/src/utils/components/fushi_pill_segmented_button.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:macos_ui/macos_ui.dart'
-    show MacosSwitch, MacosSlider, PushButton, ControlSize;
 import 'package:fushi/src/stats/study_cover_tracker.dart'
     show studyClockRouteSettings;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -60,34 +57,6 @@ Widget adaptiveDialogAction({
     }
     return FushiFilledButton.tonal(onPressed: onPressed, child: child);
   }
-  // macOS-native: PushButton is the standard dialog button. Default action =
-  // filled primary; destructive = error-tinted; everything else = secondary
-  // (the grey Cancel-style button). Checked before isCupertinoPlatform (macOS
-  // auto answers true there as the legacy fallback).
-  if (isMacosPlatform(context)) {
-    if (isDestructiveAction) {
-      return PushButton(
-        controlSize: ControlSize.large,
-        color: Theme.of(context).colorScheme.error,
-        onPressed: onPressed,
-        child: child,
-      );
-    }
-    return PushButton(
-      controlSize: ControlSize.large,
-      secondary: !isDefaultAction,
-      onPressed: onPressed,
-      child: child,
-    );
-  }
-  if (isCupertinoPlatform(context)) {
-    return CupertinoDialogAction(
-      onPressed: onPressed,
-      isDestructiveAction: isDestructiveAction,
-      isDefaultAction: isDefaultAction,
-      child: child,
-    );
-  }
   // M3 Expressive（2026-10-05 浮层统一）：主操作 filled、破坏性 error 实底
   // filled、其余 text；全部走 Fushi* 按钮，按下有 M3E 形状变形回弹。
   if (isDestructiveAction) {
@@ -121,22 +90,6 @@ Widget adaptiveSwitch({
       value: value,
       onChanged: onChanged,
       activeTrackColor: activeColor,
-    );
-  }
-  // macOS-native: MacosSwitch is a clean drop-in (nullable onChanged handles the
-  // disabled state, activeColor maps 1:1). Checked BEFORE isCupertinoPlatform
-  // because under `auto` macOS still answers true there as the legacy fallback.
-  if (isMacosPlatform(context)) {
-    // Let MacosSwitch use the system accent for its active track — that's the
-    // native macOS look, more correct than forcing the app's activeColor (which
-    // is a Material/Cupertino Color, not macos_ui's MacosColor anyway).
-    return MacosSwitch(value: value, onChanged: onChanged);
-  }
-  if (isCupertinoPlatform(context)) {
-    return CupertinoSwitch(
-      value: value,
-      onChanged: onChanged,
-      activeTrackColor: activeColor ?? CupertinoTheme.of(context).primaryColor,
     );
   }
   // Material（M3E）：走 FushiSwitch，否则绕过 Expressive 开关（关态叉号、
@@ -173,35 +126,6 @@ Widget adaptiveSlider({
       divisions: divisions,
       label: label,
       thumbColor: thumbColor,
-    );
-  }
-  // macOS-native: MacosSlider has no onChangeEnd/onChangeStart/divisions, so a
-  // thin wrapper re-creates the commit-on-drag-end contract the settings sliders
-  // rely on (e.g. app UI scale). Only when interactive — a null onChanged means
-  // disabled, which MacosSlider can't express (its onChanged is non-nullable),
-  // so we fall through to the Cupertino disabled slider for that case.
-  if (isMacosPlatform(context) && onChanged != null) {
-    return _MacosSliderWithDragCallbacks(
-      value: value.clamp(min, max).toDouble(),
-      min: min,
-      max: max,
-      divisions: divisions,
-      color: Theme.of(context).colorScheme.primary,
-      onChanged: onChanged,
-      onChangeStart: onChangeStart,
-      onChangeEnd: onChangeEnd,
-    );
-  }
-  if (isCupertinoPlatform(context)) {
-    return CupertinoSlider(
-      value: value,
-      onChanged: onChanged,
-      min: min,
-      max: max,
-      divisions: divisions,
-      thumbColor: thumbColor ?? CupertinoColors.white,
-      onChangeStart: onChangeStart,
-      onChangeEnd: onChangeEnd,
     );
   }
   final Widget slider = Slider(
@@ -287,17 +211,6 @@ Widget adaptiveIndicator({
       ),
     );
   }
-  if (isCupertinoPlatform(context)) {
-    final double radius = strokeWidth != null ? strokeWidth * 2.5 : 10.0;
-    if (value != null) {
-      return CupertinoActivityIndicator.partiallyRevealed(
-        color: color,
-        radius: radius,
-        progress: value.clamp(0.0, 1.0),
-      );
-    }
-    return CupertinoActivityIndicator(color: color, radius: radius);
-  }
   // MD3：Material 3 Expressive。不定态是 LoadingIndicator（主色形状连续变形 +
   // 旋转），确定态是波浪进度环；都放进与 M3 2024 版原控件相同的 40 外框，
   // 紧约束下等比缩小、无约束时不放大。
@@ -380,17 +293,6 @@ Future<T?> adaptiveModalSheet<T>({
   final RouteSettings? routeSettings = studyClockRouteSettings(
     transparent: studyClockTransparent,
   );
-  if (isCupertinoPlatform(context)) {
-    final CapturedThemes themes = captureFor(useRootNavigator ?? true);
-    return showCupertinoModalPopup<T>(
-      context: context,
-      useRootNavigator: useRootNavigator ?? true,
-      barrierDismissible: isDismissible,
-      routeSettings: routeSettings,
-      builder: (BuildContext sheetContext) =>
-          themes.wrap(builder(sheetContext)),
-    );
-  }
   final bool noMotion = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
   final AnimationStyle sheetMotion = noMotion
       ? AnimationStyle.noAnimation
@@ -769,9 +671,9 @@ class _GlassSheetBody extends StatelessWidget {
 /// （[FushiPillSegmentedButton]）。分段条估宽（`SegmentedStripMetrics.of`）按同一
 /// 判据选几何，两处不得各写一份分支条件。
 ///
-/// 非 Apple 设计一律胶囊分段——包括 Cupertino 设计系统但 Apple 设计不生效
-/// （墨水屏）的情况：那里以前是原生 `CupertinoSlidingSegmentedControl`，各段
-/// 等宽、不走 `fushiSegmentWidths`，最长段先被截断（BUG-4205）。
+/// 非 Apple（玻璃）设计一律胶囊分段——包括偏好选了玻璃但玻璃设计不生效
+/// （墨水屏，`isGlassDesign` 为 false）的情况：各段按 `fushiSegmentWidths`
+/// 分宽，不做等宽截断（BUG-4205）。
 bool adaptiveSegmentedUsesPill(BuildContext context) => !isGlassDesign(context);
 
 Widget adaptiveSegmentedButton<T extends Object>({
@@ -800,7 +702,7 @@ Widget adaptiveSegmentedButton<T extends Object>({
   }
   // Material（M3E）：胶囊轨道 + 选中胶囊，与浏览页二级页签同一形态
   // （2026-10-09 用户「深色模式三图标分段与浏览页胶囊页签风格不一致」）。
-  // 墨水屏（含 Cupertino 设计系统下）也走这里：胶囊分段自带墨水屏配色。
+  // 墨水屏（含偏好选了玻璃的情况）也走这里：胶囊分段自带墨水屏配色。
   assert(adaptiveSegmentedUsesPill(context));
   return FushiPillSegmentedButton<T>(
     segments: segments,
@@ -823,84 +725,9 @@ Route<T> adaptivePageRoute<T>({
   // （[FushiCupertinoPageTransitionsBuilder] 外套页面背景层），这里必须走
   // MaterialPageRoute 查主题：CupertinoPageRoute 自己画转场、不读主题，推进来的
   // 页就垫不上用户的背景图片（设置子页始终白底），也不认系统「减弱动态效果」。
-  // 只有隐藏的 [FushiDesignSystem.cupertino] 仍给原生 CupertinoPageRoute。
-  if (isCupertinoPlatform(context)) {
-    return CupertinoPageRoute<T>(
-      builder: builder,
-      settings: settings,
-      fullscreenDialog: fullscreenDialog,
-    );
-  }
   return MaterialPageRoute<T>(
     builder: builder,
     settings: settings,
     fullscreenDialog: fullscreenDialog,
   );
-}
-
-/// Wraps [MacosSlider] (which only exposes a continuous [onChanged]) to restore
-/// the [Slider]/[CupertinoSlider] drag-boundary callbacks the settings sliders
-/// depend on. The raw [Listener] sees the pointer down/up regardless of the
-/// slider's internal pan recognizer, so commit-on-drag-end keeps working without
-/// re-introducing the scaled-tree slider regression. Maps Material `divisions`
-/// to MacosSlider's `discrete`/`splits`.
-class _MacosSliderWithDragCallbacks extends StatefulWidget {
-  const _MacosSliderWithDragCallbacks({
-    required this.value,
-    required this.min,
-    required this.max,
-    required this.divisions,
-    required this.color,
-    required this.onChanged,
-    required this.onChangeStart,
-    required this.onChangeEnd,
-  });
-
-  final double value;
-  final double min;
-  final double max;
-  final int? divisions;
-  final Color color;
-  final ValueChanged<double> onChanged;
-  final ValueChanged<double>? onChangeStart;
-  final ValueChanged<double>? onChangeEnd;
-
-  @override
-  State<_MacosSliderWithDragCallbacks> createState() =>
-      _MacosSliderWithDragCallbacksState();
-}
-
-class _MacosSliderWithDragCallbacksState
-    extends State<_MacosSliderWithDragCallbacks> {
-  late double _latest = widget.value;
-
-  @override
-  void didUpdateWidget(_MacosSliderWithDragCallbacks oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // Track externally-driven value changes between drags so a pointer-up that
-    // fires without an intervening onChanged still commits the current value.
-    if (oldWidget.value != widget.value) _latest = widget.value;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final int? divisions = widget.divisions;
-    return Listener(
-      onPointerDown: (_) => widget.onChangeStart?.call(_latest),
-      onPointerUp: (_) => widget.onChangeEnd?.call(_latest),
-      onPointerCancel: (_) => widget.onChangeEnd?.call(_latest),
-      child: MacosSlider(
-        value: _latest.clamp(widget.min, widget.max).toDouble(),
-        min: widget.min,
-        max: widget.max,
-        discrete: divisions != null,
-        splits: (divisions != null && divisions >= 2) ? divisions : 15,
-        color: widget.color,
-        onChanged: (double next) {
-          _latest = next;
-          widget.onChanged(next);
-        },
-      ),
-    );
-  }
 }

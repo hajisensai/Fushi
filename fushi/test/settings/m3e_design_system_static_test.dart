@@ -3199,9 +3199,7 @@ class AnotherPopupPart {
     final String settingsSource = readSyncSettingsSchemaSource();
     final String combined = '$messageSource\n$compareSource\n$settingsSource';
 
-    expect(messageSource, contains('class SyncMessageDialog'));
-    expect(messageSource, contains('FushiDialogFrame('));
-    expect(messageSource, contains('FushiModalSheetFrame('));
+    expect(messageSource, contains('FushiSnackBar('));
     expect(compareSource, contains('showSyncMessage('));
     expect(settingsSource, contains('showSyncMessage('));
     expect(combined, isNot(contains('CupertinoAlertDialog(')));

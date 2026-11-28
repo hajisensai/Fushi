@@ -938,7 +938,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
                   rule.copyWith(fontScalePercent: value.round()),
                 ),
               ),
-              FushiSwitchListTile.adaptive(
+              FushiSwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: Text(t.anki_lapis_visual_bold),
                 value: rule.bold,
@@ -1715,7 +1715,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
     required ValueChanged<int?> onChanged,
   }) => Column(
     children: <Widget>[
-      FushiSwitchListTile.adaptive(
+      FushiSwitchListTile(
         contentPadding: EdgeInsets.zero,
         title: Text(value == null ? title : '$title · ${value}px'),
         value: value != null,

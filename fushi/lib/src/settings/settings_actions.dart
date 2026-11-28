@@ -203,8 +203,8 @@ Future<void> applyUpdateChannel(AppModel appModel, String value) async {
 }
 
 Widget buildDesignSystemSelector(SettingsContext settingsContext) {
-  // Apple 设计系统选项和历史值不对外开放；Cupertino / macOS renderer 仅作为
-  // 内部能力保留。ThemeNotifier 会在加载、刷新和写入边界把这些隐藏值归一化为 auto。
+  // 历史值 cupertino / macos 对应的隐藏渲染器已整删；ThemeNotifier 会在加载、
+  // 刷新和写入边界把这些旧值归一化为 auto。
   const List<String> visibleValues = <String>['auto', 'material', 'glass'];
   final String persisted = settingsContext.appModel.themeNotifier.designSystem;
   // 分段控件要求 selected 必须落在 segments 内；这里保留防御性钳制，持久层的
@@ -476,7 +476,7 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
                 // 是承认这个空状态而不是给它编个目标：enabled=false 会同时置灰图标、把
                 // InkWell.onTap 置 null、并让 FushiFocusTarget(enabled: false) 把按钮摘出
                 // 焦点/手柄遍历，于是新建入口唯一收敛在「+」卡片上。
-                // Material 祖先：Cupertino 渲染器下没有 Material，FushiIconButton 的
+                // Material 祖先：玻璃渲染器下没有 Material，FushiIconButton 的
                 // InkWell 需要 Material 祖先；各 swatch 自带 Material，独立按钮要自己补。
                 Material(
                   type: MaterialType.transparency,

@@ -22,7 +22,6 @@ import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_schema.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mines_page.dart';
@@ -144,9 +143,6 @@ void main() {
             colorScheme: ColorScheme.fromSeed(
               seedColor: const Color(0xFF386A58),
             ),
-            extensions: <ThemeExtension<dynamic>>[
-              FushiDesignSystemTheme(themeNotifier.designSystemTheme),
-            ],
           ),
           home: Consumer(
             builder: (BuildContext ctx, WidgetRef ref, Widget? _) {

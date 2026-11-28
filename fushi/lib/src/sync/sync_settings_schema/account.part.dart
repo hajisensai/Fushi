@@ -115,14 +115,6 @@ class _SyncAccountWidgetState extends State<_SyncAccountWidget> {
 
   Widget _signInButton(BuildContext context) {
     final Widget progress = adaptiveIndicator(context: context, strokeWidth: 2);
-    if (isCupertinoPlatform(context)) {
-      return CupertinoButton.filled(
-        minSize: 32,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        onPressed: _isLoading ? null : _signIn,
-        child: _isLoading ? progress : Text(t.sync_sign_in),
-      );
-    }
     return FushiFilledButton.icon(
       style: FilledButton.styleFrom(
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -136,14 +128,6 @@ class _SyncAccountWidgetState extends State<_SyncAccountWidget> {
   }
 
   Widget _signOutButton(BuildContext context) {
-    if (isCupertinoPlatform(context)) {
-      return CupertinoButton(
-        padding: EdgeInsets.zero,
-        minSize: 32,
-        onPressed: _isLoading ? null : _signOut,
-        child: Text(t.sync_sign_out),
-      );
-    }
     // M3E：退出登录是次要操作，用描边按钮 + 图标（与登录的实心按钮成对）。
     return FushiOutlinedButton.icon(
       style: OutlinedButton.styleFrom(

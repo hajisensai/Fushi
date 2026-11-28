@@ -543,7 +543,7 @@ void main() {
       test('glass is a visible design system rendered by Material', () async {
         await notifier.setDesignSystem('glass');
         expect(notifier.designSystem, 'glass');
-        expect(notifier.designSystemTheme, FushiDesignSystem.material);
+        expect(isGlassDesignTheme(notifier.theme), isTrue);
       });
 
       test(
@@ -663,7 +663,7 @@ void main() {
     });
   });
 
-  group('ThemeNotifier.designSystemTheme reflects design_system pref', () {
+  group('ThemeNotifier.designSystem normalizes the design_system pref', () {
     for (final String value in <String>['cupertino', 'macos', 'fluent']) {
       test(
         'hidden design_system=$value snapshot is immediately auto',
@@ -674,7 +674,7 @@ void main() {
           });
 
           expect(notifier.designSystem, 'auto');
-          expect(notifier.designSystemTheme, FushiDesignSystem.auto);
+          expect(isGlassDesignTheme(notifier.theme), isFalse);
           final Map<String, String> prefs = await db.getAllPrefs();
           expect(PrefCodec.decode(prefs['design_system']!, ''), 'auto');
         },
@@ -693,37 +693,29 @@ void main() {
       });
     }
 
-    test('design_system=material → designSystemTheme is material', () {
+    test('design_system=material → MD3 theme', () {
       notifier.loadFromPrefsSnapshot(<String, String>{
         'design_system': PrefCodec.encode('material'),
       });
 
       expect(notifier.designSystem, 'material');
-      expect(notifier.designSystemTheme, FushiDesignSystem.material);
-      expect(
-        notifier.theme.extension<FushiDesignSystemTheme>()!.designSystem,
-        FushiDesignSystem.material,
-      );
+      expect(isGlassDesignTheme(notifier.theme), isFalse);
     });
 
     test('absent design_system → defaults to auto', () {
       notifier.loadFromPrefsSnapshot(<String, String>{});
 
       expect(notifier.designSystem, 'auto');
-      expect(notifier.designSystemTheme, FushiDesignSystem.auto);
-      expect(
-        notifier.theme.extension<FushiDesignSystemTheme>()!.designSystem,
-        FushiDesignSystem.auto,
-      );
+      expect(isGlassDesignTheme(notifier.theme), isFalse);
     });
 
-    test('explicit design_system=auto → designSystemTheme is auto', () {
+    test('explicit design_system=auto → MD3 theme', () {
       notifier.loadFromPrefsSnapshot(<String, String>{
         'design_system': PrefCodec.encode('auto'),
       });
 
       expect(notifier.designSystem, 'auto');
-      expect(notifier.designSystemTheme, FushiDesignSystem.auto);
+      expect(isGlassDesignTheme(notifier.theme), isFalse);
     });
 
     test(

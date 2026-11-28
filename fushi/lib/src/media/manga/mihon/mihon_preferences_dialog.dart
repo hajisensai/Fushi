@@ -171,7 +171,7 @@ class _MihonPreferencesDialogState extends State<MihonPreferencesDialog> {
     final bool busy = _savingAll || _savingKey == preference.key;
     return switch (preference.kind) {
       MihonPreferenceKind.checkBox ||
-      MihonPreferenceKind.switchControl => FushiSwitchListTile.adaptive(
+      MihonPreferenceKind.switchControl => FushiSwitchListTile(
         title: Text(preference.title),
         subtitle: preference.summary.isEmpty ? null : Text(preference.summary),
         value: preference.value == true,

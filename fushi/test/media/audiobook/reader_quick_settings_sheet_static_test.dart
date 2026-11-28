@@ -336,7 +336,7 @@ void main() {
         source.indexOf('class FushiMasterDetailSettingsSheet'),
       );
 
-      expect(headerSource, contains('navTitleTextStyle'));
+      expect(headerSource, contains('Theme.of(context).textTheme.titleMedium'));
       expect(headerSource, isNot(contains('fontSize: 17')));
     },
   );

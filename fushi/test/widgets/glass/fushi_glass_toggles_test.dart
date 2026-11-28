@@ -85,7 +85,7 @@ void main() {
         (_) => Column(
           children: <Widget>[
             FushiSwitch(value: true, onChanged: (_) {}),
-            FushiSwitch.adaptive(value: false, onChanged: (_) {}),
+            FushiSwitch(value: false, onChanged: (_) {}),
           ],
         ),
         glass: false,
@@ -103,7 +103,7 @@ void main() {
       final List<bool> focusChanges = <bool>[];
       await pumpHost(
         tester,
-        (StateSetter setState) => FushiSwitch.adaptive(
+        (StateSetter setState) => FushiSwitch(
           value: value,
           focusNode: node,
           onFocusChange: focusChanges.add,
@@ -579,7 +579,7 @@ void main() {
     ) async {
       await pumpHost(
         tester,
-        (_) => FushiSwitchListTile.adaptive(
+        (_) => FushiSwitchListTile(
           value: true,
           onChanged: (_) {},
           title: const Text('Wifi'),
@@ -598,7 +598,7 @@ void main() {
       bool value = false;
       await pumpHost(
         tester,
-        (StateSetter setState) => FushiSwitchListTile.adaptive(
+        (StateSetter setState) => FushiSwitchListTile(
           value: value,
           focusNode: node,
           secondary: const Icon(Icons.wifi),

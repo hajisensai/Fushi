@@ -224,7 +224,6 @@ void main() {
             theme: buildFushiThemeData(
               scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
               textTheme: Typography.material2021().black,
-              designSystem: FushiDesignSystem.material,
               glass: FushiGlassMaterial.off,
               glassDesign: false,
             ),

@@ -17,7 +17,6 @@ import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_schema.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 
 import '../helpers/test_platform_services.dart';
 
@@ -87,9 +86,6 @@ void main() {
             colorScheme: ColorScheme.fromSeed(
               seedColor: const Color(0xFF386A58),
             ),
-            extensions: <ThemeExtension<dynamic>>[
-              FushiDesignSystemTheme(themeNotifier.designSystemTheme),
-            ],
           ),
           home: Scaffold(
             // 矮视口逼出滚动（reading 分组 26 项远超 240px）。

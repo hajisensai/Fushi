@@ -11,7 +11,6 @@ import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/ai_agent_page.dart';
 import 'package:fushi/src/pages/implementations/home_ai_agent_panel.dart';
 import 'package:fushi/src/shortcuts/text_field_key_ownership.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi_engine/ai/agent/agent_session.dart';
 import 'package:fushi_engine/ai/agent/agent_tool.dart';
@@ -23,7 +22,6 @@ ThemeData _theme() => buildFushiThemeData(
     seedColor: kFushiDefaultSeed,
     brightness: Brightness.light,
   ),
-  designSystem: FushiDesignSystem.auto,
   glassDesign: false,
   textTheme: FushiTypeScale.buildTextTheme(const TextStyle()),
 ).copyWith(platform: TargetPlatform.windows);

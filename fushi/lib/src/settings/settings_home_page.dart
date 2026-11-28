@@ -4,7 +4,6 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/pages/base_page.dart';
 import 'package:fushi/src/second_screen/companion/companion_context.dart'
     show companionSettingsHomeCategory;
-import 'package:fushi/src/settings/cupertino_settings_renderer.dart';
 import 'package:fushi/src/settings/glass_settings_renderer.dart';
 import 'package:fushi/src/settings/material_settings_renderer.dart';
 import 'package:fushi/src/settings/settings_context.dart';
@@ -25,7 +24,6 @@ import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
 import 'package:fushi/src/utils/adaptive/shell_style.dart'
     show shellRedesignActive;
 import 'package:fushi/src/utils/components/fushi_static_masthead.dart';
-import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart'
     show AppleEdgeSidebarSurface;
@@ -43,11 +41,8 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart'
         fushiAppleInlineTitleOpacity,
         fushiAppleLargeTitleBand,
         fushiAppleLargeTitleOpacity;
-import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
     show FushiAppleGroupSurface;
-import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart';
 
@@ -191,34 +186,15 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
       _selectedDestinationId = destinations.first.id;
     }
     final SettingsDestinationId selectedDestinationId = _selectedDestinationId!;
-    final SettingsRenderer renderer = isCupertinoPlatform(context)
-        ? const CupertinoSettingsRenderer()
-        : const MaterialSettingsRenderer();
-
-    final bool glass = isGlassDesign(context) && !isCupertinoPlatform(context);
-    final bool md3 = !glass && !isCupertinoPlatform(context);
+    final bool glass = isGlassDesign(context);
     final Widget content = LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final bool wide =
             constraints.maxWidth >= kFushiSettingsHomeTwoPaneMinWidth;
         _wide = wide;
         _publishCompanionCategory(wide ? selectedDestinationId.name : null);
-        // MD3：Android 16「设置」。宽屏左导航右详情（不另画「设置」页头），窄屏是自带
-        // 折叠大标题顶栏的单列（不再套外壳页头，见 _buildMd3NarrowLayout）。
-        if (md3) {
-          return wide
-              ? _buildMd3WideLayout(
-                  settingsContext: settingsContext,
-                  destinations: destinations,
-                  selectedDestinationId: selectedDestinationId,
-                )
-              : _buildMd3NarrowLayout(
-                  settingsContext: settingsContext,
-                  destinations: destinations,
-                );
-        }
         // 「玻璃」设计系统：整套重排成 macOS「系统设置」（宽）/ iOS「设置」
-        // （窄），见 [GlassSettingsRenderer]。MD3 / Cupertino 走下面原分支。
+        // （窄），见 [GlassSettingsRenderer]。
         if (glass) {
           return wide
               ? _buildGlassWideLayout(
@@ -231,40 +207,18 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
                   destinations: destinations,
                 );
         }
-        if (wide) {
-          // 宽屏主从：导航栏贴最左、详情填满整宽（平板友好，不再居中留白）。
-          return _buildWideLayout(
-            settingsContext: settingsContext,
-            renderer: renderer,
-            destinations: destinations,
-            selectedDestinationId: selectedDestinationId,
-          );
-        }
-        // 窄屏单列：居中限宽（单列阅读更舒适）。搜索时结果列表整体替换分类列表。
-        return DesktopContentLayout(
-          kind: DesktopContentKind.settings,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              _buildSearchField(),
-              Expanded(
-                child: _searchQuery.trim().isEmpty
-                    ? renderer.buildHomePage(
-                        settingsContext: settingsContext,
-                        destinations: destinations,
-                        selectedDestinationId: selectedDestinationId,
-                        onDestinationSelected: _selectDestination,
-                        embedded: widget.embedded,
-                      )
-                    : _buildSearchResults(
-                        settingsContext: settingsContext,
-                        destinations: destinations,
-                        wide: false,
-                      ),
-              ),
-            ],
-          ),
-        );
+        // MD3：Android 16「设置」。宽屏左导航右详情（不另画「设置」页头），窄屏是自带
+        // 折叠大标题顶栏的单列（不再套外壳页头，见 _buildMd3NarrowLayout）。
+        return wide
+            ? _buildMd3WideLayout(
+                settingsContext: settingsContext,
+                destinations: destinations,
+                selectedDestinationId: selectedDestinationId,
+              )
+            : _buildMd3NarrowLayout(
+                settingsContext: settingsContext,
+                destinations: destinations,
+              );
       },
     );
     // Apple（玻璃）窄屏自己画 iOS 导航栏 + 大标题，不再叠页头大字。
@@ -298,136 +252,6 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
   /// 页头；独立推出来的设置页（非嵌入）与墨水屏保持原页头。
   bool get _mastheadHeader => widget.embedded && shellRedesignActive(context);
 
-  /// [onNavCard] 为 true 时搜索框画在宽屏导航卡（`surfaces.card`，见
-  /// [_buildWideLayout]）里：那里 `surfaces.search` 与卡底只差一档、几乎糊掉，故再
-  /// 提一档到 `surfaces.overlay`，且横向内边距收成卡内的 `gap`；窄屏单列画在页面底
-  /// （`surfaces.page`）上，保持 `surfaces.search` 与 `page` 内边距。
-  Widget _buildSearchField({bool onNavCard = false}) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final double horizontal = onNavCard
-        ? tokens.spacing.gap
-        : tokens.spacing.page;
-    // 搜索框与设置分组卡走同一套边界语言：填充分层，不描边。原来它吃全局
-    // inputDecorationTheme 的 colorScheme.outline 描边——比分组卡的
-    // outlineVariant 深一档，在同一屏里是第三种强度的线。
-    //
-    // eink 例外：填充在 eink scheme 下塌缩成背景色，描边是唯一的边界信号，
-    // 那里把 enabled/focused 交回主题默认（enabledBorder/focusedBorder 传 null
-    // 即回落主题；只覆盖 border 会被主题的 enabledBorder 顶掉）。
-    final bool eink = isEinkTheme(context);
-    final InputBorder flatBorder = OutlineInputBorder(
-      // MD3 守卫：圆角一律走 design tokens，不自持字面量。
-      borderRadius: tokens.radii.controlRadius,
-      borderSide: BorderSide.none,
-    );
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        horizontal,
-        tokens.spacing.gap,
-        horizontal,
-        0,
-      ),
-      // Material(transparency)：设置主页也会在 Cupertino 皮肤下渲染（隐藏内部
-      // 能力），彼时树里没有 Material 祖先，裸 TextField 会 assert；透明 Material
-      // 只提供 ink/装饰上下文，不改观感。
-      child: Material(
-        type: MaterialType.transparency,
-        child: FushiTextFieldControl(
-          controller: _searchController,
-          decoration: InputDecoration(
-            hintText: t.settings_search_hint,
-            prefixIcon: const FushiIcon(Icons.search),
-            suffixIcon: _searchQuery.isEmpty
-                ? null
-                : FushiIconButtonControl(
-                    icon: const FushiIcon(Icons.clear),
-                    tooltip: t.clear,
-                    onPressed: () {
-                      _searchController.clear();
-                      setState(() => _searchQuery = '');
-                    },
-                  ),
-            isDense: true,
-            filled: !eink,
-            fillColor: eink
-                ? null
-                : (onNavCard
-                      ? tokens.surfaces.overlay
-                      : tokens.surfaces.search),
-            border: eink
-                ? OutlineInputBorder(
-                    // MD3 守卫：圆角一律走 design tokens，不自持字面量。
-                    borderRadius: tokens.radii.controlRadius,
-                  )
-                : flatBorder,
-            enabledBorder: eink ? null : flatBorder,
-            focusedBorder: eink
-                ? null
-                : OutlineInputBorder(
-                    borderRadius: tokens.radii.controlRadius,
-                    borderSide: BorderSide(
-                      color: Theme.of(context).colorScheme.primary,
-                      width: 2,
-                    ),
-                  ),
-          ),
-          onChanged: (String value) => setState(() => _searchQuery = value),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSearchResults({
-    required SettingsContext settingsContext,
-    required List<SettingsDestination> destinations,
-    required bool wide,
-  }) {
-    final List<SettingsSearchEntry> results = filterSettingsEntries(
-      flattenVisibleSettings(destinations, settingsContext),
-      _searchQuery,
-    );
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    if (results.isEmpty) {
-      return Padding(
-        padding: EdgeInsets.all(tokens.spacing.page),
-        child: Center(child: Text(t.settings_search_no_results)),
-      );
-    }
-    final EdgeInsets mediaPadding = MediaQuery.of(context).padding;
-    // 宽屏结果列表画在导航卡里：横向收成卡内 `gap`、底部不再叠系统栏内边距
-    // （卡的外边距已经让出），结果分组也不再铺卡（卡中卡）。窄屏落在页面底上，
-    // 保持原样。
-    final double horizontal = wide ? tokens.spacing.gap : tokens.spacing.page;
-    return ListView(
-      padding: EdgeInsets.fromLTRB(
-        horizontal,
-        tokens.spacing.gap,
-        horizontal,
-        wide ? tokens.spacing.gap : tokens.spacing.page + mediaPadding.bottom,
-      ),
-      children: <Widget>[
-        AdaptiveSettingsSection(
-          surfaceColor: wide ? Colors.transparent : null,
-          children: <Widget>[
-            for (final SettingsSearchEntry entry in results)
-              FushiListItem(
-                leading: FushiIcon(entry.item.icon ?? entry.destination.icon),
-                // custom 项经 searchTitle 入索引时 item.title 为空，展示用
-                // entry.title（同打分口径）。
-                title: Text(entry.title),
-                titleMaxLines: 2,
-                // 面包屑「分类 › 分区」——框架级去重：分区名为空或与分类同名时
-                // 只显示分类（消灭「系统 › 系统」，见 settingsSearchBreadcrumb）。
-                subtitle: Text(settingsSearchBreadcrumb(entry)),
-                trailing: const FushiIcon(Icons.chevron_right),
-                onTap: () => _openSearchResult(entry, wide: wide),
-              ),
-          ],
-        ),
-      ],
-    );
-  }
-
   /// 点搜索结果：登记滚动定位挂点、清空搜索，宽屏切主从选中分类，窄屏 push
   /// 详情页；目标行由 SettingsSchemaItem 消费挂点后滚入视口并闪烁高亮。
   /// 正文条目仅在已声明真实挂点时登记定位请求，避免遗留未消费的目标。
@@ -442,86 +266,6 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     );
     // 宽屏右窗格已切到该分类，只需再推子页；窄屏连顶层分类页一起推。
     openSettingsSearchEntry(Navigator.of(context), entry, pushTopLevel: !wide);
-  }
-
-  Widget _buildWideLayout({
-    required SettingsContext settingsContext,
-    required SettingsRenderer renderer,
-    required List<SettingsDestination> destinations,
-    required SettingsDestinationId selectedDestinationId,
-  }) {
-    final SettingsDestination selected = destinations.firstWhere(
-      (SettingsDestination destination) =>
-          destination.id == selectedDestinationId,
-    );
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final EdgeInsets mediaPadding = MediaQuery.of(context).padding;
-    // 窗格之间不画分隔线：BUG-2443 曾把导航窗格整块铺成 `surfaces.card` 底并保留
-    // 1px 分隔线，让线两侧读出「两个窗格」；用户实机反馈（2026-09-20 截图）那条线
-    // 本身多余——左边一整块贴边色块、右边一张分组卡、中间再夹一条竖线，接缝最扎眼。
-    // 改成导航整块（搜索框 + 分类列表）装进一张与右侧分组卡**同款**的 FushiCard
-    // （同色 `surfaces.card`、同圆角 `groupRadius`），外边距与右侧分组卡对齐：顶部
-    // 同取 `gap`、离图标侧栏 `page`、与右侧分组卡之间留一个 `page`（右侧正文自带
-    // 的左内边距，见 MaterialSettingsRenderer.detailHorizontalInsets）。这样左右
-    // 都是「卡片浮在页面底上」，窗格边界由卡片自己表达，不需要线。
-    // 这条（隐藏 Cupertino 设计系统的）分支刻意不传 supportingWidth：左栏随宽度取
-    // supportingPaneWidthForLayout（280~360），600 宽时右详情 320（见
-    // kFushiSettingsHomeTwoPaneMinWidth 文档）。
-    return MaterialSupportingPaneLayout(
-      minSplitWidth: kFushiSettingsHomeTwoPaneMinWidth,
-      supportingSide: SupportingPaneSide.start,
-      showDivider: false,
-      supporting: FushiSidePaneScrollScope(
-        child: Padding(
-          padding: EdgeInsets.fromLTRB(
-            tokens.spacing.page,
-            tokens.spacing.gap,
-            0,
-            tokens.spacing.page + mediaPadding.bottom,
-          ),
-          child: FushiCard(
-            padding: EdgeInsets.zero,
-            borderRadius: tokens.radii.groupRadius,
-            color: tokens.surfaces.card,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                _buildSearchField(onNavCard: true),
-                Expanded(
-                  child: _searchQuery.trim().isEmpty
-                      ? renderer.buildDestinationList(
-                          settingsContext: settingsContext,
-                          destinations: destinations,
-                          selectedDestinationId: selectedDestinationId,
-                          onDestinationSelected: _selectDestination,
-                          pushRoutes: false,
-                        )
-                      : _buildSearchResults(
-                          settingsContext: settingsContext,
-                          destinations: destinations,
-                          wide: true,
-                        ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-      // 详情面板的身份就是当前 destination：用 KeyedSubtree 按 id 编码，
-      // 切换目标时整棵子树作废重建，避免 Flutter 复用上一目标同位置的 Switch
-      // Element 触发 didUpdateWidget(value 变化)→ 圆点滑动（以及分段滑动、滚动
-      // 位置串页等同类复用副作用）。
-      // 详情正文填满 pane 整宽：UI 巡检 PR-5 曾按 MD3 list-detail 惯例加过
-      // 960 限宽 + 左对齐，用户实机反馈「右边空了一大堆」（2026-07-22 截图，
-      // 4K 窗口下右侧 2400px 空白）——用户拍板回滚到填满整宽的原始形态。
-      primary: KeyedSubtree(
-        key: ValueKey<SettingsDestinationId>(selected.id),
-        child: renderer.buildDetailContent(
-          settingsContext: settingsContext,
-          destination: selected,
-        ),
-      ),
-    );
   }
 
   /// 玻璃窄屏的滚动位置：驱动大标题 / 小标题交叉淡变与栏下沿 scroll edge。
@@ -594,7 +338,8 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
           destination.id == selectedDestinationId,
     );
     final EdgeInsets mediaPadding = MediaQuery.of(context).padding;
-    const GlassSettingsRenderer renderer = GlassSettingsRenderer(
+    final SettingsRenderer renderer = resolveSettingsRenderer(
+      context,
       showDetailHeader: true,
     );
     final bool searching = _searchQuery.trim().isNotEmpty;
@@ -676,7 +421,7 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     required SettingsContext settingsContext,
     required List<SettingsDestination> destinations,
   }) {
-    const GlassSettingsRenderer renderer = GlassSettingsRenderer();
+    final SettingsRenderer renderer = resolveSettingsRenderer(context);
     final double inset = GlassSettingsRenderer.detailHorizontalInset(context);
     final double band = fushiAppleLargeTitleBand(context);
     final ScrollController controller = _glassScrollController;
@@ -851,7 +596,8 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     );
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final EdgeInsets mediaPadding = MediaQuery.of(context).padding;
-    const MaterialSettingsRenderer renderer = MaterialSettingsRenderer(
+    final SettingsRenderer renderer = resolveSettingsRenderer(
+      context,
       showDetailHeader: true,
     );
     return MaterialSupportingPaneLayout(
@@ -938,7 +684,7 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     required List<SettingsDestination> destinations,
   }) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    const MaterialSettingsRenderer renderer = MaterialSettingsRenderer();
+    final SettingsRenderer renderer = resolveSettingsRenderer(context);
     final bool showHeader =
         (!widget.embedded || !FushiDesktopTitleBar.isEnabled) &&
         !_mastheadHeader;

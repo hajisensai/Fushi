@@ -138,7 +138,7 @@ class _OpdsServerSettingsSectionState
           Row(
             children: <Widget>[
               Expanded(
-                child: FushiSwitchListTile.adaptive(
+                child: FushiSwitchListTile(
                   key: ValueKey<String>('opds-server-$index-enabled'),
                   contentPadding: EdgeInsets.zero,
                   dense: true,
@@ -215,7 +215,7 @@ class _OpdsServerSettingsSectionState
             onChanged: (String value) =>
                 _update(index, draft.copyWith(apiKey: value)),
           ),
-          FushiSwitchListTile.adaptive(
+          FushiSwitchListTile(
             key: ValueKey<String>('opds-server-$index-allow-http'),
             contentPadding: EdgeInsets.zero,
             dense: true,

@@ -291,7 +291,7 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
       )?.actionFor(MediaLibraryViewKind.onlineSources);
 
   /// 页头只在独立 / 库页壳里渲染；不渲染时（embedded、Cupertino）刷新挪进搜索行。
-  bool get _headerVisible => !widget.embedded && !isCupertinoPlatform(context);
+  bool get _headerVisible => !widget.embedded;
 
   Widget _refreshButton() => FushiIconButtonControl(
     key: const ValueKey<String>('manga_discovery_refresh'),

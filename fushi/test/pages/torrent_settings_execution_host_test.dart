@@ -9,7 +9,6 @@ import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/torrent_settings_section.dart';
 import 'package:fushi/src/settings/settings_search.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
@@ -60,9 +59,6 @@ Widget _harness() {
         useMaterial3: true,
         platform: TargetPlatform.android,
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF386A58)),
-        extensions: <ThemeExtension<dynamic>>[
-          FushiDesignSystemTheme(themeNotifier.designSystemTheme),
-        ],
       ),
       home: const Scaffold(
         body: SingleChildScrollView(

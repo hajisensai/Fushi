@@ -3385,15 +3385,16 @@ class AppModel
   /// Keyboard / gamepad shortcut bindings, persisted in preferences.
   final FushiShortcutRegistry shortcutRegistry = FushiShortcutRegistry();
 
-  /// TODO-1375：媒体（阅读器 / 视频）是否打开的**可靠**通知源，专供 macOS 原生壳的
-  /// 根 sidebar 显隐门控（main.dart 的 MacosWindow）。根因：sidebar 过去直接读
+  /// TODO-1375：媒体（阅读器 / 视频）是否打开的**可靠**通知源，供 main.dart 根
+  /// builder 的壳层显隐门控订阅。根因：壳层过去直接读
   /// `isMediaOpen`（= `_currentMediaSource != null`）在 MaterialApp.builder 里求值，
   /// 靠 `ref.watch(appProvider)` 重建——但 [openMedia] / [closeMedia] 只改
   /// `_currentMediaSource` 却**从不** notifyListeners，于是退出阅读器后 builder 不重跑、
   /// sidebar 卡在上一次求值的 `null`（永久消失 → 设置 tab 失去唯一切换出口 → 困死）。
   /// 用这个独立 ValueNotifier 在 open/close 里精确 set，配合 ValueListenableBuilder，
-  /// 退出媒体必然重建并恢复 sidebar（单一真值源 + 保证通知），且不触发全局根重建。
-  /// 非 macOS 平台不读它（阅读器是盖满的整页路由，与壳 sidebar 无关），纯 no-op。
+  /// 退出媒体必然重建并恢复壳层（单一真值源 + 保证通知），且不触发全局根重建。
+  /// 现在的消费方是桌面自绘标题栏（main.dart 根 builder：媒体打开时主导航 rail
+  /// 被盖住，标题随之取消缩进）。
   final ValueNotifier<bool> mediaOpenNotifier = ValueNotifier<bool>(false);
 
   /// 宽屏主导航 rail 用户手动选的展开（true）/ 收起（false）；null = 没选过，

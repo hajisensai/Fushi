@@ -7,7 +7,6 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
-import 'package:macos_ui/macos_ui.dart' show MacosWindow;
 
 import 'support/test_app_launcher.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart'
@@ -47,11 +46,6 @@ void main() {
       homeReady,
       isTrue,
       reason: 'MD3 navigation should render within 90s on macOS.',
-    );
-    expect(
-      find.byType(MacosWindow),
-      findsNothing,
-      reason: 'Default auto must not create the hidden native macOS shell.',
     );
     expect(
       find.byType(VerticalDivider),

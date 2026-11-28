@@ -22,7 +22,6 @@ import 'package:fushi/src/web_browser/features/extension_host/web_browser_extens
 import 'package:fushi/src/web_browser/web_browser_prefs.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:material_ui/material_ui.dart';
@@ -92,9 +91,6 @@ void main() {
             theme: ThemeData(
               useMaterial3: true,
               platform: TargetPlatform.android,
-              extensions: <ThemeExtension<dynamic>>[
-                FushiDesignSystemTheme(themeNotifier.designSystemTheme),
-              ],
             ),
             home: WebBrowserSettingsPage(initialGroup: group),
           ),

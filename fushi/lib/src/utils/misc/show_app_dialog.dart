@@ -1,8 +1,6 @@
-import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/stats/study_cover_tracker.dart'
     show studyClockRouteSettings;
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -41,22 +39,6 @@ Future<T?> showAppDialog<T>({
     return origin == null ? dialog : origin.wrap(dialog);
   }
 
-  if (isCupertinoPlatform(context)) {
-    // showCupertinoDialog 不捕获 InheritedTheme：补上，色块里弹出的对话框才
-    // 拿得到色块的局部主题。
-    final CapturedThemes themes = InheritedTheme.capture(
-      from: context,
-      to: Navigator.of(context, rootNavigator: useRootNavigator).context,
-    );
-    return showCupertinoDialog<T>(
-      context: context,
-      builder: (BuildContext dialogContext) =>
-          themes.wrap(glassBuilder(dialogContext)),
-      barrierDismissible: barrierDismissible,
-      useRootNavigator: useRootNavigator,
-      routeSettings: routeSettings,
-    );
-  }
   assert(debugCheckHasMaterialLocalizations(context));
   final NavigatorState navigator = Navigator.of(
     context,

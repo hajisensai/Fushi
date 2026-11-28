@@ -939,9 +939,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
               // 是它唯一的可见出口——iOS 没有系统返回键，`canPop` 又在有查询词时
               // 关掉侧滑，藏掉页头就等于把用户锁在查词页里。
               // MD3 窄屏同理不画页头（见 [_hidesCompactPageHeader]）。
-              if ((!isCupertinoPlatform(context) &&
-                      !_hidesCompactPageHeader(context)) ||
-                  widget.showBackButton)
+              if (!_hidesCompactPageHeader(context) || widget.showBackButton)
                 _buildCollapsibleHeader(
                   collapsed: _collapsesLargeTitle(context),
                   child: _buildPageHeader(),
@@ -1186,9 +1184,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   Widget _buildSearchHeader() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool glass = isGlassDesign(context);
-    final double horizontalPadding = isCupertinoPlatform(context)
-        ? tokens.spacing.gap
-        : tokens.spacing.page;
+    final double horizontalPadding = tokens.spacing.page;
     // Apple 搜索栏的「取消」：搜索中（持焦或已有查询）才滑出，点了退出搜索。
     final bool showCancel = glass && (_searchRegionFocused || _hasActiveQuery);
     return Padding(
@@ -1270,7 +1266,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
                   )
                 : const SizedBox.shrink(),
           ),
-          if (isCupertinoPlatform(context) || _hidesCompactPageHeader(context))
+          if (_hidesCompactPageHeader(context))
             FushiIconButton(
               key: const ValueKey<String>('home_dictionary_search_row_clear'),
               tooltip: t.clear_dictionary_title,

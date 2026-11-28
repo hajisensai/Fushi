@@ -19,8 +19,8 @@ import 'package:material_ui/material_ui.dart';
 /// - MD3 `FushiSegmentedButton` = `FushiConnectedButtonGroup`；
 /// - 墨水屏 `FushiSegmentedButton`（原生 `SegmentedButton`）；
 /// - Apple 退回形态（多选 / 允许空选 / 竖排 / 富文本段）；
-/// - Cupertino 设计系统但非 Apple 设计（如墨水屏）下的 `adaptiveSegmentedButton`
-///   （原生 `CupertinoSlidingSegmentedControl`）。
+/// - 玻璃偏好被墨水屏压回 MD3（Apple 设计不生效）时的 `adaptiveSegmentedButton`
+///   （胶囊分段）。
 /// 这里每条路径都用睡眠定时那组文案在窄宽下布局，断言每段文字完整单行。
 void main() {
   // flutter_test 字体每字 1em：「15 分钟」= 5em。
@@ -37,14 +37,12 @@ void main() {
     required WidgetBuilder builder,
     bool eink = false,
     bool glassDesign = false,
-    FushiDesignSystem designSystem = FushiDesignSystem.auto,
     TargetPlatform? platform,
   }) async {
     final ThemeData base = buildFushiThemeData(
       scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
       textTheme: Typography.material2021().black,
       eink: eink,
-      designSystem: designSystem,
       glass: FushiGlassMaterial.off,
       glassDesign: glassDesign,
     );
@@ -222,20 +220,17 @@ void main() {
     expect(tester.getSize(root).width, lessThanOrEqualTo(400));
   });
 
-  testWidgets('Cupertino 设计系统 + 墨水屏下 adaptiveSegmentedButton 390 宽完整单行', (
+  testWidgets('玻璃偏好 + 墨水屏下 adaptiveSegmentedButton 390 宽完整单行', (
     WidgetTester tester,
   ) async {
-    late bool cupertino;
     late bool glass;
     await pump(
       tester,
       width: 390,
       eink: true,
-      designSystem: FushiDesignSystem.cupertino,
       glassDesign: true,
       platform: TargetPlatform.iOS,
       builder: (BuildContext context) {
-        cupertino = isCupertinoPlatform(context);
         glass = isGlassDesign(context);
         return adaptiveSegmentedButton<int>(
           context: context,
@@ -245,8 +240,7 @@ void main() {
         );
       },
     );
-    // 前提：这正是「Cupertino 平台、非 Apple 设计」那条分支。
-    expect(cupertino, isTrue);
+    // 前提：墨水屏下 Apple 设计不生效，走胶囊分段。
     expect(glass, isFalse);
     expectLabelsWhole(tester, find.byType(Scaffold));
     expect(find.byType(FushiPillSegmentedButton<int>), findsOneWidget);

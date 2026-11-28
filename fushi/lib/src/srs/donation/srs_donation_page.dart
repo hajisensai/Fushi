@@ -520,10 +520,7 @@ class _SrsDonationPageState extends ConsumerState<SrsDonationPage> {
       leading: const FushiListLeadingIcon(FushiIcons.dictionary),
       title: Text(t.srs_donation_include_words),
       subtitle: Text(t.srs_donation_include_words_hint),
-      trailing: FushiSwitch.adaptive(
-        value: _includeWords,
-        onChanged: onChanged,
-      ),
+      trailing: FushiSwitch(value: _includeWords, onChanged: onChanged),
       onTap: onChanged == null ? null : () => onChanged(!_includeWords),
     );
   }

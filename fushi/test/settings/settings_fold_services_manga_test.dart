@@ -17,7 +17,6 @@ import 'package:fushi/src/settings/settings_schema_services.dart';
 import 'package:fushi/src/settings/settings_search.dart';
 import 'package:fushi/src/settings/settings_search_sheet.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -317,13 +316,7 @@ Widget _harness({
     child: TranslationProvider(
       child: MaterialApp(
         navigatorKey: navigatorKey,
-        theme: ThemeData(
-          useMaterial3: true,
-          platform: TargetPlatform.android,
-          extensions: <ThemeExtension<dynamic>>[
-            FushiDesignSystemTheme(themeNotifier.designSystemTheme),
-          ],
-        ),
+        theme: ThemeData(useMaterial3: true, platform: TargetPlatform.android),
         home: child,
       ),
     ),

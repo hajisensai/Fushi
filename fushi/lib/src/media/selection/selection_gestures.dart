@@ -17,7 +17,6 @@
 /// | 多选态内扩选 | 长按后滑动扫选 | Shift + 点击 / 长按后滑动扫选 / 按住左键拖动框选 |
 library;
 
-import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter/foundation.dart' show ValueListenable, setEquals;
 import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
@@ -30,7 +29,6 @@ import 'package:flutter/rendering.dart'
 import 'package:flutter/services.dart';
 
 import 'package:fushi/src/media/selection/media_selection_controller.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 
 /// 多选态内的一次点击该按哪种语义：按住 Shift = 区间扩选，否则普通切换。
@@ -230,9 +228,7 @@ class _SelectionDragAreaState extends State<SelectionDragArea>
     // 树形状不随 enabled 变，滚动位置才不会在进/退多选态时被重建冲掉。回调置
     // null / 识别器表为空时不注册任何识别器，命中行为与不存在这一层等价。
     final bool on = widget.enabled;
-    final Color tint = isCupertinoPlatform(context)
-        ? CupertinoTheme.of(context).primaryColor
-        : Theme.of(context).colorScheme.primary;
+    final Color tint = Theme.of(context).colorScheme.primary;
     return GestureDetector(
       // 卡片之间的间隙也要能起手（不然扫选起点必须精确落在卡上）。非多选态回调
       // 全 null，此时 translucent 也不会吃掉任何命中（无识别器 = 不参与竞技场）。

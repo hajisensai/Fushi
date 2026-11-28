@@ -30,7 +30,6 @@ import 'package:fushi/src/shortcuts/shortcut_labels.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/shortcuts/visual/keyboard_layout_view.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/shell_style.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
@@ -529,7 +528,6 @@ ThemeData _theme({bool apple = false}) {
       seedColor: kFushiDefaultSeed,
       brightness: Brightness.dark,
     ),
-    designSystem: apple ? FushiDesignSystem.cupertino : FushiDesignSystem.auto,
     glassDesign: apple,
     textTheme: FushiTypeScale.buildTextTheme(
       const TextStyle(

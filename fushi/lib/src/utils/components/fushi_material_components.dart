@@ -21,8 +21,6 @@ import 'package:flutter/services.dart'
         SystemChannels,
         TextInputAction,
         TextInputFormatter;
-import 'package:macos_ui/macos_ui.dart'
-    show MacosTextField, MacosIcon, OverlayVisibilityMode;
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -1076,8 +1074,7 @@ class _FushiListItemState extends State<FushiListItem> {
 
 /// 搜索框形态层（[FushiSearchBar] 的底）。
 ///
-/// @design dual —— MD3：40 高填充胶囊（large 档 56 的 M3 SearchBar）；macOS 原生
-/// 平台：MacosTextField；Apple 设计系统：iOS 27 `tertiarySystemFill` 实色搜索
+/// @design dual —— MD3：40 高填充胶囊（large 档 56 的 M3 SearchBar）；Apple 设计系统：iOS 27 `tertiarySystemFill` 实色搜索
 /// 胶囊（高 36、无描边、灰放大镜 / 占位字、有内容时灰色 ⊗），macOS 27 宽窗
 /// 高 28、13pt（见 `FushiTextFieldControl` 的 Apple 分支）。
 class FushiSearchField extends StatelessWidget {
@@ -1379,26 +1376,6 @@ class FushiSearchField extends StatelessWidget {
               ? FushiAppleLargeSearchScope(child: field)
               : field;
         },
-      );
-    } else if (isMacosPlatform(context)) {
-      // macOS-native: MacosTextField maps the search field faithfully —
-      // search-icon prefix, native clear button (clearButtonMode), and it keeps
-      // onSubmitted (MacosSearchField drops it, which would break enter-to-search).
-      searchBar = MacosTextField(
-        key: fieldKey,
-        controller: controller,
-        focusNode: focusNode,
-        autofocus: autofocus,
-        placeholder: hintText,
-        keyboardType: keyboardType,
-        autocorrect: _autocorrect,
-        prefix: Padding(
-          padding: const EdgeInsets.only(left: 6, right: 2),
-          child: leading ?? const MacosIcon(CupertinoIcons.search),
-        ),
-        clearButtonMode: OverlayVisibilityMode.editing,
-        onChanged: onChanged,
-        onSubmitted: onSubmitted,
       );
     } else {
       searchBar = ValueListenableBuilder<TextEditingValue>(

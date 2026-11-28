@@ -5,7 +5,6 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_catalog_view.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
@@ -54,45 +53,44 @@ class _MokuroMoeCatalogPageState extends ConsumerState<MokuroMoeCatalogPage> {
       kind: DesktopContentKind.readerShelf,
       child: Column(
         children: <Widget>[
-          if (!isCupertinoPlatform(context))
-            ValueListenableBuilder<MokuroMoeCatalogSnapshot>(
-              valueListenable: _snapshot,
-              builder:
-                  (
-                    BuildContext context,
-                    MokuroMoeCatalogSnapshot snapshot,
-                    Widget? child,
-                  ) {
-                    final Widget? navigation = widget.navigation;
-                    if (navigation != null) {
-                      final String? seriesName = snapshot.seriesName;
-                      return FushiPageHeader.customTitle(
-                        title: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: <Widget>[
-                            navigation,
-                            if (seriesName != null &&
-                                seriesName.trim().isNotEmpty)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 4),
-                                child: Text(
-                                  seriesName,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context).textTheme.bodySmall,
-                                ),
+          ValueListenableBuilder<MokuroMoeCatalogSnapshot>(
+            valueListenable: _snapshot,
+            builder:
+                (
+                  BuildContext context,
+                  MokuroMoeCatalogSnapshot snapshot,
+                  Widget? child,
+                ) {
+                  final Widget? navigation = widget.navigation;
+                  if (navigation != null) {
+                    final String? seriesName = snapshot.seriesName;
+                    return FushiPageHeader.customTitle(
+                      title: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          navigation,
+                          if (seriesName != null &&
+                              seriesName.trim().isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Text(
+                                seriesName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.bodySmall,
                               ),
-                          ],
-                        ),
-                      );
-                    }
-                    return FushiPageHeader(
-                      title: t.manga_online_catalog_title,
-                      subtitle: snapshot.seriesName,
+                            ),
+                        ],
+                      ),
                     );
-                  },
-            ),
+                  }
+                  return FushiPageHeader(
+                    title: t.manga_online_catalog_title,
+                    subtitle: snapshot.seriesName,
+                  );
+                },
+          ),
           Expanded(
             // 正文自带内边距：readerShelf 的 desktopContentPadding 已恒为零
             // （PR#675 撤强制侧向留白），而 [MokuroMoeCatalogView] 自身零内边距，

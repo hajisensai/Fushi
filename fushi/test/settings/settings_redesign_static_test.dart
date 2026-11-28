@@ -130,12 +130,6 @@ void main() {
       'SettingsSchemaSection',
       'FushiPageScaffold',
     ],
-    'lib/src/settings/cupertino_settings_renderer.dart': <String>[
-      'class CupertinoSettingsRenderer',
-      'CupertinoPageScaffold',
-      'CupertinoSliverNavigationBar',
-      'SettingsSchemaSection',
-    ],
     'lib/src/settings/settings_schema_widgets.dart': <String>[
       'class SettingsSchemaSection',
       'class SettingsSchemaItem',
@@ -151,7 +145,6 @@ void main() {
     ],
     'lib/src/settings/settings_home_page.dart': <String>[
       'class SettingsHomePage',
-      'DesktopContentKind.settings',
       // 旧锚点是散文词 'master-detail'，它在本文件里**只出现在一条注释**里
       // （`false, // master-detail keeps selection in-pane.`）——掩掉注释后当场
       // 露馅。主从布局的真实结构证据是它会把 destination 推进详情页。
@@ -240,22 +233,14 @@ void main() {
     final String materialSource = readNormalizedSource(
       'lib/src/settings/material_settings_renderer.dart',
     );
-    final String cupertinoSource = readNormalizedSource(
-      'lib/src/settings/cupertino_settings_renderer.dart',
-    );
 
     expect(containsIdentifierCall(materialSource, 'FushiDesignTokens'), isTrue);
-    expect(
-      containsIdentifierCall(cupertinoSource, 'FushiDesignTokens'),
-      isTrue,
-    );
 
     // 旧写法是 9 条 `isNot(contains('const EdgeInsets.fromLTRB(16, 8, 16, 16)'))`
     // 这样的**逐条拼写**禁令：只堵住被枚举到的那几种，16 改 20、换个构造器、
     // 换行重排全都静默放行。改成结构判据——渲染器里任何 EdgeInsets / SizedBox
     // 构造都不得带非零裸数字实参。
     expectTokenDerivedSpacing(materialSource, 'Material 设置渲染器');
-    expectTokenDerivedSpacing(cupertinoSource, 'Cupertino 设置渲染器');
   });
 
   test('legacy adaptive alert factory is removed', () {
@@ -802,14 +787,8 @@ void main() {
     expect(shared, contains('kSettingsPickerDefaultWidth'));
     expect(shared, contains('kSettingsPickerMinInlineWidth'));
     // 紧凑档（SettingsCompactRowsScope）的「值 ▾」是自尺寸控件，不参与 flex。
-    expect(
-      shared,
-      contains('final bool below = !cupertino && controlBelow && !compact;'),
-    );
-    expect(
-      shared,
-      contains('trailingFlexible: !cupertino && !below && !compact'),
-    );
+    expect(shared, contains('final bool below = controlBelow && !compact;'));
+    expect(shared, contains('trailingFlexible: !below && !compact'));
     expect(
       containsIdentifierCall(shared, 'LayoutBuilder'),
       isTrue,

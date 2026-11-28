@@ -1,15 +1,11 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/pages/base_page.dart';
-import 'package:fushi/src/settings/cupertino_settings_renderer.dart';
-import 'package:fushi/src/settings/glass_settings_renderer.dart';
-import 'package:fushi/src/settings/material_settings_renderer.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_home_page.dart';
 import 'package:fushi/src/settings/settings_renderer.dart';
 import 'package:fushi/src/settings/settings_schema.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
@@ -80,20 +76,13 @@ class _FushiSettingsDialogPageState extends BasePageState
     final SettingsDestination destination = buildReaderQuickSettingsDestination(
       settingsContext,
     );
-    final bool cupertino = isCupertinoPlatform(context);
-    final SettingsRenderer renderer = cupertino
-        ? const CupertinoSettingsRenderer()
-        : isGlassDesign(context)
-        ? const GlassSettingsRenderer()
-        : const MaterialSettingsRenderer();
+    final SettingsRenderer renderer = resolveSettingsRenderer(context);
     final Widget detailContent = renderer.buildDetailContent(
       settingsContext: settingsContext,
       destination: destination,
-      scrollController: cupertino ? null : _contentScrollController,
-      // 两个渲染器的详情都已是可滚动 ListView（BUG-009 R1）。在此弹窗里统一收缩
-      // 到内容高：material 由 ListView 自身(controller=_contentScrollController)
-      // 滚动，cupertino 由下方外层 SingleChildScrollView 滚动；shrinkWrap 避免
-      // ListView 落在无界高度（cupertino 的 SingleChildScrollView）处崩。
+      scrollController: _contentScrollController,
+      // 渲染器的详情是可滚动 ListView（BUG-009 R1），由 ListView 自身
+      // （controller=_contentScrollController）滚动；在此弹窗里收缩到内容高。
       shrinkWrap: true,
     );
 
@@ -103,12 +92,7 @@ class _FushiSettingsDialogPageState extends BasePageState
         controller: _contentScrollController,
         child: PrimaryScrollController(
           controller: _contentScrollController,
-          child: cupertino
-              ? SingleChildScrollView(
-                  controller: _contentScrollController,
-                  child: detailContent,
-                )
-              : detailContent,
+          child: detailContent,
         ),
       ),
     );

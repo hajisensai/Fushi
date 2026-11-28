@@ -134,15 +134,29 @@ void main() {
       body.contains('RecommendedPackDownloadMiniBar('),
       isTrue,
       reason:
-          '迷你条必须挂在三套布局（移动底栏 / 桌面 rail / macOS）的共用点里，'
+          '迷你条必须挂在两套布局（移动底栏 / 桌面 rail）的共用点里，'
           '否则换个平台就看不见',
     );
-    // 三处布局都得走这个共用点，否则「共用」本身是假的。
+    // 两套布局都得走这个共用点，否则「共用」本身是假的。（第三套——隐藏的
+    // macOS 原生侧栏壳——已随隐藏设计系统整删，首页只剩这两套布局。）
     expect(
       RegExp(r'_bodyWithMiniBar\(\)').allMatches(home).length,
-      greaterThanOrEqualTo(4),
-      reason: '一处定义 + 三套布局各一处调用；少一处就有平台看不见迷你条',
+      greaterThanOrEqualTo(3),
+      reason: '一处定义 + 两套布局各一处调用；少一处就有平台看不见迷你条',
     );
+    for (final String layout in <String>[
+      'Widget _buildMobileLayout(',
+      'Widget _buildDesktopLayout(',
+    ]) {
+      final int layoutAt = home.indexOf(layout);
+      expect(layoutAt, greaterThan(0), reason: '$layout 改名了，守卫需更新');
+      final int layoutEnd = home.indexOf('\n  }', layoutAt);
+      expect(
+        home.substring(layoutAt, layoutEnd),
+        contains('_bodyWithMiniBar()'),
+        reason: '$layout 必须经共用点挂迷你条',
+      );
+    }
   });
 
   test('设置页宽屏内联路径同样订阅下载阶段', () {

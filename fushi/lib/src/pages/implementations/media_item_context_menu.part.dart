@@ -948,7 +948,7 @@ class _ItemToggleRowState extends State<_ItemToggleRow> {
             child: SizedBox(
               height: 24,
               child: FittedBox(
-                child: FushiSwitch.adaptive(
+                child: FushiSwitch(
                   key: ValueKey<String>(
                     'item_menu_toggle_${widget.action.label}',
                   ),

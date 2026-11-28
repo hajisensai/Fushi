@@ -7,7 +7,6 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/torrent_settings_section.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -67,9 +66,6 @@ Widget _harness({required double paneWidth}) {
         useMaterial3: true,
         platform: TargetPlatform.android,
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF386A58)),
-        extensions: <ThemeExtension<dynamic>>[
-          FushiDesignSystemTheme(themeNotifier.designSystemTheme),
-        ],
       ),
       home: Scaffold(
         body: Align(

@@ -511,7 +511,7 @@ class _AppleSubscriptionRow extends StatelessWidget {
             ),
           ),
           SizedBox(width: 4 * k),
-          FushiSwitch.adaptive(
+          FushiSwitch(
             key: ValueKey<String>('video-subscription-toggle-$id'),
             value: _sub.enabled,
             onChanged: card.busy ? null : card.onToggle,

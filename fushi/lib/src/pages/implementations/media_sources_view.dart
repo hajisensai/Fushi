@@ -2418,7 +2418,7 @@ class _SourceRemovalDialogState extends State<_SourceRemovalDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return FushiAlertDialog.adaptive(
+    return FushiAlertDialog(
       title: Text(t.media_source_remove),
       content: Column(
         mainAxisSize: MainAxisSize.min,

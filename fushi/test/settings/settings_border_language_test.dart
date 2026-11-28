@@ -142,16 +142,23 @@ void main() {
 
   group('搜索框', () {
     test('设置主页搜索框用填充而不是描边', () {
+      // 设置主页的搜索框只有一份实现：settings_kit_core 的 SettingsSearchBar
+      // （主页经 _buildKitSearchBar 用它），主页自己不再画输入框。
       final String home = File(
         'lib/src/settings/settings_home_page.dart',
       ).readAsStringSync();
-      expect(home, contains('filled: !eink'), reason: '搜索框与分组卡走同一套语言：填充分层，不描边');
+      expect(home, contains('SettingsSearchBar('));
+      expect(home, isNot(contains('InputDecoration(')), reason: '主页不另画一份搜索输入框');
+      final String kit = File(
+        'lib/src/settings/settings_kit_core.dart',
+      ).readAsStringSync();
+      expect(kit, contains('filled: !eink'), reason: '搜索框与分组卡走同一套语言：填充分层，不描边');
       expect(
-        home,
+        kit,
         contains('borderSide: BorderSide.none'),
         reason: '只覆盖 border 会被全局 inputDecorationTheme 的 enabledBorder 顶掉',
       );
-      expect(home, contains('enabledBorder: eink ? null : flatBorder'));
+      expect(kit, contains('enabledBorder: eink ? null : flat'));
     });
   });
 }

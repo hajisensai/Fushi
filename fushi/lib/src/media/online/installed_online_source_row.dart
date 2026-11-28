@@ -416,7 +416,7 @@ class InstalledOnlineSourceRow extends StatelessWidget {
         child: LayoutBuilder(
           builder: (BuildContext context, BoxConstraints constraints) {
             final bool narrow = constraints.maxWidth < narrowLayoutBreakpoint;
-            final Widget switchWidget = FushiSwitch.adaptive(
+            final Widget switchWidget = FushiSwitch(
               value: enabled,
               onChanged: onEnabledChanged,
             );

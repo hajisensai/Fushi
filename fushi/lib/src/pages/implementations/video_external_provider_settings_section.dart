@@ -569,7 +569,7 @@ class _VideoExternalProviderSettingsSectionState
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: FushiSwitchListTile.adaptive(
+                child: FushiSwitchListTile(
                   key: ValueKey<String>('video-torznab-$index-enabled'),
                   contentPadding: EdgeInsets.zero,
                   dense: true,
@@ -653,7 +653,7 @@ class _VideoExternalProviderSettingsSectionState
               ),
             ],
           ),
-          FushiSwitchListTile.adaptive(
+          FushiSwitchListTile(
             key: ValueKey<String>('video-torznab-$index-insecure-http'),
             contentPadding: EdgeInsets.zero,
             dense: true,
@@ -673,7 +673,7 @@ class _VideoExternalProviderSettingsSectionState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        FushiSwitchListTile.adaptive(
+        FushiSwitchListTile(
           key: const ValueKey<String>('video-opensubtitles-enabled'),
           contentPadding: EdgeInsets.zero,
           dense: true,
@@ -746,7 +746,7 @@ class _VideoExternalProviderSettingsSectionState
           onChanged: (String value) =>
               _updateOpenSubtitles(draft.copyWith(userAgent: value)),
         ),
-        FushiSwitchListTile.adaptive(
+        FushiSwitchListTile(
           key: const ValueKey<String>('video-opensubtitles-insecure-http'),
           contentPadding: EdgeInsets.zero,
           dense: true,
@@ -771,7 +771,7 @@ class _VideoExternalProviderSettingsSectionState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        FushiSwitchListTile.adaptive(
+        FushiSwitchListTile(
           key: const ValueKey<String>('video-jimaku-enabled'),
           contentPadding: EdgeInsets.zero,
           dense: true,
@@ -803,7 +803,7 @@ class _VideoExternalProviderSettingsSectionState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        FushiSwitchListTile.adaptive(
+        FushiSwitchListTile(
           key: const ValueKey<String>('video-subdl-enabled'),
           contentPadding: EdgeInsets.zero,
           dense: true,
@@ -930,7 +930,7 @@ class _VideoExternalProviderSettingsSectionState
 
   /// AJATT 只有一个开关：零配置、无 key、无配额（见 `ajatt_catalog.dart` 文件头）。
   Widget _ajattFields() {
-    return FushiSwitchListTile.adaptive(
+    return FushiSwitchListTile(
       key: const ValueKey<String>('video-ajatt-enabled'),
       contentPadding: EdgeInsets.zero,
       dense: true,

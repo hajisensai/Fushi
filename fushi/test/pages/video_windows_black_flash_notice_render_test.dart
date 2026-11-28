@@ -14,7 +14,6 @@ import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema_video.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -94,9 +93,6 @@ Widget _harness({required Widget Function(SettingsContext) builder}) {
         useMaterial3: true,
         platform: TargetPlatform.windows,
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF386A58)),
-        extensions: <ThemeExtension<dynamic>>[
-          FushiDesignSystemTheme(themeNotifier.designSystemTheme),
-        ],
       ),
       home: Consumer(
         builder: (BuildContext context, WidgetRef ref, _) {

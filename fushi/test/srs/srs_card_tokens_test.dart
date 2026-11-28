@@ -16,9 +16,6 @@ import 'package:material_ui/material_ui.dart';
 ThemeData _theme({required bool apple}) => buildFushiThemeData(
   scheme: ColorScheme.fromSeed(seedColor: const Color(0xFF386A58)),
   textTheme: FushiTypeScale.buildTextTheme(const TextStyle()),
-  designSystem: apple
-      ? FushiDesignSystem.cupertino
-      : FushiDesignSystem.material,
   glass: FushiGlassMaterial.off,
   glassDesign: apple,
 );

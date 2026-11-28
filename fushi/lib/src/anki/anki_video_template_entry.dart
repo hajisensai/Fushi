@@ -98,7 +98,7 @@ Future<void> _showFallbackDialog(
 ) async {
   final bool? adapt = await showAppDialog<bool>(
     context: context,
-    builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
+    builder: (BuildContext dialogContext) => FushiAlertDialog(
       title: Text(t.anki_video_template_fallback_title),
       content: Text(
         t.anki_video_template_fallback_body(noteType: noteTypeName),

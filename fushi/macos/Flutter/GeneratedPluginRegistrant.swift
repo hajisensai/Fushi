@@ -5,7 +5,6 @@
 import FlutterMacOS
 import Foundation
 
-import appkit_ui_element_colors
 import audio_session
 import audio_service
 import bonsoir_darwin
@@ -25,7 +24,6 @@ import google_sign_in_ios
 import hotkey_manager_macos
 import just_audio
 import macos_window_utils
-import macos_ui
 import media_kit_libs_macos_video
 import mobile_scanner
 import package_info_plus
@@ -43,7 +41,6 @@ import window_manager
 import workmanager_apple
 
 func RegisterGeneratedPlugins(registry: FlutterPluginRegistry) {
-  AppkitUiElementColorsPlugin.register(with: registry.registrar(forPlugin: "AppkitUiElementColorsPlugin"))
   AudioSessionPlugin.register(with: registry.registrar(forPlugin: "AudioSessionPlugin"))
   AudioServicePlugin.register(with: registry.registrar(forPlugin: "AudioServicePlugin"))
   SwiftBonsoirPlugin.register(with: registry.registrar(forPlugin: "SwiftBonsoirPlugin"))
@@ -63,7 +60,6 @@ func RegisterGeneratedPlugins(registry: FlutterPluginRegistry) {
   HotkeyManagerMacosPlugin.register(with: registry.registrar(forPlugin: "HotkeyManagerMacosPlugin"))
   JustAudioPlugin.register(with: registry.registrar(forPlugin: "JustAudioPlugin"))
   MacOSWindowUtilsPlugin.register(with: registry.registrar(forPlugin: "MacOSWindowUtilsPlugin"))
-  MacOSUiPlugin.register(with: registry.registrar(forPlugin: "MacOSUiPlugin"))
   MediaKitLibsMacosVideoPlugin.register(with: registry.registrar(forPlugin: "MediaKitLibsMacosVideoPlugin"))
   MobileScannerPlugin.register(with: registry.registrar(forPlugin: "MobileScannerPlugin"))
   FLTPackageInfoPlusPlugin.register(with: registry.registrar(forPlugin: "FLTPackageInfoPlusPlugin"))

@@ -190,7 +190,7 @@ class _LocalAudioSourcesDialogState extends State<LocalAudioSourcesDialog>
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
-                    FushiSwitch.adaptive(
+                    FushiSwitch(
                       value: source.enabled,
                       onChanged: (bool enabled) => setState(() {
                         prefs[index] = source.copyWith(enabled: enabled);

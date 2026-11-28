@@ -3,7 +3,8 @@ import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
-import 'package:macos_ui/macos_ui.dart' show WindowManipulator;
+import 'package:macos_window_utils/macos_window_utils.dart'
+    show WindowManipulator;
 import 'package:window_manager/window_manager.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/lookup/lookup_overlay_navigator.dart';

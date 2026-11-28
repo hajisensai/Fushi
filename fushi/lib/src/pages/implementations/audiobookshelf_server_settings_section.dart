@@ -146,7 +146,7 @@ class _AudiobookshelfServerSettingsSectionState
         if (!_expanded.remove(draft.id)) _expanded.add(draft.id);
       }),
       panel: <Widget>[
-        FushiSwitchListTile.adaptive(
+        FushiSwitchListTile(
           key: ValueKey<String>('abs-server-$index-enabled'),
           contentPadding: EdgeInsets.zero,
           dense: true,
@@ -175,7 +175,7 @@ class _AudiobookshelfServerSettingsSectionState
           onChanged: (String value) =>
               _update(index, draft.copyWith(url: value).signedOut()),
         ),
-        FushiSwitchListTile.adaptive(
+        FushiSwitchListTile(
           key: ValueKey<String>('abs-server-$index-allow-http'),
           contentPadding: EdgeInsets.zero,
           dense: true,

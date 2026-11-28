@@ -304,7 +304,7 @@ class _FieldRow extends StatelessWidget {
     final ValueChanged<bool>? onChanged = this.onChanged;
     return FushiListItem(
       density: FushiListDensity.compact,
-      leading: FushiCheckbox.adaptive(
+      leading: FushiCheckbox(
         value: checked,
         onChanged: onChanged == null
             ? null

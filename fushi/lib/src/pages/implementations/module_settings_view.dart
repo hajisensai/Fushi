@@ -2,15 +2,11 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/settings/cupertino_settings_renderer.dart';
-import 'package:fushi/src/settings/glass_settings_renderer.dart';
-import 'package:fushi/src/settings/material_settings_renderer.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_renderer.dart';
 import 'package:fushi/src/settings/settings_schema.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
 /// 在媒体/游戏模块自己的顶部页签内嵌一个 schema 设置分类。
@@ -70,13 +66,8 @@ class _ModuleSettingsViewState extends ConsumerState<ModuleSettingsView>
           (SettingsDestination destination) =>
               destination.id == widget.destinationId,
         );
-    // 玻璃：与设置主页同一套 macOS / iOS 设置详情（GlassSettingsRenderer）。
-    final SettingsRenderer renderer =
-        isGlassDesign(context) && !isCupertinoPlatform(context)
-        ? const GlassSettingsRenderer()
-        : isCupertinoPlatform(context)
-        ? const CupertinoSettingsRenderer()
-        : const MaterialSettingsRenderer();
+    // 与设置主页同一判据（玻璃 → macOS / iOS 设置详情，其余 MD3）。
+    final SettingsRenderer renderer = resolveSettingsRenderer(context);
 
     // BUG-1658：不再包 DesktopContentLayout(settings)。共享的分段导航页头由六个
     // 分区轮流渲染，其余分区（库页/发现/导入）都是 readerShelf 全出血 + 页头自身

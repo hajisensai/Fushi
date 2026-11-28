@@ -9,7 +9,6 @@ import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/ai_agent_page.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi_engine/ai/agent/agent_session.dart';
 import 'package:fushi_engine/ai/agent/agent_tool.dart';
@@ -111,7 +110,6 @@ Future<void> _pump(WidgetTester tester, _RestoredController controller) async {
       seedColor: kFushiDefaultSeed,
       brightness: Brightness.light,
     ),
-    designSystem: FushiDesignSystem.auto,
     glassDesign: false,
     textTheme: FushiTypeScale.buildTextTheme(const TextStyle()),
   );

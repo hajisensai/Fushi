@@ -1,4 +1,3 @@
-import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -8,7 +7,6 @@ import 'package:fushi/src/media/video/video_web_playback_mode_panel.dart';
 import 'package:fushi/src/media/video/video_settings_actions.dart'
     show videoQuickSettingsHostOf;
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/settings/glass_settings_renderer.dart';
 import 'package:fushi/src/settings/master_detail_settings_sheet.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -286,9 +284,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
           FushiDividerControl(
             height: 1,
             thickness: 1,
-            color: isCupertinoPlatform(context)
-                ? CupertinoColors.separator.resolveFrom(context)
-                : tokens.surfaces.outline,
+            color: tokens.surfaces.outline,
           ),
         // 分类内容：每页一个独立滚动视图（PageStorageKey 记住各自滚动位置），
         // 左右横滑切页（与阅读器设置面板同款 TabBarView）；单分组面板（字幕 /

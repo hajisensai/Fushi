@@ -4,7 +4,7 @@
 
 ## 平台与 SDK
 
-5 平台均出包：Android / iOS / macOS / Windows / Linux（`auto` 下五个平台统一走 Material 3；Cupertino / macOS renderer 仅保留为隐藏内部能力；桌面 EPUB 渲染：Windows 靠 fork 的 `flutter_inappwebview_windows`，Linux 靠 vendored 的 `packages/flutter_inappwebview_linux`（WPE WebKit，见下「Linux 桌面（源码构建）」）。Android：`compileSdk 36` / `minSdkVersion 26` / `targetSdk 35`。
+5 平台均出包：Android / iOS / macOS / Windows / Linux（`auto` 下五个平台统一走 Material 3，另一档是 Apple（glass）设计系统；隐藏的 Cupertino / macOS 渲染器已于 2026-11-28 整删；桌面 EPUB 渲染：Windows 靠 fork 的 `flutter_inappwebview_windows`，Linux 靠 vendored 的 `packages/flutter_inappwebview_linux`（WPE WebKit，见下「Linux 桌面（源码构建）」）。Android：`compileSdk 36` / `minSdkVersion 26` / `targetSdk 35`。
 
 **macOS 只出 Apple Silicon（arm64），不再支持 Intel Mac（2026-10 起）。** `flutter build macos --release` 默认出 universal，靠 `fushi/macos/Runner.xcodeproj` 工程级 `EXCLUDED_ARCHS = x86_64`（Flutter 把它透传给 xcodebuild；`fushi/macos/Podfile` 的 `post_install` 给 Pods 钉同一份）收成 arm64；`release-desktop.yml` 的「Verify macOS app is arm64-only」门钉住 app 本体恰好是 arm64，随包原生件（`libfushi_p2p.dylib` / `libfushi_fsrs.dylib` / `libfushi_compute.dylib` / `libfushi_torrent_ffi.dylib` / `fushi-anki-sync` / 统一 FFmpeg（`ffmpeg-unified-macos.tar.gz`）/ Mihon `runtime-macos-arm64`）一律只出 arm64，并按 app 本体的 `lipo -archs` 核对。发布资产名随之从 `fushi-<v>-macos.zip` 改为 `fushi-<v>-macos-arm64.zip`：已发出去的旧版（universal，可能跑在 Intel Mac 上）的更新器只认 `-macos.zip`，改名让它们选不中 Intel 上启动不了的 arm64 包，代价是旧版在 Apple Silicon 上也跨不过这一版的应用内自动更新（判「无更新」），需要手动下载一次新版。iOS 模拟器的 x86_64 切片、Windows / Linux / Android 的 x64 不在此列。Intel Mac 上的开发构建同样不再支持（`build_desktop_runtime.sh` / `script/build_and_run.sh` 在 Intel 宿主上直接报错）。
 

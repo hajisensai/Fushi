@@ -314,7 +314,7 @@ Future<void> showExtensionBulkNothing(
   required String message,
 }) => showAppDialog<void>(
   context: context,
-  builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
+  builder: (BuildContext dialogContext) => FushiAlertDialog(
     title: Text(title),
     content: Text(message),
     actions: <Widget>[
@@ -373,7 +373,7 @@ Future<R?> runExtensionBulkWithProgress<R>(
     barrierDismissible: false,
     builder: (BuildContext dialogContext) {
       progressContext = dialogContext;
-      return FushiAlertDialog.adaptive(
+      return FushiAlertDialog(
         title: Text(title),
         content: ValueListenableBuilder<(int, int, String)>(
           valueListenable: progress,
@@ -440,7 +440,7 @@ Future<void> showExtensionBulkReport(
   Map<String, String> failures = const <String, String>{},
 }) => showAppDialog<void>(
   context: context,
-  builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
+  builder: (BuildContext dialogContext) => FushiAlertDialog(
     title: Text(title),
     content: SelectableText(
       <String>[

@@ -137,9 +137,6 @@ void main() {
                   seedColor: const Color(0xFF386A58),
                 ),
                 textTheme: Typography.material2021().black,
-                designSystem: apple
-                    ? FushiDesignSystem.cupertino
-                    : FushiDesignSystem.material,
                 glass: FushiGlassMaterial.off,
                 glassDesign: apple,
               ),

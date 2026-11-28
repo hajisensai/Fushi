@@ -4232,7 +4232,6 @@ extension _ReaderChrome on _ReaderFushiPageState {
       readerDark: _isReaderThemeDark,
       buildColorScheme: appModel.buildColorScheme,
       textTheme: appModel.textTheme,
-      designSystem: appModel.themeNotifier.designSystemTheme,
       glassDesign: appModel.themeNotifier.designSystem == 'glass',
       glass: appModel.themeNotifier.glassMaterial,
       monochromeAccent: appModel.themeNotifier.appThemeKey == 'system-theme',

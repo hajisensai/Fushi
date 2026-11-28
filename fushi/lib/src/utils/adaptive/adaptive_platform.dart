@@ -1,40 +1,17 @@
-import 'dart:io' show Platform;
 import 'dart:ui' show ImageFilter;
 
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/utils/system_transparency.dart';
 
-enum FushiDesignSystem { auto, material, cupertino, macos }
-
 /// macOS 标准标题栏高度（逻辑像素）。`main.dart` 无条件启用透明标题栏 +
-/// full-size content view（macos_ui ToolBar 的硬性前提），Flutter 内容会整块
+/// full-size content view（`WindowManipulator`，Mica / vibrancy 窗口材质需要），Flutter 内容会整块
 /// 延伸到红黄绿交通灯按钮下方；而 macOS full-size content view 下 embedder 不把
 /// 交通灯上报为 `MediaQuery.padding.top`（上报 0），所以普通 `SafeArea` 挡不住。
 /// Material 桌面壳需要用它给 `SafeArea.minimum` 预留顶部内边距，让交通灯落在这条
 /// 保留带里、不再压住导航 rail / 返回按钮（BUG-869）。交通灯直径 12pt、约在
-/// y=[6,18]，28pt 足以完全让位。macos_ui 原生壳由 MacosWindow 自处理让位，不用它。
+/// y=[6,18]，28pt 足以完全让位。
 const double kMacTitleBarHeight = 28.0;
-
-@immutable
-class FushiDesignSystemTheme extends ThemeExtension<FushiDesignSystemTheme> {
-  const FushiDesignSystemTheme(this.designSystem);
-
-  final FushiDesignSystem designSystem;
-
-  @override
-  FushiDesignSystemTheme copyWith({FushiDesignSystem? designSystem}) {
-    return FushiDesignSystemTheme(designSystem ?? this.designSystem);
-  }
-
-  @override
-  FushiDesignSystemTheme lerp(
-    covariant ThemeExtension<FushiDesignSystemTheme>? other,
-    double t,
-  ) {
-    return this;
-  }
-}
 
 /// 墨水屏模式标志的 ThemeExtension 载体。挂在 ThemeNotifier._buildThemeData 的
 /// extensions 里，使任意 widget 可经 `Theme.of(context)` 感知 eink（用于把入场
@@ -213,59 +190,4 @@ Duration einkSafeDuration(BuildContext context, Duration duration) {
 /// 说「正在下载 / 同步中」，静止的空轨道足够表达。非 eink 原样返回。
 double? einkSafeProgressValue(BuildContext context, double? value) {
   return isEinkTheme(context) ? (value ?? 0) : value;
-}
-
-bool isCupertinoPlatform(BuildContext context) {
-  final FushiDesignSystem designSystem =
-      Theme.of(context).extension<FushiDesignSystemTheme>()?.designSystem ??
-      FushiDesignSystem.auto;
-  switch (designSystem) {
-    case FushiDesignSystem.material:
-      return false;
-    case FushiDesignSystem.cupertino:
-      return true;
-    case FushiDesignSystem.macos:
-      // Explicit macOS-native design system is NOT Cupertino. The macos_ui shell
-      // and converted pages route via [isMacosPlatform]; this keeps the two
-      // skins from both claiming the same surface.
-      return false;
-    case FushiDesignSystem.auto:
-      return false;
-  }
-}
-
-/// SDK 的 `X.adaptive` 系列（`Switch.adaptive` / `Slider.adaptive` /
-/// `Checkbox.adaptive` / `AlertDialog.adaptive` / `CircularProgressIndicator.adaptive`
-/// …）按 [ThemeData.platform] 选外观：iOS / macOS 上出 Cupertino 绿开关、菊花、
-/// Cupertino 对话框。本仓 `auto` 下五平台统一 MD3（M3E），所以 Fushi 包装层的
-/// `.adaptive` 构造器只在设计系统是**隐藏的 `FushiDesignSystem.cupertino`** 时
-/// 才交给 SDK 的平台分派，其余（含隐藏的 `FushiDesignSystem.macos`）一律渲染
-/// Material 控件（BUG-3309：iOS 上「来源顺序」对话框出绿色 CupertinoSwitch
-/// 外观、不跟主题色）。判据只写这一处，包装层不再各自读平台。
-///
-/// 注意：用户可见的「Cupertino」（玻璃设计）不是这里说的 Cupertino——它走
-/// [isGlassDesign] 分支，包装层在进到本判据之前就已分流，不受此判据影响。
-bool useCupertinoAdaptiveControls(BuildContext context) =>
-    isCupertinoPlatform(context);
-
-/// True when the macOS-native (macos_ui) design system should drive this
-/// subtree. Converted shells/pages branch on this BEFORE
-/// [isCupertinoPlatform].
-bool isMacosPlatform(BuildContext context) {
-  final FushiDesignSystem designSystem =
-      Theme.of(context).extension<FushiDesignSystemTheme>()?.designSystem ??
-      FushiDesignSystem.auto;
-  switch (designSystem) {
-    case FushiDesignSystem.material:
-    case FushiDesignSystem.cupertino:
-      return false;
-    case FushiDesignSystem.macos:
-      // Explicitly selecting the macOS-native design system only routes into the
-      // macos_ui / MacosWindow shell when actually running on macOS; on other
-      // hosts WindowManipulator is unavailable, so fall back to the platform
-      // default rather than crash. (Quality point ②)
-      return Platform.isMacOS;
-    case FushiDesignSystem.auto:
-      return false;
-  }
 }

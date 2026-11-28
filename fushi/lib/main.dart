@@ -13,8 +13,8 @@ import 'package:fushi/src/utils/adaptive/legacy_design_compat.dart';
 import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/asr_host/gpu_acceleration.dart';
 import 'package:fushi/src/focus/main_window_focus_gate.dart';
-import 'package:macos_ui/macos_ui.dart'
-    show MacosTheme, MacosWindow, WindowManipulator;
+import 'package:macos_window_utils/macos_window_utils.dart'
+    show WindowManipulator;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
@@ -97,7 +97,6 @@ import 'package:fushi/src/utils/scheduling/ambient_ticker.dart'
 import 'package:fushi/src/utils/settled_theme.dart';
 import 'package:fushi/src/utils/window_caption_channel.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
-import 'package:fushi/src/utils/adaptive/fushi_macos_theme.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -640,15 +639,11 @@ void main([List<String> args = const <String>[]]) {
       // BUG-1015 的保护不变。启动路径不得新增任何打开音频输出流的调用。
       // （BUG-1093 弹窗 WebView <audio> 首次无声是 WebView2 autoplay 策略，与此无关。）
 
-      // macOS native shell: initialise the macos_window_utils channel (paired with
-      // MainFlutterWindowManipulator.start in MainFlutterWindow.swift) so the
-      // MacosWindow transparent titlebar / sidebar vibrancy work. enableWindow
-      // Delegate is required for fullscreen presentation options. macos_ui's ToolBar
-      // adds a passthrough view constrained to the titlebar, which throws
-      // `NSLayoutAttributeTop requires NSWindowStyleMaskFullSizeContentView` unless
-      // the window has a full-size content view + transparent titlebar, so enable
-      // those explicitly here (before runApp) so the style mask is correct before
-      // any ToolBar mounts. No-op / not called on other platforms.
+      // macOS：初始化 macos_window_utils 通道（与 MainFlutterWindow.swift 的
+      // MainFlutterWindowManipulator.start 配对）。enableWindowDelegate 是全屏
+      // presentation options 与 [MacosFullscreenState] 的前提；透明标题栏 +
+      // full-size content view 让自绘顶栏与 vibrancy 窗口材质铺到交通灯下方
+      // （Material 壳用 kMacTitleBarHeight 让位）。必须在 runApp 前设好 style mask。
       if (Platform.isMacOS) {
         await WindowManipulator.initialize(enableWindowDelegate: true);
         await WindowManipulator.makeTitlebarTransparent();
@@ -3746,59 +3741,6 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                               ),
                             ),
                           );
-                          if (isMacosPlatform(context)) {
-                            // macOS native shell (Approach B): the MacosWindow + Sidebar
-                            // wrap the WHOLE navigator so every route — home tabs AND
-                            // pushed routes (reader, settings detail, dialogs) — inherits
-                            // a MacosWindowScope and can use native MacosScaffold/ToolBar.
-                            // MacosTheme is derived from the SAME live ColorScheme as the
-                            // rest of the app. The sidebar destinations come from the
-                            // dynamic HomeTab list (video/games toggles) so they
-                            // stay in lock-step with HomePage's rail; selection is shared
-                            // via homeShellTabNotifier. Hide the sidebar while a media
-                            // item (reader/video) is open so reading is full-width; the
-                            // builder reruns when appModel notifies (openMedia/close).
-                            // TODO-1375：sidebar 显隐由 appModel.mediaOpenNotifier 驱动，
-                            // 不再直接读 appModel.isMediaOpen。根因：isMediaOpen 变化不
-                            // notifyListeners，退出阅读器后本 builder 不重跑、sidebar 卡在
-                            // stale null（永久消失→设置 tab 无出口→困死）。改用
-                            // ValueListenableBuilder 监听可靠通知源：退出媒体必重建恢复
-                            // sidebar。navigation（=整个 navigator）作为不变 child 透传，
-                            // 只有 sidebar 参数随 mediaOpen 变，绝不重建 navigator 路由栈。
-                            navigation = MacosTheme(
-                              data: fushiMacosThemeFromColorScheme(
-                                cs,
-                                cs.brightness,
-                              ),
-                              child: ValueListenableBuilder<bool>(
-                                valueListenable: appModel.mediaOpenNotifier,
-                                builder:
-                                    (
-                                      BuildContext context,
-                                      bool mediaOpen,
-                                      Widget? child,
-                                    ) {
-                                      return MacosWindow(
-                                        sidebar: mediaOpen
-                                            ? null
-                                            : buildFushiMacosSidebar(
-                                                // 与 HomePage._activeTabs 同一真值、
-                                                // 同一个参数。此前这里是第二份手抄的
-                                                // 七参实参表，漏传 gamesEnabled 靠缺省
-                                                // false 蒙对，注释还把漏写说成「macOS
-                                                // 恒 false」——收成一个 ModuleVisibility
-                                                // 后不可能再漂移。
-                                                activeTabs: homeActiveTabs(
-                                                  appModel.moduleVisibility,
-                                                ),
-                                              ),
-                                        child: child!,
-                                      );
-                                    },
-                                child: navigation,
-                              ),
-                            );
-                          }
                           navigation = FushiAppUiScale(
                             scale: uiScale,
                             // 通知层包住整个 navigator（含全局浮层）：横幅 / 全屏层
@@ -3820,8 +3762,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                             navigation = ListenableBuilder(
                               // The home rail is only on screen while the home
                               // shell is the top route; opening a media item
-                              // covers it — the same signal the macOS shell uses
-                              // to drop its sidebar — so the title has to
+                              // covers it, so the title has to
                               // un-indent with it. `navigation` is passed through
                               // as the unchanging `child`, so flipping this never
                               // rebuilds the navigator subtree.

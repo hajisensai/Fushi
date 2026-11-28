@@ -1,7 +1,8 @@
 import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
-import 'package:macos_ui/macos_ui.dart' show WindowManipulator;
+import 'package:macos_window_utils/macos_window_utils.dart'
+    show WindowManipulator;
 
 /// 隐藏 / 恢复 macOS 系统交通灯（关闭 / 最小化 / 缩放三个圆点）。
 ///

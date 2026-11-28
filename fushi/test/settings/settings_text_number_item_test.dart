@@ -6,13 +6,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
-import 'package:fushi/src/settings/cupertino_settings_renderer.dart';
 import 'package:fushi/src/settings/material_settings_renderer.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -94,16 +92,14 @@ void main() {
     );
   }
 
-  Widget harness({required bool cupertino}) {
+  Widget harness() {
     final FushiDatabase db = FushiDatabase.forTesting(
       DatabaseConnection(NativeDatabase.memory()),
     );
     final ThemeNotifier themeNotifier =
         ThemeNotifier(db, () => const TextTheme())
           ..loadFromPrefsSnapshot(<String, String>{
-            'design_system': PrefCodec.encode(
-              cupertino ? 'cupertino' : 'material',
-            ),
+            'design_system': PrefCodec.encode('material'),
             'app_theme_key': PrefCodec.encode('system-theme'),
             'brightness_mode': PrefCodec.encode('system'),
             'custom_theme_seed': PrefCodec.encode(0xFF1F4959),
@@ -116,13 +112,7 @@ void main() {
     return ProviderScope(
       overrides: <Override>[appProvider.overrideWith((Ref ref) => appModel)],
       child: MaterialApp(
-        theme: ThemeData(
-          useMaterial3: true,
-          platform: cupertino ? TargetPlatform.iOS : TargetPlatform.android,
-          extensions: <ThemeExtension<dynamic>>[
-            FushiDesignSystemTheme(themeNotifier.designSystemTheme),
-          ],
-        ),
+        theme: ThemeData(useMaterial3: true, platform: TargetPlatform.android),
         home: Consumer(
           builder: (BuildContext context, WidgetRef ref, _) {
             final SettingsContext settingsContext = SettingsContext(
@@ -132,15 +122,10 @@ void main() {
               readerSource: ReaderFushiSource.instance,
               refresh: () {},
             );
-            return cupertino
-                ? const CupertinoSettingsRenderer().buildDetailPage(
-                    settingsContext: settingsContext,
-                    destination: fixture(),
-                  )
-                : const MaterialSettingsRenderer().buildDetailPage(
-                    settingsContext: settingsContext,
-                    destination: fixture(),
-                  );
+            return const MaterialSettingsRenderer().buildDetailPage(
+              settingsContext: settingsContext,
+              destination: fixture(),
+            );
           },
         ),
       ),
@@ -157,18 +142,7 @@ void main() {
   testWidgets('material renders both kinds through the shared dispatch', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(harness(cupertino: false));
-
-    expect(rowField('Server address'), findsOneWidget);
-    expect(rowField('API key'), findsOneWidget);
-    expect(rowField('Delay'), findsOneWidget);
-    expect(rowField('Scale'), findsOneWidget);
-  });
-
-  testWidgets('cupertino renders both kinds through the shared dispatch', (
-    WidgetTester tester,
-  ) async {
-    await tester.pumpWidget(harness(cupertino: true));
+    await tester.pumpWidget(harness());
 
     expect(rowField('Server address'), findsOneWidget);
     expect(rowField('API key'), findsOneWidget);
@@ -179,7 +153,7 @@ void main() {
   testWidgets('text item debounces keystrokes then writes through', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(harness(cupertino: false));
+    await tester.pumpWidget(harness());
 
     await tester.enterText(rowField('Server address'), 'http://10.0.0.2');
     // 防抖窗口内不写。
@@ -191,7 +165,7 @@ void main() {
   testWidgets('text item flushes a pending debounced write on dispose', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(harness(cupertino: false));
+    await tester.pumpWidget(harness());
 
     await tester.enterText(rowField('Server address'), 'http://10.0.0.9');
     // 仍在防抖窗口内（500ms 未到）——尚未写穿。
@@ -209,7 +183,7 @@ void main() {
 
   testWidgets('number item re-syncs the field text to the clamped value '
       'on unfocus', (WidgetTester tester) async {
-    await tester.pumpWidget(harness(cupertino: false));
+    await tester.pumpWidget(harness());
 
     final Finder delayField = rowField('Delay');
     await tester.enterText(delayField, '250');
@@ -238,7 +212,7 @@ void main() {
   testWidgets('secret item obscures and the eye toggle reveals', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(harness(cupertino: false));
+    await tester.pumpWidget(harness());
 
     final Finder secretRow = find.widgetWithText(
       AdaptiveSettingsRow,
@@ -271,7 +245,7 @@ void main() {
   testWidgets('secret item reset writes resetValue and refills the field', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(harness(cupertino: false));
+    await tester.pumpWidget(harness());
 
     final Finder secretRow = find.widgetWithText(
       AdaptiveSettingsRow,
@@ -295,7 +269,7 @@ void main() {
   testWidgets('number item clamps to min/max and skips unparsable input', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(harness(cupertino: false));
+    await tester.pumpWidget(harness());
 
     final Finder delayField = rowField('Delay');
     await tester.enterText(delayField, '250');
@@ -319,7 +293,7 @@ void main() {
   testWidgets('double number item parses decimals', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(harness(cupertino: false));
+    await tester.pumpWidget(harness());
 
     await tester.enterText(rowField('Scale'), '1.75');
     await tester.pump();
@@ -329,7 +303,7 @@ void main() {
   testWidgets('number item reset writes the reset value', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(harness(cupertino: false));
+    await tester.pumpWidget(harness());
 
     final Finder delayField = rowField('Delay');
     await tester.enterText(delayField, '99');

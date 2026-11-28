@@ -1,7 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/models/theme_notifier.dart' show buildFushiThemeData;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
-    show FushiDesignSystem, FushiEinkTheme, FushiGlassMaterial;
+    show FushiEinkTheme, FushiGlassMaterial;
 import 'package:fushi/src/utils/adaptive/shell_style.dart' show FushiShellTheme;
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart'
     show FushiAppleDarkTier;
@@ -46,7 +46,7 @@ class DictionaryPopupTheme {
 /// 正文 CSS 的 `einkDark` 同一真值；[buildColorScheme] 传 `AppModel.buildColorScheme`，
 /// 它在墨水屏下本就返回纯黑白 ColorScheme。
 ///
-/// [textTheme] / [designSystem] / [glassDesign] / [glass] / [monochromeAccent] 取 app
+/// [textTheme] / [glassDesign] / [glass] / [monochromeAccent] 取 app
 /// 当前值，原样交给 [buildFushiThemeData]：覆盖主题因此同样挂上 `FushiGlassTheme` 与
 /// `FushiAppleColors`，书内查词弹窗在 Apple 设计系统下不回落成 MD3。墨水屏下 Apple
 /// 设计系统本就不生效（`buildFushiThemeData` 内 `glassDesign && !eink`）。
@@ -73,7 +73,6 @@ DictionaryPopupTheme resolveDictionaryPopupTheme({
   required bool readerDark,
   required ColorScheme Function(Brightness brightness) buildColorScheme,
   required TextTheme textTheme,
-  FushiDesignSystem designSystem = FushiDesignSystem.auto,
   bool glassDesign = false,
   FushiGlassMaterial glass = FushiGlassMaterial.off,
   bool monochromeAccent = false,
@@ -92,7 +91,6 @@ DictionaryPopupTheme resolveDictionaryPopupTheme({
       buildFushiThemeData(
         scheme: buildColorScheme(einkDark ? Brightness.dark : Brightness.light),
         textTheme: textTheme,
-        designSystem: designSystem,
         glass: glass,
         glassDesign: true,
         monochromeAccent: monochromeAccent,
@@ -109,7 +107,6 @@ DictionaryPopupTheme resolveDictionaryPopupTheme({
     scheme: lyricsScheme ?? scheme,
     textTheme: textTheme,
     eink: eink,
-    designSystem: designSystem,
     glass: eink ? FushiGlassMaterial.off : glass,
     glassDesign: apple,
     monochromeAccent: monochromeAccent,

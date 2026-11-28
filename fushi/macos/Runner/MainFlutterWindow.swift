@@ -89,8 +89,9 @@ class MainFlutterWindow: NSWindow {
 
   override func awakeFromNib() {
     var windowFrame = self.frame
-    // macos_ui needs the window's content view managed by macos_window_utils so
-    // the transparent titlebar / full-size-content view / sidebar vibrancy work.
+    // macos_window_utils (WindowManipulator: transparent titlebar, full-size
+    // content view, vibrancy material, fullscreen delegate) needs the window's
+    // content view managed by its view controller.
     // MacOSWindowUtilsViewController() creates its own internal
     // FlutterViewController; plugins must be registered against that one. This
     // is the package's documented MainFlutterWindow.swift setup and is

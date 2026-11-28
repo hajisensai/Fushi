@@ -372,7 +372,7 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
               padding: EdgeInsets.all(tokens.spacing.gap / 2),
               onTap: () => _beginEditRemoteUrl(source),
             ),
-          FushiSwitch.adaptive(
+          FushiSwitch(
             value: source.enabled,
             onChanged: (bool enabled) => _updateRow(source, (int at) {
               _sources[at] = source.copyWith(enabled: enabled);

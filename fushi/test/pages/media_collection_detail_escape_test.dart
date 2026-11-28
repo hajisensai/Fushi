@@ -380,14 +380,14 @@ void main() {
     // wrapWithGlobalNavigation 外）后本用例必红（child: _wrapFocusNavigation(
     // 形态消失）。
     final String mainSrc = File('lib/main.dart').readAsStringSync();
-    // 判别性锚：从 wrapWithGlobalNavigation 调用起、到其后 macOS 分支之前的这段
-    // 实参文本里必须出现 _wrapFocusNavigation ——旧接线里它在 FushiAppUiScale
-    // 的 child（macOS 分支**之后**），裸 contains 会两种接线都绿（假防护）。
+    // 判别性锚：从 wrapWithGlobalNavigation 调用起、到其后 FushiAppUiScale 包装
+    // 之前的这段实参文本里必须出现 _wrapFocusNavigation ——旧接线里它在
+    // FushiAppUiScale 的 child（**之后**），裸 contains 会两种接线都绿（假防护）。
     final int wrapperStart = mainSrc.indexOf(
       'Widget navigation = wrapWithGlobalNavigation(',
     );
     final int macosBranch = mainSrc.indexOf(
-      'if (isMacosPlatform',
+      'navigation = FushiAppUiScale(',
       wrapperStart,
     );
     expect(wrapperStart, greaterThanOrEqualTo(0));

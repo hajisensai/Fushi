@@ -16,7 +16,6 @@ import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -80,9 +79,6 @@ Future<double> _settledOffset(
           useMaterial3: true,
           platform: TargetPlatform.android,
           colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF386A58)),
-          extensions: <ThemeExtension<dynamic>>[
-            FushiDesignSystemTheme(themeNotifier.designSystemTheme),
-          ],
         ),
         home: Scaffold(
           body: FushiFocusRoot(

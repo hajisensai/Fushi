@@ -1307,7 +1307,7 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        FushiSwitchListTile.adaptive(
+        FushiSwitchListTile(
           key: const ValueKey<String>('calibration-special-character-width'),
           contentPadding: EdgeInsets.zero,
           title: Text(t.game_lookup_samples_special_chars_title),
@@ -1658,7 +1658,7 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
               setState(() => _showAdvanced = value),
           children: [
             if (_samples.length > 1)
-              FushiSwitchListTile.adaptive(
+              FushiSwitchListTile(
                 key: const ValueKey<String>('calibration-fit-all'),
                 contentPadding: EdgeInsets.zero,
                 title: Text(t.game_lookup_samples_fit_all),

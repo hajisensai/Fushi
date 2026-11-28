@@ -799,7 +799,7 @@ class SettingsStepperItem extends SettingsItem {
 
 /// 一等文本输入项：字符串值经 getter/setter 闭包同步读写。渲染复用
 /// settings_schema_fields 的 [SettingsSecretField] 内部（防抖/提交语义一致），
-/// 由共享 SettingsSchemaItem 分发，Material/Cupertino 同路径。
+/// 由共享 SettingsSchemaItem 分发，MD3 / 玻璃同路径。
 class SettingsTextItem extends SettingsItem {
   const SettingsTextItem({
     required super.id,

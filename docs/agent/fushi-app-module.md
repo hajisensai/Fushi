@@ -6,7 +6,7 @@
 
 ## 模块职责
 
-Hibiki 的 Flutter 多平台主应用：日语 EPUB 阅读器，集成划词查词、有声书同步、Anki 卡片创建、阅读统计。基于 Flutter 跨平台框架，`auto` 下 Android / iOS / macOS / Windows / Linux 统一走 Material Design 3；Cupertino / macOS renderer 仅保留为隐藏内部能力，并通过 fork 的 `flutter_inappwebview_windows` 支持 Windows 桌面端。
+Hibiki 的 Flutter 多平台主应用：日语 EPUB 阅读器，集成划词查词、有声书同步、Anki 卡片创建、阅读统计。基于 Flutter 跨平台框架，`auto` 下 Android / iOS / macOS / Windows / Linux 统一走 Material Design 3；另一档 Apple（glass）设计系统；隐藏的 Cupertino / macOS 渲染器已于 2026-11-28 整删；并通过 fork 的 `flutter_inappwebview_windows` 支持 Windows 桌面端。
 
 ## 入口与启动
 

@@ -273,7 +273,6 @@ Future<void> _pump(
             textTheme: dark
                 ? Typography.material2021().white
                 : Typography.material2021().black,
-            designSystem: FushiDesignSystem.material,
             glass: FushiGlassMaterial.off,
             glassDesign: false,
           ),

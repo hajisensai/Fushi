@@ -681,50 +681,7 @@ class FushiAlertDialog extends StatelessWidget {
     this.alignment,
     this.constraints,
     this.scrollable,
-  }) : scrollController = null,
-       actionScrollController = null,
-       insetAnimationDuration = const Duration(milliseconds: 100),
-       insetAnimationCurve = Curves.decelerate,
-       _adaptive = false;
-
-  /// [AlertDialog.adaptive] 的分派版：MD3 下恒为 Material 对话框（`auto` 五平台
-  /// 统一 M3E，iOS 不再出 Cupertino 对话框，BUG-3309），只有隐藏的
-  /// `FushiDesignSystem.cupertino` 才按平台分派（[useCupertinoAdaptiveControls]）；
-  /// 玻璃下（含用户可见的「Cupertino」玻璃设计）与默认构造器同一个玻璃外壳。
-  const FushiAlertDialog.adaptive({
-    super.key,
-    this.icon,
-    this.iconPadding,
-    this.iconColor,
-    this.title,
-    this.titlePadding,
-    this.titleTextStyle,
-    this.content,
-    this.contentPadding,
-    this.contentTextStyle,
-    this.actions,
-    this.actionsPadding,
-    this.actionsAlignment,
-    this.actionsOverflowAlignment,
-    this.actionsOverflowDirection,
-    this.actionsOverflowButtonSpacing,
-    this.buttonPadding,
-    this.backgroundColor,
-    this.elevation,
-    this.shadowColor,
-    this.surfaceTintColor,
-    this.semanticLabel,
-    this.insetPadding,
-    this.clipBehavior,
-    this.shape,
-    this.alignment,
-    this.constraints,
-    this.scrollable,
-    this.scrollController,
-    this.actionScrollController,
-    this.insetAnimationDuration = const Duration(milliseconds: 100),
-    this.insetAnimationCurve = Curves.decelerate,
-  }) : _adaptive = true;
+  });
 
   final Widget? icon;
   final EdgeInsetsGeometry? iconPadding;
@@ -759,54 +716,9 @@ class FushiAlertDialog extends StatelessWidget {
   /// true = [AlertDialog.scrollable]（标题与内容一起滚，内容拿无界高度）；
   /// false = 不套任何滚动，内容自己管高度。
   final bool? scrollable;
-  final ScrollController? scrollController;
-  final ScrollController? actionScrollController;
-  final Duration insetAnimationDuration;
-  final Curve insetAnimationCurve;
-  final bool _adaptive;
 
   @override
   Widget build(BuildContext context) {
-    if (!isGlassDesign(context) &&
-        _adaptive &&
-        useCupertinoAdaptiveControls(context)) {
-      return FushiDialogScrollbarInset(
-        cornerRadius: _md3DialogCornerRadius(context, shape),
-        child: AlertDialog.adaptive(
-          icon: _md3HeroIcon(),
-          iconPadding: iconPadding,
-          iconColor: iconColor,
-          title: title,
-          titlePadding: titlePadding,
-          titleTextStyle: titleTextStyle,
-          content: _scrollableContent(),
-          contentPadding: contentPadding,
-          contentTextStyle: contentTextStyle,
-          actions: actions,
-          actionsPadding: actionsPadding,
-          actionsAlignment: actionsAlignment,
-          actionsOverflowAlignment: actionsOverflowAlignment,
-          actionsOverflowDirection: actionsOverflowDirection,
-          actionsOverflowButtonSpacing: actionsOverflowButtonSpacing,
-          buttonPadding: buttonPadding,
-          backgroundColor: backgroundColor,
-          elevation: elevation,
-          shadowColor: shadowColor,
-          surfaceTintColor: surfaceTintColor,
-          semanticLabel: semanticLabel,
-          insetPadding: _resolveDialogInset(context, insetPadding),
-          clipBehavior: clipBehavior,
-          shape: shape,
-          alignment: alignment,
-          constraints: _resolveMd3DialogConstraints(context, constraints),
-          scrollable: scrollable ?? false,
-          scrollController: scrollController,
-          actionScrollController: actionScrollController,
-          insetAnimationDuration: insetAnimationDuration,
-          insetAnimationCurve: insetAnimationCurve,
-        ),
-      );
-    }
     if (!isGlassDesign(context)) {
       return FushiDialogScrollbarInset(
         cornerRadius: _md3DialogCornerRadius(context, shape),

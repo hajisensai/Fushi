@@ -208,7 +208,7 @@ Future<bool> ensureLogUploadConsent(BuildContext context) async {
   if (!context.mounted) return false;
   final bool? agreed = await showAdaptiveDialog<bool>(
     context: context,
-    builder: (BuildContext ctx) => FushiAlertDialog.adaptive(
+    builder: (BuildContext ctx) => FushiAlertDialog(
       title: Text(t.log_upload_consent_title),
       content: Text(t.log_upload_consent_body),
       actions: <Widget>[

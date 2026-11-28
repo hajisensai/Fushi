@@ -128,7 +128,6 @@ Future<void> showLibraryFilterPanel({
   }
   final bool popover =
       origin != null &&
-      !isCupertinoPlatform(context) &&
       !isGlassDesign(context) &&
       MediaQuery.sizeOf(context).width >= kFushiSheetWideBreakpoint;
   if (popover) {

@@ -65,9 +65,6 @@ Future<void> _pumpPage(
           theme: buildFushiThemeData(
             scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
             textTheme: Typography.material2021().black,
-            designSystem: apple
-                ? FushiDesignSystem.cupertino
-                : FushiDesignSystem.material,
             glass: FushiGlassMaterial.off,
             glassDesign: apple,
           ),
