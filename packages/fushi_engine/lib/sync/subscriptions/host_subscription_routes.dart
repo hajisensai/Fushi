@@ -130,15 +130,25 @@ class HostSubscriptionsInterconnectModule extends InterconnectHostModule {
   final HostSubscriptionHost? host;
 
   @override
-  String get capabilityKey => 'subscriptions';
+  String get name => 'subscriptions';
 
   @override
+  List<InterconnectCapability> get capabilities => <InterconnectCapability>[
+    InterconnectCapability('subscriptions', capability),
+  ];
+
+  /// 能力值；null = 本 host 此刻不提供（键不出现）。
   Future<Object?> capability() async => host?.capability();
 
   @override
-  List<String> get routePrefixes => const <String>['/api/subscriptions'];
+  List<InterconnectRoute> get routes => <InterconnectRoute>[
+    InterconnectRoute(
+      const InterconnectPath.subtree('/api/subscriptions'),
+      trust: InterconnectTrust.credential,
+      handler: handle,
+    ),
+  ];
 
-  @override
   Future<shelf.Response> handle(InterconnectRequest request) async {
     final HostSubscriptionHost? h = host;
     if (h == null) return shelf.Response.notFound('Host subscriptions off');

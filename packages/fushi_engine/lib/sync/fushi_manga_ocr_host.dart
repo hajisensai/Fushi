@@ -1165,15 +1165,25 @@ class MangaOcrInterconnectModule extends InterconnectHostModule {
   final MangaOcrHostJobManager? manager;
 
   @override
-  String get capabilityKey => 'mangaOcr';
+  String get name => 'mangaOcr';
 
   @override
+  List<InterconnectCapability> get capabilities => <InterconnectCapability>[
+    InterconnectCapability('mangaOcr', capability),
+  ];
+
+  /// 能力值；null = 本 host 此刻不提供（键不出现）。
   Future<Object?> capability() async => manager?.capability();
 
   @override
-  List<String> get routePrefixes => const <String>['/api/ocr/job'];
+  List<InterconnectRoute> get routes => <InterconnectRoute>[
+    InterconnectRoute(
+      const InterconnectPath.subtree('/api/ocr/job'),
+      trust: InterconnectTrust.credential,
+      handler: handle,
+    ),
+  ];
 
-  @override
   Future<shelf.Response> handle(InterconnectRequest request) async {
     final MangaOcrHostJobManager? m = manager;
     if (m == null) return shelf.Response.notFound('Manga OCR off');

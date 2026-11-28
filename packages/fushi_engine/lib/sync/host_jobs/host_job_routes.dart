@@ -173,15 +173,25 @@ class HostJobsInterconnectModule extends InterconnectHostModule {
   final HostJobManager? jobs;
 
   @override
-  String get capabilityKey => 'jobs';
+  String get name => 'jobs';
 
   @override
+  List<InterconnectCapability> get capabilities => <InterconnectCapability>[
+    InterconnectCapability('jobs', capability),
+  ];
+
+  /// 能力值；null = 本 host 此刻不提供（键不出现）。
   Future<Object?> capability() async => jobs?.capability();
 
   @override
-  List<String> get routePrefixes => const <String>['/api/jobs'];
+  List<InterconnectRoute> get routes => <InterconnectRoute>[
+    InterconnectRoute(
+      const InterconnectPath.subtree('/api/jobs'),
+      trust: InterconnectTrust.credential,
+      handler: handle,
+    ),
+  ];
 
-  @override
   Future<shelf.Response> handle(InterconnectRequest request) async {
     final HostJobManager? j = jobs;
     if (j == null) return shelf.Response.notFound('Host jobs off');

@@ -2061,3 +2061,33 @@ String _safeDownloadStem(String value) {
   final String safe = value.replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '_');
   return safe.isEmpty ? 'video' : safe;
 }
+
+/// 判断规范化路径 [path] 是否为视频流路径
+/// （`/api/library/videos/<id>/<stream|hls.m3u8|hlsseg.ts|bdclip.m2ts|sidecaraudio>`，id 非空，id 可含 `/`）。
+///
+/// 这些子路径免 Basic（端点表里的 `urlTicket` 路由）：播放器拿到 playlist 后会自己去取每个分段，那些请求
+/// 同样是裸 GET，不带 Authorization。它们的门是 URL 里的短时 token（handler 内校验），与 `/stream` 是同一套。
+bool _isVideoStreamPath(String path) {
+  const String prefix = '/api/library/videos/';
+  if (!path.startsWith(prefix)) return false;
+  for (final String suffix in _kVideoStreamSuffixes) {
+    if (!path.endsWith(suffix)) continue;
+    final String idPart = path.substring(
+      prefix.length,
+      path.length - suffix.length,
+    );
+    if (idPart.isNotEmpty) return true;
+  }
+  return false;
+}
+
+/// 免 Basic 的视频子路径后缀。新增一条就是新开一个「谁拿到 URL 谁能取」的面，
+/// 所以它们的 handler 必须各自校验 token。
+const List<String> _kVideoStreamSuffixes = <String>[
+  '/stream',
+  '/hls.m3u8',
+  '/$kTranscodeSegmentPathSuffix',
+  '/$kBlurayClipPathSuffix',
+  // 外挂音轨流（M9OEh1PeYH）：播放器 `audio-add` 是裸 GET；handler 校验同一张流 token。
+  '/$kVideoSidecarAudioPathSuffix',
+];

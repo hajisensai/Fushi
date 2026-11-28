@@ -122,6 +122,7 @@ part 'fushi_sync_server/source_share.part.dart';
 part 'fushi_sync_server/plugin_relay.part.dart';
 part 'fushi_sync_server/host_update.part.dart';
 part 'fushi_sync_server/media_streams.part.dart';
+part 'fushi_sync_server/host_routes.part.dart';
 
 /// Embedded WebDAV-style server used for device-to-device LAN sync.
 ///
@@ -137,8 +138,10 @@ part 'fushi_sync_server/media_streams.part.dart';
 ///   token，同样可单独吊销，但只过普通鉴权、不过敏感服务门；共享 host token 只为
 ///   升级前已配对的老设备保留兼容。视频流 / 原盘 / 查词音频等派生凭据记签发凭据，
 ///   签发凭据被吊销即连带作废。
-/// - 免 Basic 的路由只有 auth.part 里的「规范化路径 + 方法」单表 `_kPublicRoutes`，
-///   每条 handler 自带门（token / 配对窗口）。
+/// - 端点只有一张表（[InterconnectModuleTable]，服务器自带的部分在 host_routes.part）：每条
+///   [InterconnectRoute] 写明方法集、路径模式与信任级 [InterconnectTrust]。免 Basic 的只有声明了
+///   `pairingBootstrap` / `reachabilityProbe` / `urlTicket` / `queryTicketOrCredential` 的那几条
+///   （路径 × 方法），各自的门（配对窗口 / URL 票据 / query 凭据）写在声明里。
 /// - 配对请求来源（局域网 / P2P / 公网含反代）由 pairing.part 的 `_RequestOrigin`
 ///   一处分类：带转发头的请求不算局域网；PIN 失败按来源类别计预算。
 /// - 请求体一律有界读取，超限回 413。
@@ -597,10 +600,9 @@ class FushiSyncServer {
        _historyService = historyService,
        _libraryService = libraryService,
        _screenOcr = screenOcr,
-       // 统一互联模块层（设计 2026-11-23 §3.5）：分发、能力位、流解析器都是对这张表的循环。
-       // 前六个是迁进来的既有功能（构造参数保留为装配糖，未接线时模块照样占住前缀、回 404），
-       // 顺序即 `/api/capabilities` 的键序，与迁移前逐字节相同。新功能只经 [modules] 注册。
-       _modules = InterconnectModuleTable(<InterconnectHostModule>[
+       // 构造参数带进来的模块（前六个是迁进模块层的既有功能，构造参数保留为装配糖，未接线时模块照样占住
+       // 路径、回 404）。它们与服务器自带的模块排成一张表（[_modules]，见 host_routes.part.dart）。
+       _injectedModules = <InterconnectHostModule>[
          MangaOcrInterconnectModule(mangaOcrJobs),
          HostJobsInterconnectModule(hostJobs),
          HostDownloadsInterconnectModule(downloads),
@@ -609,12 +611,12 @@ class FushiSyncServer {
          HostAssistantInterconnectModule(assistant),
          ...modules,
          // 章级漫画进度（拍板 design-ic-manga-chapter-progress）是库服务的一项可选能力（同
-         // [BookProgressBatchHost]），按库服务是否实现自动装配，不另设装配点。排在最后，既有键序不变。
+         // [BookProgressBatchHost]），按库服务是否实现自动装配，不另设装配点。
          MangaChapterProgressInterconnectModule(switch (libraryService) {
            final MangaChapterProgressHost h => h,
            _ => null,
          }),
-       ]),
+       ],
        _dictionaryMediaProvider = dictionaryMediaProvider,
        _dictionaryStylesProvider = dictionaryStylesProvider,
        _gameStreamService = gameStreamService,
@@ -647,9 +649,18 @@ class FushiSyncServer {
   final FushiRemoteHistoryService? _historyService;
   final FushiLibraryHostService? _libraryService;
 
-  /// 互联模块表（漫画 OCR 任务、通用任务、代下载、BT 引擎、订阅、助手，以及经 `modules` 注册的新功能
-  /// 如音乐库）。
-  final InterconnectModuleTable _modules;
+  final List<InterconnectHostModule> _injectedModules;
+
+  /// 互联端点表：服务器自带的各类功能与构造参数带进来的模块（漫画 OCR 任务、通用任务、代下载、BT 引擎、
+  /// 订阅、助手、经 `modules` 注册的新功能如音乐库）。鉴权豁免、分发、能力位、流解析器都是对它的循环；
+  /// 构造函数体里第一次读它，路由冲突 / 能力键冲突在构造时就报错。
+  late final InterconnectModuleTable _modules = InterconnectModuleTable(
+    _hostModules(_injectedModules),
+  );
+
+  /// 端点表本身，供从表派生的守卫读（哪些路由免 Basic、某条路径归谁）。
+  @visibleForTesting
+  InterconnectModuleTable get endpointTable => _modules;
 
   /// 截屏识字（`/api/ocr/screen` + capabilities `screenOcrV1`）。null = host 不提供，端点 404。
   final ScreenOcrHost? _screenOcr;
@@ -1339,245 +1350,17 @@ class FushiSyncServer {
     _credentialsLoading = null;
   }
 
+  /// 按端点表分发；表里没有的路径落进 WebDAV 文件树（最后的兜底）。
   Future<shelf.Response> _handleRequest(shelf.Request request) async {
     final method = request.method.toUpperCase();
     final String reqPath = canonicalRequestPath(request);
-    if (reqPath == '/api/pair') {
-      return _handlePair(request);
-    }
-    if (reqPath == '/api/pair/v2') {
-      return _handlePairV2(request);
-    }
-    if (reqPath == '/api/pair/v2/confirm') {
-      return _handlePairConfirm(request);
-    }
-    if (reqPath == '/api/game-stream/sessions' ||
-        reqPath.startsWith('/api/game-stream/sessions/') ||
-        reqPath == '/api/game-stream/join' ||
-        reqPath == '/api/game-stream/signal' ||
-        reqPath == '/api/game-stream/stop' ||
-        reqPath == '/api/game-stream/mine' ||
-        reqPath == '/api/game-stream/library' ||
-        reqPath == '/api/game-stream/library/cover' ||
-        reqPath == '/api/game-stream/launch' ||
-        reqPath == '/api/game-stream/launch/status') {
-      return _handleGameStream(request, method, reqPath);
-    }
-    if (reqPath.startsWith('/api/video-remote/')) {
-      return _handleVideoRemote(request, method, reqPath);
-    }
-    if (reqPath.startsWith('/api/lookup/')) {
-      return _handleLookupApi(request, method, reqPath);
-    }
-    if (reqPath == '/api/mine') {
-      if (method != 'POST') return shelf.Response(405);
-      return _lookupRoutes.handleMine(request);
-    }
-    if (reqPath == '/api/mine/targets') {
-      // POST 与其它 /api/mine* 一致：客户端走同一条带钉扎的互联 POST 传输（请求体为空对象）。
-      if (method != 'POST') return shelf.Response(405);
-      return _lookupRoutes.handleMiningTargets(request);
-    }
-    if (reqPath == '/api/mine/forward') {
-      if (method != 'POST') return shelf.Response(405);
-      return _lookupRoutes.handleMineForward(request);
-    }
-    if (reqPath.startsWith('/api/anki/note-type/')) {
-      if (method != 'POST') return shelf.Response(405);
-      return _lookupRoutes.handleAnkiNoteType(request, reqPath);
-    }
-    if (reqPath.startsWith('/api/anki/source/')) {
-      if (method != 'POST') return shelf.Response(405);
-      return _lookupRoutes.handleSourceNote(request, reqPath);
-    }
-    if (reqPath.startsWith('/api/anki/media/dedup/')) {
-      if (method != 'POST') return shelf.Response(405);
-      return _handleAnkiMediaDedup(request, reqPath);
-    }
-    if (reqPath == '/api/media/dictionary') {
-      if (method != 'GET' && method != 'HEAD') return shelf.Response(405);
-      return _handleDictionaryMedia(request, method == 'HEAD');
-    }
-    if (reqPath == '/api/duplicate') {
-      if (method != 'POST') return shelf.Response(405);
-      return _lookupRoutes.handleDuplicate(request);
-    }
-    if (reqPath == '/api/extension/status') {
-      if (method != 'POST') return shelf.Response(405);
-      return jsonResponse(<String, dynamic>{
-        'app': 'fushi',
-        'ready': true,
-        'port': port,
-        // BUG-4394：能力位——扩展见到它才把词典图片 URL 的 token 换成派生 key。
-        'dictionaryMediaKey': kDictionaryMediaKeyScheme,
-      });
-    }
-    if (reqPath == '/api/ping') {
-      if (method != 'GET') return shelf.Response(405);
-      return _handlePing();
-    }
-    // 复习同步快速通道（设计 §6.3）：令牌变了立刻回，没变挂到下一次写入或超时。鉴权走上方 middleware。
-    // `own`：这段推进全是提问的这台设备自己写 head 引起的（BUG-4382，见 [SrsChangePoll.ownOnly]）。
-    if (reqPath == '/api/srs/changes') {
-      if (method != 'GET') return shelf.Response(405);
-      final SrsChangePoll poll = await srsChanges.poll(
-        int.tryParse(request.url.queryParameters['after'] ?? ''),
-        reader: _pairedIdentity(request.headers['authorization']),
-      );
-      return jsonResponse(<String, dynamic>{
-        'token': poll.token,
-        'own': poll.ownOnly,
-      });
-    }
-    // 复习同步 v2 的参与状态（BUG-4320）：客户端一轮跑完问 host 自己加入了没有。鉴权走上方 middleware。
-    if (reqPath == kSrsSyncStatusPath) {
-      if (method != 'GET') return shelf.Response(405);
-      final bool Function()? joined = srsSync2Joined;
-      if (joined == null) {
-        return shelf.Response.notFound('SRS sync status not reported');
-      }
-      return jsonResponse(<String, dynamic>{'joined': joined()});
-    }
-    // 远程复习库：已配对设备不下载卡组，直接在本机的复习库上复习。鉴权走上方 middleware。
-    if (isSrsRemoteStorePath(reqPath)) {
-      final SrsRemoteStoreService? review = srsRemoteStoreProvider?.call();
-      if (review == null) {
-        // V2 端点回机读码：新客户端据「404 而没有机读码」判断对端是不认 V2 的旧主机，复习关着不能混进去。
-        return reqPath.startsWith(kSrsRemoteStoreV2PathPrefix)
-            ? shelf.Response(
-                503,
-                body: jsonEncode(<String, dynamic>{
-                  'error': SrsRemoteStoreError.unavailable,
-                }),
-                headers: const <String, String>{
-                  'Content-Type': 'application/json',
-                },
-              )
-            : shelf.Response.notFound('SRS review off');
-      }
-      return handleSrsRemoteStoreRequest(review, request, method, reqPath);
-    }
-    if (reqPath.startsWith(kAiRelayPathPrefix)) {
-      final AiRelayHostService? relay = _aiRelay;
-      if (relay == null) return shelf.Response.notFound('AI relay off');
-      return handleAiRelayRequest(
-        relay,
-        request,
-        method,
-        reqPath,
-        enabled: readInterconnectAiRelayEnabled(_prefs),
-      );
-    }
-    if (reqPath == '/api/capabilities') {
-      if (method != 'GET') return shelf.Response(405);
-      return _capabilitiesRoute(request);
-    }
-    if (reqPath == '/api/host/addresses') {
-      if (method != 'GET') return shelf.Response(405);
-      return _handleHostAddresses();
-    }
-    if (reqPath == kHostUpdatePath) {
-      return _handleHostUpdate(request, method);
-    }
-    // 漫画 P3：互联 host 代跑 OCR。鉴权走上方 middleware（无豁免），处理逻辑在
-    // fushi_manga_ocr_host.dart（本文件是共享热点，只留最小分发）。
-    // 截屏识字（Steam Deck 游戏内识字等）：处理逻辑在 fushi_screen_ocr_host.dart。
-    if (reqPath == kScreenOcrPath) {
-      final ScreenOcrHost? screenOcr = _screenOcr;
-      if (screenOcr == null) return shelf.Response.notFound('Screen OCR off');
-      return screenOcr.handle(request);
-    }
-    // 互联模块（设计 2026-11-23 §3.5）：一个功能一个模块，按模块表分发，服务器本体不再为它们写分支。
-    final InterconnectHostModule? module = _modules.match(reqPath);
-    if (module != null) {
-      return module.handle(_interconnectRequest(request, reqPath));
-    }
-    // 统一流票的签发 / 释放（取流那条免 Basic，同在 media_streams.part.dart）。
-    if (isLibraryMediaStreamRoute(reqPath)) {
-      return _handleLibraryMediaStreams(request, method, reqPath);
-    }
-    if (reqPath == '/api/library/dictionaries' ||
-        reqPath.startsWith('/api/library/dictionaries/')) {
-      return _handleLibraryDictionaries(request, method, reqPath);
-    }
-    if (reqPath == kBookProgressBatchPath) {
-      return _handleLibraryBookProgressBatch(method);
-    }
-    if (reqPath == '/api/library/books' ||
-        reqPath.startsWith('/api/library/books/')) {
-      return _handleLibraryBooks(request, method, reqPath);
-    }
-    if (reqPath.startsWith('/api/library/manga/')) {
-      return _handleLibraryManga(request, method, reqPath);
-    }
-    if (reqPath == '/api/library/localaudio' ||
-        reqPath.startsWith('/api/library/localaudio/')) {
-      return _handleLibraryLocalAudio(request, method, reqPath);
-    }
-    if (reqPath == '/api/library/audiobooks' ||
-        reqPath.startsWith('/api/library/audiobooks/')) {
-      return _handleLibraryAudiobooks(request, method, reqPath);
-    }
-    // 视频刮削元数据（7c/7a/7b），必须排在 videos 前缀判定之前（互不为前缀，但
-    // 放一起读）；host 不实现 VideoMetadataHost → 404。
-    if (reqPath == '/api/library/metadata' ||
-        reqPath.startsWith('/api/library/metadata/')) {
-      return _handleLibraryVideoMetadata(request, method, reqPath);
-    }
-    if (reqPath == '/api/library/videos' ||
-        reqPath.startsWith('/api/library/videos/')) {
-      return _handleLibraryVideos(request, method, reqPath);
-    }
-    // 远端原盘的只读盘目录（会话 token 鉴权，豁免 Basic 见 auth 中间件）。
-    if (reqPath.startsWith(kDiscShareRoutePrefix)) {
-      if (_libraryService is! VideoDiscShareHost) {
-        return shelf.Response.notFound('Disc share off');
-      }
-      return handleDiscShareRequest(
-        _discShares,
-        request,
-        method,
-        reqPath,
-        issuerValid: _issuerStillValid,
-      );
-    }
-    if (reqPath == '/api/library/aggregate') {
-      return _handleLibraryAggregate(request, method, reqPath);
-    }
-    if (reqPath == '/api/library/activity') {
-      return _handleLibraryActivity(request, method);
-    }
-    if (reqPath == '/api/library/collections') {
-      return _handleLibraryCollections(request, method, reqPath);
-    }
-    if (reqPath == '/api/library/tags') {
-      return _handleLibraryTags(request, method);
-    }
-    if (reqPath == '/api/library/media-links') {
-      return _handleLibraryMediaLinks(request, method);
-    }
-    if (reqPath == kOnlineLibraryItemsPath) {
-      return _handleLibraryOnlineItems(request, method);
-    }
-    if (reqPath == '/api/interconnect/service-config') {
-      return _handleInterconnectServiceConfig(request, method);
-    }
-    if (reqPath == kInterconnectSourceSharePath ||
-        reqPath == kInterconnectSourceSharePackagePath) {
-      return _handleInterconnectSourceShare(request, method, reqPath);
-    }
-    if (reqPath == kInterconnectPluginRelayPath ||
-        reqPath.startsWith('$kInterconnectPluginRelayPath/')) {
-      return _handleInterconnectPluginRelay(request, method, reqPath);
-    }
-    if (reqPath == kInterconnectProfilePath) {
-      return _handleInterconnectProfile(request, method);
-    }
-    if (reqPath == kInterconnectLeaderboardLinkPath) {
-      return _handleInterconnectLeaderboardLink(request, method);
-    }
-    if (reqPath == '/api/tombstones') {
-      return _handleTombstones(request, method);
+    switch (_modules.lookup(reqPath, method)) {
+      case InterconnectRouteHit(:final InterconnectRoute route):
+        return route.handler(_interconnectRequest(request, reqPath));
+      case InterconnectRouteMethodNotAllowed():
+        return shelf.Response(405);
+      case InterconnectRouteMiss():
+        break;
     }
 
     // 真实读写路径：只做词法规整、**保留原始大小写**。p.canonicalize 在

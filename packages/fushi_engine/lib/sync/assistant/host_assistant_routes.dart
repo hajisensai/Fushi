@@ -189,15 +189,25 @@ class HostAssistantInterconnectModule extends InterconnectHostModule {
   final HostAssistantSessions? sessions;
 
   @override
-  String get capabilityKey => 'assistant';
+  String get name => 'assistant';
 
   @override
+  List<InterconnectCapability> get capabilities => <InterconnectCapability>[
+    InterconnectCapability('assistant', capability),
+  ];
+
+  /// 能力值；null = 本 host 此刻不提供（键不出现）。
   Future<Object?> capability() async => sessions?.capability();
 
   @override
-  List<String> get routePrefixes => const <String>['/api/assistant'];
+  List<InterconnectRoute> get routes => <InterconnectRoute>[
+    InterconnectRoute(
+      const InterconnectPath.subtree('/api/assistant'),
+      trust: InterconnectTrust.credential,
+      handler: handle,
+    ),
+  ];
 
-  @override
   Future<shelf.Response> handle(InterconnectRequest request) async {
     final HostAssistantSessions? s = sessions;
     if (s == null) return shelf.Response.notFound('Host assistant off');

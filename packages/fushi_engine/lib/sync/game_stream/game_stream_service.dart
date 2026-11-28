@@ -11,6 +11,62 @@ import 'package:shelf/shelf.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_library.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
+import 'package:fushi_engine/sync/interconnect_module.dart';
+
+/// 游戏串流的全部端点——**唯一登记处**。互联端点表的 `gameStream` 模块从 [values] 派生路由，
+/// [FushiRemoteGameStreamService.handleRequest] 按同一个枚举穷尽分发：加一个端点，表里自动多一条路由，
+/// 分发处不处理就编不过；路径字面量不在别处再抄一份（`interconnect_module_layer_test.dart` 有守卫）。
+enum GameStreamEndpoint {
+  /// 会话列表。
+  sessions('/api/game-stream/sessions'),
+
+  /// 某个会话上的动作：`<path><sessionId>/<动作>`。
+  sessionAction('/api/game-stream/sessions/', isPrefix: true),
+
+  // 早期手机客户端用的短路径：会话 id 在 body 里，归一化成 [sessionAction] 后走同一套会话 / 鉴权检查。
+  join('/api/game-stream/join', aliasedAction: 'join'),
+  signal('/api/game-stream/signal', aliasedAction: 'signal'),
+  stop('/api/game-stream/stop', aliasedAction: 'stop'),
+  mine('/api/game-stream/mine', aliasedAction: 'mine'),
+
+  library('/api/game-stream/library'),
+  libraryCover('/api/game-stream/library/cover'),
+  launch('/api/game-stream/launch'),
+  launchStatus('/api/game-stream/launch/status');
+
+  const GameStreamEndpoint(
+    this.path, {
+    this.isPrefix = false,
+    this.aliasedAction,
+  });
+
+  /// 精确路径；[isPrefix] 时是带尾 `/` 的前缀。
+  final String path;
+  final bool isPrefix;
+
+  /// 短路径别名对应的会话动作名；不是别名时 null。
+  final String? aliasedAction;
+
+  /// 端点表里的路径模式。
+  InterconnectPath get pattern =>
+      isPrefix ? InterconnectPath.under(path) : InterconnectPath.exact(path);
+
+  /// [path] 归哪个端点；不是游戏串流端点时 null。
+  static GameStreamEndpoint? of(String path) {
+    for (final GameStreamEndpoint endpoint in values) {
+      if (endpoint.pattern.matches(path)) return endpoint;
+    }
+    return null;
+  }
+
+  /// 这条路径上的 POST 带的是制卡载荷（短路径 `mine` 或会话动作 `mine`）：服务器要先替对端解析词音频
+  /// 引用，体积上限也按制卡的算。
+  static bool carriesMineBody(String path) => switch (of(path)) {
+    GameStreamEndpoint.mine => true,
+    GameStreamEndpoint.sessionAction => path.endsWith('/mine'),
+    _ => false,
+  };
+}
 
 typedef GameStreamInputHandler =
     Future<void> Function(
@@ -320,7 +376,7 @@ class FushiRemoteGameStreamService {
   Future<Response> _handleLibrary(
     Request request,
     String method,
-    String path,
+    GameStreamEndpoint endpoint,
     String peerIdentity,
   ) async {
     final GameStreamLibraryHost? host = library;
@@ -331,7 +387,7 @@ class FushiRemoteGameStreamService {
         code: GameStreamRejection.libraryOff,
       );
     }
-    if (path == '/api/game-stream/library') {
+    if (endpoint == GameStreamEndpoint.library) {
       if (method != 'GET' && method != 'POST') return Response(405);
       final List<GameStreamLibraryGame> games = await host.listGames();
       return _json(<String, Object?>{
@@ -349,8 +405,8 @@ class FushiRemoteGameStreamService {
     } on FormatException catch (error) {
       return _error(400, error.message);
     }
-    switch (path) {
-      case '/api/game-stream/library/cover':
+    switch (endpoint) {
+      case GameStreamEndpoint.libraryCover:
         final String? gameId = _optionalString(body['gameId'], 'gameId');
         if (gameId == null) return _error(400, 'gameId is required');
         final GameStreamLibraryCover? cover = await host.cover(gameId);
@@ -360,7 +416,7 @@ class FushiRemoteGameStreamService {
           'contentType': cover.contentType,
           'data': base64Encode(cover.bytes),
         });
-      case '/api/game-stream/launch':
+      case GameStreamEndpoint.launch:
         final String? clientId = _optionalString(body['clientId'], 'clientId');
         final String? gameId = _optionalString(body['gameId'], 'gameId');
         if (clientId == null || gameId == null) {
@@ -431,7 +487,7 @@ class FushiRemoteGameStreamService {
         return _json(<String, Object?>{
           'launch': started.toJson(),
         }, status: 202);
-      case '/api/game-stream/launch/status':
+      case GameStreamEndpoint.launchStatus:
         final String? launchId = _optionalString(body['launchId'], 'launchId');
         final GameStreamLaunchStatus? status = _launch;
         if (launchId == null || status == null || status.launchId != launchId) {
@@ -441,7 +497,13 @@ class FushiRemoteGameStreamService {
           return _error(403, 'Unknown launch peer');
         }
         return _json(<String, Object?>{'launch': status.toJson()});
-      default:
+      case GameStreamEndpoint.library ||
+          GameStreamEndpoint.sessions ||
+          GameStreamEndpoint.sessionAction ||
+          GameStreamEndpoint.join ||
+          GameStreamEndpoint.signal ||
+          GameStreamEndpoint.stop ||
+          GameStreamEndpoint.mine:
         return Response.notFound('Game stream route not found');
     }
   }
@@ -466,64 +528,68 @@ class FushiRemoteGameStreamService {
     String peerIdentity = 'authenticated-peer',
   }) async {
     pruneExpired();
-    if (path == '/api/game-stream/library' ||
-        path == '/api/game-stream/library/cover' ||
-        path == '/api/game-stream/launch' ||
-        path == '/api/game-stream/launch/status') {
-      return _handleLibrary(request, method, path, peerIdentity);
-    }
-    if (path == '/api/game-stream/sessions' &&
-        (method == 'GET' || method == 'POST')) {
-      return _json(<String, Object?>{
-        'version': kGameStreamWireVersion,
-        'sessions': <Map<String, Object?>>[
-          for (final GameStreamSession s in sessions) s.toJson(),
-        ],
-      });
-    }
-    // Keep the short paths used by early mobile clients as aliases. They are
-    // normalized before the same session/auth checks below.
-    if (path == '/api/game-stream/join' ||
-        path == '/api/game-stream/signal' ||
-        path == '/api/game-stream/stop' ||
-        path == '/api/game-stream/mine') {
-      final Map<String, dynamic> aliasBody;
-      try {
-        aliasBody = await _readObject(
-          request,
-          maxBytes: path == '/api/game-stream/mine'
-              ? _maxMineBodyBytes
-              : _maxControlBodyBytes,
+    final GameStreamEndpoint? endpoint = GameStreamEndpoint.of(path);
+    switch (endpoint) {
+      case null:
+        return Response.notFound('Game stream route not found');
+      case GameStreamEndpoint.library ||
+          GameStreamEndpoint.libraryCover ||
+          GameStreamEndpoint.launch ||
+          GameStreamEndpoint.launchStatus:
+        return _handleLibrary(request, method, endpoint, peerIdentity);
+      case GameStreamEndpoint.sessions:
+        if (method != 'GET' && method != 'POST') {
+          return Response.notFound('Game stream route not found');
+        }
+        return _json(<String, Object?>{
+          'version': kGameStreamWireVersion,
+          'sessions': <Map<String, Object?>>[
+            for (final GameStreamSession s in sessions) s.toJson(),
+          ],
+        });
+      // Keep the short paths used by early mobile clients as aliases. They are
+      // normalized before the same session/auth checks below.
+      case GameStreamEndpoint.join ||
+          GameStreamEndpoint.signal ||
+          GameStreamEndpoint.stop ||
+          GameStreamEndpoint.mine:
+        final Map<String, dynamic> aliasBody;
+        try {
+          aliasBody = await _readObject(
+            request,
+            maxBytes: endpoint == GameStreamEndpoint.mine
+                ? _maxMineBodyBytes
+                : _maxControlBodyBytes,
+          );
+        } on FormatException catch (error) {
+          return _error(400, error.message);
+        }
+        final String? aliasSessionId = _optionalString(
+          aliasBody['sessionId'],
+          'sessionId',
         );
-      } on FormatException catch (error) {
-        return _error(400, error.message);
-      }
-      final String? aliasSessionId = _optionalString(
-        aliasBody['sessionId'],
-        'sessionId',
-      );
-      if (aliasSessionId == null || aliasSessionId.isEmpty) {
-        return _error(400, 'sessionId is required');
-      }
-      final String suffix = path.substring('/api/game-stream'.length);
-      final Request normalized = Request(
-        method,
-        request.requestedUri,
-        headers: request.headers,
-        body: jsonEncode(aliasBody),
-      );
-      return handleRequest(
-        normalized,
-        method,
-        '/api/game-stream/sessions/$aliasSessionId$suffix',
-        peerIdentity: peerIdentity,
-      );
+        if (aliasSessionId == null || aliasSessionId.isEmpty) {
+          return _error(400, 'sessionId is required');
+        }
+        final Request normalized = Request(
+          method,
+          request.requestedUri,
+          headers: request.headers,
+          body: jsonEncode(aliasBody),
+        );
+        return handleRequest(
+          normalized,
+          method,
+          '${GameStreamEndpoint.sessionAction.path}$aliasSessionId'
+          '/${endpoint.aliasedAction}',
+          peerIdentity: peerIdentity,
+        );
+      case GameStreamEndpoint.sessionAction:
+        break;
     }
-    const String prefix = '/api/game-stream/sessions/';
-    if (!path.startsWith(prefix)) {
-      return Response.notFound('Game stream route not found');
-    }
-    final List<String> parts = path.substring(prefix.length).split('/');
+    final List<String> parts = path
+        .substring(GameStreamEndpoint.sessionAction.path.length)
+        .split('/');
     if (parts.length != 2 || parts[0].isEmpty) {
       return Response.notFound('Game stream session not found');
     }

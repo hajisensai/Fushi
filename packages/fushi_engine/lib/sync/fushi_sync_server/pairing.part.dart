@@ -26,7 +26,6 @@ extension _FushiSyncServerPairing on FushiSyncServer {
   }
 
   Future<shelf.Response> _handlePair(shelf.Request request) async {
-    if (request.method.toUpperCase() != 'POST') return shelf.Response(405);
     final Future<bool> Function(FushiPairRequest)? approve = onPairRequest;
     // No UI wired to approve → never hand out the token unattended. A distinct
     // reason lets the client say "peer not ready" instead of "peer declined".
@@ -101,7 +100,6 @@ extension _FushiSyncServerPairing on FushiSyncServer {
   /// 喂给审批弹窗显示——此阶段 **不** 派 token、**不** 弹「允许/拒绝」（那在
   /// confirm 阶段，双重确认）。PIN 绝不进响应 body。
   Future<shelf.Response> _handlePairV2(shelf.Request request) async {
-    if (request.method.toUpperCase() != 'POST') return shelf.Response(405);
     // No approval UI wired → never start a pairing handshake unattended.
     if (onPairRequest == null) return _pairDenied('unavailable');
     final Map<String, dynamic>? body = await readJsonObjectBody(
@@ -339,7 +337,6 @@ extension _FushiSyncServerPairing on FushiSyncServer {
   /// hostFingerprint}。校验 pinProof（双 nonce HMAC），通过后 **仍** 需 host 人工
   /// 点允许（双重确认）才派 token。同一 sessionId 二次 confirm（重放）一律拒。
   Future<shelf.Response> _handlePairConfirm(shelf.Request request) async {
-    if (request.method.toUpperCase() != 'POST') return shelf.Response(405);
     final Future<bool> Function(FushiPairRequest)? approve = onPairRequest;
     if (approve == null) return _pairDenied('unavailable');
     final Map<String, dynamic>? body = await readJsonObjectBody(
@@ -594,7 +591,7 @@ extension _FushiSyncServerPairing on FushiSyncServer {
   /// 设有效期（host 改了设置，下一次探测就看到），又省掉每次切页面都整份传一遍、整份
   /// 解析。`Cache-Control: no-cache` 让中间层也只能「带条件重验后复用」。
   Future<shelf.Response> _capabilitiesRoute(shelf.Request request) async {
-    final String body = jsonEncode(await _capabilitiesDocument());
+    final String body = jsonEncode(await _modules.capabilities());
     final String etag = weakContentEtag(utf8.encode(body));
     final Map<String, String> headers = <String, String>{
       'ETag': etag,
@@ -604,178 +601,6 @@ extension _FushiSyncServerPairing on FushiSyncServer {
       return shelf.Response.notModified(headers: headers);
     }
     return jsonRawResponse(body, extraHeaders: headers);
-  }
-
-  /// 完整能力表：基础段（[_capabilitiesBase]）+ 按装配追加的顶层位。键序即线上键序。
-  Future<Map<String, dynamic>> _capabilitiesDocument() async {
-    final Map<String, dynamic> capabilities = await _capabilitiesBase();
-    if (_videoRemoteService != null) {
-      capabilities['videoRemoteControlV1'] = true;
-    }
-    if (_leaderboardLinkAvailable) {
-      capabilities[kInterconnectLeaderboardLinkCapability] = true;
-    }
-    if (srsRemoteStoreProvider?.call() != null) {
-      capabilities[kSrsRemoteStoreCapabilityV2] = true;
-      capabilities[kSrsRemoteStoreCapability] = true;
-    }
-    if (await _screenOcr?.isAvailable() ?? false) {
-      capabilities[kScreenOcrCapability] = true;
-    }
-    if (_aiRelayAdvertised) capabilities[kAiRelayCapability] = true;
-    return capabilities;
-  }
-
-  Future<Map<String, dynamic>> _capabilitiesBase() async {
-    final bool lib = _libraryService != null;
-    // 互联模块的能力位（漫画 OCR `mangaOcr`、通用任务 `jobs`、代下载 `downloads`、借 BT 引擎
-    // `torrentEngine`、订阅 `subscriptions`、助手 `assistant`，以及新模块如 `music`）：模块各给各的，
-    // 未接线 → null → 键不出现（老 client 读不到也不崩）。按注册顺序插在这里，键序与迁移前相同。
-    final Map<String, Object?> modules = await _modules.capabilities();
-    return <String, dynamic>{
-      // 复习同步的长轮询通知（`GET /api/srs/changes`）。老 host 没有这一位，客户端只按定时同步。
-      'srsChangesV1': true,
-      ...modules,
-      // 查词 / 制卡 / 查词历史 / 游戏串流：这台 host 是否接了对应 service（老 host
-      // 无这些字段，client 照旧以端点 404 判断）。只说「懂不懂这条路由」，不代表此刻
-      // 一定成功——例如制卡还要 host 已登录 Anki、查词还要 host 装了词典。
-      'lookup': <String, dynamic>{
-        'dictionary': _remoteLookupService != null,
-        'history': _historyService != null,
-      },
-      'mining': activeRemoteMiningService(_miningService) != null,
-      'gameStream': _gameStreamService != null,
-      // 远程更新 host（反馈 Pp8XPyve0N）：client 据此决定是否显示「主机版本」行。
-      'hostUpdate': hostSelfUpdater != null,
-      // 互联文件箱的同步根树列举（BUG-3743）：PROPFIND `Depth: infinity` 完整列出的
-      // 层数。老 host 无此字段 → client 不发 infinity（老 host 会把它当 Depth 0、只回
-      // 根自身，被误读成「远端没有任何书文件夹」），照旧逐本 Depth 1 列举。
-      kInterconnectDavCapabilityGroup: <String, dynamic>{
-        kInterconnectDavTreeListingLevelsField: kDavTreeListingMaxLevels,
-      },
-      'liveLibrary': <String, dynamic>{
-        'dictionaries': lib,
-        'books': lib,
-        'audio': lib,
-        // 本地音频清单带内容身份 contentId、单项端点认 contentId（拍板 pr3481）。
-        // 老 host 无此字段 → client 退回按显示名匹配并在报告里提示升级对端。
-        kLiveLibraryLocalAudioContentIdCapability: lib,
-        'videos': lib,
-        // 互联漫画源（按页在线阅读，`/api/library/manga/**`）。老 host 无此字段 →
-        // client 的漫画「来源」页把这一行标成「对端版本过低」，而不是让用户点进去
-        // 对着一屏 404 反复重试。与既有 `mangaOcr` 能力位同一范式。
-        'manga': _libraryService is MangaLibraryHost,
-        // 视频刮削元数据同步 / 远程刮削 / 代刮回写（`/api/library/metadata*`）。老
-        // host 无此字段 → client 跳过元数据同步并隐藏远程刮削入口。
-        'videoMetadata': _libraryService is VideoMetadataHost,
-        // 互联标签同步（`/api/library/tags`）。老 host 无此字段 / false → client
-        // 跳过标签维度（下载时搬一次标签的旧行为不受影响）。
-        'tags': _libraryService is TagSyncHost,
-        // 能否收下对端推来的 PDF 书（反馈 Jq1_ujHa4t）。app host 接了 PDF 导入器 →
-        // true；无头服务端没有 PDF 渲染引擎 → false。老 host 无此字段 → client
-        // 不推 PDF（老 host 会把 PDF 当 EPUB 导入、必然失败）。
-        kLiveLibraryPdfBooksCapability: switch (_libraryService) {
-          final PdfBookImportHost host => host.acceptsPdfBooks,
-          _ => false,
-        },
-        // 互联作品图谱同步（`/api/library/media-links`）。老 host 无此字段 / false
-        // → client 跳过作品图谱维度。
-        'mediaLinks': _libraryService is MediaLinkSyncHost,
-        // 在线源条目清单（`/api/library/online-items`，拍板台 mY5VWg1nD-）。老 host
-        // 无此字段 → client 遇 404 时提示升级对端。
-        kLiveLibraryOnlineItemsCapability:
-            _libraryService is OnlineLibrarySyncHost,
-        // 流媒体书注册（`PUT /api/library/videos/<id>/streamentry`，拍板台
-        // Z2OhxAjKVv）。老 host 无此字段 → client 不推（见该端点注释）。
-        kLiveLibraryStreamVideosCapability:
-            _libraryService is StreamVideoSyncHost,
-        // 删除墓碑列举（`GET /api/tombstones`）与视频删除（`DELETE
-        // /api/library/videos/<id>`）。老 host 无这两位 → client 遇到 404 时在同步报告
-        // 里提示升级对端；有位但 false（host 实现不带这项能力）→ 不叫用户去升级。
-        kLiveLibraryDeletionTombstonesCapability:
-            _libraryService is DeletionTombstoneHost,
-        kLiveLibraryVideoDeletionCapability:
-            _libraryService is VideoDeletionHost,
-        // 弱网实时转码（`/streamurl?maxHeight=&maxBitrate=`）。老 host 无此字段 →
-        // client 不显示画质档，行为与从前一致。字段随用户开关与本机 ffmpeg 可用性
-        // 实时变化，不是启动时的快照；最终真相仍是 `/streamurl` 回的 `transcoded`。
-        'videoTranscode': lib && _videoTranscodeEnabled,
-        // 远端导入 / 重定时字幕「设为这一集的默认字幕」（`PUT .../subtitle` 带
-        // `X-Fushi-Subtitle-Default: 1`，host 按自己的学习语言定后缀、旧 sidecar
-        // 改名 `.fushi-bak` 让位）。老 host 无此字段 → client **不上传**：老 host
-        // 不认那个 header，会走 live push 的旧路径按 client 报的后缀落盘，
-        // `rename` 直接覆盖 host 上同名的旧字幕且不留备份（BUG-2728）。
-        'videoSubtitleDefault': _libraryService is VideoSubtitleDefaultHost,
-        // 同一端点带 `?episode=N` 时落到播放列表第 N 集旁。老 host 无此字段 → client
-        // 对第 N 集**不上传**：老 host 不认 `episode`，会把字幕落到第 0 集旁、压掉
-        // 第 0 集的默认字幕。
-        'videoSubtitleDefaultEpisode':
-            _libraryService is VideoSubtitleDefaultHost,
-        // `DELETE .../subtitle?which=`（清字幕源 + 备份本视频 sidecar）与
-        // `POST .../subtitle/backfill`（立即补字幕）。老 host 无此字段 → 404。
-        'videoSubtitleClear': _libraryService is VideoSubtitleClearHost,
-        // 列出一集的全部外挂字幕（`/streamurl` 的 `sidecarSubtitles`）+ 按名下载
-        // （`GET .../subtitle?sidecar=`，反馈 -CaVsioFhG）。老 host 无此字段 →
-        // `/streamurl` 也不带列表，client 只有默认那一条。
-        kVideoSidecarSubtitlesCapability:
-            _libraryService is VideoSidecarSubtitleListHost,
-        // `/streamurl` 下发这一集的外挂音轨（`externalAudioTracks` + token 音轨流
-        // `.../sidecaraudio`，M9OEh1PeYH）。老 host 无此字段 → 不下发，client 照旧。
-        kVideoSidecarAudioCapability:
-            _libraryService is VideoSidecarAudioListHost,
-        // 远端原盘：整盘下载 + 流式原盘菜单共用的只读盘目录服务
-        // （`/api/library/videos/<id>/disc` + `/api/library/disc/<token>/**`）。老 host
-        // 无此字段 → client 的远端原盘按钮说明「对端版本过低」，不发请求。
-        kDiscShareCapability: _libraryService is VideoDiscShareHost,
-        // 互联远端片段导出（`GET .../clipvideo`，反馈 6nBmSBj_2W）。老 host 无此字段
-        // → client 提示「对端版本过低」，不发请求。
-        kVideoClipExportCapability: _libraryService is VideoClipExportHost,
-        // `clipaudio?discTitle=`：按（盘, title）裁音频，远端原盘会话里库中没有行的
-        // title 也能本机转录 / 重定时 / 对轴。老 host 无此字段 → client 不带
-        // `discTitle` 请求（老 host 会照 `<id>` 那一行裁）。
-        kVideoClipAudioDiscTitleCapability:
-            _libraryService is VideoDiscTitleAudioHost,
-        // `clipaudio?discTitle=` 认多角度 title 的角度成员路径（`00001.a2.mpls`），按
-        // 会话里正在播的角度裁。老 host 无此字段 → client 不发角度路径。
-        kVideoClipAudioDiscTitleAngleCapability:
-            _libraryService is VideoDiscTitleAudioHost,
-        // `clipaudio?discTitle=` 认 DVD title（`VIDEO_TS/TITLE_nn.dvdtitle`）。老 host 无此
-        // 字段 → client 不发 DVD title。
-        kVideoClipAudioDiscTitleDvdCapability:
-            _libraryService is VideoDiscTitleAudioHost,
-        // `clipaudio?discTitle=` 认 DVD 多角度 title 的角度成员路径
-        // （`TITLE_nn.aK.dvdtitle`），按会话里正在播的角度裁。老 host 无此字段 → client
-        // 不发 DVD 角度路径。
-        kVideoClipAudioDiscTitleDvdAngleCapability:
-            _libraryService is VideoDiscTitleAudioHost,
-        'videoSubtitleBackfill': lib && videoSubtitleBackfill != null,
-        // 图形字幕整轨回传（`GET .../graphicsubtitle?embeddedStreamIndex=`）。老 host
-        // 无此字段 / 没注入抽取实现 → false，client 不请求、时间表只靠边播边记。
-        'videoGraphicSubtitleTrack':
-            lib && graphicSubtitleTrackExporter != null,
-        // TMDB 备选排序（`/api/library/metadata/episode-group*`）。
-        'videoMetadataOrdering': _libraryService is VideoMetadataOrderingHost,
-        'serviceConfig':
-            _securityContext != null &&
-            _libraryService is InterconnectServiceConfigHost,
-        // 互联「来源共享」（服务器来源 + 插件包）：必须 TLS，端点另查开关与「我的设备」。
-        kInterconnectSourceShareFeature: _sourceShareAvailable,
-        // 互联「插件中继」（替没有插件运行时的「我的设备」代跑插件）：同来源共享，必须 TLS。
-        kInterconnectPluginRelayFeature: _pluginRelayAvailable,
-        // 互联「配置文件」（Profile）双向搬运：与 serviceConfig 同门槛（必须 TLS）。
-        // 能力位只说「这台 host 懂这个端点」，不代表此刻允许——端点还会再查一次
-        // 用户开关，关着时返回 403，client 如实报错而不是当成不支持。
-        'profileTransfer':
-            _securityContext != null &&
-            _libraryService is InterconnectProfileHost,
-      },
-      // TODO-961 M1 能力协商（设计稿 §1.1 / §2.5）：老 client 读不到也不崩。
-      'tls': <String, dynamic>{
-        'enabled': _securityContext != null,
-        if (_hostFingerprint != null) 'fingerprint': _hostFingerprint,
-      },
-      'pairing': <String, dynamic>{'v2': true},
-    };
   }
 
   /// GET /api/host/addresses → `{hostId, deviceName?, addresses:[{url, kind}]}`

@@ -449,15 +449,25 @@ class HostTorrentEngineInterconnectModule extends InterconnectHostModule {
   final HostTorrentEngine? engine;
 
   @override
-  String get capabilityKey => kTorrentEngineCapability;
+  String get name => kTorrentEngineCapability;
 
   @override
+  List<InterconnectCapability> get capabilities => <InterconnectCapability>[
+    InterconnectCapability(kTorrentEngineCapability, capability),
+  ];
+
+  /// 能力值；null = 本 host 此刻不提供（键不出现）。
   Future<Object?> capability() async => (await engine?.capability())?.toJson();
 
   @override
-  List<String> get routePrefixes => const <String>[kTorrentEngineRoutePrefix];
+  List<InterconnectRoute> get routes => <InterconnectRoute>[
+    InterconnectRoute(
+      const InterconnectPath.subtree(kTorrentEngineRoutePrefix),
+      trust: InterconnectTrust.credential,
+      handler: handle,
+    ),
+  ];
 
-  @override
   Future<shelf.Response> handle(InterconnectRequest request) async {
     final HostTorrentEngine? e = engine;
     if (e == null) return shelf.Response.notFound('Host torrent engine off');

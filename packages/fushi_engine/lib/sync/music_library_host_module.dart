@@ -45,9 +45,14 @@ class MusicLibraryHostModule extends InterconnectHostModule {
   final EngineMusicLibraryHost? host;
 
   @override
-  String get capabilityKey => kRemoteMusicCapability;
+  String get name => kRemoteMusicCapability;
 
   @override
+  List<InterconnectCapability> get capabilities => <InterconnectCapability>[
+    InterconnectCapability(kRemoteMusicCapability, capability),
+  ];
+
+  /// 能力值；null = 本 host 此刻不提供（键不出现）。
   Future<Object?> capability() async {
     final EngineMusicLibraryHost? h = host;
     if (h == null || !h.available) return null;
@@ -66,7 +71,13 @@ class MusicLibraryHostModule extends InterconnectHostModule {
   }
 
   @override
-  List<String> get routePrefixes => const <String>[kRemoteMusicRoutePrefix];
+  List<InterconnectRoute> get routes => <InterconnectRoute>[
+    InterconnectRoute(
+      const InterconnectPath.subtree(kRemoteMusicRoutePrefix),
+      trust: InterconnectTrust.credential,
+      handler: handle,
+    ),
+  ];
 
   @override
   Map<LibraryMediaStreamKind, LibraryMediaResolver> get streamResolvers {
@@ -83,7 +94,6 @@ class MusicLibraryHostModule extends InterconnectHostModule {
     };
   }
 
-  @override
   Future<shelf.Response> handle(InterconnectRequest request) async {
     final EngineMusicLibraryHost? h = host;
     if (h == null || !h.available) {
