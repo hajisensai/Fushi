@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:args/args.dart';
 
 import '../ctl_commands.dart';
+import '../ops/specs/leaderboard_ops.dart';
 import 'settings_commands.dart' show readCtlSecretFromStdin;
 
 /// `fushi_cli leaderboard …`：排行榜账户（app 侧路由见
@@ -16,24 +17,23 @@ const List<CtlCommandGroup> leaderboardCommandGroups = <CtlCommandGroup>[
       CtlCommandSpec(
         name: 'status',
         summary: '本 profile 的排行榜账户：是否登录、昵称、公开范围、是否同意上传',
-        build: _buildStatus,
+        op: LeaderboardOps.status,
+        call: _callStatus,
         render: _renderStatus,
       ),
       CtlCommandSpec(
         name: 'recovery-import',
         summary: '用恢复码在本机登录（恢复码从标准输入读，或 --from-env 变量名）',
         configure: _configureRecovery,
-        build: _buildRecovery,
+        op: LeaderboardOps.recoveryImport,
+        call: _callRecovery,
         render: _renderStatus,
       ),
     ],
   ),
 ];
 
-const String _root = '/api/admin/leaderboard';
-
-CtlRequestSpec _buildStatus(CtlCommandContext c) =>
-    const CtlRequestSpec.get(_root);
+CtlOpCall _callStatus(CtlCommandContext c) => const CtlOpCall();
 
 void _configureRecovery(ArgParser parser) {
   parser
@@ -41,7 +41,7 @@ void _configureRecovery(ArgParser parser) {
     ..addFlag('consent', negatable: false, help: '同意公开上传书架（与账户页的勾选同义）');
 }
 
-CtlRequestSpec _buildRecovery(CtlCommandContext c) {
+CtlOpCall _callRecovery(CtlCommandContext c) {
   final String? env = c.option('from-env');
   final String code;
   if (env != null) {
@@ -52,11 +52,10 @@ CtlRequestSpec _buildRecovery(CtlCommandContext c) {
     code = readCtlSecretFromStdin();
   }
   if (code.trim().isEmpty) throw const CtlUsageError('恢复码为空');
-  return CtlRequestSpec.post(
-    '$_root/recovery-code',
-    body: <String, Object?>{
-      'code': code.trim(),
-      if (c.flag('consent')) 'consent': true,
+  return CtlOpCall(
+    args: <String, Object?>{
+      LeaderboardOps.recoveryCode.name: code.trim(),
+      if (c.flag('consent')) LeaderboardOps.recoveryConsent.name: true,
     },
   );
 }

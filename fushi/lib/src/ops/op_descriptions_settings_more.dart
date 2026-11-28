@@ -966,7 +966,7 @@ const List<String> _providerFields = <String>[
 /// 发出去——撤销收不回已外泄的 key。新增的提供商虽然没有 key，但 URL 仍是模型给的：
 /// 接着 `settings.ai.provider.probe` 或把某个功能（含 AI 助手自己）指派给它，app 就会
 /// 向那个地址发请求、把对话内容发过去，撤销收不回，所以新增一律先确认（见下）。
-const OpParam _providerBaseUrl = OpParam.string(
+const OpParam _providerBaseUrl = OpParam.remoteUrl(
   'baseUrl',
   description: 'API base URL.',
 );

@@ -287,7 +287,7 @@ List<OpDescription> describeDataOps(OpDescribeKit kit) => <OpDescription>[
         'Links needing a PIN must be paired in the app.',
     risk: OpRisk.irreversible,
     params: <OpParam>[
-      OpParam.string(
+      OpParam.remoteUrl(
         'link',
         description: 'The fushi://pair link the user provided.',
         required: true,
@@ -349,7 +349,8 @@ List<OpDescription> describeDataOps(OpDescribeKit kit) => <OpDescription>[
         'pairing token); pairing again is needed.',
     risk: OpRisk.irreversible,
     params: <OpParam>[
-      OpParam.string(
+      // 只从已存的主机表里删，不请求它。
+      OpParam.storedAddress(
         'host',
         description: 'hostId or URL from peer.list hosts.',
         required: true,

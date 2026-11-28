@@ -429,11 +429,15 @@ void main() {
     Map<String, Object?> body = const <String, Object?>{},
   }) async {
     final FushiOp op = catalog[id]!;
-    final CtlCall c = CtlCall(
-      method: op.route.method,
-      path: op.route.pattern,
-      params: params,
-      body: body,
+    final OpArgs c = OpArgs.parse(
+      op.decl,
+      CtlCall(
+        method: op.route.method,
+        path: op.route.pattern,
+        params: params,
+        body: body,
+      ),
+      unknown: OpUnknownParams.warn,
     );
     final OpUndo undo = op.undo!;
     final Map<String, Object?> before =

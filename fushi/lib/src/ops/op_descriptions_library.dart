@@ -777,7 +777,7 @@ List<OpDescription> _describeCollectionOps(
     params: <OpParam>[
       _collectionIdParam,
       OpParam.string('path', description: 'Absolute local image path.'),
-      OpParam.string('url', description: 'http(s) image URL.'),
+      OpParam.remoteUrl('url', description: 'http(s) image URL.'),
       OpParam.boolean('reset', description: 'Clear the own cover.'),
     ],
   ),
@@ -1159,7 +1159,7 @@ List<OpDescription> _describeShelfMiscOps(OpDescribeKit kit) => <OpDescription>[
     params: <OpParam>[
       _keyParam,
       OpParam.string('path', description: 'Absolute local image path.'),
-      OpParam.string('url', description: 'http(s) image URL.'),
+      OpParam.remoteUrl('url', description: 'http(s) image URL.'),
       OpParam.boolean('reset', description: 'Books only: clear the override.'),
     ],
   ),

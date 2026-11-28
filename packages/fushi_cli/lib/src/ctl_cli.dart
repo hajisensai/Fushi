@@ -320,7 +320,7 @@ class _Cli {
     final CtlRequestSpec request;
     final CtlCommandContext commandContext = CtlCommandContext(sub);
     try {
-      request = spec.build(commandContext);
+      request = spec.request(commandContext);
     } on CtlUsageError catch (error) {
       err.writeln(error.message);
       _commandUsage(group, spec, commandParser, err);

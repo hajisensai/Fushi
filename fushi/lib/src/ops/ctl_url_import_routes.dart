@@ -7,33 +7,34 @@ import 'package:fushi/src/media/video/url_stream_video.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart'
     show StreamVideoUrlImport, StreamVideoUrlImporter;
 import 'package:fushi/src/models/module_id.dart';
-import 'package:fushi/src/ops/op_context.dart';
+import 'package:fushi/src/ops/op_describe_kit.dart';
 
-/// URL 视频导入（YouTube 等）的控制通道路由（spec `docs/specs/2026-10-26-ai-operations-agent-design.md`
-/// §2.2 / §8 P2）。每条路由调用 UI 按钮背后的同一个方法，不另写业务逻辑：
+/// URL 视频导入（YouTube 等）的操作实现（spec `docs/specs/2026-10-26-ai-operations-agent-design.md`
+/// §2.2 / §8 P2）。声明（id、路径、参数、风险）在
+/// `packages/fushi_cli/lib/src/ops/specs/url_import_ops.dart`（[UrlImportOps]），这里只
+/// `bind` 实现、模块门与撤销。每个实现调用 UI 按钮背后的同一个方法，不另写业务逻辑：
 ///
 /// - 导入 = 视频导入对话框粘贴 URL 的「导入」（[StreamVideoUrlImporter.importUrl]）：
 ///   把 URL 当作一种视频源落进视频库（像本地视频一样进库、可重开，重开时 YouTube
 ///   现解析），**不下载视频字节**——这不是下载中心的能力，不受
 ///   `StoreRestrictedCapability.downloads` 管，iOS 上对话框同样有这个入口，只认视频模块门；
+///   撤销 = 删掉刚建的那条（library 域的条目删除路由，只删库里的行；流媒体条目没有本地
+///   视频文件），条目已被删掉 = superseded；
 /// - 探测 = 播放页对 YouTube 用的同一组解析：[resolveYoutubeMetadata]（导入取标题 /
 ///   封面）、[resolveYoutubeVideoVariants]（画质菜单）、[resolveYoutubeCaptionTracks]
 ///   （字幕轨选择器）。只读，什么都不落库。
 ///
 /// CLI 侧是 `fushi_cli url probe / import`
 /// （`packages/fushi_cli/lib/src/commands/url_import_commands.dart`）。
-List<CtlRoute> buildUrlImportCtlRoutes(OpContext context) =>
-    buildUrlImportCtlRoutesFor(
-      importer: () => StreamVideoUrlImporter(
-        VideoBookRepository(context.appModel.database),
-      ),
-      videoEnabled: () =>
-          context.appModel.moduleVisibility.isEnabled(ModuleId.video),
-      isReadonly: () => context.appModel.isMigrationReadonly,
-    );
-
-/// 路由根。
-const String kUrlImportCtlRoot = '/api/admin/url-import';
+List<FushiOp> buildUrlImportOps(OpDescribeKit kit) => buildUrlImportOpsFor(
+  kit: kit,
+  importer: () => StreamVideoUrlImporter(
+    VideoBookRepository(kit.context.appModel.database),
+  ),
+  videoEnabled: () =>
+      kit.context.appModel.moduleVisibility.isEnabled(ModuleId.video),
+  isReadonly: () => kit.context.appModel.isMigrationReadonly,
+);
 
 /// YouTube 探测用到的三段解析（测试注入假件，生产走引擎的同名函数）。
 class UrlImportYoutubeProbe {
@@ -57,8 +58,12 @@ class UrlImportYoutubeProbe {
   ) => resolveYoutubeCaptionTracks(url, preferLang: lang);
 }
 
-/// 路由表本体：导入门面、模块门、只读闸门按回调注入，测试不必起 [OpContext]。
-List<CtlRoute> buildUrlImportCtlRoutesFor({
+/// 操作本体：导入门面、模块门、只读闸门按回调注入，测试不必起 AppModel。
+///
+/// 参数（必填、http(s)、类型）由 [OpArgs.parse] 按 [UrlImportOps] 的声明校验，这里
+/// 不再手写。[kit] 只给撤销用（删条目还在旧路径的 library 域上）。
+List<FushiOp> buildUrlImportOpsFor({
+  required OpDescribeKit kit,
   required StreamVideoUrlImporter Function() importer,
   required bool Function() videoEnabled,
   bool Function()? isReadonly,
@@ -70,58 +75,61 @@ List<CtlRoute> buildUrlImportCtlRoutesFor({
     }
   }
 
-  return <CtlRoute>[
-    CtlRoute.get('$kUrlImportCtlRoot/probe', (CtlCall call) async {
-      requireVideo();
-      final String url = _requireUrl(call);
-      return probeImportUrl(
-        url,
-        youtube: youtube,
-        lang:
-            call.optString('lang') ??
-            JapaneseLanguage.instance.locale.languageCode,
-      );
-    }),
-    CtlRoute.post(kUrlImportCtlRoot, (CtlCall call) async {
-      requireVideo();
-      if (isReadonly?.call() ?? false) {
-        throw const CtlFailure.rejected('数据已迁移到新版，旧版处于只读状态');
-      }
-      final String url = _requireUrl(call);
-      final StreamVideoUrlImport imported = await importer().importUrl(
-        url,
-        subtitleUrl: _optUrl(call, 'subtitleUrl'),
-        referer: call.optString('referer'),
-        userAgent: call.optString('userAgent'),
-      );
-      return <String, Object?>{
-        'bookUid': imported.bookUid,
-        'key': 'video:${imported.bookUid}',
-        'title': imported.title,
-        'url': url.trim(),
-        'kind': importUrlKind(url),
-      };
-    }),
+  final OpAvailability Function() video = kit.whenModule(ModuleId.video);
+  return <FushiOp>[
+    UrlImportOps.probe.bind(
+      availability: video,
+      handler: (OpArgs args) async {
+        requireVideo();
+        return probeImportUrl(
+          args.requiredText(UrlImportOps.probeUrl),
+          youtube: youtube,
+          lang:
+              args.text(UrlImportOps.probeLang) ??
+              JapaneseLanguage.instance.locale.languageCode,
+        );
+      },
+    ),
+    UrlImportOps.importVideo.bind(
+      availability: video,
+      handler: (OpArgs args) async {
+        requireVideo();
+        if (isReadonly?.call() ?? false) {
+          throw const CtlFailure.rejected('数据已迁移到新版，旧版处于只读状态');
+        }
+        final String url = args.requiredText(UrlImportOps.importUrl);
+        final StreamVideoUrlImport imported = await importer().importUrl(
+          url,
+          subtitleUrl: args.text(UrlImportOps.importSubtitleUrl),
+          referer: args.text(UrlImportOps.importReferer),
+          userAgent: args.text(UrlImportOps.importUserAgent),
+        );
+        return <String, Object?>{
+          'bookUid': imported.bookUid,
+          'key': 'video:${imported.bookUid}',
+          'title': imported.title,
+          'url': url,
+          'kind': importUrlKind(url),
+        };
+      },
+      undo: kit.inverseRouteUndo(
+        payloadOf: (CtlCall call, Object? result) => <String, Object?>{
+          'key': result is Map ? result['key'] : null,
+        },
+        describe: (Map<String, Object?> p) => '${p['key']}',
+        inverse: (Map<String, Object?> payload) async {
+          final Object? key = payload['key'];
+          if (key is! String || key.isEmpty) return null;
+          return kit.callRoute(
+            'DELETE',
+            '/api/admin/library/items/:key',
+            params: <String, String>{'key': key},
+            body: const <String, Object?>{'confirm': true},
+          );
+        },
+      ),
+    ),
   ];
-}
-
-String _requireUrl(CtlCall call) {
-  final String url = call.requireString('url').trim();
-  if (!isPlayableStreamUrl(url)) {
-    throw CtlFailure.badRequest('只认 http(s) 地址：$url');
-  }
-  return url;
-}
-
-/// 可选的 URL 参数：给了就必须是 http(s)（对话框里非 http 的字幕地址静默忽略，命令行
-/// 如实报错，免得用户以为挂上了字幕）。
-String? _optUrl(CtlCall call, String name) {
-  final String? raw = call.optString(name)?.trim();
-  if (raw == null || raw.isEmpty) return null;
-  if (!isPlayableStreamUrl(raw)) {
-    throw CtlFailure.badRequest('$name 只认 http(s) 地址：$raw');
-  }
-  return raw;
 }
 
 /// URL 的种类：`youtube`（导入后由播放页现解析）/ `webPage`（已知网页视频站，导入后

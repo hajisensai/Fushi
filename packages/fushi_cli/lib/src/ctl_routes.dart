@@ -2,6 +2,8 @@
 /// 「未就绪回 409」与错误映射，不懂任何 app 语义。
 library;
 
+import 'ops/fushi_op.dart';
+
 /// 路由处理器主动拒绝请求。服务端把它映射成对应状态码 + `{error, message}`。
 class CtlFailure implements Exception {
   const CtlFailure(this.status, this.code, [this.message]);
@@ -114,8 +116,13 @@ typedef CtlRouteHandler = Future<Object?> Function(CtlCall call);
 
 /// 一条路由：`method` + 路径模式（`/api/admin/library/books/:key`，`:name` 匹配一段）。
 class CtlRoute {
-  CtlRoute(this.method, this.pattern, this.handler, {this.requiresReady = true})
-    : _segments = _split(pattern);
+  CtlRoute(
+    this.method,
+    this.pattern,
+    this.handler, {
+    this.requiresReady = true,
+    this.op,
+  }) : _segments = _split(pattern);
 
   CtlRoute.get(
     String pattern,
@@ -147,6 +154,10 @@ class CtlRoute {
 
   /// app 未初始化完成时是否直接回 409（绝大多数路由都要 AppModel）。
   final bool requiresReady;
+
+  /// 由 [OpSpec.bind] 派生的路由指回它的操作（组目录时直接取，不按字符串配对）；
+  /// 旧路径手写的路由为 null。
+  final FushiOp? op;
 
   final List<String> _segments;
 

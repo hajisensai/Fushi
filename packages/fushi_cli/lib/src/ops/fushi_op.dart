@@ -7,6 +7,7 @@
 library;
 
 import '../ctl_routes.dart';
+import 'op_spec.dart';
 
 /// 操作的风险级，决定 AI 前端怎么执行（spec §5.2）。
 enum OpRisk {
@@ -52,6 +53,29 @@ enum OpParamType {
   }
 }
 
+/// 参数的语义角色：安全属性写在声明里，不靠参数名猜。只是附加元数据——给模型 /
+/// MCP 的 JSON schema（[OpParam.toJsonSchema]）与 describe（[OpParam.toJson]）
+/// 不变。
+enum OpParamRole {
+  /// 普通值。
+  plain,
+
+  /// 会被请求的外部地址，主机由调用方定（把数据发给已指派 LLM 以外的第三方，
+  /// 撤销收不回，spec §5.2）：声明了它的操作必须先确认（[validateOpSpec]）。
+  remoteUrl,
+
+  /// 地址，但只发往固定主机（如 `url.probe` 只从 YouTube 地址里取 videoId 拼
+  /// `www.youtube.com`）：调用方选不了目的主机。
+  fixedHostUrl,
+
+  /// 只存起来 / 只从已存列表里删的地址（书签、仓库表、白名单文本），操作本身不请求它。
+  storedAddress,
+
+  /// 本地条目引用（`book:<key>`、关联端点）或交给已装扩展自己解释的作品引用
+  /// （扩展安装时用户已确认，D9）：不是由调用方定主机的网络地址。
+  entityRef,
+}
+
 /// 一个参数。
 class OpParam {
   const OpParam(
@@ -63,6 +87,8 @@ class OpParam {
     this.userGate = false,
     this.inPath = false,
     this.spread = false,
+    this.role = OpParamRole.plain,
+    this.httpOnly = false,
   });
 
   const OpParam.string(
@@ -78,6 +104,67 @@ class OpParam {
          required: required,
          enumValues: enumValues,
          inPath: inPath,
+       );
+
+  /// 会被请求的外部地址（[OpParamRole.remoteUrl]）：声明即要求操作先确认。
+  /// [httpOnly]：[OpArgs.parse] 只收 http(s) 且有主机的地址。
+  const OpParam.remoteUrl(
+    String name, {
+    required String description,
+    bool required = false,
+    bool httpOnly = false,
+  }) : this(
+         name,
+         OpParamType.string,
+         description: description,
+         required: required,
+         role: OpParamRole.remoteUrl,
+         httpOnly: httpOnly,
+       );
+
+  /// 只发往固定主机的地址（[OpParamRole.fixedHostUrl]）。
+  const OpParam.fixedHostUrl(
+    String name, {
+    required String description,
+    bool required = false,
+    bool httpOnly = false,
+  }) : this(
+         name,
+         OpParamType.string,
+         description: description,
+         required: required,
+         role: OpParamRole.fixedHostUrl,
+         httpOnly: httpOnly,
+       );
+
+  /// 只存不请求的地址（[OpParamRole.storedAddress]）。
+  const OpParam.storedAddress(
+    String name, {
+    required String description,
+    bool required = false,
+    bool inPath = false,
+  }) : this(
+         name,
+         OpParamType.string,
+         description: description,
+         required: required,
+         inPath: inPath,
+         role: OpParamRole.storedAddress,
+       );
+
+  /// 本地条目引用 / 扩展作品引用（[OpParamRole.entityRef]）。
+  const OpParam.entityRef(
+    String name, {
+    required String description,
+    bool required = false,
+    bool inPath = false,
+  }) : this(
+         name,
+         OpParamType.string,
+         description: description,
+         required: required,
+         inPath: inPath,
+         role: OpParamRole.entityRef,
        );
 
   const OpParam.integer(
@@ -169,6 +256,12 @@ class OpParam {
 
   /// 对象参数的键值铺进 body 顶层，见 [OpParam.object]。
   final bool spread;
+
+  /// 语义角色（[OpParamRole]）。不进线上 schema。
+  final OpParamRole role;
+
+  /// 只收 http(s) 且有主机的地址（[OpArgs.parse] 校验，错误 400）。不进线上 schema。
+  final bool httpOnly;
 
   Map<String, Object?> toJsonSchema() => <String, Object?>{
     'type': type.schemaType,
@@ -263,9 +356,9 @@ class OpUndoRecord {
 class OpUndo {
   const OpUndo({this.capture, required this.record, required this.revert});
 
-  final Future<Map<String, Object?>> Function(CtlCall call)? capture;
+  final Future<Map<String, Object?>> Function(OpArgs call)? capture;
   final OpUndoRecord Function(
-    CtlCall call,
+    OpArgs call,
     Map<String, Object?> before,
     Object? result,
   )
@@ -402,36 +495,120 @@ class FushiOpSpec {
   );
 }
 
-/// 一条带描述的操作：描述 + 可用性 + 撤销 + 现有路由。
+//// 一条可执行、进操作目录的操作：声明（[decl]）+ 实现 + 可用性 + 撤销。
+///
+/// 两种来路：
+/// - [OpSpec.bind]（[FushiOp.fromSpec]）：声明与实现一处写完，控制通道路由
+///   [route] 由它派生，HTTP 直连也经 [OpArgs.parse] 按声明校验参数；
+/// - 旧路径 [FushiOp.new]：还没迁到 [OpSpec] 的域（经 [OpDescription.bind]）与
+///   进程内操作，拿一条现成的 [CtlRoute]，声明由路由的 method / pattern 现拼。
+///
+/// 两种来路都在构造时跑同一组约束（id 形状、[validateOpSpec]、风险与撤销的对应），
+/// 违反抛 [ArgumentError]——描述写错在组目录时就炸，不靠事后守卫。
 class FushiOp {
+  /// 旧路径（还没迁到 [OpSpec] 的域、进程内操作）：描述 + 现成路由。
   FushiOp({
-    required this.id,
-    required this.summary,
-    required this.route,
-    this.params = const <OpParam>[],
-    this.risk = OpRisk.read,
-    this.longRunning = false,
-    this.needsUi = false,
-    this.confirm = false,
+    required String id,
+    required String summary,
+    required CtlRoute route,
+    List<OpParam> params = const <OpParam>[],
+    OpRisk risk = OpRisk.read,
+    bool longRunning = false,
+    bool needsUi = false,
+    bool confirm = false,
+    OpAvailability Function()? availability,
+    OpUndo? undo,
+    bool inProcessOnly = false,
+    bool sensitiveResult = false,
+    bool installsCode = false,
+    Future<OpTaskStatus> Function(String taskId)? taskStatus,
+    String? Function(Object? result)? taskIdOf,
+    bool Function()? consentGranted,
+  }) : this._(
+         OpSpec(
+           id: id,
+           method: route.method,
+           pattern: route.pattern,
+           summary: summary,
+           params: params,
+           risk: risk,
+           longRunning: longRunning,
+           needsUi: needsUi,
+           confirm: confirm,
+           sensitiveResult: sensitiveResult,
+           installsCode: installsCode,
+           requiresReady: route.requiresReady,
+           inProcessOnly: inProcessOnly,
+         ),
+         run: route.handler,
+         legacyRoute: route,
+         availability: availability,
+         undo: undo,
+         taskStatus: taskStatus,
+         taskIdOf: taskIdOf,
+         consentGranted: consentGranted,
+       );
+
+  /// 声明 + 实现（[OpSpec.bind]）。
+  FushiOp.fromSpec(
+    OpSpec decl, {
+    required OpHandler handler,
+    OpAvailability Function()? availability,
+    OpUndo? undo,
+    Future<OpTaskStatus> Function(String taskId)? taskStatus,
+    String? Function(Object? result)? taskIdOf,
+    bool Function()? consentGranted,
+  }) : this._(
+         decl,
+         run: handler,
+         availability: availability,
+         undo: undo,
+         taskStatus: taskStatus,
+         taskIdOf: taskIdOf,
+         consentGranted: consentGranted,
+       );
+
+  FushiOp._(
+    this.decl, {
+    required OpHandler run,
+    CtlRoute? legacyRoute,
     this.availability,
     this.undo,
-    this.inProcessOnly = false,
-    this.sensitiveResult = false,
     this.taskStatus,
     this.taskIdOf,
     this.consentGranted,
-  });
+  }) : _run = run {
+    _validate();
+    route =
+        legacyRoute ??
+        CtlRoute(
+          decl.method,
+          decl.pattern,
+          (CtlCall call) =>
+              _run(OpArgs.parse(decl, call, unknown: OpUnknownParams.warn)),
+          requiresReady: decl.requiresReady,
+          op: this,
+        );
+  }
 
-  final String id;
-  final String summary;
-  final CtlRoute route;
-  final List<OpParam> params;
-  final OpRisk risk;
-  final bool longRunning;
-  final bool needsUi;
-  final bool confirm;
-  final bool inProcessOnly;
-  final bool sensitiveResult;
+  /// 声明（[OpSpec.bind] 来路的是 const 声明本身；旧路径的由路由现拼）。
+  final OpSpec decl;
+
+  final OpHandler _run;
+
+  /// 控制通道路由：[OpSpec] 来路的由声明派生（HTTP 直连按声明解析参数后调同一个
+  /// 实现）；旧路径的是传进来的那条。
+  late final CtlRoute route;
+
+  String get id => decl.id;
+  String get summary => decl.summary;
+  List<OpParam> get params => decl.params;
+  OpRisk get risk => decl.risk;
+  bool get longRunning => decl.longRunning;
+  bool get needsUi => decl.needsUi;
+  bool get confirm => decl.confirm;
+  bool get inProcessOnly => decl.inProcessOnly;
+  bool get sensitiveResult => decl.sensitiveResult;
 
   /// 平台 / 合规 / 模块开关 / 前置条件。null = 恒可用。
   final OpAvailability Function()? availability;
@@ -453,6 +630,9 @@ class FushiOp {
   /// MCP / 远端宿主照旧逐次确认。
   final bool Function()? consentGranted;
 
+  /// 用已解析的参数执行（进程内调用器、撤销、组合操作走这里；HTTP 走 [route]）。
+  Future<Object?> run(OpArgs args) => _run(args);
+
   /// 此刻是否已有长期同意（见 [consentGranted]）。
   bool get consentAlreadyGranted => consentGranted?.call() ?? false;
 
@@ -465,8 +645,8 @@ class FushiOp {
   FushiOpSpec get spec => FushiOpSpec(
     id: id,
     summary: summary,
-    method: route.method,
-    pattern: route.pattern,
+    method: decl.method,
+    pattern: decl.pattern,
     params: params,
     risk: risk,
     longRunning: longRunning,
@@ -476,10 +656,34 @@ class FushiOp {
     inProcessOnly: inProcessOnly,
     sensitiveResult: sensitiveResult,
   );
+
+  /// id 进 AI 线上名时把点换成 `__`：形状只许点分小写段（不含下划线）。
+  static final RegExp _idShape = RegExp(
+    r'^[a-z][a-z0-9]*(\.[a-z][a-z0-9-]*)+$',
+  );
+
+  void _validate() {
+    if (!_idShape.hasMatch(id)) {
+      throw ArgumentError('操作 id 要点分小写：$id');
+    }
+    if (summary.trim().isEmpty) throw ArgumentError('$id：summary 为空');
+    validateOpSpec(decl);
+    if (risk == OpRisk.read && undo != null) {
+      throw ArgumentError('$id：read 操作不该声明撤销');
+    }
+    if (risk == OpRisk.write && undo == null) {
+      throw ArgumentError('$id：写操作必须可撤销（AI 写操作必须可回滚），撤销不了就标 irreversible');
+    }
+    if (risk == OpRisk.irreversible && undo != null) {
+      throw ArgumentError('$id：能撤销就该是 write，不是 irreversible');
+    }
+  }
 }
 
-/// 一条路由的描述，按 `METHOD pattern` 挂到 [CtlRoute] 上（见 [OpCatalog.build]）。
-/// 描述与路由分开写在各域的 `op_<域>_descriptions.dart`，不改庞大的路由文件。
+/// **旧路径**：一条路由的描述，按 `METHOD pattern` 挂到 [CtlRoute] 上（见
+/// [OpCatalog.build]）。还没迁到 [OpSpec] 的域才用它；新操作一律写 [OpSpec] 并
+/// [OpSpec.bind]（声明与实现同一处，不靠字符串配对）。剩余的旧路径数由
+/// `fushi/test/ops/op_catalog_ratchet_guard_test.dart` 只减不增地卡住。
 class OpDescription {
   const OpDescription({
     required this.id,
@@ -494,6 +698,7 @@ class OpDescription {
     this.availability,
     this.undo,
     this.sensitiveResult = false,
+    this.installsCode = false,
     this.taskStatus,
     this.taskIdOf,
     this.consentGranted,
@@ -513,6 +718,9 @@ class OpDescription {
 
   /// 见 [FushiOpSpec.sensitiveResult]。
   final bool sensitiveResult;
+
+  /// 见 [OpSpec.installsCode]。
+  final bool installsCode;
 
   /// 见 [FushiOp.taskStatus]。
   final Future<OpTaskStatus> Function(String taskId)? taskStatus;
@@ -537,6 +745,7 @@ class OpDescription {
     availability: availability,
     undo: undo,
     sensitiveResult: sensitiveResult,
+    installsCode: installsCode,
     taskStatus: taskStatus,
     taskIdOf: taskIdOf,
     consentGranted: consentGranted,

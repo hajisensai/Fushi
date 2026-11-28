@@ -21,7 +21,8 @@ const Map<String, String> kRoutesWithoutCliCommand = <String, String>{};
 /// - 每条 app 路由至少被一条 CLI 命令引用（否则是 CLI 漏接的操作）；
 /// - 每条 CLI 请求路径都能落到某条 app 路由（否则是指向死路由的命令）。
 ///
-/// 做法是扫 `packages/fushi_cli/lib/src/commands/` 下的字符串字面量：代入
+/// 已迁到 [OpSpec] 的操作按对象比对（命令的 `op` 是不是那条路由的声明），不扫文本；
+/// 还在旧路径上的，做法是扫 `packages/fushi_cli/lib/src/commands/` 下的字符串字面量：代入
 /// 同文件的 `const String _x = '/api/admin/…'` 常量，其余插值折成通配符，
 /// 再和路由样例路径（`:param` 换成样例段）比对。method 不参与比对，
 /// 所以它只抓「整条漏接 / 整条死路由」，不替代各域命令测试。
@@ -37,10 +38,19 @@ void main() {
 
   test('每条 app 路由都有 CLI 命令', () {
     final List<_Template> all = <_Template>[...cli.validated, ...cli.constants];
+    // OpSpec 来路的路由：CLI 命令按声明对象引用（CtlCommandSpec.op），不靠扫字面量。
+    final Set<OpSpec> cliOps = Set<OpSpec>.identity()
+      ..addAll(<OpSpec>[
+        for (final CtlCommandGroup group in kCtlCommandGroups)
+          for (final CtlCommandSpec command in group.commands)
+            if (command.op case final OpSpec op) op,
+      ]);
     final List<String> missing = <String>[
       for (final CtlRoute route in routes)
         if (!kRoutesWithoutCliCommand.containsKey(route.pattern) &&
-            !all.any((_Template t) => _matches(t, route.pattern)))
+            (route.op == null
+                ? !all.any((_Template t) => _matches(t, route.pattern))
+                : !cliOps.contains(route.op!.decl)))
           '${route.method} ${route.pattern}',
     ];
     expect(missing, isEmpty, reason: '这些路由没有 CLI 命令引用：\n${missing.join('\n')}');

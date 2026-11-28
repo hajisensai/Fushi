@@ -71,6 +71,7 @@ OpCatalog _catalog(List<String> calls) {
         summary: 'Delete a file from disk.',
         risk: OpRisk.irreversible,
         longRunning: true,
+        taskStatus: _doneStatus,
         params: <OpParam>[
           OpParam.string(
             'name',
@@ -99,6 +100,9 @@ OpCatalog _catalog(List<String> calls) {
     ],
   );
 }
+
+Future<OpTaskStatus> _doneStatus(String taskId) async =>
+    const OpTaskStatus(terminal: true, succeeded: true);
 
 /// 最小宿主：清单 = 目录生成（[mcpToolOf]），执行 = 以模型身份调 [OpInvoker]。
 class _CatalogHost implements McpToolHost {

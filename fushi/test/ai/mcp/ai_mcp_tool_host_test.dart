@@ -159,6 +159,13 @@ OpInvoker _invoker(
           ),
           OpParam.string('title', description: 't', required: true),
         ],
+        // 写操作必须可撤销（FushiOp 构造期约束）；这个用例只看模块门，撤销给个空的。
+        undo: OpUndo(
+          record: (CtlCall call, Map<String, Object?> before, Object? result) =>
+              const OpUndoRecord(payload: <String, Object?>{}),
+          revert: (Map<String, Object?> payload) async =>
+              const OpUndoOutcome.done(),
+        ),
         availability: () => moduleOn()
             ? const OpAvailability.available()
             : const OpAvailability.unavailable(

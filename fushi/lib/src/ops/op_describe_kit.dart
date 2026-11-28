@@ -6,27 +6,61 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/ops/op_context.dart';
 
-/// 各域写操作描述（`op_descriptions_<域>.dart`）共用的工具：按 `METHOD pattern`
-/// 找现有路由、在撤销闭包里调别的路由（安装的撤销 = 卸载路由），以及几种通用
-/// 撤销形态与可用性谓词。只拼现有 handler，不写业务逻辑（spec §4）。
+/// 各域操作共用的工具：在撤销 / 组合闭包里调别的操作（安装的撤销 = 卸载），以及几种
+/// 通用撤销形态与可用性谓词。只拼现有实现，不写业务逻辑（spec §4）。
+///
+/// 调别的操作有两条路：已迁到 [OpSpec] 的用 [invoke]（按声明对象找，参数照声明校验）；
+/// 还在旧路径上的域只能用 [callRoute] / [route]（按 `METHOD pattern` 字符串找，
+/// 剩余调用数由 `op_catalog_ratchet_guard_test.dart` 只减不增地卡住）。
 class OpDescribeKit {
-  OpDescribeKit(this.context, List<CtlRoute> routes)
-    : _routes = <String, CtlRoute>{
-        for (final CtlRoute route in routes)
-          '${route.method} ${route.pattern}': route,
-      };
+  /// [routes] 可以后给（[attach]）：[OpSpec] 来路的操作要先拿到 kit 才能构造，
+  /// 路由表由它们派生。撤销 / 组合闭包都是执行时才查表。
+  OpDescribeKit(this.context, [List<CtlRoute>? routes]) {
+    if (routes != null) attach(routes);
+  }
 
   final OpContext context;
-  final Map<String, CtlRoute> _routes;
+  Map<String, CtlRoute> _routes = const <String, CtlRoute>{};
+  Map<OpSpec, FushiOp> _ops = Map<OpSpec, FushiOp>.identity();
 
-  /// 现有路由；不存在抛 [StateError]（描述与实现漂移在测试里炸）。
+  /// 装上整张路由表（含 [OpSpec] 派生的路由）。
+  void attach(List<CtlRoute> routes) {
+    _routes = <String, CtlRoute>{
+      for (final CtlRoute route in routes)
+        '${route.method} ${route.pattern}': route,
+    };
+    _ops = Map<OpSpec, FushiOp>.identity()
+      ..addAll(<OpSpec, FushiOp>{
+        for (final CtlRoute route in routes)
+          if (route.op case final FushiOp op) op.decl: op,
+      });
+  }
+
+  /// 调另一个已迁到 [OpSpec] 的操作（撤销、组合）：按声明对象找；[pathArgs] 代入
+  /// `:段`，[body] 照 [target] 的参数表校验（写错参数名立刻抛）。
+  Future<Object?> invoke(
+    OpSpec target, {
+    Map<String, String> pathArgs = const <String, String>{},
+    Map<String, Object?> body = const <String, Object?>{},
+  }) {
+    final FushiOp? op = _ops[target];
+    if (op == null) throw StateError('操作 ${target.id} 不在这张路由表里');
+    return op.run(OpArgs.direct(target, pathArgs: pathArgs, body: body));
+  }
+
+  /// **旧路径**：按 `METHOD pattern` 找现有路由；不存在抛 [StateError]。
   CtlRoute route(String method, String pattern) {
     final CtlRoute? route = _routes['$method $pattern'];
     if (route == null) throw StateError('路由 $method $pattern 不存在');
+    if (route.op case final FushiOp op) {
+      // 目标已迁到 OpSpec：只许按声明对象调（[invoke]），字符串引用不再新增。
+      throw StateError('$method $pattern 已由 OpSpec ${op.id} 声明，改用 kit.invoke');
+    }
     return route;
   }
 
-  /// 以 HTTP 等价的方式调一条现有路由：`:name` 段用 [params] 代入。
+  /// **旧路径**：以 HTTP 等价的方式调一条现有路由（`:name` 段用 [params] 代入）。
+  /// 目标已迁到 [OpSpec] 的改用 [invoke]。
   Future<Object?> callRoute(
     String method,
     String pattern, {
