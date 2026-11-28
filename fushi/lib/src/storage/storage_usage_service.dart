@@ -154,16 +154,17 @@ enum StorageEntryKind {
   readOnly,
 
   /// 类目根下的磁盘子项，且**可以**直接删（`paths` = 待删路径）。只用于
-  /// [kDeletableEntryCategories] 里那些纯派生 / 缓存 / 可重新获取的类目 —— 那里的
-  /// 东西没有任何 DB 行引用，裸删不绕过任何护栏。
+  /// [kDeletableEntryCategories] 里那些缓存 / 可重新获取的类目 —— 那里的东西没有
+  /// 任何 DB 行引用、也不是用户数据，裸删不绕过任何护栏。
   derivedFile,
 }
 
 /// 明细可**直接删**的类目。
 ///
-/// 判据是「删了不会留下悬空引用」：这些根下装的要么是能重新生成的派生数据（封面/
-/// 缩略图），要么是缓存/暂存（浏览器数据、Anki 制卡暂存、临时文件 —— 导出的备份包
-/// 就落在这里），要么是能重新下载的资源（OCR 模型、着色器）。
+/// 判据是「删了不会留下悬空引用、也不丢用户数据」：这些根下装的要么是缓存 / 暂存
+/// （浏览器数据、Anki 制卡暂存、临时文件 —— 导出的备份包就落在这里），要么是能重新
+/// 下载的资源（OCR 模型），要么是可重跑出来的任务缓存。确认框文案
+/// （`storage_entry_delete_files_confirm_body`）对用户承诺的正是这一句。
 ///
 /// 刻意**不含**：books / dictionaries（各有自己的删除原语，走 kind 分流）、
 /// videoDownloads / subtitles / customFonts（都有 DB 行或配置指着，裸删会留下孤儿行
@@ -171,6 +172,22 @@ enum StorageEntryKind {
 /// 视频另以 [StorageEntryKind.videoBook] 接视频库删除链，不走裸删）、database（活库，其中
 /// 快照残留是 [StorageEntryKind.databaseSnapshots] 专用原语、不走裸删）、
 /// other（白名单之外，语义不明）。
+///
+/// BUG-5613：同样**不含** covers 与 shaders —— 它们以前在这里，被当成「能重新生成的
+/// 派生数据」，事实并非如此：
+/// - covers：`video_covers/<uid>.jpg` 由 `video_books.cover_path` 指着，来源账本
+///   `video_covers/cover_meta.json`（`CoverOrigin.manual` 等）与合集 / 附加图子目录
+///   （`collections/`、`images/`，由 `media_collections` / `media_images` 指着）也住在
+///   这一层；`music_covers` 由 `music_albums.cover_path` 指着；`game_covers/<id>.<ext>`
+///   手选与自动获取同名混放、还进备份包；`thumbnails` 下是用户手设的书籍封面
+///   （override 缩略图）与 `BookArtStore` 的刮削图 / 撤销备份。逐条裸删 = 手动封面
+///   永久丢失、库行指向空文件。封面跟着拥有它的库行走：删书 / 删视频 / 删游戏 / 换封面
+///   时由各自的删除链回收，历史孤儿由 `VideoStorage.gcOrphanCovers` 等按引用集回收。
+/// - shaders：`mpv_shaders` 里可重下的 Anime4K 与用户自导入的着色器混放，
+///   `mpv_scripts` 全是用户导入的 Lua 脚本。Anime4K 由拥有方原语
+///   `deleteAnime4kShaderFiles`（按内置预设清单只删它认识的文件名）单独回收，存储页
+///   与控制通道都已接这条；用户导入的只在视频页的着色器 / 脚本管理里删。
+/// 这两个类目的明细因此一律只读。
 ///
 /// [StorageCategoryId.subtitleJobs] 在内：它的任务缓存是可重跑出来的派生数据；同一
 /// 类目里登记着的字幕产物（[kSubtitleJobOutputDirNames]）另以 readOnly 产出，不能裸删。
@@ -180,11 +197,9 @@ enum StorageEntryKind {
 /// 遗留的临时包、无任何 DB 行引用。以前它在事实上可删却不在本集合里，集合的文档
 /// 与事实分家（守卫 `storage_usage_service_test.dart` 钉住这条契约）。
 const Set<StorageCategoryId> kDeletableEntryCategories = <StorageCategoryId>{
-  StorageCategoryId.covers,
   StorageCategoryId.web,
   StorageCategoryId.exports,
   StorageCategoryId.ocrModels,
-  StorageCategoryId.shaders,
   StorageCategoryId.cache,
   StorageCategoryId.backups,
   StorageCategoryId.subtitleJobs,

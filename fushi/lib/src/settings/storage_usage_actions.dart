@@ -492,18 +492,19 @@ String storageEntryTitle(StorageEntryUsage entry) => switch (entry.kind) {
 
 /// 「一键清除全部缓存」覆盖的类目（反馈 jg3XoDVISk）。
 ///
-/// 判据比 [kDeletableEntryCategories]（「删了不留悬空引用」）更严：**只收纯缓存**
+/// 必须是 [kDeletableEntryCategories]（逐条可删）的子集，判据更严：**只收纯缓存**
 /// ——根下的东西没有任何 DB 行 / 配置 / 用户产物指着，删掉后各自的生产方会按需
 /// 重新生成或重新拉取，系统本身也随时可能清掉它（iOS `Library/Caches`、沙盒 `tmp`）。
 ///
-/// 刻意**不含**（它们可删，但删的是用户数据或用户要付出代价才能找回的东西，
-/// 只走存储页逐条删除、各自确认）：
-/// - covers：`video_covers` / `game_covers` 里有用户手动设置的封面（`CoverOrigin.manual`），
-///   `game_covers` 还进备份包——是用户数据，不是缓存；
+/// 刻意**不含**（它们逐条可删，但删掉的东西要用户付出代价才能找回，只走存储页逐条
+/// 删除、各自确认）：
 /// - web：`browser` 是浏览器登录态 / Cookie，`webArchive` 是用户存档；
 /// - exports：用户导出的文件与待回写 Anki 的卡片草稿；
 /// - backups：本地备份归档，内容就是用户数据的副本；
-/// - ocrModels / shaders：要重新下载几百 MB，`mpv_shaders` 里还混着用户自导入的着色器。
+/// - ocrModels：要重新下载几百 MB。
+///
+/// covers / shaders 连逐条裸删都不允许（有库行指着、混着用户数据，BUG-5613），理由
+/// 只在 [kDeletableEntryCategories] 写一处，这里不再重复判定。
 const Set<StorageCategoryId> kClearAllCacheCategories = <StorageCategoryId>{
   StorageCategoryId.cache,
 };
