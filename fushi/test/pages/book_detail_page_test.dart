@@ -40,6 +40,7 @@ void main() {
     ),
     Future<void> Function()? onOpen,
     Future<void> Function()? onScrape,
+    Future<void> Function()? onBanner,
   }) async {
     tester.view.physicalSize = const Size(1280, 900);
     tester.view.devicePixelRatio = 1;
@@ -53,6 +54,7 @@ void main() {
             loadDetail: () async => detail,
             onOpen: onOpen ?? () async {},
             onScrape: onScrape,
+            onBanner: onBanner,
           ),
         ),
       ),
@@ -138,6 +140,31 @@ void main() {
     await tester.tap(cta);
     await tester.pump();
     expect(scrapes, 1);
+  });
+
+  testWidgets('「横幅…」：给了回调才出这一项，点了回调', (WidgetTester tester) async {
+    int banners = 0;
+    await pump(
+      tester,
+      detail: ItemScrapeDetail(meta: scrapedMeta()),
+      onBanner: () async => banners++,
+    );
+    final Finder item = find.byKey(
+      const ValueKey<String>('book-detail-banner'),
+    );
+    expect(item, findsOneWidget);
+    expect(find.byTooltip(t.media_banner_action), findsOneWidget);
+    await tester.tap(item);
+    await tester.pump();
+    expect(banners, 1);
+  });
+
+  testWidgets('没给横幅回调：不出「横幅…」', (WidgetTester tester) async {
+    await pump(tester, detail: ItemScrapeDetail(meta: scrapedMeta()));
+    expect(
+      find.byKey(const ValueKey<String>('book-detail-banner')),
+      findsNothing,
+    );
   });
 
   testWidgets('刮削不可用（在线服务模块关）：不出刮削按钮与提示', (WidgetTester tester) async {

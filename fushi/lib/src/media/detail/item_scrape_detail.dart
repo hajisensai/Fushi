@@ -26,6 +26,14 @@ class ItemScrapeDetail {
   /// 资料行 / 背景图 / 艺术字一项都没有（详情页据此给「刮削」行动点）。
   bool get isEmpty => meta == null && backdropPath == null && logoPath == null;
 
+  /// 逐项叠加：本对象有的项用本对象的，缺的取 [fallback]。单本自己只有用户选的
+  /// 横幅（「横幅…」）、资料仍来自合集 / 配对书时，两样都要显示。
+  ItemScrapeDetail overlaying(ItemScrapeDetail fallback) => ItemScrapeDetail(
+    meta: meta ?? fallback.meta,
+    backdropPath: backdropPath ?? fallback.backdropPath,
+    logoPath: logoPath ?? fallback.logoPath,
+  );
+
   ImageProvider? get backdrop =>
       backdropPath == null ? null : resizedFileImage(File(backdropPath!));
 
@@ -69,9 +77,10 @@ class ItemScrapeDetail {
     );
   }
 
-  /// 先读 [key] 自己的资料；一项都没有时退到它所属合集（作品）的刮削资料
+  /// 先读 [key] 自己的资料；没有资料行时退到它所属合集（作品）的刮削资料
   /// （`collection_scrape_meta` + 合集附加图组 `media_images`），漫画卷 / 系列里的
-  /// 单本没单独刮过也能显示作品资料。合集身份按成员表 `(mediaType, entryKey)`
+  /// 单本没单独刮过也能显示作品资料。单本自己有的图（用户选的横幅）仍压在合集的
+  /// 上面（[overlaying]）。合集身份按成员表 `(mediaType, entryKey)`
   /// 找，[legacyEntryKeys] 补旧口径的成员键（v83 前 epub 成员存 bookKey）；属于
   /// 多个合集时取 id 最小的那个有资料的。
   static Future<ItemScrapeDetail> loadWithCollectionFallback(
@@ -80,7 +89,7 @@ class ItemScrapeDetail {
     List<String> legacyEntryKeys = const <String>[],
   }) async {
     final ItemScrapeDetail own = await load(db, key);
-    if (!own.isEmpty) return own;
+    if (own.meta != null) return own;
     final List<String> keys = <String>[
       key.entryKey,
       for (final String k in legacyEntryKeys)
@@ -106,7 +115,7 @@ class ItemScrapeDetail {
         collectionId,
         key,
       );
-      if (!work.isEmpty) return work;
+      if (!work.isEmpty) return own.overlaying(work);
     }
     return own;
   }
