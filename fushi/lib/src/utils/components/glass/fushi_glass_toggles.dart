@@ -2489,7 +2489,14 @@ class _GlassToggleTileState extends State<_GlassToggleTile> {
         padding:
             widget.contentPadding ??
             const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-        child: Align(alignment: AlignmentDirectional.centerStart, child: body),
+        // heightFactor: 1 = 行高取内容高（再由上面的 minHeight 托底）。不写时
+        // Align 在有界高度下会撑满上限：行直接当对话框 content 时会把整个
+        // 对话框拉到窗口高（BUG-5610）；宽度照旧撑满（行要占满整宽）。
+        child: Align(
+          alignment: AlignmentDirectional.centerStart,
+          heightFactor: 1,
+          child: body,
+        ),
       ),
     );
 
