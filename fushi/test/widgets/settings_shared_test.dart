@@ -6,7 +6,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
 import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 
@@ -14,16 +13,12 @@ Widget _buildHarness({
   required TargetPlatform platform,
   required Widget child,
   TextScaler? textScaler,
-  FushiDesignSystem designSystem = FushiDesignSystem.auto,
 }) {
   return MaterialApp(
     theme: ThemeData(
       useMaterial3: true,
       platform: platform,
       colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF386A58)),
-      extensions: <ThemeExtension<dynamic>>[
-        FushiDesignSystemTheme(designSystem),
-      ],
     ),
     home: textScaler == null
         ? child
@@ -292,40 +287,6 @@ void main() {
 
     expect(find.byIcon(Icons.tune_outlined), findsOneWidget);
   });
-
-  testWidgets('switch rows use Cupertino switch on iOS', (tester) async {
-    await tester.pumpWidget(
-      _buildHarness(
-        platform: TargetPlatform.iOS,
-        designSystem: FushiDesignSystem.cupertino,
-        child: AdaptiveSettingsScaffold(
-          title: const Text('Reader settings'),
-          children: [
-            AdaptiveSettingsSection(
-              title: 'Behavior',
-              children: [
-                AdaptiveSettingsSwitchRow(
-                  title: 'Highlight on tap',
-                  value: true,
-                  onChanged: (_) {},
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-
-    expect(find.byType(CupertinoSwitch), findsOneWidget);
-    expect(find.byType(Switch), findsNothing);
-    expect(find.byType(FushiCard), findsNothing);
-    expect(find.byType(CupertinoPageScaffold), findsOneWidget);
-    expect(find.byType(CupertinoSliverNavigationBar), findsOneWidget);
-    expect(find.byType(Scaffold), findsNothing);
-    expect(find.text('完成'), findsNothing);
-    expect(find.text('Done'), findsNothing);
-  });
-
   testWidgets('segmented rows use Material segmented button on Android', (
     tester,
   ) async {
@@ -377,63 +338,6 @@ void main() {
       findsNothing,
     );
   });
-
-  testWidgets(
-    'segmented rows on iOS without Apple design use the M3E capsule',
-    (tester) async {
-      await tester.pumpWidget(
-        _buildHarness(
-          platform: TargetPlatform.iOS,
-          designSystem: FushiDesignSystem.cupertino,
-          child: AdaptiveSettingsScaffold(
-            title: const Text('Reader settings'),
-            children: [
-              AdaptiveSettingsSection(
-                children: [
-                  AdaptiveSettingsSegmentedRow<String>(
-                    title: 'Spread mode',
-                    segments: const [
-                      ButtonSegment(
-                        value: 'off',
-                        label: Text('Off'),
-                        tooltip: 'Off',
-                      ),
-                      ButtonSegment(
-                        value: 'on',
-                        label: Text('On'),
-                        tooltip: 'On',
-                      ),
-                      ButtonSegment(
-                        value: 'auto',
-                        label: Text('Auto'),
-                        tooltip: 'Auto',
-                      ),
-                    ],
-                    selected: 'auto',
-                    onChanged: (_) {},
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      );
-
-      // BUG-4205：不再是原生 CupertinoSlidingSegmentedControl（等宽、不走
-      // fushiSegmentWidths），而是胶囊分段（SegmentedButton 子类）。
-      expect(
-        find.byWidgetPredicate(
-          (widget) => widget is CupertinoSlidingSegmentedControl,
-        ),
-        findsNothing,
-      );
-      expect(
-        find.byWidgetPredicate((Widget w) => w is SegmentedButton<String>),
-        findsOneWidget,
-      );
-    },
-  );
-
   testWidgets('picker rows use Material dropdown on Android', (tester) async {
     await tester.pumpWidget(
       _buildHarness(
@@ -765,52 +669,6 @@ void main() {
       reason: 'at width=280 / 2x the switch should stack below the label',
     );
   });
-
-  testWidgets('picker rows use Cupertino action sheet on iOS', (tester) async {
-    String selected = 'default';
-
-    await tester.pumpWidget(
-      _buildHarness(
-        platform: TargetPlatform.iOS,
-        designSystem: FushiDesignSystem.cupertino,
-        child: AdaptiveSettingsScaffold(
-          title: const Text('Reader settings'),
-          children: [
-            AdaptiveSettingsSection(
-              children: [
-                AdaptiveSettingsPickerRow<String>(
-                  title: 'Deck',
-                  selected: selected,
-                  options: const [
-                    AdaptiveSettingsPickerOption(
-                      value: 'default',
-                      label: 'Default',
-                    ),
-                    AdaptiveSettingsPickerOption(value: 'news', label: 'News'),
-                  ],
-                  onChanged: (value) => selected = value,
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-
-    expect(find.byType(DropdownMenu<int>), findsNothing);
-    expect(find.text('Default'), findsOneWidget);
-
-    await tester.tap(find.text('Deck'));
-    await tester.pumpAndSettle();
-
-    expect(find.byType(CupertinoActionSheet), findsOneWidget);
-
-    await tester.tap(find.text('News').last);
-    await tester.pumpAndSettle();
-
-    expect(selected, 'news');
-  });
-
   testWidgets('desktop picker uses a gamepad-enterable MenuAnchor dropdown', (
     tester,
   ) async {

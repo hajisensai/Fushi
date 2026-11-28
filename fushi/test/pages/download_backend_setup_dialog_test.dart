@@ -11,7 +11,6 @@ import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/download_backend_setup_dialog.dart';
 import 'package:fushi/src/pages/implementations/torrent_settings_section.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
@@ -118,9 +117,6 @@ Widget _harness(
         useMaterial3: true,
         platform: TargetPlatform.android,
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF386A58)),
-        extensions: <ThemeExtension<dynamic>>[
-          FushiDesignSystemTheme(themeNotifier.designSystemTheme),
-        ],
       ),
       // 对话框走 Center：AlertDialog 自带 IntrinsicWidth，套进滚动视图会去问
       // FushiSegmentedStrip 的 LayoutBuilder 要固有高度而炸掉（生产路径是

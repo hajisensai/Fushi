@@ -11,9 +11,6 @@ void main() {
   final String material = read(
     'lib/src/settings/material_settings_renderer.dart',
   );
-  final String cupertino = read(
-    'lib/src/settings/cupertino_settings_renderer.dart',
-  );
   final String shared = read('lib/src/settings/settings_schema_widgets.dart');
   // footer 件挪到不碰 SettingsContext / AppModel 的叶子文件（防 lib/ 大 import
   // 环，见 import_cycle_guard_test.dart），由 settings_schema_widgets 转出。
@@ -56,7 +53,7 @@ void main() {
     });
 
     test('两渲染器不再各自定义私有 schema widget（已收口）', () {
-      for (final String src in <String>[material, cupertino]) {
+      for (final String src in <String>[material]) {
         expect(src.contains('class _SettingsSchemaItem'), isFalse);
         expect(src.contains('class _SettingsSchemaSection'), isFalse);
         expect(src.contains('class _SettingsSectionFooter'), isFalse);
@@ -64,7 +61,7 @@ void main() {
     });
 
     test('两渲染器复用共享 widget 并各自注入平台 PageRoute/footerStyle', () {
-      for (final String src in <String>[material, cupertino]) {
+      for (final String src in <String>[material]) {
         expect(src, contains('SettingsSchemaSection('));
         expect(src, contains('SettingsSchemaItem('));
         expect(src, contains('footerStyle:'));
@@ -76,7 +73,6 @@ void main() {
         );
       }
       expect(material, contains('MaterialPageRoute<void>(builder: builder)'));
-      expect(cupertino, contains('CupertinoPageRoute<void>(builder: builder)'));
     });
   });
 }

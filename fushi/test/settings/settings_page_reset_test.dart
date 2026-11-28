@@ -22,7 +22,6 @@ import 'package:fushi/src/settings/settings_page_reset.dart'
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
     show FushiIconButtonControl;
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -203,9 +202,6 @@ Future<void> _pump(
           useMaterial3: true,
           platform: TargetPlatform.android,
           colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF386A58)),
-          extensions: <ThemeExtension<dynamic>>[
-            FushiDesignSystemTheme(themeNotifier.designSystemTheme),
-          ],
         ),
         home: _Host(destination: destination),
       ),

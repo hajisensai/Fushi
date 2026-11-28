@@ -1,9 +1,7 @@
-import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -98,32 +96,5 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('book profile dialog uses Cupertino rows on iOS', (
-    WidgetTester tester,
-  ) async {
-    await tester.pumpWidget(
-      TranslationProvider(
-        child: MaterialApp(
-          theme: ThemeData(
-            platform: TargetPlatform.iOS,
-            extensions: const <ThemeExtension<dynamic>>[
-              FushiDesignSystemTheme(FushiDesignSystem.cupertino),
-            ],
-          ),
-          home: BookProfileDialogContent(
-            activeProfileName: 'Default',
-            profiles: List.generate(3, profile),
-            selectedProfileId: 2,
-            onChanged: (_) {},
-          ),
-        ),
-      ),
-    );
-
-    expect(find.byType(RadioListTile<int?>), findsNothing);
-    expect(find.byIcon(Icons.radio_button_checked), findsNothing);
-    expect(find.byIcon(CupertinoIcons.check_mark), findsOneWidget);
   });
 }

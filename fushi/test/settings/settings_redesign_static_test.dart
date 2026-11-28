@@ -130,12 +130,6 @@ void main() {
       'SettingsSchemaSection',
       'FushiPageScaffold',
     ],
-    'lib/src/settings/cupertino_settings_renderer.dart': <String>[
-      'class CupertinoSettingsRenderer',
-      'CupertinoPageScaffold',
-      'CupertinoSliverNavigationBar',
-      'SettingsSchemaSection',
-    ],
     'lib/src/settings/settings_schema_widgets.dart': <String>[
       'class SettingsSchemaSection',
       'class SettingsSchemaItem',
@@ -240,22 +234,14 @@ void main() {
     final String materialSource = readNormalizedSource(
       'lib/src/settings/material_settings_renderer.dart',
     );
-    final String cupertinoSource = readNormalizedSource(
-      'lib/src/settings/cupertino_settings_renderer.dart',
-    );
 
     expect(containsIdentifierCall(materialSource, 'FushiDesignTokens'), isTrue);
-    expect(
-      containsIdentifierCall(cupertinoSource, 'FushiDesignTokens'),
-      isTrue,
-    );
 
     // 旧写法是 9 条 `isNot(contains('const EdgeInsets.fromLTRB(16, 8, 16, 16)'))`
     // 这样的**逐条拼写**禁令：只堵住被枚举到的那几种，16 改 20、换个构造器、
     // 换行重排全都静默放行。改成结构判据——渲染器里任何 EdgeInsets / SizedBox
     // 构造都不得带非零裸数字实参。
     expectTokenDerivedSpacing(materialSource, 'Material 设置渲染器');
-    expectTokenDerivedSpacing(cupertinoSource, 'Cupertino 设置渲染器');
   });
 
   test('legacy adaptive alert factory is removed', () {

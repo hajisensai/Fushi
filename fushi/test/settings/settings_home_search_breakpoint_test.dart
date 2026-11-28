@@ -13,7 +13,6 @@ import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_home_page.dart';
 import 'package:fushi/src/settings/settings_search.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -72,16 +71,8 @@ void main() {
 
   // 双栏门槛钉在设置页自身宽度（不是窗口宽度）的 600dp：11 寸平板竖屏 711dp、
   // 640dp 这类 600~719 宽度必须一级直接双栏（旧门槛 720 在这里是单列）；599 仍单列。
-  // 左栏宽按分支各自的契约：MD3 / 玻璃定宽 240，Cupertino 按
-  // [supportingPaneWidthForLayout]（600 宽时 280，右详情 320）。Cupertino 是隐藏
-  // 设计系统（偏好只认 auto / material / glass，见
-  // ThemeNotifier.normalizeDesignSystemPreference），这里在 MD3 主题上直接挂
-  // [FushiDesignSystemTheme] 进 SettingsHomePage 的 Cupertino 分支。
-  for (final String designSystem in <String>[
-    'material',
-    'glass',
-    'cupertino',
-  ]) {
+  // 左栏宽：MD3 / 玻璃都定宽 240。
+  for (final String designSystem in <String>['material', 'glass']) {
     // 期望写成字面量而不是拿常量反推：门槛被改回 720 时 600/640/711 必须红。
     for (final (double width, bool twoPane) in <(double, bool)>[
       (599, false),
@@ -94,9 +85,7 @@ void main() {
         WidgetTester tester,
       ) async {
         final AppModel model = (await tester.runAsync<AppModel>(
-          () => _buildAppModel(
-            designSystem == 'cupertino' ? 'material' : designSystem,
-          ),
+          () => _buildAppModel(designSystem),
         ))!;
         tester.view.devicePixelRatio = 1;
         tester.view.physicalSize = const Size(900, 1000);
@@ -117,11 +106,6 @@ void main() {
               child: MaterialApp(
                 theme: baseTheme.copyWith(
                   splashFactory: NoSplash.splashFactory,
-                  extensions: <ThemeExtension<dynamic>>[
-                    ...baseTheme.extensions.values.cast(),
-                    if (designSystem == 'cupertino')
-                      const FushiDesignSystemTheme(FushiDesignSystem.cupertino),
-                  ],
                 ),
                 home: Scaffold(
                   body: Align(
@@ -139,10 +123,6 @@ void main() {
         await tester.pumpAndSettle();
         final Finder home = find.byType(SettingsHomePage);
         expect(tester.getSize(home).width, width);
-        expect(
-          isCupertinoPlatform(tester.element(home)),
-          designSystem == 'cupertino',
-        );
         final Finder split = find.byType(MaterialSupportingPaneLayout);
         if (!twoPane) {
           expect(split, findsNothing);
@@ -153,9 +133,7 @@ void main() {
           final Finder supporting = find
               .descendant(of: split, matching: find.byType(SizedBox))
               .first;
-          final double expectedSupporting = designSystem == 'cupertino'
-              ? supportingPaneWidthForLayout(width)
-              : 240;
+          const double expectedSupporting = 240;
           expect(tester.getSize(supporting).width, expectedSupporting);
           expect(
             width - expectedSupporting,

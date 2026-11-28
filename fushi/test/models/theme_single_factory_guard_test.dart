@@ -102,7 +102,6 @@ void main() {
                   brightness: b,
                 ),
           textTheme: appText,
-          designSystem: FushiDesignSystem.material,
         );
 
     test('组件主题与字号阶梯同源，配色即 app ColorScheme（不再叠纸色）', () {
@@ -110,7 +109,6 @@ void main() {
       final ThemeData reference = buildFushiThemeData(
         scheme: theme.colorScheme,
         textTheme: appText,
-        designSystem: FushiDesignSystem.material,
       );
       final ColorScheme app = buildFushiColorScheme(
         seedColor: kFushiDefaultSeed,
@@ -124,10 +122,6 @@ void main() {
       expect(theme.snackBarTheme, reference.snackBarTheme);
       expect(theme.cardTheme.color, theme.colorScheme.surfaceContainerLow);
       expect(theme.textTheme.bodyMedium?.fontFamily, 'FushiTestFont');
-      expect(
-        theme.extension<FushiDesignSystemTheme>()?.designSystem,
-        FushiDesignSystem.material,
-      );
     });
 
     test('墨水屏扩展仍由纯函数自己挂上', () {

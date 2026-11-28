@@ -18,7 +18,6 @@ import 'package:fushi/src/settings/glass_settings_renderer.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -67,13 +66,7 @@ Widget _readerLookupHarness(
   return ProviderScope(
     overrides: <Override>[appProvider.overrideWith((Ref ref) => appModel)],
     child: MaterialApp(
-      theme: ThemeData(
-        useMaterial3: true,
-        platform: TargetPlatform.android,
-        extensions: <ThemeExtension<dynamic>>[
-          FushiDesignSystemTheme(themeNotifier.designSystemTheme),
-        ],
-      ),
+      theme: ThemeData(useMaterial3: true, platform: TargetPlatform.android),
       home: StatefulBuilder(
         builder: (BuildContext context, StateSetter setState) {
           return Consumer(

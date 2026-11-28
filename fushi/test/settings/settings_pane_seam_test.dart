@@ -26,7 +26,6 @@ import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/settings/material_settings_renderer.dart';
 import 'package:fushi/src/settings/settings_home_page.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart';
 import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart'
@@ -98,9 +97,6 @@ Widget _wideSettings(
           useMaterial3: true,
           platform: TargetPlatform.windows,
           colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1F4959)),
-          extensions: <ThemeExtension<dynamic>>[
-            FushiDesignSystemTheme(themeNotifier.designSystemTheme),
-          ],
         ),
         home: Scaffold(
           body: backdrop

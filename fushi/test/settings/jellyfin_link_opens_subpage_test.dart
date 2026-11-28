@@ -16,7 +16,6 @@ import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema.dart';
 import 'package:fushi/src/sync/jellyfin_settings_widget.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -120,13 +119,7 @@ Widget _harness({
     overrides: <Override>[appProvider.overrideWith((Ref ref) => appModel)],
     child: TranslationProvider(
       child: MaterialApp(
-        theme: ThemeData(
-          useMaterial3: true,
-          platform: TargetPlatform.android,
-          extensions: <ThemeExtension<dynamic>>[
-            FushiDesignSystemTheme(themeNotifier.designSystemTheme),
-          ],
-        ),
+        theme: ThemeData(useMaterial3: true, platform: TargetPlatform.android),
         home: Consumer(
           builder: (BuildContext context, WidgetRef ref, _) => builder(
             SettingsContext(

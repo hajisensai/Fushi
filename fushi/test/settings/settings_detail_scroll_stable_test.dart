@@ -11,14 +11,12 @@ import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
-import 'package:fushi/src/settings/cupertino_settings_renderer.dart';
 import 'package:fushi/src/settings/material_settings_renderer.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_renderer.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -88,9 +86,6 @@ Future<ScrollController> _pumpSyncDetail(
           useMaterial3: true,
           platform: TargetPlatform.android,
           colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF386A58)),
-          extensions: <ThemeExtension<dynamic>>[
-            FushiDesignSystemTheme(themeNotifier.designSystemTheme),
-          ],
         ),
         home: Scaffold(
           body: FushiFocusRoot(
@@ -147,12 +142,11 @@ void main() {
     FocusManager.instance.highlightStrategy = FocusHighlightStrategy.automatic;
   });
 
-  // 两个渲染器的自滚动详情路径（shrinkWrap:false）都吃这条修复：Material 走窄屏
-  // push 页 + 宽屏主从，Cupertino 走宽屏 master-detail（iPad/macOS-Cupertino）。
+  // 渲染器的自滚动详情路径（shrinkWrap:false）吃这条修复：Material 走窄屏 push
+  // 页 + 宽屏主从。
   for (final ({String name, SettingsRenderer renderer}) variant
       in <({String name, SettingsRenderer renderer})>[
         (name: 'material', renderer: const MaterialSettingsRenderer()),
-        (name: 'cupertino', renderer: const CupertinoSettingsRenderer()),
       ]) {
     testWidgets(
       '${variant.name}: sync/backup detail keeps a stable scroll extent at '

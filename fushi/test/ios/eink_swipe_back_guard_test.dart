@@ -7,7 +7,7 @@
 // * 这个手势不是 iOS 系统给的，是 Flutter 自己装的：只有 Cupertino 系的
 //   `PageTransitionsBuilder`（`CupertinoRouteTransitionMixin.buildPageTransitions`）
 //   才会在页面外面套上 `_CupertinoBackGestureDetector`。
-// * 本 app 默认设计系统是 `auto`，`isCupertinoPlatform` 在 iOS 上返回 false，
+// * 本 app 五平台统一走 MD3 / 玻璃，`adaptivePageRoute` 恒给 `MaterialPageRoute`，
 //   于是 iOS 的每个页面都是普通的 `MaterialPageRoute`——它的返回手势 **100%**
 //   来自 `ThemeData.pageTransitionsTheme` 里给 `TargetPlatform.iOS` 注册的那一项，
 //   没有任何别的兜底。

@@ -26,7 +26,6 @@ import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_schema.dart';
 import 'package:fushi/src/sync/texthooker_ws_client.dart';
 import 'package:fushi/src/sync/texthooker_ws_client_manager.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
     show fushiM3eMenuAnimationStyle;
 import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart';
@@ -2286,9 +2285,6 @@ void main() {
               colorScheme: ColorScheme.fromSeed(
                 seedColor: const Color(0xFF386A58),
               ),
-              extensions: <ThemeExtension<dynamic>>[
-                FushiDesignSystemTheme(themeNotifier.designSystemTheme),
-              ],
             ),
             home: Consumer(
               builder: (BuildContext ctx, WidgetRef ref, Widget? _) {

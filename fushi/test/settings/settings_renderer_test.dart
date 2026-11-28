@@ -12,7 +12,6 @@ import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
-import 'package:fushi/src/settings/cupertino_settings_renderer.dart';
 import 'package:fushi/src/settings/material_settings_renderer.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
@@ -22,7 +21,6 @@ import 'package:fushi/src/settings/settings_home_page.dart';
 import 'package:fushi/src/settings/settings_schema.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
@@ -158,7 +156,6 @@ Widget _harness({
   required Widget Function(SettingsContext) builder,
   CupertinoThemeData? cupertinoTheme,
   String designSystem = 'auto',
-  FushiDesignSystemTheme? designSystemTheme,
   AppModel? appModel,
   FushiDatabase? database,
   Map<String, String> extraThemePrefs = const <String, String>{},
@@ -190,10 +187,6 @@ Widget _harness({
           useMaterial3: true,
           platform: platform,
           colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF386A58)),
-          extensions: <ThemeExtension<dynamic>>[
-            designSystemTheme ??
-                FushiDesignSystemTheme(themeNotifier.designSystemTheme),
-          ],
         ),
         home: _buildHome(cupertinoTheme, builder, textScaler),
       ),
@@ -394,52 +387,6 @@ void main() {
       expect(find.byType(DropdownMenu<int>), findsOneWidget);
     },
   );
-
-  testWidgets('cupertino renderer maps schema to Cupertino controls', (
-    WidgetTester tester,
-  ) async {
-    await tester.pumpWidget(
-      _harness(
-        platform: TargetPlatform.iOS,
-        designSystemTheme: const FushiDesignSystemTheme(
-          FushiDesignSystem.cupertino,
-        ),
-        builder: (SettingsContext settingsContext) {
-          return CupertinoSettingsRenderer().buildDetailPage(
-            settingsContext: settingsContext,
-            destination: _fixtureDestination(),
-          );
-        },
-      ),
-    );
-
-    expect(find.byType(CupertinoPageScaffold), findsOneWidget);
-    expect(find.byType(CupertinoSliverNavigationBar), findsOneWidget);
-    expect(find.byType(AdaptiveSettingsSection), findsOneWidget);
-    expect(find.text('Action'), findsOneWidget);
-    expect(find.byIcon(Icons.play_arrow_outlined), findsNothing);
-    expect(find.byType(CupertinoSwitch), findsOneWidget);
-    expect(find.byIcon(Icons.tune_outlined), findsNothing);
-    expect(find.byIcon(Icons.settings_suggest_outlined), findsOneWidget);
-    expect(find.byIcon(Icons.toggle_on_outlined), findsNothing);
-    // BUG-4205：Cupertino 设计系统但 Apple 设计不生效时，分段不再是原生
-    // CupertinoSlidingSegmentedControl（等宽、不走 fushiSegmentWidths，最长段先
-    // 被截断），而是胶囊分段（SegmentedButton 子类）。
-    expect(
-      find.byWidgetPredicate(
-        (Widget widget) => widget is CupertinoSlidingSegmentedControl,
-      ),
-      findsNothing,
-    );
-    expect(
-      find.byWidgetPredicate((Widget widget) => widget is SegmentedButton),
-      findsOneWidget,
-    );
-    expect(find.byType(CupertinoSlider), findsOneWidget);
-    expect(find.text('Stepper'), findsOneWidget);
-    expect(find.text('Custom builder content'), findsOneWidget);
-  });
-
   testWidgets('material design system keeps Material rows on iOS', (
     WidgetTester tester,
   ) async {
@@ -448,7 +395,6 @@ void main() {
         platform: TargetPlatform.iOS,
         designSystem: 'material',
         builder: (SettingsContext settingsContext) {
-          expect(isCupertinoPlatform(settingsContext.context), isFalse);
           return MaterialSettingsRenderer().buildDetailPage(
             settingsContext: settingsContext,
             destination: _fixtureDestination(),
@@ -465,59 +411,6 @@ void main() {
     expect(find.byType(CupertinoPageScaffold), findsNothing);
     expect(find.byType(CupertinoSlidingSegmentedControl<String>), findsNothing);
   });
-
-  testWidgets('cupertino switch uses theme primary color', (
-    WidgetTester tester,
-  ) async {
-    const Color customPrimary = Color(0xFFE91E63);
-    await tester.pumpWidget(
-      _harness(
-        platform: TargetPlatform.iOS,
-        cupertinoTheme: const CupertinoThemeData(primaryColor: customPrimary),
-        designSystemTheme: const FushiDesignSystemTheme(
-          FushiDesignSystem.cupertino,
-        ),
-        builder: (SettingsContext settingsContext) {
-          return CupertinoSettingsRenderer().buildDetailPage(
-            settingsContext: settingsContext,
-            destination: _fixtureDestination(),
-          );
-        },
-      ),
-    );
-
-    final CupertinoSwitch sw = tester.widget<CupertinoSwitch>(
-      find.byType(CupertinoSwitch),
-    );
-    expect(sw.activeTrackColor, customPrimary);
-  });
-
-  testWidgets('cupertino destination icons use theme primary color', (
-    WidgetTester tester,
-  ) async {
-    const Color customPrimary = Color(0xFFE91E63);
-    await tester.pumpWidget(
-      _harness(
-        platform: TargetPlatform.iOS,
-        cupertinoTheme: const CupertinoThemeData(primaryColor: customPrimary),
-        designSystemTheme: const FushiDesignSystemTheme(
-          FushiDesignSystem.cupertino,
-        ),
-        builder: (SettingsContext settingsContext) {
-          return CupertinoSettingsRenderer().buildDestinationList(
-            settingsContext: settingsContext,
-            destinations: <SettingsDestination>[_fixtureDestination()],
-            selectedDestinationId: SettingsDestinationId.appearance,
-            onDestinationSelected: (_) {},
-          );
-        },
-      ),
-    );
-
-    final Icon icon = tester.widget<Icon>(find.byIcon(Icons.palette_outlined));
-    expect(icon.color, customPrimary);
-  });
-
   testWidgets('material master-detail destinations use fixed groups with '
       'pill selection', (WidgetTester tester) async {
     await tester.pumpWidget(
@@ -1003,47 +896,6 @@ void main() {
     expect(appModel.appUiScale, 2.0, reason: '松手提交真实缩放');
     expect(row().value, 2.0);
   });
-
-  testWidgets('appearance custom rows omit Cupertino leading icons', (
-    WidgetTester tester,
-  ) async {
-    await tester.pumpWidget(
-      _harness(
-        platform: TargetPlatform.iOS,
-        designSystemTheme: const FushiDesignSystemTheme(
-          FushiDesignSystem.cupertino,
-        ),
-        builder: (SettingsContext settingsContext) {
-          final SettingsDestination appearance =
-              buildSettingsSchema(settingsContext).firstWhere(
-                (SettingsDestination destination) =>
-                    destination.id == SettingsDestinationId.appearance,
-              );
-          final SettingsDestination firstSectionOnly = SettingsDestination(
-            id: appearance.id,
-            title: appearance.title,
-            icon: appearance.icon,
-            // 设计系统 / 主题 / 深色模式三条 custom 行住「主题」分区。
-            sections: <SettingsSection>[
-              appearance.sections.firstWhere(
-                (SettingsSection s) => s.id == 'appearance.section.interface',
-              ),
-            ],
-          );
-
-          return CupertinoSettingsRenderer().buildDetailPage(
-            settingsContext: settingsContext,
-            destination: firstSectionOnly,
-          );
-        },
-      ),
-    );
-
-    expect(find.byIcon(Icons.devices_outlined), findsNothing);
-    expect(find.byIcon(Icons.color_lens_outlined), findsNothing);
-    expect(find.byIcon(Icons.contrast_outlined), findsNothing);
-  });
-
   test('settings renderers route schema rows through shared component', () {
     final String material = File(
       'lib/src/settings/material_settings_renderer.dart',
@@ -1146,86 +998,13 @@ void main() {
     );
     expect(received, 'on', reason: 'onChanged 必须以正确的 String 值触发');
   });
-
-  testWidgets('cupertino segmented change fires onChanged without _TypeError', (
-    WidgetTester tester,
-  ) async {
-    String received = '';
-    await tester.pumpWidget(
-      _harness(
-        platform: TargetPlatform.iOS,
-        designSystemTheme: const FushiDesignSystemTheme(
-          FushiDesignSystem.cupertino,
-        ),
-        builder: (SettingsContext sctx) =>
-            CupertinoSettingsRenderer().buildDetailPage(
-              settingsContext: sctx,
-              destination: segmentedFixture((String v) => received = v),
-            ),
-      ),
-    );
-    await tester.tap(find.text('On'));
-    await tester.pumpAndSettle();
-    expect(
-      tester.takeException(),
-      isNull,
-      reason: '改 String 型 segmented 设置不得抛 _TypeError',
-    );
-    expect(received, 'on', reason: 'onChanged 必须以正确的 String 值触发');
-  });
-
-  // BUG-009 R1：宽屏 master-detail 的 primary 是有限高度的 Expanded；cupertino
-  // 详情过去返回裸 Column，内容超高 → RenderFlex 溢出（真机右下角黄黑条纹）。
-  // 详情必须像 Material 渲染器一样自带滚动视口。
-  testWidgets(
-    'BUG-009: cupertino detail content scrolls in a bounded pane instead of '
-    'overflowing',
-    (WidgetTester tester) async {
-      await tester.pumpWidget(
-        _harness(
-          platform: TargetPlatform.iOS,
-          designSystemTheme: const FushiDesignSystemTheme(
-            FushiDesignSystem.cupertino,
-          ),
-          builder: (SettingsContext settingsContext) {
-            // 模拟宽屏 primary：固定矮高度面板，内容远超其高度。
-            return Align(
-              alignment: Alignment.topLeft,
-              child: SizedBox(
-                height: 250,
-                width: 600,
-                child: const CupertinoSettingsRenderer().buildDetailContent(
-                  settingsContext: settingsContext,
-                  destination: _fixtureDestination(),
-                ),
-              ),
-            );
-          },
-        ),
-      );
-
-      expect(
-        tester.takeException(),
-        isNull,
-        reason: 'cupertino 详情在有限高度面板里必须可滚动，不得 RenderFlex 溢出（BUG-009 R1）',
-      );
-      // 详情自身提供可滚动视口（宽屏 primary 与 reader 设置弹窗都复用此路径）。
-      expect(find.byType(Scrollable), findsWidgets);
-    },
-  );
-
   // 宽屏设置全平台同壳（用户 2026-11-17）：设置是常驻主导航旁的普通 tab，宽屏
   // 只有「分类列表 + 详情」二栏，不再有「返回箭头 + 『设置』大标题」的二级页头。
   // 平板 / Linux（无自绘桌面顶栏）曾走「隐藏 rail + 页头返回」的全屏设置。
-  // Cupertino 一支同时咬住 BUG-009 R2 的不溢出。
-  for (final (String label, TargetPlatform platform, FushiDesignSystem system)
-      in <(String, TargetPlatform, FushiDesignSystem)>[
-        (
-          'M3E Android tablet',
-          TargetPlatform.android,
-          FushiDesignSystem.material,
-        ),
-        ('Cupertino iPad', TargetPlatform.iOS, FushiDesignSystem.cupertino),
+  for (final (String label, TargetPlatform platform)
+      in <(String, TargetPlatform)>[
+        ('M3E Android tablet', TargetPlatform.android),
+        ('M3E iPad', TargetPlatform.iOS),
       ]) {
     testWidgets(
       'wide embedded settings ($label): two panes only, no back arrow or '
@@ -1239,7 +1018,6 @@ void main() {
         await tester.pumpWidget(
           _harness(
             platform: platform,
-            designSystemTheme: FushiDesignSystemTheme(system),
             appModel: appModel,
             builder: (SettingsContext _) =>
                 const SettingsHomePage(embedded: true),

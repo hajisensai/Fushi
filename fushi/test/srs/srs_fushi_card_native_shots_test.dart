@@ -131,9 +131,6 @@ void main() {
                 textTheme: dark
                     ? Typography.material2021().white
                     : Typography.material2021().black,
-                designSystem: apple
-                    ? FushiDesignSystem.cupertino
-                    : FushiDesignSystem.material,
                 glass: FushiGlassMaterial.off,
                 glassDesign: apple,
               ),

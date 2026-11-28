@@ -196,17 +196,5 @@ void main() {
         );
       },
     );
-
-    test('cupertino renderer: shrinkWrap branch is NeverScrollable', () {
-      final String branch = shrinkWrapBranch(
-        'lib/src/settings/cupertino_settings_renderer.dart',
-        '自滚动',
-      );
-      expect(
-        branch.contains('NeverScrollableScrollPhysics'),
-        isTrue,
-        reason: 'cupertino embedded shrinkWrap list must not own the scroll',
-      );
-    });
   });
 }

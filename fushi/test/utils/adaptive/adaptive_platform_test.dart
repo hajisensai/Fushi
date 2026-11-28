@@ -1,6 +1,5 @@
-import 'dart:io' show File, Platform;
+import 'dart:io' show File;
 
-import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -19,19 +18,13 @@ class _RecordingNavigatorObserver extends NavigatorObserver {
 Future<Route<dynamic>?> _pushAdaptiveRoute(
   WidgetTester tester, {
   required TargetPlatform platform,
-  required FushiDesignSystem? designSystem,
 }) async {
   final _RecordingNavigatorObserver observer = _RecordingNavigatorObserver();
   await tester.pumpWidget(
     MaterialApp(
       key: UniqueKey(),
       navigatorObservers: <NavigatorObserver>[observer],
-      theme: ThemeData(
-        platform: platform,
-        extensions: designSystem == null
-            ? const <ThemeExtension<dynamic>>[]
-            : <ThemeExtension<dynamic>>[FushiDesignSystemTheme(designSystem)],
-      ),
+      theme: ThemeData(platform: platform),
       home: Builder(
         builder: (BuildContext context) => TextButton(
           onPressed: () {
@@ -56,88 +49,6 @@ Future<Route<dynamic>?> _pushAdaptiveRoute(
 }
 
 void main() {
-  Future<({bool cupertino, bool macos})> resolve(
-    WidgetTester tester, {
-    required TargetPlatform platform,
-    required FushiDesignSystem designSystem,
-  }) async {
-    late ({bool cupertino, bool macos}) result;
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: ThemeData(
-          platform: platform,
-          extensions: <ThemeExtension<dynamic>>[
-            FushiDesignSystemTheme(designSystem),
-          ],
-        ),
-        home: Builder(
-          builder: (BuildContext context) {
-            result = (
-              cupertino: isCupertinoPlatform(context),
-              macos: isMacosPlatform(context),
-            );
-            return const SizedBox.shrink();
-          },
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    return result;
-  }
-
-  testWidgets('auto resolves to MD3 on all five platform families', (
-    WidgetTester tester,
-  ) async {
-    for (final TargetPlatform platform in TargetPlatform.values) {
-      final result = await resolve(
-        tester,
-        platform: platform,
-        designSystem: FushiDesignSystem.auto,
-      );
-      expect(result.cupertino, isFalse, reason: '$platform');
-      expect(result.macos, isFalse, reason: '$platform');
-    }
-  });
-
-  testWidgets('explicit Apple modes remain internally available', (
-    WidgetTester tester,
-  ) async {
-    final cupertino = await resolve(
-      tester,
-      platform: TargetPlatform.iOS,
-      designSystem: FushiDesignSystem.cupertino,
-    );
-    expect(cupertino.cupertino, isTrue);
-    final macos = await resolve(
-      tester,
-      platform: TargetPlatform.macOS,
-      designSystem: FushiDesignSystem.macos,
-    );
-    expect(macos.macos, Platform.isMacOS);
-  });
-
-  testWidgets('missing design extension follows auto and stays MD3', (
-    WidgetTester tester,
-  ) async {
-    late bool cupertino;
-    late bool macos;
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: ThemeData(platform: TargetPlatform.iOS),
-        home: Builder(
-          builder: (BuildContext context) {
-            cupertino = isCupertinoPlatform(context);
-            macos = isMacosPlatform(context);
-            return const SizedBox.shrink();
-          },
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(cupertino, isFalse);
-    expect(macos, isFalse);
-  });
-
   test('adaptive route API requires the active BuildContext', () {
     final String source = File(
       'lib/src/utils/adaptive/adaptive_widgets.dart',
@@ -152,18 +63,6 @@ void main() {
     );
     expect(source, isNot(contains('BuildContext? context')));
     expect(source, isNot(contains('context != null')));
-  });
-
-  testWidgets('explicit Cupertino route is pushed through a real Navigator', (
-    WidgetTester tester,
-  ) async {
-    final Route<dynamic>? route = await _pushAdaptiveRoute(
-      tester,
-      platform: TargetPlatform.iOS,
-      designSystem: FushiDesignSystem.cupertino,
-    );
-
-    expect(route, isA<CupertinoPageRoute<void>>());
   });
 
   // Apple（玻璃）设计的推入转场由主题给（Cupertino 推入 + 页面背景层）；
@@ -203,31 +102,15 @@ void main() {
     expect(observer.lastPushedRoute, isA<MaterialPageRoute<void>>());
   });
 
-  testWidgets('auto and missing extension routes stay Material everywhere', (
+  testWidgets('MD3 routes stay Material on all five platform families', (
     WidgetTester tester,
   ) async {
     for (final TargetPlatform platform in TargetPlatform.values) {
-      final Route<dynamic>? autoRoute = await _pushAdaptiveRoute(
+      final Route<dynamic>? route = await _pushAdaptiveRoute(
         tester,
         platform: platform,
-        designSystem: FushiDesignSystem.auto,
       );
-      expect(
-        autoRoute,
-        isA<MaterialPageRoute<void>>(),
-        reason: '$platform auto',
-      );
-
-      final Route<dynamic>? missingRoute = await _pushAdaptiveRoute(
-        tester,
-        platform: platform,
-        designSystem: null,
-      );
-      expect(
-        missingRoute,
-        isA<MaterialPageRoute<void>>(),
-        reason: '$platform missing',
-      );
+      expect(route, isA<MaterialPageRoute<void>>(), reason: '$platform');
     }
   });
 }

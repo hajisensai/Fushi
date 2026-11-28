@@ -19,7 +19,6 @@ import 'package:fushi/src/sync/interconnect_dictionary_lookup_section.dart';
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:material_ui/material_ui.dart';
@@ -113,9 +112,6 @@ Future<SyncRepository> _pumpDevicesPage(WidgetTester tester) async {
           theme: ThemeData(
             useMaterial3: true,
             platform: TargetPlatform.android,
-            extensions: <ThemeExtension<dynamic>>[
-              FushiDesignSystemTheme(themeNotifier.designSystemTheme),
-            ],
           ),
           home: Scaffold(
             body: FushiFocusRoot(

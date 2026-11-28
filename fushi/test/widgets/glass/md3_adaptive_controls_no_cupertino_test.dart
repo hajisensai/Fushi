@@ -13,30 +13,20 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 
 import '../../helpers/source_guard.dart';
 
-// BUG-3309：`auto` 下五平台统一 MD3（M3E）。Fushi 包装层的 `.adaptive` 构造器
-// 曾直通 SDK 的 `X.adaptive`，后者按 ThemeData.platform 选外观——iOS 上于是出
-// 绿色 Cupertino 开关（不跟主题色）、菊花、Cupertino 对话框。现在只有隐藏的
-// `FushiDesignSystem.cupertino` 才交给 SDK 的平台分派；用户可见的「Cupertino」
-// （玻璃设计）走 isGlassDesign 分支，不受此判据影响。
+// BUG-3309：`auto` 下五平台统一 MD3（M3E）。Fushi 包装层曾有直通 SDK `X.adaptive`
+// 的 `.adaptive` 构造器，后者按 ThemeData.platform 选外观——iOS 上于是出绿色
+// Cupertino 开关（不跟主题色）、菊花、Cupertino 对话框。隐藏的 Cupertino 设计
+// 系统删掉后，开关 / 滑块 / 勾选 / 单选 / 对话框包装层已没有 `.adaptive` 构造器
+// （写不出来）；用户可见的「Cupertino」（玻璃设计）走 isGlassDesign 分支。
 
 const Color _iosGreen = Color(0xFF34C759); // CupertinoColors.systemGreen（浅色）
 
-ThemeData _theme({
-  required TargetPlatform platform,
-  FushiDesignSystem designSystem = FushiDesignSystem.auto,
-}) {
-  final ThemeData base = buildFushiThemeData(
-    scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
-    textTheme: Typography.material2021().black,
-    glass: FushiGlassMaterial.off,
-    glassDesign: false,
-  ).copyWith(platform: platform);
-  return base.copyWith(
-    extensions: List<ThemeExtension<dynamic>>.of(
-      base.extensions.values.cast<ThemeExtension<dynamic>>(),
-    )..add(FushiDesignSystemTheme(designSystem)),
-  );
-}
+ThemeData _theme({required TargetPlatform platform}) => buildFushiThemeData(
+  scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+  textTheme: Typography.material2021().black,
+  glass: FushiGlassMaterial.off,
+  glassDesign: false,
+).copyWith(platform: platform);
 
 Future<void> _pump(WidgetTester tester, ThemeData theme, Widget child) async {
   await tester.pumpWidget(
@@ -101,53 +91,13 @@ void main() {
     });
   });
 
-  // 「隐藏的 FushiDesignSystem.cupertino」不是用户可见的「Cupertino」——后者是
-  // 玻璃设计，走 isGlassDesign 分支，不受 useCupertinoAdaptiveControls 影响。
-  group('hidden FushiDesignSystem.cupertino keeps platform dispatch', () {
-    testWidgets('switch / progress / dialog stay Cupertino on iOS', (
-      WidgetTester tester,
-    ) async {
-      await _pump(
-        tester,
-        _theme(
-          platform: TargetPlatform.iOS,
-          designSystem: FushiDesignSystem.cupertino,
-        ),
-        Column(
-          children: <Widget>[
-            FushiSwitch(value: true, onChanged: (_) {}),
-            const FushiCircularProgressIndicator.adaptive(),
-          ],
-        ),
-      );
-      expect(find.byType(Switch), paints..rrect(color: _iosGreen));
-      expect(find.byType(CupertinoActivityIndicator), findsOneWidget);
-
-      await _pump(
-        tester,
-        _theme(
-          platform: TargetPlatform.iOS,
-          designSystem: FushiDesignSystem.cupertino,
-        ),
-        const FushiAlertDialog(title: Text('t'), content: Text('c')),
-      );
-      expect(find.byType(CupertinoAlertDialog), findsOneWidget);
-    });
-  });
-
-  // 隐藏的 macOS 原生设计系统（FushiDesignSystem.macos）同样不是隐藏的
-  // FushiDesignSystem.cupertino：修复前它在 macOS 上让 `.adaptive` 出 Cupertino
-  // 开关 / 菊花，现在与 MD3 一样渲染 Material 控件。
-  group('hidden FushiDesignSystem.macos renders Material', () {
+  group('MD3 on macOS renders Material', () {
     testWidgets('FushiSwitch / progress on macOS are Material', (
       WidgetTester tester,
     ) async {
       await _pump(
         tester,
-        _theme(
-          platform: TargetPlatform.macOS,
-          designSystem: FushiDesignSystem.macos,
-        ),
+        _theme(platform: TargetPlatform.macOS),
         Column(
           children: <Widget>[
             FushiSwitch(value: true, onChanged: (_) {}),
@@ -161,71 +111,58 @@ void main() {
     });
   });
 
-  // 源码守卫：SDK `X.adaptive(` 只许出现在包装层（及显式 Apple 分支的
-  // settings_kit），且包装层每一处都经 useCupertinoAdaptiveControls 判据；不许再
-  // 出现直通 `if (_adaptive) {`。
-  test(
-    'SDK .adaptive constructors are gated by the design-system judgement',
-    () {
-      final List<String> offenders = <String>[];
-      for (final FileSystemEntity entity in Directory(
-        'lib',
-      ).listSync(recursive: true)) {
-        if (entity is! File || !entity.path.endsWith('.dart')) continue;
-        offenders.addAll(
-          _adaptiveGateOffenders(
-            entity.path.replaceAll(r'\', '/'),
-            entity.readAsStringSync(),
-          ),
-        );
-      }
-      expect(offenders, isEmpty, reason: offenders.join('\n'));
-    },
-  );
+  // 源码守卫（只减不增）：SDK `X.adaptive(` 只许留在进度环包装层的原生回落
+  // （墨水屏 / year2023 / 外部 controller 时 iOS / macOS 仍交给 SDK 平台分派）
+  // 那一处。别处新写一处即红。
+  test('raw SDK .adaptive constructors stay in the allowlist', () {
+    final List<String> offenders = <String>[];
+    for (final FileSystemEntity entity in Directory(
+      'lib',
+    ).listSync(recursive: true)) {
+      if (entity is! File || !entity.path.endsWith('.dart')) continue;
+      offenders.addAll(
+        _adaptiveOffenders(
+          entity.path.replaceAll(r'\', '/'),
+          entity.readAsStringSync(),
+        ),
+      );
+    }
+    expect(offenders, isEmpty, reason: offenders.join('\n'));
+  });
 
-  // 守卫自检：注释里的判据 / 注释里的 SDK 调用都不能左右结论（审查 PR #2098：
-  // 逐行过滤只认行首注释，挡不住块注释与行尾注释）。
-  group('adaptive gate guard self-check', () {
-    const String wrapper = '${_glassDir}fushi_glass_toggles.dart';
-
-    test('a gate that only lives in a block comment does not count', () {
-      const String source = '''
-Widget build(BuildContext context) {
-  if (_adaptive /* && useCupertinoAdaptiveControls(context) */) {
-    return Switch.adaptive(value: v, onChanged: f);
-  }
-}
-''';
-      expect(_adaptiveGateOffenders(wrapper, source), isNotEmpty);
-    });
-
-    test('a gate that only lives in a trailing comment does not count', () {
-      const String source = '''
-Widget build(BuildContext context) {
-  final bool g = _adaptive; // useCupertinoAdaptiveControls(context)
-  if (g) return Switch.adaptive(value: v, onChanged: f);
-}
-''';
-      expect(_adaptiveGateOffenders(wrapper, source), isNotEmpty);
-    });
-
-    test('a real gate passes and commented SDK calls are ignored', () {
+  group('adaptive guard self-check', () {
+    test('commented SDK calls are ignored', () {
       const String source = '''
 Widget build(BuildContext context) {
   /* Switch.adaptive( */
   // Slider.adaptive(
-  if (_adaptive && useCupertinoAdaptiveControls(context)) {
-    return Switch.adaptive(value: v, onChanged: f);
-  }
+  return const SizedBox();
 }
 ''';
-      expect(_adaptiveGateOffenders(wrapper, source), isEmpty);
+      expect(
+        _adaptiveOffenders('lib/src/pages/some_page.dart', source),
+        isEmpty,
+      );
     });
 
-    test('a raw SDK call outside the wrappers is reported', () {
+    test('a raw SDK call outside the allowlist is reported', () {
       const String source = 'final Widget w = Switch.adaptive(value: v);';
       expect(
-        _adaptiveGateOffenders('lib/src/pages/some_page.dart', source),
+        _adaptiveOffenders('lib/src/pages/some_page.dart', source),
+        isNotEmpty,
+      );
+    });
+
+    test('a new call inside an allowlisted file is reported', () {
+      const String source = '''
+final Widget a = CircularProgressIndicator.adaptive();
+final Widget b = Switch.adaptive(value: v);
+''';
+      expect(
+        _adaptiveOffenders(
+          'lib/src/utils/components/glass/fushi_glass_feedback.dart',
+          source,
+        ),
         isNotEmpty,
       );
     });
@@ -237,37 +174,17 @@ final RegExp _sdkAdaptive = RegExp(
   r'SwitchListTile|RadioListTile(<\w+>)?|AlertDialog|'
   r'CircularProgressIndicator)\.adaptive\(',
 );
-const String _glassDir = 'lib/src/utils/components/glass/';
-const Set<String> _wrappers = <String>{
-  '${_glassDir}fushi_glass_toggles.dart',
-  '${_glassDir}fushi_glass_overlays.dart',
-  '${_glassDir}fushi_glass_feedback.dart',
-};
-// settings_kit 的那一处在 `if (apple)` 分支里（玻璃 / Apple 设计系统）。
-const Set<String> _allowed = <String>{
-  ..._wrappers,
-  'lib/src/settings/settings_kit.dart',
+
+/// 现存的 SDK `.adaptive(` 调用数（只减不增：减了就把这里一起改小）。
+const Map<String, int> _allowedCounts = <String, int>{
+  'lib/src/utils/components/glass/fushi_glass_feedback.dart': 1,
 };
 
-/// 单个文件的违规清单。先整文件词法遮注释（`maskComments`：行注释 / 行尾注释 /
-/// 块注释一律换成等长空白），再在遮后的全文上计数——不逐行过滤。
-List<String> _adaptiveGateOffenders(String path, String source) {
-  final String code = maskComments(source);
-  final int raw = _sdkAdaptive.allMatches(code).length;
-  if (raw == 0) return const <String>[];
-  if (!_allowed.contains(path)) {
-    return <String>['$path: $raw raw SDK .adaptive( call(s)'];
-  }
-  if (!_wrappers.contains(path)) return const <String>[];
-  final List<String> offenders = <String>[];
-  final int gated = 'useCupertinoAdaptiveControls(context)'
-      .allMatches(code)
-      .length;
-  if (gated < raw) {
-    offenders.add('$path: $raw SDK .adaptive( calls but $gated gates');
-  }
-  if (RegExp(r'if \((widget\.)?_adaptive\) \{').hasMatch(code)) {
-    offenders.add('$path: ungated `if (_adaptive) {`');
-  }
-  return offenders;
+/// 单个文件的违规清单。先整文件词法遮注释（`maskComments`），再在遮后的全文上
+/// 计数——不逐行过滤。
+List<String> _adaptiveOffenders(String path, String source) {
+  final int raw = _sdkAdaptive.allMatches(maskComments(source)).length;
+  final int allowed = _allowedCounts[path] ?? 0;
+  if (raw <= allowed) return const <String>[];
+  return <String>['$path: $raw raw SDK .adaptive( call(s), allowed $allowed'];
 }
