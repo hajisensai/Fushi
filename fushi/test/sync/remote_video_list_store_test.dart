@@ -77,6 +77,8 @@ void main() {
               'http://jf-lan:8096/Items/ep1/Images/Primary?maxWidth=400&quality=90&api_key=SECRET-TOKEN-1',
           seriesCoverUrl:
               'http://jf-lan:8096/Items/s1/Images/Primary?maxWidth=400&quality=90&api_key=SECRET-TOKEN-1',
+          workBackdropItemId: 's1',
+          workLogoItemId: 's1-logo',
           completedAt: 1700000000000,
           positionMs: 5000,
           positionUpdatedAtMs: 1700000000000,
@@ -115,6 +117,9 @@ void main() {
           back.seriesCoverUrl,
           'https://jf.example:8920/Items/s1/Images/Primary?maxWidth=400&quality=90&api_key=SECRET-TOKEN-2',
         );
+        // Work-level art ids (client-only, BUG-5614) survive as-is.
+        expect(back.workBackdropItemId, 's1');
+        expect(back.workLogoItemId, 's1-logo');
         // Every other field survives unchanged.
         final Map<String, Object?> want = episode.toJson()..remove('coverUrl');
         final Map<String, Object?> got = back.toJson()..remove('coverUrl');

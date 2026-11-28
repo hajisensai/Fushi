@@ -108,6 +108,10 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/disc/disc_share_manifest.dart'
     show DiscShareFile;
 import 'package:fushi/src/media/video/video_library_delete.dart';
+import 'package:fushi/src/media/video/media_server/media_server_browser.dart'
+    show MediaServerBrowser, MediaServerImageKind;
+import 'package:fushi/src/media/video/media_server/media_server_images.dart'
+    show mediaServerWorkArtImage;
 import 'package:fushi/src/media/video/media_server/media_server_library.dart'
     show MediaServerLibraryWork, MediaServerVideoLibrary, mediaServerWorkOfRow;
 import 'package:fushi/src/pages/implementations/media_server/media_server_library_remove_confirm.dart';
@@ -7284,6 +7288,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
               ),
               cloudBadge: item.target.local == null,
               collectionId: item.collection.id,
+              remoteArt: _remoteArtSourceOf(item.members),
             ),
           ),
       ],
@@ -7466,6 +7471,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
             ? t.video_playlist_episodes(count: entry.memberCount)
             : t.video_home_recent_episode_number(n: episodeNumber),
         cloudBadge: latest.local == null,
+        remoteArt: _remoteArtSourceOf(members),
       ),
     );
   }
@@ -7559,6 +7565,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     progress: hero.progress,
     collectionId: hero.collectionId,
     bookUid: hero.bookUid,
+    remoteArt: hero.remoteArt,
   );
 
   /// 色块版式下分区的一块：与竖版行卡同一份信息（[_RowCardSpec]），卡壳与视觉
@@ -7615,8 +7622,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         progress: spec.progress,
         completed: (spec.progress ?? 0) >= 1,
         tags: spec.tags,
-        poster: collectionId != null || bookUid != null
-            ? _videoBlockMeta(collectionId: collectionId, bookUid: bookUid)
+        poster:
+            collectionId != null || bookUid != null || spec.remoteArt != null
+            ? _videoBlockMeta(
+                collectionId: collectionId,
+                bookUid: bookUid,
+                remoteArt: spec.remoteArt,
+              )
             : null,
       ),
     );
@@ -7877,9 +7889,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     final List<_VideoSlot> members = candidate.members;
     final int completedCount = candidate.completedCount;
     final _VideoSlot target = candidate.target;
+    final RemoteVideoInfo? remoteArt = _remoteArtSourceOf(members);
     final _HeroCleanArt clean = _heroCleanArt(
       target.local == null ? null : _episodeStillProvider(target.local!),
-      _videoBlockMeta(collectionId: collection.id),
+      _videoBlockMeta(collectionId: collection.id, remoteArt: remoteArt),
     );
     return _HomeHeroData(
       logo: clean.logo,
@@ -7922,6 +7935,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         progressLabel: _continueCollectionSecondaryText(candidate),
       ),
       cloud: target.local == null,
+      remoteArt: remoteArt,
     );
   }
 
@@ -7951,6 +7965,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   _HomeHeroData _continueRemoteHero(RemoteVideoInfo video) {
     final String safeKey = _safeRemoteKey(video.id);
     final ImageProvider? cover = _remoteCoverProvider(video);
+    // 媒体服务器上的电影 / 散集：主卡大图先用服务器的无字背景图并叠 logo
+    // （BUG-5614），没有再用封面。
+    final _HeroCleanArt clean = _heroCleanArt(
+      null,
+      _videoBlockMeta(remoteArt: video),
+    );
     return _HomeHeroData(
       cardKey: ValueKey<String>('home_video_continue_remote_$safeKey'),
       focusId: FushiFocusId('home-video-continue-remote-$safeKey'),
@@ -7960,11 +7980,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                 ' · ${t.video_playlist_episodes(count: video.episodes.length)}'
           : t.video_watched_up_to(time: formatVideoPosition(video.positionMs)),
       poster: cover,
-      image: ({required bool overlay}) => cover,
+      logo: clean.logo,
+      image: ({required bool overlay}) =>
+          (overlay ? clean.image : null) ?? cover,
       progress: _slotPositionFraction(_VideoSlot(remote: video)),
       onPlay: () => unawaited(_openRemote(video)),
       onLongPress: () => _showRemoteVideoDialog(video),
       cloud: true,
+      remoteArt: video,
     );
   }
 
@@ -8009,6 +8032,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           ? t.video_home_recent_episode_number(n: video.currentEpisode + 1)
           : t.home_recently_added,
       cloudBadge: true,
+      remoteArt: video,
     );
   }
 
@@ -9237,7 +9261,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
               completed: metaCompleted,
               tags: tags,
               discBadge: discBadge,
-              poster: _videoBlockMeta(collectionId: collection.id),
+              poster: _videoBlockMeta(
+                collectionId: collection.id,
+                remoteArt: _remoteArtSourceOf(
+                  group.items.map(
+                    (CollectionOrderingItem<_VideoSlot> it) => it.payload,
+                  ),
+                ),
+              ),
             )
           : Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -9777,6 +9808,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
               completed: completed,
               tags: remoteTags,
               playsOnTap: !_selectionMode,
+              poster: _videoBlockMeta(remoteArt: video),
             )
           : Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -13213,7 +13245,58 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// 排序 / 解析部分（[VideoSeriesMetaPlan]）由后台 isolate 预算（BUG-5253 余项），
   /// 这里只做哈希查找与本地文件存在性查询；还没算好时先给上一份结果（同键旧
   /// 输入的）或空资料，算好后整页重建一次。
-  FushiSeriesMeta _videoBlockMeta({int? collectionId, String? bookUid}) {
+  ///
+  /// [remoteArt]：这一条（合集的远端成员 / 远端散片）在媒体服务器上的作品
+  /// （[_remoteArtSourceOf]）。本机没刮削到的背景图 / logo 由服务器补上
+  /// （[FushiSeriesMeta.withMissingArt]，BUG-5614）——不在本机库里的 Jellyfin /
+  /// Emby / Plex 剧此前只剩封面取色 + 大字水印。[collectionId] / [bookUid] 都没有时
+  /// 只用服务器的图。
+  FushiSeriesMeta _videoBlockMeta({
+    int? collectionId,
+    String? bookUid,
+    RemoteVideoInfo? remoteArt,
+  }) {
+    final FushiSeriesMeta scraped = collectionId == null && bookUid == null
+        ? const FushiSeriesMeta()
+        : _scrapedVideoBlockMeta(collectionId: collectionId, bookUid: bookUid);
+    if (remoteArt == null) return scraped;
+    return scraped.withMissingArt(
+      backdrop: _remoteWorkArt(remoteArt, MediaServerImageKind.backdrop),
+      logo: _remoteWorkArt(remoteArt, MediaServerImageKind.logo),
+    );
+  }
+
+  /// 远端占位在媒体服务器上的作品级背景图 / logo（[RemoteVideoInfo.workBackdropItemId]
+  /// / [RemoteVideoInfo.workLogoItemId]）：经它所在来源的服务器取图器现拼地址
+  /// （[mediaServerWorkArtImage]，与服务器页、首页「继续」同一缓存键）。非媒体
+  /// 服务器来源 / 服务器没报这张图为 null。构造不发请求。
+  ImageProvider? _remoteWorkArt(
+    RemoteVideoInfo video,
+    MediaServerImageKind kind,
+  ) {
+    final String? itemId = kind == MediaServerImageKind.logo
+        ? video.workLogoItemId
+        : video.workBackdropItemId;
+    if (itemId == null || itemId.isEmpty) return null;
+    final RemoteVideoClient? client = _liveClientOf(video.id);
+    if (client is! MediaServerBrowser) return null;
+    return mediaServerWorkArtImage(client as MediaServerBrowser, itemId, kind);
+  }
+
+  /// 成员里第一个在媒体服务器上带作品级背景图或 logo 的远端集（同一部剧的集报的
+  /// 是同一份剧的图）；没有为 null。
+  static RemoteVideoInfo? _remoteArtSourceOf(Iterable<_VideoSlot> members) {
+    for (final _VideoSlot m in members) {
+      final RemoteVideoInfo? remote = m.remote;
+      if (remote == null) continue;
+      if (remote.workBackdropItemId != null || remote.workLogoItemId != null) {
+        return remote;
+      }
+    }
+    return null;
+  }
+
+  FushiSeriesMeta _scrapedVideoBlockMeta({int? collectionId, String? bookUid}) {
     final ({String key, VideoSeriesMetaInput input, int? collectionId}) source =
         _seriesPlanSource(collectionId: collectionId, bookUid: bookUid);
     final int? cid = source.collectionId;
@@ -13476,6 +13559,7 @@ class _HomeHeroData {
     this.collectionId,
     this.bookUid,
     this.logo,
+    this.remoteArt,
   });
 
   /// 主卡剧照上叠的作品 logo（只在剧照不带片名时非 null，见 [_heroCleanArt]）。
@@ -13509,6 +13593,10 @@ class _HomeHeroData {
 
   /// 目标集只在 host 上（点开流播）。
   final bool cloud;
+
+  /// 媒体服务器上的作品图来源（远端成员 / 远端散片，见 `_remoteArtSourceOf`）：
+  /// 色块版式据此补背景图 / logo（BUG-5614）。
+  final RemoteVideoInfo? remoteArt;
 }
 
 /// 「已更新未看」的一部作品（竖排版横滚行卡 / 横排版面板条目共用）。
@@ -13582,6 +13670,7 @@ class _RowCardSpec {
     this.progress,
     this.collectionId,
     this.bookUid,
+    this.remoteArt,
   });
 
   final Key cardKey;
@@ -13601,6 +13690,10 @@ class _RowCardSpec {
   /// 合集条目给 [collectionId]，本地散片给 [bookUid]，远端占位都不给。
   final int? collectionId;
   final String? bookUid;
+
+  /// 媒体服务器上的作品图来源（`_remoteArtSourceOf`）：本机没刮削到的背景图 /
+  /// logo 由服务器补（BUG-5614）。
+  final RemoteVideoInfo? remoteArt;
 }
 
 /// 两份成员名单逐项相同（集号解析的输入比较，[BackgroundKeyedDerivation]）。

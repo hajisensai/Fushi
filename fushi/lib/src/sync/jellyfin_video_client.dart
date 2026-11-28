@@ -518,6 +518,7 @@ class JellyfinItem {
     this.hasLogoImage = false,
     this.parentThumbItemId,
     this.parentBackdropItemId,
+    this.parentLogoItemId,
     this.seriesCoverItemId,
     this.overview,
     this.communityRating,
@@ -576,6 +577,10 @@ class JellyfinItem {
   /// 拿去请求必 404。「继续观看」横卡在集自身没有横图时回落到它们。
   final String? parentThumbItemId;
   final String? parentBackdropItemId;
+
+  /// 上级 logo 所在条目 id（`ParentLogoItemId` + `ParentLogoImageTag`）：集自己没有
+  /// logo 时服务器报剧的那张；只有 tag 存在时才非 null。
+  final String? parentLogoItemId;
 
   /// 集所属剧的竖版海报所在条目 id（`SeriesId` + `SeriesPrimaryImageTag`，缺时回落
   /// `ParentPrimaryImageItemId` + `ParentPrimaryImageTag`）。只对 Episode 且服务器
@@ -669,6 +674,7 @@ class JellyfinItem {
     hasLogoImage: hasLogoImage,
     parentThumbItemId: parentThumbItemId,
     parentBackdropItemId: parentBackdropItemId,
+    parentLogoItemId: parentLogoItemId,
     seriesCoverItemId: seriesCoverItemId,
     overview: overview,
     communityRating: communityRating,
@@ -2466,6 +2472,7 @@ class JellyfinApi {
         (json['BackdropImageTags'] as List?) ?? const <Object?>[];
     final List<Object?> genres = (json['Genres'] as List?) ?? const <Object?>[];
     final String? parentThumbTag = json['ParentThumbImageTag'] as String?;
+    final String? parentLogoTag = json['ParentLogoImageTag'] as String?;
     final List<Object?> parentBackdropTags =
         (json['ParentBackdropImageTags'] as List?) ?? const <Object?>[];
     final String? seriesCoverItemId = (json['Type'] as String?) == 'Episode'
@@ -2516,6 +2523,9 @@ class JellyfinApi {
       parentBackdropItemId: parentBackdropTags.isEmpty
           ? null
           : json['ParentBackdropItemId'] as String?,
+      parentLogoItemId: parentLogoTag == null || parentLogoTag.isEmpty
+          ? null
+          : json['ParentLogoItemId'] as String?,
       seriesCoverItemId: seriesCoverItemId,
       overview: json['Overview'] as String?,
       communityRating: (json['CommunityRating'] as num?)?.toDouble(),
@@ -2923,6 +2933,11 @@ class JellyfinVideoClient
     hasCover: item.hasCover,
     coverUrl: coverUrl(item),
     seriesCoverUrl: seriesCoverUrl(item),
+    workBackdropItemId: mediaServerWorkImageItemId(
+      item,
+      MediaServerImageKind.backdrop,
+    ),
+    workLogoItemId: mediaServerWorkImageItemId(item, MediaServerImageKind.logo),
     completedAt: completedAtOf(item),
     positionMs: item.positionMs,
     positionUpdatedAtMs: item.lastPlayedAtMs,
@@ -3023,6 +3038,7 @@ class JellyfinVideoClient
     hasLogo: item.hasLogoImage,
     parentThumbItemId: item.parentThumbItemId,
     parentBackdropItemId: item.parentBackdropItemId,
+    parentLogoItemId: item.parentLogoItemId,
     seriesCoverItemId: item.seriesCoverItemId,
     overview: item.overview,
     communityRating: item.communityRating,

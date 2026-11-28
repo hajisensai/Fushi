@@ -38,7 +38,8 @@ class RemoteVideoListStore {
   RemoteVideoListStore._();
 
   /// 文件格式版本。改了信封或条目的序列化方式就 +1，旧文件随之被忽略并覆盖。
-  static const int formatVersion = 1;
+  /// 2：条目加作品级背景图 / logo 的条目 id（BUG-5614）。
+  static const int formatVersion = 2;
 
   static const String directoryName = 'remote_video_lists';
 
@@ -314,12 +315,16 @@ Future<_Decoded?> _decodeFile(_DecodeJob job) async {
     if (info.id.isEmpty) return null;
     final Object? cover = raw['coverUrl'];
     final Object? seriesCover = raw[_kSeriesCoverUrlKey];
+    final Object? workBackdrop = raw[_kWorkBackdropItemIdKey];
+    final Object? workLogo = raw[_kWorkLogoItemIdKey];
     videos.add(
       info.copyWith(
         coverUrl: cover is String ? credentials.authorize(cover) : null,
         seriesCoverUrl: seriesCover is String
             ? credentials.authorize(seriesCover)
             : null,
+        workBackdropItemId: workBackdrop is String ? workBackdrop : null,
+        workLogoItemId: workLogo is String ? workLogo : null,
       ),
     );
   }
@@ -333,6 +338,12 @@ Future<_Decoded?> _decodeFile(_DecodeJob job) async {
 /// `RemoteVideoInfo.toJson` 是互联 wire 格式，不带 [RemoteVideoInfo.seriesCoverUrl]
 /// （那是 client 侧拼出来的地址），落盘时单独存在这个键下。
 const String _kSeriesCoverUrlKey = 'seriesCoverUrl';
+
+/// 同理：作品级背景图 / logo 的条目 id（[RemoteVideoInfo.workBackdropItemId] /
+/// [RemoteVideoInfo.workLogoItemId]）只在 client 侧派生、不进 wire。是服务器条目
+/// id，不含凭据，原样落盘。
+const String _kWorkBackdropItemIdKey = 'workBackdropItemId';
+const String _kWorkLogoItemIdKey = 'workLogoItemId';
 
 /// 后台 isolate：条目去凭据 → 编码 → 写临时文件 → 改名覆盖。
 Future<void> _encodeFile(_EncodeJob job) async {
@@ -351,6 +362,12 @@ Future<void> _encodeFile(_EncodeJob job) async {
       if (credentials.strip(url) case final String path) {
         item[_kSeriesCoverUrlKey] = path;
       }
+    }
+    if (video.workBackdropItemId case final String id) {
+      item[_kWorkBackdropItemIdKey] = id;
+    }
+    if (video.workLogoItemId case final String id) {
+      item[_kWorkLogoItemIdKey] = id;
     }
     items.add(item);
   }

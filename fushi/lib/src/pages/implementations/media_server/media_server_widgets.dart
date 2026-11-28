@@ -6,9 +6,9 @@ import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/media/video/cover_ui/cover_orientation_builder.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
+import 'package:fushi/src/media/video/media_server/media_server_images.dart';
 import 'package:fushi/src/media/video/video_home_layout.dart'
     show VideoCardOrientation;
-import 'package:fushi/src/sync/remote_cover_image.dart';
 import 'package:fushi/src/utils/adaptive/shell_style.dart'
     show ShellContentLayout, shellContentLayoutOf, shellRedesignActive;
 import 'package:fushi/src/utils/components/fushi_masthead_scaffold.dart'
@@ -18,8 +18,6 @@ import 'package:fushi/src/utils/components/fushi_continue_blocks.dart'
 import 'package:fushi/src/utils/components/fushi_cover_block.dart';
 import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart'
     show fushiCoverBlockFirstRowHeight, kFushiCoverBlockSpacing;
-import 'package:fushi/src/utils/cover_image.dart'
-    show kLocalCoverDecodePixelWidth;
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show
         FushiFloatingChromeController,
@@ -53,70 +51,6 @@ const double kMediaServerRowCardWidth = 150;
 
 /// 媒体库卡（16:9）的基准宽度：首页库网格的最大列宽按它推，库卡单测也按它给槽。
 const double kMediaServerLibraryCardWidth = 220;
-
-/// 服务器条目封面（缩放到 [kLocalCoverDecodePixelWidth] 以内解码）。fetcher 就是
-/// 浏览器本身（[MediaServerBrowser] implements `RemoteCoverFetcher`）；无图返回 null，
-/// 页面画占位图，**不**拿一个必 404 的地址去请求。
-ImageProvider? mediaServerCoverImage(
-  MediaServerBrowser browser,
-  MediaServerItem item, {
-  MediaServerImageKind kind = MediaServerImageKind.primary,
-}) {
-  final String? url = browser.coverUrl(item, kind: kind);
-  if (url == null || url.isEmpty) return null;
-  return ResizeImage(
-    RemoteCoverImage(url, browser, cacheKey: '${item.id}:${kind.name}'),
-    width: kLocalCoverDecodePixelWidth,
-    allowUpscaling: false,
-  );
-}
-
-/// 详情页 hero 用的大图（横版背景 / 标题 logo）：请求宽度与解码宽度都比网格卡大
-/// ——背景要铺满 1600+ 逻辑像素宽的 hero，720 像素放大后一片糊；logo 在 hero 里
-/// 最大 460×110 逻辑像素 × dpr。缓存键带上请求宽度，与网格卡的 720 版本互不串。
-/// 其它 [kind] 退回 [mediaServerCoverImage] 的常规尺寸。无图返回 null。
-ImageProvider? mediaServerHeroImage(
-  MediaServerBrowser browser,
-  MediaServerItem item, {
-  required MediaServerImageKind kind,
-}) {
-  final (int requestWidth, int decodeWidth) = switch (kind) {
-    MediaServerImageKind.backdrop => (1920, 2560),
-    MediaServerImageKind.logo => (800, 800),
-    MediaServerImageKind.primary || MediaServerImageKind.thumb => (
-      kMediaServerCoverMaxWidth,
-      kLocalCoverDecodePixelWidth,
-    ),
-  };
-  final String? url = browser.coverUrl(
-    item,
-    kind: kind,
-    maxWidth: requestWidth,
-  );
-  if (url == null || url.isEmpty) return null;
-  return ResizeImage(
-    RemoteCoverImage(
-      url,
-      browser,
-      cacheKey: '${item.id}:${kind.name}:$requestWidth',
-    ),
-    width: decodeWidth,
-    allowUpscaling: false,
-  );
-}
-
-ImageProvider? mediaServerLibraryCoverImage(
-  MediaServerBrowser browser,
-  MediaServerLibrary library,
-) {
-  final String? url = browser.libraryCoverUrl(library);
-  if (url == null || url.isEmpty) return null;
-  return ResizeImage(
-    RemoteCoverImage(url, browser, cacheKey: 'library:${library.id}'),
-    width: kLocalCoverDecodePixelWidth,
-    allowUpscaling: false,
-  );
-}
 
 /// `1:32:05` / `24:10` 形态的时长；null / 0 返回空串。
 String formatMediaServerDuration(int? durationMs) {
@@ -450,8 +384,8 @@ double mediaServerContinueCardHeight(BuildContext context) =>
 ///   [PortraitCoverImage] 模糊垫底后完整显示）。
 ///
 /// 上级图借 [MediaServerItem.parentThumbItemId] / `parentBackdropItemId`：把那个
-/// id 包成一个只带对应图片旗子的条目交给 [MediaServerBrowser.coverUrl]，不用给
-/// 契约再开一个「按 id 取图」的口子，缓存键也自然按剧共享。
+/// id 包成一个只带对应图片旗子的条目（[mediaServerParentImageItem]）交给
+/// [MediaServerBrowser.coverUrl]，缓存键也自然按剧共享。
 List<ImageProvider> mediaServerContinueImages(
   MediaServerBrowser browser,
   MediaServerItem item,
@@ -472,23 +406,16 @@ List<ImageProvider> mediaServerContinueImages(
     final String? parentThumb = item.parentThumbItemId;
     if (parentThumb != null && parentThumb.isNotEmpty) {
       add(
-        MediaServerItem(
-          id: parentThumb,
-          name: '',
-          type: MediaServerItemType.series,
-          hasThumb: true,
-        ),
+        mediaServerParentImageItem(parentThumb, MediaServerImageKind.thumb),
         MediaServerImageKind.thumb,
       );
     }
     final String? parentBackdrop = item.parentBackdropItemId;
     if (parentBackdrop != null && parentBackdrop.isNotEmpty) {
       add(
-        MediaServerItem(
-          id: parentBackdrop,
-          name: '',
-          type: MediaServerItemType.series,
-          hasBackdrop: true,
+        mediaServerParentImageItem(
+          parentBackdrop,
+          MediaServerImageKind.backdrop,
         ),
         MediaServerImageKind.backdrop,
       );
@@ -1351,33 +1278,6 @@ Widget _mediaServerBlockShell({
   );
 }
 
-/// 条目的横版背景图（无字剧照）：自身有就用自身的，集借所属剧的
-/// （[MediaServerItem.parentBackdropItemId]）。没有为 null。
-ImageProvider? mediaServerBackdropImage(
-  MediaServerBrowser browser,
-  MediaServerItem item,
-) {
-  if (item.hasBackdrop) {
-    return mediaServerCoverImage(
-      browser,
-      item,
-      kind: MediaServerImageKind.backdrop,
-    );
-  }
-  final String? parent = item.parentBackdropItemId;
-  if (parent == null || parent.isEmpty) return null;
-  return mediaServerCoverImage(
-    browser,
-    MediaServerItem(
-      id: parent,
-      name: '',
-      type: MediaServerItemType.series,
-      hasBackdrop: true,
-    ),
-    kind: MediaServerImageKind.backdrop,
-  );
-}
-
 /// 一个服务器条目的封面色块（重设计外壳，库页布局为拼贴 / 规整色块时代替
 /// [MediaServerItemCard] / [MediaServerContinueCard]）：封面取色底 + 作品名大字
 /// 水印，信息与原卡同一份（[mediaServerItemCardStatus] /
@@ -1436,9 +1336,8 @@ class MediaServerItemBlock extends StatelessWidget {
       ...item.genres.take(3),
       if (rating != null && rating > 0) '★ ${rating.toStringAsFixed(1)}',
     ].join(' · ');
-    final ImageProvider? logo = item.hasLogo
-        ? mediaServerHeroImage(browser, item, kind: MediaServerImageKind.logo)
-        : null;
+    // 集画所属剧的艺术字（与标题取剧名同口径）。
+    final ImageProvider? logo = mediaServerLogoImage(browser, item);
     final IconData placeholderIcon = MediaServerItemCard._placeholderIcon(
       item.type,
     );

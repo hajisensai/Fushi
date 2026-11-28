@@ -208,6 +208,8 @@ import 'package:fushi/src/media/video/media_server/media_server_browser.dart'
     show MediaServerBrowser, MediaServerItem;
 import 'package:fushi/src/media/video/media_server/media_server_config.dart'
     show MediaServerConfig;
+import 'package:fushi/src/media/video/media_server/media_server_images.dart'
+    show mediaServerBackdropImage, mediaServerLogoImage;
 import 'package:fushi/src/pages/implementations/audiobookshelf/audiobookshelf_item_page.dart'
     show AudiobookshelfItemDetailPage;
 import 'package:fushi/src/pages/implementations/audiobookshelf/audiobookshelf_ui_helpers.dart'
@@ -1823,6 +1825,10 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
         // 集用剧竖版封面（集自己的 Primary 是 16:9 截图），与本地漫画 / 视频卡同形。
         coverUrlOf: (MediaServerItem item) => browser.coverUrl(item.coverItem),
         coverFetcher: browser,
+        // 系列色块的背景图 / 艺术字：与服务器自己的条目色块同一份取图（集用剧的图）。
+        backdropOf: (MediaServerItem item) =>
+            mediaServerBackdropImage(browser, item),
+        logoOf: (MediaServerItem item) => mediaServerLogoImage(browser, item),
         // 与服务器自己的浏览页同一出口：根 Navigator 压 VideoFushiPage.neutralizedRemote。
         open: (BuildContext context, MediaServerItem item) =>
             pushMediaServerPlayer(
@@ -2655,7 +2661,8 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
 
   /// 条目的系列元数据键：本地视频按主合集（散片按 bookUid）、本地书 / 字幕书按
   /// `item_scrape_meta` 键、合集项（最近添加里合成一项的同合集书）按合集、本地
-  /// 游戏按游戏 id。远端 / 服务器条目没有本机刮削数据，为 null。
+  /// 游戏按游戏 id。远端 / 服务器条目没有本机刮削数据，为 null（服务器条目的
+  /// 元数据随条目带来，见 [_seriesMetaFor]）。
   String? _seriesMetaKey(_ContinueEntry entry) {
     if (entry.remote != null || entry.server != null) return null;
     if (entry.video case final VideoBookRow video) {
@@ -2680,8 +2687,13 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
   }
 
   /// 条目的系列元数据（没有 / 还没取到为 null）。没取过或取的是旧一轮时在后台
-  /// 单查一次，取到后重建；旧值照画到新值到达。
+  /// 单查一次，取到后重建；旧值照画到新值到达。媒体服务器条目不查本机库：服务器
+  /// 自己的背景图 / logo / 类型年份随候选带来（[serverContinueSeriesMeta]），图在
+  /// 卡画出来时才取。
   FushiSeriesMeta? _seriesMetaFor(_ContinueEntry entry) {
+    if (entry.server case final ServerContinueCandidate server) {
+      return serverContinueSeriesMeta(server, cover: _serverCoverImage(server));
+    }
     final String? key = _seriesMetaKey(entry);
     if (key == null) return null;
     final ({int generation, FushiSeriesMeta? meta})? cached =

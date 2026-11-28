@@ -511,6 +511,51 @@ void main() {
   });
 
   group('[C] 封面', () {
+    test('集的 clearLogo 挂在剧上：记成上级 logo，不拿集 id 拼地址', () {
+      MediaServerItem map(Map<String, Object?> json, MediaServerItemType t) =>
+          PlexVideoClient.mediaServerItemFrom(PlexApi.parseMetadata(json)!, t);
+      final MediaServerItem episode = map(<String, Object?>{
+        'ratingKey': 'ep-9',
+        'type': 'episode',
+        'title': 'Ep',
+        'grandparentRatingKey': 'show-1',
+        'Image': <Object?>[
+          <String, Object?>{
+            'type': 'clearLogo',
+            'url': '/library/metadata/show-1/clearLogo/1700000000',
+          },
+        ],
+      }, MediaServerItemType.episode);
+      expect(episode.hasLogo, isFalse);
+      expect(episode.parentLogoItemId, 'show-1');
+
+      final MediaServerItem show = map(<String, Object?>{
+        'ratingKey': 'show-1',
+        'type': 'show',
+        'title': 'Show',
+        'Image': <Object?>[
+          <String, Object?>{
+            'type': 'clearLogo',
+            'url': '/library/metadata/show-1/clearLogo/1700000000',
+          },
+        ],
+      }, MediaServerItemType.series);
+      expect(show.hasLogo, isTrue);
+      expect(show.parentLogoItemId, isNull);
+
+      // 地址形态认不出：按自身的 logo（旧口径）。
+      final MediaServerItem odd = map(<String, Object?>{
+        'ratingKey': 'show-2',
+        'type': 'show',
+        'title': 'Show',
+        'Image': <Object?>[
+          <String, Object?>{'type': 'clearLogo', 'url': '/x'},
+        ],
+      }, MediaServerItemType.series);
+      expect(odd.hasLogo, isTrue);
+      expect(odd.parentLogoItemId, isNull);
+    });
+
     test('主图走 /photo/:/transcode，带尺寸框与 token', () {
       final PlexVideoClient c = _client(_FakePms());
       const MediaServerItem poster = MediaServerItem(

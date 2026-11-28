@@ -1,6 +1,9 @@
-import 'package:flutter/widgets.dart' show BuildContext;
+import 'package:flutter/widgets.dart' show BuildContext, ImageProvider;
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/sync/remote_cover_fetcher.dart';
+import 'package:fushi/src/utils/components/fushi_series_cover_block.dart'
+    show FushiSeriesMeta;
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_api.dart'
     show audiobookshelfProgressKey;
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_models.dart';
@@ -33,6 +36,13 @@ class ServerContinueCandidate {
     this.coverUrl,
     this.coverCacheKey,
     this.coverFetcher,
+    this.coverIsPoster = false,
+    this.backdrop,
+    this.logo,
+    this.isEpisode = false,
+    this.genres = const <String>[],
+    this.year,
+    this.rating,
   });
 
   final ServerContinueSource source;
@@ -58,6 +68,26 @@ class ServerContinueCandidate {
 
   /// 封面取图器（媒体服务器的封面要走它带鉴权；null = 直接 HTTP 取图）。
   final RemoteCoverFetcher? coverFetcher;
+
+  /// [coverUrl] 是作品竖版海报（电影主图、集所属剧的海报）；集没有剧海报时封面是
+  /// 这一集的 16:9 截图，为 false——那张图不能当系列色块里斜放的海报。
+  final bool coverIsPoster;
+
+  /// 作品级横版背景图（无字剧照）与标题艺术字：集是**所属剧**的（服务器报了剧图才
+  /// 有），不是这一集的截图。与本地视频的刮削背景 / logo 同一用途（首页系列色块，见
+  /// [serverContinueSeriesMeta]）。只是 provider：构造不发请求，卡画出来才经服务器
+  /// 自己的取图器取图并走同一套缓存。ABS 没有这类图，恒 null。
+  final ImageProvider? backdrop;
+  final ImageProvider? logo;
+
+  /// 条目是剧集里的一集（系列色块的 chip 标「剧集」而不是「电影」）。
+  final bool isEpisode;
+
+  /// 服务器在清单里已经给出的作品信息（不为它多发请求）：类型、年份、评分。集只留
+  /// 类型——年份 / 评分是这一集的，不是剧的。
+  final List<String> genres;
+  final int? year;
+  final double? rating;
 
   /// 点卡的落地：媒体服务器 = 起播，ABS = 条目详情页。
   final Future<void> Function(BuildContext context) open;
@@ -89,6 +119,8 @@ List<ServerContinueCandidate> mediaServerContinueCandidates({
   required Future<void> Function(BuildContext context, MediaServerItem item)
   open,
   RemoteCoverFetcher? coverFetcher,
+  ImageProvider? Function(MediaServerItem item)? backdropOf,
+  ImageProvider? Function(MediaServerItem item)? logoOf,
 }) {
   final Set<String> seen = <String>{};
   final List<ServerContinueCandidate> out = <ServerContinueCandidate>[];
@@ -121,11 +153,46 @@ List<ServerContinueCandidate> mediaServerContinueCandidates({
         coverUrl: coverUrlOf(item),
         coverCacheKey: 'media-server:$serverId:${item.coverItem.id}',
         coverFetcher: coverFetcher,
+        coverIsPoster: !episode || item.seriesCoverItemId != null,
+        backdrop: backdropOf?.call(item),
+        logo: logoOf?.call(item),
+        isEpisode: episode,
+        genres: item.genres,
+        year: episode ? null : item.productionYear,
+        rating: episode ? null : item.communityRating,
         open: (BuildContext context) => open(context, item),
       ),
     );
   }
   return out;
+}
+
+/// 服务器条目的系列色块元数据（首页「继续」色块，与本地视频的刮削元数据同形：
+/// 海报斜放、背景图铺尾侧、艺术字、概览 / chip）。图来自服务器自己（[ServerContinueCandidate.backdrop]
+/// / [ServerContinueCandidate.logo]），[cover] 是首页已经给这张卡建好的封面
+/// provider——只有它确实是作品海报（[ServerContinueCandidate.coverIsPoster]）才放进
+/// 海报位。ABS 条目、服务器既没报背景图也没报 logo 时为 null（卡片照原摆法画）。
+FushiSeriesMeta? serverContinueSeriesMeta(
+  ServerContinueCandidate candidate, {
+  required ImageProvider? cover,
+}) {
+  if (!candidate.isVideo) return null;
+  final int? year = candidate.year;
+  final FushiSeriesMeta meta = FushiSeriesMeta.fromParts(
+    backdrop: candidate.backdrop,
+    logo: candidate.logo,
+    poster: candidate.coverIsPoster ? cover : null,
+    genres: candidate.genres,
+    rating: candidate.rating,
+    year: year,
+    chipParts: <String>[
+      candidate.isEpisode
+          ? t.shelf_block_video_kind_tv
+          : t.shelf_block_video_kind_movie,
+      if (year != null && year > 0) '$year',
+    ],
+  );
+  return meta.backdrop == null && meta.logo == null ? null : meta;
 }
 
 /// NextUp 里没有自身播放时刻的集 → 所属剧的最近播放时刻（seriesId → epoch 毫秒）。

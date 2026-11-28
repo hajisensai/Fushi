@@ -74,6 +74,62 @@ void main() {
     expect(fushiScrapeYear('unknown'), isNull);
   });
 
+  group('withMissingArt（BUG-5614：服务器图只补空位）', () {
+    final ImageProvider scrapedBackdrop = MemoryImage(Uint8List(1));
+    final ImageProvider scrapedLogo = MemoryImage(Uint8List(2));
+    final ImageProvider serverBackdrop = MemoryImage(Uint8List(3));
+    final ImageProvider serverLogo = MemoryImage(Uint8List(4));
+
+    test('空资料：背景 / logo 都由服务器补上，补进的背景当无字图', () {
+      final FushiSeriesMeta meta = const FushiSeriesMeta().withMissingArt(
+        backdrop: serverBackdrop,
+        logo: serverLogo,
+      );
+      expect(meta.backdrop, same(serverBackdrop));
+      expect(meta.logo, same(serverLogo));
+      expect(meta.backdropHasText, isFalse);
+      expect(meta.displayLogo, same(serverLogo));
+    });
+
+    test('本机刮削的图不被换掉，其余字段原样', () {
+      final FushiSeriesMeta scraped = FushiSeriesMeta(
+        backdrop: scrapedBackdrop,
+        backdropHasText: true,
+        overview: '日常 · ★ 8.8',
+        chip: 'TV · 2014',
+        genres: const <String>['日常'],
+        rating: 8.8,
+        year: 2014,
+      );
+      final FushiSeriesMeta meta = scraped.withMissingArt(
+        backdrop: serverBackdrop,
+        logo: serverLogo,
+      );
+      expect(meta.backdrop, same(scrapedBackdrop));
+      expect(meta.backdropHasText, isTrue, reason: '保留原背景图自己的旗子');
+      expect(meta.logo, same(serverLogo), reason: '只补空着的 logo');
+      expect(meta.displayLogo, isNull, reason: '带字背景图不再叠 logo');
+      expect(meta.overview, scraped.overview);
+      expect(meta.chip, scraped.chip);
+      expect(meta.genres, scraped.genres);
+      expect(meta.rating, 8.8);
+      expect(meta.year, 2014);
+    });
+
+    test('都有或都不补时原样返回同一个对象', () {
+      final FushiSeriesMeta full = FushiSeriesMeta(
+        backdrop: scrapedBackdrop,
+        logo: scrapedLogo,
+      );
+      expect(
+        full.withMissingArt(backdrop: serverBackdrop, logo: serverLogo),
+        same(full),
+      );
+      const FushiSeriesMeta empty = FushiSeriesMeta();
+      expect(empty.withMissingArt(), same(empty));
+    });
+  });
+
   group('galgameSeriesMeta', () {
     GalgameEntry game({
       String? releaseDate,
