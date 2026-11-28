@@ -89,6 +89,15 @@ class MusicServerOfflineQueue extends ChangeNotifier {
 
   bool get attached => _db != null;
 
+  /// [attach] 的反向（[db] 这一代连接关闭前调）：撤表订阅、丢掉连接引用（此后 [attached] 为 false，
+  /// 不再往已关闭的连接写补发）。不是当前连接时是空操作。
+  void detach(FushiDatabase db) {
+    if (!identical(_db, db)) return;
+    unawaited(_sub?.cancel());
+    _sub = null;
+    _db = null;
+  }
+
   /// 接到 [db]（同一个库重复调用只换 [browsers]）。
   void attach(FushiDatabase db, {required MusicServerQueueBrowsers browsers}) {
     _browsers = browsers;

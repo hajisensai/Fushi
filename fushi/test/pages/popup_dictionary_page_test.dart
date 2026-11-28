@@ -435,7 +435,7 @@ void main() {
     // 的 popupPagePath -> [popup-perf] 用例接管。
     expect(
       model,
-      contains('MediaSource.setDatabase(_database)'),
+      contains('_attachMediaSourceDatabase(session)'),
       reason: 'popup init must attach MediaSource prefs to the popup DB.',
     );
     expect(

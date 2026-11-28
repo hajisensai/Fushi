@@ -1874,7 +1874,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     });
     // ③ close database：WAL checkpoint + 排空后台 isolate pending 写。退出最后一道
     //    数据完整性闸门——必须在 exit(0) 之前完成。
-    //    加超时上界：quiesceBackgroundDatabaseWriters 内部要等在飞的下载任务收尾，
+    //    加超时上界：关库（DatabaseSession.close）要等在飞的下载任务收尾，
     //    这里过去是整条退出链上唯一的无界等待。WAL 本身崩溃安全，超时放行只损失一次
     //    checkpoint（下次启动自动回放），不损失任何已提交的数据。
     await _guardedExitStep('database close', () async {

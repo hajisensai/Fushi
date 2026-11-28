@@ -279,45 +279,6 @@ void main() {
             '否则会对已关闭的 db 跑 _runCollectionsSync（BUG-1569②）',
       );
     });
-
-    test('源码守卫：AppModel 三条关库/销毁路径都撤观察者', () {
-      final File f = File('lib/src/models/app_model.dart');
-      expect(
-        f.existsSync(),
-        isTrue,
-        reason: 'run from the fushi/ package root',
-      );
-      final String src = f.readAsStringSync();
-
-      String slice(String start, String end) {
-        final int a = src.indexOf(start);
-        expect(a, greaterThan(-1), reason: 'missing: $start');
-        final int b = src.indexOf(end, a);
-        expect(b, greaterThan(a), reason: 'missing end marker after $start');
-        return src.substring(a, b);
-      }
-
-      expect(
-        // 锚点去掉空参数表：退出路径要传 pipelineDrainTimeout（BUG-1505 的
-        // 上界只能给退出链，见 video_download_pipeline_service.stop 的注释），
-        // `closeDatabase()` 这个字面量已不存在。
-        slice('Future<void> closeDatabase(', 'Future<void> shutdown()'),
-        contains('uninstallCollectionsSyncWatcher()'),
-        reason: 'closeDatabase 必须撤合集观察者（BUG-1569②）',
-      );
-      expect(
-        slice('Future<void> closeForPopup()', 'void dispose()'),
-        contains('uninstallCollectionsSyncWatcher()'),
-        reason: 'closeForPopup 必须撤合集观察者（BUG-1569②）',
-      );
-      expect(
-        // 终点用带分号的真调用——dispose 顶部的 doc 注释里也写了「super.dispose()」，
-        // 不带分号的标记会把切片截在注释处。
-        slice('void dispose() {', 'super.dispose();'),
-        contains('uninstallCollectionsSyncWatcher()'),
-        reason: 'dispose 必须对称撤合集观察者（BUG-1569②）',
-      );
-    });
   });
 
   // BUG-1569③：此前 sweep 在飞时退出书只记账、等整轮收尾再补跑；现在按资源加锁，

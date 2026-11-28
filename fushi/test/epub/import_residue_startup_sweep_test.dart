@@ -58,10 +58,7 @@ void main() {
     ).readAsStringSync();
     final int start = src.indexOf('Future<void> _initialiseOnce() async {');
     expect(start, isNonNegative, reason: '找不到 _initialiseOnce');
-    final int openDb = src.indexOf(
-      '_database = FushiDatabase(_databaseDirectory.path);',
-      start,
-    );
+    final int openDb = src.indexOf("label: 'main',", start);
     final int done = src.indexOf("debugPrint('[Fushi] init: DONE');", start);
     expect(openDb, greaterThan(start));
     expect(done, greaterThan(openDb));

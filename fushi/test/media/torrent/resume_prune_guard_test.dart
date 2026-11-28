@@ -138,10 +138,10 @@ void main() {
       // `AnimeDownloadService(`，直接找会命中函数签名（永远在最前面）。
       final int refresh = body.indexOf('await _refreshAnimeDownloadPlanIds(');
       final int service = body.indexOf(
-        '_animeDownloadService = AnimeDownloadService(',
+        '_animeDownloadService = _requireSession().own<AnimeDownloadService>(',
       );
       final int subscription = body.indexOf(
-        '_animeDownloadSubscriptionService = AnimeDownloadSubscriptionService(',
+        '_animeDownloadSubscriptionService = _requireSession()',
       );
       expect(
         refresh,

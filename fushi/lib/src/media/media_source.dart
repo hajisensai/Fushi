@@ -107,6 +107,11 @@ abstract class MediaSource {
   /// Call from [AppModel.initialise] before initialising media sources.
   static void setDatabase(FushiDatabase db) => _sharedDb = db;
 
+  /// [setDatabase] 的反向：[db] 这一代连接关闭时调，只清仍指向它的那份。
+  static void clearDatabase(FushiDatabase db) {
+    if (identical(_sharedDb, db)) _sharedDb = null;
+  }
+
   /// Shared database for subclasses that persist beyond the preference cache
   /// (e.g. ReaderFushiSource writing back epubBooks.author for BUG-220). Null
   /// until [setDatabase] runs in [AppModel.initialise].

@@ -225,6 +225,15 @@ class MusicServerDownloadIndex extends ChangeNotifier {
     );
   }
 
+  /// [attach] 的反向（[db] 这一代连接关闭前调）：撤表订阅、丢掉连接引用。不是当前连接时是空操作。
+  /// 进程级查找函数与内存快照保留：下一代 [attach] 时重新对账。
+  void detach(FushiDatabase db) {
+    if (!identical(_db, db)) return;
+    unawaited(_sub?.cancel());
+    _sub = null;
+    _db = null;
+  }
+
   /// 把离线副本对应、却不在音乐库里的曲目放回音乐库（不删任何文件）。返回放回的首数。
   Future<int> reconcileIntoLibrary() async {
     final FushiDatabase? db = _db;

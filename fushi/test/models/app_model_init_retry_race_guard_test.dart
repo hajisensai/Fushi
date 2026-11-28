@@ -84,13 +84,13 @@ void main() {
       reason: 'retryInitialise() 必须先检查 _initInFlight（在飞 init 短路）。',
     );
     final int inFlightCheckIdx = inFlightCheck!.start;
-    final int closeIdx = retryRegion.indexOf('_database.close()');
+    final int closeIdx = retryRegion.indexOf('_closeDatabaseSession()');
 
     expect(inFlightCheckIdx, greaterThan(inFlightReadIdx));
     expect(
       closeIdx,
       greaterThanOrEqualTo(0),
-      reason: 'retryInitialise() 仍应保留 error 后的干净重起（_database.close()）。',
+      reason: 'retryInitialise() 仍应保留 error 后的干净重起（_closeDatabaseSession()）。',
     );
 
     // 关键不变量：in-flight 检查必须早于 _database.close()。否则慢启动下重试会关掉
