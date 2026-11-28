@@ -522,12 +522,14 @@ Future<void> _sceneUvLyrics(_Ctx c) async {
         ),
       ),
     );
-    // 封面（YouTube 缩略图）与歌词（LRCLIB）都是起播后在线拉的：等第一句出来（歌词行是
-    // RichText，要 findRichText）。
+    // 封面（YouTube 缩略图）与歌词（LRCLIB）都是起播后在线拉的：等歌词区换成逐行歌词视图
+    // （KaraokeLyricsView 自绘，不是 Text，按文字找不到）。
     await _waitFor(
       tester,
       () => find
-          .textContaining('肩落としてる', findRichText: true)
+          .byWidgetPredicate(
+            (Widget w) => w.runtimeType.toString() == 'KaraokeLyricsView',
+          )
           .evaluate()
           .isNotEmpty,
       timeout: const Duration(seconds: 45),
