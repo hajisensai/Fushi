@@ -1,14 +1,97 @@
 import 'package:fushi_lints/src/rules/platform_dirs_via_app_paths.dart';
-import 'package:test_reflective_loader/test_reflective_loader.dart';
 
 import 'rule_test_base.dart';
 
 void main() {
-  defineReflectiveSuite(() {
-    defineReflectiveTests(PlatformDirsViaAppPathsTest);
-    defineReflectiveTests(PlatformDirsInPackagesTest);
-  });
+  defineRuleTests<PlatformDirsViaAppPathsTest>(
+    PlatformDirsViaAppPathsTest.new,
+    <String, RuleCase<PlatformDirsViaAppPathsTest>>{
+      'call_reported': (PlatformDirsViaAppPathsTest t) async {
+        const String src = '''
+import 'package:path_provider/path_provider.dart';
+
+Future<Object> f() => getTemporaryDirectory();
+''';
+        await t.assertDiagnostics(src, <ExpectedDiagnostic>[
+          t.lintAt(src, 'getTemporaryDirectory();'.replaceAll('();', '')),
+        ]);
+      },
+      'tearOff_and_prefix_reported': (PlatformDirsViaAppPathsTest t) async {
+        const String src = '''
+import 'package:path_provider/path_provider.dart' as pp;
+
+Future<Object> Function() resolver = pp.getApplicationDocumentsDirectory;
+''';
+        await t.assertDiagnostics(src, <ExpectedDiagnostic>[
+          t.lintAt(src, 'getApplicationDocumentsDirectory'),
+        ]);
+      },
+      'showCombinator_docComment_clean': (PlatformDirsViaAppPathsTest t) async {
+        await t.assertNoDiagnostics('''
+// ignore: unused_import
+import 'package:path_provider/path_provider.dart' show getTemporaryDirectory;
+
+/// Unlike [getTemporaryDirectory], this follows the data root.
+void f() {}
+''');
+      },
+      'testDirectory_notInScope': (PlatformDirsViaAppPathsTest t) async {
+        final String path = t.writePackageFile('test/a_test.dart', '''
+import 'package:path_provider/path_provider.dart';
+
+Future<Object> f() => getTemporaryDirectory();
+''');
+        await t.assertNoDiagnosticsInFile(path);
+      },
+      'allowance_exactCount_clean': (PlatformDirsViaAppPathsTest t) async {
+        final String path = t.writePackageFile(_platformFallback, '''
+import 'package:path_provider/path_provider.dart';
+
+Future<Object> Function()? resolver;
+void install() => resolver ??= getApplicationDocumentsDirectory;
+''');
+        await t.assertNoDiagnosticsInFile(path);
+      },
+      'allowance_isPerFunction': (PlatformDirsViaAppPathsTest t) async {
+        const String src = '''
+import 'package:path_provider/path_provider.dart';
+
+Future<Object> Function()? resolver;
+void install() => resolver ??= getApplicationDocumentsDirectory;
+Future<Object> temp() => getTemporaryDirectory();
+''';
+        final String path = t.writePackageFile(_platformFallback, src);
+        // 只登记了 getApplicationDocumentsDirectory：别的函数没有额度。
+        await t.assertDiagnosticsInFile(path, <ExpectedDiagnostic>[
+          t.lintAt(src, 'getTemporaryDirectory'),
+        ]);
+      },
+      'allowance_unused_isStale': (PlatformDirsViaAppPathsTest t) async {
+        final String path = t.writePackageFile(_platformFallback, '''
+void install() {}
+''');
+        await t.assertDiagnosticsInFile(path, <ExpectedDiagnostic>[
+          t.staleAllowance(),
+        ]);
+      },
+    },
+  );
+  defineRuleTests<PlatformDirsInPackagesTest>(
+    PlatformDirsInPackagesTest.new,
+    <String, RuleCase<PlatformDirsInPackagesTest>>{
+      'packageLib_notInScope': (PlatformDirsInPackagesTest t) async {
+        await t.assertNoDiagnostics('''
+import 'package:path_provider/path_provider.dart';
+
+Future<Object> f() => getTemporaryDirectory();
+''');
+      },
+    },
+  );
 }
+
+const String _platformFallback =
+    'lib/src/media/audiobook/audiobook_storage_platform.dart';
 
 const String _pathProvider = '''
 class Directory {}
@@ -16,95 +99,16 @@ Future<Directory> getTemporaryDirectory() async => Directory();
 Future<Directory> getApplicationDocumentsDirectory() async => Directory();
 ''';
 
-@reflectiveTest
 class PlatformDirsViaAppPathsTest extends FushiRuleTest {
   @override
   void setUp() {
     rule = PlatformDirsViaAppPaths();
-    newPackage(
-      'path_provider',
-    ).addFile('lib/path_provider.dart', _pathProvider);
+    newPackage('path_provider')
+        .addFile('lib/path_provider.dart', _pathProvider);
     super.setUp();
-  }
-
-  Future<void> test_call_reported() async {
-    const String src = '''
-import 'package:path_provider/path_provider.dart';
-
-Future<Object> f() => getTemporaryDirectory();
-''';
-    await assertDiagnostics(src, <ExpectedDiagnostic>[
-      lintAt(src, 'getTemporaryDirectory();'.replaceAll('();', '')),
-    ]);
-  }
-
-  Future<void> test_tearOff_and_prefix_reported() async {
-    const String src = '''
-import 'package:path_provider/path_provider.dart' as pp;
-
-Future<Object> Function() resolver = pp.getApplicationDocumentsDirectory;
-''';
-    await assertDiagnostics(src, <ExpectedDiagnostic>[
-      lintAt(src, 'getApplicationDocumentsDirectory'),
-    ]);
-  }
-
-  Future<void> test_showCombinator_docComment_clean() async {
-    await assertNoDiagnostics('''
-// ignore: unused_import
-import 'package:path_provider/path_provider.dart' show getTemporaryDirectory;
-
-/// Unlike [getTemporaryDirectory], this follows the data root.
-void f() {}
-''');
-  }
-
-  Future<void> test_testDirectory_notInScope() async {
-    final String path = writePackageFile('test/a_test.dart', '''
-import 'package:path_provider/path_provider.dart';
-
-Future<Object> f() => getTemporaryDirectory();
-''');
-    await assertNoDiagnosticsInFile(path);
-  }
-
-  static const String _platformFallback =
-      'lib/src/media/audiobook/audiobook_storage_platform.dart';
-
-  Future<void> test_allowance_exactCount_clean() async {
-    final String path = writePackageFile(_platformFallback, '''
-import 'package:path_provider/path_provider.dart';
-
-Future<Object> Function()? resolver;
-void install() => resolver ??= getApplicationDocumentsDirectory;
-''');
-    await assertNoDiagnosticsInFile(path);
-  }
-
-  Future<void> test_allowance_isPerFunction() async {
-    const String src = '''
-import 'package:path_provider/path_provider.dart';
-
-Future<Object> Function()? resolver;
-void install() => resolver ??= getApplicationDocumentsDirectory;
-Future<Object> temp() => getTemporaryDirectory();
-''';
-    final String path = writePackageFile(_platformFallback, src);
-    // 只登记了 getApplicationDocumentsDirectory：别的函数没有额度。
-    await assertDiagnosticsInFile(path, <ExpectedDiagnostic>[
-      lintAt(src, 'getTemporaryDirectory'),
-    ]);
-  }
-
-  Future<void> test_allowance_unused_isStale() async {
-    final String path = writePackageFile(_platformFallback, '''
-void install() {}
-''');
-    await assertDiagnosticsInFile(path, <ExpectedDiagnostic>[staleAllowance()]);
   }
 }
 
-@reflectiveTest
 class PlatformDirsInPackagesTest extends FushiRuleTest {
   @override
   String get packageDir => 'packages/fushi_platform';
@@ -112,17 +116,8 @@ class PlatformDirsInPackagesTest extends FushiRuleTest {
   @override
   void setUp() {
     rule = PlatformDirsViaAppPaths();
-    newPackage(
-      'path_provider',
-    ).addFile('lib/path_provider.dart', _pathProvider);
+    newPackage('path_provider')
+        .addFile('lib/path_provider.dart', _pathProvider);
     super.setUp();
-  }
-
-  Future<void> test_packageLib_notInScope() async {
-    await assertNoDiagnostics('''
-import 'package:path_provider/path_provider.dart';
-
-Future<Object> f() => getTemporaryDirectory();
-''');
   }
 }
