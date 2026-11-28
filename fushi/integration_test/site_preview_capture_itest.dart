@@ -16,48 +16,129 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart'
     show InAppWebView;
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/asr_host/asr_host.dart'
+    show isAsrSupported, openAsrModelStore, saveAsrModelCatalog;
+import 'package:fushi/src/asr_host/asr_model_catalog.dart' show AsrModelCatalog;
 import 'package:fushi/src/lookup/sentence_extraction.dart'
     show lookupQueryFromIndex;
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_services.dart'
+    show TtsServices;
+import 'package:fushi/src/media/manga/audio/manga_audio_library.dart'
+    show registerMangaAudio;
+import 'package:fushi/src/media/manga/audio/manga_audio_playback_driver.dart'
+    show MangaAudioPlaybackDriver;
+import 'package:fushi/src/media/manga/audio/manga_audio_review_page.dart'
+    show MangaAudioReviewPage;
+import 'package:fushi/src/media/manga/audio/manga_audio_stores.dart'
+    show mangaAudioScriptStoreFor, mangaRenderManifestFile;
+import 'package:fushi/src/media/manga/audio/manga_audio_workbench_page.dart'
+    show MangaAudioWorkbenchPage;
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart' show JapaneseLanguage;
+import 'package:fushi/src/media/import/pasted_text_book_dialog.dart';
+import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/reader/manga_fushi_page.dart';
+import 'package:fushi/src/media/music/music_output_backend.dart';
+import 'package:fushi/src/media/music/music_player_engine.dart';
+import 'package:fushi/src/media/music/server/music_server_play_item.dart';
+import 'package:fushi_engine/media/music/server/music_server.dart'
+    show MusicServerSearchResult, MusicServerTrack;
+import 'package:fushi_engine/media/music/youtube/youtube_music_client.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart'
     show singleVideoBookUid;
+import 'package:fushi/src/media/video/subtitle/video_subtitle_studio_page.dart'
+    show VideoSubtitleStudioPage;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/home_tab.dart';
+import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart'
     show DictionaryPopupLayer;
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show DictionaryPopupWebView, DictionaryPopupWebViewState;
 import 'package:fushi/src/pages/implementations/home_page.dart' show HomePage;
+import 'package:fushi/src/pages/implementations/home_widget_grid.dart'
+    show homeWidgetEditRequested;
+import 'package:fushi/src/pages/implementations/music/music_lyrics_page.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart'
     show HomeVideoPage;
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
+import 'package:fushi/src/pages/implementations/srs_statistics_page.dart'
+    show SrsStatisticsTab;
+import 'package:fushi/src/pages/implementations/stat_shared.dart'
+    show StatCenterTabScope;
+import 'package:fushi/src/pages/implementations/statistics_center_page.dart'
+    show StatsCenterTab;
+import 'package:fushi/src/pages/shared/library_section_tabs.dart'
+    show LibrarySectionTabs;
+import 'package:fushi/src/srs/srs_providers.dart'
+    show srsEngineProvider, srsStoreProvider;
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart'
     show VideoFushiPage, VideoFushiTestHooks;
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
+    show FushiGlassMaterial;
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
+    show kFushiToolbarOverflowKey;
+import 'package:fushi/src/utils/components/fushi_material_components.dart'
+    show FushiPageScaffold;
+import 'package:fushi/src/utils/components/library_section_tab.dart'
+    show LibrarySectionTab;
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/utils/misc/update_checker.dart';
 import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_asr_core/asr_core.dart'
+    show AsrAudioProfile, AsrLanguage, AsrModelStore;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/manga/mokuro_payload.dart'
+    show MokuroBlock, MokuroPayload, parseMangaJson;
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart'
+    show VideoSubtitleSegmenterMode;
+import 'package:fushi_engine/srs/srs_builtin.dart' show srsLapisFieldId;
+import 'package:fushi_engine/srs/srs_calibration.dart'
+    show
+        SrsCalibrationBin,
+        SrsCalibrationData,
+        SrsCalibrationPhase,
+        SrsCalibrationProgress,
+        SrsCalibrationReport,
+        SrsCalibrationSeries,
+        SrsUmPlus,
+        SrsUmPlusBin;
+import 'package:fushi_engine/srs/srs_db_store.dart' show SrsDbStore;
+import 'package:fushi_engine/srs/srs_storage.dart' show SrsStorage;
+import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart'
+    show MangaRenderManifest, MangaRenderedLine;
+import 'package:fushi_engine/tts/manga_audio/manga_audio_script.dart'
+    show CastLineKind, CastVoiceAssignment, MangaAudioScript, MangaScriptLine;
+import 'package:fushi_engine/tts/manga_audio/manga_audio_validate.dart'
+    show mangaPayloadOcrSignature;
+import 'package:fushi_engine/tts/render/tts_cast.dart' show TtsCastCharacter;
+import 'package:fushi_engine/tts/tts_voice_preset.dart' show TtsVoicePreset;
+import 'package:fushi_srs/fushi_srs.dart'
+    show SrsSourceKind, SrsSourceRef, SrsTrustedClock;
 import 'package:integration_test/integration_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
 import 'package:window_manager/window_manager.dart';
 
+import 'helpers/focus_driver.dart';
 import 'helpers/library_fixture.dart';
 import 'support/fake_ankiconnect.dart';
 import 'support/fake_ankiconnect_setup.dart';
@@ -66,10 +147,17 @@ import 'support/site_preview_recorder.dart';
 import 'support/test_app_launcher.dart';
 import 'test_helpers.dart';
 
+part 'site_preview_update_video_scenes.dart';
+part 'site_preview_uv_more.dart';
+part 'site_preview_uv_voiced.dart';
+
 const String _kOut = String.fromEnvironment('SITE_PREVIEW_OUT');
 const String _kDemo = String.fromEnvironment('SITE_PREVIEW_DEMO');
 const String _kLibrary = String.fromEnvironment('SITE_PREVIEW_LIBRARY');
 const String _kOnly = String.fromEnvironment('SITE_PREVIEW_ONLY');
+
+/// 更新视频的素材夹具目录（可空；布局同 demo：manga/、video/、dict/ + uv.json）。
+const String _kUv = String.fromEnvironment('SITE_PREVIEW_UV');
 
 /// 录屏场景的窗口客户区（逻辑像素）；官网成片就是这个比例。
 const Size _kSceneSize = Size(1280, 720);
@@ -479,22 +567,43 @@ int _sinceStart(SitePreviewRecording rec) =>
 
 /// 视频：字幕上点「大好き」→ 弹窗 → + 制卡。
 Future<void> _sceneVideo(_Ctx c) async {
-  final WidgetTester tester = c.tester;
   final Map<String, Object?> demo = _demoJson();
   final Map<String, Object?> preset =
       (demo['presetLookups']! as List<Object?>).first! as Map<String, Object?>;
-  final String sentence = preset['sentence']! as String;
-  final int charIndex = preset['charIndex']! as int;
-  final int length = preset['length']! as int;
-  final int cueStart = preset['cueStartMs']! as int;
-  final String title = (preset['miscInfo'] as String?) ?? 'Fushi demo';
+  await _recordVideoLookup(
+    c,
+    scene: 'video',
+    videoSrc: _demoPath('video/demo.mp4'),
+    srtSrc: _demoPath('video/demo.srt'),
+    sentence: preset['sentence']! as String,
+    charIndex: preset['charIndex']! as int,
+    length: preset['length']! as int,
+    cueStart: preset['cueStartMs']! as int,
+    title: (preset['miscInfo'] as String?) ?? 'Fushi demo',
+    size: _kSceneSize,
+  );
+}
 
+/// 播到 [sentence] 那句字幕后暂停，指针点第 [charIndex] 个字 → 弹窗 → + 制卡。
+Future<void> _recordVideoLookup(
+  _Ctx c, {
+  required String scene,
+  required String videoSrc,
+  required String srtSrc,
+  required String sentence,
+  required int charIndex,
+  required int length,
+  required int cueStart,
+  required String title,
+  required Size size,
+}) async {
+  final WidgetTester tester = c.tester;
   // sidecar 字幕与视频同名同目录。
-  final Directory dir = _scratch('video');
+  final Directory dir = _scratch(scene);
   final File video = File(
-    _demoPath('video/demo.mp4'),
-  ).copySync(p.join(dir.path, 'clip.mp4'));
-  File(_demoPath('video/demo.srt')).copySync(p.join(dir.path, 'clip.srt'));
+    videoSrc,
+  ).copySync(p.join(dir.path, 'clip${p.extension(videoSrc)}'));
+  File(srtSrc).copySync(p.join(dir.path, 'clip.srt'));
   final VideoBookRepository repo = VideoBookRepository(c.appModel.database);
   final String uid = singleVideoBookUid(video.path);
   await repo.saveVideoBook(
@@ -523,11 +632,11 @@ Future<void> _sceneVideo(_Ctx c) async {
         hooks().debugCueCount > 0,
     what: '视频页就绪',
   );
-  final PhysicalRect rect = await _resizeClient(tester, _kSceneSize);
+  final PhysicalRect rect = await _resizeClient(tester, size);
   await hooks().debugPause();
   await _prewarmLookup(
     tester,
-    'video',
+    scene,
     () => hooks().debugLookupAt(sentence, charIndex),
   );
   await hooks().debugPause();
@@ -540,9 +649,9 @@ Future<void> _sceneVideo(_Ctx c) async {
     SitePreviewTimeline tl,
     SitePreviewCursor cursor,
   ) = await c.begin(
-    'video',
+    scene,
     rect,
-    const Offset(1060, 560),
+    Offset(size.width - 220, size.height - 160),
   );
   await _hold(tester, const Duration(milliseconds: 500));
   tl.playAudio(video.path, fromMs: playFrom);
@@ -574,7 +683,7 @@ Future<void> _sceneVideo(_Ctx c) async {
   );
   final DictionaryPopupWebViewState? popup = await _timedPopup(
     tester,
-    'video',
+    scene,
     clickAt,
     tl,
   );
@@ -583,7 +692,7 @@ Future<void> _sceneVideo(_Ctx c) async {
   await _hold(tester, const Duration(milliseconds: 2600));
   await _mineFromPopup(tester, cursor, popup!, c.anki);
   await _hold(tester, const Duration(milliseconds: 2400));
-  await c.end('video', rec, tl, cursor, posterMs: posterMs);
+  await c.end(scene, rec, tl, cursor, posterMs: posterMs, outSize: size);
   c.nav.pop();
   await _hold(tester, const Duration(seconds: 1));
 }
@@ -758,10 +867,18 @@ Future<void> _sceneAudiobook(_Ctx c) async {
 }
 
 /// 漫画：点 OCR 气泡里的「お正月」→ 弹窗 → + 制卡。
-Future<void> _sceneManga(_Ctx c) async {
-  final WidgetTester tester = c.tester;
+const String _kDemoMangaKey = 'site-preview-manga';
+
+/// 官网 demo 漫画页（带 OCR 框）登记成书库里的一本书（bookKey site-preview-manga）。
+Future<void> _seedDemoManga(
+  _Ctx c, {
+  String root = _kDemo,
+  String bookKey = _kDemoMangaKey,
+  String title = 'ドラえもん',
+}) async {
+  String demoPath(String rel) => p.normalize(p.join(root, rel));
   final Object? ocr = jsonDecode(
-    File(_demoPath('manga/ocr.json')).readAsStringSync(),
+    File(demoPath('manga/ocr.json')).readAsStringSync(),
   );
   final List<Map<String, Object?>> pages = <Map<String, Object?>>[
     for (final Object? e
@@ -770,12 +887,12 @@ Future<void> _sceneManga(_Ctx c) async {
             : ocr! as List<Object?>))
       e! as Map<String, Object?>,
   ];
-  final Directory dir = _scratch('manga');
+  final Directory dir = _scratch(bookKey);
   final Directory images = Directory(p.join(dir.path, 'images'))..createSync();
   final List<Map<String, Object?>> payloadPages = <Map<String, Object?>>[];
   for (final Map<String, Object?> page in pages) {
     final String name = page['image']! as String;
-    File(_demoPath('manga/$name')).copySync(p.join(images.path, name));
+    File(demoPath('manga/$name')).copySync(p.join(images.path, name));
     payloadPages.add(<String, Object?>{
       'url': name,
       'width': page['width'],
@@ -808,11 +925,10 @@ Future<void> _sceneManga(_Ctx c) async {
   File(
     p.join(dir.path, 'manga.json'),
   ).writeAsStringSync(jsonEncode(<String, Object?>{'pages': payloadPages}));
-  const String bookKey = 'site-preview-manga';
   await c.appModel.database.insertEpubBook(
     EpubBooksCompanion.insert(
       bookKey: bookKey,
-      title: 'ドラえもん',
+      title: title,
       epubPath: 'manga.json',
       extractDir: dir.path,
       chapterCount: payloadPages.length,
@@ -828,7 +944,12 @@ Future<void> _sceneManga(_Ctx c) async {
     'direction': 'rtl',
     'ocrTrigger': 'manual',
   });
+}
 
+Future<void> _sceneManga(_Ctx c) async {
+  final WidgetTester tester = c.tester;
+  const String bookKey = _kDemoMangaKey;
+  await _seedDemoManga(c);
   final BuildContext navContext = c.nav.context;
   unawaited(
     c.nav.push(
@@ -1168,6 +1289,25 @@ void main() {
         if (_wants('gal')) await _sceneGal(c);
         if (_wants('audiobook')) await _sceneAudiobook(c);
       }
+      // 版本更新视频（tool/update_video）：只在点名时录。
+      bool uv(String scene) =>
+          _kOnly.split(',').map((String s) => s.trim()).contains(scene);
+      if (<String>['uv-manga', 'uv-paste', 'uv-video'].any(uv)) {
+        if (!anyScene) await configureFakeAnkiConnect(tester, anki);
+        // 有素材夹具时换成真词典（官网场景已导过 demo 词库就不再重复导）。
+        if (_kUv.isNotEmpty || !anyScene) {
+          await _uvImportDictionaries(appModel);
+        }
+      }
+      if (uv('uv-home')) await _sceneUvHome(c);
+      if (uv('uv-apple')) await _sceneUvApple(c);
+      if (uv('uv-manga')) await _sceneUvManga(c);
+      if (uv('uv-paste')) await _sceneUvPaste(c);
+      if (uv('uv-video')) await _sceneUvVideo(c);
+      if (uv('uv-lyrics')) await _sceneUvLyrics(c);
+      if (uv('uv-voiced')) await _sceneUvVoiced(c);
+      if (uv('uv-subtitle')) await _sceneUvSubtitle(c);
+      if (uv('uv-srs')) await _sceneUvSrs(c);
       debugPrint(
         '[site-preview] done notes=${anki.notes.length} errors=${errors.length}',
       );

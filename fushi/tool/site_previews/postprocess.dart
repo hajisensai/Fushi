@@ -47,7 +47,9 @@ Future<void> main(List<String> args) async {
       produced++;
       continue;
     }
-    final RegExpMatch? tl = RegExp(r'^(\w+)\.timeline\.json$').firstMatch(name);
+    final RegExpMatch? tl = RegExp(
+      r'^([\w-]+)\.timeline\.json$',
+    ).firstMatch(name);
     if (tl != null) {
       await _encodePreview(tl.group(1)!, File(e.path), previewOut, dryRun);
       produced++;

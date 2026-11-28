@@ -9,6 +9,7 @@
 // 为什么指针是画出来的：用户拍板录制时不动真鼠标（2026-10-27），ddagrab 用
 // draw_mouse=0 录，指针由 [SitePreviewCursor] 画在 app 自己的根 Overlay 最上层，
 // 与画面天然同步，不用后期对时间轴。
+import 'dart:math' as math;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi' hide Size;
@@ -313,6 +314,39 @@ class SitePreviewCursor {
       await tester.pump(const Duration(milliseconds: 16));
     }
     if (!fired && onDown != null) await onDown();
+    _press.value = 0;
+    await tester.pump(const Duration(milliseconds: 16));
+  }
+
+  /// 按住拖到 [target]：全程呈按下态（略缩），逐帧把这一帧的位移交给 [onDelta]
+  /// （喂给控件自己的拖动回调，与真指针拖动同一条连续路径）。
+  Future<void> drag(
+    WidgetTester tester,
+    Offset target, {
+    required void Function(Offset delta) onDelta,
+    Duration duration = const Duration(milliseconds: 1200),
+  }) async {
+    raise();
+    final Offset from = _position.value;
+    _press.value = 0.3;
+    final Stopwatch sw = Stopwatch()..start();
+    Offset last = from;
+    while (true) {
+      final double t = math.min(
+        1,
+        sw.elapsedMicroseconds / duration.inMicroseconds,
+      );
+      final Offset at = Offset.lerp(
+        from,
+        target,
+        Curves.easeInOutCubic.transform(t),
+      )!;
+      _position.value = at;
+      if (at != last) onDelta(at - last);
+      last = at;
+      await tester.pump(const Duration(milliseconds: 16));
+      if (t >= 1) break;
+    }
     _press.value = 0;
     await tester.pump(const Duration(milliseconds: 16));
   }
