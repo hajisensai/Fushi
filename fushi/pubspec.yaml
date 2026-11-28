@@ -263,7 +263,6 @@ dev_dependencies:
   # 的补丁真的打上了（file 路径不得百分号编码）。flutter_local_notifications
   # 的传递依赖，声明只为测试 import。
   flutter_local_notifications_windows: ^2.0.1
-  drift_dev: ^2.23.0
   dependency_validator: ^3.0.0
   flutter_lints: ^2.0.1
   flutter_native_splash: ^2.2.8

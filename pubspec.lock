@@ -515,10 +515,10 @@ packages:
     dependency: transitive
     description:
       name: drift_dev
-      sha256: "9a0fc61d9c32f4edf7d7b239a41ef00de4dc85634aaf9bbf6fbd80b924415671"
+      sha256: "735aad3c34215805c66bd518c8812fa4f83b5534b2c13c4092c970c04a7e9983"
       url: "https://pub.dev"
     source: hosted
-    version: "2.35.3"
+    version: "2.34.5"
   dynamic_color:
     dependency: transitive
     description:

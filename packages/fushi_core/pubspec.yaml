@@ -19,5 +19,12 @@ dependencies:
 
 dev_dependencies:
   test: ^1.24.0
-  drift_dev: ^2.23.0
+  # BUG-5615：drift_dev 生成的 database.g.dart 调用的是 drift 运行时的内部 API，两者必须
+  # 成对钉住，而 drift_dev 自己声明的 drift 下限并不可靠——drift_dev 2.35.3 声明
+  # drift >=2.30.0 却生成 `$_getPrefetchedDataByColumns` 调用（drift 2.33 没有），
+  # 宽松的 `^` 约束一解析到它，普通 `dart run build_runner build` 生成的码就编不过。
+  # 所以钉精确版本：2.34.5 是兼容上面钉住的 drift 2.33.x、且与工作区 analyzer 13
+  # 共存的最新一版。全仓只在这里声明 drift_dev（只有本包有 Drift 表）；升 drift 时
+  # 同步改这里并重跑 codegen。守卫：fushi/test/build/drift_codegen_pin_guard_test.dart。
+  drift_dev: 2.34.5
   build_runner: ^2.3.3
