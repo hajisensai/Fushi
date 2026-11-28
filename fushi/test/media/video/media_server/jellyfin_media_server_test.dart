@@ -1500,6 +1500,31 @@ void main() {
       expect(noTags.parentBackdropItemId, isNull);
     });
 
+    test('集借用的剧级 logo：ParentLogoImageTag 在才给 id，并透传到 MediaServerItem', () {
+      final JellyfinItem episode = JellyfinApi.parseItem(<String, Object?>{
+        'Id': 'ep1',
+        'Name': 'Ep',
+        'Type': 'Episode',
+        'ParentLogoItemId': 'series-1',
+        'ParentLogoImageTag': 'logo-tag',
+      });
+      expect(episode.parentLogoItemId, 'series-1');
+      final MediaServerItem mapped = JellyfinVideoClient.mediaServerItemFrom(
+        episode,
+        MediaServerItemType.episode,
+      );
+      expect(mapped.parentLogoItemId, 'series-1');
+      expect(mapped.hasLogo, isFalse);
+
+      final JellyfinItem noTag = JellyfinApi.parseItem(<String, Object?>{
+        'Id': 'ep2',
+        'Name': 'Ep',
+        'Type': 'Episode',
+        'ParentLogoItemId': 'series-1',
+      });
+      expect(noTag.parentLogoItemId, isNull);
+    });
+
     test('集的剧海报：SeriesPrimaryImageTag > ParentPrimaryImage 回落 > 无则用集自身图', () {
       MediaServerItem map(Map<String, Object?> extra) =>
           JellyfinVideoClient.mediaServerItemFrom(

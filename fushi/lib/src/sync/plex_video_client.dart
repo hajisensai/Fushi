@@ -414,6 +414,7 @@ class PlexVideoClient
     final int? leafCount = m.leafCount;
     final int? viewedLeafCount = m.viewedLeafCount;
     final int? duration = m.durationMs;
+    final String? logoOwner = m.clearLogoRatingKey;
     return MediaServerItem(
       id: m.ratingKey,
       name: m.title,
@@ -452,7 +453,14 @@ class PlexVideoClient
       hasBackdrop: m.art != null,
       // 集的 thumb 就是 16:9 截图；电影 / 剧没有单独的横版缩略图。
       hasThumb: isEpisode && m.thumb != null,
-      hasLogo: m.hasClearLogo,
+      // 集的 Image 列表报的是剧的 clearLogo（地址挂在剧的 ratingKey 上）：那是上级
+      // logo，不是集自己的——拿集的 id 去拼 clearLogo 地址取不到。
+      hasLogo:
+          m.hasClearLogo && (logoOwner == null || logoOwner == m.ratingKey),
+      parentLogoItemId:
+          m.hasClearLogo && logoOwner != null && logoOwner != m.ratingKey
+          ? logoOwner
+          : null,
       parentBackdropItemId: isEpisode
           ? (m.grandparentArt != null ? m.grandparentRatingKey : null)
           : (isSeason && m.parentArt != null ? m.parentRatingKey : null),

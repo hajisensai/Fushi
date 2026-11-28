@@ -312,6 +312,7 @@ class MediaServerItem {
     this.hasLogo = false,
     this.parentThumbItemId,
     this.parentBackdropItemId,
+    this.parentLogoItemId,
     this.seriesCoverItemId,
     this.overview,
     this.communityRating,
@@ -380,6 +381,12 @@ class MediaServerItem {
   /// `hasThumb` / `hasBackdrop` 的条目交给 [MediaServerBrowser.coverUrl] 即可。
   final String? parentThumbItemId;
   final String? parentBackdropItemId;
+
+  /// 集 / 季可借用的上级 logo（标题艺术字）所在条目 id（通常是剧；Jellyfin / Emby
+  /// `ParentLogoItemId` + `ParentLogoImageTag`，Plex 集的 `clearLogo` 图挂在剧上时
+  /// 取剧的 ratingKey）。只在服务器确实报了 logo 时非 null，用法同
+  /// [parentBackdropItemId]。
+  final String? parentLogoItemId;
 
   /// 集所属剧的竖版海报所在条目 id（Jellyfin / Emby `SeriesId` +
   /// `SeriesPrimaryImageTag`，Plex `grandparentThumb`）；只在服务器确实报了剧海报时

@@ -269,6 +269,7 @@ class PlexMetadata {
     this.thumb,
     this.art,
     this.hasClearLogo = false,
+    this.clearLogoRatingKey,
     this.parentRatingKey,
     this.parentTitle,
     this.parentIndex,
@@ -311,6 +312,12 @@ class PlexMetadata {
   final String? thumb;
   final String? art;
   final bool hasClearLogo;
+
+  /// ratingKey of the item the `clearLogo` image actually belongs to, parsed
+  /// from its `Image` url (`/library/metadata/<key>/clearLogo/...`). An episode
+  /// reports its show's logo this way (the key is the grandparent's); null when
+  /// there is no logo or the url does not have that shape.
+  final String? clearLogoRatingKey;
 
   /// 集 → 季；季 → 剧。
   final String? parentRatingKey;
@@ -870,14 +877,26 @@ class PlexApi {
     );
   }
 
+  /// `clearLogo` 图片地址里的所属条目 ratingKey（`/library/metadata/<key>/clearLogo`）。
+  static final RegExp _clearLogoOwner = RegExp(
+    r'^/library/metadata/([^/?]+)/clearLogo',
+  );
+
   /// 单条 `Metadata`；缺 ratingKey 返回 null。
   static PlexMetadata? parseMetadata(Map<String, Object?> json) {
     final String? ratingKey = _str(json['ratingKey']);
     if (ratingKey == null || ratingKey.isEmpty) return null;
     final int? lastViewedAt = _int(json['lastViewedAt']);
     bool hasClearLogo = false;
+    String? clearLogoRatingKey;
     for (final Object? image in (json['Image'] as List?) ?? const <Object?>[]) {
-      if (image is Map && image['type'] == 'clearLogo') hasClearLogo = true;
+      if (image is Map && image['type'] == 'clearLogo') {
+        hasClearLogo = true;
+        final Object? url = image['url'];
+        if (url is String) {
+          clearLogoRatingKey = _clearLogoOwner.firstMatch(url)?.group(1);
+        }
+      }
     }
     return PlexMetadata(
       ratingKey: ratingKey,
@@ -894,6 +913,7 @@ class PlexApi {
       thumb: _nonEmpty(_str(json['thumb'])),
       art: _nonEmpty(_str(json['art'])),
       hasClearLogo: hasClearLogo,
+      clearLogoRatingKey: clearLogoRatingKey,
       parentRatingKey: _str(json['parentRatingKey']),
       parentTitle: _str(json['parentTitle']),
       parentIndex: _int(json['parentIndex']),

@@ -13,6 +13,7 @@ import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart';
 import 'package:fushi/src/utils/components/fushi_logo_title.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/utils/misc/dashboard_server_continue.dart';
+import 'package:fushi/src/sync/remote_cover_fetcher.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart'
     show FushiMotion;
 import 'package:fushi/i18n/strings.g.dart';
@@ -2431,6 +2432,75 @@ void main() {
       await pumpDashboard(tester);
 
       expect(hero(), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    // BUG-5608：不在本机库里的服务器条目，从前首页查不到本机刮削就只剩封面取色的
+    // 平铺色块；现在用服务器自己的背景图 / 艺术字画系列色块（与本地视频同一摆法）。
+    testWidgets('色块「继续」：服务器条目带背景图 / logo 时画系列色块（BUG-5608）', (
+      WidgetTester tester,
+    ) async {
+      dashboardLayout = ShellContentLayout.collage;
+      useSize(tester, const Size(1280, 900));
+      final ImageProvider backdrop = MemoryImage(
+        Uint8List.fromList(_kLandscapePng),
+      );
+      final ImageProvider logo = MemoryImage(
+        Uint8List.fromList(_kLandscapePng),
+      );
+      final _BytesCoverFetcher fetcher = _BytesCoverFetcher();
+      await tester.pumpWidget(
+        buildApp(
+          serverContinueLoader: () async => <ServerContinueCandidate>[
+            ServerContinueCandidate(
+              source: ServerContinueSource.mediaServer,
+              serverId: 'srv',
+              serverName: 'MyServer',
+              itemId: 'jf-ep',
+              title: 'S01E02 Pilot',
+              collectionName: 'Show',
+              recentMs: now - 100,
+              progress: 0.4,
+              badgeLabel: 'S01E02',
+              coverUrl: 'show-poster',
+              coverFetcher: fetcher,
+              coverIsPoster: true,
+              backdrop: backdrop,
+              logo: logo,
+              isEpisode: true,
+              open: (BuildContext _) async {},
+            ),
+          ],
+        ),
+      );
+      await pumpDashboard(tester);
+      final Finder block = find.byKey(
+        const ValueKey<String>('home-continue-block/0'),
+      );
+      expect(block, findsOneWidget);
+      expect(
+        find.descendant(
+          of: block,
+          matching: find.byWidgetPredicate(
+            (Widget w) => w is Image && w.image == backdrop,
+          ),
+        ),
+        findsOneWidget,
+        reason: 'the server backdrop fills the end side of the block',
+      );
+      final Finder logoTitle = find.descendant(
+        of: block,
+        matching: find.byType(FushiLogoTitle),
+      );
+      // 艺术字先经 ImageStream 量宽高比再上屏：给真实事件循环几跳解码。
+      for (int i = 0; i < 20 && logoTitle.evaluate().isEmpty; i++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 50)),
+        );
+        await tester.pump();
+      }
+      expect(logoTitle, findsOneWidget);
+      expect(fetcher.fetched, contains('show-poster'));
       expect(tester.takeException(), isNull);
     });
 
@@ -5624,3 +5694,17 @@ class _NetMountFile implements File {
 /// H8，按 `parseBookSeriesKey` 认卷号），书名尾巴是数字（「新书1」「新书2」）会被认成
 /// 同一系列的不同卷而合并；只测排序 / 条数的用例用字母后缀，每本各成一张。
 String _seriesFreeSuffix(int i) => String.fromCharCode(0x40 + i);
+
+/// 服务器封面取图器桩：任何地址都回一张 1×1 PNG，并记下取过哪些地址。
+class _BytesCoverFetcher implements RemoteCoverFetcher {
+  final List<String> fetched = <String>[];
+
+  @override
+  String get coverCacheNamespace => 'test-server';
+
+  @override
+  Future<Uint8List> fetchRemoteCover(String coverUrl) async {
+    fetched.add(coverUrl);
+    return Uint8List.fromList(_kOnePixelPng);
+  }
+}
