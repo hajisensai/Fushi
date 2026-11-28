@@ -1,6 +1,6 @@
 # Fushi settings reference
 
-> Every setting of the Fushi app (version 3.4.0), generated from the app's own settings schema on each change. 930 entries. Machine-readable copy: <https://fushi.moe/settings.json>.
+> Every setting of the Fushi app (version 3.4.1), generated from the app's own settings schema on each change. 930 entries. Machine-readable copy: <https://fushi.moe/settings.json>.
 
 How to read this:
 
