@@ -111,13 +111,14 @@ void main() {
         '    check.configure { dependsOn(ensureFushiAndroidNative) }',
       ),
     );
-    // gradle 与脚本备的是同一组 crate。
-    const String crates =
-        "'fushi_compute', 'fushi_rwkv', 'fushi_music', 'fushi_corpus', "
-        "'fushi_web_core'";
-    expect(gradle, contains('def fushiAndroidNativeCrates = [$crates]'));
+    // gradle 与脚本备的是同一组 crate：脚本读登记表（--android-local），gradle 手写的
+    // fushiAndroidNativeCrates 与登记表一致由 native_crate_registry_guard_test 钉住。
+    expect(gradle, contains('def fushiAndroidNativeCrates = ['));
     final String script = read('../tool/native_libs.ps1');
-    expect(script, contains('\$NativeAndroidCrates = @($crates)'));
+    expect(
+      script,
+      contains("Get-NativeCrateList -Filter @('--android-local')"),
+    );
     expect(script, contains('[switch]\$Android'));
   });
 }

@@ -180,114 +180,14 @@ foreach(_dll ${FUSHI_TORRENT_DLLS})
   endif()
 endforeach()
 
-# === 互联 P2P 隧道（iroh，可选）===
-# native/fushi_p2p/build_windows_dll.ps1 产出 prebuilt/windows-x64/fushi_p2p.dll，
-# 存在则随包。缺失时 P2P 能力判不可用（设置里不出现开关），其余互联照常——故意
-# 不像 libtorrent 那样在 Release 强制：P2P 缺库是可降级的（能力整块隐藏，不会像
-# 内置 torrent 那样「宣称有后端却打不开」），没装 Rust 的开发机照样能出 Release 包。
-# 发布包的保证在流水线侧：release-desktop.yml 先跑 build_windows_dll.ps1（失败即红），
-# 出包后再核对 bundle 里确有 fushi_p2p.dll
-# （docs/specs/2026-09-28-interconnect-remote-reach.md §5 / §9）。
-set(FUSHI_P2P_DLL
-  "${CMAKE_CURRENT_SOURCE_DIR}/../../native/fushi_p2p/prebuilt/windows-x64/fushi_p2p.dll")
-if(EXISTS "${FUSHI_P2P_DLL}")
-  install(FILES "${FUSHI_P2P_DLL}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
-    COMPONENT Runtime)
-endif()
-
-# === SRS 排程内核（fsrs-rs，copy-if-present）===
-# native/fushi_fsrs/build_windows_dll.ps1 产出 prebuilt/windows-x64/fushi_fsrs.dll，
-# 存在则随包到 exe 同级（Dart 侧 packages/fushi_srs 的 FushiFsrs 按 exe 同级定位）。
-# 缺失时 SRS 原生内核判不可用，构建照常——与上面 fushi_p2p 同一语义；发布包的保证在
-# 流水线侧（先跑构建脚本，失败即红）。
-set(FUSHI_FSRS_DLL
-  "${CMAKE_CURRENT_SOURCE_DIR}/../../native/fushi_fsrs/prebuilt/windows-x64/fushi_fsrs.dll")
-if(EXISTS "${FUSHI_FSRS_DLL}")
-  install(FILES "${FUSHI_FSRS_DLL}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
-    COMPONENT Runtime)
-endif()
-# === 网页内容核心（fushi_web_core：广告拦截 + 漫画章末广告页识别，Rust）===
-# native/fushi_web_core/build_windows_dll.ps1 产出 prebuilt/windows-x64/fushi_web_core.dll，
-# 随包到 exe 同级（Dart 侧 packages/fushi_web_core 的 FushiWebCoreLibrary 按 exe 同级定位）。
-# **硬依赖**：Dart 侧没有「缺库判不可用」的分支，缺库在运行时就是 FushiWebCoreLibraryMissing。
-# 所以 Profile/Release bundle 缺它直接构建失败（下面的 install(CODE) 门）；Debug 构建只告警，
-# 不挡纯 UI 开发，但用到网页浏览 / 网页漫画时会如实报错。
-set(FUSHI_WEB_CORE_DLL
-  "${CMAKE_CURRENT_SOURCE_DIR}/../../native/fushi_web_core/prebuilt/windows-x64/fushi_web_core.dll")
-if(EXISTS "${FUSHI_WEB_CORE_DLL}")
-  install(FILES "${FUSHI_WEB_CORE_DLL}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
-    COMPONENT Runtime)
-else()
-  message(WARNING
-    "fushi_web_core: ${FUSHI_WEB_CORE_DLL} not found. Run "
-    "native/fushi_web_core/build_windows_dll.ps1; Profile/Release bundles refuse to build without it.")
-endif()
-install(CODE "
-  if(CMAKE_INSTALL_CONFIG_NAME MATCHES \"^(Profile|Release)$\" AND NOT EXISTS \"${FUSHI_WEB_CORE_DLL}\")
-    message(FATAL_ERROR
-      \"Missing required native library fushi_web_core.dll. \"
-      \"Run native/fushi_web_core/build_windows_dll.ps1 before building a Profile/Release bundle.\")
-  endif()
-" COMPONENT Runtime)
-
-# === 计算内核（哈希 / 图像 / 文本，**硬依赖**）===
-# native/fushi_compute/build_windows_dll.ps1 产出 prebuilt/windows-x64/fushi_compute.dll，
-# 随包到 exe 同级（Dart 侧 packages/fushi_compute 的 FushiCompute 按 exe 同级定位）。
-# 与上面几个 copy-if-present 不同：没有 Dart 回退实现，缺库时在配置期直接失败（任何配置都是，
-# Debug 也不例外）。新 worktree 由 tool/bootstrap.ps1 编好它。
-set(FUSHI_COMPUTE_DLL
-  "${CMAKE_CURRENT_SOURCE_DIR}/../../native/fushi_compute/prebuilt/windows-x64/fushi_compute.dll")
-if(NOT EXISTS "${FUSHI_COMPUTE_DLL}")
-  message(FATAL_ERROR
-    "fushi_compute is a required native dependency, but ${FUSHI_COMPUTE_DLL} is missing. "
-    "Build it first: powershell -ExecutionPolicy Bypass -File native/fushi_compute/build_windows_dll.ps1 "
-    "(needs Rust/cargo; tool/bootstrap.ps1 runs it for new worktrees).")
-endif()
-install(FILES "${FUSHI_COMPUTE_DLL}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
-  COMPONENT Runtime)
-
-# === RWKV-Instant 排程推理（**硬依赖**，AGPL-3.0-or-later）===
-# native/fushi_rwkv/build_windows_dll.ps1 产出 prebuilt/windows-x64/fushi_rwkv.dll，
-# 随包到 exe 同级（Dart 侧 packages/fushi_rwkv 的 FushiRwkv 按 exe 同级定位）。
-# 与 fushi_compute 同一语义：没有 Dart 回退实现，缺库时在配置期直接失败（Debug 也不例外）。
-set(FUSHI_RWKV_DLL
-  "${CMAKE_CURRENT_SOURCE_DIR}/../../native/fushi_rwkv/prebuilt/windows-x64/fushi_rwkv.dll")
-if(NOT EXISTS "${FUSHI_RWKV_DLL}")
-  message(FATAL_ERROR
-    "fushi_rwkv is a required native dependency, but ${FUSHI_RWKV_DLL} is missing. "
-    "Build it first: powershell -ExecutionPolicy Bypass -File native/fushi_rwkv/build_windows_dll.ps1 "
-    "(needs Rust/cargo; tool/bootstrap.ps1 runs it for new worktrees).")
-endif()
-install(FILES "${FUSHI_RWKV_DLL}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
-  COMPONENT Runtime)
-
-# === 音乐胖核心（**硬依赖**，GPL-3.0-only）===
-# native/fushi_music/build_windows_dll.ps1 产出 prebuilt/windows-x64/fushi_music.dll，随包到 exe
-# 同级（Dart 侧 packages/fushi_music 的 FushiMusic 按 exe 同级定位）。没有 Dart 回退，缺库配置期失败。
-set(FUSHI_MUSIC_DLL
-  "${CMAKE_CURRENT_SOURCE_DIR}/../../native/fushi_music/prebuilt/windows-x64/fushi_music.dll")
-if(NOT EXISTS "${FUSHI_MUSIC_DLL}")
-  message(FATAL_ERROR
-    "fushi_music is a required native dependency, but ${FUSHI_MUSIC_DLL} is missing. "
-    "Build it first: powershell -ExecutionPolicy Bypass -File native/fushi_music/build_windows_dll.ps1 "
-    "(needs Rust/cargo; tool/bootstrap.ps1 runs it for new worktrees).")
-endif()
-install(FILES "${FUSHI_MUSIC_DLL}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
-  COMPONENT Runtime)
-
-# === 语料胖核心（**硬依赖**，GPL-3.0-only）===
-# native/fushi_corpus/build_windows_dll.ps1 产出 prebuilt/windows-x64/fushi_corpus.dll，随包到 exe
-# 同级（Dart 侧 packages/fushi_corpus 的 FushiCorpus 按 exe 同级定位）。没有 Dart 回退，缺库配置期失败。
-set(FUSHI_CORPUS_DLL
-  "${CMAKE_CURRENT_SOURCE_DIR}/../../native/fushi_corpus/prebuilt/windows-x64/fushi_corpus.dll")
-if(NOT EXISTS "${FUSHI_CORPUS_DLL}")
-  message(FATAL_ERROR
-    "fushi_corpus is a required native dependency, but ${FUSHI_CORPUS_DLL} is missing. "
-    "Build it first: powershell -ExecutionPolicy Bypass -File native/fushi_corpus/build_windows_dll.ps1 "
-    "(needs Rust/cargo; tool/bootstrap.ps1 runs it for new worktrees).")
-endif()
-install(FILES "${FUSHI_CORPUS_DLL}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
-  COMPONENT Runtime)
+# === Rust 原生库（登记表 native/crates.json 里 Windows 上 bundled_by=app 的 crate）===
+# 每个 crate 的 build_windows_dll.ps1 产出 native/<crate>/prebuilt/windows-x64/<产物>，随包到 exe 同级（Dart 侧
+# 各绑定包按 exe 同级定位）。缺库时怎么办由登记表的 required 决定（native/fushi_native_libs.cmake 头部）：
+# always 配置期 FATAL_ERROR（fushi_compute / fushi_rwkv / fushi_music / fushi_corpus：没有 Dart 回退，Debug 也不例外）；
+# release 只挡 Profile/Release（fushi_web_core）；optional 有则随包（fushi_p2p / fushi_fsrs：能力判不可用，
+# docs/agent/build.md）。发布包的保证在流水线侧：release-desktop.yml 先跑构建脚本（失败即红），出包后再核对。
+include("${CMAKE_CURRENT_SOURCE_DIR}/../../native/fushi_native_libs.cmake")
+fushi_install_native_libs(windows windows-x64 "powershell -ExecutionPolicy Bypass -File")
 
 # Debug builds may intentionally omit the expensive libtorrent prebuild so UI
 # work stays lightweight. A Profile/Release bundle, however, must never be

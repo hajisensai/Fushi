@@ -312,12 +312,19 @@ void main() {
       '\r\n',
       '\n',
     );
+    // 非 crate 输入在 names.sh 里写成字面量数组；crate 的输入取自登记表
+    // （`X=($(crate_paths <crate>))` → tool/native_crates.py paths <crate>）。
     final Map<String, List<String>> arrays = <String, List<String>>{
       for (final RegExpMatch m in RegExp(
-        r'^([A-Z0-9_]+)=\(([^)]*)\)$',
+        r'^([A-Z0-9_]+)=\(([^)$]*)\)$',
         multiLine: true,
       ).allMatches(script))
         m.group(1)!: m.group(2)!.trim().split(RegExp(r'\s+')),
+      for (final RegExpMatch m in RegExp(
+        r'^([A-Z0-9_]+)=\(\$\(crate_paths ([a-z0-9_]+)\)\)$',
+        multiLine: true,
+      ).allMatches(script))
+        m.group(1)!: _registryPaths(m.group(2)!),
     };
     expect(arrays.keys, containsAll(<String>['TORRENT', 'P2P', 'ANKI_SYNC']));
     final List<String> offenders = <String>[];
@@ -486,8 +493,8 @@ void main() {
     final String pbxproj = File(
       'macos/Runner.xcodeproj/project.pbxproj',
     ).readAsStringSync();
-    expect(pbxproj, contains('bundle_fushi_torrent.sh'));
-    expect(File('macos/bundle_fushi_torrent.sh').existsSync(), isTrue);
+    expect(pbxproj, contains('bundle_native_libs.sh'));
+    expect(File('macos/bundle_native_libs.sh').existsSync(), isTrue);
   });
 }
 
@@ -634,4 +641,22 @@ bool _githubPathFilterMatches(List<String> patterns, String path) {
     if (RegExp(re.toString()).hasMatch(path)) included = !negate;
   }
   return included;
+}
+
+/// 登记表（native/crates.json）里一个原生 crate 的输入路径：调 names.sh 用的同一个实现
+/// （tool/native_crates.py paths），不在 Dart 里再算一遍。cwd 是 `fushi/`。
+List<String> _registryPaths(String crate) {
+  final String python = Platform.isWindows ? 'py' : 'python3';
+  final ProcessResult r = Process.runSync(python, <String>[
+    if (Platform.isWindows) '-3',
+    '../tool/native_crates.py',
+    'paths',
+    crate,
+  ]);
+  if (r.exitCode != 0)
+    throw StateError('native_crates.py paths $crate: ${r.stderr}');
+  return '${r.stdout}'
+      .split(RegExp(r'\s+'))
+      .where((String s) => s.isNotEmpty)
+      .toList();
 }

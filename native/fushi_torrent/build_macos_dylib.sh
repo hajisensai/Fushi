@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # macOS 版内置 torrent 引擎 bridge：vcpkg manifest 静态链 libtorrent 2.0.11 + boost +
 # openssl 进单个 libfushi_torrent_ffi.dylib（只出 Apple Silicon arm64：macOS 版不再支持
-# Intel Mac），给 app bundle 的 Contents/Frameworks 用（fushi/macos/bundle_fushi_torrent.sh
+# Intel Mac），给 app bundle 的 Contents/Frameworks 用（fushi/macos/bundle_native_libs.sh
 # 在 Xcode 构建阶段拷进去）。
 #
 # 在此之前 macOS 从没编过这个库：app 侧早把 macOS 算作支持内置引擎的平台，加载失败后

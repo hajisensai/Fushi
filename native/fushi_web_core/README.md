@@ -160,7 +160,7 @@ fushi_fsrs 合成一个归档，同理。
 | Windows x64 | `powershell -ExecutionPolicy Bypass -File native/fushi_web_core/build_windows_dll.ps1` | `prebuilt/windows-x64/fushi_web_core.dll` | `fushi/windows/CMakeLists.txt` 装到 exe 同级；Profile/Release 缺库构建失败 |
 | Android | `build_android_so.ps1 [-NdkRoot …] [-Abis …]` / `build_android_so.sh <ndk-root> [abi…]`（cargo-ndk，API 24） | `prebuilt/android/<abi>/libfushi_web_core.so` | `build.gradle` 的 `jniLibs.srcDirs`；release 构建按 target-platform 逐 ABI 核对，缺库失败 |
 | Linux x64 | `build_linux_so.sh` | `prebuilt/linux-x64/libfushi_web_core.so` | `fushi/linux/CMakeLists.txt` 装到 `bundle/lib/`；Profile/Release 缺库失败；CI 单测经 `FUSHI_WEB_CORE_LIB` 加载 |
-| macOS | `build_macos_dylib.sh`（只出 arm64） | `prebuilt/macos/libfushi_web_core.dylib` | Runner 构建阶段「Bundle fushi_web_core dylib」拷进 `Contents/Frameworks`；Release/Profile 缺库失败 |
+| macOS | `build_macos_dylib.sh`（只出 arm64） | `prebuilt/macos/libfushi_web_core.dylib` | Runner 构建阶段「Bundle native libraries」拷进 `Contents/Frameworks`；Release/Profile 缺库失败 |
 | iOS | **并入伞形库** `native/fushi_ios_umbrella/build_ios_staticlib.sh` | `libfushi_ios_umbrella.a` | Runner `-force_load`，Dart 侧 `DynamicLibrary.process()`；出包后核对 `fwc_*` 符号 |
 
 - 测试：`cargo test --release`（含回归向量；开发循环用 `cargo test --profile quick --lib <过滤>`，见

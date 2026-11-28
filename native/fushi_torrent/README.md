@@ -312,8 +312,8 @@ manifest 静态链**：
    `_ht_*`（`-exported_symbol`）并 `-dead_strip`，静态进来的 libtorrent/boost/openssl
    符号不外露。产物 `prebuilt/macos/libfushi_torrent_ffi.dylib`，脚本自检 `otool -L`
    里只许出现 `/usr/lib`、`/System` 系统库。
-2. **随包**：Runner 构建阶段「Bundle fushi_torrent dylib」
-   （`fushi/macos/bundle_fushi_torrent.sh`）copy-if-present 进 `Contents/Frameworks`，
+2. **随包**：Runner 构建阶段「Bundle native libraries」
+   （`fushi/macos/bundle_native_libs.sh`）copy-if-present 进 `Contents/Frameworks`，
    缺架构直接报错；`EmbeddedTorrentEngine` 在 macOS 先按 `<exe>/../Frameworks/<名>`
    绝对路径加载（dyld 对 dlopen 叶名不保证走可执行文件的 rpath），裸名兜底。发布包由
    Developer ID 签名循环随其它 Mach-O 一起签。

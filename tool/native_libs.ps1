@@ -21,7 +21,7 @@
 
   备哪些 crate、带什么 feature、要不要 id_audit 那份，全部取自登记表 native/crates.json
   （经 tool/native_crates.py 读；新增 crate 只改登记表，本脚本不列名字）：主机平台备
-  `host_test_lib: true` 的，-Android 备 Android 上 `required: always` 的 Rust crate。它们必须自带
+  `host_test_lib: true` 的，-Android 备 Android 上不是 optional（always / release）的 Rust crate。它们必须自带
   登记表 build.<平台> 写的构建脚本、产物落 prebuilt/<平台>/。戳记的源码键也由
   tool/native_crates.py 算（`key`：native/<crate> 加登记表 external_sources 等输入的已提交内容，
   与 dist worker、CI 原生产物库同一个函数；tool/native_crates_test.py 钉住）。
@@ -483,7 +483,7 @@ if ($Android) {
     # `powershell -File ... -Abis a,b` 把整串当成一个元素传进来，这里统一拆开。
     $Abis = @($Abis | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
     # fushi/android/app/build.gradle 的 checkFushi*Native 查的那一组（与 fushi/tool/dist_test/worker_build.sh 远端备的
-    # 同一组）：登记表里 Android 上 `required: always` 的 Rust crate。
+    # 同一组）：登记表里 Android 上不是 optional 的 Rust crate（list --android-local）。
     foreach ($crate in (Get-NativeCrateList -Filter @('--android-local'))) {
         Install-NativeAndroidCrate -RepoRoot $root -Crate $crate -Abis $Abis
     }

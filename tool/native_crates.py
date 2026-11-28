@@ -237,9 +237,9 @@ def select(
         if host_test and not c.host_test_lib:
             continue
         # Android .so the app build requires and the local tooling prepares (native_libs.ps1 -Android,
-        # dist worker): Rust crates that are `required: always` on Android.
+        # dist worker): Rust crates that are not optional on Android (always / release).
         if android_local and not (
-            c.language == "rust" and "android" in c.platforms and c.platforms["android"].required == "always"
+            c.language == "rust" and "android" in c.platforms and c.platforms["android"].required != "optional"
         ):
             continue
         if ios_umbrella and not ("ios" in c.platforms and c.platforms["ios"].via == "fushi_ios_umbrella"):

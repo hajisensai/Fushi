@@ -153,15 +153,19 @@ void main() {
 
   test('名字哈希不吃 Markdown：改 README 不得让各端原生件全部重编', () {
     final String script = namesScript.readAsStringSync();
+    // 源码部分交给本机 / dist worker 共用的那一个实现（tool/native_crates.py tree-key）；它滤掉 .md
+    // （2026-10-07 一次 README 改动让四端 libtorrent 冷编），由 tool/native_crates_test.py 的
+    // test_markdown_does_not_change_key 钉住行为。
     expect(
       script,
-      contains(
-        r'git ls-tree -r --full-tree HEAD -- '
-        '"\$@"'
-        r" | grep -viE '\.md$'",
-      ),
+      contains(r'"$py" tool/native_crates.py tree-key "$@"'),
       reason:
-          'tree_hash 必须在哈希前滤掉 .md（2026-10-07 一次 README 改动让四端 libtorrent 冷编）',
+          'tree_hash 的源码键必须走 tool/native_crates.py tree-key，不在 names.sh 里另算',
+    );
+    expect(
+      script,
+      isNot(contains('git ls-tree')),
+      reason: 'names.sh 不另写一份源码哈希',
     );
   });
 

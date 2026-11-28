@@ -26,7 +26,7 @@ void main() {
     const List<String> bundlers = <String>[
       'windows/CMakeLists.txt',
       'linux/CMakeLists.txt',
-      'macos/bundle_fushi_fsrs.sh',
+      'macos/bundle_native_libs.sh',
       'android/app/build.gradle',
       '../native/fushi_ios_umbrella/build_ios_staticlib.sh',
       '../native/fushi_fsrs/build_ios_staticlib.sh',

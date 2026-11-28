@@ -70,7 +70,7 @@
         "windows": { "artifact": "fushi_web_core.dll", "required": "release", "bundled_by": "app" },
         "linux": { "artifact": "libfushi_web_core.so", "required": "release", "bundled_by": "app" },
         "macos": { "artifact": "libfushi_web_core.dylib", "required": "release", "bundled_by": "app" },
-        "android": { "artifact": "libfushi_web_core.so", "required": "always", "bundled_by": "fushi/android/app/build.gradle" },
+        "android": { "artifact": "libfushi_web_core.so", "required": "release", "bundled_by": "fushi/android/app/build.gradle" },
         "ios": { "via": "fushi_ios_umbrella", "required": "optional", "fallback": "linked unconditionally by the umbrella; no ABI handshake symbol to check yet" }
       }
     },

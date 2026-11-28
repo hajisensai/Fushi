@@ -219,7 +219,7 @@ if [ "$need" = android ]; then
       android-x64) abis="$abis x86_64" ;;
     esac
   done
-  # The registry's Android-required Rust crates (native/crates.json, same list
+  # The registry's non-optional Android Rust crates (native/crates.json, same list
   # as tool/native_libs.ps1 -Android); the source key folds in the registry's
   # external_sources (BUG-4988), same function as worker_prepare.sh.
   py=python3

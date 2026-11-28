@@ -96,7 +96,7 @@ native lib 目录、macOS `Contents/Frameworks`、Linux `bundle/lib/`）；iOS �
 | Windows x64 | `powershell -ExecutionPolicy Bypass -File native/fushi_fsrs/build_windows_dll.ps1` | `prebuilt/windows-x64/fushi_fsrs.dll` | `fushi/windows/CMakeLists.txt` copy-if-present 到 exe 同级；服务端放 `bundle/lib/` |
 | Android | `build_android_so.ps1 [-NdkRoot …] [-Abis …]` / `build_android_so.sh <ndk-root> [abi…]`（cargo-ndk，API 24） | `prebuilt/android/<abi>/libfushi_fsrs.so` | `fushi/android/app/build.gradle` 的 `jniLibs.srcDirs` copy-if-present |
 | Linux x64 | `build_linux_so.sh` | `prebuilt/linux-x64/libfushi_fsrs.so` | `fushi/linux/CMakeLists.txt` copy-if-present 到 `bundle/lib/`；服务端放 `bundle/lib/` |
-| macOS | `build_macos_dylib.sh`（只出 arm64，部署目标 13.4） | `prebuilt/macos/libfushi_fsrs.dylib`（install name `@rpath/…`） | Runner 构建阶段「Bundle fushi_fsrs dylib」（`fushi/macos/bundle_fushi_fsrs.sh`）copy-if-present 到 `Contents/Frameworks` |
+| macOS | `build_macos_dylib.sh`（只出 arm64，部署目标 13.4） | `prebuilt/macos/libfushi_fsrs.dylib`（install name `@rpath/…`） | Runner 构建阶段「Bundle native libraries」（`fushi/macos/bundle_native_libs.sh`）copy-if-present 到 `Contents/Frameworks` |
 | iOS | `native/fushi_ios_umbrella/build_ios_staticlib.sh [device\|simulator\|all]`（伞形 staticlib，部署目标 15.1） | `native/fushi_ios_umbrella/prebuilt/ios/{iphoneos,iphonesimulator}/libfushi_ios_umbrella.a` + `fushi_ios_umbrella.xcconfig` | `fushi/ios/Flutter/{Debug,Release}.xcconfig` 可选 `#include?` 那份 xcconfig → Runner `OTHER_LDFLAGS` 的 `$(FUSHI_IOS_NATIVE_LDFLAGS)`（`-force_load`），见下「iOS」 |
 
 - **缺库 = 能力不可用，不是构建失败**：五端都是「prebuilt 有则随包」，没装 Rust 的机器照常出包。

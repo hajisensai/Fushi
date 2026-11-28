@@ -325,10 +325,7 @@
 			buildPhases = (
 				913B847A994ABA4520129689 /* [CP] Check Pods Manifest.lock */,
 				B20200000000000000000001 /* Build FushiDicts FFI */,
-				B20200000000000000000002 /* Check fushi_compute (iOS umbrella) */,
-				B20200000000000000000003 /* Check fushi_rwkv (iOS umbrella) */,
-				B20200000000000000000004 /* Check fushi_music (iOS umbrella) */,
-				B20200000000000000000005 /* Check fushi_corpus (iOS umbrella) */,
+				B20200000000000000000002 /* Check native libraries (iOS umbrella) */,
 				9740EEB61CF901F6004384FC /* Run Script */,
 				97C146EA1CF9000F007C117D /* Sources */,
 				97C146EB1CF9000F007C117D /* Frameworks */,
@@ -514,7 +511,7 @@
 			shellPath = /bin/bash;
 			shellScript = "/bin/bash \"$PROJECT_DIR/build_fushidicts_ffi.sh\"\n";
 		};
-		B20200000000000000000002 /* Check fushi_compute (iOS umbrella) */ = {
+		B20200000000000000000002 /* Check native libraries (iOS umbrella) */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
@@ -524,71 +521,14 @@
 			);
 			inputPaths = (
 			);
-			name = "Check fushi_compute (iOS umbrella)";
+			name = "Check native libraries (iOS umbrella)";
 			outputFileListPaths = (
 			);
 			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
-			shellScript = "/bin/bash \"$PROJECT_DIR/check_fushi_compute.sh\"\n";
-		};
-		B20200000000000000000003 /* Check fushi_rwkv (iOS umbrella) */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-			);
-			name = "Check fushi_rwkv (iOS umbrella)";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/bash;
-			shellScript = "/bin/bash \"$PROJECT_DIR/check_fushi_rwkv.sh\"\n";
-		};
-		B20200000000000000000004 /* Check fushi_music (iOS umbrella) */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-			);
-			name = "Check fushi_music (iOS umbrella)";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/bash;
-			shellScript = "/bin/bash \"$PROJECT_DIR/check_fushi_music.sh\"\n";
-		};
-		B20200000000000000000005 /* Check fushi_corpus (iOS umbrella) */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-			);
-			name = "Check fushi_corpus (iOS umbrella)";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/bash;
-			shellScript = "/bin/bash \"$PROJECT_DIR/check_fushi_corpus.sh\"\n";
+			shellScript = "/bin/bash \"$PROJECT_DIR/check_native_libs.sh\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

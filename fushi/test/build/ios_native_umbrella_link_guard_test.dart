@@ -18,7 +18,7 @@ import 'package:test/test.dart';
 ///   verify_abi.sh；
 /// - iOS Runner（主二进制 / xcarchive）的每条 ffsrs_* 核对旁都有同参数的 fwc_* 与 frwkv_*
 ///   （RWKV 排程推理，硬依赖；其 Runner 构建阶段由 fushi_rwkv_hard_dependency_guard_test 钉）核对；
-/// - fushi_compute 是硬依赖：Runner 有一个在编译前跑 `check_fushi_compute.sh` 的构建阶段，
+/// - fushi_compute 是硬依赖：Runner 有一个在编译前跑 `check_native_libs.sh` 的构建阶段，
 ///   伞形库缺失（`#include?` 静默缺席）或是不含 `ffc_*` 的旧件时让构建失败。
 void main() {
   // 测试 cwd 是 `fushi/`。
@@ -137,7 +137,7 @@ void main() {
     expect(
       pbx,
       contains(
-        r'shellScript = "/bin/bash \"$PROJECT_DIR/check_fushi_compute.sh\"\n";',
+        r'shellScript = "/bin/bash \"$PROJECT_DIR/check_native_libs.sh\"\n";',
       ),
     );
     // 必须挂在 Runner 的 buildPhases 里、且排在 Sources 之前（编译 / 链接之前就失败）。
@@ -151,7 +151,7 @@ void main() {
     );
     final int phases = pbx.indexOf('buildPhases = (', target);
     final int check = pbx.indexOf(
-      '/* Check fushi_compute (iOS umbrella) */,',
+      '/* Check native libraries (iOS umbrella) */,',
       phases,
     );
     final int sources = pbx.indexOf('/* Sources */,', phases);
@@ -159,10 +159,12 @@ void main() {
     expect(check, greaterThan(phases), reason: '构建阶段没挂进 Runner');
     expect(check, lessThan(sources), reason: '检查阶段必须在 Sources 之前');
 
-    final String script = read('ios/check_fushi_compute.sh');
+    final String script = read('ios/check_native_libs.sh');
     expect(script, contains(r'prebuilt/ios/${sdk}/libfushi_ios_umbrella.a'));
     expect(script, contains('FUSHI_IOS_NATIVE_LDFLAGS'));
-    expect(script, contains('_ffc_abi_version'));
+    // 查哪些 crate、各查哪个 ABI 符号取自登记表（ios-checks）；fushi_compute 在其中由
+    // native_crate_registry_guard_test 钉住。
+    expect(script, contains("tool/native_crates.py\" ios-checks"));
     expect(script, contains('exit 1'));
   });
 }
