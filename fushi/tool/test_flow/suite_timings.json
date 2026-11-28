@@ -908,7 +908,6 @@
     "test/media/drag_drop/import_dialog_drop_test.dart": 100,
     "test/media/drag_drop/manga_drop_test.dart": 100,
     "test/media/drag_drop/url_drop_native_guard_test.dart": 100,
-    "test/media/drag_drop/url_drop_url_predicate_guard_test.dart": 100,
     "test/media/favorites/favorite_batch_mining_plan_test.dart": 100,
     "test/media/import/book_format_whitelist_sync_guard_test.dart": 100,
     "test/media/import/book_import_carrier_memo_guard_test.dart": 100,

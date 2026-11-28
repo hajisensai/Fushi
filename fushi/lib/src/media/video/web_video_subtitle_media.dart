@@ -31,7 +31,7 @@ import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
 import 'package:fushi/src/media/video/subtitle/video_stream_subtitle_audio.dart'
     show VideoStreamSubtitleAudioInput;
 import 'package:fushi/src/media/video/url_stream_video.dart'
-    show YoutubeAudioStreamResolver;
+    show YoutubeAudioStreamResolver, isPlayableStreamUrl;
 import 'package:fushi/src/media/video/youtube_range_relay.dart'
     show YoutubeStreamRelay, relayYoutubeStreamUrl;
 
@@ -106,16 +106,9 @@ WebVideoMediaProbe? parseWebVideoMediaProbe(Object? raw) {
     manifests: <String>[
       if (manifests is List)
         for (final Object? m in manifests)
-          if (m is String && _isHttpUrl(m)) m,
+          if (m is String && isPlayableStreamUrl(m)) m,
     ],
   );
-}
-
-bool _isHttpUrl(String url) {
-  final Uri? uri = Uri.tryParse(url.trim());
-  if (uri == null || uri.host.isEmpty) return false;
-  final String scheme = uri.scheme.toLowerCase();
-  return scheme == 'http' || scheme == 'https';
 }
 
 /// 地址指向的媒体形态（按路径后缀）。
@@ -194,7 +187,7 @@ WebVideoSubtitleMedia resolveWebVideoSubtitleMedia(
       youtubeId: youtubeId,
     );
   }
-  if (_isHttpUrl(probe.src)) {
+  if (isPlayableStreamUrl(probe.src)) {
     return WebVideoSubtitleMedia.available(_kindOf(probe.src), probe.src);
   }
   final String? hls = probe.manifests.firstWhereOrNull(
