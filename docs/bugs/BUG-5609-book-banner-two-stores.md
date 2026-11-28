@@ -4,7 +4,7 @@
   - 书籍刮削（Bangumi / DLsite / AniList…）把背景图写进 `item_images` backdrop（`fushi/lib/src/media/metadata/book_metadata_scrape_facade.dart:597`，经 `ItemScrapeStore`）；书详情页（`book_detail_page.dart:161` → `ItemScrapeDetail.load`）、首页（`home_dashboard_page.dart` `_querySeriesMeta` 读 `getItemImages`，系列合并卡借代表卷）、书架系列块（`reader_fushi_history_page.dart` `_borrowedCollectionSeries`）都只读这一份。
   - 「获取各卷封面与横幅」把横幅另存进 `BookArtStore` 的 `<thumbnails>/scraped_banners/`（旧 `book_art_scrape_service.dart:812` `store.writeBanner`），只有合集页经 `CollectionArtScrape.bannerFor`（旧 `collection_art_scrape.dart:62` → `BookArtStore.backdropForCollection`）、`media_collection_grid_detail_page.dart:336/413` `_artBannerFor` 读。
   - 根因是数据结构：同一个概念（书的横版背景图）存两处、各有各的读者，获取写的那份别的页面根本不读。
-- **[x] ① 已修复** — 横幅只存一份：获取把系列横幅经 `ItemScrapeStore.setSharedImageFromFile` 贴成每一卷的 `item_images` backdrop（同 URL 的文件各卷共用一份，回收随最后一行），`BookArtRecord.bannerKey/bannerUrl` 只记「获取贴了哪张」（背景图 `source_url` == bannerUrl 才算获取写的）。合集页删掉第二条读路径，与书架 / 首页一样借最前那卷的背景图；书架映射重载后经 `memberInfoRefresh` 通知打开着的合集页重算。
+- **[x] ① 已修复**（1759ac071c）— 横幅只存一份：获取把系列横幅经 `ItemScrapeStore.setSharedImageFromFile` 贴成每一卷的 `item_images` backdrop（同 URL 的文件各卷共用一份，回收随最后一行），`BookArtRecord.bannerKey/bannerUrl` 只记「获取贴了哪张」（背景图 `source_url` == bannerUrl 才算获取写的）。合集页删掉第二条读路径，与书架 / 首页一样借最前那卷的背景图；书架映射重载后经 `memberInfoRefresh` 通知打开着的合集页重算。
   - 覆盖策略：书没有背景图、或现在那张就是之前获取贴的，才贴新横幅；书籍刮削 / 手选来的背景图不覆盖，记录也不认领（`BookArtStore.applyBanner`）。清除 / 单本否决 / 撤销只撤获取贴的那张（`clearBannerFrom`），别的来源不碰。
   - 旧数据：`BookArtStore.migrateLegacyBanners` 一次性把 `scraped_banners/` 按同一覆盖策略搬进 `item_images` 后删掉旧目录（AppModel 初始化收尾触发；获取 / 清除 / 否决 / 撤销也先等它）。不改 schema。
   - 数据根迁移：共用文件在 `video_covers/items/` 下，`DataRootMigrator._rebaseItemImages` 逐行改写，不需改动；备份只带 `item_images` 行（文件本来就不进备份）。
