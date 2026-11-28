@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:pdfrx/pdfrx.dart';
 
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/epub/book_content_restore.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
@@ -59,7 +60,12 @@ class PdfImporter {
     int? sourceId,
   }) async {
     // 跳过策略（批量 / 后台）先判重再开 PDF：已在库的卷不再白白打开文档、栅格化封面。
-    await _precheckSkippedDuplicate(db: db, title: title, policy: policy);
+    await precheckSkippedDuplicate(
+      db: db,
+      proposedTitle: title,
+      format: BookFormat.pdf.dbValue,
+      policy: policy,
+    );
 
     await PdfEngine.ensureInitialized();
 
@@ -117,11 +123,39 @@ class PdfImporter {
     String? placedDir;
     String? insertedKey;
     try {
-      final ({String storedTitle, String bookKey, int importedAtMs})
+      final ({
+        String storedTitle,
+        String bookKey,
+        int importedAtMs,
+        bool restored,
+      })
       placed = await EpubImporter.placeUnderResolvedTitle(
         db: db,
         proposedTitle: title,
         policy: policy,
+        format: BookFormat.pdf.dbValue,
+        // 同名 PDF 书受管内容已丢（UXtYShn4Yj）：备好的 document.pdf + 封面原子换进
+        // 它的书目录，回写页数，不插行。
+        restore: (EpubBookRow existing) async {
+          EpubStorage.moveDirIntoPlace(
+            srcDir: Directory(stagedDir!),
+            targetDir: existing.extractDir,
+            liveExtractDirs: const <String>[],
+          );
+          await writeRestoredBookMetadata(
+            db: db,
+            existing: existing,
+            chapterCount: pageCount,
+            chaptersJson: existing.chaptersJson,
+            coverPath: coverRel,
+          );
+          return (
+            storedTitle: existing.title,
+            bookKey: existing.bookKey,
+            importedAtMs: existing.importedAt,
+            restored: true,
+          );
+        },
         // 书名键在锁内被别人占了要重新定夺时会再进来一次，已备好的不重做。
         stage: () async {
           if (staged) return;
@@ -175,9 +209,12 @@ class PdfImporter {
                 storedTitle: storedTitle,
                 bookKey: bookKey,
                 importedAtMs: importedAtMs,
+                restored: false,
               );
             },
       );
+      // 就地恢复不是新导入：不写「added」活动事件。
+      if (placed.restored) return placed.bookKey;
 
       // 与 EpubImporter 一致：写一条「added」活动事件喂首页时间轴。best-effort。
       try {
@@ -310,22 +347,6 @@ class PdfImporter {
       }
       rethrow;
     }
-  }
-
-  /// [DuplicatePolicy.skip] 的导入前预检：[title] 已在书库里时直接按跳过中止，
-  /// 其它策略不碰数据库（落位时的判重照旧）。
-  static Future<void> _precheckSkippedDuplicate({
-    required FushiDatabase db,
-    required String title,
-    required DuplicatePolicy policy,
-  }) async {
-    if (policy is! SkipDuplicate) return;
-    final List<EpubBookMeta> books = await db.getEpubBookMetas();
-    throwIfSkippedDuplicate(
-      existingTitles: <String>[for (final EpubBookMeta b in books) b.title],
-      proposedTitle: title,
-      policy: policy,
-    );
   }
 
   /// PDF 书目录 → `EpubBooks` 行：导入（[importFromPath]）与「孤儿书目录重新登记」

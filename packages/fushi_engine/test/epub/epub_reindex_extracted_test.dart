@@ -77,8 +77,7 @@ void main() {
     // 第 3 章（占位）换成正文、末尾续挂新占位；第 1 章的文件被偷偷改大——它不在
     // changedHrefs 里，沿用旧字数说明没有重读它的正文。
     writeBook(<String>['あいうえおかきくけこ', 'かきくけ', 'さしすせそ', '待']);
-    final ({int chapterCount, String chaptersJson, String? coverPath})
-    reindexed = await EpubImporter.reindexExtractedBook(
+    final RebuiltEpubTree reindexed = await EpubImporter.reindexExtractedBook(
       extractDir: dir.path,
       previousChaptersJson: before,
       changedHrefs: <String>{p.join('OEBPS', 'chapter-3.xhtml')},

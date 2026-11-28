@@ -15,8 +15,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/pdf/pdf_importer.dart';
+import 'package:fushi_engine/epub/book_content_restore.dart';
+import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
+import 'package:fushi_engine/media/manga/manga_importer.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
@@ -180,6 +184,18 @@ void main() {
       return (await db.getMediaSourceById(sid))!;
     }
 
+    Future<SourceLibraryRow> addMangaSource(FushiDatabase db) async {
+      final int sid = await db.insertMediaSource(
+        MediaSourcesCompanion.insert(
+          label: 'Manga',
+          mediaKind: 'manga',
+          rootPath: tmp.path,
+          createdAt: 1000,
+        ),
+      );
+      return (await db.getMediaSourceById(sid))!;
+    }
+
     Future<void> scan(
       WidgetTester tester,
       FushiDatabase db,
@@ -282,7 +298,10 @@ void main() {
       );
     });
 
-    testWidgets('手动导入的同名书不归本来源 → 不拿来源文件去重建它', (WidgetTester tester) async {
+    // UXtYShn4Yj：书是手动导入的（或来源删了又重新添加，sourceId 变了），受管文件
+    // 丢了之后用户新加来源重新扫描原件——此前扫描只重建本来源导入的行，这里按同名
+    // 判重复直接跳过，书永远打不开。
+    testWidgets('手动导入的同名书受管内容丢了 → 新来源扫描按原条目重建', (WidgetTester tester) async {
       final FushiDatabase db = _memDb();
       addTearDown(db.close);
       final String manual = p.join(pp.path, 'manual.epub');
@@ -296,18 +315,273 @@ void main() {
         );
       });
       final EpubBookRow before = (await db.getEpubBook(bookKey))!;
+      await savePosition(db, before.uid);
       Directory(before.extractDir).deleteSync(recursive: true);
 
       _writeEpub(p.join(tmp.path, 'other.epub'), 'ManualNovel');
       final SourceLibraryRow source = await addSource(db);
       await scan(tester, db, source);
 
-      expect(await db.getAllEpubBooks(), hasLength(1));
+      final List<EpubBookRow> after = await db.getAllEpubBooks();
+      expect(after, hasLength(1), reason: '不另起 X (2)');
+      final EpubBookRow row = after.single;
+      expect(row.bookKey, before.bookKey);
+      expect(row.uid, before.uid);
+      expect(row.sourceId, isNull, reason: '重建不改归属');
       expect(
-        Directory(before.extractDir).existsSync(),
-        false,
-        reason: '同名不等于同一份原件：不认领、不覆写',
+        File(p.join(row.extractDir, 'META-INF', 'container.xml')).existsSync(),
+        true,
       );
+      expect((await db.getReaderPosition(row.uid))?.normCharOffset, 4242);
+      final SourceLibraryRow scanned = (await db.getMediaSourceById(
+        source.id,
+      ))!;
+      expect(scanned.lastScanError, isNull);
+      expect(scanned.mediaCount, 0, reason: '重建不是新入库');
+    });
+
+    testWidgets('手动导入的同名书内容完好 → 扫描照旧按重复跳过、不覆写', (WidgetTester tester) async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final String manual = p.join(pp.path, 'manual.epub');
+      _writeEpub(manual, 'IntactNovel');
+      late String bookKey;
+      await tester.runAsync(() async {
+        bookKey = await EpubImporter.importFromPath(
+          db: db,
+          filePath: manual,
+          fileName: 'manual.epub',
+        );
+      });
+      final EpubBookRow before = (await db.getEpubBook(bookKey))!;
+      final File marker = File(p.join(before.extractDir, 'marker.txt'))
+        ..writeAsStringSync('keep');
+
+      _writeEpub(p.join(tmp.path, 'other.epub'), 'IntactNovel', chapters: 3);
+      final SourceLibraryRow source = await addSource(db);
+      await scan(tester, db, source);
+
+      final EpubBookRow row = (await db.getAllEpubBooks()).single;
+      expect(row.chapterCount, before.chapterCount);
+      expect(marker.existsSync(), true, reason: '内容完好的书不被同名原件覆写');
+    });
+
+    testWidgets('手动导入的同名漫画书目录丢了 → 漫画来源扫描按原条目重建', (WidgetTester tester) async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final Directory manualDir = Directory(p.join(pp.path, 'manual_manga'))
+        ..createSync();
+      _writeMokuro(manualDir.path, title: 'ManualVolume', pages: 2);
+      late String bookKey;
+      await tester.runAsync(() async {
+        bookKey = await MangaImporter.importFromMokuroPath(
+          db: db,
+          mokuroPath: p.join(manualDir.path, 'ManualVolume.mokuro'),
+        );
+      });
+      final EpubBookRow before = (await db.getEpubBook(bookKey))!;
+      expect(before.format, BookFormat.manga.dbValue);
+      await savePosition(db, before.uid);
+      Directory(before.extractDir).deleteSync(recursive: true);
+
+      _writeMokuro(tmp.path, title: 'ManualVolume', pages: 2);
+      final SourceLibraryRow source = await addMangaSource(db);
+      await scan(tester, db, source);
+
+      final List<EpubBookRow> after = await db.getAllEpubBooks();
+      expect(after, hasLength(1));
+      final EpubBookRow row = after.single;
+      expect(row.uid, before.uid);
+      expect(row.extractDir, before.extractDir);
+      expect(File(p.join(row.extractDir, row.epubPath)).existsSync(), true);
+      expect((await db.getReaderPosition(row.uid))?.normCharOffset, 4242);
+      final SourceLibraryRow scanned = (await db.getMediaSourceById(
+        source.id,
+      ))!;
+      expect(scanned.lastScanError, isNull);
+      expect(scanned.mediaCount, 0, reason: '重建不是新入库');
+    });
+
+    // UXtYShn4Yj：导入层本身（手动导入对话框走的就是它）。同名书受管内容丢了时，
+    // 任何重复策略都不再问「加 (2) / 取消」、不跳过，而是把新导入换进原条目。
+    testWidgets('导入器：同名书内容丢了 → ask 策略不问用户，换进原条目', (WidgetTester tester) async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final String file = p.join(pp.path, 'again.epub');
+      _writeEpub(file, 'AskNovel');
+      late String firstKey;
+      await tester.runAsync(() async {
+        firstKey = await EpubImporter.importFromPath(
+          db: db,
+          filePath: file,
+          fileName: 'again.epub',
+        );
+      });
+      final EpubBookRow before = (await db.getEpubBook(firstKey))!;
+      await savePosition(db, before.uid);
+      Directory(before.extractDir).deleteSync(recursive: true);
+
+      int asked = 0;
+      late String againKey;
+      await tester.runAsync(() async {
+        againKey = await EpubImporter.importFromPath(
+          db: db,
+          filePath: file,
+          fileName: 'again.epub',
+          policy: DuplicatePolicy.ask((String _) async {
+            asked++;
+            return DuplicateChoice.suffix;
+          }),
+        );
+      });
+
+      expect(asked, 0, reason: '原条目打不开，没有可问的「重复」');
+      expect(againKey, firstKey);
+      final EpubBookRow row = (await db.getAllEpubBooks()).single;
+      expect(row.uid, before.uid);
+      expect(row.extractDir, before.extractDir);
+      expect(
+        File(p.join(row.extractDir, 'META-INF', 'container.xml')).existsSync(),
+        true,
+      );
+      expect((await db.getReaderPosition(row.uid))?.normCharOffset, 4242);
+    });
+
+    testWidgets('导入器：同名书内容完好 → skip 照旧判重复', (WidgetTester tester) async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final String file = p.join(pp.path, 'dup.epub');
+      _writeEpub(file, 'DupNovel');
+      await tester.runAsync(() async {
+        await EpubImporter.importFromPath(
+          db: db,
+          filePath: file,
+          fileName: 'dup.epub',
+        );
+      });
+      Object? error;
+      await tester.runAsync(() async {
+        try {
+          await EpubImporter.importFromPath(
+            db: db,
+            filePath: file,
+            fileName: 'dup.epub',
+            policy: const DuplicatePolicy.skip(),
+          );
+        } catch (e) {
+          error = e;
+        }
+      });
+      expect(error, isA<DuplicateImportCancelledException>());
+      expect(await db.getAllEpubBooks(), hasLength(1));
+    });
+
+    testWidgets('导入器：同名 PDF 书目录丢了 → skip 预检放行并换进原条目', (
+      WidgetTester tester,
+    ) async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final String pdf = p.join(pp.path, 'src.pdf');
+      File(pdf).writeAsStringSync('%PDF-1.4 fake');
+      late String firstKey;
+      await tester.runAsync(() async {
+        firstKey = await PdfImporter.persistRendered(
+          db: db,
+          filePath: pdf,
+          title: 'PdfBook',
+          policy: const DuplicatePolicy.skip(),
+          pageCount: 5,
+          coverPng: null,
+        );
+      });
+      final EpubBookRow before = (await db.getEpubBook(firstKey))!;
+      Directory(before.extractDir).deleteSync(recursive: true);
+
+      late String againKey;
+      await tester.runAsync(() async {
+        await precheckSkippedDuplicate(
+          db: db,
+          proposedTitle: 'PdfBook',
+          format: BookFormat.pdf.dbValue,
+          policy: const DuplicatePolicy.skip(),
+        );
+        againKey = await PdfImporter.persistRendered(
+          db: db,
+          filePath: pdf,
+          title: 'PdfBook',
+          policy: const DuplicatePolicy.skip(),
+          pageCount: 7,
+          coverPng: null,
+        );
+      });
+
+      expect(againKey, firstKey);
+      final EpubBookRow row = (await db.getAllEpubBooks()).single;
+      expect(row.uid, before.uid);
+      expect(row.chapterCount, 7);
+      expect(File(p.join(row.extractDir, row.epubPath)).existsSync(), true);
+    });
+
+    // 审查发现（PR #4612）：同一来源里两份同名文件，撞上的是另一份文件导入的行时，
+    // 不能拿这一份去重建它——只认它自己那份原件。
+    testWidgets('同来源两份同名 EPUB → 丢了内容的行只由它自己的原件重建', (WidgetTester tester) async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      _writeEpub(p.join(tmp.path, 'a.epub'), 'TwinNovel');
+      final SourceLibraryRow source = await addSource(db);
+      await scan(tester, db, source);
+      final EpubBookRow before = (await db.getAllEpubBooks()).single;
+      expect(before.chapterCount, 1);
+
+      // 同来源里又放进一份同名、章数不同的文件，然后原条目的内容丢了。
+      _writeEpub(p.join(tmp.path, 'b.epub'), 'TwinNovel', chapters: 3);
+      Directory(before.extractDir).deleteSync(recursive: true);
+      await scan(tester, db, source);
+
+      final EpubBookRow row = (await db.getAllEpubBooks()).single;
+      expect(row.uid, before.uid);
+      expect(row.chapterCount, 1, reason: '必须由 a.epub 重建，不能装进 b.epub');
+      expect(
+        File(p.join(row.extractDir, 'META-INF', 'container.xml')).existsSync(),
+        true,
+      );
+    });
+
+    testWidgets('同来源两卷同名漫画 → 一卷书目录丢了只由它自己的文件重建', (WidgetTester tester) async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final Directory a = Directory(p.join(tmp.path, 'a'))..createSync();
+      final Directory b = Directory(p.join(tmp.path, 'b'))..createSync();
+      _writeMokuro(a.path, title: 'TwinVolume', pages: 2);
+      _writeMokuro(b.path, title: 'TwinVolume', pages: 3);
+      final SourceLibraryRow source = await addMangaSource(db);
+      await scan(tester, db, source);
+      final List<EpubBookRow> first = await db.getAllEpubBooks();
+      expect(first, hasLength(2));
+      final EpubBookRow twoPages = first.singleWhere(
+        (EpubBookRow r) => r.chapterCount == 2,
+      );
+      final EpubBookRow threePages = first.singleWhere(
+        (EpubBookRow r) => r.chapterCount == 3,
+      );
+
+      Directory(twoPages.extractDir).deleteSync(recursive: true);
+      await scan(tester, db, source);
+
+      final List<EpubBookRow> after = await db.getAllEpubBooks();
+      expect(after, hasLength(2), reason: '不另起第三本，也不把两卷并成一本');
+      final EpubBookRow rebuilt = after.singleWhere(
+        (EpubBookRow r) => r.uid == twoPages.uid,
+      );
+      expect(rebuilt.chapterCount, 2, reason: '由 a/ 那一卷重建，不装进 b/ 的 3 页');
+      expect(
+        File(p.join(rebuilt.extractDir, rebuilt.epubPath)).existsSync(),
+        true,
+      );
+      final EpubBookRow other = after.singleWhere(
+        (EpubBookRow r) => r.uid == threePages.uid,
+      );
+      expect(other.chapterCount, 3);
     });
 
     testWidgets('有声书持久目录里的音频与字幕副本丢了 → 补回原路径，进度不变', (WidgetTester tester) async {
@@ -418,18 +692,6 @@ void main() {
       ))!;
       expect(scanned.lastScanError, contains('no longer match'));
     });
-
-    Future<SourceLibraryRow> addMangaSource(FushiDatabase db) async {
-      final int sid = await db.insertMediaSource(
-        MediaSourcesCompanion.insert(
-          label: 'Manga',
-          mediaKind: 'manga',
-          rootPath: tmp.path,
-          createdAt: 1000,
-        ),
-      );
-      return (await db.getMediaSourceById(sid))!;
-    }
 
     testWidgets('漫画 mokuro 卷的书目录丢了 → 按原条目重建，身份与进度不变', (
       WidgetTester tester,

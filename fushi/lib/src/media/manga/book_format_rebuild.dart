@@ -31,6 +31,7 @@ library;
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:drift/drift.dart' show Value;
 import 'package:path/path.dart' as p;
 import 'package:pdfrx/pdfrx.dart';
 
@@ -380,6 +381,8 @@ abstract final class BookFormatRebuild {
     final String chaptersJson;
     final String? coverPath;
     final String epubPath;
+    // 转回 EPUB 时目录从解压树重新算（转成漫画期间这一列可能已失真）；PDF 无目录列。
+    Value<String?> tocJson = const Value.absent();
     if (isPdf) {
       final PdfPageCounter counter = debugPdfPageCounter ?? _countPdfPages;
       chapterCount = await counter(sourcePath);
@@ -391,11 +394,13 @@ abstract final class BookFormatRebuild {
       );
       coverPath = cover.existsSync() ? PdfImporter.kCoverFileName : null;
     } else {
-      final ({int chapterCount, String chaptersJson, String? coverPath})
-      parsed = await EpubImporter.reparseExtractedBook(sourcePath);
+      final RebuiltEpubTree parsed = await EpubImporter.reparseExtractedBook(
+        sourcePath,
+      );
       chapterCount = parsed.chapterCount;
       chaptersJson = parsed.chaptersJson;
       coverPath = parsed.coverPath;
+      tocJson = Value(parsed.tocJson);
       // 转成漫画时 `epubPath` 被写成 `manga.json`，原始文件名无处可存也无处可用
       // （EPUB 行的 epubPath 从不解析成真实文件）。这里合成的是同步侧
       // (`sync_manager._exportContentIfMissing`) 打包上传时用的同一个名字，
@@ -415,6 +420,7 @@ abstract final class BookFormatRebuild {
         coverPath: coverPath,
         // 表约定：非漫画行恒 null。
         mangaReadingMode: null,
+        tocJson: tocJson,
       );
     });
   }

@@ -1,0 +1,17 @@
+## BUG-5608 · 书文件丢了之后重新导入恢复不了：同名判重复只认原来源
+- **报告**：2026-11-28（应用内反馈 UXtYShn4Yj，Android，3.4.0-debug.33039 / 09ad1eb；拍板台 UXtYShn4Yj 拍板「做」）
+- **真实性**：✅ 真 bug。用户外置书库被 flutter_logs 整树删除（BUG-5576，已修），书 313/323、漫画 217/217、有声书 3/3 的受管文件没了，库行和进度都在；之后新加来源 `/storage/26DA-CA80/1.Ebooks` 重新导入原件，只有原本不在库里的书进来了，老书打开仍是「Book file not found」。用户的包已含 BUG-5569（来源扫描按原条目重建）。根因（develop `7b2b0c07f7` 行号）：
+  - `fushi/lib/src/media/source_library/source_library_scanner.dart:2294` / `:2435`：BUG-5569 的重建只在 `_BookSourceIdentity.owns`（`:1335`，行的 sourceId 必须是本来源）时才做；手动导入的书、来源删了又重新添加（sourceId 变了）的书按标题判重复直接跳过。
+  - 漫画同根：`_MangaSourceIdentity.policyFor`（`:533`）把同名的手动导入 / 本来源旧行判成 null（不导入），`repairFor` 只认索引里的本来源行。
+  - 导入层本身：`packages/fushi_engine/lib/epub/epub_importer.dart` `placeUnderResolvedTitle`（EPUB / PDF / 漫画共用的落位编排）与各入口的跳过预检（`throwIfSkippedDuplicate`）只看标题，不看撞上的行还能不能打开：手动导入对话框只给「加 (2) 后缀 / 取消」，批量 / 后台导入一律跳过。结果是库行在、进度在，却**没有任何导入路径**能把内容补回原条目。
+- **[x] ① 已修复** — 把「同名行受管内容已丢 → 新导入就地恢复到原条目」收进导入层的单一判据 `packages/fushi_engine/lib/epub/book_content_restore.dart`：
+  - `bookManagedContentIntact`（从扫描器下沉）/ `bookDirWithinLibrary` / `isRestorableBookRow` / `findRestorableDuplicate`：撞名行**格式相同、受管内容已丢、书目录在当前书库根下**才算可恢复；内容完好的同名行行为不变。
+  - `EpubImporter.placeUnderResolvedTitle` 新增必填 `format` + `restore`：可恢复时先 stage，持落位锁重新确认后调 `restore` 把暂存内容原子换进原书目录、回写原行（`writeRestoredBookMetadata`，章节元数据照写，封面列为空或指向的文件已不在才换），不插行、不改 bookKey / uid / 进度 / 统计 / 合集，不写「added」活动事件。EPUB（`_persistParsed`）、PDF（`PdfImporter.persistRendered`）、漫画（`MangaImporter._copyAndInsert`）三个调用方都接上；`restore` 是必填参数，新入口不接会编译失败。
+  - 跳过预检统一成 `precheckSkippedDuplicate(db, proposedTitle, format, policy)`：可恢复的同名不再提前判重复。删掉只看标题的 `throwIfSkippedDuplicate`。
+  - 扫描器：书的重建门槛从 `owns` 换成 `canRebuild`（格式一致即可），认领进索引仍只认 `owns`；漫画 `policyFor` 遇到可恢复的同名行放行给导入器就地恢复，`finish` 按重建记账（不算新入库、不认领）。扫描器的 EPUB / PDF / 漫画重建回写也改用同一个 `writeRestoredBookMetadata`。
+  - 审查（PR #4612）后补正：① 是否允许就地恢复由调用方经重复策略显式表态（`DuplicatePolicy.skip/suffix(restoreMissing:)`，默认允许）：来源扫描导入书时传 `false`、重建由扫描自己判；漫画扫描撞上本来源另一个在场文件的同名卷（`otherSourceFile`）传 `false`，不把别的卷装进去。② 扫描的书重建门槛 `canRebuild`：本来源自己的行只由它自己那份文件（`owns`）重建，别的来源 / 手动导入的行同格式即可。③ 换树时目录一起回写：`EpubImporter.buildTocJson` 收成唯一序列化口径，`rebuildExtractedInPlace` 返回 `tocJson`（`RebuiltEpubTree`），`writeRestoredBookMetadata` / `updateEpubBookChapters` 接 `tocJson`；同类问题按类一并改：`reparseExtractedBook` / `reindexExtractedBook` 也返回 `RebuiltEpubTree`，此前换了树 / 续了章只写章节不写目录的五个调用方——字幕书换字幕（`standalone_subtitle_book.dart`）、在线小说重下（`lnreader_online_book.dart`）、网页小说重下与追章（`web_novel_library.dart`）、漫画转回书（`book_format_rebuild.dart`）、来源扫描重建——都把目录写回（`updateEpubBookMihonState` / `updateEpubBookFormat` 接 `tocJson`）；守卫 `fushi/test/tools/rebuilt_epub_tree_toc_guard_test.dart` 要求调用这三个 API 的文件必须写回 `tocJson`。④ 漫画扫描按落地书的 uid 判「恢复 / 新入库」，不按预测记账。
+- **[x] ② 已加自动化测试** — `fushi/test/media/source_library/source_library_scan_repair_test.dart`（真 DB + 真文件系统 + 真导入器）：手动导入的 EPUB 内容丢了 → 新来源扫描按原条目重建（uid / 进度不变、sourceId 不改、不计新入库）；手动导入的同名书内容完好 → 扫描照旧跳过、不覆写；手动导入的漫画书目录丢了 → 漫画来源扫描重建；导入器 ask 策略遇内容已丢的同名书不问用户、换进原条目；内容完好时 skip 照旧判重复；PDF 同名书目录丢了 → 预检放行、换进原条目。原「手动导入同名不认领、不重建」用例按拍板改成新预期。同来源两份同名 EPUB / 两卷同名漫画：丢了内容的行只由它自己的原件重建。`fushi/test/epub/epub_import_dir_ownership_test.dart` 的锁内重取快照用例让书目录真实落盘（否则那一行就是「内容已丢的同名书」）。`fushi/test/tools/import_load_fat_read_guard_test.dart` 登记 PDF 导入器的快照委托与新文件的瘦投影约束。
+- **备注**：
+  - 同名但其实是另一本书时，新内容会装进旧行（旧进度挂上去）；只在旧行内容已丢、本来就打不开时发生。来源扫描对非本来源行拿不到入库时的指纹，不会给「原件变过」提示；章节 href 结构不同时照旧提示。
+  - 有声书音频 / 字幕副本的补回（`_repairAudiobookFiles`）本来就不按来源归属判，未改。
+  - 新测试没有先在修复前的代码上跑红；Android 真机上「删掉解包目录 → 新来源扫描 / 手动导入原件 → 能打开、进度还在」未复测。

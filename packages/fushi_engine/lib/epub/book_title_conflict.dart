@@ -45,6 +45,14 @@ typedef AskOnDuplicate = Future<DuplicateChoice> Function(String proposedTitle);
 ///   torrent 下载完自动入库）。扫一个目录弹五十次框等于不可用（BUG-443）。
 /// - [DuplicatePolicy.suffix]：**程序化**路径（同步引擎拉书等）。没有人可问，又必须
 ///   保住「本地不出现两本同 key 书」这个同步层依赖的不变量，只能留副本。
+///
+/// ## 撞上「受管内容已丢」的同名书（UXtYShn4Yj）
+///
+/// 三种策略处置的都是「库里已有一本能打开的同名书」。撞上的那一行若格式相同、书目录
+/// 已经没了（`book_content_restore.dart` 的 [restoreMissing] 判据），默认不按策略处置，
+/// 而是把这次导入换进原条目（`EpubImporter.placeUnderResolvedTitle`）。调用方**明知**
+/// 撞名的是另一本书时（来源扫描里被本来源另一个文件占着的标题）显式传
+/// `restoreMissing: false`，照常按策略处置。
 sealed class DuplicatePolicy {
   const DuplicatePolicy();
 
@@ -53,10 +61,13 @@ sealed class DuplicatePolicy {
 
   /// 批量 / 后台导入：命中已有条目直接跳过（抛
   /// [DuplicateImportCancelledException]），既不加后缀也不询问。
-  const factory DuplicatePolicy.skip() = SkipDuplicate;
+  const factory DuplicatePolicy.skip({bool restoreMissing}) = SkipDuplicate;
 
   /// 静默留副本：自动加 ` (2)` 后缀。程序化路径的默认。
-  const factory DuplicatePolicy.suffix() = SuffixDuplicate;
+  const factory DuplicatePolicy.suffix({bool restoreMissing}) = SuffixDuplicate;
+
+  /// 撞上受管内容已丢的同名同格式书时，是否把这次导入换进原条目（见类注释）。
+  bool get restoreMissing;
 }
 
 /// [DuplicatePolicy.ask] 的实现类型。
@@ -65,16 +76,26 @@ final class AskDuplicate extends DuplicatePolicy {
 
   /// 询问用户的回调。
   final AskOnDuplicate ask;
+
+  /// 用户就在屏幕前导入这份原件：原条目打不开时没有可问的「重复」。
+  @override
+  bool get restoreMissing => true;
 }
 
 /// [DuplicatePolicy.skip] 的实现类型。
 final class SkipDuplicate extends DuplicatePolicy {
-  const SkipDuplicate();
+  const SkipDuplicate({this.restoreMissing = true});
+
+  @override
+  final bool restoreMissing;
 }
 
 /// [DuplicatePolicy.suffix] 的实现类型。
 final class SuffixDuplicate extends DuplicatePolicy {
-  const SuffixDuplicate();
+  const SuffixDuplicate({this.restoreMissing = true});
+
+  @override
+  final bool restoreMissing;
 }
 
 /// 返回最终入库标题。书籍跨设备身份 = `sanitizeTtuFilename(title)`（同步远端
@@ -100,26 +121,6 @@ Future<String> resolveDuplicateTitle({
       return _uniqueSuffixedTitle(proposedTitle, keys);
     case SuffixDuplicate():
       return _uniqueSuffixedTitle(proposedTitle, keys);
-  }
-}
-
-/// [DuplicatePolicy.skip] 的**预检**：拟用标题的身份 key 已在 [existingTitles] 里时
-/// 抛 [DuplicateImportCancelledException]（与 [resolveDuplicateTitle] 跳过时同一个
-/// 异常、同一个 title），其余情况（不撞名 / 策略不是跳过）什么都不做。
-///
-/// 给「定书名之前要先做重活」的导入入口用（manga-10：压缩包要整包解压、页图文件夹
-/// 要逐页读尺寸，判重却在这些之后）：跳过策略的结论只取决于标题与书库快照，能在
-/// 重活之前定下来。[resolveDuplicateTitle] 那次判重照旧保留——预检与落位之间书库
-/// 可能又变了。[DuplicatePolicy.ask] 不走预检：它的「先做完再问」次序是有意保留的。
-void throwIfSkippedDuplicate({
-  required List<String> existingTitles,
-  required String proposedTitle,
-  required DuplicatePolicy policy,
-}) {
-  if (policy is! SkipDuplicate) return;
-  final String key = sanitizeTtuFilename(proposedTitle);
-  if (existingTitles.any((String t) => sanitizeTtuFilename(t) == key)) {
-    throw DuplicateImportCancelledException(proposedTitle);
   }
 }
 

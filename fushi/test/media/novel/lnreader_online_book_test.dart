@@ -9,6 +9,7 @@ import 'package:archive/archive.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/novel/online/lnreader_book_download.dart';
+import 'package:fushi_engine/epub/epub_importer.dart' show RebuiltEpubTree;
 import 'package:fushi/src/media/novel/online/lnreader_downloaded_book_images.dart';
 import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
 import 'package:fushi/src/media/novel/online/lnreader_missing_images.dart';
@@ -44,15 +45,19 @@ void _unzipInto(Uint8List bytes, String dir) {
 Future<void> _unzipInBackground(Uint8List bytes, String dir) =>
     Isolate.run(() => _unzipInto(bytes, dir));
 
-Future<({int chapterCount, String chaptersJson, String? coverPath})>
-_rebuildInBackground(
+Future<RebuiltEpubTree> _rebuildInBackground(
   String epubFilePath,
   String extractDir,
   int chapterCount,
 ) => Isolate.run(() {
   Directory(extractDir).deleteSync(recursive: true);
   _unzipInto(File(epubFilePath).readAsBytesSync(), extractDir);
-  return (chapterCount: chapterCount, chaptersJson: '[]', coverPath: null);
+  return (
+    chapterCount: chapterCount,
+    chaptersJson: '[]',
+    coverPath: null,
+    tocJson: null,
+  );
 });
 
 /// 🔴 本文件**不能**调 `TestWidgetsFlutterBinding.ensureInitialized()`：绑定会把
@@ -343,6 +348,7 @@ void main() {
               chapterCount: count,
               chaptersJson: chaptersJson(count),
               coverPath: null,
+              tocJson: null,
             );
           },
     );

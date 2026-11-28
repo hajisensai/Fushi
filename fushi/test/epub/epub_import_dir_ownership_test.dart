@@ -473,6 +473,10 @@ void main() {
             db: db,
             proposedTitle: '同名',
             policy: const DuplicatePolicy.suffix(),
+            format: BookFormat.epub.dbValue,
+            // 两本书的书目录都真实落盘（见下），同名行内容完好，不该走就地恢复。
+            restore: (EpubBookRow existing) async =>
+                fail('content of ${existing.bookKey} is intact; no restore'),
             place:
                 (
                   String storedTitle,
@@ -484,6 +488,12 @@ void main() {
                     await releaseA.future;
                   }
                   placedKeys.add(bookKey);
+                  // 书目录落成一本完好的 EPUB 解压树：否则这行在后来者眼里是「内容
+                  // 已丢的同名书」，会被就地恢复而不是加后缀（UXtYShn4Yj）。
+                  final String dir = p.join(booksRoot, bookKey);
+                  File(p.join(dir, 'META-INF', 'container.xml'))
+                    ..createSync(recursive: true)
+                    ..writeAsStringSync('<container/>');
                   return db.insertEpubBook(
                     EpubBooksCompanion.insert(
                       bookKey: bookKey,
