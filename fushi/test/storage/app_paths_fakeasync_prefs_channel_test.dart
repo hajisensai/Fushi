@@ -106,7 +106,7 @@ void main() {
               '前一个用例的 fake async 相位钉死（BUG-1400）',
             ),
           );
-      expect(dir.path, endsWith('bug1400_probe'));
+      expect(dir.path, endsWith('custom_fonts'));
     });
   });
 

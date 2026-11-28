@@ -656,13 +656,16 @@ void main() {
     expect(find.byTooltip(t.storage_shaders_delete_anime4k), findsNothing);
   });
 
-  testWidgets('派生类目（封面与缩略图）的明细可直接删，走注入的 deleteFiles 原语', (
+  testWidgets('派生类目（导出）的明细可直接删，走注入的 deleteFiles 原语；封面明细只读（BUG-5613）', (
     WidgetTester tester,
   ) async {
-    // 用户报「导出的备份包在存储里没办法删」：这些纯派生 / 缓存 / 可重新获取的
-    // 类目此前每条明细都是 readOnly，UI 的删除按钮门控直接把它们全挡掉了。
+    // 用户报「导出的备份包在存储里没办法删」：这些缓存 / 可重新获取的类目此前每条
+    // 明细都是 readOnly，UI 的删除按钮门控直接把它们全挡掉了。
+    final String export = p.join(docs.path, 'fushiExport', 'deck.apkg');
+    writeFile(export, 2048);
+    // BUG-5613 对照组：封面有库行指着、混着手动封面，不许裸删。
     final String cover = p.join(docs.path, 'video_covers', 'a.jpg');
-    writeFile(cover, 2048);
+    writeFile(cover, 4096);
     final List<List<String>> deleted = <List<String>>[];
 
     await tester.pumpWidget(
@@ -687,6 +690,19 @@ void main() {
     await tester.tap(_rowText(t.storage_category_covers));
     await tester.pumpAndSettle();
     expect(find.text('video_covers/a.jpg'), findsOneWidget);
+    expect(
+      find.byIcon(FushiIcons.delete),
+      findsNothing,
+      reason: '封面明细只读，不给删除按钮',
+    );
+    await tester.tap(_rowText(t.storage_category_covers));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(_rowText(t.storage_category_exports));
+    await tester.pumpAndSettle();
+    await tester.tap(_rowText(t.storage_category_exports));
+    await tester.pumpAndSettle();
+    expect(find.text('fushiExport/deck.apkg'), findsOneWidget);
 
     await tester.ensureVisible(find.byIcon(FushiIcons.delete).first);
     await tester.pumpAndSettle();
@@ -706,8 +722,9 @@ void main() {
     }
 
     expect(deleted, <List<String>>[
-      <String>[cover],
+      <String>[export],
     ]);
+    expect(File(cover).existsSync(), isTrue);
   });
 
   testWidgets('一键清除全部缓存（jg3XoDVISk）：确认框列出类目与大小，只删缓存明细，不碰封面等用户数据', (
@@ -717,7 +734,7 @@ void main() {
     final String imageCache = p.join(cache.path, 'libCachedImageData');
     writeFile(p.join(coverCache, 'c_a'), 1024);
     writeFile(p.join(imageCache, 'img'), 2048);
-    // 用户数据对照组：手动封面（covers 可逐条删，但不是缓存）。
+    // 用户数据对照组：手动封面（不是缓存，BUG-5613 起连逐条裸删都不允许）。
     final String manualCover = p.join(docs.path, 'video_covers', 'mine.jpg');
     writeFile(manualCover, 4096);
     final List<List<String>> deleted = <List<String>>[];

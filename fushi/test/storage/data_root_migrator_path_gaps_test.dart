@@ -629,7 +629,7 @@ void main() {
   });
 
   test('③b 作用域谓词：首段不在白名单里的路径不参与改写', () {
-    const DocumentsPathRebaser rebaser = DocumentsPathRebaser(
+    final DocumentsPathRebaser rebaser = DocumentsPathRebaser(
       oldRoot: '/home/u/Documents',
       newRoot: '/home/u/Documents/Hibiki/data',
       scopeTopLevelNames: AppPaths.fushiOwnedDocumentsEntries,
@@ -666,7 +666,7 @@ void main() {
   });
 
   test('③c 整树搬移（无白名单）仍改写全部子路径', () {
-    const DocumentsPathRebaser rebaser = DocumentsPathRebaser(
+    final DocumentsPathRebaser rebaser = DocumentsPathRebaser(
       oldRoot: '/old/documents',
       newRoot: '/new/documents',
       scopeTopLevelNames: null,
@@ -706,7 +706,7 @@ void main() {
   });
 
   test('video_remote_subtitle_files：按集的本机字幕档列表随数据根改写，外部路径不动', () {
-    const DocumentsPathRebaser rebaser = DocumentsPathRebaser(
+    final DocumentsPathRebaser rebaser = DocumentsPathRebaser(
       oldRoot: '/home/u/Documents',
       newRoot: '/home/u/Documents/Hibiki/data',
       scopeTopLevelNames: AppPaths.fushiOwnedDocumentsEntries,
@@ -759,7 +759,7 @@ void main() {
   });
 
   test('rebaseMigratedPrefValue 不动未登记的 key（profile_settings 里躺着全部 pref）', () {
-    const DocumentsPathRebaser rebaser = DocumentsPathRebaser(
+    final DocumentsPathRebaser rebaser = DocumentsPathRebaser(
       oldRoot: '/home/u/Documents',
       newRoot: '/home/u/Documents/Hibiki/data',
       scopeTopLevelNames: AppPaths.fushiOwnedDocumentsEntries,
