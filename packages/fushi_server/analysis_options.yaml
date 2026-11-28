@@ -14,3 +14,8 @@ linter:
     only_throw_errors: true
     prefer_single_quotes: true
     use_rethrow_when_possible: true
+
+# 仓库自己的 analyzer 插件（packages/fushi_lints），规则与豁免见该包。
+plugins:
+  fushi_lints:
+    path: ../fushi_lints

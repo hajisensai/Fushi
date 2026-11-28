@@ -453,6 +453,19 @@ jobs:
           exit 1
         fi
 
+    # 无头服务端闭包的 import 纯度（analyzer 规则 fushi_pure_dart_package_imports，
+    # packages/fushi_lints）只在分析这四个包时生效：上面的 flutter analyze 只分析
+    # fushi/，server-gate.yml 只在服务端 / 引擎改动时分析 fushi_server。包有改动就把
+    # 规则的整个作用域分析一遍（插件由各包 analysis_options.yaml 的 plugins 段挂上）。
+    - name: Analyze pure-Dart packages (fushi_lints)
+      if: needs.plan.outputs.packages == 'true'
+      run: |
+        for pkg in fushi_core fushi_audio fushi_engine fushi_server; do
+          echo "::group::dart analyze $pkg"
+          (cd "packages/$pkg" && dart analyze)
+          echo "::endgroup::"
+        done
+
     # JS behavior tests (jsdom) for the reader/audiobook WebView bridge. The Dart
     # source-scan guards can't execute compareDocumentPosition semantics; this runs
     # the real bridge functions against a real DOM (BUG-724). Ubuntu runners ship

@@ -14,7 +14,7 @@
 
 ## 分段选择用设计系统组件
 
-- **分段选择一律用设计系统组件，禁止裸 `SegmentedButton`（用户 2026-10-16 拍板：「分段选择器还是老样式，用 m3e，写进规则吧都用新的」）**：单选分段用 `adaptiveSegmentedButton(...)`（`fushi/lib/src/utils/adaptive/adaptive_widgets.dart`；Material = M3E 胶囊分段、Apple = iOS 分段），设置行用 `AdaptiveSettingsSegmentedRow`；多选 / 竖排 / 允许空选等 `SegmentedButton` 同参需求用 `FushiSegmentedButton`（Material = M3E 连接式按钮组）。页面里直接 `SegmentedButton(...)` 会绕过设计系统分派、画出旧版 MD3 描边分段。守卫 `fushi/test/build/segmented_button_m3e_guard_test.dart`（只豁免组件实现文件自身）。
+- **分段选择一律用设计系统组件，禁止裸 `SegmentedButton`（用户 2026-10-16 拍板：「分段选择器还是老样式，用 m3e，写进规则吧都用新的」）**：单选分段用 `adaptiveSegmentedButton(...)`（`fushi/lib/src/utils/adaptive/adaptive_widgets.dart`；Material = M3E 胶囊分段、Apple = iOS 分段），设置行用 `AdaptiveSettingsSegmentedRow`；多选 / 竖排 / 允许空选等 `SegmentedButton` 同参需求用 `FushiSegmentedButton`（Material = M3E 连接式按钮组）。页面里直接 `SegmentedButton(...)` 会绕过设计系统分派、画出旧版 MD3 描边分段。由 analyzer 规则 `fushi_no_raw_design_controls`（`packages/fushi_lints`，按构造调用的静态类型判定，豁免表只列组件实现自身）判定。
 
 ## 存量 Dart 重写成 Rust
 
@@ -74,7 +74,7 @@
 
 ## material_ui 迁移
 
-- **Material / Cupertino 走 pub 包 `material_ui` / `cupertino_ui`**（Flutter 3.47 起从 SDK 拆出；2026-10-06 迁移）：fushi/、packages/、third_party/ vendored 包一律 `import 'package:material_ui/material_ui.dart'` / `'package:cupertino_ui/cupertino_ui.dart'`，**禁止新写 `package:flutter/material.dart` / `cupertino.dart`**——SDK 内与新包同名符号是不同类型，混用编译常能过、运行时 Theme / Material 祖先却互相看不见（守卫 `fushi/test/build/design_widgets_import_guard_test.dart`；合并带旧 import 的分支后跑 `bash tool/migrate_design_widgets.sh` 收尾）。本地化用 `GlobalMaterialLocalizations.delegates`（material_ui 的，已含 Cupertino + Widgets）。仍用旧 SDK Material/Cupertino 的第三方包（flutter_markdown、liquid_glass_widgets、macos_ui 等；flutter_colorpicker 已 vendored 到 `third_party/flutter_colorpicker` 并改用 material_ui，见其 PATCHES.md）靠三个 entry point 根上的 `LegacyDesignCompatibility`（`lib/src/utils/adaptive/legacy_design_compat.dart`：两个官方 CompatibilityBridge + 一层透明旧 Material）读到 app 主题；公开 API 收旧类型的（flutter_markdown 的 `MarkdownStyleSheet.fromTheme`）在调用处用 `as legacy` 前缀取桥出来的旧 Theme。`dynamic_color` 已升 2.x（依赖 material_ui，ColorScheme 同型）。
+- **Material / Cupertino 走 pub 包 `material_ui` / `cupertino_ui`**（Flutter 3.47 起从 SDK 拆出；2026-10-06 迁移）：fushi/、packages/、third_party/ vendored 包一律 `import 'package:material_ui/material_ui.dart'` / `'package:cupertino_ui/cupertino_ui.dart'`，**禁止新写 `package:flutter/material.dart` / `cupertino.dart`**——SDK 内与新包同名符号是不同类型，混用编译常能过、运行时 Theme / Material 祖先却互相看不见（analyzer 规则 `fushi_no_legacy_design_import`，`packages/fushi_lints`；合并带旧 import 的分支后跑 `bash tool/migrate_design_widgets.sh` 收尾）。本地化用 `GlobalMaterialLocalizations.delegates`（material_ui 的，已含 Cupertino + Widgets）。仍用旧 SDK Material/Cupertino 的第三方包（flutter_markdown、liquid_glass_widgets、macos_ui 等；flutter_colorpicker 已 vendored 到 `third_party/flutter_colorpicker` 并改用 material_ui，见其 PATCHES.md）靠三个 entry point 根上的 `LegacyDesignCompatibility`（`lib/src/utils/adaptive/legacy_design_compat.dart`：两个官方 CompatibilityBridge + 一层透明旧 Material）读到 app 主题；公开 API 收旧类型的（flutter_markdown 的 `MarkdownStyleSheet.fromTheme`）在调用处用 `as legacy` 前缀取桥出来的旧 Theme。`dynamic_color` 已升 2.x（依赖 material_ui，ColorScheme 同型）。
 
 ## Impeller
 

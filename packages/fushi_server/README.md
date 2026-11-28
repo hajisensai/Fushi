@@ -740,5 +740,5 @@ dart analyze          # CI 用 dart analyze，info 也致命
 dart test             # 配置往返 / 上传分块 / 随包库定位
 ```
 
-引擎纯度守卫：`fushi/test/build/fushi_engine_purity_guard_test.dart`（`fushi_engine` 不得 import
-`package:flutter` / `dart:ui` / 插件 / `package:fushi`）。`dart build cli` 出 bundle 是最终门。
+引擎纯度：analyzer 规则 `fushi_pure_dart_package_imports`（`packages/fushi_lints`；`fushi_engine` / `fushi_server` / `fushi_core` / `fushi_audio` 不得 import
+`package:flutter` / `dart:ui` / 插件 / `package:fushi`，沿传递闭包判定）；pubspec 不声明 Flutter 由 `fushi/test/build/fushi_engine_purity_guard_test.dart` 守。`dart build cli` 出 bundle 是最终门。

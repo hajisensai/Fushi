@@ -42,3 +42,11 @@ linter:
     only_throw_errors: true
     prefer_single_quotes: true
     use_rethrow_when_possible: true
+
+# 仓库自己的 analyzer 插件（packages/fushi_lints）：把纯语法 / 纯 import / 纯调用
+# 形状的代码不变式做成 lint，随 flutter analyze / dart analyze 与 IDE 一起报。
+# 规则都注册成 warning，启用插件即全部生效；豁免写在各规则源码的 Allowance 表里
+# （精确到文件与个数，只减不增）。
+plugins:
+  fushi_lints:
+    path: ../packages/fushi_lints

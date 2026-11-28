@@ -3,7 +3,7 @@
 /// 为什么是端口而不是直接用 `UpdateFeedService`：那个服务绑 drift 数据库、
 /// 偏好仓库与系统通知（都在 app 侧、都拖 Flutter），而下载管线已经住进
 /// `fushi_engine`——引擎反向 import app 会把 Flutter 拖进无头服务端的 AOT
-/// 编译（守卫 `fushi/test/build/fushi_engine_purity_guard_test.dart`）。
+/// 编译（analyzer 规则 `fushi_pure_dart_package_imports`，`packages/fushi_lints`）。
 /// 所以纯数据与接口留在引擎，实现留在 app，依赖方向从 app → 引擎，单向。
 library;
 

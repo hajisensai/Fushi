@@ -5,7 +5,7 @@
 /// （just_audio 播放控制器 / 存储平台装配 / 字符集插件实现）已搬到 app 的
 /// `fushi/lib/src/media/audiobook/`，经本包的装配点注入。
 ///
-/// 守卫：`fushi/test/build/fushi_engine_purity_guard_test.dart`。
+/// 判定：analyzer 规则 `fushi_pure_dart_package_imports`（`packages/fushi_lints`）。
 library fushi_audio_core;
 
 // Parsers

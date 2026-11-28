@@ -55,8 +55,8 @@ Design (pending decisions): `docs/specs/2026-11-23-interconnect-music-library-de
    `metadata/music_scrape_service.dart`. Inject the app-only parts: the
    `onMusicSourceScanned` callback, paths, and the AcoustID key. Resolve the
    `theme_song_detector` dependency, which is reached through `music_scrape_service.dart` /
-   `music_video_service.dart`. Keep `fushi/test/build/fushi_engine_purity_guard_test.dart`
-   green: no Flutter, plugins or `package:fushi` in the engine.
+   `music_video_service.dart`. Keep the analyzer rule `fushi_pure_dart_package_imports`
+   (`packages/fushi_lints`) green: no Flutter, plugins or `package:fushi` in the engine.
 2. Server scan: add `case 'music'` to the `scanAll` switch in
    `packages/fushi_server/lib/src/library_scanner.dart`, plus prune. Music soft-deletes
    through the music scanner, not through `pruneMissingBookRows`. Add `music` to

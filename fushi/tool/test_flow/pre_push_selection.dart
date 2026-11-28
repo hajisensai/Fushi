@@ -94,9 +94,14 @@ const Set<String> kCiSkippedPackages = <String>{
   'fushi_torrent',
 };
 
-/// Pure-Dart packages that CI also `dart analyze`s on their own
-/// (server-gate.yml); `flutter analyze` in fushi/ does not cover them.
+/// Pure-Dart packages that CI also `dart analyze`s on their own (main.yml's
+/// "Analyze pure-Dart packages" step and server-gate.yml); `flutter analyze` in
+/// fushi/ does not cover them. They are exactly the scope of the analyzer rule
+/// `fushi_pure_dart_package_imports` (packages/fushi_lints), whose diagnostics
+/// only appear when these packages themselves are analyzed.
 const Set<String> kSeparatelyAnalyzedPackages = <String>{
+  'fushi_audio',
+  'fushi_core',
   'fushi_engine',
   'fushi_server',
 };
