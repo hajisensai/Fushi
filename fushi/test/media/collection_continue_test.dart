@@ -263,4 +263,80 @@ void main() {
       expect(_m(pos: ep - 1000, duration: ep).isFinished, isTrue);
     });
   });
+  // BUG-5613：看完第 2 集（最后真正播放的一集），再把第 3～9 集标已看（标记不写
+  // lastPlayedAt）——此前锚点 +1 落在已打勾的第 3 集。用户实报数据的形状。
+  group('锚点看完后跳过已标看完的集 (BUG-5613)', () {
+    test('第 3～9 集已标看完、没有播放时刻 → 继续看第 10 集', () {
+      final List<CollectionMemberProgress> members = <CollectionMemberProgress>[
+        _m(done: true, at: 100),
+        _m(done: true, at: 200),
+        for (int i = 2; i < 9; i++) _m(done: true),
+        for (int i = 9; i < 34; i++) _m(),
+      ];
+      expect(latestPlayedMemberIndex(members), 1, reason: '锚点仍是第 2 集');
+      expect(continueMemberIndex(members), 9);
+    });
+
+    test('进度到片尾区的集同样跳过；重看到一半的已打勾集不跳过', () {
+      const int ep = 24 * 60 * 1000;
+      expect(
+        continueMemberIndex(<CollectionMemberProgress>[
+          _m(done: true, at: 300),
+          _m(pos: ep - 1000, duration: ep),
+          _m(),
+        ]),
+        2,
+      );
+      expect(
+        continueMemberIndex(<CollectionMemberProgress>[
+          _m(done: true, at: 300),
+          _m(pos: 1000, done: true, duration: ep),
+          _m(),
+        ]),
+        1,
+      );
+    });
+
+    test('正在看第 5 集时补标第 1～3 集已看 → 仍停在第 5 集', () {
+      expect(
+        continueMemberIndex(<CollectionMemberProgress>[
+          _m(done: true),
+          _m(done: true),
+          _m(done: true),
+          _m(done: true, at: 100),
+          _m(pos: 60000, at: 200),
+          _m(),
+        ]),
+        4,
+      );
+    });
+
+    test('锚点之后全部看完 → 最后一个成员（前面没看的不回头）', () {
+      expect(
+        continueMemberIndex(<CollectionMemberProgress>[
+          _m(),
+          _m(done: true, at: 100),
+          _m(done: true),
+          _m(done: true),
+        ]),
+        3,
+      );
+    });
+
+    test('firstUnfinishedMemberFrom 边界', () {
+      final List<CollectionMemberProgress> members = <CollectionMemberProgress>[
+        _m(done: true),
+        _m(),
+      ];
+      expect(firstUnfinishedMemberFrom(members, 0), 1);
+      expect(firstUnfinishedMemberFrom(members, 2), isNull);
+      expect(firstUnfinishedMemberFrom(members, -1), 1);
+      expect(
+        firstUnfinishedMemberFrom(<CollectionMemberProgress>[
+          _m(done: true),
+        ], 0),
+        isNull,
+      );
+    });
+  });
 }
