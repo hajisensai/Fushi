@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -72,6 +73,94 @@ void main() {
     expect(fushiScrapeYear(' 2014-04 '), 2014);
     expect(fushiScrapeYear('1800-01-01'), isNull);
     expect(fushiScrapeYear('unknown'), isNull);
+  });
+
+  // BUG-5609 审查：合集有资料行（Bangumi 刮过）但没有背景图时，「获取各卷封面与
+  // 横幅」贴在每卷上的横幅必须经借来那卷显示；书架 / 合集页 / 首页共用这一个口径。
+  group('fushiCollectionSeriesInfo（合集资料 + 借来那卷）', () {
+    final ImageProvider ownBackdrop = MemoryImage(Uint8List(1));
+    final ImageProvider lentBackdrop = MemoryImage(Uint8List(2));
+    final FushiSeriesInfo lent = (
+      meta: FushiSeriesMeta(
+        backdrop: lentBackdrop,
+        backdropHasText: true,
+        overview: 'lent',
+      ),
+      summary: 'lent summary',
+    );
+
+    test('合集没有资料：整份用借来的', () {
+      expect(
+        fushiCollectionSeriesInfo(own: null, borrowed: () => lent),
+        same(lent),
+      );
+    });
+
+    test('合集有背景图：只用自己的，不去借', () {
+      final FushiSeriesInfo own = (
+        meta: FushiSeriesMeta(backdrop: ownBackdrop, overview: 'own'),
+        summary: 'own summary',
+      );
+      expect(
+        fushiCollectionSeriesInfo(own: own, borrowed: () => fail('不该借')),
+        same(own),
+      );
+    });
+
+    test('合集有资料行但没有背景图：资料 / 简介用自己的，背景图借成员的', () {
+      final FushiSeriesMeta ownMeta = collectionSeriesMeta(
+        scrape: scrape(
+          airDate: '2014-04-01',
+          rating: 8.8,
+          tagsJson: '[{"name":"日常"}]',
+        ),
+        backdrop: null,
+      )!;
+      final FushiSeriesInfo merged = fushiCollectionSeriesInfo(
+        own: (meta: ownMeta, summary: 'own summary'),
+        borrowed: () => lent,
+      )!;
+      expect(merged.meta.backdrop, same(lentBackdrop));
+      expect(merged.meta.backdropHasText, isTrue);
+      expect(merged.meta.overview, ownMeta.overview);
+      expect(merged.meta.year, 2014);
+      expect(merged.summary, 'own summary');
+    });
+
+    test('合集没有背景图、借来的也没有：保持自己的', () {
+      const FushiSeriesInfo own = (
+        meta: FushiSeriesMeta(overview: 'own'),
+        summary: null,
+      );
+      expect(
+        fushiCollectionSeriesInfo(
+          own: own,
+          borrowed: () =>
+              (meta: const FushiSeriesMeta(overview: 'x'), summary: null),
+        ),
+        same(own),
+      );
+      expect(
+        fushiCollectionSeriesInfo(own: own, borrowed: () => null),
+        same(own),
+      );
+    });
+
+    // 书架合集块、合集详情页 hero、首页系列合并卡都经这一个函数合并，不各写一份
+    // 「own 不为 null 就不借」的判断（曾因此漏掉横幅）。
+    test('三个合集资料入口都走同一个合并函数', () {
+      for (final String path in <String>[
+        'lib/src/pages/implementations/reader_fushi_history_page.dart',
+        'lib/src/pages/implementations/media_collection_grid_detail_page.dart',
+        'lib/src/pages/implementations/home_dashboard_page.dart',
+      ]) {
+        expect(
+          File(path).readAsStringSync(),
+          contains('fushiCollectionSeriesInfo('),
+          reason: path,
+        );
+      }
+    });
   });
 
   group('galgameSeriesMeta', () {

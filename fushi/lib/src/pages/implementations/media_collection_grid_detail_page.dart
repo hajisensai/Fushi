@@ -1615,8 +1615,10 @@ class _MediaCollectionGridDetailPageState
   /// [_reload] 预取的字段，零 IO。
   ///
   /// 背景带优先级：合集自己的背景图 > 借来那卷的背景图 > 没有（hero 用封面模糊
-  /// 垫底）。「获取各卷封面与横幅」的系列横幅就贴在每卷的背景图上（BUG-5609），
-  /// 经借来那卷显示，与书详情页 / 首页 / 书架同一份，本页不另读第二处。
+  /// 垫底）；合集有资料行但没有背景图时文字资料用自己的、背景图照样借
+  /// （[fushiCollectionSeriesInfo]，与书架 / 首页同一口径）。「获取各卷封面与横幅」
+  /// 的系列横幅就贴在每卷的背景图上（BUG-5609），经借来那卷显示，与书详情页 /
+  /// 首页 / 书架同一份，本页不另读第二处。
   ({FushiSeriesMeta meta, String? summary})? _collectionSeries() {
     final String? backdropPath = _backdropPath;
     final String? logoPath = _logoPath;
@@ -1628,20 +1630,14 @@ class _MediaCollectionGridDetailPageState
       logo: logoPath == null ? null : resizedFileImage(File(logoPath)),
       countLabel: null,
     );
-    if (own != null) {
-      final String? summary = _scrapeMeta?.summary?.trim();
-      return (
-        meta: own,
-        summary: summary == null || summary.isEmpty ? null : summary,
-      );
-    }
-    final ({FushiSeriesMeta meta, String? summary})? borrowed = widget
-        .collectionSeriesFallback
-        ?.call();
-    if (borrowed == null) return null;
-    final String? summary = borrowed.summary?.trim();
+    final FushiSeriesInfo? series = fushiCollectionSeriesInfo(
+      own: own == null ? null : (meta: own, summary: _scrapeMeta?.summary),
+      borrowed: () => widget.collectionSeriesFallback?.call(),
+    );
+    if (series == null) return null;
+    final String? summary = series.summary?.trim();
     return (
-      meta: borrowed.meta,
+      meta: series.meta,
       summary: summary == null || summary.isEmpty ? null : summary,
     );
   }

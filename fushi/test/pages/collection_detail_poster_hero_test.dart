@@ -298,6 +298,40 @@ void main() {
       expect(heroBackdrop(tester), isNull);
     });
 
+    // BUG-5609 审查：Bangumi 刮过的合集有资料行、没有背景图——获取贴在每卷上的
+    // 横幅仍要经借来那卷显示（资料与简介用合集自己的）。
+    testWidgets('合集有资料行但没有背景图：背景带借那卷的，简介用自己的', (WidgetTester tester) async {
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
+      addTearDown(db.close);
+      final MediaCollectionRow collection = await seedCollection(db);
+      await db.upsertCollectionScrapeMeta(
+        CollectionScrapeMetaCompanion.insert(
+          collectionId: Value<int>(collection.id),
+          source: 'bangumi',
+          subjectId: '7',
+          title: 'Banner Series',
+          summary: const Value<String?>('合集自己的简介。'),
+          scrapedAt: DateTime(2026, 11, 27),
+        ),
+      );
+      final File banner = File('${thumbs.path}/epub_shared_banner.png')
+        ..writeAsBytesSync(kTransparentImage);
+      await pumpDetail(
+        tester,
+        db,
+        collection,
+        collectionSeriesFallback: () => (
+          meta: FushiSeriesMeta(backdrop: resizedFileImage(banner)),
+          summary: '那一卷的简介。',
+        ),
+      );
+      expect(backdropPath(heroBackdrop(tester)), banner.path);
+      expect(find.textContaining('合集自己的简介。'), findsWidgets);
+      expect(find.textContaining('那一卷的简介。'), findsNothing);
+    });
+
     testWidgets('合集自己的背景图优先于借来那卷的', (WidgetTester tester) async {
       final FushiDatabase db = FushiDatabase.forTesting(
         NativeDatabase.memory(),

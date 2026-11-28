@@ -3592,7 +3592,8 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 只读 [_loadShelfMaps] 已批量预取的映射，零查询 / 零 IO。
   ///
   /// 合集自己没刮削过时借成员的（[_borrowedCollectionSeries]，2026-11-16 用户
-  /// 拍板）：最前那卷的横版海报 / 类型 / 评分画成系列块。
+  /// 拍板）：最前那卷的横版海报 / 类型 / 评分画成系列块；合集有资料行但没有背景图
+  /// 时只借背景图（[fushiCollectionSeriesInfo]，与合集详情页 / 首页同一口径）。
   FushiSeriesMeta? _shelfCollectionSeriesMeta(
     CollectionGroup<_ShelfBookSlot> group,
   ) {
@@ -3600,13 +3601,16 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     if (collection == null) return null;
     final String? backdrop = _collectionBackdropPathById[collection.id];
     final String? logo = _collectionLogoPathById[collection.id];
-    return collectionSeriesMeta(
-          scrape: _collectionScrapeMetaById[collection.id],
-          backdrop: backdrop == null ? null : resizedFileImage(File(backdrop)),
-          logo: logo == null ? null : resizedFileImage(File(logo)),
-          countLabel: t.shelf_collection_volume_count(n: group.items.length),
-        ) ??
-        _borrowedCollectionSeries(group)?.meta;
+    final FushiSeriesMeta? own = collectionSeriesMeta(
+      scrape: _collectionScrapeMetaById[collection.id],
+      backdrop: backdrop == null ? null : resizedFileImage(File(backdrop)),
+      logo: logo == null ? null : resizedFileImage(File(logo)),
+      countLabel: t.shelf_collection_volume_count(n: group.items.length),
+    );
+    return fushiCollectionSeriesInfo(
+      own: own == null ? null : (meta: own, summary: null),
+      borrowed: () => _borrowedCollectionSeries(group),
+    )?.meta;
   }
 
   /// 合集借用的成员刮削资料：先看「继续」会打开的那卷（[_collectionContinueIndex]），
