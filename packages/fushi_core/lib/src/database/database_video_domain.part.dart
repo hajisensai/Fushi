@@ -300,40 +300,132 @@ mixin _FushiDbVideoDomain
 
   // ── media_images（媒体附加图组，schema v68 / Jellyfin 图组对齐）──────
 
-  /// 整体替换某合集**刮削所属**的附加图组（重刮即替换；空列表 = 清空）。
+  /// 整体替换某合集**刮削所属**的附加图组（重刮即替换；空列表 = 清空）。刮削口径：
+  /// 只由视频刮削写回调用。
   ///
   /// 事务内 delete + insert（与 [replaceCollectionRelations] 同理由）：图组来自
   /// 源的一次完整响应，逐条 upsert 会留下上次刮削已不存在的残图行。只删
   /// [MediaImageKind.scrapeOwned] 的种类：原盘盘面图（[MediaImageKind.discArt] /
   /// [MediaImageKind.discCover]）由源库扫描写入，重刮不能把它清掉。
+  ///
+  /// v184 来源锁：某种图里已有用户亲手选的（`user_chosen`，[setUserMediaImage]）
+  /// 时，这一种整组让路——旧行不删、[images] 里这一种的行不插；其余种类照常替换。
+  /// 查锁与替换在同一个事务里，与用户的并发换图不会互相踩掉。
   Future<void> replaceMediaImagesForCollection(
     int collectionId,
     List<MediaImagesCompanion> images,
-  ) => transaction(() async {
-    await (delete(mediaImages)..where(
-          ($MediaImagesTable t) =>
-              t.collectionId.equals(collectionId) & _scrapeOwnedKind(t),
-        ))
-        .go();
-    for (final MediaImagesCompanion c in images) {
-      await into(mediaImages).insert(c);
-    }
-  });
+  ) => _replaceScrapedMediaImages(
+    ($MediaImagesTable t) => t.collectionId.equals(collectionId),
+    images,
+  );
 
-  /// 整体替换某视频刮削所属的附加图组（散装电影刮削用；空列表 = 清空），口径同
-  /// [replaceMediaImagesForCollection]。
+  /// 整体替换某视频刮削所属的附加图组（散装电影 / 分集刮削用；空列表 = 清空），口径
+  /// （含 v184 来源锁）同 [replaceMediaImagesForCollection]。
   Future<void> replaceMediaImagesForBook(
     String bookUid,
     List<MediaImagesCompanion> images,
+  ) => _replaceScrapedMediaImages(
+    ($MediaImagesTable t) => t.bookUid.equals(bookUid),
+    images,
+  );
+
+  Future<void> _replaceScrapedMediaImages(
+    Expression<bool> Function($MediaImagesTable t) owner,
+    List<MediaImagesCompanion> images,
   ) => transaction(() async {
+    final Set<String> locked = await _userChosenMediaImageKinds(owner);
     await (delete(mediaImages)..where(
           ($MediaImagesTable t) =>
-              t.bookUid.equals(bookUid) & _scrapeOwnedKind(t),
+              owner(t) &
+              _scrapeOwnedKind(t) &
+              (locked.isEmpty
+                  ? const Constant<bool>(true)
+                  : t.kind.isNotIn(locked)),
         ))
         .go();
     for (final MediaImagesCompanion c in images) {
-      await into(mediaImages).insert(c);
+      if (locked.contains(c.kind.value)) continue;
+      await into(
+        mediaImages,
+      ).insert(c.copyWith(userChosen: const Value<bool>(false)));
     }
+  });
+
+  Future<Set<String>> _userChosenMediaImageKinds(
+    Expression<bool> Function($MediaImagesTable t) owner,
+  ) async => <String>{
+    for (final MediaImageRow row
+        in await (select(mediaImages)..where(
+              ($MediaImagesTable t) => owner(t) & t.userChosen.equals(true),
+            ))
+            .get())
+      row.kind,
+  };
+
+  Expression<bool> _mediaImageOwner(
+    $MediaImagesTable t, {
+    int? collectionId,
+    String? bookUid,
+  }) {
+    if ((collectionId == null) == (bookUid == null)) {
+      throw ArgumentError('exactly one of collectionId / bookUid is required');
+    }
+    return collectionId != null
+        ? t.collectionId.equals(collectionId)
+        : t.bookUid.equals(bookUid!);
+  }
+
+  /// 用户口径（v184）：把合集（[collectionId]）或视频（[bookUid]，二选一）的
+  /// [kind] 图换成 [path] 这一张（position 0，替换这一种的全部旧行，刮削的也换），
+  /// 并上锁——之后的刮削整组重写跳过这一种。[sourceUrl] = 在线图 / 链接的原地址
+  /// （本地图为 null）。返回被换下、且不是 [path] 的旧文件路径（调用方据此回收自己
+  /// 目录里的文件）。
+  Future<List<String>> setUserMediaImage({
+    int? collectionId,
+    String? bookUid,
+    required MediaImageKind kind,
+    required String path,
+    String? sourceUrl,
+  }) => transaction(() async {
+    Expression<bool> where($MediaImagesTable t) =>
+        _mediaImageOwner(t, collectionId: collectionId, bookUid: bookUid) &
+        t.kind.equals(kind.dbValue);
+    final List<MediaImageRow> old = await (select(
+      mediaImages,
+    )..where(where)).get();
+    await (delete(mediaImages)..where(where)).go();
+    await into(mediaImages).insert(
+      MediaImagesCompanion.insert(
+        collectionId: Value<int?>(collectionId),
+        bookUid: Value<String?>(bookUid),
+        kind: kind.dbValue,
+        path: path,
+        sourceUrl: Value<String?>(sourceUrl),
+        userChosen: const Value<bool>(true),
+      ),
+    );
+    return <String>[
+      for (final MediaImageRow row in old)
+        if (row.path != path) row.path,
+    ];
+  });
+
+  /// 用户口径（v184）：移除合集 / 视频的 [kind] 图里用户选的那张并解锁（刮削的图
+  /// 不在这里删——它们归刮削管，下一次刮削整组重写）。返回被删行的文件路径。
+  Future<List<String>> clearUserMediaImage({
+    int? collectionId,
+    String? bookUid,
+    required MediaImageKind kind,
+  }) => transaction(() async {
+    Expression<bool> where($MediaImagesTable t) =>
+        _mediaImageOwner(t, collectionId: collectionId, bookUid: bookUid) &
+        t.kind.equals(kind.dbValue) &
+        t.userChosen.equals(true);
+    final List<MediaImageRow> old = await (select(
+      mediaImages,
+    )..where(where)).get();
+    await (delete(mediaImages)..where(where)).go();
+    return <String>[for (final MediaImageRow row in old) row.path];
   });
 
   Expression<bool> _scrapeOwnedKind($MediaImagesTable t) =>
@@ -1843,14 +1935,18 @@ mixin _FushiDbVideoDomain
                 t.collectionId.equals(entry.key) &
                 t.path.equals(entry.value) &
                 t.kind.equals('backdrop') &
-                t.sourceUrl.isNull(),
+                t.sourceUrl.isNull() &
+                t.userChosen.equals(false),
           ))
           .go();
     }
     // 有远端来源的行是可重建刮削投影；无来源且未被上方精确命中的行是手工图。
-    await (delete(
-      mediaImages,
-    )..where(($MediaImagesTable t) => t.sourceUrl.isNotNull())).go();
+    // 用户亲手选的图（v184 来源锁，可能带在线原地址）不是刮削投影，一律保留。
+    await (delete(mediaImages)..where(
+          ($MediaImagesTable t) =>
+              t.sourceUrl.isNotNull() & t.userChosen.equals(false),
+        ))
+        .go();
 
     // work 删除会级联 seasons / episodes / owner identities / snapshots /
     // work_terms / credits / images / extras；people / characters / terms 是独立

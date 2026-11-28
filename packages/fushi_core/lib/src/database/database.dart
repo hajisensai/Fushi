@@ -3903,6 +3903,14 @@ class FushiDatabase extends _$FushiDatabase
           await m.addColumn(itemImages, itemImages.userChosen);
         }
       }
+      if (from < 184) {
+        // v184：media_images.user_chosen——视频作品 / 合集附加图的来源锁（同 v183 的
+        // item_images）。纯加列、存量 0 = 刮削来源；按列存在性守卫，重跑幂等。
+        if (await _tableExists('media_images') &&
+            !await _columnExists('media_images', 'user_chosen')) {
+          await m.addColumn(mediaImages, mediaImages.userChosen);
+        }
+      }
       // 阶梯之后（列已齐）补统计分区索引：v105 后新装的库 onCreate 曾漏建
       // （video-36i），每次升 schema 都幂等补一次。
       await _ensureStatIndexes();

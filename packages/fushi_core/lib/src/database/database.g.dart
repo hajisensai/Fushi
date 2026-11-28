@@ -36252,6 +36252,21 @@ class $MediaImagesTable extends MediaImages
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _userChosenMeta = const VerificationMeta(
+    'userChosen',
+  );
+  @override
+  late final GeneratedColumn<bool> userChosen = GeneratedColumn<bool>(
+    'user_chosen',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("user_chosen" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -36261,6 +36276,7 @@ class $MediaImagesTable extends MediaImages
     position,
     path,
     sourceUrl,
+    userChosen,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -36320,6 +36336,12 @@ class $MediaImagesTable extends MediaImages
         sourceUrl.isAcceptableOrUnknown(data['source_url']!, _sourceUrlMeta),
       );
     }
+    if (data.containsKey('user_chosen')) {
+      context.handle(
+        _userChosenMeta,
+        userChosen.isAcceptableOrUnknown(data['user_chosen']!, _userChosenMeta),
+      );
+    }
     return context;
   }
 
@@ -36362,6 +36384,10 @@ class $MediaImagesTable extends MediaImages
         DriftSqlType.string,
         data['${effectivePrefix}source_url'],
       ),
+      userChosen: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}user_chosen'],
+      )!,
     );
   }
 
@@ -36392,6 +36418,13 @@ class MediaImageRow extends DataClass implements Insertable<MediaImageRow> {
 
   /// 来源远程 URL（重下/诊断用；手动设置的图为 null）。
   final String? sourceUrl;
+
+  /// v184 来源锁（与 [ItemImages.userChosen] 同一口径）：用户亲手选的图（视频作品 /
+  /// 合集详情页「横幅…」）为 true。刮削整组重写（[FushiDatabase.replaceMediaImagesForCollection]
+  /// / [FushiDatabase.replaceMediaImagesForBook]）与全量清理一律跳过这一种图、不删不换；
+  /// 用户换图 / 移除照常生效（移除 = 解锁，交还给下一次刮削）。存量行 false = 刮削来源。
+  /// 读侧（详情页 hero、系列色块）用户选的那张压过刮削图组与作品图组。
+  final bool userChosen;
   const MediaImageRow({
     required this.id,
     this.collectionId,
@@ -36400,6 +36433,7 @@ class MediaImageRow extends DataClass implements Insertable<MediaImageRow> {
     required this.position,
     required this.path,
     this.sourceUrl,
+    required this.userChosen,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -36417,6 +36451,7 @@ class MediaImageRow extends DataClass implements Insertable<MediaImageRow> {
     if (!nullToAbsent || sourceUrl != null) {
       map['source_url'] = Variable<String>(sourceUrl);
     }
+    map['user_chosen'] = Variable<bool>(userChosen);
     return map;
   }
 
@@ -36435,6 +36470,7 @@ class MediaImageRow extends DataClass implements Insertable<MediaImageRow> {
       sourceUrl: sourceUrl == null && nullToAbsent
           ? const Value.absent()
           : Value(sourceUrl),
+      userChosen: Value(userChosen),
     );
   }
 
@@ -36451,6 +36487,7 @@ class MediaImageRow extends DataClass implements Insertable<MediaImageRow> {
       position: serializer.fromJson<int>(json['position']),
       path: serializer.fromJson<String>(json['path']),
       sourceUrl: serializer.fromJson<String?>(json['sourceUrl']),
+      userChosen: serializer.fromJson<bool>(json['userChosen']),
     );
   }
   @override
@@ -36464,6 +36501,7 @@ class MediaImageRow extends DataClass implements Insertable<MediaImageRow> {
       'position': serializer.toJson<int>(position),
       'path': serializer.toJson<String>(path),
       'sourceUrl': serializer.toJson<String?>(sourceUrl),
+      'userChosen': serializer.toJson<bool>(userChosen),
     };
   }
 
@@ -36475,6 +36513,7 @@ class MediaImageRow extends DataClass implements Insertable<MediaImageRow> {
     int? position,
     String? path,
     Value<String?> sourceUrl = const Value.absent(),
+    bool? userChosen,
   }) => MediaImageRow(
     id: id ?? this.id,
     collectionId: collectionId.present ? collectionId.value : this.collectionId,
@@ -36483,6 +36522,7 @@ class MediaImageRow extends DataClass implements Insertable<MediaImageRow> {
     position: position ?? this.position,
     path: path ?? this.path,
     sourceUrl: sourceUrl.present ? sourceUrl.value : this.sourceUrl,
+    userChosen: userChosen ?? this.userChosen,
   );
   MediaImageRow copyWithCompanion(MediaImagesCompanion data) {
     return MediaImageRow(
@@ -36495,6 +36535,9 @@ class MediaImageRow extends DataClass implements Insertable<MediaImageRow> {
       position: data.position.present ? data.position.value : this.position,
       path: data.path.present ? data.path.value : this.path,
       sourceUrl: data.sourceUrl.present ? data.sourceUrl.value : this.sourceUrl,
+      userChosen: data.userChosen.present
+          ? data.userChosen.value
+          : this.userChosen,
     );
   }
 
@@ -36507,14 +36550,23 @@ class MediaImageRow extends DataClass implements Insertable<MediaImageRow> {
           ..write('kind: $kind, ')
           ..write('position: $position, ')
           ..write('path: $path, ')
-          ..write('sourceUrl: $sourceUrl')
+          ..write('sourceUrl: $sourceUrl, ')
+          ..write('userChosen: $userChosen')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode =>
-      Object.hash(id, collectionId, bookUid, kind, position, path, sourceUrl);
+  int get hashCode => Object.hash(
+    id,
+    collectionId,
+    bookUid,
+    kind,
+    position,
+    path,
+    sourceUrl,
+    userChosen,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -36525,7 +36577,8 @@ class MediaImageRow extends DataClass implements Insertable<MediaImageRow> {
           other.kind == this.kind &&
           other.position == this.position &&
           other.path == this.path &&
-          other.sourceUrl == this.sourceUrl);
+          other.sourceUrl == this.sourceUrl &&
+          other.userChosen == this.userChosen);
 }
 
 class MediaImagesCompanion extends UpdateCompanion<MediaImageRow> {
@@ -36536,6 +36589,7 @@ class MediaImagesCompanion extends UpdateCompanion<MediaImageRow> {
   final Value<int> position;
   final Value<String> path;
   final Value<String?> sourceUrl;
+  final Value<bool> userChosen;
   const MediaImagesCompanion({
     this.id = const Value.absent(),
     this.collectionId = const Value.absent(),
@@ -36544,6 +36598,7 @@ class MediaImagesCompanion extends UpdateCompanion<MediaImageRow> {
     this.position = const Value.absent(),
     this.path = const Value.absent(),
     this.sourceUrl = const Value.absent(),
+    this.userChosen = const Value.absent(),
   });
   MediaImagesCompanion.insert({
     this.id = const Value.absent(),
@@ -36553,6 +36608,7 @@ class MediaImagesCompanion extends UpdateCompanion<MediaImageRow> {
     this.position = const Value.absent(),
     required String path,
     this.sourceUrl = const Value.absent(),
+    this.userChosen = const Value.absent(),
   }) : kind = Value(kind),
        path = Value(path);
   static Insertable<MediaImageRow> custom({
@@ -36563,6 +36619,7 @@ class MediaImagesCompanion extends UpdateCompanion<MediaImageRow> {
     Expression<int>? position,
     Expression<String>? path,
     Expression<String>? sourceUrl,
+    Expression<bool>? userChosen,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -36572,6 +36629,7 @@ class MediaImagesCompanion extends UpdateCompanion<MediaImageRow> {
       if (position != null) 'position': position,
       if (path != null) 'path': path,
       if (sourceUrl != null) 'source_url': sourceUrl,
+      if (userChosen != null) 'user_chosen': userChosen,
     });
   }
 
@@ -36583,6 +36641,7 @@ class MediaImagesCompanion extends UpdateCompanion<MediaImageRow> {
     Value<int>? position,
     Value<String>? path,
     Value<String?>? sourceUrl,
+    Value<bool>? userChosen,
   }) {
     return MediaImagesCompanion(
       id: id ?? this.id,
@@ -36592,6 +36651,7 @@ class MediaImagesCompanion extends UpdateCompanion<MediaImageRow> {
       position: position ?? this.position,
       path: path ?? this.path,
       sourceUrl: sourceUrl ?? this.sourceUrl,
+      userChosen: userChosen ?? this.userChosen,
     );
   }
 
@@ -36619,6 +36679,9 @@ class MediaImagesCompanion extends UpdateCompanion<MediaImageRow> {
     if (sourceUrl.present) {
       map['source_url'] = Variable<String>(sourceUrl.value);
     }
+    if (userChosen.present) {
+      map['user_chosen'] = Variable<bool>(userChosen.value);
+    }
     return map;
   }
 
@@ -36631,7 +36694,8 @@ class MediaImagesCompanion extends UpdateCompanion<MediaImageRow> {
           ..write('kind: $kind, ')
           ..write('position: $position, ')
           ..write('path: $path, ')
-          ..write('sourceUrl: $sourceUrl')
+          ..write('sourceUrl: $sourceUrl, ')
+          ..write('userChosen: $userChosen')
           ..write(')'))
         .toString();
   }
@@ -113994,6 +114058,7 @@ typedef $$MediaImagesTableCreateCompanionBuilder =
       Value<int> position,
       required String path,
       Value<String?> sourceUrl,
+      Value<bool> userChosen,
     });
 typedef $$MediaImagesTableUpdateCompanionBuilder =
     MediaImagesCompanion Function({
@@ -114004,6 +114069,7 @@ typedef $$MediaImagesTableUpdateCompanionBuilder =
       Value<int> position,
       Value<String> path,
       Value<String?> sourceUrl,
+      Value<bool> userChosen,
     });
 
 final class $$MediaImagesTableReferences
@@ -114077,6 +114143,11 @@ class $$MediaImagesTableFilterComposer
 
   ColumnFilters<String> get sourceUrl => $composableBuilder(
     column: $table.sourceUrl,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get userChosen => $composableBuilder(
+    column: $table.userChosen,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -114161,6 +114232,11 @@ class $$MediaImagesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<bool> get userChosen => $composableBuilder(
+    column: $table.userChosen,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$MediaCollectionsTableOrderingComposer get collectionId {
     final $$MediaCollectionsTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -114231,6 +114307,11 @@ class $$MediaImagesTableAnnotationComposer
 
   GeneratedColumn<String> get sourceUrl =>
       $composableBuilder(column: $table.sourceUrl, builder: (column) => column);
+
+  GeneratedColumn<bool> get userChosen => $composableBuilder(
+    column: $table.userChosen,
+    builder: (column) => column,
+  );
 
   $$MediaCollectionsTableAnnotationComposer get collectionId {
     final $$MediaCollectionsTableAnnotationComposer composer = $composerBuilder(
@@ -114314,6 +114395,7 @@ class $$MediaImagesTableTableManager
                 Value<int> position = const Value.absent(),
                 Value<String> path = const Value.absent(),
                 Value<String?> sourceUrl = const Value.absent(),
+                Value<bool> userChosen = const Value.absent(),
               }) => MediaImagesCompanion(
                 id: id,
                 collectionId: collectionId,
@@ -114322,6 +114404,7 @@ class $$MediaImagesTableTableManager
                 position: position,
                 path: path,
                 sourceUrl: sourceUrl,
+                userChosen: userChosen,
               ),
           createCompanionCallback:
               ({
@@ -114332,6 +114415,7 @@ class $$MediaImagesTableTableManager
                 Value<int> position = const Value.absent(),
                 required String path,
                 Value<String?> sourceUrl = const Value.absent(),
+                Value<bool> userChosen = const Value.absent(),
               }) => MediaImagesCompanion.insert(
                 id: id,
                 collectionId: collectionId,
@@ -114340,6 +114424,7 @@ class $$MediaImagesTableTableManager
                 position: position,
                 path: path,
                 sourceUrl: sourceUrl,
+                userChosen: userChosen,
               ),
           withReferenceMapper: (p0) => p0
               .map(
