@@ -49,6 +49,7 @@ namespace flutter_inappwebview_plugin
   constexpr auto kMethodSetShaders = "setShaders";
   constexpr auto kMethodSetWindowedInputEnabled = "setWindowedInputEnabled";
   constexpr auto kMethodSetWindowedInputExclusions = "setWindowedInputExclusions";
+  constexpr auto kMethodGetCaptureStats = "getCaptureStats";
 
   constexpr auto kEventType = "type";
   constexpr auto kEventValue = "value";
@@ -599,6 +600,31 @@ namespace flutter_inappwebview_plugin
         const bool ok = view ? view->setWindowedInputExclusions(exclusions) : false;
         return result->Success(flutter::EncodableValue(ok));
       }
+    }
+    // getCaptureStats（BUG-5611，只读）：{frames, width, height, samples: [[b,g,r,a] x5]}；
+    // 窗口宿主档没有截取链路 → null。
+    else if (method_name.compare(kMethodGetCaptureStats) == 0) {
+      if (!texture_bridge_) {
+        return result->Success();
+      }
+      const auto stats = texture_bridge_->GetCaptureStats();
+      flutter::EncodableList samples;
+      for (const auto& sample : stats.samples) {
+        samples.push_back(flutter::EncodableValue(flutter::EncodableList{
+          flutter::EncodableValue(static_cast<int32_t>(sample[0])),
+          flutter::EncodableValue(static_cast<int32_t>(sample[1])),
+          flutter::EncodableValue(static_cast<int32_t>(sample[2])),
+          flutter::EncodableValue(static_cast<int32_t>(sample[3])) }));
+      }
+      return result->Success(flutter::EncodableValue(flutter::EncodableMap{
+        { flutter::EncodableValue("frames"),
+          flutter::EncodableValue(static_cast<int64_t>(stats.frames)) },
+        { flutter::EncodableValue("width"),
+          flutter::EncodableValue(static_cast<int64_t>(stats.width)) },
+        { flutter::EncodableValue("height"),
+          flutter::EncodableValue(static_cast<int64_t>(stats.height)) },
+        { flutter::EncodableValue("samples"), flutter::EncodableValue(samples) },
+      }));
     }
     else if (method_name.compare(kMethodSetFpsLimit) == 0) {
       if (const auto value = std::get_if<int32_t>(method_call.arguments())) {

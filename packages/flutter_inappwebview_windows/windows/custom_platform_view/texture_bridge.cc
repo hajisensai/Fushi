@@ -887,6 +887,57 @@ namespace flutter_inappwebview_plugin
     }
   }
 
+  TextureBridge::CaptureStats TextureBridge::GetCaptureStats()
+  {
+    CaptureStats stats;
+    const std::lock_guard<std::mutex> lock(mutex_);
+    StagedFrame staged = AcquireStagedFrame();
+    stats.frames = mailbox_->seq;
+    if (!staged.texture || staged.content.Width <= 0 ||
+      staged.content.Height <= 0) {
+      return stats;
+    }
+    const UINT w = static_cast<UINT>(staged.content.Width);
+    const UINT h = static_cast<UINT>(staged.content.Height);
+    stats.width = w;
+    stats.height = h;
+
+    D3D11_TEXTURE2D_DESC desc;
+    staged.texture->GetDesc(&desc);
+    desc.Width = 1;
+    desc.Height = 1;
+    desc.MipLevels = 1;
+    desc.ArraySize = 1;
+    desc.SampleDesc = { 1, 0 };
+    desc.Usage = D3D11_USAGE_STAGING;
+    desc.BindFlags = 0;
+    desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+    desc.MiscFlags = 0;
+    winrt::com_ptr<ID3D11Texture2D> probe;
+    if (FAILED(graphics_context_->d3d_device()->CreateTexture2D(&desc, nullptr,
+      probe.put()))) {
+      return stats;
+    }
+    auto device_context = graphics_context_->d3d_device_context();
+    const UINT points[5][2] = { { w / 2, h / 2 }, { w / 4, h / 4 },
+      { w * 3 / 4, h / 4 }, { w / 4, h * 3 / 4 }, { w * 3 / 4, h * 3 / 4 } };
+    for (const auto& point : points) {
+      const D3D11_BOX box = { point[0], point[1], 0, point[0] + 1,
+        point[1] + 1, 1 };
+      device_context->CopySubresourceRegion(probe.get(), 0, 0, 0, 0,
+        staged.texture, 0, &box);
+      D3D11_MAPPED_SUBRESOURCE mapped;
+      if (FAILED(device_context->Map(probe.get(), 0, D3D11_MAP_READ, 0,
+        &mapped))) {
+        continue;
+      }
+      const auto* px = static_cast<const uint8_t*>(mapped.pData);
+      stats.samples.push_back({ px[0], px[1], px[2], px[3] });
+      device_context->Unmap(probe.get(), 0);
+    }
+    return stats;
+  }
+
   TextureBridge::StagedFrame TextureBridge::AcquireStagedFrame()
   {
     StagedFrame staged;

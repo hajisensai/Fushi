@@ -21,7 +21,7 @@ import 'dart:collection';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart'
-    show TargetPlatform, defaultTargetPlatform, listEquals;
+    show TargetPlatform, defaultTargetPlatform, listEquals, visibleForTesting;
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:material_ui/material_ui.dart';
@@ -93,18 +93,32 @@ String webVideoCapturableUserDataFolder() {
 /// 2026-08 在旧运行时上实测时它还能出画面（当时用来让 Widevine 软件解密的视频不进 DComp
 /// overlay、可被截取，见 `docs/plans/2026-08-29-web-video-player-anime4k.md` §5）。
 ///
-/// 现在只关「视频 overlay」：视频照常合成进主画面再交给宿主 visual，WGC 能截到。注意它在
-/// WebView2 158 上救不回加密视频——Widevine 软件解密的画面在 composition 宿主下仍是黑的
-/// （BUG-5611 备注），那是另一层限制，不靠把整条显示链路关掉来换。
+/// 加密视频要另关「视频 overlay」：Chromium 把受保护视频（含 Widevine 软件解密）一律放进
+/// DirectComposition overlay（`components/viz/service/display/dc_layer_overlay.cc`
+/// `IsOverlayRequiredForQuad`），这类 overlay 的交换链带 `DXGI_SWAP_CHAIN_FLAG_DISPLAY_ONLY`
+/// （`ui/gl/swap_chain_presenter.cc`），WGC 只截到黑。`--disable_direct_composition_video_overlays`
+/// 是 GPU 驱动 workaround 的命令行开关（`gpu/config/gpu_driver_bug_list.cc`
+/// `AppendWorkaroundsFromCommandLine`，**下划线**写法；连字符的 `disable-direct-composition-video-overlays`
+/// 在 Chromium 里不存在、是空操作），置位后 `DirectCompositionOverlaysSupported()` 为 false，
+/// 视频（含加密视频）照常合成进主画面再交给宿主 visual。WebView2 158 实测（BUG-5611，
+/// `integration_test/web_video_builtin_capture_itest.dart`）：开关传到 GPU 进程，
+/// dash.js Widevine 样例截到真画面、YouTube 不受影响；不带它时加密样例整片黑。
 const String kWebVideoCapturableBrowserArguments =
     '--autoplay-policy=no-user-gesture-required '
-    '--disable-direct-composition-video-overlays';
+    '--disable_direct_composition_video_overlays';
+
+/// 集成测试换参数用（BUG-5611 回归：换回旧参数时截取体检应当失败）。只在本进程第一次建
+/// 可捕获环境之前设置才生效（环境是进程级单例，参数不能运行期切换）。
+@visibleForTesting
+String? debugWebVideoCapturableBrowserArgumentsOverride;
 
 Future<WebViewEnvironment> webVideoCapturableEnvironment() {
   return _capturableEnv ??= WebViewEnvironment.create(
     settings: WebViewEnvironmentSettings(
       userDataFolder: webVideoCapturableUserDataFolder(),
-      additionalBrowserArguments: kWebVideoCapturableBrowserArguments,
+      additionalBrowserArguments:
+          debugWebVideoCapturableBrowserArgumentsOverride ??
+          kWebVideoCapturableBrowserArguments,
     ),
   );
 }

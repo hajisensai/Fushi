@@ -297,6 +297,7 @@ import 'package:fushi/src/media/video/netflix_metadata.dart';
 import 'package:fushi/src/media/video/web_video_platform_player.dart';
 import 'package:fushi/src/media/video/web_video_track_selection.dart';
 import 'package:fushi/src/media/video/web_video_session.dart';
+import 'package:fushi/src/media/video/web_video_capture_stats.dart';
 import 'package:fushi/src/media/video/web_video_mode_chip.dart';
 import 'package:fushi/src/media/video/video_web_playback_mode_panel.dart'
     show VideoWebPlaybackModeHost;
@@ -1657,6 +1658,12 @@ abstract class VideoFushiTestHooks {
 
   /// 在站点页面里求值（取证：页面只留画面的 style 在不在、`<video>` 实际解码尺寸）。
   Future<String?> debugWebEvalJs(String js);
+
+  /// 网页档当前的播放方式（「制卡优先」/「画质优先」）；非网页档为 null。
+  WebVideoHosting? get debugWebHosting;
+
+  /// 「制卡优先」档截取链路体检（BUG-5611）：纹理桥收到的帧数与最近一帧采样像素。
+  Future<WebVideoCaptureStats?> debugWebCaptureStats();
 }
 
 // TODO-314：字幕跳转列表不再走 overlay 面板系统，改 push-aside（[_subtitleListVisible]
@@ -2177,6 +2184,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   @override
   Future<String?> debugWebEvalJs(String js) async =>
       _webSession?.evaluateRaw(js);
+
+  @override
+  WebVideoHosting? get debugWebHosting => _webMode ? _webHosting : null;
+
+  @override
+  Future<WebVideoCaptureStats?> debugWebCaptureStats() =>
+      readWebVideoCaptureStats(_webSession?.platformViewId);
 
   @override
   Future<void> debugSelectRemoteEmbeddedSubtitle(int streamIndex) async {

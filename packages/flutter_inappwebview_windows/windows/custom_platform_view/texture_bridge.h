@@ -1,5 +1,8 @@
 #pragma once
 
+#include <array>
+#include <vector>
+
 #include <windows.foundation.h>
 #include <windows.graphics.capture.h>
 #include <windows.system.h>
@@ -134,6 +137,17 @@ namespace flutter_inappwebview_plugin
     // 计划 P2：mpv 用户着色器链（.glsl 文本，按序）。空 = 直通。只有 GPU 桥实现；
     // 回 true = 全部解析成功并已启用。
     virtual bool SetShaders(const std::vector<std::string>& shader_texts) { return false; }
+
+    // BUG-5611：截取链路的只读体检（集成测试用；不调用就没有任何开销）。[frames] = 取帧
+    // 线程累计拷进交接箱的 WGC 帧数；[samples] = 最近一帧里 5 个采样点（中心 + 四个
+    // 四分点）的 BGRA，按需从交接箱私有纹理回读，不碰交给引擎的共享纹理。
+    struct CaptureStats {
+      uint64_t frames = 0;
+      uint32_t width = 0;
+      uint32_t height = 0;
+      std::vector<std::array<uint8_t, 4>> samples;
+    };
+    CaptureStats GetCaptureStats();
 
     // 平台线程上的帧上报（取帧线程经 DispatcherQueue 投递过来）。public 只为让投递
     // 回调（texture_bridge.cc 匿名命名空间）能调到；外部不要直接调。

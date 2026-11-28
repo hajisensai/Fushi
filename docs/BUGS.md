@@ -36,10 +36,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4879 条。点号进各自文件。
+> 共 4881 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5612](bugs/BUG-5612-video-web-parentdata-conflict.md) | 🚧 | 🚧 | video-web-parentdata-conflict |
+| [BUG-5611](bugs/BUG-5611-web-video-builtin-white.md) | ✅ | ✅ | web-video-builtin-white |
 | [BUG-5607](bugs/BUG-5607-torrent-dht-test-default-timeout.md) | ✅ | ✅ | torrent-dht-test-default-timeout |
 | [BUG-5606](bugs/BUG-5606-host-isolate-offload.md) | ✅ | ✅ | 电脑当互联 host，iPhone 连过来同步时电脑界面一卡一卡 |
 | [BUG-5605](bugs/BUG-5605-video-network-mount-sync-stat-freeze.md) | ✅ | ✅ | video-network-mount-sync-stat-freeze |
