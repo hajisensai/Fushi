@@ -114,12 +114,12 @@ void main() {
     setUp(() {
       service = TexthookerService.instance;
       service.clear();
-      service.foldProgressiveLines = true;
+      service.foldProgressiveLinesReader = () => true;
     });
 
     tearDown(() {
       service.clear();
-      service.foldProgressiveLines = true;
+      service.foldProgressiveLinesReader = () => true;
     });
 
     TexthookerLineEntry? append(String text, {int? seq}) {
@@ -375,7 +375,7 @@ void main() {
     });
 
     test('关掉开关就退回旧的逐条追加行为', () {
-      service.foldProgressiveLines = false;
+      service.foldProgressiveLinesReader = () => false;
 
       append(kZatoFirst, seq: 1);
       append(kZatoSecondSegment, seq: 2);

@@ -238,7 +238,7 @@ void main() {
   test(
     'remote historical screenshot bypasses current-frame and GIF capture',
     () async {
-      service.foldProgressiveLines = false;
+      service.foldProgressiveLinesReader = () => false;
       final TexthookerLineEntry old = service.appendLine('old scene')!;
       service.appendLine('new scene');
       final _RecordingRepo repo = _RecordingRepo();
@@ -274,7 +274,7 @@ void main() {
   // 截图从手机那头带进来的路径（game_stream_mining 只接受主机自己缓存的那张）。
   // 合并 #1611 前它零测试覆盖。
   test('提供的截图与目标台词对不上时必须拒绝，且不退回抓当前画面', () async {
-    service.foldProgressiveLines = false;
+    service.foldProgressiveLinesReader = () => false;
     final TexthookerLineEntry old = service.appendLine('old scene')!;
     final TexthookerLineEntry other = service.appendLine('other scene')!;
     final _RecordingRepo repo = _RecordingRepo();
@@ -1305,7 +1305,7 @@ void main() {
     });
 
     test('预览帧属于别的台词：拒绝制卡，不把码打到别的画面上', () async {
-      service.foldProgressiveLines = false;
+      service.foldProgressiveLinesReader = () => false;
       final TexthookerLineEntry a = service.appendLine('甲')!;
       final TexthookerLineEntry b = service.appendLine('乙')!;
       final _CoverBytesRepo repo = _CoverBytesRepo();

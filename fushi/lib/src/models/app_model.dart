@@ -1074,6 +1074,18 @@ class HomeDictionaryTabRequest {
   int get hashCode => Object.hash(seq, focusSearch);
 }
 
+/// 把 [service] 的偏好读取器接到 [prefs] 上：每次判定现读偏好缓存，不存副本。
+///
+/// [TexthookerService] 是没有 ref 的进程级单例；偏好随 Profile 走，切 Profile 时
+/// [AppModel.refreshPrefCache] 只重载 [prefs] 的缓存，现读的读取器自动跟上，推进去
+/// 的副本却会停在旧值（BUG-5609）。
+void bindTexthookerPreferenceReaders(
+  TexthookerService service,
+  PreferencesRepository prefs,
+) {
+  service.foldProgressiveLinesReader = () => prefs.galHookFoldProgressiveLines;
+}
+
 /// A scoped model for parameters that affect the entire application.
 /// RiverPod is used for global state management across multiple layers,
 /// especially for preferences that persist across application restarts.
@@ -6179,10 +6191,10 @@ class AppModel
           prefsRepo.getPref(kStatDayResetHourPrefKey) == null) {
         await setStatDayResetHour(SrsDayContext.defaultRolloverHour);
       }
-      // 偏好一装载就把折叠开关推给 TexthookerService（进程级单例、无 ref）。漏了这一步
-      // 开关就只在「本次会话里手动改过」时才生效，重启后静默退回默认值。
-      TexthookerService.instance.foldProgressiveLines =
-          prefsRepo.galHookFoldProgressiveLines;
+      // TexthookerService 是没有 ref 的进程级单例：接上现读偏好的读取器，不推副本。
+      // 推副本要在启动 / 改开关 / 切 Profile 各补一次，漏了切 Profile 那次开关就停在
+      // 旧 Profile 的值上（BUG-5609）。
+      bindTexthookerPreferenceReaders(TexthookerService.instance, prefsRepo);
       // 代理是**进程级**网络出口配置，却只存在偏好里；同步层的单例（GoogleDriveAuth 等）
       // 拿不到 AppModel，以前就只能各自裸连——BUG-1348 的谷歌云盘登录超时正是如此。四个
       // 代理读取器的绑定已下沉到 `PreferencesRepository.loadFromDb()`（偏好变得可读的
@@ -15828,13 +15840,11 @@ class AppModel
       prefsRepo.galHookPassThroughBlocksMouse;
   Future<void> setGalHookPassThroughBlocksMouse(bool value) =>
       prefsRepo.setGalHookPassThroughBlocksMouse(value);
-  // 折叠「同一句台词的多次快照」。TexthookerService 是没有 ref 的进程级单例，
-  // 拿不到偏好；真值由这里单向推给它（启动期一次 + 每次改开关一次）。
+  // 折叠「同一句台词的多次快照」。TexthookerService 经 [bindTexthookerPreferenceReaders]
+  // 现读同一个偏好，这里写完即生效，不另推副本。
   bool get galHookFoldProgressiveLines => prefsRepo.galHookFoldProgressiveLines;
-  Future<void> setGalHookFoldProgressiveLines(bool value) async {
-    await prefsRepo.setGalHookFoldProgressiveLines(value);
-    TexthookerService.instance.foldProgressiveLines = value;
-  }
+  Future<void> setGalHookFoldProgressiveLines(bool value) =>
+      prefsRepo.setGalHookFoldProgressiveLines(value);
 
   // TODO-370: 悬浮字幕透明度（按钮底色 / 文字），0..100 百分比，100=保持现观感。
   int get floatingLyricButtonBgOpacity =>

@@ -1,0 +1,6 @@
+## BUG-5609 · texthooker-fold-lines-profile-switch
+- **报告**：2026-11-28（用户：架构审计顺带发现）
+- **真实性**：✅ 真 bug。`TexthookerService.foldProgressiveLines`（`fushi/lib/src/sync/texthooker_service.dart:572`）是偏好 `gal_hook_fold_progressive_lines` 的推送式副本，只在 `AppModel.initialise`（`fushi/lib/src/models/app_model.dart:6184`）和 `setGalHookFoldProgressiveLines`（`app_model.dart:15836`）赋值；该键不在 `ProfileKeys` 排除表 / 前缀里，随 Profile 快照切换，而切 Profile 走的 `AppModel.refreshPrefCache`（`app_model.dart:6918`）只重载偏好缓存、不刷新这份副本 → 切完 Profile 后「合并分段吐出的台词」停在旧 Profile 的值，直到重启。
+- **[x] ① 已修复** — 不存副本：`TexthookerService` 改持 `bool Function() foldProgressiveLinesReader`，`foldProgressiveLines` 变成只读 getter 每次现读（与 `ImmersionMiningEngine.lowMemoryModeReader` 同法）；`AppModel.initialise` 经顶层 `bindTexthookerPreferenceReaders(service, prefs)` 接到偏好缓存，setter 不再推值。字段去掉 setter 后，再写推送式赋值编译不过。盘点 `app_model.dart` 与 `lib/` 里其它「只在 initialise + setter 赋值」的进程级单例镜像：没有第二处（`navRailExpandedNotifier` / 主题 / 统计日界已在 `refreshPrefCache` 里刷新，`FushiToast.mineNoticeFilter`、`ImmersionMiningEngine.lowMemoryModeReader` 本就是现读闭包，页面里的 `_popup.lowMemory` 等是页面实例状态不在本机制内）。
+- **[x] ② 已加自动化测试** — `fushi/test/sync/texthooker_fold_profile_switch_test.dart`：内存库上走真实切换路径 `ProfileRepository.applyProfile` + `PreferencesRepository.refreshFromDb`，断言服务的折叠行为（三拍逐段重绘留 1 条 / 3 条）跟着新 Profile 走。
+- **备注**：未做真机验证（Windows galgame hook 会话下切 Profile 后看工作台折叠）。
