@@ -1,12 +1,365 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-27T05:38:43Z",
+ "generatedAt": "2026-11-28T08:27:33Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "e9563b679e759638e7e2e7b40dd4c9de6a738b6c",
-  "seq": 32866
+  "sha": "4d853cf79195e335c36454886fed25e9ec0d235e",
+  "seq": 33053
  },
  "builds": [
+  {
+   "seq": 33039,
+   "version": "3.4.0",
+   "sha": "09ad1eb307ef4ba5e3a562d74340a0f99807b7be",
+   "unknown": false,
+   "publishedAt": "2026-11-28T03:46:36Z",
+   "testflight": false,
+   "baseSeq": 32865,
+   "prs": [
+    4534
+   ],
+   "direct": [
+    {
+     "sha": "09ad1eb307ef4ba5e3a562d74340a0f99807b7be",
+     "subject": "test(interconnect): BUG-5606 测试守规：纯 Dart 测试改用 package:test，host 路由同步 IO 守卫改用 maskComments（合并后守卫批两红）"
+    },
+    {
+     "sha": "88232088f48dc59729ec2f7647dd0ed426b7a7d1",
+     "subject": "feat(interconnect): client 清单 GET 带 If-None-Match，304 复用已解析结果（BUG-5606 审查第 8 条）"
+    },
+    {
+     "sha": "41219c1827abe5724834d6218fd657c9fb33f15a",
+     "subject": "Merge PR #4597"
+    },
+    {
+     "sha": "95af714ed61ec50b9fecee3f8f0ea10e7c0c0b40",
+     "subject": "Merge PR #4596"
+    },
+    {
+     "sha": "7a0716a29ec98942d86f83a4172ddf7229edf511",
+     "subject": "Merge PR #4595"
+    },
+    {
+     "sha": "ef013894e41697f171b98522795f54d3dc68078a",
+     "subject": "test(torrent): BUG-5165 DHT 汇总用例补 2 分钟用例超时，60 s 轮询上限不再被默认 30 s 先判死（BUG-5607）"
+    },
+    {
+     "sha": "3706622ff1a5a20e8784fbbb7c053902e785a27d",
+     "subject": "Merge PR #4588"
+    },
+    {
+     "sha": "6a1f474a5885a689583b7b4aa5e4388638886aa9",
+     "subject": "Merge PR #4575"
+    },
+    {
+     "sha": "7e2741a1d3ec309276db58b182275c121793afbb",
+     "subject": "Merge PR #4569"
+    },
+    {
+     "sha": "df2d0c877931f76a31bfd8124c50248391d58cf5",
+     "subject": "chore(bugs): settle BUG number collisions on 7eb13d8b4"
+    },
+    {
+     "sha": "7eb13d8b484a73a3f45b5a0698539100d54e8790",
+     "subject": "docs(bugs): 登记批量合并审查中发现的三条遗留（BUG-5597 TTS/SRS 模块整块在最大 import 环里；BUG-5598 Apple 浮层原生材质默认色判据与默认面板色不一致；BUG-5599 捐赠页 await 后才读 ref）"
+    },
+    {
+     "sha": "f0e263587d596a27e1e1729a497e294c52ce38d6",
+     "subject": "fix(merge): 批量合并集成修复——itest 补 videoSpecsProvider 新位置的 import；「添加声音」流程折回朗读声音页，不再给 lib/ 最大 import 环多加节点（618→617）"
+    },
+    {
+     "sha": "7f57b7b41686a875bbb6bac9b2195ac6f7c0c2b6",
+     "subject": "Merge PR #4581"
+    },
+    {
+     "sha": "37c1a788d88dc39084fa6e566be8c1b3315d39ae",
+     "subject": "Merge PR #4578"
+    },
+    {
+     "sha": "d111577d8ea7a32a8bb2b2abe01ab87513ae2771",
+     "subject": "Merge PR #4579"
+    },
+    {
+     "sha": "4608f79c16fb59dde3348e9d9e4244bca37c3f3f",
+     "subject": "Merge PR #4577"
+    },
+    {
+     "sha": "0e6f40b4e3c5a49be1b83bc365edf5e62286600f",
+     "subject": "Merge PR #4580"
+    },
+    {
+     "sha": "61eff6b796e9b00500821f418524ab9bd0a9b2f9",
+     "subject": "chore(bugs): settle BUG number collisions on a57a3c69e"
+    },
+    {
+     "sha": "a57a3c69e5b37f17beaff4b701795d1ec6dca6a0",
+     "subject": "Merge PR #4548"
+    },
+    {
+     "sha": "11c1c57e23a0679d500f28c28cac9bdf0e935858",
+     "subject": "Merge PR #4558"
+    },
+    {
+     "sha": "e715c12fc74d9ab3a0100669e3d42322052553b6",
+     "subject": "Merge PR #4568"
+    },
+    {
+     "sha": "0e0254b8bdcc64bf7e4a9a8db5eac9208426ef42",
+     "subject": "Merge PR #4570"
+    },
+    {
+     "sha": "b26e97dbdc44940726fb61b5fd83aff3dea9cf94",
+     "subject": "Merge PR #4573"
+    },
+    {
+     "sha": "a1bc55f6701b1587a181cc8e787b0d88b2895871",
+     "subject": "Merge PR #4574"
+    },
+    {
+     "sha": "26f0ffc2eca2c03cfae75ef7eea2b73b1f916ae9",
+     "subject": "Merge PR #4576"
+    },
+    {
+     "sha": "69599bd28f61860c153bafec3ced79b1115ef4fb",
+     "subject": "Merge PR #4567"
+    },
+    {
+     "sha": "9f21d9ed7e5262914064f95fd0a5987bfb1fb58f",
+     "subject": "Merge PR #4553"
+    },
+    {
+     "sha": "e18ab28f1c8f14c862179a70f05d25deb6deef68",
+     "subject": "Merge PR #4571"
+    },
+    {
+     "sha": "cc0d474cdfd5365b7d8351e5f6f6cf6277b7ac2a",
+     "subject": "chore(bugs): settle BUG number collisions on 6c77f8c16"
+    },
+    {
+     "sha": "6c77f8c16234047fabf0dba2b71fa2aaacaa95e3",
+     "subject": "style: dart format 与 BUGS 索引（批量合并）"
+    },
+    {
+     "sha": "cff526e4bcb658956ed53a37889a32dd858819fe",
+     "subject": "chore(bugs): reindex（BUG-5542 去重行、收录 5584 等）"
+    },
+    {
+     "sha": "a9fb42da2431d3e49e74ef20cae91fc7587ab0b9",
+     "subject": "fix(feedback-link): push 事件只带 20 个提交时经 compare API 取全，批量合并不再漏标反馈（BUG-5584）"
+    },
+    {
+     "sha": "19edcb79535eac08f4a4dd15f6150568cfc7b055",
+     "subject": "test(srs): 补 edit_of_object 与 parse_edit 逐字段对拍（#4565 注释引用的测试原本不存在）"
+    },
+    {
+     "sha": "2f77a9791e942b7d911fdf4570e39259bfb45015",
+     "subject": "fix(detail): 横屏手机详情页背景带给首屏标题与主按钮让位（BUG-5550）"
+    },
+    {
+     "sha": "9fa2425facd34a51cabb14098346444780c3d114",
+     "subject": "fix(layout): 横屏手机外壳按真实高度取档，快捷键页工具区随列表滚走（BUG-5492）"
+    },
+    {
+     "sha": "2486a54adbbc81de9a6a301a27488be15ce83cc0",
+     "subject": "fix(feedback): preserve account ticket seen state across startup rebuilds and concurrent refreshes"
+    },
+    {
+     "sha": "b96887651783c27b0675cd483843be9827c28409",
+     "subject": "fix(collections): promote epub passthrough items to local uid on book arrival and deduplicate dual-key members"
+    },
+    {
+     "sha": "1d41428e3d9651e85bac76902bc1477c3de08957",
+     "subject": "fix(merge): #4455 迁移摘要改记进数据位置取证环（BUG-5490），删掉自建的 SharedPreferences 键与 data_root_move_log"
+    },
+    {
+     "sha": "eb83cc359591ade04fd89340a910bc507226221b",
+     "subject": "fix(storage): Android 书库迁到外部时拒绝只差大小写的文件，补迁移取证（BUG-5467）"
+    },
+    {
+     "sha": "2fa20c281718c753a7ee94de769111cdaac9bb0e",
+     "subject": "fix(srs): 辅助进程的复习写入经绑定 Service 转交主进程（BUG-5542）"
+    },
+    {
+     "sha": "5ece79b2ebb2a0f1a4067f0ac08329a1425e5d42",
+     "subject": "perf(srs): 笔记批量读改走内核 read note_views（读+物化合一、字段正文走字符串列）、读一趟内别名查询记忆、read logs 整批重放；登记 BUG-5572 第二轮前后基准"
+    },
+    {
+     "sha": "2aa7a62d915925f9f3acf3f80ff17070a69f98ed",
+     "subject": "perf(srs): read note_views 内核读+物化合一、read logs 整批按族重放、读一趟内别名查询记忆（BUG-5572，WIP）"
+    },
+    {
+     "sha": "2d8a6f86cad2a6fb28ff7a4bdfbb4aa0bc8c2357",
+     "subject": "docs(agent): 「能力缺口按机制补」推广为「按类解决」，覆盖 bug / CI 红 / 审查 / 反馈等所有方向"
+    },
+    {
+     "sha": "b058eb73ef6ca23af61547ba6e36bffdad5339df",
+     "subject": "docs(agent): 能力缺口（互联 / CLI 等）按机制补，不逐个补功能"
+    },
+    {
+     "sha": "8e334764ce5e750c7c010164d7032717227898ad",
+     "subject": "docs(agent): 只做根本解、禁止补丁式解决；根本解波及面大就上拍板台"
+    },
+    {
+     "sha": "13850fa93b90004f810ca8df60c0bb82ee56484c",
+     "subject": "chore(bugs): settle BUG number collisions on 8a2a65c95"
+    },
+    {
+     "sha": "8a2a65c953f84fa107a71c12ebc430a96a9a34ce",
+     "subject": "fix(merge): no_flutter_logs 守卫改用 package:test（pure_dart_test_import_guard 红）；登记 develop 既有的 import 大环 626>620（BUG-5581，本批未加剧）"
+    },
+    {
+     "sha": "b7528e06e3c030bbf11508c8fa71abe1fd43416b",
+     "subject": "fix(merge): 本批 PR 审查遗留——PDF 原件拷贝收成一处裸写（#4556 守卫）；捐赠预览缓存写入口在 await 前取（#4541）；read_lofty 嗅探不出才按扩展名重读、读不出退回扩展名推断（#4525，0 字节音频不升级成扫描错误）；日志测试改用 package:test 与插值（#4554）；词典取消夹具补齐装载文件（#4547）；dart format"
+    },
+    {
+     "sha": "54b3e6cdfa72792b65ea2acea4e34eea1157804b",
+     "subject": "Merge PR #4563"
+    },
+    {
+     "sha": "8a9506c00a7b8522ede6236573edb0b739c1a79a",
+     "subject": "Merge PR #4561"
+    },
+    {
+     "sha": "e713636b3ea0a181a5bb298bdeece76fd036212f",
+     "subject": "Merge PR #4564"
+    },
+    {
+     "sha": "e316d3bb07ecc9afc26873876571f146cdd51b56",
+     "subject": "Merge PR #4524"
+    },
+    {
+     "sha": "60e66e82b5da97acacdccf9c8f43947e14cc7abc",
+     "subject": "Merge PR #4525"
+    },
+    {
+     "sha": "f8dbc6a03c867bdb7bcd9b389342718d3f0186f0",
+     "subject": "Merge PR #4526"
+    },
+    {
+     "sha": "f0c9a231c16f0986d21311977f15abde03cd7a28",
+     "subject": "Merge PR #4527"
+    },
+    {
+     "sha": "30d558d80ac9836ecd59c7426321c84ef8c53fec",
+     "subject": "Merge PR #4528"
+    },
+    {
+     "sha": "c5675f895eaf5da3c221b94e378cc5ac5f144c45",
+     "subject": "Merge PR #4529"
+    },
+    {
+     "sha": "f317fc3cd8f596274c85c7b4ec51fa93656c1f80",
+     "subject": "Merge PR #4531"
+    },
+    {
+     "sha": "f1c3f18bc1bc3b2aa61771a8d42ed21cf0504c7f",
+     "subject": "Merge PR #4533"
+    },
+    {
+     "sha": "b6b2011188b7e7c279b85aa8ea5550bc118af881",
+     "subject": "Merge PR #4535"
+    },
+    {
+     "sha": "7c428b90b7d9905e8000c0d561a268a71ec0ce8b",
+     "subject": "Merge PR #4536"
+    },
+    {
+     "sha": "937e90348214349231f0fe155e136088b4f6e95c",
+     "subject": "Merge PR #4537"
+    },
+    {
+     "sha": "984405b02394e684169f96ad9de1f16fa9630949",
+     "subject": "Merge PR #4538"
+    },
+    {
+     "sha": "cb437c5e7dd96d62b72a74ba665954ded5527dca",
+     "subject": "Merge PR #4539"
+    },
+    {
+     "sha": "38145627d12eb9703e348473aa7f64c822396095",
+     "subject": "Merge PR #4540"
+    },
+    {
+     "sha": "4c1708243ebba0a666b8e3c3b2c767023dfd0f67",
+     "subject": "Merge PR #4541"
+    },
+    {
+     "sha": "51a838ddf07f98adad4d00dd2dea8f4f913e3a30",
+     "subject": "Merge PR #4542"
+    },
+    {
+     "sha": "66e424175abe56229da4039e498d804d79fc8ce9",
+     "subject": "Merge PR #4544"
+    },
+    {
+     "sha": "5f974a299e5b964e27d0f4f06d182bcc79b8c711",
+     "subject": "Merge PR #4545"
+    },
+    {
+     "sha": "c7420ce0d517743717a7f2914e881ef439be003a",
+     "subject": "Merge PR #4546"
+    },
+    {
+     "sha": "db4ebdfafb7703b422b4aa742208a6e57c281c1b",
+     "subject": "Merge PR #4547"
+    },
+    {
+     "sha": "96502d1d678d60618527f17d733af22de56ea35f",
+     "subject": "Merge PR #4550"
+    },
+    {
+     "sha": "b38b9ebbd718ddd9bd2a6b1a60d69e37c5401eb9",
+     "subject": "Merge PR #4551"
+    },
+    {
+     "sha": "64f6954057977248ae386c4bcaefbbfbee13bdaa",
+     "subject": "Merge PR #4554"
+    },
+    {
+     "sha": "1596edb9775b7667cf8dff6c957e7247f9c5426f",
+     "subject": "Merge PR #4555"
+    },
+    {
+     "sha": "baab946216fe7b50a7778534183de7884426871e",
+     "subject": "Merge PR #4556"
+    },
+    {
+     "sha": "944660aef56b4aacca4d6405d8dbe24c82c08a4f",
+     "subject": "Merge PR #4557"
+    },
+    {
+     "sha": "b6976f554113ea48c74e4fb0e90e9d16bbb3f966",
+     "subject": "Merge PR #4560"
+    },
+    {
+     "sha": "a009cde29a0adb1bbae4a85c1c9bbf663d19b4b3",
+     "subject": "Merge PR #4552"
+    },
+    {
+     "sha": "7af367e5acb019d918dd6eba4abbd1afb842246b",
+     "subject": "Merge PR #4562"
+    },
+    {
+     "sha": "e9563b679e759638e7e2e7b40dd4c9de6a738b6c",
+     "subject": "chore(readme): refresh development activity chart [skip ci]"
+    }
+   ],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "ok"
+    },
+    "macos": {
+     "state": "ok"
+    },
+    "ios": {
+     "state": "ok"
+    }
+   }
+  },
   {
    "seq": 32865,
    "version": "3.4.0",
@@ -53,7 +406,7 @@
    "unknown": false,
    "publishedAt": "2026-11-26T20:08:14Z",
    "testflight": true,
-   "baseSeq": 32846,
+   "baseSeq": 32769,
    "prs": [],
    "direct": [
     {
@@ -91,34 +444,7 @@
     {
      "sha": "1af8eff4f14e4adb76c2194d58739f863ff8db97",
      "subject": "Merge PR #4517"
-    }
-   ],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
     },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "ok"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
-  },
-  {
-   "seq": 32846,
-   "version": "3.4.0",
-   "sha": "b3beaa39bab0820eb637c1959fa84527e8dfe89a",
-   "unknown": false,
-   "publishedAt": "2026-11-26T18:46:12Z",
-   "testflight": true,
-   "baseSeq": 32769,
-   "prs": [],
-   "direct": [
     {
      "sha": "b3beaa39bab0820eb637c1959fa84527e8dfe89a",
      "subject": "fix(merge): 集成验证三处红——BUG-5527/5528/5529 撞号改号为 5534/5535/5536；捐赠客户端测试改用 package:test；作品远程海报用例补回磁盘缓存清理定时器的 pump"
@@ -213,8 +539,7 @@
      "state": "ok"
     },
     "macos": {
-     "state": "failed",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45870008870"
+     "state": "ok"
     },
     "ios": {
      "state": "ok"
@@ -223,30 +548,83 @@
   }
  ],
  "pending": {
-  "headSha": "e9563b679e759638e7e2e7b40dd4c9de6a738b6c",
-  "headSeq": 32866,
-  "prs": [],
+  "headSha": "4d853cf79195e335c36454886fed25e9ec0d235e",
+  "headSeq": 33053,
+  "prs": [
+   4612,
+   4610,
+   4602
+  ],
   "direct": [
    {
-    "sha": "e9563b679e759638e7e2e7b40dd4c9de6a738b6c",
+    "sha": "a166cd9af8d41fe61407c43b60ea55713e2b08b7",
     "subject": "chore(readme): refresh development activity chart [skip ci]"
+   },
+   {
+    "sha": "3402e7d86f522b17e3f162a59806c0151c39d56a",
+    "subject": "chore(readme): refresh star history chart (TODO-1294) [skip ci]"
+   },
+   {
+    "sha": "efce8c85a9068b88a8184b9abc8ad457a7f9618b",
+    "subject": "chore(bugs): settle BUG number collisions on 09ad1eb30"
    }
   ],
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "none"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/46125697638"
    },
    "windows": {
-    "state": "none"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/46125697711"
    },
    "macos": {
-    "state": "none"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/46125697711"
    },
    "ios": {
-    "state": "none"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/46125697711"
    }
   }
  },
- "prs": {}
+ "prs": {
+  "4534": {
+   "number": 4534,
+   "title": "docs(bugs): BUG-5565 原盘回菜单后点 NCED 无反应——复现结论（未定根因）",
+   "author": "hajisensai",
+   "mergedAt": null,
+   "additions": 28,
+   "deletions": 1,
+   "labels": []
+  },
+  "4602": {
+   "number": 4602,
+   "title": "ci(release): 暂停开关也挡手动 debug dispatch；准备 3.4.1",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-28T04:24:59Z",
+   "additions": 101,
+   "deletions": 37,
+   "labels": []
+  },
+  "4610": {
+   "number": 4610,
+   "title": "docs(readme): Linux 官方 Flatpak 与服务端描述更新",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-28T05:49:53Z",
+   "additions": 52,
+   "deletions": 52,
+   "labels": []
+  },
+  "4612": {
+   "number": 4612,
+   "title": "fix(import): 同名书受管内容丢了时任何导入入口都按原条目就地恢复（BUG-5608）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-28T08:24:52Z",
+   "additions": 954,
+   "deletions": 268,
+   "labels": []
+  }
+ }
 }
