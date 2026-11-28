@@ -636,6 +636,56 @@ void main() {
       expect(fonts.bytes, 55);
     });
 
+    test('BUG-5613：封面与着色器明细一律只读（有库行指着 / 混着用户数据）', () async {
+      // 封面根下的直接子项：成员封面（video_books.cover_path 指着）、来源账本
+      // （手动封面的 CoverOrigin.manual 就记在这里）、合集封面子目录、游戏封面
+      // （进备份包）、音乐封面（music_albums.cover_path 指着）、书籍 override 缩略图。
+      writeFile(p.join(docs.path, 'video_covers', 'uid1.jpg'), 10);
+      writeFile(p.join(docs.path, 'video_covers', 'cover_meta.json'), 10);
+      writeFile(p.join(docs.path, 'video_covers', 'collections', 'c1.jpg'), 10);
+      writeFile(p.join(docs.path, 'game_covers', '7.png'), 10);
+      writeFile(p.join(docs.path, 'music_covers', 'mbid-1.jpg'), 10);
+      writeFile(p.join(docs.path, 'thumbnails', '123456'), 10);
+      // 着色器：用户自导入的与 Anime4K 混放；Lua 脚本全是用户导入的。
+      writeFile(p.join(docs.path, 'mpv_shaders', 'my_own.glsl'), 10);
+      writeFile(p.join(docs.path, 'mpv_shaders', 'Anime4K_Clamp.glsl'), 10);
+      writeFile(p.join(docs.path, 'mpv_scripts', 'skip.lua'), 10);
+
+      final List<StorageCategoryUsage> all = await service()
+          .scanCategories(
+            books: const <StorageBookRef>[],
+            dictionaryNames: const <String>[],
+          )
+          .toList();
+
+      for (final StorageCategoryId id in <StorageCategoryId>[
+        StorageCategoryId.covers,
+        StorageCategoryId.shaders,
+      ]) {
+        final StorageCategoryUsage usage = all.singleWhere(
+          (StorageCategoryUsage u) => u.id == id,
+        );
+        expect(usage.entries, isNotEmpty, reason: '$id 必须真的扫到明细，否则断言是空转');
+        for (final StorageEntryUsage entry in usage.entries) {
+          expect(
+            entry.kind,
+            StorageEntryKind.readOnly,
+            reason: '${entry.label} 裸删会丢用户数据或留下悬空引用',
+          );
+        }
+        expect(kDeletableEntryCategories, isNot(contains(id)));
+      }
+      expect(
+        all
+            .singleWhere(
+              (StorageCategoryUsage u) => u.id == StorageCategoryId.covers,
+            )
+            .entries
+            .length,
+        6,
+      );
+    });
+
     test('database 明细列出 support 根子项，且不含被单列的 OCR 模型目录', () async {
       writeFile(p.join(support.path, 'fushi.sqlite'), 1000);
       writeFile(p.join(support.path, 'local_audio_1.db'), 20);
