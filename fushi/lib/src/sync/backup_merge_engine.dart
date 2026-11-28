@@ -12,6 +12,8 @@ import 'package:fushi_engine/media/video/strm_file.dart'
         kNetworkStreamSchemes,
         kSourceLibrarySftpScheme;
 import 'package:fushi_engine/sync/aggregate_merge_service.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart'
+    show capFutureSyncStampSql, trustedStoredSyncStampSql;
 import 'package:fushi/src/models/preference_keys.dart'
     show kProfileFallbackIdPrefKey, kWorkProfileSessionPrefKey;
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -39,7 +41,10 @@ import 'package:fushi_srs/fushi_srs.dart' show SrsCore;
 ///
 /// Conflict resolution mirrors the existing sync semantics:
 /// - content lists (books / videos / dictionaries / audio) -> push-only UNION.
-/// - progress (reader positions) -> LWW by `updatedAt` (larger wins).
+/// - progress (reader positions) -> LWW by `updatedAt` (larger wins). Every
+///   LWW comparison uses the sync side's future-stamp rule ([_srcStampNewer] /
+///   [_landedStamp], BUG-5612): a poisoned future stamp counts as 0 and is
+///   capped when landed, so it never pins a row forever.
 /// - statistics (reading / video / hourly / mining / lookup+mine counters) ->
 ///   per-bucket MAX-union, so re-importing the same backup is idempotent and
 ///   never double-counts.
@@ -122,6 +127,22 @@ class BackupMergeEngine {
 
   /// [_excludedBookKeys] 的连接级临时表，[_mergeMainDatabase] 事务开头建、结尾删。
   static const String _excludedBookKeysTable = 'temp.merge_excluded_book_keys';
+
+  /// 本次合并比较时间戳用的「现在」（毫秒）。一次合并只取一次，所有 LWW 语句同一口径。
+  late final int _nowMs = DateTime.now().millisecondsSinceEpoch;
+
+  /// 备份合并的 LWW 判据（BUG-5612）：src 行的戳 [srcStamp] 严格新于目标行的戳
+  /// [targetStamp]（两者都是 SQL 列表达式）。两侧都按同步侧的
+  /// [trustedStoredSyncStampSql] 看——超出未来余量的毒戳（时钟走快的设备写下的）按 0
+  /// 比较：备份里的毒戳不会压住本机真实的较新值，本机已有的毒戳也会被备份里的正常
+  /// 值盖掉（自愈）。与同步侧 `mangaChapterStateReplaces` 同一口径；平局保留本机。
+  String _srcStampNewer(String srcStamp, String targetStamp) =>
+      '${trustedStoredSyncStampSql(srcStamp, nowMs: _nowMs)} > '
+      '${trustedStoredSyncStampSql(targetStamp, nowMs: _nowMs)}';
+
+  /// src 行落进本库时写的戳：截到 [capFutureSyncStampSql]，毒戳不随合并扩散进本库。
+  String _landedStamp(String srcStamp) =>
+      capFutureSyncStampSql(srcStamp, nowMs: _nowMs);
 
   /// 「这本书不得落进本库」的 bookKey 子查询：删除墓碑，加上 [_excludedBookKeys]。
   /// 只在 [_mergeMainDatabase] 内使用（临时表只在那里存在）。
@@ -804,7 +825,7 @@ class BackupMergeEngine {
           'WHERE t.book_uid = $_srcBookUidRekey) '
           'OR EXISTS (SELECT 1 FROM reader_positions AS t '
           'WHERE t.book_uid = $_srcBookUidRekey '
-          'AND s.updated_at > t.updated_at)',
+          'AND ${_srcStampNewer('s.updated_at', 't.updated_at')})',
         )
         .getSingle();
     return row.data['c'] as int;
@@ -1327,12 +1348,16 @@ class BackupMergeEngine {
   /// Reader positions LWW: a src row wins only when the target lacks a row for
   /// that book(uid), or the src `updated_at` is strictly greater. v82 起
   /// book_uid 经 [_srcBookUidRekey] 双侧换键（两库随机 uid 不可直比）。
+  /// 「更新」按 [_srcStampNewer]（毒戳按 0），落地的戳经 [_landedStamp] 截断（BUG-5612）。
   Future<void> _mergeReaderPositions() async {
     final List<String> cols = await _columnsExceptId('reader_positions');
     final String colList = cols.join(', ');
-    final String selList = cols
-        .map((String c) => c == '"book_uid"' ? _srcBookUidRekey : 's.$c')
-        .join(', ');
+    String srcValue(String c) => switch (c) {
+      '"book_uid"' => _srcBookUidRekey,
+      '"updated_at"' => _landedStamp('s.$c'),
+      _ => 's.$c',
+    };
+    final String selList = cols.map(srcValue).join(', ');
     await _db.customStatement(
       'INSERT INTO reader_positions ($colList) '
       'SELECT $selList FROM $_srcAlias.reader_positions AS s '
@@ -1346,7 +1371,7 @@ class BackupMergeEngine {
         .map(
           (String c) =>
               '$c = ('
-              'SELECT s.$c FROM $_srcAlias.reader_positions AS s '
+              'SELECT ${srcValue(c)} FROM $_srcAlias.reader_positions AS s '
               'WHERE $_srcBookUidRekey = reader_positions.book_uid)',
         )
         .join(', ');
@@ -1355,7 +1380,7 @@ class BackupMergeEngine {
       'UPDATE reader_positions SET $setClause '
       'WHERE EXISTS (SELECT 1 FROM $_srcAlias.reader_positions AS s '
       'WHERE $_srcBookUidRekey = reader_positions.book_uid '
-      'AND s.updated_at > reader_positions.updated_at)',
+      'AND ${_srcStampNewer('s.updated_at', 'reader_positions.updated_at')})',
     );
   }
 
@@ -2121,13 +2146,14 @@ class BackupMergeEngine {
         'SELECT s.playlist_uid FROM $_srcAlias.music_playlists AS s '
         'WHERE NOT EXISTS (SELECT 1 FROM music_playlists AS t '
         'WHERE t.playlist_uid = s.playlist_uid '
-        'AND t.updated_at >= s.updated_at)',
+        'AND NOT (${_srcStampNewer('s.updated_at', 't.updated_at')}))',
       );
       await _db.customStatement(
         'INSERT INTO music_playlists '
         '(playlist_uid, name, rules_json, created_at, updated_at, deleted_at) '
         'SELECT s.playlist_uid, s.name, s.rules_json, s.created_at, '
-        's.updated_at, s.deleted_at FROM $_srcAlias.music_playlists AS s '
+        '${_landedStamp('s.updated_at')}, s.deleted_at '
+        'FROM $_srcAlias.music_playlists AS s '
         'WHERE s.playlist_uid IN (SELECT uid FROM temp.merge_music_pl) '
         'ON CONFLICT (playlist_uid) DO UPDATE SET name = excluded.name, '
         'rules_json = excluded.rules_json, updated_at = excluded.updated_at, '
@@ -2161,8 +2187,11 @@ class BackupMergeEngine {
         'SELECT s.track_uid, s.kind, s.source_key, s.item_id, s.title, '
         's.artist, s.album, s.duration_ms, s.cover_url, s.cover_ref, '
         's.album_id, s.artist_refs, s.library_added_at, '
-        's.created_at, s.updated_at '
-        'FROM $_srcAlias.music_remote_tracks AS s WHERE true '
+        's.created_at, ${_landedStamp('s.updated_at')} '
+        'FROM $_srcAlias.music_remote_tracks AS s '
+        'WHERE NOT EXISTS (SELECT 1 FROM music_remote_tracks AS t '
+        'WHERE t.track_uid = s.track_uid '
+        'AND NOT (${_srcStampNewer('s.updated_at', 't.updated_at')})) '
         'ON CONFLICT (track_uid) DO UPDATE SET '
         'kind = excluded.kind, source_key = excluded.source_key, '
         'item_id = excluded.item_id, title = excluded.title, '
@@ -2171,8 +2200,7 @@ class BackupMergeEngine {
         'cover_ref = excluded.cover_ref, album_id = excluded.album_id, '
         'artist_refs = excluded.artist_refs, '
         'library_added_at = excluded.library_added_at, '
-        'updated_at = excluded.updated_at '
-        'WHERE excluded.updated_at > music_remote_tracks.updated_at',
+        'updated_at = excluded.updated_at',
       );
     }
     if (await _srcTableExists('music_lyrics')) {
@@ -2182,10 +2210,10 @@ class BackupMergeEngine {
         'is_user_edited, updated_at) '
         'SELECT s.track_uid, s.source, s.format, s.raw, s.timeline_cache, '
         's.timeline_version, s.offset_ms, s.timing_quality, s.is_user_edited, '
-        's.updated_at FROM $_srcAlias.music_lyrics AS s '
+        '${_landedStamp('s.updated_at')} FROM $_srcAlias.music_lyrics AS s '
         'WHERE NOT EXISTS (SELECT 1 FROM music_lyrics AS t '
         'WHERE t.track_uid = s.track_uid AND t.source = s.source '
-        'AND t.updated_at >= s.updated_at) '
+        'AND NOT (${_srcStampNewer('s.updated_at', 't.updated_at')})) '
         'ON CONFLICT (track_uid, source) DO UPDATE SET '
         'format = excluded.format, raw = excluded.raw, '
         'timeline_cache = excluded.timeline_cache, '
@@ -2201,10 +2229,12 @@ class BackupMergeEngine {
         'INSERT INTO music_videos (track_uid, kind, ref, offset_ms, '
         'confidence, is_user_bound, updated_at) '
         'SELECT s.track_uid, s.kind, s.ref, s.offset_ms, s.confidence, '
-        's.is_user_bound, s.updated_at FROM $_srcAlias.music_videos AS s '
+        's.is_user_bound, ${_landedStamp('s.updated_at')} '
+        'FROM $_srcAlias.music_videos AS s '
         'WHERE NOT EXISTS (SELECT 1 FROM music_videos AS t '
         'WHERE t.track_uid = s.track_uid AND t.kind = s.kind '
-        'AND t.ref = s.ref AND t.updated_at >= s.updated_at) '
+        'AND t.ref = s.ref '
+        'AND NOT (${_srcStampNewer('s.updated_at', 't.updated_at')})) '
         'ON CONFLICT (track_uid, kind, ref) DO UPDATE SET '
         'offset_ms = excluded.offset_ms, confidence = excluded.confidence, '
         'is_user_bound = excluded.is_user_bound, '
@@ -2255,13 +2285,16 @@ class BackupMergeEngine {
       await _db.customStatement(
         'INSERT INTO music_resume_points '
         '(track_uid, position_ms, duration_ms, updated_at) '
-        'SELECT s.track_uid, s.position_ms, s.duration_ms, s.updated_at '
-        'FROM $_srcAlias.music_resume_points AS s WHERE true '
+        'SELECT s.track_uid, s.position_ms, s.duration_ms, '
+        '${_landedStamp('s.updated_at')} '
+        'FROM $_srcAlias.music_resume_points AS s '
+        'WHERE NOT EXISTS (SELECT 1 FROM music_resume_points AS t '
+        'WHERE t.track_uid = s.track_uid '
+        'AND NOT (${_srcStampNewer('s.updated_at', 't.updated_at')})) '
         'ON CONFLICT (track_uid) DO UPDATE SET '
         'position_ms = excluded.position_ms, '
         'duration_ms = excluded.duration_ms, '
-        'updated_at = excluded.updated_at '
-        'WHERE excluded.updated_at > music_resume_points.updated_at',
+        'updated_at = excluded.updated_at',
       );
     }
   }
@@ -2272,7 +2305,7 @@ class BackupMergeEngine {
       'INSERT INTO book_custom_css '
       '(book_uid, relative_path, content, deleted, updated_at) '
       'SELECT $_srcBookUidRekey, s.relative_path, s.content, s.deleted, '
-      's.updated_at FROM $_srcAlias.book_custom_css AS s '
+      '${_landedStamp('s.updated_at')} FROM $_srcAlias.book_custom_css AS s '
       'WHERE EXISTS '
       '(SELECT 1 FROM epub_books AS b WHERE b.uid = $_srcBookUidRekey) '
       'AND NOT EXISTS (SELECT 1 FROM book_custom_css AS t '
@@ -2288,13 +2321,14 @@ class BackupMergeEngine {
       'deleted = (SELECT s.deleted FROM $_srcAlias.book_custom_css AS s '
       'WHERE $_srcBookUidRekey = book_custom_css.book_uid '
       'AND s.relative_path = book_custom_css.relative_path), '
-      'updated_at = (SELECT s.updated_at FROM $_srcAlias.book_custom_css AS s '
+      'updated_at = (SELECT ${_landedStamp('s.updated_at')} '
+      'FROM $_srcAlias.book_custom_css AS s '
       'WHERE $_srcBookUidRekey = book_custom_css.book_uid '
       'AND s.relative_path = book_custom_css.relative_path) '
       'WHERE EXISTS (SELECT 1 FROM $_srcAlias.book_custom_css AS s '
       'WHERE $_srcBookUidRekey = book_custom_css.book_uid '
       'AND s.relative_path = book_custom_css.relative_path '
-      'AND s.updated_at > book_custom_css.updated_at)',
+      'AND ${_srcStampNewer('s.updated_at', 'book_custom_css.updated_at')})',
     );
   }
 
@@ -2304,7 +2338,8 @@ class BackupMergeEngine {
     await _db.customStatement(
       'INSERT INTO manga_reader_overrides '
       '(book_uid, overrides_json, updated_at, deleted) '
-      'SELECT $_srcBookUidRekey, s.overrides_json, s.updated_at, s.deleted '
+      'SELECT $_srcBookUidRekey, s.overrides_json, '
+      '${_landedStamp('s.updated_at')}, s.deleted '
       'FROM $_srcAlias.manga_reader_overrides AS s '
       'WHERE EXISTS (SELECT 1 FROM epub_books AS b WHERE b.uid = $_srcBookUidRekey) '
       'AND NOT EXISTS (SELECT 1 FROM manga_reader_overrides AS t '
@@ -2318,11 +2353,12 @@ class BackupMergeEngine {
       'WHERE $_srcBookUidRekey = manga_reader_overrides.book_uid), '
       'deleted = (SELECT s.deleted FROM $_srcAlias.manga_reader_overrides AS s '
       'WHERE $_srcBookUidRekey = manga_reader_overrides.book_uid), '
-      'updated_at = (SELECT s.updated_at FROM $_srcAlias.manga_reader_overrides AS s '
+      'updated_at = (SELECT ${_landedStamp('s.updated_at')} '
+      'FROM $_srcAlias.manga_reader_overrides AS s '
       'WHERE $_srcBookUidRekey = manga_reader_overrides.book_uid) '
       'WHERE EXISTS (SELECT 1 FROM $_srcAlias.manga_reader_overrides AS s '
       'WHERE $_srcBookUidRekey = manga_reader_overrides.book_uid '
-      'AND s.updated_at > manga_reader_overrides.updated_at)',
+      'AND ${_srcStampNewer('s.updated_at', 'manga_reader_overrides.updated_at')})',
     );
   }
 
@@ -2404,7 +2440,7 @@ class BackupMergeEngine {
   Future<void> _mergeOverrideTitlePrefs() async {
     await _db.customStatement(
       'INSERT INTO preferences ("key", "value", "updated_at") '
-      'SELECT s."key", s."value", s."updated_at" '
+      'SELECT s."key", s."value", ${_landedStamp('s."updated_at"')} '
       'FROM $_srcAlias.preferences AS s '
       "WHERE instr(s.\"key\", '$kOverrideTitleKeyMarker') > 0 "
       'AND NOT EXISTS (SELECT 1 FROM preferences AS t WHERE t."key" = s."key")',
@@ -2414,12 +2450,13 @@ class BackupMergeEngine {
       'UPDATE preferences SET '
       '"value" = (SELECT s."value" FROM $_srcAlias.preferences AS s '
       'WHERE s."key" = preferences."key"), '
-      '"updated_at" = (SELECT s."updated_at" FROM $_srcAlias.preferences AS s '
+      '"updated_at" = (SELECT ${_landedStamp('s."updated_at"')} '
+      'FROM $_srcAlias.preferences AS s '
       'WHERE s."key" = preferences."key") '
       "WHERE instr(preferences.\"key\", '$kOverrideTitleKeyMarker') > 0 "
       'AND EXISTS (SELECT 1 FROM $_srcAlias.preferences AS s '
       'WHERE s."key" = preferences."key" '
-      'AND s."updated_at" > preferences."updated_at")',
+      'AND ${_srcStampNewer('s."updated_at"', 'preferences."updated_at"')})',
     );
   }
 

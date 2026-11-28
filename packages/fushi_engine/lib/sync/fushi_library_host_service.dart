@@ -2388,6 +2388,18 @@ int capFutureSyncStamp(int atMs, {required int nowMs}) {
 int trustedStoredSyncStamp(int storedAtMs, {required int nowMs}) =>
     storedAtMs > nowMs + kSyncFutureStampToleranceMs ? 0 : storedAtMs;
 
+/// [capFutureSyncStamp] 的 SQLite 表达式版：[expr] 是一个非 NULL 整数列 / 表达式，
+/// 结果与 Dart 版逐值相同（同一个 [kSyncFutureStampToleranceMs]）。给只能写成
+/// SQL 的 LWW 合并用（备份合并，BUG-5612），口径不另定义。
+String capFutureSyncStampSql(String expr, {required int nowMs}) =>
+    'MIN($expr, ${nowMs + kSyncFutureStampToleranceMs})';
+
+/// [trustedStoredSyncStamp] 的 SQLite 表达式版：超出未来余量的毒戳按 0，其余原样。
+/// [expr] 是一个非 NULL 整数列 / 表达式。
+String trustedStoredSyncStampSql(String expr, {required int nowMs}) =>
+    '(CASE WHEN $expr > ${nowMs + kSyncFutureStampToleranceMs} '
+    'THEN 0 ELSE $expr END)';
+
 /// 书进度的「可信戳」视图：只把 [RemoteBookProgress.updatedAtMs] 换成
 /// [trustedStoredSyncStamp]（超限毒戳按 0），其余字段原样。戳本来可信时原样返回
 /// 同一个对象。比较前用它，书籍通道才与视频 / 有声书同样能自愈毒戳（BUG-3367 的
