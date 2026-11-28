@@ -117,13 +117,13 @@ extension _SyncOrchestratorAudiobooks on SyncOrchestrator {
             );
           }
         } else if (info.delayUpdatedAtMs > localAt) {
-          await _db.setPrefTyped<int>(
-            audiobookDelayPrefKey(identity),
-            info.delayMs,
-          );
-          await _db.setPrefTyped<int>(
-            audiobookDelayAtPrefKey(identity),
-            info.delayUpdatedAtMs,
+          // 比较与写入同一事务（BUG-5610）：本轮清单是拉取前的快照，期间本机调轴
+          // 写下的更新值不能被它盖掉；值与戳一次提交。
+          await _db.applyStampedIntPrefIfNewer(
+            valueKey: audiobookDelayPrefKey(identity),
+            stampKey: audiobookDelayAtPrefKey(identity),
+            value: info.delayMs,
+            stampMs: info.delayUpdatedAtMs,
           );
         }
       } catch (e) {

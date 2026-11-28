@@ -1,0 +1,10 @@
+## BUG-5610 · audiobook-delay-write-not-atomic
+- **报告**：2026-11-28（架构审计顺带发现）
+- **真实性**：✅ 真 bug。有声书调轴是偏好表里一对键 `audiobook_delay_<id>`（值）+ `audiobook_delay_at_<id>`（LWW 戳），三处写入都不是「同一事务比较后写入」：
+  - `packages/fushi_audio/lib/src/audiobook/audiobook_repository.dart:411`（`updateDelayMs`）：值与戳两次独立 `setPrefTyped`。同步落地能插进两次提交之间（落下「对端值 + 本机戳」），进程死在中间留下「新值 + 旧戳」；值没变也重盖戳，会无故压过对端真实的更新调轴；戳取裸 `now`，已存戳来自时钟偏快的对端（host 容许 +5 分钟）时本机新调轴反而「更旧」，下一轮 sweep 被对端旧值拉回。
+  - `packages/fushi_engine/lib/sync/local_library_host_service/audiobooks.part.dart:158`（host `putAudiobookDelay`）：先 `getAudiobookDelay` 读、`resolveDelayLww` 判、再两次 `setPrefTyped` 写；读与写之间 host 本机调轴写下的更新值会被这次过期判定盖掉。
+  - `fushi/lib/src/sync/sync_orchestrator/audiobooks.part.dart:114`（client sweep 拉取）：同样先读后写、两次提交。
+  - 对照：`updatePositionMs`（BUG-4825）已是单事务，但它比较的是**值**（值没变不写），不是委托描述里的「比较时间戳」；speed / followAudio / volume 没有戳、不走 LWW，不在本机制内。
+- **[x] ① 已修复** — `FushiDatabase`（`packages/fushi_core/lib/src/database/database_prefs_media.part.dart`）新增带戳 int 偏好对的两个原语，值与戳的读、判、写都在一个事务里、一次 `setPrefs` 提交：`writeLocalStampedIntPref`（本机写：值未变不写；戳取 `max(now, 已存戳 + 1)`）与 `applyStampedIntPrefIfNewer`（对端落地：仅戳严格更新才写，平局保留已存值，同 `resolveDelayLww` 的 a 侧规则）。`updateDelayMs` 与 `updatePositionMs` 共用前者；host `putAudiobookDelay` 与 client sweep 拉取共用后者。顺带补 `AudiobookRepository.readDelayUpdatedAtMs`。
+- **[x] ② 已加自动化测试** — `packages/fushi_audio/test/audiobook/audiobook_delay_atomic_write_test.dart`（戳写失败值回滚、一次提交、值未变不重盖戳、对端未来戳下本机戳仍严格更新、旧戳 / 平局不覆盖、并发时过期快照盖不掉本机新值）；`packages/fushi_engine/test/sync/audiobook_delay_host_put_atomic_test.dart`（host PUT 戳写失败值回滚、一次提交、旧戳 / 平局不覆盖）。
+- **备注**：同类未改（机制相同、但牵涉视频行 / 系列级列写穿与多字段合并，超出本条范围，应另开一条用同一原语收口）：视频远端调轴等 `video_remote_*` 值 + `…at_` 对——`fushi/lib/src/pages/implementations/video_fushi_page.dart` 本机调轴两次 `setPref`、`packages/fushi_engine/lib/media/video/video_book_repository.dart` `updateCollectionSubtitleDelayMs` 逐成员两次写、host `putVideoPlayback`（`local_library_host_service/videos.part.dart`）与 client `sync_orchestrator/videos.part.dart` 拉取的先读后写。未做真机验证（纯偏好表事务语义，单测在真 SQLite 上覆盖）。
