@@ -9,17 +9,22 @@
 /// - `scraped/<sha1(bookKey)>.json`：来源元数据（[BookArtRecord]：匹配源、系列、
 ///   卷号、各图 URL 与尺寸、是否用户钉死、被否决的 URL；署名、重刮沿用钉死的系列、
 ///   不降清晰度都靠它）；
-/// - `undo_backups/book_art/`：写入 / 清除前的旧刮削层（卷封面 + 本层贴上的横幅；
-///   撤销用，保留 30 天，按文件名里的时间戳判过期）。
+/// - `undo_backups/book_art/`：写入 / 清除前的旧刮削层（撤销用，保留 30 天）：卷封面
+///   `<时间戳>_<sha1(bookKey)>` 按文件名里的时间戳判过期；本层贴上的横幅按内容寻址
+///   `banner_<sha256>`，同系列各卷的快照共用一份，每次被快照用到就把修改时间刷成
+///   现在，按修改时间判过期（[snapshot]）。
 ///
 /// **横幅不在本层存**（BUG-5609）：系列横幅就是书的横版背景图，与书籍刮削写的背景图
 /// 同一份真相——`item_images` 的 backdrop，只经 [ItemScrapeStore] 写（文件按横幅 URL
 /// 在同系列各卷间共用一份）。书详情页、首页卡片（单本与系列合并卡）、书架系列块、
 /// 合集页都只读那一份。记录里的 [BookArtRecord.bannerKey] / [BookArtRecord.bannerUrl]
-/// 只记「获取」把哪张横幅贴到了这本书上：书当前背景图的 `source_url` 等于
-/// bannerUrl 才算本层写的（[bannerStateOf]），清除 / 否决 / 撤销只撤这种，别的来源
-/// （书籍刮削、手选）的背景图一律不碰，获取也不覆盖它们（[applyBanner]）。
-/// 旧版的 `scraped_banners/` 目录由 [migrateLegacyBanners] 一次性搬进去后删除。
+/// 只记「获取」把哪张横幅贴到了这本书上。书当前背景图是 [ItemScrapeStore] 的共用
+/// 图（[isItemSharedImageRow]：文件名是按 URL 算的共用文件名，只有批量贴图会写出
+/// 它）且 `source_url` 等于 bannerUrl，才算本层写的（[bannerStateOf]）——不单看
+/// URL：书籍刮削 / 手选恰好用了同一个 URL 时那张图仍是它们的。清除 / 否决 / 撤销只
+/// 撤本层写的，别的来源一律不碰，获取也不覆盖它们（[applyBanner]）。所有「看一眼
+/// 当前背景图再决定写 / 撤」都经 [ItemScrapeStore] 的条件写在格锁里原子完成。
+/// 旧版的 `scraped_banners/` 目录由 [migrateLegacyBanners] 逐条搬进去后删除。
 ///
 /// 卷封面没有新表：元数据跟着文件走，文件在则元数据在，不会出现「行在、图没了」的
 /// 两份真相；删书时 [ReaderMediaSource.clearOverrideValues] 一并删除。
@@ -66,6 +71,7 @@ class BookArtRecord {
     this.rejectedCoverUrls = const <String>[],
     this.originalEditionCovers = false,
     this.coverFromOriginalEdition = false,
+    this.bannerOnBackdrop = true,
   });
 
   /// 用户单本移除了贴错的封面：只留否决记录（没有系列、没有卷封面），重刮时不再
@@ -103,6 +109,7 @@ class BookArtRecord {
     pinned: json['pinned'] == true,
     originalEditionCovers: json['originalEditionCovers'] == true,
     coverFromOriginalEdition: json['coverFromOriginalEdition'] == true,
+    bannerOnBackdrop: json['bannerOnBackdrop'] == true,
     rejectedCoverUrls: <String>[
       if (json['rejectedCoverUrls'] is List)
         for (final Object? u in json['rejectedCoverUrls'] as List)
@@ -158,6 +165,12 @@ class BookArtRecord {
   /// 书里的封面」时据此删掉它，有了本语言的封面时据此替换（不按清晰度保留它）。
   final bool coverFromOriginalEdition;
 
+  /// 横幅四项说的是书的背景图（BUG-5609 之后的布局；本类新建的记录恒为 true）。
+  /// false = 旧版记录，横幅还在 `scraped_banners/` 里、没搬进背景图：
+  /// [BookArtStore.migrateLegacyBanners] 只搬这种，搬一条就把它改成 true 落盘，
+  /// 中途失败重跑也不会把已搬过、之后被用户清掉的横幅再贴回去。
+  final bool bannerOnBackdrop;
+
   /// 有匹配到的系列（否决记录没有）。
   bool get hasSeries => source.isNotEmpty && seriesId.isNotEmpty;
 
@@ -166,10 +179,13 @@ class BookArtRecord {
       coverSource == BookArtSource.mangabaka.wire ||
       (bannerKey?.startsWith('${BookArtSource.mangabaka.wire}_') ?? false);
 
-  /// 本层贴在书背景图上的横幅 URL（[bannerKey] 为 null 时不算，旧记录可能只剩 URL）。
-  String? get appliedBannerUrl => bannerKey == null ? null : bannerUrl;
+  /// 本层贴在书背景图上的横幅 URL（[bannerKey] 为 null 时不算，旧记录可能只剩 URL；
+  /// 还没搬家的旧版记录 [bannerOnBackdrop] 为 false，也不算）。
+  String? get appliedBannerUrl =>
+      bannerKey == null || !bannerOnBackdrop ? null : bannerUrl;
 
-  /// 横幅四项换成 [from] 的（null = 清掉），其余不变。
+  /// 横幅四项换成 [from] 的（null = 清掉），其余不变；结果是新布局的记录
+  /// （[bannerOnBackdrop] 为 true）。
   BookArtRecord withBannerOf(BookArtRecord? from) => BookArtRecord(
     bookKey: bookKey,
     source: source,
@@ -214,6 +230,7 @@ class BookArtRecord {
     if (rejectedCoverUrls.isNotEmpty) 'rejectedCoverUrls': rejectedCoverUrls,
     if (originalEditionCovers) 'originalEditionCovers': true,
     if (coverFromOriginalEdition) 'coverFromOriginalEdition': true,
+    if (bannerOnBackdrop) 'bannerOnBackdrop': true,
   };
 }
 
@@ -247,7 +264,8 @@ class BookArtSnapshot {
   final String? coverBackupPath;
 
   /// 之前本层贴在书背景图上的那张横幅的备份（清除时它随最后一行被回收，撤销要能
-  /// 拿回来）；null = 之前没有本层贴的横幅。
+  /// 拿回来）；null = 之前没有本层贴的横幅。按内容寻址、同系列各卷的快照共用一份，
+  /// 只由过期清理删除（[BookArtStore.discardSnapshot] 不删它）。
   final String? bannerBackupPath;
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -426,9 +444,18 @@ class BookArtStore extends ChangeNotifier {
   Future<ItemImageRow?> _backdropOf(ItemScrapeKey key) =>
       _itemScrape.firstImage(key, MediaImageKind.backdrop);
 
+  /// [row] 是不是本层从 [url] 贴上去的那张：共用图（[isItemSharedImageRow]，只有
+  /// 批量贴图写得出这种文件名）且 `source_url` 是 [url]。单看 URL 不够：书籍刮削 /
+  /// 手选恰好用了同一张图的 URL 时，那张背景图仍归它们。
+  static bool _isFetched(ItemImageRow? row, String? url) =>
+      row != null &&
+      url != null &&
+      row.sourceUrl == url &&
+      isItemSharedImageRow(row);
+
   static BookArtBannerState _stateOf(ItemImageRow? row, String? appliedUrl) {
     if (row == null) return BookArtBannerState.none;
-    return appliedUrl != null && row.sourceUrl == appliedUrl
+    return _isFetched(row, appliedUrl)
         ? BookArtBannerState.fetched
         : BookArtBannerState.other;
   }
@@ -445,12 +472,13 @@ class BookArtStore extends ChangeNotifier {
 
   /// 把横幅 [banner]（来自 [url]）贴成这本书的背景图（同 URL 的文件各卷共用）。
   ///
-  /// **覆盖策略**（BUG-5609）：只在书没有背景图、或现在那张就是本层贴的
-  /// （`source_url` 是 [ownedUrl]——调用方传更新记录前的
-  /// [BookArtRecord.appliedBannerUrl]——或已经是 [url]）时写；书籍刮削 / 手选来的
-  /// 背景图不覆盖，返回 false。「获取各卷封面与横幅」是整套系列的批量动作，单本
-  /// 已有的背景图更具体，也是用户自己刮 / 选来的。书不在库也返回 false。写入只经
-  /// [ItemScrapeStore]（之后的「用户手选背景图上锁」随之生效）。
+  /// **覆盖策略**（BUG-5609）：只在书没有背景图、或现在那张就是本层贴的（从
+  /// [ownedUrl]——调用方传更新记录前的 [BookArtRecord.appliedBannerUrl]——或 [url]
+  /// 贴上的共用图，[_isFetched]）时写；书籍刮削 / 手选来的背景图不覆盖，返回 false。
+  /// 「获取各卷封面与横幅」是整套系列的批量动作，单本已有的背景图更具体，也是用户
+  /// 自己刮 / 选来的。书不在库也返回 false。判断与写入经 [ItemScrapeStore] 的条件
+  /// 写在格锁里原子完成，中间插不进书籍刮削 / 手选（之后的「用户手选背景图上锁」
+  /// 随之生效）。
   Future<bool> applyBanner(
     String bookKey,
     File banner, {
@@ -459,33 +487,37 @@ class BookArtStore extends ChangeNotifier {
   }) async {
     final ItemScrapeKey? key = await _itemKeyOf(bookKey);
     if (key == null) return false;
-    final ItemImageRow? row = await _backdropOf(key);
-    if (row != null && row.sourceUrl != url && row.sourceUrl != ownedUrl) {
-      return false;
-    }
-    if (row != null && row.sourceUrl == url && File(row.path).existsSync()) {
-      return true;
-    }
-    await _itemScrape.setSharedImageFromFile(
+    bool alreadyThere = false;
+    final String? written = await _itemScrape.setSharedImageFromFile(
       key,
       MediaImageKind.backdrop,
       banner,
       sourceUrl: url,
+      when: (ItemImageRow? row) {
+        if (_isFetched(row, url) && File(row!.path).existsSync()) {
+          alreadyThere = true;
+          return false;
+        }
+        return row == null || _isFetched(row, url) || _isFetched(row, ownedUrl);
+      },
     );
+    if (written == null) return alreadyThere;
     notifyListeners();
     return true;
   }
 
-  /// 撤掉这本书背景图——只在它就是来自 [url] 的那张（本层贴的）时；别的来源不动。
-  /// 返回是否撤了。
+  /// 撤掉这本书背景图——只在它就是本层从 [url] 贴上的那张（[_isFetched]）时；别的
+  /// 来源不动。判断与撤除在格锁里原子完成。返回是否撤了。
   Future<bool> clearBannerFrom(String bookKey, {required String url}) async {
     final ItemScrapeKey? key = await _itemKeyOf(bookKey);
     if (key == null) return false;
-    final ItemImageRow? row = await _backdropOf(key);
-    if (row == null || row.sourceUrl != url) return false;
-    await _itemScrape.clearImage(key, MediaImageKind.backdrop);
-    notifyListeners();
-    return true;
+    final bool cleared = await _itemScrape.clearImage(
+      key,
+      MediaImageKind.backdrop,
+      when: (ItemImageRow? row) => _isFetched(row, url),
+    );
+    if (cleared) notifyListeners();
+    return cleared;
   }
 
   /// 撤掉当前记录说本层贴上去的那张横幅（还是那张时）。
@@ -509,12 +541,16 @@ class BookArtStore extends ChangeNotifier {
 
   Future<void>? _legacyMigration;
 
-  /// 一次性把旧版 `scraped_banners/` 里的横幅搬进书的背景图（BUG-5609），搬完删掉
-  /// 旧目录。旧目录在就是标记：没有它直接返回；中途失败下次再跑（逐条幂等）。
+  /// 把旧版 `scraped_banners/` 里的横幅搬进书的背景图（BUG-5609），搬完删掉旧目录。
+  /// 旧目录在就是「还有活」的快速标记：没有它直接返回。
   ///
-  /// 每条带横幅的记录按与获取相同的覆盖策略处理：书没有背景图 → 贴上（文件同 URL
-  /// 共用）；背景图已经是那张（上次搬到一半）→ 保留；书已有别处来的背景图、旧横幅
-  /// 文件不在 / 坏了、书已不在库 → 记录去掉横幅（本层没有贴上任何东西）。
+  /// **逐条推进**：只搬还是旧版布局的记录（[BookArtRecord.bannerOnBackdrop] 为
+  /// false），每条先把记录改成新布局落盘再贴图——之后无论贴图、删旧目录哪一步失败，
+  /// 重跑都跳过它，不会把已搬过、之后被用户清掉的横幅再贴回去。每条按与获取相同的
+  /// 覆盖策略处理：书没有背景图 → 贴上（文件同 URL 共用）；背景图已经是那张 →
+  /// 保留；书已有别处来的背景图、旧横幅文件不在 / 坏了、书已不在库 → 记录去掉横幅
+  /// （本层没有贴上任何东西）。「没有背景图才贴」在格锁里原子判断，期间的书籍刮削 /
+  /// 手选不会被覆盖。
   ///
   /// 启动时由 `AppModel` 初始化收尾触发一次（与其它按数据幂等的启动搬家同处）；
   /// 本层所有会动横幅的写入口（获取、清除、否决、撤销）也先等它跑完。
@@ -525,26 +561,29 @@ class BookArtStore extends ChangeNotifier {
     final Directory legacy = _legacyBannerDir;
     if (!legacy.existsSync()) return;
     try {
-      bool changed = false;
       final Directory covers = _coverDir;
       if (covers.existsSync()) {
         for (final FileSystemEntity e in covers.listSync(followLinks: false)) {
           if (e is! File || !e.path.endsWith('.json')) continue;
           final BookArtRecord? record = _readRecordFile(e);
           final String? bannerKey = record?.bannerKey;
-          if (record == null || bannerKey == null) continue;
+          if (record == null || bannerKey == null || record.bannerOnBackdrop) {
+            continue;
+          }
+          // 先认领再贴：从这一刻起这条记录是新布局，重跑不再碰它。
+          final BookArtRecord claimed = record.withBannerOf(record);
+          await write(record: claimed);
           final bool kept = await _migrateLegacyBanner(
-            record,
+            claimed,
             File(p.join(legacy.path, _safeName(bannerKey))),
           );
-          if (!kept) await write(record: record.withBannerOf(null));
-          changed = true;
+          if (!kept) await write(record: claimed.withBannerOf(null));
         }
       }
       await legacy.delete(recursive: true);
-      if (changed) notifyListeners();
     } catch (e, stack) {
-      // 文件还被占着 / 库忙：旧目录留着，下一次调用重跑（已搬的条目幂等跳过）。
+      // 文件还被占着 / 库忙：旧目录留着，下一次调用接着搬（已搬的记录已改成新布局，
+      // 跳过）。
       _legacyMigration = null;
       ErrorLogService.instance.log('BookArtStore.migrateLegacy', e, stack);
     }
@@ -555,17 +594,21 @@ class BookArtStore extends ChangeNotifier {
     final String? url = record.bannerUrl;
     final ItemScrapeKey? key = await _itemKeyOf(record.bookKey);
     if (url == null || key == null) return false;
-    final ItemImageRow? row = await _backdropOf(key);
-    if (row != null) return row.sourceUrl == url;
-    if (!legacy.existsSync()) return false;
+    if (!legacy.existsSync()) return _isFetched(await _backdropOf(key), url);
+    bool alreadyThere = false;
     try {
-      await _itemScrape.setSharedImageFromFile(
+      final String? written = await _itemScrape.setSharedImageFromFile(
         key,
         MediaImageKind.backdrop,
         legacy,
         sourceUrl: url,
+        when: (ItemImageRow? row) {
+          if (row == null) return true;
+          alreadyThere = _isFetched(row, url);
+          return false;
+        },
       );
-      return true;
+      return written != null || alreadyThere;
     } on CoverImageInvalidException catch (e) {
       ErrorLogService.instance.logDiagnostic(
         'BookArtStore.migrateLegacy',
@@ -656,6 +699,10 @@ class BookArtStore extends ChangeNotifier {
 
   /// 写入 / 清除前调用：把旧刮削层（卷封面、本层贴上的横幅、元数据）备份出来，返回
   /// 可撤销的快照。横幅也备份：清除时它随最后一行被回收，撤销要能把它拿回来。
+  ///
+  /// 横幅备份按内容寻址（`banner_<sha256>`）：一次获取 / 清除整套几十卷，各卷快照
+  /// 共用同一份，不按卷各复制一份。每次被快照用到都把修改时间刷成现在，过期清理按
+  /// 修改时间判（名字里没有时间戳），所以它跟最后一份引用它的快照一起过期。
   Future<BookArtSnapshot> snapshot(String bookKey) async {
     await migrateLegacyBanners();
     final BookArtRecord? record = recordFor(bookKey);
@@ -664,43 +711,92 @@ class BookArtStore extends ChangeNotifier {
     if (!cover.existsSync() && banner == null) {
       return BookArtSnapshot(bookKey: bookKey, record: record);
     }
-    await _backupDir.create(recursive: true);
-    await _pruneBackups();
-    final int stamp = _now().microsecondsSinceEpoch;
-    String? coverBackup;
-    if (cover.existsSync()) {
-      coverBackup = p.join(_backupDir.path, '${stamp}_${fileKeyFor(bookKey)}');
-      await cover.copy(coverBackup);
-    }
-    String? bannerBackup;
-    if (banner != null) {
-      bannerBackup = p.join(
-        _backupDir.path,
-        '${stamp}_${fileKeyFor(bookKey)}_banner',
+    return _inBackupDir(() async {
+      await _backupDir.create(recursive: true);
+      await _pruneBackups();
+      final int stamp = _now().microsecondsSinceEpoch;
+      String? coverBackup;
+      if (cover.existsSync()) {
+        coverBackup = p.join(
+          _backupDir.path,
+          '${stamp}_${fileKeyFor(bookKey)}',
+        );
+        await cover.copy(coverBackup);
+      }
+      final String? bannerBackup = banner == null
+          ? null
+          : await _backupBanner(banner);
+      return BookArtSnapshot(
+        bookKey: bookKey,
+        record: record,
+        coverBackupPath: coverBackup,
+        bannerBackupPath: bannerBackup,
       );
-      await banner.copy(bannerBackup);
-    }
-    return BookArtSnapshot(
-      bookKey: bookKey,
-      record: record,
-      coverBackupPath: coverBackup,
-      bannerBackupPath: bannerBackup,
-    );
+    });
   }
 
-  /// 丢弃一份没用上的快照（写入失败时），删掉它的备份文件。
+  /// 备份目录的写入与过期清理串行进行：获取按并发逐卷做快照，同系列各卷共用一份
+  /// 横幅备份——「已有就复用 + 刷新修改时间」与别的快照的「写同一份」「按修改时间
+  /// 清理」不能交错（否则撞「目标已存在」，或刚决定复用的备份被清掉）。
+  Future<void> _backupDirTail = Future<void>.value();
+
+  Future<T> _inBackupDir<T>(Future<T> Function() body) {
+    final Future<T> run = _backupDirTail.then((_) => body());
+    _backupDirTail = run.then<void>((_) {}, onError: (Object _) {});
+    return run;
+  }
+
+  /// 共用横幅文件 → 内容摘要（键含长度与修改时间；共用文件已在就不会被覆盖写，
+  /// 一次获取 / 清除整套只读一遍）。
+  final Map<String, ({int length, DateTime modified, String digest})>
+  _bannerDigests = <String, ({int length, DateTime modified, String digest})>{};
+
+  Future<String> _bannerDigest(File banner) async {
+    final FileStat stat = await banner.stat();
+    final ({int length, DateTime modified, String digest})? known =
+        _bannerDigests[banner.path];
+    if (known != null &&
+        known.length == stat.size &&
+        known.modified == stat.modified) {
+      return known.digest;
+    }
+    final String digest = sha256.convert(await banner.readAsBytes()).toString();
+    _bannerDigests[banner.path] = (
+      length: stat.size,
+      modified: stat.modified,
+      digest: digest,
+    );
+    return digest;
+  }
+
+  /// 把 [banner] 备份成内容寻址的 `banner_<sha256>`（已有就复用），刷新它的修改
+  /// 时间，返回备份路径。只在 [_inBackupDir] 里调用。
+  Future<String> _backupBanner(File banner) async {
+    final File backup = File(
+      p.join(_backupDir.path, 'banner_${await _bannerDigest(banner)}'),
+    );
+    if (!backup.existsSync()) {
+      final File tmp = File('${backup.path}.tmp');
+      if (tmp.existsSync()) await tmp.delete(); // 上次中断留下的半截
+      await banner.copy(tmp.path);
+      await tmp.rename(backup.path);
+    }
+    // `File.copy` 在 Windows / macOS 上保留源文件的修改时间；按修改时间判过期，
+    // 这里显式刷成「最近一次被快照用到」（调用方持有备份目录锁，清理插不进来）。
+    await backup.setLastModified(_now());
+    return backup.path;
+  }
+
+  /// 丢弃一份没用上的快照（写入失败时、恢复完之后），删掉它的卷封面备份。横幅备份
+  /// 是同系列各卷快照共用的，不在这里删（别的快照可能还要用），由过期清理回收。
   Future<void> discardSnapshot(BookArtSnapshot snapshot) async {
-    for (final String? path in <String?>[
-      snapshot.coverBackupPath,
-      snapshot.bannerBackupPath,
-    ]) {
-      if (path == null) continue;
-      try {
-        final File f = File(path);
-        if (f.existsSync()) await f.delete();
-      } on FileSystemException catch (e) {
-        ErrorLogService.instance.logDiagnostic('BookArtStore.discard', '$e');
-      }
+    final String? path = snapshot.coverBackupPath;
+    if (path == null) return;
+    try {
+      final File f = File(path);
+      if (f.existsSync()) await f.delete();
+    } on FileSystemException catch (e) {
+      ErrorLogService.instance.logDiagnostic('BookArtStore.discard', '$e');
     }
   }
 
@@ -716,13 +812,16 @@ class BookArtStore extends ChangeNotifier {
         !File(bannerBackup).existsSync()) {
       final ItemScrapeKey? key = await _itemKeyOf(snapshot.bookKey);
       final ItemImageRow? row = key == null ? null : await _backdropOf(key);
-      if (row?.sourceUrl != url) return false;
+      if (!_isFetched(row, url)) return false;
     }
     return true;
   }
 
   /// 把刮削层恢复成 [snapshot]（之前没有 → 清除）。备份已不在时抛 [StateError]
   /// （不拿别的图凑数）；调用方应先用 [canRestore] 逐本检查。
+  ///
+  /// 记录里的横幅四项只在横幅真的恢复到书上时才照快照写回；书的背景图位置已被
+  /// 别处来的图占着（按覆盖策略不动它）时记录不认领横幅，不留指向别人图片的署名。
   Future<void> restore(BookArtSnapshot snapshot) async {
     await migrateLegacyBanners();
     final BookArtRecord? record = snapshot.record;
@@ -734,20 +833,21 @@ class BookArtStore extends ChangeNotifier {
     if (!await canRestore(snapshot)) {
       throw StateError('封面备份已不在（超过 ${backupRetention.inDays} 天会被清理）');
     }
-    await _restoreBanner(snapshot);
+    final bool bannerRestored = await _restoreBanner(snapshot);
     final List<int>? bytes = backup == null
         ? null
         : await File(backup).readAsBytes();
+    final BookArtRecord restored =
+        record ??
+        BookArtRecord(
+          bookKey: snapshot.bookKey,
+          source: '',
+          seriesId: '',
+          seriesTitle: '',
+          scrapedAt: _now().millisecondsSinceEpoch,
+        );
     await write(
-      record:
-          record ??
-          BookArtRecord(
-            bookKey: snapshot.bookKey,
-            source: '',
-            seriesId: '',
-            seriesTitle: '',
-            scrapedAt: _now().millisecondsSinceEpoch,
-          ),
+      record: restored.withBannerOf(bannerRestored ? record : null),
       coverBytes: bytes,
       // 之前只有元数据、没有卷封面文件：删掉现在的卷封面。
       removeCover: backup == null,
@@ -755,32 +855,44 @@ class BookArtStore extends ChangeNotifier {
     await discardSnapshot(snapshot);
   }
 
-  /// 书背景图恢复到快照时本层贴的那张：现在贴着的本层横幅（按当前记录）与快照不同
-  /// 就先撤掉，快照有横幅且书上没有别处来的背景图时用备份贴回去。
-  Future<void> _restoreBanner(BookArtSnapshot snapshot) async {
+  /// 书背景图恢复到快照时本层贴的那张，返回快照的横幅是否在书上（恢复了 / 本来就
+  /// 贴着）。快照有横幅且有备份：按与获取同一覆盖策略贴回（[applyBanner]：书没有
+  /// 背景图或现在是本层按当前记录贴的才换；别处来的不覆盖）。快照没有可贴回的横幅：
+  /// 撤掉现在本层贴的那张（已经就是快照那张时保留）。判断与写入都在格锁里原子完成。
+  Future<bool> _restoreBanner(BookArtSnapshot snapshot) async {
     final ItemScrapeKey? key = await _itemKeyOf(snapshot.bookKey);
-    if (key == null) return;
+    if (key == null) return false;
     final String? want = snapshot.record?.appliedBannerUrl;
     final String? current = recordFor(snapshot.bookKey)?.appliedBannerUrl;
-    final ItemImageRow? row = await _backdropOf(key);
-    if (row != null && want != null && row.sourceUrl == want) return;
-    bool occupied = row != null;
-    if (row != null && current != null && row.sourceUrl == current) {
-      await _itemScrape.clearImage(key, MediaImageKind.backdrop);
-      occupied = false;
-    }
     final String? bannerBackup = snapshot.bannerBackupPath;
-    if (want == null || occupied || bannerBackup == null) return;
-    await _itemScrape.setSharedImageFromFile(
+    if (want != null &&
+        bannerBackup != null &&
+        File(bannerBackup).existsSync()) {
+      return applyBanner(
+        snapshot.bookKey,
+        File(bannerBackup),
+        url: want,
+        ownedUrl: current,
+      );
+    }
+    bool wantedThere = false;
+    final bool cleared = await _itemScrape.clearImage(
       key,
       MediaImageKind.backdrop,
-      File(bannerBackup),
-      sourceUrl: want,
+      when: (ItemImageRow? row) {
+        if (_isFetched(row, want)) {
+          wantedThere = true;
+          return false;
+        }
+        return _isFetched(row, current);
+      },
     );
+    if (cleared) notifyListeners();
+    return wantedThere;
   }
 
   /// 当前状态摘要（撤销前判「之后又被改过」）：卷封面文件 sha256 + 元数据时间戳 +
-  /// 书背景图的来源（别处换了背景图也算改过）。
+  /// 书背景图的来源与文件（别处换了背景图——哪怕 URL 相同——也算改过）。
   Future<Map<String, Object?>> fingerprint(String bookKey) async {
     final File cover = File(coverPathFor(bookKey));
     final ItemScrapeKey? key = await _itemKeyOf(bookKey);
@@ -792,6 +904,7 @@ class BookArtStore extends ChangeNotifier {
       'scrapedAt': recordFor(bookKey)?.scrapedAt,
       'bannerKey': recordFor(bookKey)?.bannerKey,
       'backdrop': backdrop == null ? null : (backdrop.sourceUrl ?? ''),
+      'backdropFile': backdrop == null ? null : p.basename(backdrop.path),
     };
   }
 

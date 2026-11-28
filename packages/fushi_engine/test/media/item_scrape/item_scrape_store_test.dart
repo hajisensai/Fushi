@@ -162,18 +162,18 @@ void main() {
     const String url = 'https://images.mangabaka.dev/banner/1';
     final ItemScrapeKey a = ItemScrapeKey(MediaKind.epub, 'uid-a');
     final ItemScrapeKey b = ItemScrapeKey(MediaKind.epub, 'uid-b');
-    final String pathA = await store.setSharedImageFromFile(
+    final String pathA = (await store.setSharedImageFromFile(
       a,
       MediaImageKind.backdrop,
       source('banner.gif'),
       sourceUrl: url,
-    );
-    final String pathB = await store.setSharedImageFromFile(
+    ))!;
+    final String pathB = (await store.setSharedImageFromFile(
       b,
       MediaImageKind.backdrop,
       source('banner.gif'),
       sourceUrl: url,
-    );
+    ))!;
     expect(pathB, pathA);
     expect(p.basename(pathA), startsWith('epub_shared_'));
     expect(
@@ -214,7 +214,7 @@ void main() {
     final List<ItemScrapeKey> keys = <ItemScrapeKey>[
       for (int i = 0; i < 6; i++) ItemScrapeKey(MediaKind.epub, 'uid-$i'),
     ];
-    final List<String> paths = await Future.wait(<Future<String>>[
+    final List<String?> paths = await Future.wait(<Future<String?>>[
       for (final ItemScrapeKey k in keys)
         store.setSharedImageFromFile(
           k,
@@ -232,7 +232,7 @@ void main() {
     }
     expect(
       dir.listSync().whereType<File>().map((File f) => p.basename(f.path)),
-      <String>[p.basename(paths.first)],
+      <String>[p.basename(paths.first!)],
     );
   });
 
@@ -255,6 +255,154 @@ void main() {
       throwsA(isA<CoverImageInvalidException>()),
     );
     expect((await store.firstImage(a, MediaImageKind.backdrop))!.path, old);
+  });
+
+  // BUG-5609 审查：共用文件「已在就复用」与行的登记之间曾有空当——同时撤掉最后
+  // 一行（或回收扫描）的一方看到零引用就删文件，复用方随后插进的行指向一个不存在
+  // 的文件。现在「确保文件 + 登记行」与「确认无引用 + 删」在同一把文件锁里互斥。
+  test('共用文件：并发撤掉最后一行 / 回收与另一卷复用同一张图，行永不指向缺失文件', () async {
+    const String url = 'https://images.mangabaka.dev/banner/race';
+    final ItemScrapeKey a = ItemScrapeKey(MediaKind.epub, 'uid-a');
+    final ItemScrapeKey b = ItemScrapeKey(MediaKind.epub, 'uid-b');
+    for (int round = 0; round < 12; round++) {
+      await store.clearImage(b, MediaImageKind.backdrop);
+      await store.setSharedImageFromFile(
+        a,
+        MediaImageKind.backdrop,
+        source('banner_a.gif'),
+        sourceUrl: url,
+      );
+      final File reuseSource = source('banner_b.gif');
+      // 每轮换一种起跑先后，覆盖不同的交错。
+      Future<void> later(int ticks, Future<void> Function() body) async {
+        for (int i = 0; i < ticks; i++) {
+          await Future<void>.delayed(Duration.zero);
+        }
+        await body();
+      }
+
+      await Future.wait(<Future<void>>[
+        later(round % 3, () => store.clearImage(a, MediaImageKind.backdrop)),
+        later(
+          (round ~/ 3) % 2,
+          () => store.setSharedImageFromFile(
+            b,
+            MediaImageKind.backdrop,
+            reuseSource,
+            sourceUrl: url,
+          ),
+        ),
+        later(round % 2, () => store.reclaimUnreferencedFiles()),
+      ]);
+      final ItemImageRow? row = await store.firstImage(
+        b,
+        MediaImageKind.backdrop,
+      );
+      expect(row, isNotNull, reason: 'round $round');
+      expect(File(row!.path).existsSync(), isTrue, reason: 'round $round');
+    }
+  });
+
+  // BUG-5609 审查：「书没有背景图才贴」的判断与写入必须原子，不能先读再写——中间
+  // 插进来的书籍刮削 / 手选会被覆盖。条件写拿着本格的锁判断。
+  test('条件写：判断与写入之间插不进别的写入，先来的单本背景图不被覆盖', () async {
+    const String url = 'https://images.mangabaka.dev/banner/cond';
+    for (int round = 0; round < 6; round++) {
+      final ItemScrapeKey k = ItemScrapeKey(MediaKind.epub, 'uid-c$round');
+      String? shared;
+      late String own;
+      Future<void> later(int ticks, Future<void> Function() body) async {
+        for (int i = 0; i < ticks; i++) {
+          await Future<void>.delayed(Duration.zero);
+        }
+        await body();
+      }
+
+      await Future.wait(<Future<void>>[
+        later(round % 3, () async {
+          shared = await store.setSharedImageFromFile(
+            k,
+            MediaImageKind.backdrop,
+            source('shared_$round.gif'),
+            sourceUrl: url,
+            when: (ItemImageRow? current) => current == null,
+          );
+        }),
+        later(round ~/ 3, () async {
+          own = await store.setImageFromFile(
+            k,
+            MediaImageKind.backdrop,
+            source('own_$round.gif'),
+            sourceUrl: 'https://s4.anilist.co/banner/$round.jpg',
+          );
+        }),
+      ]);
+      // 两种先后都以单本背景图收场：条件写先到则被它覆盖，后到则不写。
+      final ItemImageRow row = (await store.firstImage(
+        k,
+        MediaImageKind.backdrop,
+      ))!;
+      expect(row.path, own, reason: 'round $round');
+      expect(File(own).existsSync(), isTrue);
+      if (shared != null) expect(p.basename(shared!), startsWith('epub_'));
+    }
+    final ItemScrapeKey taken = ItemScrapeKey(MediaKind.epub, 'uid-taken');
+    await store.setImageFromFile(
+      taken,
+      MediaImageKind.backdrop,
+      source('taken.gif'),
+    );
+    expect(
+      await store.setSharedImageFromFile(
+        taken,
+        MediaImageKind.backdrop,
+        source('x.gif'),
+        sourceUrl: url,
+        when: (ItemImageRow? current) => current == null,
+      ),
+      isNull,
+    );
+    expect(
+      await store.clearImage(
+        taken,
+        MediaImageKind.backdrop,
+        when: (ItemImageRow? current) => current?.sourceUrl == url,
+      ),
+      isFalse,
+    );
+    expect(await store.firstImage(taken, MediaImageKind.backdrop), isNotNull);
+  });
+
+  // BUG-5609 审查：批量贴图的归属按共用文件名认，不按 source_url——单本刮削 / 手选
+  // 恰好用了同一个 URL 也不会被认成共用图（否则「清除」会撤掉用户自己的背景图）。
+  test('isItemSharedImageRow：共用文件名才算，同 URL 的单条目图不算', () async {
+    const String url = 'https://images.mangabaka.dev/banner/own';
+    final ItemScrapeKey a = ItemScrapeKey(MediaKind.epub, 'uid-a');
+    final ItemScrapeKey b = ItemScrapeKey(MediaKind.epub, 'uid-b');
+    await store.setSharedImageFromFile(
+      a,
+      MediaImageKind.backdrop,
+      source('shared.png'),
+      sourceUrl: url,
+    );
+    await store.setImageFromFile(
+      b,
+      MediaImageKind.backdrop,
+      source('picked.gif'),
+      sourceUrl: url,
+    );
+    expect(
+      isItemSharedImageRow(
+        (await store.firstImage(a, MediaImageKind.backdrop))!,
+      ),
+      isTrue,
+    );
+    expect(
+      isItemSharedImageRow(
+        (await store.firstImage(b, MediaImageKind.backdrop))!,
+      ),
+      isFalse,
+    );
   });
 
   test('ItemScrapeKey 拒收 video 与空键', () {

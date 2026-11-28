@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
@@ -312,6 +313,18 @@ void main() {
   group('旧版 scraped_banners/ 一次性搬家', () {
     late Directory legacy;
 
+    /// 旧版（BUG-5609 前）写下的记录：没有 `bannerOnBackdrop`，横幅在旧目录里。
+    void writeLegacy(String bookKey, {required String bannerKey}) {
+      Directory(p.join(thumbs.path, 'scraped')).createSync(recursive: true);
+      final Map<String, Object?> json = record(
+        bookKey,
+        bannerKey: bannerKey,
+      ).toJson()..remove('bannerOnBackdrop');
+      File(
+        '${store.coverPathFor(bookKey)}.json',
+      ).writeAsStringSync(jsonEncode(json));
+    }
+
     setUp(() {
       legacy = Directory(p.join(thumbs.path, 'scraped_banners'))
         ..createSync(recursive: true);
@@ -324,10 +337,10 @@ void main() {
       final ItemScrapeKey c = await seed('c');
       final String foreign = await foreignBackdrop(c);
       for (final String k in <String>['a', 'b', 'c', 'gone']) {
-        await store.write(record: record(k, bannerKey: 'mangabaka_1'));
+        writeLegacy(k, bannerKey: 'mangabaka_1');
       }
       // 横幅文件已经不在的旧记录。
-      await store.write(record: record('d', bannerKey: 'mangabaka_404'));
+      writeLegacy('d', bannerKey: 'mangabaka_404');
       await seed('d');
 
       BookArtStore.resetForTesting();
@@ -353,7 +366,7 @@ void main() {
 
     test('搬家后清除只撤搬进去的横幅；再跑一次是空操作', () async {
       final ItemScrapeKey a = await seed('a');
-      await store.write(record: record('a', bannerKey: 'mangabaka_1'));
+      writeLegacy('a', bannerKey: 'mangabaka_1');
       await store.migrateLegacyBanners();
       expect(await backdrop(a), isNotNull);
 
@@ -365,10 +378,164 @@ void main() {
 
     test('写入口先等搬家跑完：直接清除也会撤掉旧横幅', () async {
       final ItemScrapeKey a = await seed('a');
-      await store.write(record: record('a', bannerKey: 'mangabaka_1'));
+      writeLegacy('a', bannerKey: 'mangabaka_1');
       await store.remove('a');
       expect(await backdrop(a), isNull);
       expect(legacy.existsSync(), isFalse);
     });
+
+    // BUG-5609 审查：删旧目录失败（文件被占着）后重跑，不能把已搬过、之后被用户
+    // 清掉的横幅再贴回去——进度按记录落盘，不只靠旧目录在不在。
+    test('逐条推进：旧目录没删掉时重跑，已搬过又被清掉的横幅不复活', () async {
+      final ItemScrapeKey a = await seed('a');
+      writeLegacy('a', bannerKey: 'mangabaka_1');
+      await store.migrateLegacyBanners();
+      expect(await backdrop(a), isNotNull);
+      expect(store.recordFor('a')!.bannerOnBackdrop, isTrue);
+      // 模拟「删旧目录失败」：旧目录与横幅文件都还在。
+      legacy.createSync(recursive: true);
+      File(p.join(legacy.path, 'mangabaka_1')).writeAsBytesSync(png(16, 9));
+      // 用户在书详情页清掉了背景图。
+      await itemScrape.clearImage(a, MediaImageKind.backdrop);
+
+      BookArtStore.resetForTesting();
+      final BookArtStore rerun = open();
+      await rerun.migrateLegacyBanners();
+      expect(await backdrop(a), isNull);
+      expect(legacy.existsSync(), isFalse);
+    });
+
+    // BUG-5609 审查：「书没有背景图」的判断与贴图必须原子——期间插进来的书籍刮削
+    // 不能被搬家覆盖。各种起跑先后都以书籍刮削那张收场。
+    test('搬家与同时进行的书籍刮削：别处来的背景图永不被覆盖', () async {
+      for (int round = 0; round < 6; round++) {
+        final String k = 'r$round';
+        final ItemScrapeKey key = await seed(k);
+        legacy.createSync(recursive: true);
+        File(p.join(legacy.path, 'mangabaka_1')).writeAsBytesSync(png(16, 9));
+        writeLegacy(k, bannerKey: 'mangabaka_1');
+        BookArtStore.resetForTesting();
+        final BookArtStore migrating = open();
+        final File src = File(p.join(thumbs.path, 'scrape_$round.png'))
+          ..writeAsBytesSync(png(20, 9, shade: 90));
+        late String foreign;
+        Future<void> later(int ticks, Future<void> Function() body) async {
+          for (int i = 0; i < ticks; i++) {
+            await Future<void>.delayed(Duration.zero);
+          }
+          await body();
+        }
+
+        await Future.wait(<Future<void>>[
+          later(round % 3, migrating.migrateLegacyBanners),
+          later(round ~/ 3 * 2, () async {
+            foreign = await itemScrape.setImageFromFile(
+              key,
+              MediaImageKind.backdrop,
+              src,
+              sourceUrl: 'https://s4.anilist.co/banner/$round.jpg',
+            );
+          }),
+        ]);
+        expect((await backdrop(key))!.path, foreign, reason: 'round $round');
+        expect(
+          await migrating.bannerStateOf(k),
+          BookArtBannerState.other,
+          reason: 'round $round',
+        );
+      }
+    });
+  });
+
+  // BUG-5609 审查：归属不单看 source_url。书籍刮削 / 手选恰好用了与获取同一个横幅
+  // URL 时，那张背景图仍是它们的：清除不撤、获取不当成自己的覆盖。
+  test('同 URL 的别处背景图不算本层的：清除不撤，指纹能区分', () async {
+    final ItemScrapeKey a = await seed('a');
+    await fetchBanner('a');
+    final Map<String, Object?> after = await store.fingerprint('a');
+    final File src = File(p.join(thumbs.path, 'picked.png'))
+      ..writeAsBytesSync(png(20, 9, shade: 40));
+    final String picked = await itemScrape.setImageFromFile(
+      a,
+      MediaImageKind.backdrop,
+      src,
+      sourceUrl: kBannerUrl,
+    );
+    expect(await store.bannerStateOf('a'), BookArtBannerState.other);
+    expect(await store.fingerprint('a'), isNot(after));
+    expect(
+      await store.applyBanner(
+        'a',
+        bannerSource,
+        url: 'https://images.mangabaka.dev/banner/2',
+        ownedUrl: kBannerUrl,
+      ),
+      isFalse,
+    );
+    await store.remove('a');
+    expect((await backdrop(a))!.path, picked);
+    expect(File(picked).existsSync(), isTrue);
+  });
+
+  // BUG-5609 审查：撤销时背景图位置已被别处的图占着，横幅贴不回去——记录也不能
+  // 照快照写回横幅四项（否则署名 / 清除认领一张不是本层写的图）。
+  test('撤销时横幅贴不回去（位置被别处占着）：记录不写回横幅', () async {
+    final ItemScrapeKey a = await seed('a');
+    await fetchBanner('a', cover: png(4, 6));
+    final BookArtSnapshot snap = await store.snapshot('a');
+    await store.remove('a');
+    final String foreign = await foreignBackdrop(a);
+
+    await store.restore(snap);
+    expect((await backdrop(a))!.path, foreign);
+    expect(store.hasCover('a'), isTrue);
+    expect(store.recordFor('a')!.seriesId, '42');
+    expect(store.recordFor('a')!.bannerKey, isNull);
+    expect(store.recordFor('a')!.bannerUrl, isNull);
+    expect(await store.bannerStateOf('a'), BookArtBannerState.other);
+  });
+
+  // BUG-5609 审查：一次获取 / 清除整套几十卷，横幅备份按内容只存一份，各卷快照
+  // 共用；恢复完一卷不能删掉别的卷还要用的那份。修改时间随每次被用到刷新，过期
+  // 清理照常回收。
+  test('横幅备份按内容共用一份，逐卷恢复都拿得到，过期照常清理', () async {
+    DateTime clock = DateTime(2026, 11, 1);
+    BookArtStore.resetForTesting();
+    store = BookArtStore.of(
+      thumbs,
+      database: db,
+      itemScrape: itemScrape,
+      now: () => clock,
+    );
+    final ItemScrapeKey a = await seed('a');
+    final ItemScrapeKey b = await seed('b');
+    await fetchBanner('a');
+    await fetchBanner('b');
+    final BookArtSnapshot snapA = await store.snapshot('a');
+    final BookArtSnapshot snapB = await store.snapshot('b');
+    expect(snapA.bannerBackupPath, isNotNull);
+    expect(snapB.bannerBackupPath, snapA.bannerBackupPath);
+    final Directory backups = Directory(
+      p.join(thumbs.path, 'undo_backups', 'book_art'),
+    );
+    expect(
+      backups.listSync().whereType<File>().map((File f) => p.basename(f.path)),
+      <String>[p.basename(snapA.bannerBackupPath!)],
+    );
+
+    await store.remove('a');
+    await store.remove('b');
+    await store.restore(snapA);
+    expect(await store.canRestore(snapB), isTrue);
+    await store.restore(snapB);
+    expect((await backdrop(a))!.sourceUrl, kBannerUrl);
+    expect((await backdrop(b))!.path, (await backdrop(a))!.path);
+    expect(File(snapA.bannerBackupPath!).existsSync(), isTrue);
+
+    // 过期：31 天后再做快照时清理掉没人再用的横幅备份。
+    clock = clock.add(const Duration(days: 31));
+    await store.write(record: record('c'), coverBytes: png(4, 6));
+    await store.snapshot('c');
+    expect(File(snapA.bannerBackupPath!).existsSync(), isFalse);
   });
 }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -22,7 +23,10 @@ import 'package:fushi_engine/media/video/video_storage.dart';
 /// - [setImageFromFile] / [setImageFromUrl]：附加图（backdrop / logo）原子落盘到
 ///   `video_covers/items/` 并登记；换图时旧文件随即回收；
 /// - [setSharedImageFromFile]：同一张图贴到多个条目（「获取各卷封面与横幅」的系列
-///   横幅，BUG-5609），文件只存一份；
+///   横幅，BUG-5609），文件只存一份；可带条件（[setSharedImageFromFile] 的 `when`）
+///   在格锁里原子地「判断当前那张 → 写」；
+/// - 附加图的全部写入 / 回收按「格锁 → 文件锁」串行（见 [_locked]），检查与写入、
+///   引用判断与删文件之间插不进别的写入；
 /// - [applyScrape]：上面两步的组合（刮削源一次响应 = 资料 + 可选横版图）。
 ///
 /// 删除宿主时 DB 行在删书 / 删字幕书 / 删游戏的事务里清掉（fushi_core 的
@@ -166,29 +170,36 @@ class ItemScrapeStore {
     final Directory dir = await _dir();
     await dir.create(recursive: true);
     final String dest = p.join(dir.path, itemImageFileName(key, kind, source));
-    await copyCoverFileAtomically(source: source, destPath: dest);
-    final List<String> dropped = await _db.replaceItemImagesOfKind(
-      mediaType: key.mediaType,
-      entryKey: key.entryKey,
-      kind: kind,
-      images: <({String path, String? sourceUrl})>[
-        (path: dest, sourceUrl: sourceUrl),
-      ],
+    final String? written = await _replaceSlot(
+      key,
+      kind,
+      dest: dest,
+      sourceUrl: sourceUrl,
+      materialize: () =>
+          copyCoverFileAtomically(source: source, destPath: dest),
     );
-    await _deleteOwned(dropped);
-    return dest;
+    return written!;
   }
 
   /// 同 [setImageFromFile]，但文件按 [sourceUrl] 在条目间共用（BUG-5609）：同一张
   /// 系列横幅贴到一整套几十卷时只存一份 `<mediaType>_shared_<url 摘要>_<kind>`，
   /// 每卷各一行指向它。文件已在就不再复制（同一来源同一张图；也不在 Windows 上
   /// 覆盖一张正被背景带读着的文件）。回收口径不变：换图 / 清图时只有不再被任何行
-  /// 引用的文件才删（[_deleteOwned]），共用文件随最后一行一起回收。
-  Future<String> setSharedImageFromFile(
+  /// 引用的文件才删，共用文件随最后一行一起回收。
+  ///
+  /// 共用文件名只由本方法产生（单条目写入是 [itemImageFileName]），调用方据
+  /// [isItemSharedImageRow] 认「这一行是批量贴上去的那张」，不靠 `source_url`
+  /// 单独判断（别的来源可能恰好是同一个 URL）。
+  ///
+  /// [when]：条件写——拿着本格（[key] 的 [kind]）的锁读当前那行，返回 false 就不写、
+  /// 返回 null；检查与写入之间不会插进别的写入（「书没有背景图才贴」这类判断必须
+  /// 用它，不能先 [firstImage] 再写）。写了返回落盘路径。
+  Future<String?> setSharedImageFromFile(
     ItemScrapeKey key,
     MediaImageKind kind,
     File source, {
     required String sourceUrl,
+    bool Function(ItemImageRow? current)? when,
   }) async {
     final Directory dir = await _dir();
     await dir.create(recursive: true);
@@ -196,34 +207,17 @@ class ItemScrapeStore {
       dir.path,
       itemSharedImageFileName(key.mediaType, kind, sourceUrl, source),
     );
-    await _ensureSharedFile(source, dest);
-    final List<String> dropped = await _db.replaceItemImagesOfKind(
-      mediaType: key.mediaType,
-      entryKey: key.entryKey,
-      kind: kind,
-      images: <({String path, String? sourceUrl})>[
-        (path: dest, sourceUrl: sourceUrl),
-      ],
+    return _replaceSlot(
+      key,
+      kind,
+      dest: dest,
+      sourceUrl: sourceUrl,
+      when: when,
+      materialize: () async {
+        if (await File(dest).exists()) return;
+        await copyCoverFileAtomically(source: source, destPath: dest);
+      },
     );
-    await _deleteOwned(dropped);
-    return dest;
-  }
-
-  /// 正在落盘的共用文件（目标路径 → 那次复制）。同一套系列的各卷并发贴同一张图时
-  /// 只复制一次，其余等它：并发各自「不在 → 复制 → 改名」会在 Windows 上撞
-  /// 「目标已存在」而失败。按路径全局（多个 [ItemScrapeStore] 实例写同一目录）。
-  static final Map<String, Future<void>> _sharedCopies =
-      <String, Future<void>>{};
-
-  Future<void> _ensureSharedFile(File source, String dest) {
-    final Future<void>? inFlight = _sharedCopies[dest];
-    if (inFlight != null) return inFlight;
-    final Future<void> copy = () async {
-      if (await File(dest).exists()) return;
-      await copyCoverFileAtomically(source: source, destPath: dest);
-    }();
-    _sharedCopies[dest] = copy;
-    return copy.whenComplete(() => _sharedCopies.remove(dest));
   }
 
   /// [key] 的 [kind] 图里 position 最小的那行；没有为 null。
@@ -260,16 +254,13 @@ class ItemScrapeStore {
     }
   }
 
-  /// 清掉 [key] 的 [kind] 图（行 + 文件）。
-  Future<void> clearImage(ItemScrapeKey key, MediaImageKind kind) async {
-    final List<String> dropped = await _db.replaceItemImagesOfKind(
-      mediaType: key.mediaType,
-      entryKey: key.entryKey,
-      kind: kind,
-      images: const <({String path, String? sourceUrl})>[],
-    );
-    await _deleteOwned(dropped);
-  }
+  /// 清掉 [key] 的 [kind] 图（行 + 文件）。[when] 同 [setSharedImageFromFile]：
+  /// 拿着本格的锁判断当前那行，返回 false 就不清。返回是否清了。
+  Future<bool> clearImage(
+    ItemScrapeKey key,
+    MediaImageKind kind, {
+    bool Function(ItemImageRow? current)? when,
+  }) async => await _replaceSlot(key, kind, dest: null, when: when) != null;
 
   /// 回收附加图目录里不再被任何 item_images 行引用的文件（宿主删除后调用）。
   /// 返回实删数；目录不存在为 0。失败只记日志，不抛断删除流程。
@@ -277,34 +268,110 @@ class ItemScrapeStore {
     try {
       final Directory dir = await _dir();
       if (!await dir.exists()) return 0;
+      final Set<String> referenced = <String>{
+        for (final ItemImageRow row in await _db.getAllItemImages()) row.path,
+      };
       final List<String> candidates = <String>[
         await for (final FileSystemEntity e in dir.list())
-          if (e is File && !p.basename(e.path).contains('.tmp.')) e.path,
+          if (e is File &&
+              !p.basename(e.path).contains('.tmp.') &&
+              !referenced.contains(e.path))
+            e.path,
       ];
-      if (candidates.isEmpty) return 0;
-      return await VideoStorage.deleteOwnedImageFiles(
-        deletedPaths: candidates,
-        stillReferencedPaths: <String>[
-          for (final ItemImageRow row in await _db.getAllItemImages()) row.path,
-        ],
-        ownedDir: dir,
-      );
+      int removed = 0;
+      // 逐个在文件锁里复查再删：扫描之后有写入把它重新用上（共用文件被另一卷贴上）
+      // 就留着。
+      for (final String path in candidates) {
+        if (await _deleteIfUnreferenced(path, dir)) removed++;
+      }
+      return removed;
     } catch (e, stack) {
       engineLog.log('itemScrape.reclaim', e, stack);
       return 0;
     }
   }
 
-  Future<void> _deleteOwned(List<String> paths) async {
-    if (paths.isEmpty) return;
-    await VideoStorage.deleteOwnedImageFiles(
-      deletedPaths: paths,
-      stillReferencedPaths: <String>[
-        for (final ItemImageRow row in await _db.getAllItemImages()) row.path,
-      ],
-      ownedDir: await _dir(),
-    );
+  // ── 附加图的串行化（BUG-5609 审查）──
+  //
+  // 两类键，同一张进程级锁表（多个 [ItemScrapeStore] 实例写同一张表、同一个目录）：
+  // - 格锁 `slot:<mediaType>:<entryKey>:<kind>`：一个条目一种图的全部写入
+  //   （换图 / 清图 / 条件写）在它里面完成，[when] 的检查与写入之间插不进别的写入；
+  // - 文件锁 `file:<路径>`：「确保文件在 + 登记引用它的行」与「确认无行引用 + 删
+  //   文件」互斥，共用文件不会在「已决定复用、行还没插」的空当被回收（否则行指向
+  //   一个不存在的文件）。
+  // 加锁顺序固定为格锁 → 文件锁，文件锁之间从不嵌套（先放开目标文件锁再回收被
+  // 换下的文件），所以不会死锁。
+
+  static final Map<String, Future<void>> _locks = <String, Future<void>>{};
+
+  static Future<T> _locked<T>(String lock, Future<T> Function() body) async {
+    final Future<void> previous = _locks[lock] ?? Future<void>.value();
+    final Completer<void> release = Completer<void>();
+    final Future<void> mine = release.future;
+    _locks[lock] = mine;
+    try {
+      await previous;
+      return await body();
+    } finally {
+      release.complete();
+      if (identical(_locks[lock], mine)) _locks.remove(lock);
+    }
   }
+
+  static String _slotLock(ItemScrapeKey key, MediaImageKind kind) =>
+      'slot:${key.mediaType.dbValue}:${key.entryKey}:${kind.dbValue}';
+
+  static String _fileLock(String path) => 'file:${p.canonicalize(path)}';
+
+  /// 本格（[key] 的 [kind]）换成 [dest] 一张（[materialize] 负责让文件就位）或清空
+  /// （[dest] 为 null），再回收被换下且不再被引用的文件。[when] 不通过返回 null，
+  /// 否则返回 [dest]（清空时返回空串，只表示「做了」）。
+  Future<String?> _replaceSlot(
+    ItemScrapeKey key,
+    MediaImageKind kind, {
+    required String? dest,
+    String? sourceUrl,
+    Future<void> Function()? materialize,
+    bool Function(ItemImageRow? current)? when,
+  }) => _locked(_slotLock(key, kind), () async {
+    if (when != null && !when(await firstImage(key, kind))) return null;
+    Future<List<String>> replace() => _db.replaceItemImagesOfKind(
+      mediaType: key.mediaType,
+      entryKey: key.entryKey,
+      kind: kind,
+      images: <({String path, String? sourceUrl})>[
+        if (dest != null) (path: dest, sourceUrl: sourceUrl),
+      ],
+    );
+    final List<String> dropped = dest == null
+        ? await replace()
+        : await _locked(_fileLock(dest), () async {
+            await materialize?.call();
+            return replace();
+          });
+    if (dropped.isNotEmpty) {
+      final Directory dir = await _dir();
+      for (final String path in dropped) {
+        await _deleteIfUnreferenced(path, dir);
+      }
+    }
+    return dest ?? '';
+  });
+
+  /// 在 [path] 的文件锁里确认没有任何行引用它（且落在 [dir] 内）才删。返回是否删了。
+  Future<bool> _deleteIfUnreferenced(String path, Directory dir) => _locked(
+    _fileLock(path),
+    () async {
+      final int removed = await VideoStorage.deleteOwnedImageFiles(
+        deletedPaths: <String>[path],
+        stillReferencedPaths: <String>[
+          for (final ItemImageRow row in await _db.getAllItemImages()) row.path,
+        ],
+        ownedDir: dir,
+      );
+      return removed > 0;
+    },
+  );
 }
 
 /// item_scrape_meta / item_images 的宿主身份（同合集成员的 (mediaType, entryKey)：
@@ -592,4 +659,19 @@ String itemSharedImageFileName(
     ext = '.jpg';
   }
   return '${mediaType.dbValue}_shared_${digest}_${kind.dbValue}$ext';
+}
+
+/// [row] 是不是 [ItemScrapeStore.setSharedImageFromFile] 贴上去的共用图：路径就是
+/// 它按 `source_url` 算出的共用文件名（扩展名不论）。批量贴图的调用方据此认领
+/// 「这张是我贴的」——单条目写入（书籍刮削、手选）的文件名是 [itemImageFileName]，
+/// 即使 `source_url` 恰好相同也不会被认成共用图。
+bool isItemSharedImageRow(ItemImageRow row) {
+  final String? url = row.sourceUrl;
+  final MediaKind? mediaType = MediaKind.tryParse(row.mediaType);
+  final MediaImageKind? kind = MediaImageKind.tryParse(row.kind);
+  if (url == null || mediaType == null || kind == null) return false;
+  return p.basenameWithoutExtension(row.path) ==
+      p.basenameWithoutExtension(
+        itemSharedImageFileName(mediaType, kind, url, File('x.jpg')),
+      );
 }
