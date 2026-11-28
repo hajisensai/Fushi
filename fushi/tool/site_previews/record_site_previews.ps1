@@ -22,12 +22,14 @@
 #   -Cache     夹具与原始产物目录（默认 fushi/build/site_previews；路径须为 ASCII，dart-define 不收非 ASCII）
 #   -Proxy     下载素材与 runner 用的代理（默认 http://127.0.0.1:7890）
 #   -NoPublish 只录不写官网仓（原始产物留在 <Cache>/raw/<runId>）
+#   -Uv        更新视频的素材夹具目录（uv-* 场景用；布局见 integration_test/site_preview_update_video_scenes.dart）
 param(
   [Parameter(Mandatory = $true)][string]$Site,
   [string]$Only = "",
   [string]$Cache = "",
   [string]$Proxy = "http://127.0.0.1:7890",
-  [switch]$NoPublish
+  [switch]$NoPublish,
+  [string]$Uv = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -55,9 +57,13 @@ function Invoke-Checked([string]$what, [scriptblock]$block) {
 $demoDir = Join-Path $Cache "demo"
 $libraryDir = Join-Path $Cache "library"
 Invoke-Checked "抽取官网 demo 夹具" { & $dart run tool/site_previews/extract_demo_fixtures.dart --site $Site --out $demoDir }
-$wantOverview = [string]::IsNullOrWhiteSpace($Only) -or ($Only -split ',' | ForEach-Object { $_.Trim() }) -contains 'overview'
+$onlyList = @($Only -split ',' | ForEach-Object { $_.Trim() })
+# 全貌截图与更新视频的首页 / 外观段（uv-home、uv-apple）都要公有领域书库播种。
+$wantOverview = [string]::IsNullOrWhiteSpace($Only) -or $onlyList -contains 'overview' -or $onlyList -contains 'uv-home' -or $onlyList -contains 'uv-apple'
 if ($wantOverview) {
-  Invoke-Checked "下载公有领域库素材" { & $dart run tool/site_previews/fetch_library_fixtures.dart --out $libraryDir --proxy $Proxy }
+  # -Proxy "" = 直连（代理没开时）：空值不能跟在 --proxy 后面（下载脚本按用法错误退出 64）。
+  $proxyArgs = if ([string]::IsNullOrWhiteSpace($Proxy)) { @() } else { @('--proxy', $Proxy) }
+  Invoke-Checked "下载公有领域库素材" { & $dart run tool/site_previews/fetch_library_fixtures.dart --out $libraryDir @proxyArgs }
 }
 
 # 置顶停靠位：主显示器左上，按系统缩放换成物理像素（FUSHI_TEST_TOPMOST 收物理像素）。
@@ -84,7 +90,8 @@ $defines = @(
   "SITE_PREVIEW_OUT=$rawDir",
   "SITE_PREVIEW_DEMO=$demoDir",
   "SITE_PREVIEW_LIBRARY=$libraryDir",
-  "SITE_PREVIEW_ONLY=$Only"
+  "SITE_PREVIEW_ONLY=$Only",
+  "SITE_PREVIEW_UV=$Uv"
 )
 $defineLiteral = ($defines | ForEach-Object { "'" + ($_ -replace "'", "''") + "'" }) -join ","
 # 经本机重活租约跑 runner；-DartDefine 必须以数组传，用 EncodedCommand 免去转义。

@@ -317,7 +317,7 @@
       "attribution": "Tears of Steel (CC) Blender Foundation | mango.blender.org",
       "cover": {
         "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/70/Tos-poster.png/960px-Tos-poster.png",
-        "sha256": "777466845181fa7c3fb58154aef6a6a67976de7c97bdfcf377e003d7592d6c6b",
+        "sha256": "4de360140a8614e7d939c4b7344d51505cbd0909eb0ca705575c42fde76dce48",
         "sourcePage": "https://commons.wikimedia.org/wiki/File:Tos-poster.png",
         "license": "CC BY 3.0",
         "attribution": "(CC) Blender Foundation | Project Mango"
@@ -491,7 +491,7 @@
       "attribution": "SuperTuxKart in-race screenshot by QwertyChouskie, CC BY-SA 4.0",
       "cover": {
         "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/64/SuperTuxKart_in-race_%282018%29.png/960px-SuperTuxKart_in-race_%282018%29.png",
-        "sha256": "4ab76b6a290a262b5a870d9da1c1eec6c30075e9ed10893fbb674579995ee2ac",
+        "sha256": "52004fe08f1300fe6d8e2cd4afd9abe1e31bb392e010ec53a59a1d64b476b135",
         "sourcePage": "https://commons.wikimedia.org/wiki/File:SuperTuxKart_in-race_(2018).png",
         "license": "CC BY-SA 4.0",
         "attribution": "QwertyChouskie, Wikimedia Commons"
@@ -548,7 +548,7 @@
       "attribution": "The Battle for Wesnoth title screen, Wesnoth Team, GPL",
       "cover": {
         "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a8/The_Battle_for_Wesnoth-Title_Screen.png/960px-The_Battle_for_Wesnoth-Title_Screen.png",
-        "sha256": "9901b62570f32f8a05bb676664773fc8a67437ce0ad7639bf762988d5a5fd696",
+        "sha256": "a69842223102766dbde6f190829d65539f64ed501be6b92fe38a0d12e99a5469",
         "sourcePage": "https://commons.wikimedia.org/wiki/File:The_Battle_for_Wesnoth-Title_Screen.png",
         "license": "GPL（Wikimedia Commons 标注）",
         "attribution": "Wesnoth Team, Wikimedia Commons"
