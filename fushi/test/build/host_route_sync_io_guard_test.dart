@@ -60,9 +60,7 @@ void main() {
     );
     final List<String> offenders = <String>[];
     for (final File f in files) {
-      final List<String> lines = maskComments(
-        f.readAsStringSync(),
-      ).split('\n');
+      final List<String> lines = maskComments(f.readAsStringSync()).split('\n');
       for (int i = 0; i < lines.length; i++) {
         final String line = lines[i];
         for (final RegExpMatch m in <RegExpMatch>[

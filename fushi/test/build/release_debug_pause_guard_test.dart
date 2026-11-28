@@ -4,13 +4,14 @@ import 'package:test/test.dart';
 
 /// 「暂停调试版自动发布」开关（仓库变量 `FUSHI_PAUSE_DEBUG_RELEASE`）的不变式。
 ///
-/// 用途：测试版放出去试用期间，develop 上的每次 push 不再出滚动 debug 包，
-/// 手动 dispatch 的 beta / formal 与 `release` 事件照常发。这条守卫钉住开关
-/// **只**作用于 push（= debug 通道），每一条失守都是真事故：
+/// 用途：测试版放出去试用期间，debug 通道不再出包——develop 上的 push 和手动
+/// dispatch `channel=debug` 都停（2026-11-28：只停 push 时，有人手动 dispatch
+/// debug 照样把滚动 debug 包推给了 debug 通道用户），手动 dispatch 的 beta / formal
+/// 与 `release` 事件照常发。这条守卫钉住开关**只**作用于 debug 通道，每一条失守都是真事故：
 ///
-/// 1. 每处引用都是同一个「push && 变量」整体表达式。裸 `vars.FUSHI_PAUSE_DEBUG_RELEASE`
-///    会把手动 beta / formal 一起停掉——正好在要发正式版的那天。
-/// 2. push 事件在 release.yml 里只解析成 debug 通道，所以「停 push」就是「停 debug」。
+/// 1. 每处引用都是同一个「变量 && (push || dispatch debug)」整体表达式。裸
+///    `vars.FUSHI_PAUSE_DEBUG_RELEASE` 会把手动 beta / formal 一起停掉——正好在要发正式版的那天。
+/// 2. push 事件在 release.yml 里只解析成 debug 通道，所以挡 push 只挡到 debug。
 /// 3. release.yml 只挡 `build` / `publish-android`：`tests` 等 job 是 develop 唯一的
 ///    app 全量单测门，暂停期间必须照跑。
 /// 4. release-desktop.yml 每个 job 都挡，`publish` 带 `always()` 必须自己挡
@@ -20,7 +21,7 @@ import 'package:test/test.dart';
 File _repoFile(String path) => File('../$path');
 
 const String _pauseExpr =
-    "!(github.event_name == 'push' && vars.FUSHI_PAUSE_DEBUG_RELEASE == 'true')";
+    "!(vars.FUSHI_PAUSE_DEBUG_RELEASE == 'true' && (github.event_name == 'push' || github.event.inputs.channel == 'debug'))";
 const String _varRef = 'vars.FUSHI_PAUSE_DEBUG_RELEASE';
 
 final RegExp _jobHeader = RegExp(r'^  ([A-Za-z0-9_-]+):\s*$');
@@ -54,7 +55,7 @@ int _count(String haystack, String needle) =>
     needle.allMatches(haystack).length;
 
 void main() {
-  test('每处引用都是 push 限定的整体表达式，不会波及 beta / formal', () {
+  test('每处引用都是 debug 限定的整体表达式，不会波及 beta / formal', () {
     for (final String path in <String>[
       '.github/workflows/release.yml',
       '.github/workflows/release-desktop.yml',
@@ -64,7 +65,7 @@ void main() {
         _count(yaml, _varRef),
         _count(yaml, _pauseExpr),
         reason:
-            '$path 里有不带 push 限定的 $_varRef 引用：裸变量会把手动 dispatch 的 '
+            '$path 里有不带 debug 限定的 $_varRef 引用：裸变量会把手动 dispatch 的 '
             'beta / formal 与 release 事件一起停掉。每一处都必须写成 $_pauseExpr',
       );
     }

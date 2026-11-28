@@ -299,15 +299,15 @@ GitHub 默认分支是 `develop`（用户 2026-11-25 拍板：开发分支才是
 
 ### 暂停调试版自动发布（2026-11-27）
 
-用途：测试版放出去试用期间（例如「测试版测 1 天再发正式版」），让 develop / main 的 push 不再出滚动 debug 包，免得 debug 通道的用户被新提交打断、runner 也让给 beta / formal。开关是**仓库变量** `FUSHI_PAUSE_DEBUG_RELEASE`，值为 `true`（GitHub 表达式比较不分大小写）时暂停，删掉或改成别的值即恢复，不用改代码、不用提交。
+用途：测试版放出去试用期间（例如「测试版测 1 天再发正式版」），让 debug 通道不再出包，免得 debug 通道的用户被新提交打断、runner 也让给 beta / formal。开关是**仓库变量** `FUSHI_PAUSE_DEBUG_RELEASE`，值为 `true`（GitHub 表达式比较不分大小写）时暂停，删掉或改成别的值即恢复，不用改代码、不用提交。
 
 - **暂停**：`gh variable set FUSHI_PAUSE_DEBUG_RELEASE --body true --repo hajisensai/Fushi`
-- **恢复**：`gh variable delete FUSHI_PAUSE_DEBUG_RELEASE --repo hajisensai/Fushi`（或 `--body false`）。恢复后不自动补发暂停期间的提交：下一次进 push 路径的提交照常出包（序号 = commit 数，跳号无害）；想立刻出一版就手动 dispatch `channel=debug`。
-- 只作用于 **push 事件**（= debug 通道，push 在两条 workflow 里只会解析成 debug）。`workflow_dispatch` 的 debug / beta / formal、`release: published` 事件一律不看这个变量，暂停期间照常发，包括它们的 TestFlight。
+- **恢复**：`gh variable delete FUSHI_PAUSE_DEBUG_RELEASE --repo hajisensai/Fushi`（或 `--body false`）。恢复后不自动补发暂停期间的提交：下一次进 push 路径的提交照常出包（序号 = commit 数，跳号无害）；想立刻出一版就手动 dispatch `channel=debug`（变量删掉之后）。
+- 只作用于 **debug 通道的两个入口**：push 事件（在两条 workflow 里只会解析成 debug）与 `workflow_dispatch channel=debug`（2026-11-28 补上：此前只挡 push，有人手动 dispatch debug 就把 debug.33039 推给了 debug 通道用户）。`workflow_dispatch` 的 beta / formal、`release: published` 事件一律不看这个变量，暂停期间照常发，包括它们的 TestFlight。暂停期间确实要出一版 debug，先删变量再 dispatch。
 - `release.yml`：`build` 与 `publish-android` 两个 job 在 job 级 `if` 上跳过（Android 构建、debug pulse、滚动 debug 资产上传、更新清单全不跑，连 runner 都不占）。`web-core-linux` / `test-native-linux` / `fushidicts-linux` / `tests` 不受影响——它们是 develop 上唯一的 app 全量单测门；`publish-settings-catalog`（官网设置目录）跟着 `tests` 照跑，它不是调试版发布。
 - `release-desktop.yml`：windows / macos / flatpak-baseapp / linux / ios / testflight / publish 每个 job 都在 job 级 `if` 上跳过（含 develop push 每次的 debug TestFlight 上传）；`publish` 带 `always()`，不会随 needs 跳过，所以它自己也判。
 - 服务端 `hajisensai/fushi-server`：`release-server.yml` 的 plan step 把同名变量交给 `tool/server_release_plan.py`，暂停时 auto 不再挑「develop 新提交 → debug」，app 正式版 / beta 的服务端候选照常。注意可复用 workflow 的 `vars` 取的是**调用方**仓的变量，所以要连服务端 debug 一起停，得在 fushi-server 上另设同名变量（`--repo hajisensai/fushi-server`）；只在本仓设时服务端 debug 照发（它不进五端 app 的更新通道，不影响测试版试用）。
-- 守卫：`fushi/test/build/release_debug_pause_guard_test.dart`（每处引用必须是 `!(github.event_name == 'push' && vars.FUSHI_PAUSE_DEBUG_RELEASE == 'true')` 整体表达式、哪些 job 挡哪些不挡、服务端暂停判断排在 formal / beta 之后）、`tool/check_release_policy.ps1`（同一表达式与出现次数）、`tool/server_release_plan_test.py`。
+- 守卫：`fushi/test/build/release_debug_pause_guard_test.dart`（每处引用必须是 `!(vars.FUSHI_PAUSE_DEBUG_RELEASE == 'true' && (github.event_name == 'push' || github.event.inputs.channel == 'debug'))` 整体表达式、哪些 job 挡哪些不挡、服务端暂停判断排在 formal / beta 之后）、`tool/check_release_policy.ps1`（同一表达式与出现次数）、`tool/server_release_plan_test.py`。
 
 ### 反馈修复的发布回填（2026-10-13）
 

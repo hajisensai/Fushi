@@ -264,13 +264,13 @@ foreach ($relativePath in $magpieBundleWorkflows.Keys) {
 #   2. the channel job refuses to run when github.repository is the app repo;
 #   3. every checkout pins repository: hajisensai/Fushi so the caller repo's
 #      own tree is never mistaken for the source.
-# 2026-11-27 暂停调试版自动发布：仓库变量 FUSHI_PAUSE_DEBUG_RELEASE = 'true' 时只停 push 事件
-# （滚动 debug 通道）的构建与发布；workflow_dispatch 的 debug / beta / formal 与 release 事件一律不看它。
-# 每一处引用都必须是同一个「push && 变量」整体表达式，裸 vars.FUSHI_PAUSE_DEBUG_RELEASE 会把手动
+# 2026-11-27 暂停调试版发布：仓库变量 FUSHI_PAUSE_DEBUG_RELEASE = 'true' 时停 debug 通道的两个入口
+# （push 事件、2026-11-28 起加上 workflow_dispatch channel=debug）的构建与发布；dispatch 的 beta / formal
+# 与 release 事件一律不看它。每一处引用都必须是同一个「变量 && debug 入口」整体表达式，裸 vars.FUSHI_PAUSE_DEBUG_RELEASE 会把手动
 # beta / formal 一并停掉。release.yml 只挡 build / publish-android（tests 系 job 是 develop 唯一的
 # app 全量单测门，必须照跑）；release-desktop.yml 每个 job 都挡（publish 带 always()，不会随 needs 跳过）。
 # Dart 侧同一不变式（逐 job 核对）：fushi/test/build/release_debug_pause_guard_test.dart。
-$debugPauseExpr = "!(github.event_name == 'push' && vars.FUSHI_PAUSE_DEBUG_RELEASE == 'true')"
+$debugPauseExpr = "!(vars.FUSHI_PAUSE_DEBUG_RELEASE == 'true' && (github.event_name == 'push' || github.event.inputs.channel == 'debug'))"
 $debugPauseExpected = @{
   '.github/workflows/release.yml'         = 2
   '.github/workflows/release-desktop.yml' = 7
@@ -280,7 +280,7 @@ foreach ($relativePath in $debugPauseExpected.Keys) {
   $varRefs = [regex]::Matches($content, 'vars\.FUSHI_PAUSE_DEBUG_RELEASE').Count
   $exprRefs = [regex]::Matches($content, [regex]::Escape($debugPauseExpr)).Count
   if ($varRefs -ne $exprRefs) {
-    $failures.Add("${relativePath}: every vars.FUSHI_PAUSE_DEBUG_RELEASE reference must be the push-only pause expression ($debugPauseExpr); a bare reference would also stop manual beta / formal releases")
+    $failures.Add("${relativePath}: every vars.FUSHI_PAUSE_DEBUG_RELEASE reference must be the debug-only pause expression ($debugPauseExpr); a bare reference would also stop manual beta / formal releases")
   }
   if ($exprRefs -ne $debugPauseExpected[$relativePath]) {
     $failures.Add("${relativePath}: expected the debug pause expression on $($debugPauseExpected[$relativePath]) job-level if: lines, found $exprRefs")
