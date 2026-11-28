@@ -108,7 +108,7 @@ List<Widget> buildAiWebKnowledgeCustomSiteRows(
                         onChanged: (bool value) =>
                             setEnabled(site, value: value),
                       )
-                    : FushiSwitch.adaptive(
+                    : FushiSwitch(
                         value: enabled.contains(site.id),
                         onChanged: (bool value) =>
                             setEnabled(site, value: value),

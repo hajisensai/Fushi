@@ -233,7 +233,7 @@ class _RemoteSubscriptionsSectionState
                   ),
             icon: const FushiIcon(Icons.delete_outline, size: 18),
           ),
-          FushiSwitch.adaptive(
+          FushiSwitch(
             key: ValueKey<String>(
               'remote-subscription-toggle-${sub.subscriptionId}',
             ),

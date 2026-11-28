@@ -51,7 +51,7 @@ void installFushiApiPortConflictNotice({
 Future<void> _showConflictDialog(BuildContext context, int port) {
   return showAppDialog<void>(
     context: context,
-    builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
+    builder: (BuildContext dialogContext) => FushiAlertDialog(
       title: Text(t.fushi_api_server),
       content: Text(fushiApiPortInUseMessage(port)),
       actions: <Widget>[

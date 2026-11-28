@@ -131,7 +131,7 @@ class _AListSiteSettingsSectionState
           Row(
             children: <Widget>[
               Expanded(
-                child: FushiSwitchListTile.adaptive(
+                child: FushiSwitchListTile(
                   key: ValueKey<String>('alist-site-$index-enabled'),
                   contentPadding: EdgeInsets.zero,
                   dense: true,
@@ -228,7 +228,7 @@ class _AListSiteSettingsSectionState
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ),
-          FushiSwitchListTile.adaptive(
+          FushiSwitchListTile(
             key: ValueKey<String>('alist-site-$index-allow-http'),
             contentPadding: EdgeInsets.zero,
             dense: true,

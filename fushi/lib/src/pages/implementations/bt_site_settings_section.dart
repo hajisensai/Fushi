@@ -417,7 +417,7 @@ class _BtSiteSettingsSectionState extends ConsumerState<BtSiteSettingsSection> {
               ),
               Semantics(
                 label: t.bt_site_enabled_label,
-                child: FushiSwitch.adaptive(
+                child: FushiSwitch(
                   key: ValueKey<String>('bt-site-${site.id}-enabled'),
                   value: site.enabled,
                   onChanged: running
@@ -818,7 +818,7 @@ class _BtSiteEditDialogState extends State<BtSiteEditDialog> {
               ),
             ),
           const SizedBox(height: 8),
-          FushiSwitchListTile.adaptive(
+          FushiSwitchListTile(
             key: const ValueKey<String>('bt-site-dialog-enabled'),
             contentPadding: EdgeInsets.zero,
             dense: true,
@@ -829,7 +829,7 @@ class _BtSiteEditDialogState extends State<BtSiteEditDialog> {
                 : (bool value) => setState(() => _enabled = value),
           ),
           if (_showAllowHttp)
-            FushiSwitchListTile.adaptive(
+            FushiSwitchListTile(
               key: const ValueKey<String>('bt-site-dialog-allow-http'),
               contentPadding: EdgeInsets.zero,
               dense: true,

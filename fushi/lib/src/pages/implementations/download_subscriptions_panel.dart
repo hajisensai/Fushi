@@ -320,7 +320,7 @@ class _DownloadSubscriptionsPanelState
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                FushiSwitch.adaptive(
+                FushiSwitch(
                   value: subscription.enabled,
                   onChanged: checking
                       ? null

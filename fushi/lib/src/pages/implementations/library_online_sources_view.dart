@@ -1,7 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/pages/implementations/browse_online_sources_view.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 
@@ -39,8 +38,7 @@ class LibraryOnlineSourcesView extends StatelessWidget {
       kind: DesktopContentKind.readerShelf,
       child: Column(
         children: <Widget>[
-          if (!isCupertinoPlatform(context))
-            FushiPageHeader.customTitle(title: navigation),
+          FushiPageHeader.customTitle(title: navigation),
           Expanded(child: body),
         ],
       ),

@@ -499,7 +499,7 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
   /// 页头只在独立页面（非 embedded、非 Cupertino）渲染。放送日历不再是页头 /
   /// 搜索行上的图标按钮（2026-10-20 用户：「藏太深了」），改成正文里的「今日
   /// 放送」小模块（[AiringTodayShelf]），三种宽度、embedded 与否都在同一处。
-  bool get _headerVisible => !widget.embedded && !isCupertinoPlatform(context);
+  bool get _headerVisible => !widget.embedded;
 
   /// 页头动作（设计稿 DI15 / DI10）：平铺「AI 下载」（宽窗带字）/ 订阅 / 下载
   /// 中心（**有后台任务时才出现**）/ ⋯（刷新）。搜索是内容第一行的输入框，不占

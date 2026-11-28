@@ -34,7 +34,7 @@ void main() {
 
       // 书架是惰性构建的保活 tab，冷启动落在 dashboard；不先切过去，
       // `book_entry_*` 书卡不在树中，seedReaderBook 的可见性轮询必然超时
-      // （与 macos_reader_screenshot / macos_todo1375 同根因同修法）。
+      // （与 macos_reader_screenshot 同根因同修法）。
       await showBooksTab(tester);
 
       final String bookKey = await seedReaderBook(tester);

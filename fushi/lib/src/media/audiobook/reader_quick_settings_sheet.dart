@@ -3648,27 +3648,9 @@ class _InBookIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bool cupertino = isCupertinoPlatform(context);
     final Color color = destructive
-        ? (cupertino
-              ? CupertinoColors.destructiveRed.resolveFrom(context)
-              : Theme.of(context).colorScheme.error)
-        : (cupertino
-              ? CupertinoTheme.of(context).primaryColor
-              : Theme.of(context).colorScheme.onSurfaceVariant);
-
-    if (cupertino) {
-      return CupertinoButton(
-        padding: EdgeInsets.zero,
-        minSize: kMinInteractiveDimension,
-        onPressed: onPressed,
-        child: Semantics(
-          button: true,
-          label: tooltip,
-          child: FushiIcon(cupertinoIcon, size: 18, color: color),
-        ),
-      );
-    }
+        ? Theme.of(context).colorScheme.error
+        : Theme.of(context).colorScheme.onSurfaceVariant;
 
     return FushiIconButton(
       icon: materialIcon,

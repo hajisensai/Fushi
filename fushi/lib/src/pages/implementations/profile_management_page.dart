@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart' show ProfileMediaKind;
 import 'package:fushi/src/pages/base_page.dart';
@@ -185,9 +184,8 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
   // ---------------------------------------------------------------------------
 
   Widget _buildCreateRow(ProfileViewModel vm) {
-    final bool cupertino = isCupertinoPlatform(context);
     return AdaptiveSettingsRow(
-      icon: cupertino ? CupertinoIcons.add : FushiIcons.add,
+      icon: FushiIcons.add,
       showIcon: true,
       title: t.profile_create,
       onTap: () => _showCreateDialog(vm),
@@ -195,9 +193,8 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
   }
 
   Widget _buildImportRow(ProfileViewModel vm) {
-    final bool cupertino = isCupertinoPlatform(context);
     return AdaptiveSettingsRow(
-      icon: cupertino ? CupertinoIcons.square_arrow_down : FushiIcons.download,
+      icon: FushiIcons.download,
       showIcon: true,
       title: t.profile_import,
       onTap: () => _importProfile(vm),
@@ -210,16 +207,13 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
 
   List<Widget> _buildProfileRows(ProfileUiState uiState, ProfileViewModel vm) {
     final isOnly = uiState.profiles.length <= 1;
-    final bool cupertino = isCupertinoPlatform(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return [
       for (final profile in uiState.profiles)
         AdaptiveSettingsRow(
           icon: profile.id == uiState.activeProfileId
-              ? (cupertino
-                    ? CupertinoIcons.check_mark_circled_solid
-                    : FushiIcons.filled(FushiIcons.success))
-              : (cupertino ? CupertinoIcons.circle : FushiIcons.profiles),
+              ? FushiIcons.filled(FushiIcons.success)
+              : FushiIcons.profiles,
           // 行首的实心 / 空心圆就是「当前激活」的唯一信号——不 showIcon 的话
           // 共享行根本不画它，列表里看不出哪个方案在用。
           showIcon: true,
@@ -559,34 +553,16 @@ class _ProfileActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bool cupertino = isCupertinoPlatform(context);
     // Apple：行内操作字形是强调色（iOS 列表行里的可点图标口径），删除用系统
     // destructive 红；MD3 维持中性 onSurfaceVariant / error。
-    final bool glass = !cupertino && isGlassDesign(context);
+    final bool glass = isGlassDesign(context);
     final Color color = destructive
-        ? (cupertino
-              ? CupertinoColors.destructiveRed.resolveFrom(context)
-              : glass
+        ? (glass
               ? appleColorsOf(context).destructive
               : Theme.of(context).colorScheme.error)
-        : (cupertino
-              ? CupertinoTheme.of(context).primaryColor
-              : glass
+        : (glass
               ? appleColorsOf(context).accent
               : Theme.of(context).colorScheme.onSurfaceVariant);
-
-    if (cupertino) {
-      return CupertinoButton(
-        padding: EdgeInsets.zero,
-        minSize: 36,
-        onPressed: onPressed,
-        child: Semantics(
-          button: true,
-          label: tooltip,
-          child: FushiIcon(cupertinoIcon, size: 20, color: color),
-        ),
-      );
-    }
 
     return FushiIconButton(
       icon: materialIcon,

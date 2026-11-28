@@ -54,7 +54,7 @@ Future<void> _pump(WidgetTester tester, ThemeData theme, Widget child) async {
 
 void main() {
   group('MD3 on iOS renders Material, not Cupertino', () {
-    testWidgets('FushiSwitch.adaptive does not paint the iOS green track', (
+    testWidgets('FushiSwitch does not paint the iOS green track', (
       WidgetTester tester,
     ) async {
       final ThemeData theme = _theme(platform: TargetPlatform.iOS);
@@ -66,11 +66,7 @@ void main() {
       );
       expect(find.byType(Switch), paints..rrect(color: _iosGreen));
 
-      await _pump(
-        tester,
-        theme,
-        FushiSwitch.adaptive(value: true, onChanged: (_) {}),
-      );
+      await _pump(tester, theme, FushiSwitch(value: true, onChanged: (_) {}));
       expect(find.byType(Switch), isNot(paints..rrect(color: _iosGreen)));
       expect(
         find.byType(Switch),
@@ -92,13 +88,13 @@ void main() {
       },
     );
 
-    testWidgets('FushiAlertDialog.adaptive is a Material AlertDialog', (
+    testWidgets('FushiAlertDialog is a Material AlertDialog', (
       WidgetTester tester,
     ) async {
       await _pump(
         tester,
         _theme(platform: TargetPlatform.iOS),
-        const FushiAlertDialog.adaptive(title: Text('t'), content: Text('c')),
+        const FushiAlertDialog(title: Text('t'), content: Text('c')),
       );
       expect(find.byType(CupertinoAlertDialog), findsNothing);
       expect(find.byType(AlertDialog), findsOneWidget);
@@ -119,7 +115,7 @@ void main() {
         ),
         Column(
           children: <Widget>[
-            FushiSwitch.adaptive(value: true, onChanged: (_) {}),
+            FushiSwitch(value: true, onChanged: (_) {}),
             const FushiCircularProgressIndicator.adaptive(),
           ],
         ),
@@ -133,7 +129,7 @@ void main() {
           platform: TargetPlatform.iOS,
           designSystem: FushiDesignSystem.cupertino,
         ),
-        const FushiAlertDialog.adaptive(title: Text('t'), content: Text('c')),
+        const FushiAlertDialog(title: Text('t'), content: Text('c')),
       );
       expect(find.byType(CupertinoAlertDialog), findsOneWidget);
     });
@@ -143,7 +139,7 @@ void main() {
   // FushiDesignSystem.cupertino：修复前它在 macOS 上让 `.adaptive` 出 Cupertino
   // 开关 / 菊花，现在与 MD3 一样渲染 Material 控件。
   group('hidden FushiDesignSystem.macos renders Material', () {
-    testWidgets('FushiSwitch.adaptive / progress on macOS are Material', (
+    testWidgets('FushiSwitch / progress on macOS are Material', (
       WidgetTester tester,
     ) async {
       await _pump(
@@ -154,7 +150,7 @@ void main() {
         ),
         Column(
           children: <Widget>[
-            FushiSwitch.adaptive(value: true, onChanged: (_) {}),
+            FushiSwitch(value: true, onChanged: (_) {}),
             const FushiCircularProgressIndicator.adaptive(),
           ],
         ),

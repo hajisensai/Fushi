@@ -754,7 +754,7 @@ class _MihonSortFilterField extends StatelessWidget {
           title: Text(
             ascending ? t.mihon_filter_ascending : t.mihon_filter_descending,
           ),
-          trailing: FushiSwitch.adaptive(
+          trailing: FushiSwitch(
             value: ascending,
             onChanged: (bool value) => update(nextAscending: value),
           ),

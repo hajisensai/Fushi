@@ -422,7 +422,7 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
     required ValueChanged<bool>? onChanged,
   }) => KeyedSubtree(
     key: key,
-    child: isGlassDesign(context) && !isCupertinoPlatform(context)
+    child: isGlassDesign(context)
         ? glassSettingsSwitch(
             context: context,
             value: value,

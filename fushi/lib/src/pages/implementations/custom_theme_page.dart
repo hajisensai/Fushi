@@ -949,8 +949,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final bool wide =
-            constraints.maxWidth >= kCustomThemeWideLayoutMinWidth &&
-            !isCupertinoPlatform(context);
+            constraints.maxWidth >= kCustomThemeWideLayoutMinWidth;
         _wideLayout = wide;
         return SettingsKitScaffold(
           title: t.custom_theme,

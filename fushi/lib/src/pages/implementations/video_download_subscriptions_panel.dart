@@ -1240,7 +1240,7 @@ class _VideoDownloadSubscriptionCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 4),
-              FushiSwitch.adaptive(
+              FushiSwitch(
                 key: ValueKey<String>(
                   'video-subscription-toggle-${subscription.subscriptionId}',
                 ),

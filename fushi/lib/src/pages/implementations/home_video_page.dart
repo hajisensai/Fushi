@@ -170,7 +170,6 @@ import 'package:fushi/src/pages/implementations/video_filename_organize_dialog.d
 import 'package:fushi/src/media/library_progress_reset.dart';
 import 'package:fushi/src/pages/implementations/library_progress_reset_dialog.dart';
 import 'package:fushi/src/pages/implementations/media_sources_dialog.dart';
-import 'package:fushi/src/pages/implementations/library_filter_dropdown.dart';
 import 'package:fushi/src/pages/implementations/library_filter_panel.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
 import 'package:fushi/src/pages/implementations/video_library_header_actions.dart';
@@ -6197,25 +6196,16 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
-                  if (!isCupertinoPlatform(context)) _buildPageHeader(allTags),
+                  _buildPageHeader(allTags),
                   // 单行页头（2026-10-14）：搜索 / 筛选 / 多选 / 排序 /
                   // 管理标签并进页头动作，搜索点开整行换成搜索栏；筛选
                   // 维度收进「筛选」面板。下面只剩一行 chip：生效中的
                   // 筛选条件（带 ✕）在前、标签在后，两者都没有时零高度。
-                  // Cupertino 旧版面保留常驻搜索行（筛选胶囊仍在行内）。
-                  if (widget.section != VideoLibrarySection.home) ...<Widget>[
-                    if (isCupertinoPlatform(context)) ...<Widget>[
-                      _buildVideoSearchBar(allTags),
-                      // Apple 下标签胶囊在搜索行下面的筛选行里（iOS 档）或侧栏
-                      // （macOS 档），这里不再另起一行。
-                      if (!isGlassDesign(context)) _buildTagFilterBar(allTags),
-                    ] else ...<Widget>[
-                      _buildTagFilterBar(
-                        allTags,
-                        leadingChips: _activeFilterChips(),
-                      ),
-                    ],
-                  ],
+                  if (widget.section != VideoLibrarySection.home)
+                    _buildTagFilterBar(
+                      allTags,
+                      leadingChips: _activeFilterChips(),
+                    ),
                   // 提醒配的是刮削 / 字幕凭据（AniDB / Jimaku 等），属于「在线服务」
                   // 模块；模块关着时那个设置分类不可达（推上去当帧自 pop），提醒
                   // 整条不渲染。媒体服务器不在此列，见 openMediaServerSettings
@@ -9915,9 +9905,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   ///   使用时）、刷新（桌面，BUG-2567）、选择。刷新进行中这一项置灰（平铺时就是
   ///   那颗按钮本身，恒外露），免得「按了没反应、于是连按五次」。
   Widget _buildPageHeader(List<BookTagRow> tags) {
-    final bool libraryGrid =
-        widget.section != VideoLibrarySection.home &&
-        !isCupertinoPlatform(context);
+    final bool libraryGrid = widget.section != VideoLibrarySection.home;
     final VideoSourceScrapeTaskController? scrapeTasks =
         widget.scrapeTaskController;
     final VoidCallback? openScrapeTasks = widget.onOpenScrapeTasks;
@@ -10051,12 +10039,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     ];
   }
 
-  /// 页头搜索：首页分区没有可搜的网格、多选态页头是「已选 N · 退出」，都不出 🔍；
-  /// Cupertino 旧版面用常驻搜索行。
+  /// 页头搜索：首页分区没有可搜的网格、多选态页头是「已选 N · 退出」，都不出 🔍。
   FushiHeaderSearchController? get _headerSearchForSection =>
-      widget.section == VideoLibrarySection.home ||
-          _selectionMode ||
-          isCupertinoPlatform(context)
+      widget.section == VideoLibrarySection.home || _selectionMode
       ? null
       : _headerSearch;
 
@@ -10780,219 +10765,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
             child: Text(t.dialog_close),
           ),
         ],
-      ),
-    );
-  }
-
-  /// 标签筛选栏：与书架完全一致——复用 [FushiTagFilterBar]（内联 chip 点选筛选、
-  /// 长按拖拽重排、末尾「管理标签」齿轮 + 「批量选择」动作）。共享
-  /// [selectedTagIdsProvider] 与书架联动；批量选择动作经 [onToggleSelectionMode]
-  /// 与书架对齐（TODO-063：此前视频 tab 没传，缺了「标签设置旁的选择」）。
-  ///
-  /// 渲染条件：与书架 [reader_fushi_history_page._buildTagBar] 一致——「批量选择」
-  /// 永远露出（否则空标签库点不到批量入口、无法批量删除），2026-10-04 起它与排序
-  /// 一起挪进工具行行尾；标签 chip 段（含「管理标签」齿轮）只在有标签时占一行。
-  ///
-  /// P5-A 视频库工具行：搜索框 + 筛选胶囊 + 行尾「批量选择 / 排序」，形态与
-  /// 书架 / 游戏库页同一个 [LibraryToolbar]（宽屏一行；窄屏搜索一行、筛选下一行
-  /// 横滚）。搜索词只影响本次会话、不落库。
-  ///
-  /// 「全部视频」另有系列归属 / 媒体类型 / 正片特典 / 来源四档：系列归属只在这里
-  /// 露出——整库逐条平铺，是唯一会被系列集数淹没的视图；系列页本身按合集折叠，
-  /// 再给它这个档位没有意义。来源只有一个时不出来源档（只有一个选项的筛选没有
-  /// 意义）。筛选多了放不下时横向滚动，不换行（BUG-2835）。
-  Widget _buildVideoSearchBar(List<BookTagRow> tags) {
-    return LibraryToolbar(
-      filtersKey: _isAllVideosSection
-          ? const ValueKey<String>('home_video_all_videos_filter_row')
-          : null,
-      // 窄屏（手机竖屏）：搜索框独占一行，筛选胶囊与行尾工具落第二行（筛选横滑）。
-      // 此前搜索与工具挤一行，360dp 上搜索框只剩一截（2026-10 体验优化）。
-      compactKey: const ValueKey<String>('video_search_bar_stacked'),
-      compactTrailing: _buildTagFilterBar(
-        tags,
-        part: FushiTagFilterBarPart.actions,
-      ),
-      search: LibrarySearchField(
-        fieldKey: const ValueKey<String>('video_search_field'),
-        controller: _searchController,
-        hintText: t.library_search,
-        onChanged: (String value) => setState(() => _searchQuery = value),
-        onClear: () {
-          _searchController.clear();
-          setState(() => _searchQuery = '');
-        },
-      ),
-      filters: <Widget>[
-        _buildYearFilterButton(),
-        _buildWatchStatusFilterButton(),
-        if (_isAllVideosSection) ...<Widget>[
-          _buildSeriesFilterButton(),
-          _buildMediaTypeFilterButton(),
-          _buildExtrasFilterButton(),
-          if (_videoSourcesById.length >= 2) _buildSourceFilterButton(),
-        ],
-      ],
-      trailing: _buildTagFilterBar(tags, part: FushiTagFilterBarPart.actions),
-      appleFilterRow: isGlassDesign(context)
-          ? _buildTagFilterBar(tags, part: FushiTagFilterBarPart.appleFilterRow)
-          : null,
-    );
-  }
-
-  /// TODO-2486：年份下拉筛选。年份列表由条目刮削 airDate 派生（去重倒序）；
-  /// 含「未知」桶——无刮削资料的条目在年份筛选下归未知、不消失。
-  Widget _buildYearFilterButton() {
-    final List<int> years = _airYearByUid.values.toSet().toList()
-      ..sort((int a, int b) => b.compareTo(a));
-    final String label = _yearFilter.isAll
-        ? t.video_filter_year
-        : (_yearFilter.unknownOnly
-              ? t.video_filter_year_unknown
-              : '${_yearFilter.year}');
-    return FushiPopupMenuButton<VideoYearFilter>(
-      key: const ValueKey<String>('home_video_filter_year'),
-      tooltip: t.video_filter_year,
-      initialValue: _yearFilter,
-      onSelected: (VideoYearFilter value) =>
-          setState(() => _yearFilter = value),
-      itemBuilder: (BuildContext context) => <PopupMenuEntry<VideoYearFilter>>[
-        PopupMenuItem<VideoYearFilter>(
-          value: const VideoYearFilter.all(),
-          child: Text(t.home_filter_all),
-        ),
-        for (final int year in years)
-          PopupMenuItem<VideoYearFilter>(
-            value: VideoYearFilter.year(year),
-            child: Text('$year'),
-          ),
-        PopupMenuItem<VideoYearFilter>(
-          value: const VideoYearFilter.unknown(),
-          child: Text(t.video_filter_year_unknown),
-        ),
-      ],
-      child: LibraryFilterChip(label: label, active: !_yearFilter.isAll),
-    );
-  }
-
-  /// TODO-2486：看完状态下拉筛选（全部 / 未看 / 在看 / 已看完）。
-  Widget _buildWatchStatusFilterButton() {
-    final String label = _watchStatusFilter == VideoWatchStatusFilter.all
-        ? t.video_filter_watch_status
-        : _watchStatusFilterLabel(_watchStatusFilter);
-    return FushiPopupMenuButton<VideoWatchStatusFilter>(
-      key: const ValueKey<String>('home_video_filter_watch_status'),
-      tooltip: t.video_filter_watch_status,
-      initialValue: _watchStatusFilter,
-      onSelected: (VideoWatchStatusFilter value) =>
-          setState(() => _watchStatusFilter = value),
-      itemBuilder: (BuildContext context) =>
-          <PopupMenuEntry<VideoWatchStatusFilter>>[
-            for (final VideoWatchStatusFilter filter
-                in VideoWatchStatusFilter.values)
-              PopupMenuItem<VideoWatchStatusFilter>(
-                value: filter,
-                child: Text(
-                  filter == VideoWatchStatusFilter.all
-                      ? t.home_filter_all
-                      : _watchStatusFilterLabel(filter),
-                ),
-              ),
-          ],
-      child: LibraryFilterChip(
-        label: label,
-        active: _watchStatusFilter != VideoWatchStatusFilter.all,
-      ),
-    );
-  }
-
-  /// 系列归属下拉筛选（全部 / 系列内 / 非系列）。「全部视频」逐条平铺整库，一部
-  /// 番的几十集会把散片淹掉；这个档位让用户把已归进系列的集数收起来，只看还没
-  /// 成系列的片子（反向档位同理，用来核对某些集是不是漏归系列了）。
-  Widget _buildSeriesFilterButton() =>
-      _buildEnumFilterButton<VideoSeriesFilter>(
-        key: 'home_video_filter_series',
-        tooltip: t.video_filter_series,
-        value: _seriesFilter,
-        values: VideoSeriesFilter.values,
-        allValue: VideoSeriesFilter.all,
-        labelOf: _seriesFilterLabel,
-        onSelected: _setSeriesFilter,
-      );
-
-  /// BUG-2835：媒体类型下拉（全部 / 视频 / 音频）。
-  Widget _buildMediaTypeFilterButton() =>
-      _buildEnumFilterButton<VideoMediaTypeFilter>(
-        key: 'home_video_filter_media_type',
-        tooltip: t.video_filter_media_type,
-        value: _mediaTypeFilter,
-        values: VideoMediaTypeFilter.values,
-        allValue: VideoMediaTypeFilter.all,
-        labelOf: _mediaTypeFilterLabel,
-        onSelected: (VideoMediaTypeFilter value) =>
-            setState(() => _mediaTypeFilter = value),
-      );
-
-  /// BUG-2835：正片 / 特典下拉（全部 / 正片 / 特典）。
-  Widget _buildExtrasFilterButton() =>
-      _buildEnumFilterButton<VideoExtrasFilter>(
-        key: 'home_video_filter_extras',
-        tooltip: t.video_filter_extras,
-        value: _extrasFilter,
-        values: VideoExtrasFilter.values,
-        allValue: VideoExtrasFilter.all,
-        labelOf: _extrasFilterLabel,
-        onSelected: (VideoExtrasFilter value) =>
-            setState(() => _extrasFilter = value),
-      );
-
-  /// BUG-2835：来源下拉（全部 + 每个视频来源库）。值用来源 id；`-1` 是「全部」
-  /// 在菜单里的占位（PopupMenuButton 选中 null 值不触发 onSelected）。
-  Widget _buildSourceFilterButton() {
-    final List<MediaSourceRow> sources = _videoSourcesById.values.toList()
-      ..sort((MediaSourceRow a, MediaSourceRow b) => a.id.compareTo(b.id));
-    String labelOf(int id) =>
-        id < 0 ? t.video_filter_source : (_videoSourcesById[id]?.label ?? '');
-    return _buildEnumFilterButton<int>(
-      key: 'home_video_filter_source',
-      tooltip: t.video_filter_source,
-      value: _effectiveSourceFilter ?? -1,
-      values: <int>[-1, for (final MediaSourceRow s in sources) s.id],
-      allValue: -1,
-      labelOf: labelOf,
-      onSelected: (int value) =>
-          setState(() => _sourceFilter = value < 0 ? null : value),
-    );
-  }
-
-  /// 「全部视频」下拉筛选共用形态：chip 在「全部」态显示维度名、菜单里同一档位
-  /// 显示「全部」（两处语义不同，见 [_seriesFilterLabel]）。
-  Widget _buildEnumFilterButton<T>({
-    required String key,
-    required String tooltip,
-    required T value,
-    required List<T> values,
-    required T allValue,
-    required String Function(T value) labelOf,
-    required ValueChanged<T> onSelected,
-  }) {
-    return FushiPopupMenuButton<T>(
-      key: ValueKey<String>(key),
-      tooltip: tooltip,
-      initialValue: value,
-      onSelected: onSelected,
-      itemBuilder: (BuildContext context) => <PopupMenuEntry<T>>[
-        for (final T option in values)
-          PopupMenuItem<T>(
-            value: option,
-            child: Text(
-              option == allValue ? t.home_filter_all : labelOf(option),
-            ),
-          ),
-      ],
-      child: LibraryFilterChip(
-        label: labelOf(value),
-        active: value != allValue,
       ),
     );
   }

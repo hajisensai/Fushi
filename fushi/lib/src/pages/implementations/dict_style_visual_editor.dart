@@ -313,7 +313,7 @@ class DictStyleVisualEditor extends StatelessWidget {
   }) {
     return Column(
       children: <Widget>[
-        FushiSwitchListTile.adaptive(
+        FushiSwitchListTile(
           contentPadding: EdgeInsets.zero,
           title: Text(value == null ? label : '$label · ${format(value)}'),
           value: value != null,

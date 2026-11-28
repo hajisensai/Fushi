@@ -174,7 +174,7 @@ dependencies:
   # media_kit_libs_windows_audio 移除：与视频用的 media_kit_libs_video 抢同名 libmpv
   # 归档(同下载路径不同 MD5)，video libs 是 audio 超集，统一提供 libmpv。
   kana_kit: ^2.0.0
-  macos_ui: ^2.2.2
+  macos_window_utils: ^1.9.1
   material_color_utilities: ^0.13.0
   marquee: ^2.2.3
   multi_value_listenable_builder: ^0.0.2

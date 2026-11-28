@@ -100,7 +100,7 @@ class SourceToggleList extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         for (final SourceToggleRow row in rows)
-          FushiSwitchListTile.adaptive(
+          FushiSwitchListTile(
             key: ValueKey<String>('$keyPrefix-${row.id}'),
             contentPadding: EdgeInsets.zero,
             dense: true,

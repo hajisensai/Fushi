@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' show PointerDeviceKind;
 
-import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
@@ -142,12 +141,6 @@ Widget _maybeBadge({
 /// on the private widget type or the stock NavigationBar/NavigationRail (which
 /// this no longer uses on Material).
 const Key fushiMaterialNavKey = ValueKey<String>('fushi-material-nav');
-
-/// Marks the macOS-native (macos_ui) shell's content subtree so integration
-/// tests can locate the top-level destinations without depending on the
-/// MacosWindow/Sidebar internals. Mirrors [fushiMaterialNavKey] for the macOS
-/// design system.
-const Key fushiMacosNavKey = ValueKey<String>('fushi-macos-nav');
 
 /// Height of the mobile bottom bar's **content box**, in logical pixels —
 /// the system gesture inset is let through by [SafeArea] on top of this.
@@ -419,29 +412,6 @@ Widget adaptiveBottomBar({
   ValueChanged<int>? onDragSelect,
   AdaptiveNavBarStyle barStyle = AdaptiveNavBarStyle.flat,
 }) {
-  if (isCupertinoPlatform(context)) {
-    // Cupertino keeps the stock tab bar as a single whole-bar gamepad stop. iOS
-    // is touch-first and we don't self-draw its chrome; per-item focus is a
-    // Material-only refinement (the rail/bottom bar the gamepad users hit).
-    return GamepadNavCluster(
-      axis: Axis.horizontal,
-      count: items.length,
-      currentIndex: currentIndex,
-      onSelect: onTap,
-      child: CupertinoTabBar(
-        currentIndex: currentIndex,
-        onTap: onTap,
-        items: items
-            .map(
-              (AdaptiveNavItem e) => BottomNavigationBarItem(
-                icon: _maybeBadge(item: e, child: FushiIcon(e.icon)),
-                label: e.label,
-              ),
-            )
-            .toList(),
-      ),
-    );
-  }
   // Material: each destination is its OWN gamepad/keyboard focus target, so the
   // app focus ring hugs the single selected item instead of wrapping the whole
   // bar. Directional D-pad steps between adjacent tiles through the normal
@@ -4736,29 +4706,8 @@ PreferredSizeWidget adaptiveAppBar({
   double? titleSpacing,
   PreferredSizeWidget? bottom,
 }) {
-  if (isCupertinoPlatform(context)) {
-    final navBar = CupertinoNavigationBar(
-      leading: leading,
-      middle: title,
-      trailing: actions != null && actions.isNotEmpty
-          ? Row(mainAxisSize: MainAxisSize.min, children: actions)
-          : null,
-    );
-    if (bottom == null) return navBar;
-    return _CupertinoAppBarWithBottom(navBar: navBar, bottom: bottom);
-  }
-  if (isGlassDesign(context)) {
-    // 「玻璃」设计系统：与 [FushiAppBar] 同一套 Apple 26 顶栏（透明底、
-    // 圆形玻璃返回钮、actions 收进一枚玻璃胶囊）。
-    return FushiAppBar(
-      leading: leading,
-      title: title,
-      actions: actions,
-      titleSpacing: titleSpacing,
-      bottom: bottom,
-    );
-  }
-  // MD3 同样走设计系统分派的顶栏（统一的 arrow_back 返回键与顶栏主题）。
+  // [FushiAppBar] 自己按设计系统分派：Apple 26 顶栏（透明底、圆形玻璃返回钮、
+  // actions 收进一枚玻璃胶囊）/ MD3（统一的 arrow_back 返回键与顶栏主题）。
   return FushiAppBar(
     leading: leading,
     title: title,
@@ -4766,25 +4715,4 @@ PreferredSizeWidget adaptiveAppBar({
     titleSpacing: titleSpacing,
     bottom: bottom,
   );
-}
-
-class _CupertinoAppBarWithBottom extends StatelessWidget
-    implements PreferredSizeWidget {
-  final CupertinoNavigationBar navBar;
-  final PreferredSizeWidget bottom;
-
-  const _CupertinoAppBarWithBottom({
-    required this.navBar,
-    required this.bottom,
-  });
-
-  @override
-  Size get preferredSize => Size.fromHeight(
-    navBar.preferredSize.height + bottom.preferredSize.height,
-  );
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(mainAxisSize: MainAxisSize.min, children: [navBar, bottom]);
-  }
 }

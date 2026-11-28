@@ -620,15 +620,8 @@ class _HomeGamePageState extends State<HomeGamePage> {
             title: const SizedBox.shrink(),
             // 顶部不再放「捕获工作台」图标钮——它与下方 GameSectionTabs 的
             // 「工作台」分段去向完全相同，纯冗余；入口收敛到分段导航 + 状态带。
-            // 网格 / 列表切换（与视频库「全部视频」同位：页头动作）。只在真库页
-            // 时出现——注入 libraryBuilder 的测试宿主没有 ProviderScope。
-            // 真库页（非 Cupertino）的网格 / 列表切换已并进游戏库自己的单行页头
-            // （与搜索 / 刮削 / 排序同一组动作，2026-10-14），这里只给 Cupertino
-            // 旧版面保留。
-            actions: <Widget>[
-              if (widget.libraryBuilder == null && isCupertinoPlatform(context))
-                const GamesLibraryLayoutToggle(),
-            ],
+            // 网格 / 列表切换已并进游戏库自己的单行页头（与搜索 / 刮削 / 排序
+            // 同一组动作，2026-10-14），这里不再挂页头动作。
           ),
           Expanded(
             // 生产路径：库页自己把搜索 / 筛选行叠进浮动工具区、主滚动视图消费

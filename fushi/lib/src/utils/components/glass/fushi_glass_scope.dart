@@ -428,9 +428,6 @@ class FushiAppleDarkTier extends StatelessWidget {
         primary: monochrome ? accent : appleDarkTierAccent(accent),
       ),
       textTheme: theme.textTheme.apply(bodyColor: label, displayColor: label),
-      designSystem:
-          theme.extension<FushiDesignSystemTheme>()?.designSystem ??
-          FushiDesignSystem.auto,
       glass:
           theme.extension<FushiGlassTheme>()?.material ??
           FushiGlassMaterial.off,

@@ -8,16 +8,6 @@ import 'dart:io';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart' show BoxParentData, RenderShiftedBox;
 import 'package:flutter/scheduler.dart' show SchedulerBinding, SchedulerPhase;
-import 'package:macos_ui/macos_ui.dart'
-    show
-        MacosScaffold,
-        ToolBar,
-        ContentArea,
-        Sidebar,
-        SidebarItems,
-        SidebarItem,
-        MacosBackButton,
-        MacosIcon;
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:fushi_anki/fushi_anki.dart' show AnkiMediaDedupReport;
@@ -401,49 +391,6 @@ AdaptiveNavItem _homeNavItemBase(HomeTab tab) {
   }
 }
 
-/// 为根 [MacosWindow] 构建 macOS 原生 [Sidebar]。住在根（不在 HomePage 内）才能让
-/// pushed 路由——阅读器、设置详情、对话框——继承 MacosWindowScope 用原生 ToolBar。
-/// 侧栏项由 [activeTabs] 动态生成（与底栏/rail 的 [homeActiveTabs] 同一真值，video /
-/// games 开关变化时自动增删），选中身份走 [homeShellTabNotifier]。
-Sidebar buildFushiMacosSidebar({required List<HomeTab> activeTabs}) {
-  return Sidebar(
-    minWidth: 220,
-    builder: (BuildContext context, ScrollController scrollController) {
-      final List<AdaptiveNavItem> items = activeTabs
-          .map(homeNavItemFor)
-          .toList();
-      return ValueListenableBuilder<HomeTab>(
-        valueListenable: homeShellTabNotifier,
-        builder: (BuildContext context, HomeTab current, _) {
-          // 当前 tab 若已不在可见列表（刚关掉实验开关仍停在 video），回落到书架，
-          // 避免 SidebarItems.currentIndex 越界。
-          final int currentIndex = activeTabs.contains(current)
-              ? activeTabs.indexOf(current)
-              : 0;
-          return SidebarItems(
-            currentIndex: currentIndex,
-            onChanged: (int i) {
-              if (i >= 0 && i < activeTabs.length) {
-                // 只写共享真值；HomePage 监听它并走 _selectTab（保留 _previousTab /
-                // 焦点环复位语义），再写回，故三处入口同一条路径。
-                homeShellTabNotifier.value = activeTabs[i];
-              }
-            },
-            scrollController: scrollController,
-            items: <SidebarItem>[
-              for (final AdaptiveNavItem item in items)
-                SidebarItem(
-                  leading: MacosIcon(item.selectedIcon ?? item.icon),
-                  label: Text(item.label),
-                ),
-            ],
-          );
-        },
-      );
-    },
-  );
-}
-
 /// 纯函数：顶层同步态 [PopScope] 在收到系统返回时是否应弹「同步进行中」告警。
 ///
 /// 仅当**正在同步**且**当前不在设置 tab**时才告警。设置 tab 的返回由它自己的内层
@@ -513,9 +460,8 @@ class _HomePageState extends BasePageState<HomePage>
 
   HomeTab _currentTab = HomeTab.home;
 
-  /// BUG-2719：tab 正文（[_bodyWithMiniBar]）的唯一身份。三套布局把正文挂在不同的父链下
-  /// （底栏：`Scaffold.body > SafeArea`；侧栏：`Row > Expanded`；macOS：
-  /// `ContentArea`），而 [LayoutBuilder] 只按**当前宽度**挑其一。没有这把 key，
+  /// BUG-2719：tab 正文（[_bodyWithMiniBar]）的唯一身份。两套布局把正文挂在不同的父链下
+  /// （底栏：`Scaffold.body > SafeArea`；侧栏：`Row > Expanded`），而 [LayoutBuilder] 只按**当前宽度**挑其一。没有这把 key，
   /// 宽度一越过 600 的断点，整棵正文就被卸载重建，所有 tab 的 State 一起丢掉。
   /// 最常见的触发是手机竖屏点开视频：播放页转横屏，被它盖住的首页跟着变宽换成侧栏
   /// 布局，退出视频转回竖屏再换一次——视频库的分区（系列 / 全部视频 / 媒体服务器…）
@@ -1545,7 +1491,7 @@ class _HomePageState extends BasePageState<HomePage>
     _selectTab(homeLandingTab(tabs));
   }
 
-  /// The macOS root sidebar writes [homeShellTabNotifier] directly; route that
+  /// 外部入口（ctl 路由等）直接写 [homeShellTabNotifier]；route that
   /// external request through the SAME [_selectTab] path so _previousTab and the
   /// focus-ring reset run identically to a rail/bottom-bar/shortcut switch. Guard
   /// against the echo from _selectTab's own write-back.
@@ -1730,14 +1676,6 @@ class _HomePageState extends BasePageState<HomePage>
                   // desktop locked to the nav-rail layout and the phone
                   // (bottom-bar) layout was unreachable however narrow the
                   // real window got dragged.
-                  // macOS-native shell: a real root MacosWindow + Sidebar
-                  // (built in main.dart, Approach B) replaces the self-drawn
-                  // rail/bottom-bar. MacosWindow manages its own breakpoints, so
-                  // HomePage only renders the tab body here — checked before the
-                  // size-class switch.
-                  if (isMacosPlatform(context)) {
-                    return _buildMacosLayout();
-                  }
                   final sizeClass = windowSizeClassReal(
                     constraints.maxWidth,
                     FushiAppUiScale.of(context),
@@ -2140,57 +2078,6 @@ class _HomePageState extends BasePageState<HomePage>
   /// 可见 tab 列表对应的导航项（与 [_activeTabs] 顺序一致）。
   List<AdaptiveNavItem> _navItems(List<HomeTab> tabs) =>
       tabs.map(_navItemFor).toList();
-
-  /// macOS-native shell (Approach B): the MacosWindow + Sidebar live at the app
-  /// ROOT (main.dart builder, via [buildFushiMacosSidebar]) so pushed routes
-  /// also inherit a MacosWindowScope. Here HomePage only renders the visible
-  /// tab's body in a [MacosScaffold] with a native ToolBar titled by the current
-  /// destination. Settings tab reuses the same full-screen two-pane content the
-  /// desktop layout uses (the sidebar IS the destination switcher, so no extra
-  /// back button). Tab identity is [HomeTab]-driven — the dynamic [_activeTabs]
-  /// list (video/games toggles) flows through the same enum, never int.
-  Widget _buildMacosLayout() {
-    _inMobileLayout = false;
-    _shellFabHostedByBar = false;
-    final AdaptiveNavItem currentItem = _navItemFor(_visibleTab);
-    // TODO-1375（症状③）：macOS ToolBar 的 automaticallyImplyLeading 只在
-    // route.canPop 时生成返回键；home（含 settings）是顶层 route、tab 是 IndexedStack
-    // 切换非 route push，故永远 canPop=false、无返回键。设计假设「设置靠根 sidebar 切
-    // 走」，可一旦 sidebar 因任何原因没了，设置 tab 就零出口困死。给设置 tab 一个**不
-    // 依赖 sidebar**的显式返回出口（切回来源 tab），与桌面 _buildDesktopLayout 的
-    // showBackButton:true 对齐——即便 sidebar 缺席也永不困死。
-    final bool showSettingsBack = _visibleTab == HomeTab.settings;
-    return KeyedSubtree(
-      key: fushiMacosNavKey,
-      child: MacosScaffold(
-        toolBar: ToolBar(
-          leading: showSettingsBack
-              ? MacosBackButton(
-                  fillColor: Colors.transparent,
-                  onPressed: () => _selectTab(_previousVisibleTab),
-                )
-              : null,
-          automaticallyImplyLeading: false,
-          title: Text(currentItem.label),
-          titleWidth: 240,
-        ),
-        children: <Widget>[
-          ContentArea(
-            builder: (BuildContext context, ScrollController _) {
-              // MacosWindow provides no Material ink surface, but the page bodies
-              // use Material widgets (InkWell chips, list tiles). A transparent
-              // Material gives them the required ancestor without painting over
-              // the native window background.
-              return Material(
-                type: MaterialType.transparency,
-                child: _bodyWithMiniBar(),
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildDesktopLayout(WindowSizeClass sizeClass) {
     _inMobileLayout = false;
@@ -4200,7 +4087,7 @@ class _HomePageState extends BasePageState<HomePage>
     if (!mounted) return (proceed: false, grant: false);
     final bool? confirmed = await showAppDialog<bool>(
       context: context,
-      builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
+      builder: (BuildContext dialogContext) => FushiAlertDialog(
         title: Text(t.video_source_scrape_external_overwrite_confirm_title),
         content: Text(t.video_source_scrape_external_overwrite_confirm_body),
         actions: <Widget>[

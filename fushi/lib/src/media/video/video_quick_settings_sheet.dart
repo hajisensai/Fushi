@@ -1,4 +1,3 @@
-import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -286,9 +285,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
           FushiDividerControl(
             height: 1,
             thickness: 1,
-            color: isCupertinoPlatform(context)
-                ? CupertinoColors.separator.resolveFrom(context)
-                : tokens.surfaces.outline,
+            color: tokens.surfaces.outline,
           ),
         // 分类内容：每页一个独立滚动视图（PageStorageKey 记住各自滚动位置），
         // 左右横滑切页（与阅读器设置面板同款 TabBarView）；单分组面板（字幕 /

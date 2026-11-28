@@ -406,7 +406,7 @@ WidgetStateProperty<Icon?>? _md3SwitchThumbIcon(BuildContext context) {
   return fushiExpressiveSwitchThumbIcon(Theme.of(context).colorScheme);
 }
 
-/// [Switch] 的设计系统分派版（含 `.adaptive`）。
+/// [Switch] 的设计系统分派版。
 class FushiSwitch extends StatelessWidget {
   const FushiSwitch({
     super.key,
@@ -437,40 +437,7 @@ class FushiSwitch extends StatelessWidget {
     this.onFocusChange,
     this.autofocus = false,
     this.padding,
-  }) : applyCupertinoTheme = null,
-       _adaptive = false;
-
-  const FushiSwitch.adaptive({
-    super.key,
-    required this.value,
-    required this.onChanged,
-    this.activeColor,
-    this.activeThumbColor,
-    this.activeTrackColor,
-    this.inactiveThumbColor,
-    this.inactiveTrackColor,
-    this.activeThumbImage,
-    this.onActiveThumbImageError,
-    this.inactiveThumbImage,
-    this.onInactiveThumbImageError,
-    this.materialTapTargetSize,
-    this.thumbColor,
-    this.trackColor,
-    this.trackOutlineColor,
-    this.trackOutlineWidth,
-    this.thumbIcon,
-    this.dragStartBehavior = DragStartBehavior.start,
-    this.mouseCursor,
-    this.focusColor,
-    this.hoverColor,
-    this.overlayColor,
-    this.splashRadius,
-    this.focusNode,
-    this.onFocusChange,
-    this.autofocus = false,
-    this.padding,
-    this.applyCupertinoTheme,
-  }) : _adaptive = true;
+  });
 
   final bool value;
   final ValueChanged<bool>? onChanged;
@@ -499,44 +466,10 @@ class FushiSwitch extends StatelessWidget {
   final ValueChanged<bool>? onFocusChange;
   final bool autofocus;
   final EdgeInsetsGeometry? padding;
-  final bool? applyCupertinoTheme;
-  final bool _adaptive;
 
   @override
   Widget build(BuildContext context) {
     if (isGlassDesign(context)) return _buildGlass(context);
-    if (_adaptive && useCupertinoAdaptiveControls(context)) {
-      return Switch.adaptive(
-        value: value,
-        onChanged: onChanged,
-        activeColor: activeColor,
-        activeThumbColor: activeThumbColor,
-        activeTrackColor: activeTrackColor,
-        inactiveThumbColor: inactiveThumbColor,
-        inactiveTrackColor: inactiveTrackColor,
-        activeThumbImage: activeThumbImage,
-        onActiveThumbImageError: onActiveThumbImageError,
-        inactiveThumbImage: inactiveThumbImage,
-        onInactiveThumbImageError: onInactiveThumbImageError,
-        materialTapTargetSize: materialTapTargetSize,
-        thumbColor: thumbColor,
-        trackColor: trackColor,
-        trackOutlineColor: trackOutlineColor,
-        trackOutlineWidth: trackOutlineWidth,
-        thumbIcon: thumbIcon ?? _md3SwitchThumbIcon(context),
-        dragStartBehavior: dragStartBehavior,
-        mouseCursor: mouseCursor,
-        focusColor: focusColor,
-        hoverColor: hoverColor,
-        overlayColor: overlayColor,
-        splashRadius: splashRadius,
-        focusNode: focusNode,
-        onFocusChange: onFocusChange,
-        autofocus: autofocus,
-        padding: padding,
-        applyCupertinoTheme: applyCupertinoTheme,
-      );
-    }
     return Switch(
       value: value,
       onChanged: onChanged,
@@ -864,7 +797,7 @@ class FushiAppleSwitch extends StatelessWidget {
 // Slider
 // ---------------------------------------------------------------------------
 
-/// [Slider] 的设计系统分派版（含 `.adaptive`）。
+/// [Slider] 的设计系统分派版。
 class FushiSlider extends StatelessWidget {
   const FushiSlider({
     super.key,
@@ -893,36 +826,7 @@ class FushiSlider extends StatelessWidget {
     this.ticks = const <double>[],
     this.size,
     this.axis = Axis.horizontal,
-  }) : _adaptive = false;
-
-  const FushiSlider.adaptive({
-    super.key,
-    required this.value,
-    this.secondaryTrackValue,
-    required this.onChanged,
-    this.onChangeStart,
-    this.onChangeEnd,
-    this.min = 0.0,
-    this.max = 1.0,
-    this.divisions,
-    this.label,
-    this.mouseCursor,
-    this.activeColor,
-    this.inactiveColor,
-    this.secondaryActiveColor,
-    this.thumbColor,
-    this.overlayColor,
-    this.semanticFormatterCallback,
-    this.focusNode,
-    this.autofocus = false,
-    this.allowedInteraction,
-    this.showValueIndicator,
-    this.year2023,
-    this.ticks = const <double>[],
-    this.size,
-    this.axis = Axis.horizontal,
-  }) : padding = null,
-       _adaptive = true;
+  });
 
   final double value;
   final double? secondaryTrackValue;
@@ -946,7 +850,6 @@ class FushiSlider extends StatelessWidget {
   final EdgeInsetsGeometry? padding;
   final ShowValueIndicator? showValueIndicator;
   final bool? year2023;
-  final bool _adaptive;
 
   /// 轨道上的竖线刻度（量程内的分数 0~1，例如全书进度条的章首）。只有 Apple
   /// 设计系统读——MD3 的刻度由调用方经 [SliderTheme] 的 trackShape 画。
@@ -976,10 +879,7 @@ class FushiSlider extends StatelessWidget {
     final ShowValueIndicator? valueIndicator = axis == Axis.vertical
         ? ShowValueIndicator.never
         : showValueIndicator;
-    Widget slider = _buildMd3Slider(
-      valueIndicator,
-      adaptive: _adaptive && useCupertinoAdaptiveControls(context),
-    );
+    Widget slider = _buildMd3Slider(valueIndicator);
     if (sliderSize != null && !isEinkTheme(context)) {
       slider = SliderTheme(
         data: fushiSliderSizeTheme(SliderTheme.of(context), sliderSize),
@@ -994,35 +894,7 @@ class FushiSlider extends StatelessWidget {
     return slider;
   }
 
-  Widget _buildMd3Slider(
-    ShowValueIndicator? showValueIndicator, {
-    required bool adaptive,
-  }) {
-    if (adaptive) {
-      return Slider.adaptive(
-        value: value,
-        secondaryTrackValue: secondaryTrackValue,
-        onChanged: onChanged,
-        onChangeStart: onChangeStart,
-        onChangeEnd: onChangeEnd,
-        min: min,
-        max: max,
-        divisions: divisions,
-        label: label,
-        mouseCursor: mouseCursor,
-        activeColor: activeColor,
-        inactiveColor: inactiveColor,
-        secondaryActiveColor: secondaryActiveColor,
-        thumbColor: thumbColor,
-        overlayColor: overlayColor,
-        semanticFormatterCallback: semanticFormatterCallback,
-        focusNode: focusNode,
-        autofocus: autofocus,
-        allowedInteraction: allowedInteraction,
-        showValueIndicator: showValueIndicator,
-        year2023: year2023,
-      );
-    }
+  Widget _buildMd3Slider(ShowValueIndicator? showValueIndicator) {
     return Slider(
       value: value,
       secondaryTrackValue: secondaryTrackValue,
@@ -1948,7 +1820,7 @@ class _GlassRangeSliderState extends State<_GlassRangeSlider> {
 // Checkbox
 // ---------------------------------------------------------------------------
 
-/// [Checkbox] 的设计系统分派版（含 `.adaptive`）。
+/// [Checkbox] 的设计系统分派版。
 class FushiCheckbox extends StatelessWidget {
   const FushiCheckbox({
     super.key,
@@ -1971,30 +1843,7 @@ class FushiCheckbox extends StatelessWidget {
     this.side,
     this.isError = false,
     this.semanticLabel,
-  }) : _adaptive = false;
-
-  const FushiCheckbox.adaptive({
-    super.key,
-    required this.value,
-    this.tristate = false,
-    required this.onChanged,
-    this.mouseCursor,
-    this.activeColor,
-    this.fillColor,
-    this.checkColor,
-    this.focusColor,
-    this.hoverColor,
-    this.overlayColor,
-    this.splashRadius,
-    this.materialTapTargetSize,
-    this.visualDensity,
-    this.focusNode,
-    this.autofocus = false,
-    this.shape,
-    this.side,
-    this.isError = false,
-    this.semanticLabel,
-  }) : _adaptive = true;
+  });
 
   final bool? value;
   final bool tristate;
@@ -2015,7 +1864,6 @@ class FushiCheckbox extends StatelessWidget {
   final BorderSide? side;
   final bool isError;
   final String? semanticLabel;
-  final bool _adaptive;
 
   @override
   Widget build(BuildContext context) {
@@ -2035,29 +1883,6 @@ class FushiCheckbox extends StatelessWidget {
         activeColor: activeColor,
         fillColor: fillColor,
         checkColor: checkColor,
-        isError: isError,
-        semanticLabel: semanticLabel,
-      );
-    }
-    if (_adaptive && useCupertinoAdaptiveControls(context)) {
-      return Checkbox.adaptive(
-        value: value,
-        tristate: tristate,
-        onChanged: onChanged,
-        mouseCursor: mouseCursor,
-        activeColor: activeColor,
-        fillColor: fillColor,
-        checkColor: checkColor,
-        focusColor: focusColor,
-        hoverColor: hoverColor,
-        overlayColor: overlayColor,
-        splashRadius: splashRadius,
-        materialTapTargetSize: materialTapTargetSize,
-        visualDensity: visualDensity,
-        focusNode: focusNode,
-        autofocus: autofocus,
-        shape: shape,
-        side: side,
         isError: isError,
         semanticLabel: semanticLabel,
       );
@@ -2102,7 +1927,7 @@ bool? _nextCheckboxValue(bool? value, bool tristate) {
 // Radio
 // ---------------------------------------------------------------------------
 
-/// [Radio] 的设计系统分派版（含 `.adaptive`）。支持新 [RadioGroup] API 与
+/// [Radio] 的设计系统分派版。支持新 [RadioGroup] API 与
 /// 已弃用的 `groupValue` / `onChanged`；玻璃下作为 [RadioClient] 登记到组里，
 /// RadioGroup 的方向键选择、空格切换与「Tab 只停已选项」照常生效。
 class FushiRadio<T> extends StatefulWidget {
@@ -2128,33 +1953,7 @@ class FushiRadio<T> extends StatefulWidget {
     this.backgroundColor,
     this.side,
     this.innerRadius,
-  }) : useCupertinoCheckmarkStyle = false,
-       _adaptive = false;
-
-  const FushiRadio.adaptive({
-    super.key,
-    required this.value,
-    this.groupValue,
-    this.onChanged,
-    this.mouseCursor,
-    this.toggleable = false,
-    this.activeColor,
-    this.fillColor,
-    this.focusColor,
-    this.hoverColor,
-    this.overlayColor,
-    this.splashRadius,
-    this.materialTapTargetSize,
-    this.visualDensity,
-    this.focusNode,
-    this.autofocus = false,
-    this.useCupertinoCheckmarkStyle = false,
-    this.enabled,
-    this.groupRegistry,
-    this.backgroundColor,
-    this.side,
-    this.innerRadius,
-  }) : _adaptive = true;
+  });
 
   final T value;
   final T? groupValue;
@@ -2171,13 +1970,11 @@ class FushiRadio<T> extends StatefulWidget {
   final VisualDensity? visualDensity;
   final FocusNode? focusNode;
   final bool autofocus;
-  final bool useCupertinoCheckmarkStyle;
   final bool? enabled;
   final RadioGroupRegistry<T>? groupRegistry;
   final WidgetStateProperty<Color?>? backgroundColor;
   final BorderSide? side;
   final WidgetStateProperty<double?>? innerRadius;
-  final bool _adaptive;
 
   @override
   State<FushiRadio<T>> createState() => _FushiRadioState<T>();
@@ -2265,31 +2062,6 @@ class _FushiRadioState<T> extends State<FushiRadio<T>> with RadioClient<T> {
         autofocus: widget.autofocus,
         activeColor: widget.activeColor,
         fillColor: widget.fillColor,
-      );
-    }
-    if (widget._adaptive && useCupertinoAdaptiveControls(context)) {
-      return Radio<T>.adaptive(
-        value: widget.value,
-        groupValue: widget.groupValue,
-        onChanged: widget.onChanged,
-        mouseCursor: widget.mouseCursor,
-        toggleable: widget.toggleable,
-        activeColor: widget.activeColor,
-        fillColor: widget.fillColor,
-        focusColor: widget.focusColor,
-        hoverColor: widget.hoverColor,
-        overlayColor: widget.overlayColor,
-        splashRadius: widget.splashRadius,
-        materialTapTargetSize: widget.materialTapTargetSize,
-        visualDensity: widget.visualDensity,
-        focusNode: widget.focusNode,
-        autofocus: widget.autofocus,
-        useCupertinoCheckmarkStyle: widget.useCupertinoCheckmarkStyle,
-        enabled: widget.enabled,
-        groupRegistry: widget.groupRegistry,
-        backgroundColor: widget.backgroundColor,
-        side: widget.side,
-        innerRadius: widget.innerRadius,
       );
     }
     return Radio<T>(
@@ -2568,7 +2340,7 @@ class _GlassToggleTileState extends State<_GlassToggleTile> {
 // CheckboxListTile
 // ---------------------------------------------------------------------------
 
-/// [CheckboxListTile] 的设计系统分派版（含 `.adaptive`）。
+/// [CheckboxListTile] 的设计系统分派版。
 class FushiCheckboxListTile extends StatelessWidget {
   const FushiCheckboxListTile({
     super.key,
@@ -2612,51 +2384,7 @@ class FushiCheckboxListTile extends StatelessWidget {
     this.checkboxScaleFactor = 1.0,
     this.titleAlignment,
     this.internalAddSemanticForOnTap = false,
-  }) : _adaptive = false;
-
-  const FushiCheckboxListTile.adaptive({
-    super.key,
-    required this.value,
-    required this.onChanged,
-    this.mouseCursor,
-    this.activeColor,
-    this.fillColor,
-    this.checkColor,
-    this.hoverColor,
-    this.overlayColor,
-    this.splashRadius,
-    this.materialTapTargetSize,
-    this.visualDensity,
-    this.focusNode,
-    this.statesController,
-    this.autofocus = false,
-    this.shape,
-    this.side,
-    this.isError = false,
-    this.enabled,
-    this.tileColor,
-    this.title,
-    this.subtitle,
-    this.isThreeLine,
-    this.dense,
-    this.secondary,
-    this.selected = false,
-    this.controlAffinity,
-    this.contentPadding,
-    this.tristate = false,
-    this.checkboxShape,
-    this.selectedTileColor,
-    this.onFocusChange,
-    this.enableFeedback,
-    this.horizontalTitleGap,
-    this.minVerticalPadding,
-    this.minLeadingWidth,
-    this.minTileHeight,
-    this.checkboxSemanticLabel,
-    this.checkboxScaleFactor = 1.0,
-    this.titleAlignment,
-    this.internalAddSemanticForOnTap = false,
-  }) : _adaptive = true;
+  });
 
   final bool? value;
   final ValueChanged<bool?>? onChanged;
@@ -2698,55 +2426,10 @@ class FushiCheckboxListTile extends StatelessWidget {
   final double checkboxScaleFactor;
   final ListTileTitleAlignment? titleAlignment;
   final bool internalAddSemanticForOnTap;
-  final bool _adaptive;
 
   @override
   Widget build(BuildContext context) {
     if (isGlassDesign(context)) return _buildGlass(context);
-    if (_adaptive && useCupertinoAdaptiveControls(context)) {
-      return CheckboxListTile.adaptive(
-        value: value,
-        onChanged: onChanged,
-        mouseCursor: mouseCursor,
-        activeColor: activeColor,
-        fillColor: fillColor,
-        checkColor: checkColor,
-        hoverColor: hoverColor,
-        overlayColor: overlayColor,
-        splashRadius: splashRadius,
-        materialTapTargetSize: materialTapTargetSize,
-        visualDensity: visualDensity,
-        focusNode: focusNode,
-        statesController: statesController,
-        autofocus: autofocus,
-        shape: shape,
-        side: side,
-        isError: isError,
-        enabled: enabled,
-        tileColor: tileColor,
-        title: title,
-        subtitle: subtitle,
-        isThreeLine: isThreeLine,
-        dense: dense,
-        secondary: secondary,
-        selected: selected,
-        controlAffinity: controlAffinity,
-        contentPadding: contentPadding,
-        tristate: tristate,
-        checkboxShape: checkboxShape,
-        selectedTileColor: selectedTileColor,
-        onFocusChange: onFocusChange,
-        enableFeedback: enableFeedback,
-        horizontalTitleGap: horizontalTitleGap,
-        minVerticalPadding: minVerticalPadding,
-        minLeadingWidth: minLeadingWidth,
-        minTileHeight: minTileHeight,
-        checkboxSemanticLabel: checkboxSemanticLabel,
-        checkboxScaleFactor: checkboxScaleFactor,
-        titleAlignment: titleAlignment,
-        internalAddSemanticForOnTap: internalAddSemanticForOnTap,
-      );
-    }
     return CheckboxListTile(
       value: value,
       onChanged: onChanged,
@@ -2848,7 +2531,7 @@ class FushiCheckboxListTile extends StatelessWidget {
 // RadioListTile
 // ---------------------------------------------------------------------------
 
-/// [RadioListTile] 的设计系统分派版（含 `.adaptive`）。
+/// [RadioListTile] 的设计系统分派版。
 class FushiRadioListTile<T> extends StatefulWidget {
   const FushiRadioListTile({
     super.key,
@@ -2891,52 +2574,7 @@ class FushiRadioListTile<T> extends StatefulWidget {
     this.radioBackgroundColor,
     this.radioSide,
     this.radioInnerRadius,
-  }) : useCupertinoCheckmarkStyle = false,
-       _adaptive = false;
-
-  const FushiRadioListTile.adaptive({
-    super.key,
-    required this.value,
-    this.groupValue,
-    this.onChanged,
-    this.mouseCursor,
-    this.toggleable = false,
-    this.activeColor,
-    this.fillColor,
-    this.hoverColor,
-    this.overlayColor,
-    this.splashRadius,
-    this.materialTapTargetSize,
-    this.title,
-    this.subtitle,
-    this.isThreeLine,
-    this.dense,
-    this.secondary,
-    this.selected = false,
-    this.controlAffinity,
-    this.autofocus = false,
-    this.contentPadding,
-    this.shape,
-    this.tileColor,
-    this.selectedTileColor,
-    this.visualDensity,
-    this.focusNode,
-    this.statesController,
-    this.onFocusChange,
-    this.enableFeedback,
-    this.horizontalTitleGap,
-    this.minVerticalPadding,
-    this.minLeadingWidth,
-    this.minTileHeight,
-    this.radioScaleFactor = 1.0,
-    this.enabled,
-    this.useCupertinoCheckmarkStyle = false,
-    this.titleAlignment,
-    this.internalAddSemanticForOnTap = false,
-    this.radioBackgroundColor,
-    this.radioSide,
-    this.radioInnerRadius,
-  }) : _adaptive = true;
+  });
 
   final T value;
   final T? groupValue;
@@ -2973,12 +2611,10 @@ class FushiRadioListTile<T> extends StatefulWidget {
   final double radioScaleFactor;
   final ListTileTitleAlignment? titleAlignment;
   final bool? enabled;
-  final bool useCupertinoCheckmarkStyle;
   final bool internalAddSemanticForOnTap;
   final WidgetStateProperty<Color?>? radioBackgroundColor;
   final BorderSide? radioSide;
   final WidgetStateProperty<double?>? radioInnerRadius;
-  final bool _adaptive;
 
   @override
   State<FushiRadioListTile<T>> createState() => _FushiRadioListTileState<T>();
@@ -3046,50 +2682,6 @@ class _FushiRadioListTileState<T> extends State<FushiRadioListTile<T>>
   @override
   Widget build(BuildContext context) {
     if (isGlassDesign(context)) return _buildGlass(context);
-    if (widget._adaptive && useCupertinoAdaptiveControls(context)) {
-      return RadioListTile<T>.adaptive(
-        value: widget.value,
-        groupValue: widget.groupValue,
-        onChanged: widget.onChanged,
-        mouseCursor: widget.mouseCursor,
-        toggleable: widget.toggleable,
-        activeColor: widget.activeColor,
-        fillColor: widget.fillColor,
-        hoverColor: widget.hoverColor,
-        overlayColor: widget.overlayColor,
-        splashRadius: widget.splashRadius,
-        materialTapTargetSize: widget.materialTapTargetSize,
-        title: widget.title,
-        subtitle: widget.subtitle,
-        isThreeLine: widget.isThreeLine,
-        dense: widget.dense,
-        secondary: widget.secondary,
-        selected: widget.selected,
-        controlAffinity: widget.controlAffinity,
-        autofocus: widget.autofocus,
-        contentPadding: widget.contentPadding,
-        shape: widget.shape,
-        tileColor: widget.tileColor,
-        selectedTileColor: widget.selectedTileColor,
-        visualDensity: widget.visualDensity,
-        focusNode: widget.focusNode,
-        statesController: widget.statesController,
-        onFocusChange: widget.onFocusChange,
-        enableFeedback: widget.enableFeedback,
-        horizontalTitleGap: widget.horizontalTitleGap,
-        minVerticalPadding: widget.minVerticalPadding,
-        minLeadingWidth: widget.minLeadingWidth,
-        minTileHeight: widget.minTileHeight,
-        radioScaleFactor: widget.radioScaleFactor,
-        enabled: widget.enabled,
-        useCupertinoCheckmarkStyle: widget.useCupertinoCheckmarkStyle,
-        titleAlignment: widget.titleAlignment,
-        internalAddSemanticForOnTap: widget.internalAddSemanticForOnTap,
-        radioBackgroundColor: widget.radioBackgroundColor,
-        radioSide: widget.radioSide,
-        radioInnerRadius: widget.radioInnerRadius,
-      );
-    }
     return RadioListTile<T>(
       value: widget.value,
       groupValue: widget.groupValue,
@@ -3197,7 +2789,7 @@ class _FushiRadioListTileState<T> extends State<FushiRadioListTile<T>>
 // SwitchListTile
 // ---------------------------------------------------------------------------
 
-/// [SwitchListTile] 的设计系统分派版（含 `.adaptive`）。
+/// [SwitchListTile] 的设计系统分派版。
 class FushiSwitchListTile extends StatelessWidget {
   const FushiSwitchListTile({
     super.key,
@@ -3244,56 +2836,7 @@ class FushiSwitchListTile extends StatelessWidget {
     this.minTileHeight,
     this.hoverColor,
     this.internalAddSemanticForOnTap = false,
-  }) : applyCupertinoTheme = null,
-       _adaptive = false;
-
-  const FushiSwitchListTile.adaptive({
-    super.key,
-    required this.value,
-    required this.onChanged,
-    this.activeColor,
-    this.activeThumbColor,
-    this.activeTrackColor,
-    this.inactiveThumbColor,
-    this.inactiveTrackColor,
-    this.activeThumbImage,
-    this.onActiveThumbImageError,
-    this.inactiveThumbImage,
-    this.onInactiveThumbImageError,
-    this.thumbColor,
-    this.trackColor,
-    this.trackOutlineColor,
-    this.thumbIcon,
-    this.materialTapTargetSize,
-    this.dragStartBehavior = DragStartBehavior.start,
-    this.mouseCursor,
-    this.overlayColor,
-    this.splashRadius,
-    this.focusNode,
-    this.statesController,
-    this.onFocusChange,
-    this.autofocus = false,
-    this.applyCupertinoTheme,
-    this.tileColor,
-    this.title,
-    this.subtitle,
-    this.isThreeLine,
-    this.dense,
-    this.contentPadding,
-    this.secondary,
-    this.selected = false,
-    this.controlAffinity,
-    this.shape,
-    this.selectedTileColor,
-    this.visualDensity,
-    this.enableFeedback,
-    this.horizontalTitleGap,
-    this.minVerticalPadding,
-    this.minLeadingWidth,
-    this.minTileHeight,
-    this.hoverColor,
-    this.internalAddSemanticForOnTap = false,
-  }) : _adaptive = true;
+  });
 
   final bool value;
   final ValueChanged<bool>? onChanged;
@@ -3319,7 +2862,6 @@ class FushiSwitchListTile extends StatelessWidget {
   final WidgetStatesController? statesController;
   final ValueChanged<bool>? onFocusChange;
   final bool autofocus;
-  final bool? applyCupertinoTheme;
   final Color? tileColor;
   final Widget? title;
   final Widget? subtitle;
@@ -3339,59 +2881,10 @@ class FushiSwitchListTile extends StatelessWidget {
   final double? minTileHeight;
   final Color? hoverColor;
   final bool internalAddSemanticForOnTap;
-  final bool _adaptive;
 
   @override
   Widget build(BuildContext context) {
     if (isGlassDesign(context)) return _buildGlass(context);
-    if (_adaptive && useCupertinoAdaptiveControls(context)) {
-      return SwitchListTile.adaptive(
-        value: value,
-        onChanged: onChanged,
-        activeColor: activeColor,
-        activeThumbColor: activeThumbColor,
-        activeTrackColor: activeTrackColor,
-        inactiveThumbColor: inactiveThumbColor,
-        inactiveTrackColor: inactiveTrackColor,
-        activeThumbImage: activeThumbImage,
-        onActiveThumbImageError: onActiveThumbImageError,
-        inactiveThumbImage: inactiveThumbImage,
-        onInactiveThumbImageError: onInactiveThumbImageError,
-        thumbColor: thumbColor,
-        trackColor: trackColor,
-        trackOutlineColor: trackOutlineColor,
-        thumbIcon: thumbIcon ?? _md3SwitchThumbIcon(context),
-        materialTapTargetSize: materialTapTargetSize,
-        dragStartBehavior: dragStartBehavior,
-        mouseCursor: mouseCursor,
-        overlayColor: overlayColor,
-        splashRadius: splashRadius,
-        focusNode: focusNode,
-        statesController: statesController,
-        onFocusChange: onFocusChange,
-        autofocus: autofocus,
-        applyCupertinoTheme: applyCupertinoTheme,
-        tileColor: tileColor,
-        title: title,
-        subtitle: subtitle,
-        isThreeLine: isThreeLine,
-        dense: dense,
-        contentPadding: contentPadding,
-        secondary: secondary,
-        selected: selected,
-        controlAffinity: controlAffinity,
-        shape: shape,
-        selectedTileColor: selectedTileColor,
-        visualDensity: visualDensity,
-        enableFeedback: enableFeedback,
-        horizontalTitleGap: horizontalTitleGap,
-        minVerticalPadding: minVerticalPadding,
-        minLeadingWidth: minLeadingWidth,
-        minTileHeight: minTileHeight,
-        hoverColor: hoverColor,
-        internalAddSemanticForOnTap: internalAddSemanticForOnTap,
-      );
-    }
     return SwitchListTile(
       value: value,
       onChanged: onChanged,

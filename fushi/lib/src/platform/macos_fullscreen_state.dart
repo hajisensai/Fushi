@@ -1,10 +1,10 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-// macos_ui re-exports both（见 `global_navigation.dart` 同款写法）；直接依赖
-// macos_window_utils 会触发 depend_on_referenced_packages（它只是传递依赖）。
-import 'package:macos_ui/macos_ui.dart'
-    show NSWindowDelegate, WindowManipulator;
+import 'package:macos_window_utils/macos/ns_window_delegate.dart'
+    show NSWindowDelegate;
+import 'package:macos_window_utils/macos_window_utils.dart'
+    show WindowManipulator;
 
 /// BUG-1744：macOS 原生全屏状态的**唯一真相源**。
 ///

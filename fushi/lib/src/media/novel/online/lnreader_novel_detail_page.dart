@@ -1104,7 +1104,7 @@ class _LnReaderDownloadDialogState extends State<LnReaderDownloadDialog> {
     final bool building = _done >= total;
     return PopScope(
       canPop: false,
-      child: FushiAlertDialog.adaptive(
+      child: FushiAlertDialog(
         title: Text(widget.novel.name),
         content: Column(
           mainAxisSize: MainAxisSize.min,

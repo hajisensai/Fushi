@@ -32,7 +32,7 @@ Future<HomeWidgetSize?> showHomeWidgetSizePicker(
   required String label,
 }) => showAppDialog<HomeWidgetSize>(
   context: context,
-  builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
+  builder: (BuildContext dialogContext) => FushiAlertDialog(
     title: Text(label),
     content: HomeWidgetSizePicker(
       kind: kind,

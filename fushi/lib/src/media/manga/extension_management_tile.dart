@@ -243,7 +243,7 @@ class MangaExtensionManagementTile extends StatelessWidget {
     ];
     final List<Widget> trailingChildren = <Widget>[
       if (enabled != null)
-        FushiSwitch.adaptive(value: enabled!, onChanged: onEnabledChanged),
+        FushiSwitch(value: enabled!, onChanged: onEnabledChanged),
       if (!narrow) ...actions,
     ];
     final bool structured =

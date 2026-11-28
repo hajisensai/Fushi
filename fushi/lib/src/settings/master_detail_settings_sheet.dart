@@ -2,9 +2,7 @@ import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 
-import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
@@ -31,35 +29,17 @@ class FushiSettingsSubPageHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bool cupertino = isCupertinoPlatform(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final TextStyle? titleStyle = cupertino
-        ? CupertinoTheme.of(context).textTheme.navTitleTextStyle
-        : Theme.of(context).textTheme.titleMedium;
-    final IconData icon = cupertino
-        ? CupertinoIcons.chevron_back
-        : Icons.arrow_back;
+    final TextStyle? titleStyle = Theme.of(context).textTheme.titleMedium;
 
     return Row(
       children: <Widget>[
-        if (cupertino)
-          Semantics(
-            button: true,
-            label: t.back,
-            child: CupertinoButton(
-              padding: EdgeInsets.zero,
-              minSize: 36,
-              onPressed: onBack,
-              child: FushiIcon(icon, size: 22),
-            ),
-          )
-        else
-          FushiIconButton(
-            icon: icon,
-            tooltip: t.back,
-            padding: EdgeInsets.all(tokens.spacing.gap / 2),
-            onTap: onBack,
-          ),
+        FushiIconButton(
+          icon: Icons.arrow_back,
+          tooltip: t.back,
+          padding: EdgeInsets.all(tokens.spacing.gap / 2),
+          onTap: onBack,
+        ),
         SizedBox(width: tokens.spacing.gap / 2),
         Expanded(
           child: Text(

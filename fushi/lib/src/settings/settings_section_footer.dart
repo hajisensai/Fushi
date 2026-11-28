@@ -4,7 +4,6 @@
 /// `settings_schema_widgets.dart` 转出本文件，旧 import 照常可用。
 library;
 
-import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoColors;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -12,20 +11,14 @@ import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
     show FushiAppleMetrics;
 
-/// section footer 文字样式解析器。两个渲染器对 footer 用不同的 TextStyle
-/// （Material：bodySmall + surfaces.onVariant；Cupertino：metadata + secondaryLabel），
-/// 是这套共享 schema widget 里唯一的平台差异，作参数注入。
+/// section footer 文字样式解析器（默认 [settingsFootnoteStyle]），渲染器要别的
+/// 口径时作参数注入。
 typedef SettingsFooterStyle = TextStyle? Function(BuildContext context);
 
-/// 设置分组脚注的默认文字样式，按设计系统 / 平台分派：Apple = iOS footnote
-/// （13 号 secondaryLabel）；Cupertino = metadata + secondaryLabel；MD3 =
-/// bodySmall + surfaces.onVariant。分组内外的说明文字都走这一处。
+/// 设置分组脚注的默认文字样式，按设计系统分派：Apple = iOS footnote
+/// （13 号 secondaryLabel）；MD3 = bodySmall + surfaces.onVariant。分组内外的
+/// 说明文字都走这一处。
 TextStyle? settingsFootnoteStyle(BuildContext context) {
-  if (isCupertinoPlatform(context)) {
-    return FushiDesignTokens.of(context).type.metadata.copyWith(
-      color: CupertinoColors.secondaryLabel.resolveFrom(context),
-    );
-  }
   if (isGlassDesign(context)) {
     return FushiAppleMetrics.of(context).footnoteStyle(context);
   }

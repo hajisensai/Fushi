@@ -26,7 +26,6 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/components/fushi_bottom_action_bar.dart';
 import 'package:fushi/src/utils/misc/error_details_dialog.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
@@ -405,7 +404,7 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
     }
     final bool? confirmed = await showAppDialog<bool>(
       context: context,
-      builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
+      builder: (BuildContext dialogContext) => FushiAlertDialog(
         title: Text(t.mihon_signer_trust_title),
         content: SelectableText(
           '${t.mihon_extension_warning}\n\n'
@@ -655,12 +654,11 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
       kind: DesktopContentKind.readerShelf,
       child: Column(
         children: <Widget>[
-          if (!isCupertinoPlatform(context))
-            FushiPageHeader(
-              title: title,
-              bottom: widget.navigation,
-              actions: _actions(manager),
-            ),
+          FushiPageHeader(
+            title: title,
+            bottom: widget.navigation,
+            actions: _actions(manager),
+          ),
           Expanded(child: content(0)),
         ],
       ),

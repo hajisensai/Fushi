@@ -216,7 +216,7 @@ class _KavitaServerSettingsSectionState
         if (!_expanded.remove(draft.id)) _expanded.add(draft.id);
       }),
       panel: <Widget>[
-        FushiSwitchListTile.adaptive(
+        FushiSwitchListTile(
           key: ValueKey<String>('kavita-server-$index-enabled'),
           contentPadding: EdgeInsets.zero,
           dense: true,
@@ -243,7 +243,7 @@ class _KavitaServerSettingsSectionState
           onChanged: (String value) =>
               _update(index, draft.copyWith(url: value)),
         ),
-        FushiSwitchListTile.adaptive(
+        FushiSwitchListTile(
           key: ValueKey<String>('kavita-server-$index-allow-http'),
           contentPadding: EdgeInsets.zero,
           dense: true,

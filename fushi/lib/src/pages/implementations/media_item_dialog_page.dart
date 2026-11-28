@@ -574,9 +574,7 @@ Future<T?> showMediaItemActions<T>({
   }
   final bool narrow =
       MediaQuery.sizeOf(context).width < kFushiSheetWideBreakpoint;
-  // Apple 移动端的系统弹层（showCupertinoModalPopup）不给面板底色，这里改用
-  // 对话框承载同一份宫格内容。
-  if (narrow && !isCupertinoPlatform(context)) {
+  if (narrow) {
     return adaptiveModalSheet<T>(
       context: context,
       builder: (BuildContext sheetContext) =>

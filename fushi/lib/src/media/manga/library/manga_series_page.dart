@@ -902,7 +902,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     final _LockedChapterChoice?
     choice = await showAppDialog<_LockedChapterChoice>(
       context: context,
-      builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
+      builder: (BuildContext dialogContext) => FushiAlertDialog(
         key: const ValueKey<String>('manga_chapter_locked_dialog'),
         title: Text(t.manga_chapter_locked_title),
         content: Text(

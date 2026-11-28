@@ -2,14 +2,11 @@ import 'package:flutter/widgets.dart';
 import 'package:fushi/src/pages/base_page.dart';
 import 'package:fushi/src/second_screen/companion/companion_context.dart';
 import 'package:fushi/src/second_screen/companion/companion_protocol.dart';
-import 'package:fushi/src/settings/cupertino_settings_renderer.dart';
 import 'package:fushi/src/settings/glass_settings_renderer.dart';
-import 'package:fushi/src/settings/material_settings_renderer.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_renderer.dart';
 import 'package:fushi/src/settings/settings_schema.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 
 /// Renders [destination] through the active platform's settings detail shell
 /// (Material → [FushiPageScaffold] + 24px padding + [AdaptiveSettingsSection];
@@ -111,20 +108,7 @@ class _SettingsDetailPageState extends BasePageState<SettingsDetailPage>
     SettingsContext settingsContext,
     SettingsDestination destination,
   ) {
-    // 「玻璃」设计系统：iOS / macOS 设置详情（见 GlassSettingsRenderer）。
-    if (isGlassDesign(context) && !isCupertinoPlatform(context)) {
-      return const GlassSettingsRenderer().buildDetailPage(
-        settingsContext: settingsContext,
-        destination: destination,
-      );
-    }
-    if (isCupertinoPlatform(context)) {
-      return const CupertinoSettingsRenderer().buildDetailPage(
-        settingsContext: settingsContext,
-        destination: destination,
-      );
-    }
-    return const MaterialSettingsRenderer().buildDetailPage(
+    return resolveSettingsRenderer(context).buildDetailPage(
       settingsContext: settingsContext,
       destination: destination,
     );

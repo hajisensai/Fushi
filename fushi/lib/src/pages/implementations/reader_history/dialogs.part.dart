@@ -428,18 +428,13 @@ class _BookProfileOptionRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bool cupertino = isCupertinoPlatform(context);
     // Apple 设计系统：iOS 单选列表只在选中行尾画强调色对勾，未选中行留空
     // （透明对勾占位，行高与对齐不跳），不画 Material 的空心圆。
-    final bool glass = !cupertino && isGlassDesign(context);
-    final Color selectedColor = cupertino
-        ? CupertinoTheme.of(context).primaryColor
-        : glass
+    final bool glass = isGlassDesign(context);
+    final Color selectedColor = glass
         ? appleColorsOf(context).accent
         : Theme.of(context).colorScheme.primary;
-    final Color idleColor = cupertino
-        ? CupertinoColors.secondaryLabel.resolveFrom(context)
-        : glass
+    final Color idleColor = glass
         ? Colors.transparent
         : Theme.of(context).colorScheme.onSurfaceVariant;
 
@@ -448,15 +443,9 @@ class _BookProfileOptionRow extends StatelessWidget {
       onTap: onTap,
       trailing: FushiIcon(
         selected
-            ? (cupertino || glass
-                  ? CupertinoIcons.check_mark
-                  : Icons.radio_button_checked)
-            : (cupertino
-                  ? CupertinoIcons.circle
-                  : glass
-                  ? CupertinoIcons.check_mark
-                  : Icons.radio_button_off),
-        size: cupertino ? 20 : 22,
+            ? (glass ? CupertinoIcons.check_mark : Icons.radio_button_checked)
+            : (glass ? CupertinoIcons.check_mark : Icons.radio_button_off),
+        size: 22,
         color: selected ? selectedColor : idleColor,
       ),
     );

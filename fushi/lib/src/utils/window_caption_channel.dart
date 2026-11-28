@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:macos_ui/macos_ui.dart'
+import 'package:macos_window_utils/macos_window_utils.dart'
     show NSVisualEffectViewMaterial, WindowManipulator;
 
 /// 把标题栏配色推给 Windows 原生 runner（DWM caption / text color）。

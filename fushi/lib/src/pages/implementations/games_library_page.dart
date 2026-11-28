@@ -237,7 +237,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
 
   /// 单行页头（嵌在游戏 tab 里、非 Cupertino）：搜索 / 刮削 / 排序 / 筛选 /
   /// 管理标签 / 布局切换都进页头动作；Cupertino 与独立 push 保留旧工具行。
-  bool get _singleRowHeader => widget.embedded && !isCupertinoPlatform(context);
+  bool get _singleRowHeader => widget.embedded;
 
   /// 合集分组映射（与书架 `_loadShelfMaps` 同款三件套）：合集字典、条目 → 主折叠
   /// 合集 id、条目在主折叠合集里的 sortIndex。[_reload] 时一并批量预取。

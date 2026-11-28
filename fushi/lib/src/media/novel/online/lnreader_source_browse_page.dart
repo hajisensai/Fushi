@@ -401,7 +401,7 @@ class _LnReaderFilterDialogState extends State<LnReaderFilterDialog> {
         decoration: InputDecoration(labelText: filter.label),
         onChanged: (String value) => _set(index, value),
       ),
-      LnReaderFilterType.toggle => FushiSwitchListTile.adaptive(
+      LnReaderFilterType.toggle => FushiSwitchListTile(
         key: ValueKey<String>('novel_filter_${filter.key}'),
         contentPadding: EdgeInsets.zero,
         title: Text(filter.label),

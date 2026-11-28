@@ -983,8 +983,7 @@ class _DictionaryDialogPageState extends BasePageState {
     // 住在导航栏，内容层只放列表。各宽度给同一份平铺动作，放不下由导航栏统一
     // 收进「⋯」；以前窄屏自带一个「⋮」菜单，被导航栏再收一层就成了「⋮」「⋯」
     // 两颗溢出钮并排。
-    final bool cupertino =
-        isCupertinoPlatform(context) || isGlassDesign(context);
+    final bool cupertino = isGlassDesign(context);
     final double width = MediaQuery.sizeOf(context).width;
     final bool compact = MediaQuery.sizeOf(context).width < 480;
     // 宽屏（PC）= 列表 + 右侧详情侧板两栏；窄屏 = 单列卡片列表 + 底部 sheet。
@@ -2450,8 +2449,7 @@ class _DictionaryDialogPageState extends BasePageState {
         platform == TargetPlatform.macOS;
     final bool compact = MediaQuery.sizeOf(context).width < 480;
     // Material 手机：多选开关与溢出菜单住在这一行右侧（动作条只放两个主入口）。
-    final bool headerActions =
-        compact && !(isCupertinoPlatform(context) || isGlassDesign(context));
+    final bool headerActions = compact && !isGlassDesign(context);
     final Widget? hint = dictionaries.length > 1
         ? Text(
             desktop ? t.dict_reorder_hint_desktop : t.dict_reorder_hint_touch,

@@ -555,8 +555,7 @@ class EinkNoPageTransitionsBuilder extends PageTransitionsBuilder {
 
 /// E-ink route transition for the platforms whose *only* way back out of a
 /// pushed page is the Cupertino edge-swipe gesture (iOS has no system back
-/// button, and `isCupertinoPlatform` is false under the default `auto` design
-/// system, so every page there is a plain [MaterialPageRoute] whose gesture
+/// button, and every page there is a plain [MaterialPageRoute] whose gesture
 /// comes solely from this [PageTransitionsTheme] entry).
 ///
 /// [EinkNoPageTransitionsBuilder] returns `child` verbatim, which never
@@ -2717,8 +2716,10 @@ class ThemeNotifier extends ChangeNotifier {
 
   // ── Design system override ────────────────────────────────────────
 
-  /// 对外开放的设计系统值：auto / material（MD3）/ glass（玻璃）。玻璃是 MD3
-  /// 组件之上的一层材质皮肤，渲染器仍走 Material（见 [designSystemTheme]）。
+  /// 设计系统偏好（冻结键 `design_system`）的合法值：auto / material（MD3）/
+  /// glass（玻璃）。auto 与 material 渲染相同（五平台统一 MD3）；glass 是唯一
+  /// 改变外观的取值，经 [FushiGlassTheme.glassDesign] 进主题（[isGlassDesign]）。
+  /// 其余旧值（早年的 cupertino / macos 等）一律归一成 auto，读写两头都走这里。
   static String normalizeDesignSystemPreference(Object? value) {
     if (value == 'material' || value == 'glass') return value! as String;
     return 'auto';
@@ -2742,20 +2743,6 @@ class ThemeNotifier extends ChangeNotifier {
   Future<void> setDesignSystem(String value) async {
     await _set('design_system', normalizeDesignSystemPreference(value));
     notifyListeners();
-  }
-
-  FushiDesignSystem get designSystemTheme {
-    switch (designSystem) {
-      case 'material':
-      case 'glass':
-        return FushiDesignSystem.material;
-      case 'cupertino':
-        return FushiDesignSystem.cupertino;
-      case 'macos':
-        return FushiDesignSystem.macos;
-      default:
-        return FushiDesignSystem.auto;
-    }
   }
 
   static String normalizeAppUiScaleMode(String value) {
@@ -3104,7 +3091,6 @@ class ThemeNotifier extends ChangeNotifier {
     scheme: scheme,
     textTheme: _textThemeBuilder(),
     eink: einkMode,
-    designSystem: designSystemTheme,
     glass: glassMaterial,
     glassDesign: designSystem == 'glass',
     shell: shellTheme,
@@ -3118,7 +3104,6 @@ class ThemeNotifier extends ChangeNotifier {
         scheme: inputs.scheme,
         textTheme: inputs.textTheme,
         eink: inputs.eink,
-        designSystem: inputs.designSystem,
         glass: inputs.glass,
         glassDesign: inputs.glassDesign,
         shell: inputs.shell,
@@ -3586,7 +3571,6 @@ ThemeData buildFushiThemeData({
   required ColorScheme scheme,
   required TextTheme textTheme,
   bool eink = false,
-  FushiDesignSystem designSystem = FushiDesignSystem.auto,
   FushiGlassMaterial glass = FushiGlassMaterial.off,
   bool glassDesign = false,
   bool monochromeAccent = false,
@@ -3826,7 +3810,6 @@ ThemeData buildFushiThemeData({
             alpha: appleColors.tertiaryFill.a / 2,
           ),
     extensions: <ThemeExtension<dynamic>>[
-      FushiDesignSystemTheme(designSystem),
       FushiEinkTheme(eink),
       FushiGlassTheme(glass, glassDesign: glassDesign && !eink),
       shell,
@@ -4416,9 +4399,6 @@ ThemeData rethemeFushiWithScheme(ThemeData base, ColorScheme scheme) {
     scheme: scheme,
     textTheme: base.textTheme,
     eink: base.extension<FushiEinkTheme>()?.einkMode ?? false,
-    designSystem:
-        base.extension<FushiDesignSystemTheme>()?.designSystem ??
-        FushiDesignSystem.auto,
     glass: glass?.material ?? FushiGlassMaterial.off,
     glassDesign: glass?.glassDesign ?? false,
     shell: base.extension<FushiShellTheme>() ?? const FushiShellTheme(),
@@ -4519,7 +4499,6 @@ class _ThemeDataInputs {
     required this.scheme,
     required this.textTheme,
     required this.eink,
-    required this.designSystem,
     required this.glass,
     required this.glassDesign,
     required this.shell,
@@ -4530,7 +4509,6 @@ class _ThemeDataInputs {
   final ColorScheme scheme;
   final TextTheme textTheme;
   final bool eink;
-  final FushiDesignSystem designSystem;
   final FushiGlassMaterial glass;
   final bool glassDesign;
   final FushiShellTheme shell;
@@ -4543,7 +4521,6 @@ class _ThemeDataInputs {
       other.scheme == scheme &&
       other.textTheme == textTheme &&
       other.eink == eink &&
-      other.designSystem == designSystem &&
       other.glass == glass &&
       other.glassDesign == glassDesign &&
       other.shell == shell &&
@@ -4555,7 +4532,6 @@ class _ThemeDataInputs {
     scheme,
     textTheme,
     eink,
-    designSystem,
     glass,
     glassDesign,
     shell,

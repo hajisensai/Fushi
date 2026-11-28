@@ -298,7 +298,7 @@ class MangaPanelChoiceRow<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (isGlassDesign(context) || isCupertinoPlatform(context)) {
+    if (isGlassDesign(context)) {
       return AdaptiveSettingsPickerRow<T>(
         title: title,
         icon: icon,

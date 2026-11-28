@@ -105,10 +105,8 @@ enum SettingsKitStyle {
   /// 「玻璃」设计系统（Apple）。
   apple;
 
-  /// 当前上下文的视觉语言：玻璃设计系统（且不是隐藏的 Cupertino renderer）→
-  /// [apple]，其余一律 [expressive]。
-  static SettingsKitStyle of(BuildContext context) =>
-      isGlassDesign(context) && !isCupertinoPlatform(context)
+  /// 当前上下文的视觉语言：玻璃设计系统 → [apple]，其余一律 [expressive]。
+  static SettingsKitStyle of(BuildContext context) => isGlassDesign(context)
       ? SettingsKitStyle.apple
       : SettingsKitStyle.expressive;
 }

@@ -89,7 +89,6 @@ import 'package:fushi/src/pages/implementations/book_drag_target.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/src/pages/implementations/collection_name_dialog.dart';
 import 'package:fushi/src/pages/implementations/name_input_dialog.dart';
-import 'package:fushi/src/pages/implementations/library_filter_dropdown.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
 import 'package:fushi/src/pages/implementations/library_view_options.dart';
 import 'package:fushi/src/pages/implementations/library_layout/library_grid_zoom.dart';
@@ -1224,12 +1223,9 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
                       children: <Widget>[
                         // 单行页头（2026-10-14）：页签 + 右侧 🔍 / 多选 / 排序 /
                         // 管理标签，搜索点开整行换成搜索栏；标签 chip 只在有
-                        // 标签时在下面占一行。Cupertino 旧版面保留常驻搜索行。
-                        if (!isCupertinoPlatform(context)) ...<Widget>[
-                          _buildPageHeader(allTags.valueOrNull ?? const []),
-                          _buildTagBar(allTags.valueOrNull ?? const []),
-                        ] else
-                          _buildSearchBar(allTags.valueOrNull ?? const []),
+                        // 标签时在下面占一行。
+                        _buildPageHeader(allTags.valueOrNull ?? const []),
+                        _buildTagBar(allTags.valueOrNull ?? const []),
                         // 书 / 漫画没认出来时的常驻提醒（BUG-5283）：与视频库同一个
                         // 提醒条组件，只数本书架的媒体。
                         PendingIdentityBannerHost(
@@ -1993,54 +1989,6 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     if (mode == _sortMode) return;
     setState(() => _sortMode = mode);
     unawaited(appModel.prefsRepo.setShelfSortModeName(mode.name));
-  }
-
-  /// P5-A 书架工具行：搜索框 + 行尾「管理标签 / 批量选择 / 排序」，与视频库 /
-  /// 游戏库同一个 [LibraryToolbar]。搜索词只影响本次会话、不落库。
-  ///
-  /// 2026-10-10「库页顶部只留两行」：阅读状态并进排序菜单；标签 chip 宽屏嵌在
-  /// 搜索框与行尾工具之间（[LibraryToolbar.wideMiddle]），窄屏放不下就收进
-  /// 排序菜单（多选组）。两种布局下工具条都只有一行。宽窄判据与
-  /// [LibraryToolbar] 自己的同一个（同一宽度、同一断点）。
-  Widget _buildSearchBar(List<BookTagRow> allTags) {
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        final bool wide = constraints.maxWidth >= LibraryToolbar.wideBreakpoint;
-        return _buildToolbar(allTags, wide: wide);
-      },
-    );
-  }
-
-  Widget _buildToolbar(List<BookTagRow> allTags, {required bool wide}) {
-    final Widget actions = _buildTagBar(
-      allTags,
-      part: FushiTagFilterBarPart.actions,
-      tagsInMenu: !wide,
-    );
-    // Apple iOS 档：标签胶囊在工具行下面的筛选行里（方案 A 第 8 项），宽屏
-    // 也不再把标签塞进工具行中段；macOS 宽窗档标签在侧栏。
-    final bool appleRow = isGlassDesign(context);
-    return LibraryToolbar(
-      wideMiddle: !appleRow && wide && allTags.isNotEmpty
-          ? _buildTagBar(allTags, inlineTags: true)
-          : null,
-      appleFilterRow: appleRow
-          ? _buildTagBar(allTags, part: FushiTagFilterBarPart.appleFilterRow)
-          : null,
-      search: LibrarySearchField(
-        fieldKey: const ValueKey<String>('shelf_search_field'),
-        controller: _searchController,
-        hintText: t.library_search,
-        onChanged: (String value) => setState(() => _searchQuery = value),
-        onClear: () {
-          _searchController.clear();
-          setState(() => _searchQuery = '');
-        },
-      ),
-      // 行尾：管理标签（常驻，key `library_tag_settings`）+ 批量选择 + 排序
-      // （含阅读状态 / 窄屏标签筛选）。
-      trailing: actions,
-    );
   }
 
   String _sortModeLabel(ShelfSortMode mode) => switch (mode) {
