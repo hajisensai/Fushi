@@ -37037,7 +37037,7 @@ class ItemScrapeMetaRow extends DataClass
   /// 本行写入毫秒戳。
   final int scrapedAt;
 
-  /// v172 字段锁（与视频 `video_metadata_works.locked_fields` 同形）：逗号分隔的
+  /// v177 字段锁（与视频 `video_metadata_works.locked_fields` 同形）：逗号分隔的
   /// 可锁字段名，例如 `summary`。用户手填过的字段进这里，之后条目刮削一律保留
   /// 旧值（BUG-5111）。NULL / 空 = 无锁；值域由引擎 `ItemScrapeLockableField`
   /// 维护，未知值静默忽略（前向兼容）。
@@ -57255,7 +57255,7 @@ class StudySegmentRow extends DataClass implements Insertable<StudySegmentRow> {
   /// 页数（漫画 / PDF；EPUB 恒 0）。
   final int pages;
 
-  /// v172（拍板台 4KOWK3c2mn 方案 b）：本段时间里**在这个媒体上**的查词次数。
+  /// v178（拍板台 4KOWK3c2mn 方案 b）：本段时间里**在这个媒体上**的查词次数。
   ///
   /// 查词发生时本媒体的 [StudySegments] 时钟在跑，就记进当前段（与字数同一行、同一
   /// uid、同一次绝对值写）；这样查词与字数 / 时长同一小时粒度，编辑会话改日期时随段
@@ -90350,18 +90350,7 @@ class $$MediaOpenHistoryTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$MediaOpenHistoryTable, MediaOpenHistoryRow>(
-                    table,
-                  ),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $MediaOpenHistoryTable,
-                    MediaOpenHistoryRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -90728,16 +90717,7 @@ class $$AnkiMappingsTableTableManager
                 prependDictionaryNames: prependDictionaryNames,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$AnkiMappingsTable, AnkiMappingRow>(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $AnkiMappingsTable,
-                    AnkiMappingRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -90925,18 +90905,7 @@ class $$SearchHistoryItemsTableTableManager
                 uniqueKey: uniqueKey,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$SearchHistoryItemsTable, SearchHistoryItemRow>(
-                    table,
-                  ),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $SearchHistoryItemsTable,
-                    SearchHistoryItemRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -91264,16 +91233,7 @@ class $$AudiobooksTableTableManager
                 followAudio: followAudio,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$AudiobooksTable, AudiobookRow>(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $AudiobooksTable,
-                    AudiobookRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -91572,16 +91532,7 @@ class $$AudioCuesTableTableManager
                 tokenTimingJson: tokenTimingJson,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$AudioCuesTable, AudioCueRow>(table),
-                  BaseReferences<_$FushiDatabase, $AudioCuesTable, AudioCueRow>(
-                    db,
-                    table,
-                    e,
-                  ),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -91914,16 +91865,7 @@ class $$SrtBooksTableTableManager
                 language: language,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$SrtBooksTable, SrtBookRow>(table),
-                  BaseReferences<_$FushiDatabase, $SrtBooksTable, SrtBookRow>(
-                    db,
-                    table,
-                    e,
-                  ),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -92145,16 +92087,7 @@ class $$ReaderPositionsTableTableManager
                 updatedAt: updatedAt,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$ReaderPositionsTable, ReaderPositionRow>(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $ReaderPositionsTable,
-                    ReaderPositionRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -92478,16 +92411,7 @@ class $$BookmarksTableTableManager
                 chapterKey: chapterKey,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$BookmarksTable, BookmarkRow>(table),
-                  BaseReferences<_$FushiDatabase, $BookmarksTable, BookmarkRow>(
-                    db,
-                    table,
-                    e,
-                  ),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -92734,18 +92658,7 @@ class $$ReadingStatisticsTableTableManager
                 lastStatisticModified: lastStatisticModified,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$ReadingStatisticsTable, ReadingStatisticRow>(
-                    table,
-                  ),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $ReadingStatisticsTable,
-                    ReadingStatisticRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -92954,18 +92867,7 @@ class $$ReadingHourlyLogsTableTableManager
                 format: format,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$ReadingHourlyLogsTable, ReadingHourlyLogRow>(
-                    table,
-                  ),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $ReadingHourlyLogsTable,
-                    ReadingHourlyLogRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -93131,16 +93033,7 @@ class $$PreferencesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$PreferencesTable, PreferenceRow>(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $PreferencesTable,
-                    PreferenceRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -93456,18 +93349,7 @@ class $$DictionaryMetadataTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$DictionaryMetadataTable, DictionaryMetaRow>(
-                    table,
-                  ),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $DictionaryMetadataTable,
-                    DictionaryMetaRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -93829,19 +93711,7 @@ class $$RemoteDictionaryMetadataTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<
-                    $RemoteDictionaryMetadataTable,
-                    RemoteDictionaryMetaRow
-                  >(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $RemoteDictionaryMetadataTable,
-                    RemoteDictionaryMetaRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -94012,18 +93882,7 @@ class $$DictionaryHistoryTableTableManager
                 resultJson: resultJson,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$DictionaryHistoryTable, DictionaryHistoryRow>(
-                    table,
-                  ),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $DictionaryHistoryTable,
-                    DictionaryHistoryRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -95132,7 +94991,7 @@ class $$MediaSourcesTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<$MediaSourcesTable, MediaSourceRow>(table),
+                  e.readTable(table),
                   $$MediaSourcesTableReferences(db, table, e),
                 ),
               )
@@ -95935,7 +95794,7 @@ class $$EpubBooksTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<$EpubBooksTable, EpubBookRow>(table),
+                  e.readTable(table),
                   $$EpubBooksTableReferences(db, table, e),
                 ),
               )
@@ -96243,7 +96102,7 @@ class $$BookTagsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<$BookTagsTable, BookTagRow>(table),
+                  e.readTable(table),
                   $$BookTagsTableReferences(db, table, e),
                 ),
               )
@@ -96542,7 +96401,7 @@ class $$TagAssignmentsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<$TagAssignmentsTable, TagAssignmentRow>(table),
+                  e.readTable(table),
                   $$TagAssignmentsTableReferences(db, table, e),
                 ),
               )
@@ -97068,7 +96927,7 @@ class $$ProfilesTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<$ProfilesTable, ProfileRow>(table),
+                  e.readTable(table),
                   $$ProfilesTableReferences(db, table, e),
                 ),
               )
@@ -97460,7 +97319,7 @@ class $$ProfileSettingsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<$ProfileSettingsTable, ProfileSettingRow>(table),
+                  e.readTable(table),
                   $$ProfileSettingsTableReferences(db, table, e),
                 ),
               )
@@ -97736,9 +97595,7 @@ class $$MediaTypeProfilesTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<$MediaTypeProfilesTable, MediaTypeProfileRow>(
-                    table,
-                  ),
+                  e.readTable(table),
                   $$MediaTypeProfilesTableReferences(db, table, e),
                 ),
               )
@@ -98001,7 +97858,7 @@ class $$BookProfilesTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<$BookProfilesTable, BookProfileRow>(table),
+                  e.readTable(table),
                   $$BookProfilesTableReferences(db, table, e),
                 ),
               )
@@ -98274,9 +98131,7 @@ class $$LanguageProfilesTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<$LanguageProfilesTable, LanguageProfileRow>(
-                    table,
-                  ),
+                  e.readTable(table),
                   $$LanguageProfilesTableReferences(db, table, e),
                 ),
               )
@@ -98488,16 +98343,7 @@ class $$SyncBaselinesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$SyncBaselinesTable, SyncBaselineRow>(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $SyncBaselinesTable,
-                    SyncBaselineRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -99686,7 +99532,7 @@ class $$VideoBooksTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<$VideoBooksTable, VideoBookRow>(table),
+                  e.readTable(table),
                   $$VideoBooksTableReferences(db, table, e),
                 ),
               )
@@ -100154,19 +100000,7 @@ class $$VideoWatchStatisticsTableTableManager
                 lastModified: lastModified,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<
-                    $VideoWatchStatisticsTable,
-                    VideoWatchStatisticRow
-                  >(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $VideoWatchStatisticsTable,
-                    VideoWatchStatisticRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -100353,16 +100187,7 @@ class $$VideoHourlyLogsTableTableManager
                 watchTimeMs: watchTimeMs,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$VideoHourlyLogsTable, VideoHourlyLogRow>(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $VideoHourlyLogsTable,
-                    VideoHourlyLogRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -100728,16 +100553,7 @@ class $$FavoriteWordsTableTableManager
                 normCharLength: normCharLength,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$FavoriteWordsTable, FavoriteWordRow>(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $FavoriteWordsTable,
-                    FavoriteWordRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -101192,18 +101008,7 @@ class $$FavoriteSentencesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$FavoriteSentencesTable, FavoriteSentenceRow>(
-                    table,
-                  ),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $FavoriteSentencesTable,
-                    FavoriteSentenceRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -101390,18 +101195,7 @@ class $$MiningStatisticsTableTableManager
                 count: count,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$MiningStatisticsTable, MiningStatisticRow>(
-                    table,
-                  ),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $MiningStatisticsTable,
-                    MiningStatisticRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -101868,16 +101662,7 @@ class $$MinedSentencesTableTableManager
                 createdAt: createdAt,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$MinedSentencesTable, MinedSentenceRow>(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $MinedSentencesTable,
-                    MinedSentenceRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -102143,10 +101928,7 @@ class $$MusicAutoSourceDismissalsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<
-                    $MusicAutoSourceDismissalsTable,
-                    MusicAutoSourceDismissalRow
-                  >(table),
+                  e.readTable(table),
                   $$MusicAutoSourceDismissalsTableReferences(db, table, e),
                 ),
               )
@@ -102455,10 +102237,8 @@ class $$SeriesTableTableManager
               ),
           withReferenceMapper: (p0) => p0
               .map(
-                (e) => (
-                  e.readTable<$SeriesTable, SeriesRow>(table),
-                  $$SeriesTableReferences(db, table, e),
-                ),
+                (e) =>
+                    (e.readTable(table), $$SeriesTableReferences(db, table, e)),
               )
               .toList(),
           prefetchHooksCallback: ({shelfEntriesRefs = false}) {
@@ -102742,7 +102522,7 @@ class $$ShelfEntriesTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<$ShelfEntriesTable, ShelfEntryRow>(table),
+                  e.readTable(table),
                   $$ShelfEntriesTableReferences(db, table, e),
                 ),
               )
@@ -103719,9 +103499,7 @@ class $$MediaCollectionsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<$MediaCollectionsTable, MediaCollectionRow>(
-                    table,
-                  ),
+                  e.readTable(table),
                   $$MediaCollectionsTableReferences(db, table, e),
                 ),
               )
@@ -104178,10 +103956,7 @@ class $$MediaCollectionItemsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<
-                    $MediaCollectionItemsTable,
-                    MediaCollectionItemRow
-                  >(table),
+                  e.readTable(table),
                   $$MediaCollectionItemsTableReferences(db, table, e),
                 ),
               )
@@ -104505,19 +104280,7 @@ class $$CollectionMemberTombstonesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<
-                    $CollectionMemberTombstonesTable,
-                    CollectionMemberTombstoneRow
-                  >(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $CollectionMemberTombstonesTable,
-                    CollectionMemberTombstoneRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -104679,19 +104442,7 @@ class $$CollectionBookAliasesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<
-                    $CollectionBookAliasesTable,
-                    CollectionBookAliasRow
-                  >(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $CollectionBookAliasesTable,
-                    CollectionBookAliasRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -104920,18 +104671,7 @@ class $$FushiPairedPeersTableTableManager
                 lastSeenIp: lastSeenIp,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$FushiPairedPeersTable, FushiPairedPeerRow>(
-                    table,
-                  ),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $FushiPairedPeersTable,
-                    FushiPairedPeerRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -105084,16 +104824,7 @@ class $$BookTombstonesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$BookTombstonesTable, BookTombstoneRow>(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $BookTombstonesTable,
-                    BookTombstoneRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -105341,19 +105072,7 @@ class $$LookupMiningCountersTableTableManager
                 mineCount: mineCount,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<
-                    $LookupMiningCountersTable,
-                    LookupMiningCounterRow
-                  >(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $LookupMiningCountersTable,
-                    LookupMiningCounterRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -105533,19 +105252,7 @@ class $$StatisticsTombstonesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<
-                    $StatisticsTombstonesTable,
-                    StatisticsTombstoneRow
-                  >(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $StatisticsTombstonesTable,
-                    StatisticsTombstoneRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -105745,19 +105452,7 @@ class $$BookTagMembershipTombstonesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<
-                    $BookTagMembershipTombstonesTable,
-                    BookTagMembershipTombstoneRow
-                  >(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $BookTagMembershipTombstonesTable,
-                    BookTagMembershipTombstoneRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -105969,16 +105664,7 @@ class $$BookCustomCssTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$BookCustomCssTable, BookCustomCssRow>(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $BookCustomCssTable,
-                    BookCustomCssRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -106173,19 +105859,7 @@ class $$MangaReaderOverridesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<
-                    $MangaReaderOverridesTable,
-                    MangaReaderOverrideRow
-                  >(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $MangaReaderOverridesTable,
-                    MangaReaderOverrideRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -106429,19 +106103,7 @@ class $$SyncDeletionTombstonesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<
-                    $SyncDeletionTombstonesTable,
-                    SyncDeletionTombstoneRow
-                  >(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $SyncDeletionTombstonesTable,
-                    SyncDeletionTombstoneRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -106615,16 +106277,7 @@ class $$RevealedImagesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$RevealedImagesTable, RevealedImageRow>(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $RevealedImagesTable,
-                    RevealedImageRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -106906,16 +106559,7 @@ class $$ActivityEventsTableTableManager
                 charsDelta: charsDelta,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$ActivityEventsTable, ActivityEventRow>(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $ActivityEventsTable,
-                    ActivityEventRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -107083,18 +106727,7 @@ class $$ClipboardHistoryTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$ClipboardHistoryTable, ClipboardHistoryRow>(
-                    table,
-                  ),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $ClipboardHistoryTable,
-                    ClipboardHistoryRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -107586,7 +107219,7 @@ class $$VideoScrapeMetaTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<$VideoScrapeMetaTable, VideoScrapeMetaRow>(table),
+                  e.readTable(table),
                   $$VideoScrapeMetaTableReferences(db, table, e),
                 ),
               )
@@ -108118,10 +107751,7 @@ class $$CollectionScrapeMetaTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<
-                    $CollectionScrapeMetaTable,
-                    CollectionScrapeMetaRow
-                  >(table),
+                  e.readTable(table),
                   $$CollectionScrapeMetaTableReferences(db, table, e),
                 ),
               )
@@ -108682,10 +108312,7 @@ class $$MediaTrackingMappingsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<
-                    $MediaTrackingMappingsTable,
-                    MediaTrackingMappingRow
-                  >(table),
+                  e.readTable(table),
                   $$MediaTrackingMappingsTableReferences(db, table, e),
                 ),
               )
@@ -109070,10 +108697,7 @@ class $$MediaTrackingOutboxTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<
-                    $MediaTrackingOutboxTable,
-                    MediaTrackingOutboxRow
-                  >(table),
+                  e.readTable(table),
                   $$MediaTrackingOutboxTableReferences(db, table, e),
                 ),
               )
@@ -109446,19 +109070,7 @@ class $$MediaTrackingSuggestionsTableTableManager
                 dismissedAt: dismissedAt,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<
-                    $MediaTrackingSuggestionsTable,
-                    MediaTrackingSuggestionRow
-                  >(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $MediaTrackingSuggestionsTable,
-                    MediaTrackingSuggestionRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -109689,19 +109301,7 @@ class $$MediaTrackingIgnoredTableTableManager
                 createdAt: createdAt,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<
-                    $MediaTrackingIgnoredTable,
-                    MediaTrackingIgnoredRow
-                  >(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $MediaTrackingIgnoredTable,
-                    MediaTrackingIgnoredRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -110051,19 +109651,7 @@ class $$MediaTrackingActivityTableTableManager
                 createdAt: createdAt,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<
-                    $MediaTrackingActivityTable,
-                    MediaTrackingActivityRow
-                  >(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $MediaTrackingActivityTable,
-                    MediaTrackingActivityRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -110379,19 +109967,7 @@ class $$MediaTrackingRemoteEpisodesTableTableManager
                 watchedAt: watchedAt,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<
-                    $MediaTrackingRemoteEpisodesTable,
-                    MediaTrackingRemoteEpisodeRow
-                  >(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $MediaTrackingRemoteEpisodesTable,
-                    MediaTrackingRemoteEpisodeRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -110892,7 +110468,7 @@ class $$GalgamesTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<$GalgamesTable, GalgameRow>(table),
+                  e.readTable(table),
                   $$GalgamesTableReferences(db, table, e),
                 ),
               )
@@ -111250,7 +110826,7 @@ class $$GalgameSourcesTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<$GalgameSourcesTable, GalgameSourceRow>(table),
+                  e.readTable(table),
                   $$GalgameSourcesTableReferences(db, table, e),
                 ),
               )
@@ -111550,16 +111126,7 @@ class $$GalgameSessionsTableTableManager
                 gameTitle: gameTitle,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$GalgameSessionsTable, GalgameSessionRow>(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $GalgameSessionsTable,
-                    GalgameSessionRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -111958,19 +111525,7 @@ class $$MangaExtensionStoresTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<
-                    $MangaExtensionStoresTable,
-                    MangaExtensionStoreRow
-                  >(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $MangaExtensionStoresTable,
-                    MangaExtensionStoreRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -112365,16 +111920,7 @@ class $$MangaExtensionsTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$MangaExtensionsTable, MangaExtensionRow>(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $MangaExtensionsTable,
-                    MangaExtensionRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -112665,18 +112211,7 @@ class $$MangaOnlineSourcesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$MangaOnlineSourcesTable, MangaOnlineSourceRow>(
-                    table,
-                  ),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $MangaOnlineSourcesTable,
-                    MangaOnlineSourceRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -112920,19 +112455,7 @@ class $$MangaSourcePreferencesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<
-                    $MangaSourcePreferencesTable,
-                    MangaSourcePreferenceRow
-                  >(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $MangaSourcePreferencesTable,
-                    MangaSourcePreferenceRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -113131,18 +112654,7 @@ class $$MangaTrustedSignersTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$MangaTrustedSignersTable, MangaTrustedSignerRow>(
-                    table,
-                  ),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $MangaTrustedSignersTable,
-                    MangaTrustedSignerRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -113799,9 +113311,7 @@ class $$CollectionRelationsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<$CollectionRelationsTable, CollectionRelationRow>(
-                    table,
-                  ),
+                  e.readTable(table),
                   $$CollectionRelationsTableReferences(db, table, e),
                 ),
               )
@@ -114282,7 +113792,7 @@ class $$MediaImagesTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<$MediaImagesTable, MediaImageRow>(table),
+                  e.readTable(table),
                   $$MediaImagesTableReferences(db, table, e),
                 ),
               )
@@ -114718,16 +114228,7 @@ class $$ItemScrapeMetaTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$ItemScrapeMetaTable, ItemScrapeMetaRow>(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $ItemScrapeMetaTable,
-                    ItemScrapeMetaRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -114950,16 +114451,7 @@ class $$ItemImagesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$ItemImagesTable, ItemImageRow>(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $ItemImagesTable,
-                    ItemImageRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -116191,9 +115683,7 @@ class $$VideoMetadataWorksTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<$VideoMetadataWorksTable, VideoMetadataWorkRow>(
-                    table,
-                  ),
+                  e.readTable(table),
                   $$VideoMetadataWorksTableReferences(db, table, e),
                 ),
               )
@@ -117239,10 +116729,7 @@ class $$VideoMetadataSeasonsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<
-                    $VideoMetadataSeasonsTable,
-                    VideoMetadataSeasonRow
-                  >(table),
+                  e.readTable(table),
                   $$VideoMetadataSeasonsTableReferences(db, table, e),
                 ),
               )
@@ -118326,10 +117813,7 @@ class $$VideoMetadataEpisodesTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<
-                    $VideoMetadataEpisodesTable,
-                    VideoMetadataEpisodeRow
-                  >(table),
+                  e.readTable(table),
                   $$VideoMetadataEpisodesTableReferences(db, table, e),
                 ),
               )
@@ -119100,10 +118584,7 @@ class $$VideoMetadataPeopleTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<
-                    $VideoMetadataPeopleTable,
-                    VideoMetadataPersonRow
-                  >(table),
+                  e.readTable(table),
                   $$VideoMetadataPeopleTableReferences(db, table, e),
                 ),
               )
@@ -119717,10 +119198,7 @@ class $$VideoMetadataCharactersTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<
-                    $VideoMetadataCharactersTable,
-                    VideoMetadataCharacterRow
-                  >(table),
+                  e.readTable(table),
                   $$VideoMetadataCharactersTableReferences(db, table, e),
                 ),
               )
@@ -120642,10 +120120,7 @@ class $$VideoMetadataProviderIdentitiesTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<
-                    $VideoMetadataProviderIdentitiesTable,
-                    VideoMetadataProviderIdentityRow
-                  >(table),
+                  e.readTable(table),
                   $$VideoMetadataProviderIdentitiesTableReferences(
                     db,
                     table,
@@ -121154,10 +120629,7 @@ class $$VideoMetadataRawSnapshotsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<
-                    $VideoMetadataRawSnapshotsTable,
-                    VideoMetadataRawSnapshotRow
-                  >(table),
+                  e.readTable(table),
                   $$VideoMetadataRawSnapshotsTableReferences(db, table, e),
                 ),
               )
@@ -121482,9 +120954,7 @@ class $$VideoMetadataTermsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<$VideoMetadataTermsTable, VideoMetadataTermRow>(
-                    table,
-                  ),
+                  e.readTable(table),
                   $$VideoMetadataTermsTableReferences(db, table, e),
                 ),
               )
@@ -121855,10 +121325,7 @@ class $$VideoMetadataWorkTermsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<
-                    $VideoMetadataWorkTermsTable,
-                    VideoMetadataWorkTermRow
-                  >(table),
+                  e.readTable(table),
                   $$VideoMetadataWorkTermsTableReferences(db, table, e),
                 ),
               )
@@ -122680,10 +122147,7 @@ class $$VideoMetadataCreditsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<
-                    $VideoMetadataCreditsTable,
-                    VideoMetadataCreditRow
-                  >(table),
+                  e.readTable(table),
                   $$VideoMetadataCreditsTableReferences(db, table, e),
                 ),
               )
@@ -123652,9 +123116,7 @@ class $$VideoMetadataImagesTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<$VideoMetadataImagesTable, VideoMetadataImageRow>(
-                    table,
-                  ),
+                  e.readTable(table),
                   $$VideoMetadataImagesTableReferences(db, table, e),
                 ),
               )
@@ -124397,9 +123859,7 @@ class $$VideoMetadataExtrasTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<$VideoMetadataExtrasTable, VideoMetadataExtraRow>(
-                    table,
-                  ),
+                  e.readTable(table),
                   $$VideoMetadataExtrasTableReferences(db, table, e),
                 ),
               )
@@ -124899,10 +124359,7 @@ class $$VideoSourceScrapeSettingsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<
-                    $VideoSourceScrapeSettingsTable,
-                    VideoSourceScrapeSettingRow
-                  >(table),
+                  e.readTable(table),
                   $$VideoSourceScrapeSettingsTableReferences(db, table, e),
                 ),
               )
@@ -125561,10 +125018,7 @@ class $$VideoSourceScrapeRunsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<
-                    $VideoSourceScrapeRunsTable,
-                    VideoSourceScrapeRunRow
-                  >(table),
+                  e.readTable(table),
                   $$VideoSourceScrapeRunsTableReferences(db, table, e),
                 ),
               )
@@ -126416,10 +125870,7 @@ class $$VideoSidecarArtifactsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<
-                    $VideoSidecarArtifactsTable,
-                    VideoSidecarArtifactRow
-                  >(table),
+                  e.readTable(table),
                   $$VideoSidecarArtifactsTableReferences(db, table, e),
                 ),
               )
@@ -127839,9 +127290,7 @@ class $$VideoDownloadJobsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<$VideoDownloadJobsTable, VideoDownloadJobRow>(
-                    table,
-                  ),
+                  e.readTable(table),
                   $$VideoDownloadJobsTableReferences(db, table, e),
                 ),
               )
@@ -128578,10 +128027,7 @@ class $$VideoDownloadJobFilesTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<
-                    $VideoDownloadJobFilesTable,
-                    VideoDownloadJobFileRow
-                  >(table),
+                  e.readTable(table),
                   $$VideoDownloadJobFilesTableReferences(db, table, e),
                 ),
               )
@@ -129230,10 +128676,7 @@ class $$VideoDownloadJobSubtitlesTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<
-                    $VideoDownloadJobSubtitlesTable,
-                    VideoDownloadJobSubtitleRow
-                  >(table),
+                  e.readTable(table),
                   $$VideoDownloadJobSubtitlesTableReferences(db, table, e),
                 ),
               )
@@ -130352,10 +129795,7 @@ class $$VideoDownloadSubscriptionsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<
-                    $VideoDownloadSubscriptionsTable,
-                    VideoDownloadSubscriptionRow
-                  >(table),
+                  e.readTable(table),
                   $$VideoDownloadSubscriptionsTableReferences(db, table, e),
                 ),
               )
@@ -131029,10 +130469,7 @@ class $$VideoDownloadSubscriptionItemsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<
-                    $VideoDownloadSubscriptionItemsTable,
-                    VideoDownloadSubscriptionItemRow
-                  >(table),
+                  e.readTable(table),
                   $$VideoDownloadSubscriptionItemsTableReferences(db, table, e),
                 ),
               )
@@ -131343,18 +130780,7 @@ class $$MangaChapterStatesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$MangaChapterStatesTable, MangaChapterStateRow>(
-                    table,
-                  ),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $MangaChapterStatesTable,
-                    MangaChapterStateRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -131554,19 +130980,7 @@ class $$StudySegmentTombstonesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<
-                    $StudySegmentTombstonesTable,
-                    StudySegmentTombstoneRow
-                  >(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $StudySegmentTombstonesTable,
-                    StudySegmentTombstoneRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -131987,16 +131401,7 @@ class $$StudySegmentsTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$StudySegmentsTable, StudySegmentRow>(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $StudySegmentsTable,
-                    StudySegmentRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -132371,16 +131776,7 @@ class $$WebMineQueueTableTableManager
                 minedAt: minedAt,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$WebMineQueueTable, WebMineQueueRow>(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $WebMineQueueTable,
-                    WebMineQueueRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -132880,16 +132276,7 @@ class $$VideoFileSpecsTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$VideoFileSpecsTable, VideoFileSpecRow>(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $VideoFileSpecsTable,
-                    VideoFileSpecRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -133159,18 +132546,7 @@ class $$UpdateFeedEntriesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$UpdateFeedEntriesTable, UpdateFeedEntryRow>(
-                    table,
-                  ),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $UpdateFeedEntriesTable,
-                    UpdateFeedEntryRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -133602,18 +132978,7 @@ class $$MangaDownloadJobsTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$MangaDownloadJobsTable, MangaDownloadJobRow>(
-                    table,
-                  ),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $MangaDownloadJobsTable,
-                    MangaDownloadJobRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -134184,18 +133549,7 @@ class $$AnidbFileIdentitiesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$AnidbFileIdentitiesTable, AnidbFileIdentityRow>(
-                    table,
-                  ),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $AnidbFileIdentitiesTable,
-                    AnidbFileIdentityRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -134486,10 +133840,7 @@ class $$VideoEpisodeBindingOverridesTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<
-                    $VideoEpisodeBindingOverridesTable,
-                    VideoEpisodeBindingOverrideRow
-                  >(table),
+                  e.readTable(table),
                   $$VideoEpisodeBindingOverridesTableReferences(db, table, e),
                 ),
               )
@@ -134800,10 +134151,7 @@ class $$VideoCollectionSectionOverridesTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<
-                    $VideoCollectionSectionOverridesTable,
-                    VideoCollectionSectionOverrideRow
-                  >(table),
+                  e.readTable(table),
                   $$VideoCollectionSectionOverridesTableReferences(
                     db,
                     table,
@@ -135159,16 +134507,7 @@ class $$PendingMineQueueTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$PendingMineQueueTable, PendingMineRow>(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $PendingMineQueueTable,
-                    PendingMineRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -135389,19 +134728,7 @@ class $$VideoSubtitleGlossariesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<
-                    $VideoSubtitleGlossariesTable,
-                    VideoSubtitleGlossaryRow
-                  >(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $VideoSubtitleGlossariesTable,
-                    VideoSubtitleGlossaryRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -135643,19 +134970,7 @@ class $$VideoSubtitleTextOverridesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<
-                    $VideoSubtitleTextOverridesTable,
-                    VideoSubtitleTextOverrideRow
-                  >(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $VideoSubtitleTextOverridesTable,
-                    VideoSubtitleTextOverrideRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -135849,18 +135164,7 @@ class $$MediaPrivacyFlagsTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$MediaPrivacyFlagsTable, MediaPrivacyFlagRow>(
-                    table,
-                  ),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $MediaPrivacyFlagsTable,
-                    MediaPrivacyFlagRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -136051,16 +135355,7 @@ class $$MediaNsfwFlagsTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$MediaNsfwFlagsTable, MediaNsfwFlagRow>(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $MediaNsfwFlagsTable,
-                    MediaNsfwFlagRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -136247,18 +135542,7 @@ class $$MediaLockedFlagsTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$MediaLockedFlagsTable, MediaLockedFlagRow>(
-                    table,
-                  ),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $MediaLockedFlagsTable,
-                    MediaLockedFlagRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -136438,19 +135722,7 @@ class $$MediaLockCredentialsTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<
-                    $MediaLockCredentialsTable,
-                    MediaLockCredentialRow
-                  >(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $MediaLockCredentialsTable,
-                    MediaLockCredentialRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -136890,9 +136162,7 @@ class $$LibraryOrganizeRunsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<$LibraryOrganizeRunsTable, LibraryOrganizeRunRow>(
-                    table,
-                  ),
+                  e.readTable(table),
                   $$LibraryOrganizeRunsTableReferences(db, table, e),
                 ),
               )
@@ -137323,10 +136593,7 @@ class $$LibraryOrganizeChangesTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<
-                    $LibraryOrganizeChangesTable,
-                    LibraryOrganizeChangeRow
-                  >(table),
+                  e.readTable(table),
                   $$LibraryOrganizeChangesTableReferences(db, table, e),
                 ),
               )
@@ -137575,18 +136842,7 @@ class $$WebBrowserHistoryTableTableManager
                 visitCount: visitCount,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$WebBrowserHistoryTable, WebBrowserHistoryRow>(
-                    table,
-                  ),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $WebBrowserHistoryTable,
-                    WebBrowserHistoryRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -137853,18 +137109,7 @@ class $$WebBrowserBookmarksTableTableManager
                 updatedAt: updatedAt,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$WebBrowserBookmarksTable, WebBrowserBookmarkRow>(
-                    table,
-                  ),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $WebBrowserBookmarksTable,
-                    WebBrowserBookmarkRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -138077,19 +137322,7 @@ class $$WebBrowserSessionTabsTableTableManager
                 active: active,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<
-                    $WebBrowserSessionTabsTable,
-                    WebBrowserSessionTabRow
-                  >(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $WebBrowserSessionTabsTable,
-                    WebBrowserSessionTabRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -138299,19 +137532,7 @@ class $$WebBrowserClosedTabsTableTableManager
                 tabIndex: tabIndex,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<
-                    $WebBrowserClosedTabsTable,
-                    WebBrowserClosedTabRow
-                  >(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $WebBrowserClosedTabsTable,
-                    WebBrowserClosedTabRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -138601,18 +137822,7 @@ class $$WebBrowserDownloadsTableTableManager
                 startedAt: startedAt,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$WebBrowserDownloadsTable, WebBrowserDownloadRow>(
-                    table,
-                  ),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $WebBrowserDownloadsTable,
-                    WebBrowserDownloadRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -139014,16 +138224,7 @@ class $$MediaLinksTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$MediaLinksTable, MediaLinkRow>(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $MediaLinksTable,
-                    MediaLinkRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -139840,16 +139041,7 @@ class $$MusicTracksTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$MusicTracksTable, MusicTrackRow>(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $MusicTracksTable,
-                    MusicTrackRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -140023,19 +139215,7 @@ class $$MusicTrackUidAliasesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<
-                    $MusicTrackUidAliasesTable,
-                    MusicTrackUidAliasRow
-                  >(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $MusicTrackUidAliasesTable,
-                    MusicTrackUidAliasRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -140422,16 +139602,7 @@ class $$MusicAlbumsTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$MusicAlbumsTable, MusicAlbumRow>(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $MusicAlbumsTable,
-                    MusicAlbumRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -140652,16 +139823,7 @@ class $$MusicArtistsTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$MusicArtistsTable, MusicArtistRow>(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $MusicArtistsTable,
-                    MusicArtistRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -140872,18 +140034,7 @@ class $$MusicTrackCreditsTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$MusicTrackCreditsTable, MusicTrackCreditRow>(
-                    table,
-                  ),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $MusicTrackCreditsTable,
-                    MusicTrackCreditRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -141190,16 +140341,7 @@ class $$MusicLyricsTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$MusicLyricsTable, MusicLyricRow>(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $MusicLyricsTable,
-                    MusicLyricRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -141454,16 +140596,7 @@ class $$MusicVideosTableTableManager
                 updatedAt: updatedAt,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$MusicVideosTable, MusicVideoRow>(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $MusicVideosTable,
-                    MusicVideoRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -141709,18 +140842,7 @@ class $$MusicDiscSourcesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$MusicDiscSourcesTable, MusicDiscSourceRow>(
-                    table,
-                  ),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $MusicDiscSourcesTable,
-                    MusicDiscSourceRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -142043,7 +141165,7 @@ class $$MusicPlaylistsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<$MusicPlaylistsTable, MusicPlaylistRow>(table),
+                  e.readTable(table),
                   $$MusicPlaylistsTableReferences(db, table, e),
                 ),
               )
@@ -142366,10 +141488,7 @@ class $$MusicPlaylistEntriesTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable<
-                    $MusicPlaylistEntriesTable,
-                    MusicPlaylistEntryRow
-                  >(table),
+                  e.readTable(table),
                   $$MusicPlaylistEntriesTableReferences(db, table, e),
                 ),
               )
@@ -142816,18 +141935,7 @@ class $$MusicRemoteTracksTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$MusicRemoteTracksTable, MusicRemoteTrackRow>(
-                    table,
-                  ),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $MusicRemoteTracksTable,
-                    MusicRemoteTrackRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -143123,19 +142231,7 @@ class $$MusicServerDownloadsTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<
-                    $MusicServerDownloadsTable,
-                    MusicServerDownloadRow
-                  >(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $MusicServerDownloadsTable,
-                    MusicServerDownloadRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -143472,19 +142568,7 @@ class $$MusicServerPendingActionsTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<
-                    $MusicServerPendingActionsTable,
-                    MusicServerPendingActionRow
-                  >(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $MusicServerPendingActionsTable,
-                    MusicServerPendingActionRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -143808,19 +142892,7 @@ class $$MusicServerTrackStatesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<
-                    $MusicServerTrackStatesTable,
-                    MusicServerTrackStateRow
-                  >(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $MusicServerTrackStatesTable,
-                    MusicServerTrackStateRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -144283,16 +143355,7 @@ class $$MusicPlayEventsTableTableManager
                 sourceCover: sourceCover,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$MusicPlayEventsTable, MusicPlayEventRow>(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $MusicPlayEventsTable,
-                    MusicPlayEventRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -144490,18 +143553,7 @@ class $$MusicResumePointsTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$MusicResumePointsTable, MusicResumePointRow>(
-                    table,
-                  ),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $MusicResumePointsTable,
-                    MusicResumePointRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -144824,18 +143876,7 @@ class $$VideoThemeSongSpansTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$VideoThemeSongSpansTable, VideoThemeSongSpanRow>(
-                    table,
-                  ),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $VideoThemeSongSpansTable,
-                    VideoThemeSongSpanRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -145062,19 +144103,7 @@ class $$VideoContentFingerprintsTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<
-                    $VideoContentFingerprintsTable,
-                    VideoContentFingerprintRow
-                  >(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $VideoContentFingerprintsTable,
-                    VideoContentFingerprintRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -145849,18 +144878,7 @@ class $$MediaLinkAiVerdictsTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$MediaLinkAiVerdictsTable, MediaLinkAiVerdictRow>(
-                    table,
-                  ),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $MediaLinkAiVerdictsTable,
-                    MediaLinkAiVerdictRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -146600,16 +145618,7 @@ class $$MusicScrapeMetaTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$MusicScrapeMetaTable, MusicScrapeMetaRow>(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $MusicScrapeMetaTable,
-                    MusicScrapeMetaRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -146845,19 +145854,7 @@ class $$MusicMetadataRawSnapshotsTableTableManager
                 fetchedAt: fetchedAt,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<
-                    $MusicMetadataRawSnapshotsTable,
-                    MusicMetadataRawSnapshotRow
-                  >(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $MusicMetadataRawSnapshotsTable,
-                    MusicMetadataRawSnapshotRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -147053,18 +146050,7 @@ class $$MusicLockedFieldsTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$MusicLockedFieldsTable, MusicLockedFieldRow>(
-                    table,
-                  ),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $MusicLockedFieldsTable,
-                    MusicLockedFieldRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -147255,16 +146241,7 @@ class $$GameVoiceCastsTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$GameVoiceCastsTable, GameVoiceCastRow>(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $GameVoiceCastsTable,
-                    GameVoiceCastRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -147479,19 +146456,7 @@ class $$PersonIdentityBridgesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<
-                    $PersonIdentityBridgesTable,
-                    PersonIdentityBridgeRow
-                  >(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $PersonIdentityBridgesTable,
-                    PersonIdentityBridgeRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -147779,19 +146744,7 @@ class $$AdaptationProgressAnchorsTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<
-                    $AdaptationProgressAnchorsTable,
-                    AdaptationProgressAnchorRow
-                  >(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $AdaptationProgressAnchorsTable,
-                    AdaptationProgressAnchorRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -148085,16 +147038,7 @@ class $$AiAgentSessionsTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$AiAgentSessionsTable, AiAgentSessionRow>(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $AiAgentSessionsTable,
-                    AiAgentSessionRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -148460,16 +147404,7 @@ class $$AiAgentActionsTableTableManager
                 undoStatus: undoStatus,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$AiAgentActionsTable, AiAgentActionRow>(table),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $AiAgentActionsTable,
-                    AiAgentActionRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -148828,18 +147763,7 @@ class $$RemoteAudioBindingsTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$RemoteAudioBindingsTable, RemoteAudioBindingRow>(
-                    table,
-                  ),
-                  BaseReferences<
-                    _$FushiDatabase,
-                    $RemoteAudioBindingsTable,
-                    RemoteAudioBindingRow
-                  >(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
         ),

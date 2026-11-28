@@ -22,7 +22,7 @@
 
 - `drift: ">=2.33.0 <2.34.0"` + `sqlite3` -- ORM 与 SQLite 绑定。**本包零 Flutter**（pubspec 不声明 `sdk: flutter`，包测试用 `package:test`）；SQLite 原生库由 `sqlite3` 3.x 的 build hook 作为 native asset 提供：app 随 `flutter build` 打包，服务端走 `dart build cli`；不要加 `sqlite3_flutter_libs`（只配 2.x，会多塞一份 SQLite）。
 - `path: ^1.8.2` -- 路径处理。
-- 代码生成：`drift_dev: ^2.23.0` + `build_runner`，生成 `database.g.dart`。
+- 代码生成：`drift_dev`（精确钉版，全仓只在本包声明，须与上面的 drift 系列成对，BUG-5615）+ `build_runner`，在本目录直接 `dart run build_runner build --delete-conflicting-outputs` 生成 `database.g.dart`（约 3～5 分钟），不需要隔离副本；升 drift 时同步改 drift_dev 钉版与守卫 `fushi/test/build/drift_codegen_pin_guard_test.dart` 的登记表。
 
 ## 数据模型
 
