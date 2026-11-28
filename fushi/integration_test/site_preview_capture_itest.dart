@@ -30,6 +30,18 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/lookup/sentence_extraction.dart'
     show lookupQueryFromIndex;
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_services.dart'
+    show TtsServices;
+import 'package:fushi/src/media/manga/audio/manga_audio_library.dart'
+    show registerMangaAudio;
+import 'package:fushi/src/media/manga/audio/manga_audio_playback_driver.dart'
+    show MangaAudioPlaybackDriver;
+import 'package:fushi/src/media/manga/audio/manga_audio_review_page.dart'
+    show MangaAudioReviewPage;
+import 'package:fushi/src/media/manga/audio/manga_audio_stores.dart'
+    show mangaAudioScriptStoreFor, mangaRenderManifestFile;
+import 'package:fushi/src/media/manga/audio/manga_audio_workbench_page.dart'
+    show MangaAudioWorkbenchPage;
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart' show JapaneseLanguage;
 import 'package:fushi/src/media/import/pasted_text_book_dialog.dart';
@@ -67,6 +79,16 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/manga/mokuro_payload.dart'
+    show MokuroBlock, MokuroPayload, parseMangaJson;
+import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart'
+    show MangaRenderManifest, MangaRenderedLine;
+import 'package:fushi_engine/tts/manga_audio/manga_audio_script.dart'
+    show CastLineKind, CastVoiceAssignment, MangaAudioScript, MangaScriptLine;
+import 'package:fushi_engine/tts/manga_audio/manga_audio_validate.dart'
+    show mangaPayloadOcrSignature;
+import 'package:fushi_engine/tts/render/tts_cast.dart' show TtsCastCharacter;
+import 'package:fushi_engine/tts/tts_voice_preset.dart' show TtsVoicePreset;
 import 'package:integration_test/integration_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
@@ -1239,6 +1261,7 @@ void main() {
       if (uv('uv-paste')) await _sceneUvPaste(c);
       if (uv('uv-video')) await _sceneUvVideo(c);
       if (uv('uv-lyrics')) await _sceneUvLyrics(c);
+      if (uv('uv-voiced')) await _sceneUvVoiced(c);
       debugPrint(
         '[site-preview] done notes=${anki.notes.length} errors=${errors.length}',
       );
