@@ -156,6 +156,107 @@ void main() {
     expect(File(gone).existsSync(), isFalse);
   });
 
+  // BUG-5609：「获取各卷封面与横幅」把同一张系列横幅贴到每一卷：只存一份文件，
+  // 各卷一行指向它；换图 / 清图时随最后一行回收，别的条目还在用就留着。
+  test('setSharedImageFromFile：同 URL 共用一个文件，最后一行撤掉才回收', () async {
+    const String url = 'https://images.mangabaka.dev/banner/1';
+    final ItemScrapeKey a = ItemScrapeKey(MediaKind.epub, 'uid-a');
+    final ItemScrapeKey b = ItemScrapeKey(MediaKind.epub, 'uid-b');
+    final String pathA = await store.setSharedImageFromFile(
+      a,
+      MediaImageKind.backdrop,
+      source('banner.gif'),
+      sourceUrl: url,
+    );
+    final String pathB = await store.setSharedImageFromFile(
+      b,
+      MediaImageKind.backdrop,
+      source('banner.gif'),
+      sourceUrl: url,
+    );
+    expect(pathB, pathA);
+    expect(p.basename(pathA), startsWith('epub_shared_'));
+    expect(
+      p.basename(pathA),
+      isNot(
+        p.basename(
+          itemImageFileName(a, MediaImageKind.backdrop, File('x.gif')),
+        ),
+      ),
+    );
+    final ItemImageRow row = (await store.firstImage(
+      a,
+      MediaImageKind.backdrop,
+    ))!;
+    expect(row.path, pathA);
+    expect(row.sourceUrl, url);
+
+    // a 换成自己的图：共用文件 b 还在用。
+    final String own = await store.setImageFromFile(
+      a,
+      MediaImageKind.backdrop,
+      source('own.gif'),
+      sourceUrl: 'https://s4.anilist.co/banner/1.jpg',
+    );
+    expect(own, isNot(pathA));
+    expect(File(pathA).existsSync(), isTrue);
+
+    await store.clearImage(b, MediaImageKind.backdrop);
+    expect(await store.firstImage(b, MediaImageKind.backdrop), isNull);
+    expect(File(pathA).existsSync(), isFalse);
+    expect(File(own).existsSync(), isTrue);
+  });
+
+  // 获取按并发 3 逐卷落盘：各卷同时贴同一张图，只复制一次，一卷都不能丢（各自
+  // 「不在 → 复制 → 改名」在 Windows 上撞目标已存在，曾让并发的那几卷失败）。
+  test('setSharedImageFromFile：多卷并发贴同一张图全部成功', () async {
+    const String url = 'https://images.mangabaka.dev/banner/9';
+    final List<ItemScrapeKey> keys = <ItemScrapeKey>[
+      for (int i = 0; i < 6; i++) ItemScrapeKey(MediaKind.epub, 'uid-$i'),
+    ];
+    final List<String> paths = await Future.wait(<Future<String>>[
+      for (final ItemScrapeKey k in keys)
+        store.setSharedImageFromFile(
+          k,
+          MediaImageKind.backdrop,
+          source('banner_${k.entryKey}.gif'),
+          sourceUrl: url,
+        ),
+    ]);
+    expect(paths.toSet(), hasLength(1));
+    for (final ItemScrapeKey k in keys) {
+      expect(
+        (await store.firstImage(k, MediaImageKind.backdrop))?.path,
+        paths.first,
+      );
+    }
+    expect(
+      dir.listSync().whereType<File>().map((File f) => p.basename(f.path)),
+      <String>[p.basename(paths.first)],
+    );
+  });
+
+  test('setSharedImageFromFile：源不是完整图片时抛，旧图不动', () async {
+    final ItemScrapeKey a = ItemScrapeKey(MediaKind.epub, 'uid-a');
+    final String old = await store.setImageFromFile(
+      a,
+      MediaImageKind.backdrop,
+      source('old.gif'),
+    );
+    final File broken = File(p.join(scratch.path, 'broken.png'))
+      ..writeAsBytesSync(<int>[1, 2, 3]);
+    await expectLater(
+      store.setSharedImageFromFile(
+        a,
+        MediaImageKind.backdrop,
+        broken,
+        sourceUrl: 'https://images.mangabaka.dev/banner/x',
+      ),
+      throwsA(isA<CoverImageInvalidException>()),
+    );
+    expect((await store.firstImage(a, MediaImageKind.backdrop))!.path, old);
+  });
+
   test('ItemScrapeKey 拒收 video 与空键', () {
     expect(() => ItemScrapeKey(MediaKind.video, 'v'), throwsArgumentError);
     expect(() => ItemScrapeKey(MediaKind.epub, ''), throwsArgumentError);

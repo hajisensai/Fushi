@@ -1,18 +1,28 @@
 import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
+import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/detail/item_scrape_detail.dart';
 import 'package:fushi/src/media/metadata/book_art_store.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/item_scrape/item_scrape_store.dart';
 import 'package:image/image.dart' as img;
+import 'package:path/path.dart' as p;
 
-/// 刮削层存储：写 / 读 / 横幅投票 / 清除回收孤儿横幅 / 快照撤销往返。
+/// 刮削层存储：写 / 读 / 快照撤销往返；横幅 = 书的背景图（item_images，BUG-5609）：
+/// 贴上 / 不覆盖别处来的背景图 / 清除只撤本层贴的 / 撤销贴回 / 旧版目录一次性搬家。
 List<int> png(int width, int height, {int shade = 0}) => img.encodePng(
   img.Image(width: width, height: height)
     ..clear(img.ColorRgb8(shade, shade, shade)),
 );
 
+const String kBannerUrl = 'https://images.mangabaka.dev/banner/1';
+
 BookArtRecord record(
   String bookKey, {
   String? bannerKey,
+  String? bannerUrl,
   String source = 'mangabaka',
   int scrapedAt = 1,
 }) => BookArtRecord(
@@ -23,6 +33,7 @@ BookArtRecord record(
   coverSource: source,
   coverUrl: 'https://images.example/$bookKey',
   bannerKey: bannerKey,
+  bannerUrl: bannerUrl ?? (bannerKey == null ? null : kBannerUrl),
   scrapedAt: scrapedAt,
 );
 
@@ -30,19 +41,80 @@ void main() {
   // 写盘 / 清除都会驱逐解码缓存（ImageCache 要 binding）。
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  late FushiDatabase db;
   late Directory thumbs;
+  late Directory items;
+  late ItemScrapeStore itemScrape;
   late BookArtStore store;
+  late File bannerSource;
+
+  BookArtStore open() =>
+      BookArtStore.of(thumbs, database: db, itemScrape: itemScrape);
 
   setUp(() async {
     BookArtStore.resetForTesting();
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
     thumbs = await Directory.systemTemp.createTemp('fushi_book_art_store_');
-    store = BookArtStore.of(thumbs);
+    items = Directory(p.join(thumbs.path, 'items'));
+    itemScrape = ItemScrapeStore(db, imagesDirectory: items);
+    store = open();
+    bannerSource = File(p.join(thumbs.path, 'banner_src.png'))
+      ..writeAsBytesSync(png(16, 9));
   });
 
   tearDown(() async {
     BookArtStore.resetForTesting();
+    await db.close();
     if (thumbs.existsSync()) await thumbs.delete(recursive: true);
   });
+
+  Future<ItemScrapeKey> seed(String bookKey) async {
+    await db.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: bookKey,
+        title: 'Series $bookKey',
+        epubPath: '/nonexistent/$bookKey.cbz',
+        extractDir: '/nonexistent/$bookKey',
+        chapterCount: 1,
+        chaptersJson: '[]',
+        importedAt: 1000,
+        format: const Value<String>('manga'),
+      ),
+    );
+    return ItemScrapeKey(
+      MediaKind.epub,
+      (await db.resolveEpubBookUid(bookKey))!,
+    );
+  }
+
+  Future<ItemImageRow?> backdrop(ItemScrapeKey key) =>
+      itemScrape.firstImage(key, MediaImageKind.backdrop);
+
+  /// 别处（书籍刮削）写的背景图。
+  Future<String> foreignBackdrop(ItemScrapeKey key) async {
+    final File src = File(p.join(thumbs.path, 'anilist.png'))
+      ..writeAsBytesSync(png(20, 9, shade: 90));
+    return itemScrape.setImageFromFile(
+      key,
+      MediaImageKind.backdrop,
+      src,
+      sourceUrl: 'https://s4.anilist.co/banner/1.jpg',
+    );
+  }
+
+  /// 获取的完整一步：记录认领横幅 + 贴成背景图。
+  Future<bool> fetchBanner(String bookKey, {List<int>? cover}) async {
+    final bool applied = await store.applyBanner(
+      bookKey,
+      bannerSource,
+      url: kBannerUrl,
+    );
+    await store.write(
+      record: record(bookKey, bannerKey: applied ? 'mangabaka_1' : null),
+      coverBytes: cover,
+    );
+    return applied;
+  }
 
   test('写入后 hasCover / coverFileFor / recordFor 命中；重开实例从磁盘读回', () async {
     expect(store.hasCover('a'), isFalse);
@@ -53,7 +125,7 @@ void main() {
     expect(store.recordFor('a')!.usesMangaBaka, isTrue);
 
     BookArtStore.resetForTesting();
-    final BookArtStore reopened = BookArtStore.of(thumbs);
+    final BookArtStore reopened = open();
     expect(reopened.hasCover('a'), isTrue);
     expect(reopened.recordFor('a')!.coverUrl, 'https://images.example/a');
   });
@@ -68,53 +140,77 @@ void main() {
     expect(store.coverFileFor('a')!.readAsBytesSync(), before);
   });
 
-  test('合集横幅按成员多数票；单本横幅取自己的', () async {
-    await store.writeBanner('mangabaka_1', png(16, 9));
-    await store.writeBanner('mangabaka_2', png(16, 9, shade: 50));
-    await store.write(record: record('a', bannerKey: 'mangabaka_1'));
-    await store.write(record: record('b', bannerKey: 'mangabaka_2'));
-    await store.write(record: record('c', bannerKey: 'mangabaka_2'));
-    expect(
-      store.backdropForCollection(<String>['a', 'b', 'c'])!.path,
-      store.bannerPathFor('mangabaka_2'),
-    );
-    expect(
-      store.backdropForBook('a')!.path,
-      store.bannerPathFor('mangabaka_1'),
-    );
-    expect(store.backdropForCollection(<String>['zzz']), isNull);
+  test('横幅贴成书的背景图：同 URL 各卷共用一个文件，书详情页读得到', () async {
+    final ItemScrapeKey a = await seed('a');
+    final ItemScrapeKey b = await seed('b');
+    expect(await fetchBanner('a'), isTrue);
+    expect(await fetchBanner('b'), isTrue);
+
+    final ItemImageRow rowA = (await backdrop(a))!;
+    final ItemImageRow rowB = (await backdrop(b))!;
+    expect(rowA.sourceUrl, kBannerUrl);
+    expect(rowA.path, rowB.path, reason: '同系列横幅只存一份');
+    expect(File(rowA.path).existsSync(), isTrue);
+    expect(await store.bannerStateOf('a'), BookArtBannerState.fetched);
+
+    // 书详情页 / 首页单本卡读的就是这一份（ItemScrapeDetail / getItemImages）。
+    final ItemScrapeDetail detail = await ItemScrapeDetail.load(db, a);
+    expect(detail.backdropPath, rowA.path);
   });
 
-  test('清除一本：卷封面与元数据删掉，没人引用的横幅一起回收', () async {
-    await store.writeBanner('mangabaka_1', png(16, 9));
-    await store.write(
-      record: record('a', bannerKey: 'mangabaka_1'),
-      coverBytes: png(4, 6),
-    );
-    await store.write(record: record('b', bannerKey: 'mangabaka_1'));
+  test('覆盖策略：书已有别处来的背景图时不覆盖，也不认领', () async {
+    final ItemScrapeKey a = await seed('a');
+    final String foreign = await foreignBackdrop(a);
+    expect(await store.bannerStateOf('a'), BookArtBannerState.other);
+
+    expect(await fetchBanner('a'), isFalse);
+    expect((await backdrop(a))!.path, foreign);
+    expect(store.recordFor('a')!.bannerKey, isNull);
+    expect(await store.bannerStateOf('a'), BookArtBannerState.other);
+  });
+
+  test('清除只撤本层贴的横幅：共用文件随最后一行回收，别处来的背景图不动', () async {
+    final ItemScrapeKey a = await seed('a');
+    final ItemScrapeKey b = await seed('b');
+    final ItemScrapeKey c = await seed('c');
+    await fetchBanner('a', cover: png(4, 6));
+    await fetchBanner('b');
+    final String shared = (await backdrop(a))!.path;
+    // c 记录里也记着这张横幅，但之后被书籍刮削换成了自己的背景图。
+    await fetchBanner('c');
+    final String foreign = await foreignBackdrop(c);
+    expect(await store.bannerStateOf('c'), BookArtBannerState.other);
+
     await store.remove('a');
     expect(store.hasCover('a'), isFalse);
     expect(store.recordFor('a'), isNull);
-    expect(File(store.bannerPathFor('mangabaka_1')).existsSync(), isTrue);
+    expect(await backdrop(a), isNull);
+    expect(File(shared).existsSync(), isTrue, reason: 'b 还在用');
+
     await store.remove('b');
-    expect(File(store.bannerPathFor('mangabaka_1')).existsSync(), isFalse);
+    expect(await backdrop(b), isNull);
+    expect(File(shared).existsSync(), isFalse);
+
+    await store.remove('c');
+    expect((await backdrop(c))!.path, foreign);
+    expect(File(foreign).existsSync(), isTrue);
   });
 
-  // 横幅文件还被打开着（Windows 上背景带正在读它，删不掉）：清除照常完成，孤儿
-  // 横幅留到下一次回收再删。曾直接抛出，合集清除逐本删到这里就中断。
-  test('孤儿横幅删不掉时清除不中断，下一次回收再删', () async {
-    await store.writeBanner('mangabaka_1', png(16, 9));
-    await store.write(record: record('a', bannerKey: 'mangabaka_1'));
-    final File banner = File(store.bannerPathFor('mangabaka_1'));
-    final RandomAccessFile reader = await banner.open();
-    try {
-      await store.remove('a');
-      expect(store.recordFor('a'), isNull);
-    } finally {
-      await reader.close();
-    }
-    await store.collectOrphanBanners();
-    expect(banner.existsSync(), isFalse);
+  test('单本否决：卷封面与本层横幅撤掉，只留否决记录；JSON 往返保留', () async {
+    final ItemScrapeKey a = await seed('a');
+    await fetchBanner('a', cover: png(4, 6));
+    await store.rejectCover('a');
+    expect(store.hasCover('a'), isFalse);
+    expect(await backdrop(a), isNull);
+    expect(store.recordFor('a')!.hasSeries, isFalse);
+    expect(store.recordFor('a')!.rejectedCoverUrls, <String>[
+      'https://images.example/a',
+    ]);
+    BookArtStore.resetForTesting();
+    final BookArtStore reopened = open();
+    expect(reopened.recordFor('a')!.rejectedCoverUrls, <String>[
+      'https://images.example/a',
+    ]);
   });
 
   test('快照 → 覆盖写 → 恢复：卷封面字节与元数据回到快照', () async {
@@ -139,12 +235,14 @@ void main() {
     expect(await store.fingerprint('a'), isNot(after));
   });
 
-  test('从无到有的写入，恢复 = 清除', () async {
+  test('从无到有的写入，恢复 = 清除（连同贴上的横幅）', () async {
+    final ItemScrapeKey a = await seed('a');
     final BookArtSnapshot snap = await store.snapshot('a');
-    await store.write(record: record('a'), coverBytes: png(4, 6));
+    await fetchBanner('a', cover: png(4, 6));
     await store.restore(snap);
     expect(store.hasCover('a'), isFalse);
     expect(store.recordFor('a'), isNull);
+    expect(await backdrop(a), isNull);
   });
 
   test('备份文件不在时恢复抛 StateError，不拿别的图凑数', () async {
@@ -154,19 +252,30 @@ void main() {
     await expectLater(store.restore(snap), throwsStateError);
   });
 
-  test('清除后撤销：横幅随快照恢复（清除时它因无人引用被回收）', () async {
-    await store.writeBanner('mangabaka_1', png(16, 9));
-    await store.write(
-      record: record('a', bannerKey: 'mangabaka_1'),
-      coverBytes: png(4, 6),
-    );
+  test('清除后撤销：横幅从备份贴回背景图（清除时共用文件已回收）', () async {
+    final ItemScrapeKey a = await seed('a');
+    await fetchBanner('a', cover: png(4, 6));
+    final String shared = (await backdrop(a))!.path;
     final BookArtSnapshot snap = await store.snapshot('a');
+    expect(snap.bannerBackupPath, isNotNull);
     await store.remove('a');
-    expect(File(store.bannerPathFor('mangabaka_1')).existsSync(), isFalse);
-    expect(store.canRestore(snap), isTrue);
+    expect(File(shared).existsSync(), isFalse);
+    expect(await store.canRestore(snap), isTrue);
+
     await store.restore(BookArtSnapshot.fromJson(snap.toJson()));
-    expect(store.backdropForBook('a'), isNotNull);
+    final ItemImageRow row = (await backdrop(a))!;
+    expect(row.sourceUrl, kBannerUrl);
+    expect(File(row.path).existsSync(), isTrue);
+    expect(await store.bannerStateOf('a'), BookArtBannerState.fetched);
     expect(store.hasCover('a'), isTrue);
+  });
+
+  test('别处换了背景图后指纹变化（撤销据此判 superseded）', () async {
+    final ItemScrapeKey a = await seed('a');
+    await fetchBanner('a');
+    final Map<String, Object?> after = await store.fingerprint('a');
+    await foreignBackdrop(a);
+    expect(await store.fingerprint('a'), isNot(after));
   });
 
   test('备份按文件名时间戳过期，不看 copy 继承来的修改时间', () async {
@@ -180,33 +289,7 @@ void main() {
     // 第二本的 snapshot 会先 prune：不能把第一本刚做的备份当过期删掉。
     await store.snapshot('b');
     expect(File(first.coverBackupPath!).existsSync(), isTrue);
-    expect(store.canRestore(first), isTrue);
-  });
-
-  test('持有中的横幅不被回收（记录还没落盘）', () async {
-    await store.writeBanner('mangabaka_9', png(16, 9));
-    final void Function() release = store.holdBanner('mangabaka_9');
-    await store.write(record: record('x'), coverBytes: png(4, 6));
-    await store.remove('x'); // 触发回收
-    expect(File(store.bannerPathFor('mangabaka_9')).existsSync(), isTrue);
-    release();
-    await store.collectOrphanBanners();
-    expect(File(store.bannerPathFor('mangabaka_9')).existsSync(), isFalse);
-  });
-
-  test('单本否决：卷封面删掉，只留否决记录；JSON 往返保留', () async {
-    await store.write(record: record('a'), coverBytes: png(4, 6));
-    await store.rejectCover('a');
-    expect(store.hasCover('a'), isFalse);
-    expect(store.recordFor('a')!.hasSeries, isFalse);
-    expect(store.recordFor('a')!.rejectedCoverUrls, <String>[
-      'https://images.example/a',
-    ]);
-    BookArtStore.resetForTesting();
-    final BookArtStore reopened = BookArtStore.of(thumbs);
-    expect(reopened.recordFor('a')!.rejectedCoverUrls, <String>[
-      'https://images.example/a',
-    ]);
+    expect(await store.canRestore(first), isTrue);
   });
 
   test('编辑弹窗展示的记录：有卷封面或只有横幅都算，只剩否决记录不算', () async {
@@ -215,23 +298,77 @@ void main() {
     await store.write(record: record('cover'), coverBytes: png(4, 6));
     expect(store.displayableRecordFor('cover')!.seriesId, '42');
 
-    // 本地更清晰时只写了横幅：没有卷封面文件，仍要能看到来源 / 署名并移除。
-    await store.writeBanner('mangabaka_1', png(16, 9));
-    await store.write(
-      record: BookArtRecord(
-        bookKey: 'banner',
-        source: 'mangabaka',
-        seriesId: '42',
-        seriesTitle: 'Series',
-        bannerKey: 'mangabaka_1',
-        scrapedAt: 1,
-      ),
-    );
+    // 本地更清晰时只贴了横幅：没有卷封面文件，仍要能看到来源 / 署名并移除。
+    await seed('banner');
+    await fetchBanner('banner');
     expect(store.hasCover('banner'), isFalse);
     expect(store.displayableRecordFor('banner')!.usesMangaBaka, isTrue);
 
     await store.rejectCover('cover');
     expect(store.recordFor('cover'), isNotNull);
     expect(store.displayableRecordFor('cover'), isNull);
+  });
+
+  group('旧版 scraped_banners/ 一次性搬家', () {
+    late Directory legacy;
+
+    setUp(() {
+      legacy = Directory(p.join(thumbs.path, 'scraped_banners'))
+        ..createSync(recursive: true);
+      File(p.join(legacy.path, 'mangabaka_1')).writeAsBytesSync(png(16, 9));
+    });
+
+    test('没有背景图的书贴上；已有别处来的保留并去掉记录认领；旧目录删掉', () async {
+      final ItemScrapeKey a = await seed('a');
+      final ItemScrapeKey b = await seed('b');
+      final ItemScrapeKey c = await seed('c');
+      final String foreign = await foreignBackdrop(c);
+      for (final String k in <String>['a', 'b', 'c', 'gone']) {
+        await store.write(record: record(k, bannerKey: 'mangabaka_1'));
+      }
+      // 横幅文件已经不在的旧记录。
+      await store.write(record: record('d', bannerKey: 'mangabaka_404'));
+      await seed('d');
+
+      BookArtStore.resetForTesting();
+      final BookArtStore migrated = open();
+      await migrated.migrateLegacyBanners();
+
+      expect(legacy.existsSync(), isFalse);
+      final ItemImageRow rowA = (await backdrop(a))!;
+      expect(rowA.sourceUrl, kBannerUrl);
+      expect((await backdrop(b))!.path, rowA.path);
+      expect(File(rowA.path).existsSync(), isTrue);
+      expect(migrated.recordFor('a')!.bannerKey, 'mangabaka_1');
+      expect(await migrated.bannerStateOf('a'), BookArtBannerState.fetched);
+
+      expect((await backdrop(c))!.path, foreign);
+      expect(migrated.recordFor('c')!.bannerKey, isNull);
+      expect(migrated.recordFor('gone')!.bannerKey, isNull);
+      expect(migrated.recordFor('d')!.bannerKey, isNull);
+
+      // 书详情页 / 首页读同一份。
+      expect((await ItemScrapeDetail.load(db, a)).backdropPath, rowA.path);
+    });
+
+    test('搬家后清除只撤搬进去的横幅；再跑一次是空操作', () async {
+      final ItemScrapeKey a = await seed('a');
+      await store.write(record: record('a', bannerKey: 'mangabaka_1'));
+      await store.migrateLegacyBanners();
+      expect(await backdrop(a), isNotNull);
+
+      await store.remove('a');
+      expect(await backdrop(a), isNull);
+      await store.migrateLegacyBanners();
+      expect(await backdrop(a), isNull);
+    });
+
+    test('写入口先等搬家跑完：直接清除也会撤掉旧横幅', () async {
+      final ItemScrapeKey a = await seed('a');
+      await store.write(record: record('a', bannerKey: 'mangabaka_1'));
+      await store.remove('a');
+      expect(await backdrop(a), isNull);
+      expect(legacy.existsSync(), isFalse);
+    });
   });
 }

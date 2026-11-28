@@ -14,6 +14,7 @@ import 'package:fushi/src/anki/mined_card_undo.dart';
 import 'package:fushi/src/corpus/library_corpus_service.dart';
 import 'package:fushi/src/leaderboard/leaderboard_paired_login.dart';
 import 'package:fushi/src/media/library_finish_marks.dart';
+import 'package:fushi/src/media/metadata/book_art_store.dart';
 import 'package:fushi/src/media/import/import_inbox.dart';
 import 'package:fushi/src/media/source_library/source_folder_access.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart'
@@ -6471,6 +6472,17 @@ class AppModel
       // BUG-4245 修复前逐个入库的蓝光流文件行（`BDMV/STREAM/00002.m2ts`）换成正规盘
       // 合集（BUG-5285）。按数据幂等：没有这类行就什么都不做；盘读不出的行留到下次。
       unawaited(_migrateLegacyDiscStreamRows());
+      // BUG-5609：旧版「获取各卷封面与横幅」把横幅单独存在 `scraped_banners/`，只有
+      // 合集页读；搬进书的背景图（item_images，书详情页 / 首页 / 书架同一份）后删掉
+      // 旧目录。按数据幂等：没有旧目录就什么都不做；搬不动的留到下次启动。
+      if (!isMigrationReadonly) {
+        unawaited(
+          BookArtStore.of(
+            thumbnailsDirectory,
+            database: _database,
+          ).migrateLegacyBanners(),
+        );
+      }
       // 上个进程被杀 / 崩溃留在书库根的导入残留（`.tmp-*` 暂存、`.bak-*` 让位旧树、
       // 拷到一半的半成品）：开库后清一次，不等下一次导入才清（BUG-4841，#3722 c07
       // 遗留）。Android 就地重建拷贝回退期间被杀时，这一步把 bak 还原成完整的书。

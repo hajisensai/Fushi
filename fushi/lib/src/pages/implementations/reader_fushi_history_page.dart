@@ -1105,7 +1105,10 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   }
 
   /// 合集详情页成员信息（最后阅读 / 进度 / 读完）的版本号：源数据 provider 刷新、
-  /// 本页重建完之后 +1，详情页订阅它重算「继续阅读」（4h4uGUck4k）。
+  /// 本页重建完之后 +1，详情页订阅它重算「继续阅读」（4h4uGUck4k）。书架映射重载
+  /// 完（[_loadShelfMaps]）也 +1：详情页 hero 借的成员刮削资料 / 背景图
+  /// （`collectionSeriesFallback`，含「获取各卷封面与横幅」贴上的横幅，BUG-5609）
+  /// 读的就是这些映射。
   final ValueNotifier<int> _memberInfoRevision = ValueNotifier<int>(0);
 
   void _bumpMemberInfoRevision() {
@@ -1889,6 +1892,8 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       for (final MediaCollectionRow c in collections) c.id: c,
     };
     _primaryCollectionByEntry = primaryMap;
+    // 打开着的合集详情页借的成员背景图 / 刮削资料变了：通知它重算 hero。
+    _bumpMemberInfoRevision();
   }
 
   /// [collectionIds] 里各合集附加图组中 [kind] 种类、position 最小且文件还在的

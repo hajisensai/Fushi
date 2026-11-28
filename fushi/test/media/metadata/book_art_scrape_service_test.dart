@@ -4,13 +4,14 @@ import 'dart:io';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/collections/collection_art_scrape.dart';
+import 'package:fushi/src/media/detail/item_scrape_detail.dart';
 import 'package:fushi/src/media/metadata/book_art_scrape_service.dart';
 import 'package:fushi/src/media/metadata/book_art_store.dart';
 import 'package:fushi/src/media/metadata/book_metadata_scraper.dart'
     show kBookScraperUserAgent;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/collections/book_series_key.dart';
+import 'package:fushi_engine/media/item_scrape/item_scrape_store.dart';
 import 'package:fushi_engine/media/metadata/book_art/book_art_matcher.dart';
 import 'package:fushi_engine/media/metadata/book_art/book_art_plan.dart';
 import 'package:fushi_engine/media/metadata/mangabaka/mangabaka_client.dart';
@@ -95,6 +96,7 @@ void main() {
 
   late FushiDatabase db;
   late Directory thumbs;
+  late ItemScrapeStore itemScrape;
   late BookArtStore store;
   late List<Uri> requests;
   late List<String> userAgents;
@@ -103,7 +105,11 @@ void main() {
     BookArtStore.resetForTesting();
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     thumbs = await Directory.systemTemp.createTemp('fushi_book_art_svc_');
-    store = BookArtStore.of(thumbs);
+    itemScrape = ItemScrapeStore(
+      db,
+      imagesDirectory: Directory('${thumbs.path}/items'),
+    );
+    store = BookArtStore.of(thumbs, database: db, itemScrape: itemScrape);
     requests = <Uri>[];
     userAgents = <String>[];
   });
@@ -127,6 +133,16 @@ void main() {
       format: const Value<String>('manga'),
     ),
   );
+
+  /// 书的横版背景图（item_images backdrop，BUG-5609：横幅只存这一份）。
+  Future<ItemImageRow?> backdropOf(String bookKey) async {
+    final String? uid = await db.resolveEpubBookUid(bookKey);
+    if (uid == null) return null;
+    return itemScrape.firstImage(
+      ItemScrapeKey(MediaKind.epub, uid),
+      MediaImageKind.backdrop,
+    );
+  }
 
   BookArtScrapeService service(
     Future<http.Response> Function(http.Request req) handler, {
@@ -270,17 +286,12 @@ void main() {
     expect(store.hasCover('k1'), isTrue);
     expect(store.hasCover('k2'), isTrue);
 
-    final CollectionArtScrape art = CollectionArtScrape(
-      database: db,
-      thumbnailsDirectory: thumbs,
-      servicesEnabled: () => true,
-      migrationReadonly: () => false,
-    );
-    final File? banner = await art.bannerFor(
-      await db.getCollectionItems(collectionId),
-    );
-    expect(banner, isNotNull);
-    expect(banner!.existsSync(), isTrue);
+    // 横幅贴在每个成员（按 uid 认出的书）的背景图上。
+    for (final String key in <String>['k1', 'k2', 'legacy']) {
+      final ItemImageRow? banner = await backdropOf(key);
+      expect(banner, isNotNull, reason: key);
+      expect(File(banner!.path).existsSync(), isTrue);
+    }
   });
 
   test('MangaBaka 命中：逐卷写入 + 横幅 + 署名标记；UA 不带用户信息', () async {
@@ -302,7 +313,21 @@ void main() {
       store.recordFor('k2')!.coverUrl,
       'https://images.mangabaka.dev/volume/2',
     );
-    expect(store.backdropForCollection(<String>['k1', 'k2']), isNotNull);
+    // BUG-5609：横幅贴成两卷的背景图（同一个文件），书详情页 / 首页读同一份。
+    expect(await backdropOf('k1'), isNotNull, reason: '${plan.errors}');
+    final ItemImageRow banner1 = (await backdropOf('k1'))!;
+    final ItemImageRow banner2 = (await backdropOf('k2'))!;
+    expect(banner1.sourceUrl, 'https://images.mangabaka.dev/banner/1');
+    expect(banner2.path, banner1.path);
+    expect(store.recordFor('k1')!.bannerUrl, banner1.sourceUrl);
+    final String uid1 = (await db.resolveEpubBookUid('k1'))!;
+    expect(
+      (await ItemScrapeDetail.load(
+        db,
+        ItemScrapeKey(MediaKind.epub, uid1),
+      )).backdropPath,
+      banner1.path,
+    );
     // 两卷都够清晰：不去问 Bangumi。
     expect(requests.where((Uri u) => u.host == 'api.bgm.tv'), isEmpty);
     expect(userAgents.toSet(), <String>{kBookScraperUserAgent});
@@ -314,6 +339,9 @@ void main() {
     }
     expect(store.hasCover('k1'), isFalse);
     expect(store.recordFor('k2'), isNull);
+    expect(await backdropOf('k1'), isNull);
+    expect(await backdropOf('k2'), isNull);
+    expect(File(banner1.path).existsSync(), isFalse);
   });
 
   // BUG-5287：台版只有第 1 卷在 MangaBaka 上有中文封面；第 2 卷只有日文版封面，
@@ -613,7 +641,8 @@ void main() {
     expect(result.count(BookArtBookOutcome.written), 0);
     expect(store.coverFileFor('k1')!.readAsBytesSync(), before);
     expect(store.recordFor('k1')!.coverSource, 'mangabaka');
-    expect(store.backdropForCollection(<String>['k1', 'k2']), isNotNull);
+    expect(await backdropOf('k1'), isNotNull);
+    expect(await backdropOf('k2'), isNotNull);
   });
 
   test('重刮时横幅下载失败：同系列沿用旧横幅引用', () async {
@@ -622,6 +651,7 @@ void main() {
     await first.run(<String>['k1']);
     first.close();
     final String? bannerKey = store.recordFor('k1')!.bannerKey;
+    final String? bannerUrl = store.recordFor('k1')!.bannerUrl;
     expect(bannerKey, isNotNull);
     // 让卷封面看起来比已有的大：已有记录的尺寸改小。
     await store.write(
@@ -635,6 +665,7 @@ void main() {
         coverWidth: 1,
         coverHeight: 1,
         bannerKey: bannerKey,
+        bannerUrl: bannerUrl,
         scrapedAt: 1,
       ),
     );
@@ -652,7 +683,7 @@ void main() {
     expect(result.count(BookArtBookOutcome.written), 1);
     expect(result.series.single.errors.single, startsWith('banner'));
     expect(store.recordFor('k1')!.bannerKey, bannerKey);
-    expect(store.backdropForBook('k1'), isNotNull);
+    expect((await backdropOf('k1'))!.sourceUrl, bannerUrl);
   });
 
   test('横幅文件头完整但解码不了：只丢横幅，卷封面照写，不中断', () async {
@@ -674,7 +705,49 @@ void main() {
     expect(result.count(BookArtBookOutcome.written), 1);
     expect(result.series.single.banner, isNull);
     expect(result.series.single.errors.single, startsWith('banner'));
-    expect(store.backdropForBook('k1'), isNull);
+    expect(await backdropOf('k1'), isNull);
+    expect(store.recordFor('k1')!.bannerKey, isNull);
+  });
+
+  // BUG-5609：书已有书籍刮削（AniList 等）写的背景图时，获取不覆盖、也不认领；
+  // 「清除已获取的封面」只撤获取贴上的那张。
+  test('覆盖策略：别处来的背景图不覆盖，清除只撤获取贴上的横幅', () async {
+    await seed('k1', 'テスト漫画 1');
+    await seed('k2', 'テスト漫画 2');
+    final File other = File('${thumbs.path}/anilist.png')
+      ..writeAsBytesSync(png(30, 10, shade: 120));
+    final String foreign = await itemScrape.setImageFromFile(
+      ItemScrapeKey(MediaKind.epub, (await db.resolveEpubBookUid('k2'))!),
+      MediaImageKind.backdrop,
+      other,
+      sourceUrl: 'https://s4.anilist.co/banner/2.jpg',
+    );
+
+    final BookArtScrapeService svc = service(mangaBakaOk);
+    final BookArtRunResult result = await svc.run(<String>['k1', 'k2']);
+    svc.close();
+    expect(result.series.single.banner, isNotNull);
+    expect(
+      (await backdropOf('k1'))!.sourceUrl,
+      'https://images.mangabaka.dev/banner/1',
+    );
+    expect((await backdropOf('k2'))!.path, foreign);
+    expect(store.recordFor('k1')!.bannerKey, isNotNull);
+    expect(store.recordFor('k2')!.bannerKey, isNull);
+    expect(store.hasCover('k2'), isTrue, reason: '卷封面照写');
+
+    // 重跑：k2 仍不被覆盖（不因上次的记录误认领）。
+    final BookArtScrapeService again = service(mangaBakaOk);
+    await again.run(<String>['k1', 'k2']);
+    again.close();
+    expect((await backdropOf('k2'))!.path, foreign);
+
+    for (final String key in <String>['k1', 'k2']) {
+      await store.remove(key);
+    }
+    expect(await backdropOf('k1'), isNull);
+    expect((await backdropOf('k2'))!.path, foreign);
+    expect(File(foreign).existsSync(), isTrue);
   });
 
   test('Bangumi 补卷要求种类一致：轻小说不补漫画版单行本封面', () async {
@@ -881,7 +954,9 @@ void main() {
     expect(store.hasCover('k1'), isFalse);
     expect(store.recordFor('k1')!.seriesId, '200');
     expect(store.recordFor('k1')!.coverUrl, isNull);
-    expect(store.backdropForBook('k1'), isNull);
+    // 换了系列、新系列没有横幅：旧系列贴上的横幅从背景图撤掉。
+    expect(await backdropOf('k1'), isNull);
+    expect(store.recordFor('k1')!.bannerKey, isNull);
   });
 
   test('本地有封面但量不出尺寸：按本地更清晰处理，不覆盖', () async {

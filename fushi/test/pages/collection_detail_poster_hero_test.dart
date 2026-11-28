@@ -11,8 +11,9 @@ import 'package:transparent_image/transparent_image.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/collections/collection_art_scrape.dart';
 import 'package:fushi/src/media/detail/media_poster_detail.dart';
-import 'package:fushi/src/media/metadata/book_art_store.dart';
 import 'package:fushi/src/pages/implementations/media_collection_grid_detail_page.dart';
+import 'package:fushi/src/utils/components/fushi_series_cover_block.dart';
+import 'package:fushi/src/utils/cover_image.dart' show resizedFileImage;
 
 /// 合集详情页头部（重设计外壳，2026-11-16 所有者「封面显示位置有问题」「合集样式
 /// 都改成这种」）：所有合集都是同一个海报 hero（[MediaPosterDetailHero]）——横版
@@ -30,6 +31,9 @@ void main() {
     FushiDatabase db,
     MediaCollectionRow collection, {
     CollectionArtScrape? artScrape,
+    ({FushiSeriesMeta meta, String? summary})? Function()?
+    collectionSeriesFallback,
+    Listenable? memberInfoRefresh,
   }) async {
     tester.view.physicalSize = const Size(1400, 1200);
     tester.view.devicePixelRatio = 1.0;
@@ -49,6 +53,8 @@ void main() {
                 }) => Text(entryKey),
             onChanged: () {},
             artScrape: artScrape,
+            collectionSeriesFallback: collectionSeriesFallback,
+            memberInfoRefresh: memberInfoRefresh,
           ),
         ),
       ),
@@ -203,38 +209,20 @@ void main() {
     );
   });
 
-  group('「获取各卷封面与横幅」下到的系列横幅接 hero 背景带（pr3467 拍板 a）', () {
+  // BUG-5609：「获取各卷封面与横幅」的横幅贴在每卷的背景图上（item_images），合集页
+  // 经书架借来的那卷（collectionSeriesFallback）显示，不再另读刮削层的第二份横幅。
+  // 书架映射重载后经 memberInfoRefresh 通知，打开着的详情页即时重算。
+  group('获取的横幅经借来那卷的背景图显示（单一真相）', () {
     late Directory thumbs;
 
     setUp(() {
-      BookArtStore.resetForTesting();
       thumbs = Directory.systemTemp.createTempSync('fushi_detail_art_banner');
     });
     tearDown(() {
-      BookArtStore.resetForTesting();
       try {
         thumbs.deleteSync(recursive: true);
       } catch (_) {}
     });
-
-    CollectionArtScrape artFor(FushiDatabase db) => CollectionArtScrape(
-      database: db,
-      thumbnailsDirectory: thumbs,
-      // 门关着也照样显示：横幅已在本地，门只管联网动作的入口。
-      servicesEnabled: () => false,
-      migrationReadonly: () => false,
-    );
-
-    BookArtRecord recordFor(String bookKey, String? bannerKey) => BookArtRecord(
-      bookKey: bookKey,
-      source: 'mangabaka',
-      seriesId: '42',
-      seriesTitle: 'S',
-      coverSource: 'mangabaka',
-      coverUrl: 'https://images.example/$bookKey',
-      bannerKey: bannerKey,
-      scrapedAt: 1,
-    );
 
     ImageProvider? heroBackdrop(WidgetTester tester) => tester
         .widget<MediaPosterDetailHero>(
@@ -251,95 +239,94 @@ void main() {
         ? null
         : ((image as ResizeImage).imageProvider as FileImage).file.path;
 
-    /// 刮削层变更后页面按成员重算横幅（成员 uid → bookKey 走 drift 查询）：
-    /// 交替推进假时钟与真实异步，直到背景带变成 [expected]。
-    Future<void> settleBackdrop(WidgetTester tester, String? expected) async {
-      for (int i = 0; i < 50; i++) {
-        if (backdropPath(heroBackdrop(tester)) == expected) return;
-        await tester.pump(const Duration(milliseconds: 20));
-        await tester.runAsync(
-          () => Future<void>.delayed(const Duration(milliseconds: 20)),
-        );
-      }
+    Future<MediaCollectionRow> seedCollection(FushiDatabase db) async {
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: 'k1',
+          uid: const Value<String>('u1'),
+          title: 'k1',
+          epubPath: '/x/k1.cbz',
+          extractDir: '/x/k1',
+          chapterCount: 1,
+          chaptersJson: '[]',
+          importedAt: 1000,
+        ),
+      );
+      final int cid = await db.createMediaCollection('Banner Series');
+      await db.addToCollection(cid, MediaKind.epub, 'u1');
+      return (await db.getMediaCollectionById(cid))!;
     }
 
-    Future<void> seedBook(FushiDatabase db, String bookKey, String uid) =>
-        db.insertEpubBook(
-          EpubBooksCompanion.insert(
-            bookKey: bookKey,
-            uid: Value<String>(uid),
-            title: bookKey,
-            epubPath: '/x/$bookKey.cbz',
-            extractDir: '/x/$bookKey',
-            chapterCount: 1,
-            chaptersJson: '[]',
-            importedAt: 1000,
-          ),
-        );
-
-    // 成员行存书 uid（v83），刮削层按 bookKey 记（BUG-5396：曾直接拿 uid 查刮削层）。
-    testWidgets('取到横幅后 hero 背景带即时换成它；清除后退回无背景', (WidgetTester tester) async {
+    testWidgets('借来那卷的背景图变了（获取 / 清除后书架重载）：hero 背景带跟着变', (
+      WidgetTester tester,
+    ) async {
       final FushiDatabase db = FushiDatabase.forTesting(
         NativeDatabase.memory(),
       );
       addTearDown(db.close);
-      await seedBook(db, 'k1', 'u1');
-      await seedBook(db, 'k2', 'u2');
-      final int cid = await db.createMediaCollection('Banner Series');
-      await db.addToCollection(cid, MediaKind.epub, 'u1');
-      await db.addToCollection(cid, MediaKind.epub, 'u2');
-      final MediaCollectionRow collection = (await db.getMediaCollectionById(
-        cid,
-      ))!;
-      final CollectionArtScrape art = artFor(db);
-      await pumpDetail(tester, db, collection, artScrape: art);
+      final MediaCollectionRow collection = await seedCollection(db);
+      final File banner = File('${thumbs.path}/epub_shared_banner.png')
+        ..writeAsBytesSync(kTransparentImage);
+      String? memberBackdrop;
+      final ValueNotifier<int> refresh = ValueNotifier<int>(0);
+      addTearDown(refresh.dispose);
+      await pumpDetail(
+        tester,
+        db,
+        collection,
+        collectionSeriesFallback: () {
+          final String? path = memberBackdrop;
+          return path == null
+              ? null
+              : (
+                  meta: FushiSeriesMeta(backdrop: resizedFileImage(File(path))),
+                  summary: null,
+                );
+        },
+        memberInfoRefresh: refresh,
+      );
       expect(heroBackdrop(tester), isNull);
 
-      // 模拟一次刮削：先写横幅，再写两卷的记录（与刮削服务同一顺序）。
-      await tester.runAsync(() async {
-        await art.store.writeBanner('mangabaka_42', kTransparentImage);
-        await art.store.write(record: recordFor('k1', 'mangabaka_42'));
-        await art.store.write(record: recordFor('k2', 'mangabaka_42'));
-      });
-      final String bannerPath = art.store.bannerPathFor('mangabaka_42');
-      await settleBackdrop(tester, bannerPath);
-      expect(backdropPath(heroBackdrop(tester)), bannerPath);
+      memberBackdrop = banner.path;
+      refresh.value++;
+      await tester.pump();
+      expect(backdropPath(heroBackdrop(tester)), banner.path);
 
-      // 清除（逐本 remove，回收孤儿横幅）后不再指向已删的文件。
-      await tester.runAsync(() async {
-        await art.store.remove('k1');
-        await art.store.remove('k2');
-      });
-      await settleBackdrop(tester, null);
+      memberBackdrop = null;
+      refresh.value++;
+      await tester.pump();
       expect(heroBackdrop(tester), isNull);
     });
 
-    testWidgets('合集自己的背景图优先于下到的横幅', (WidgetTester tester) async {
+    testWidgets('合集自己的背景图优先于借来那卷的', (WidgetTester tester) async {
       final FushiDatabase db = FushiDatabase.forTesting(
         NativeDatabase.memory(),
       );
       addTearDown(db.close);
-      await seedBook(db, 'k1', 'u1');
-      final int cid = await db.createMediaCollection('Own Backdrop');
-      await db.addToCollection(cid, MediaKind.epub, 'u1');
+      final MediaCollectionRow collection = await seedCollection(db);
       final File own = File('${thumbs.path}/own.png')
         ..writeAsBytesSync(kTransparentImage);
-      await db.replaceMediaImagesForCollection(cid, <MediaImagesCompanion>[
-        MediaImagesCompanion.insert(
-          collectionId: Value<int?>(cid),
-          kind: MediaImageKind.backdrop.dbValue,
-          path: own.path,
+      final File banner = File('${thumbs.path}/banner.png')
+        ..writeAsBytesSync(kTransparentImage);
+      await db.replaceMediaImagesForCollection(
+        collection.id,
+        <MediaImagesCompanion>[
+          MediaImagesCompanion.insert(
+            collectionId: Value<int?>(collection.id),
+            kind: MediaImageKind.backdrop.dbValue,
+            path: own.path,
+          ),
+        ],
+      );
+      await pumpDetail(
+        tester,
+        db,
+        collection,
+        collectionSeriesFallback: () => (
+          meta: FushiSeriesMeta(backdrop: resizedFileImage(banner)),
+          summary: null,
         ),
-      ]);
-      final CollectionArtScrape art = artFor(db);
-      await tester.runAsync(() async {
-        await art.store.writeBanner('mangabaka_42', kTransparentImage);
-        await art.store.write(record: recordFor('k1', 'mangabaka_42'));
-      });
-      final MediaCollectionRow collection = (await db.getMediaCollectionById(
-        cid,
-      ))!;
-      await pumpDetail(tester, db, collection, artScrape: art);
+      );
       expect(backdropPath(heroBackdrop(tester)), own.path);
     });
   });

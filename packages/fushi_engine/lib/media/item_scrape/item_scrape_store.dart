@@ -21,6 +21,8 @@ import 'package:fushi_engine/media/video/video_storage.dart';
 /// - [mergeMeta] / [restoreMeta]：脚本合并写 / 撤销快照原样写回；
 /// - [setImageFromFile] / [setImageFromUrl]：附加图（backdrop / logo）原子落盘到
 ///   `video_covers/items/` 并登记；换图时旧文件随即回收；
+/// - [setSharedImageFromFile]：同一张图贴到多个条目（「获取各卷封面与横幅」的系列
+///   横幅，BUG-5609），文件只存一份；
 /// - [applyScrape]：上面两步的组合（刮削源一次响应 = 资料 + 可选横版图）。
 ///
 /// 删除宿主时 DB 行在删书 / 删字幕书 / 删游戏的事务里清掉（fushi_core 的
@@ -175,6 +177,69 @@ class ItemScrapeStore {
     );
     await _deleteOwned(dropped);
     return dest;
+  }
+
+  /// 同 [setImageFromFile]，但文件按 [sourceUrl] 在条目间共用（BUG-5609）：同一张
+  /// 系列横幅贴到一整套几十卷时只存一份 `<mediaType>_shared_<url 摘要>_<kind>`，
+  /// 每卷各一行指向它。文件已在就不再复制（同一来源同一张图；也不在 Windows 上
+  /// 覆盖一张正被背景带读着的文件）。回收口径不变：换图 / 清图时只有不再被任何行
+  /// 引用的文件才删（[_deleteOwned]），共用文件随最后一行一起回收。
+  Future<String> setSharedImageFromFile(
+    ItemScrapeKey key,
+    MediaImageKind kind,
+    File source, {
+    required String sourceUrl,
+  }) async {
+    final Directory dir = await _dir();
+    await dir.create(recursive: true);
+    final String dest = p.join(
+      dir.path,
+      itemSharedImageFileName(key.mediaType, kind, sourceUrl, source),
+    );
+    await _ensureSharedFile(source, dest);
+    final List<String> dropped = await _db.replaceItemImagesOfKind(
+      mediaType: key.mediaType,
+      entryKey: key.entryKey,
+      kind: kind,
+      images: <({String path, String? sourceUrl})>[
+        (path: dest, sourceUrl: sourceUrl),
+      ],
+    );
+    await _deleteOwned(dropped);
+    return dest;
+  }
+
+  /// 正在落盘的共用文件（目标路径 → 那次复制）。同一套系列的各卷并发贴同一张图时
+  /// 只复制一次，其余等它：并发各自「不在 → 复制 → 改名」会在 Windows 上撞
+  /// 「目标已存在」而失败。按路径全局（多个 [ItemScrapeStore] 实例写同一目录）。
+  static final Map<String, Future<void>> _sharedCopies =
+      <String, Future<void>>{};
+
+  Future<void> _ensureSharedFile(File source, String dest) {
+    final Future<void>? inFlight = _sharedCopies[dest];
+    if (inFlight != null) return inFlight;
+    final Future<void> copy = () async {
+      if (await File(dest).exists()) return;
+      await copyCoverFileAtomically(source: source, destPath: dest);
+    }();
+    _sharedCopies[dest] = copy;
+    return copy.whenComplete(() => _sharedCopies.remove(dest));
+  }
+
+  /// [key] 的 [kind] 图里 position 最小的那行；没有为 null。
+  Future<ItemImageRow?> firstImage(
+    ItemScrapeKey key,
+    MediaImageKind kind,
+  ) async {
+    ItemImageRow? first;
+    for (final ItemImageRow row in await _db.getItemImages(
+      key.mediaType,
+      key.entryKey,
+    )) {
+      if (row.kind != kind.dbValue) continue;
+      if (first == null || row.position < first.position) first = row;
+    }
+    return first;
   }
 
   /// 下载 [url] 后同 [setImageFromFile]（下载失败抛 [ImageDownloadException]）。
@@ -507,4 +572,24 @@ String itemImageFileName(ItemScrapeKey key, MediaImageKind kind, File source) {
     ext = '.jpg';
   }
   return '${key.mediaType.dbValue}_${digest}_${kind.dbValue}$ext';
+}
+
+/// 条目间共用的附加图文件名（[ItemScrapeStore.setSharedImageFromFile]）：
+/// `<mediaType>_shared_<sourceUrl 摘要>_<kind>.<ext>`，与 [itemImageFileName] 的
+/// 单条目文件名不会相撞（摘要段是十六进制，不会是 `shared`）。
+String itemSharedImageFileName(
+  MediaKind mediaType,
+  MediaImageKind kind,
+  String sourceUrl,
+  File source,
+) {
+  final String digest = sha1
+      .convert(utf8.encode(sourceUrl))
+      .toString()
+      .substring(0, 16);
+  String ext = p.extension(source.path).toLowerCase();
+  if (!const <String>{'.jpg', '.jpeg', '.png', '.webp', '.gif'}.contains(ext)) {
+    ext = '.jpg';
+  }
+  return '${mediaType.dbValue}_shared_${digest}_${kind.dbValue}$ext';
 }
