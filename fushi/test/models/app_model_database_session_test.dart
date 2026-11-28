@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:drift/drift.dart' show QueryExecutor;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -136,14 +134,24 @@ void main() {
     model.removeDatabaseCloseQuiescer(quiesce);
   });
 
-  test('dispose 也经这一代收尾：连接被关', () async {
+  test('dispose 收尾这一代的资源，但连接留给持有方', () async {
     final _CountingDatabase db = _CountingDatabase(NativeDatabase.memory());
     final _GenerationAppModel model = _GenerationAppModel()
-      ..wireDatabaseForTesting(db);
+      ..wireDatabaseForTesting(
+        db,
+        dictionaryRepository: DictionaryRepository(db),
+      );
+    int quiesced = 0;
+    Future<void> quiesce() async => quiesced++;
+    model.addDatabaseCloseQuiescer(quiesce);
 
     model.dispose();
     await pumpEventQueue();
 
-    expect(db.closeCalls, 1);
+    expect(quiesced, 1);
+    expect(model.isDictionaryRepoReady, isFalse);
+    expect(ExitFlushRegistry.instance.callbackCount, 0);
+    expect(db.closeCalls, 0);
+    await db.close();
   });
 }

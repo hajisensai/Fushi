@@ -201,6 +201,28 @@ void main() {
     });
   });
 
+  test('closeConnection: false 只收尾资源，连接留给持有方', () async {
+    final _RecordingDatabase db = _RecordingDatabase(<String>[]);
+    final DatabaseSession session = DatabaseSession(
+      db,
+      label: 'owner-dispose',
+      onError: _Errors().call,
+    );
+    int closes = 0;
+    session.own<Object>(Object(), (Object _) => closes++, label: 'repo');
+
+    await session.close(closeConnection: false);
+
+    expect(closes, 1);
+    expect(db.closeCalls, 0);
+    expect(
+      () => session.database,
+      throwsA(isA<DatabaseSessionClosedException>()),
+    );
+    expect(await db.getAllDictionaryMetadata(), isEmpty);
+    await db.close();
+  });
+
   group('ProcessLifetime', () {
     test('逆序收尾、每项恰好一次、关后不再接受登记', () async {
       final ProcessLifetime lifetime = ProcessLifetime(

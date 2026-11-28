@@ -1925,10 +1925,10 @@ class AppModel
     );
     _session = session;
     // 关库信号（首页刷新、SRS 第四代迁移的「正在关」判据）：每一代关闭开始时发一次。
-    session.onClosing(
-      databaseCloseNotifier.notifyListeners,
-      label: 'databaseCloseNotifier',
-    );
+    // 模型自身销毁（[dispose]）时不发：听众（页面）正随之拆除，通知只会让它们在拆除途中重建。
+    session.onClosing(() {
+      if (!_disposing) databaseCloseNotifier.notifyListeners();
+    }, label: 'databaseCloseNotifier');
     // BUG-1569②：合集观察者是模块级全局，订阅的是这一代连接的表 + 未决防抖 Timer，
     // 它由 initialise / 同步模块门在本代内装上（可能装多次，也可能从没装）；撤是幂等的，
     // 所以每一代关闭开始时无条件撤一次，防抖到点后不会再对已关闭的库发查询。
@@ -1962,10 +1962,16 @@ class AppModel
 
   /// 关掉当前这一代（幂等）。重试开库、关库、弹窗进程关库、无界面复习写入引擎交库、
   /// dispose 全走这里，不再各列各的清理清单。
-  Future<void> _closeDatabaseSession({Duration? drainTimeout}) async {
+  Future<void> _closeDatabaseSession({
+    Duration? drainTimeout,
+    bool closeConnection = true,
+  }) async {
     final DatabaseSession? session = _session;
     if (session == null) return;
-    await session.close(drainTimeout: drainTimeout);
+    await session.close(
+      drainTimeout: drainTimeout,
+      closeConnection: closeConnection,
+    );
   }
 
   /// 当前这一代（懒建的绑库服务在创建处登记用）。没开过库时抛，与读 [_database] 同语义。
@@ -13579,12 +13585,21 @@ class AppModel
     FushiDicts.disposeInstance();
   }
 
+  /// [dispose] 已开始（见 [_beginDatabaseSession] 的关库信号）。
+  bool _disposing = false;
+
   @override
   void dispose() {
-    // 当前这一代的绑库资源（仓库、观察者、后台写手、单例 attach、SRS 存储、连接本身）
-    // 统一由 session 逆序收尾；dispose 是同步的，只能投递出去。下面只剩进程级的常驻服务。
+    _disposing = true;
+    // 当前这一代的绑库资源（仓库、观察者、后台写手、单例 attach、SRS 存储）统一由 session
+    // 逆序收尾；dispose 是同步的，只能投递出去。连接本身不在这里关（与改造前一致）：生产
+    // 退出链此前已经 closeDatabase 整代关完（这里就是空操作），测试 seam 接的连接归测试。
+    // 下面只剩进程级的常驻服务。
     unawaited(
-      _closeDatabaseSession().catchError((Object e, StackTrace stack) {
+      _closeDatabaseSession(closeConnection: false).catchError((
+        Object e,
+        StackTrace stack,
+      ) {
         ErrorLogService.instance.log('AppModel.dispose.session', e, stack);
       }),
     );

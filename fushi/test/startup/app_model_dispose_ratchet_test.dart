@@ -78,9 +78,12 @@ const List<String> _baseline = <String>[
 
 /// 生命周期统一收尾的几行（不算手写清单）。
 const List<String> _lifecycleLines = <String>[
+  '_disposing = true;',
   'unawaited(',
   'unawaited(_processLifetime.close());',
-  '_closeDatabaseSession().catchError((Object e, StackTrace stack) {',
+  '_closeDatabaseSession(closeConnection: false).catchError((',
+  'Object e,',
+  'StackTrace stack,',
   "ErrorLogService.instance.log('AppModel.dispose.session', e, stack);",
   'super.dispose();',
 ];

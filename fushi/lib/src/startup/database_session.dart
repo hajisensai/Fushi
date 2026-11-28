@@ -164,28 +164,35 @@ final class DatabaseSession {
   /// [resource] 是否还在本代的栈里。
   bool owns(Object resource) => _stack.owns(resource);
 
-  /// 关闭这一代（幂等：并发 / 重复调用拿到同一个 Future）。连接本身关闭失败时原样抛出，
-  /// 其余收尾失败只记日志。
-  Future<void> close({Duration? drainTimeout}) =>
-      _closeFuture ??= _close(drainTimeout);
+  /// 关闭这一代（幂等：并发 / 重复调用拿到同一个 Future，第一次调用的参数为准）。连接本身
+  /// 关闭失败时原样抛出，其余收尾失败只记日志。
+  ///
+  /// [closeConnection] 为 false 时只收尾登记的资源，连接（及其名下的后台工作）留给连接的
+  /// 持有方：只给「持有者对象自身销毁」用（AppModel.dispose：生产退出链此前已经整代关完，
+  /// 测试 seam 接进来的连接归测试所有）。
+  Future<void> close({Duration? drainTimeout, bool closeConnection = true}) =>
+      _closeFuture ??= _close(drainTimeout, closeConnection);
 
-  Future<void> _close(Duration? drainTimeout) async {
+  Future<void> _close(Duration? drainTimeout, bool closeConnection) async {
     _drainTimeout = drainTimeout;
     for (final _Entry entry in _closing) {
       // 同步回调：run 的第一步在本轮事件循环里执行完。
       unawaited(entry.run(_onError, label));
     }
     _closing.clear();
-    final Future<void> backgroundWorkStopped = _database
-        .quiesceBackgroundWork();
+    final Future<void>? backgroundWorkStopped = closeConnection
+        ? _database.quiesceBackgroundWork()
+        : null;
     await _stack.closeAll();
-    try {
-      await backgroundWorkStopped;
-    } catch (e, stack) {
-      _onError('$label.close(background work)', e, stack);
+    if (backgroundWorkStopped != null) {
+      try {
+        await backgroundWorkStopped;
+      } catch (e, stack) {
+        _onError('$label.close(background work)', e, stack);
+      }
     }
     _closed = true;
-    await _database.close();
+    if (closeConnection) await _database.close();
   }
 }
 
