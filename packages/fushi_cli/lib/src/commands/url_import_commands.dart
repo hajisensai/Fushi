@@ -1,6 +1,8 @@
 import 'package:args/args.dart';
 
 import '../ctl_commands.dart';
+import '../ops/op_spec.dart';
+import '../ops/specs/url_import_ops.dart';
 
 /// `fushi_cli url …`：从 URL 导入视频（YouTube 等）（app 侧路由见 `fushi/lib/src/ops/ctl_url_import_routes.dart`）。
 ///
@@ -18,7 +20,8 @@ const List<CtlCommandGroup> urlImportCommandGroups = <CtlCommandGroup>[
         summary: '探测 URL：种类、导入后的条目键；YouTube 列标题 / 画质 / 字幕轨',
         usage: '<url>',
         configure: _configureProbe,
-        build: _buildProbe,
+        op: UrlImportOps.probe,
+        call: _callProbe,
         render: renderUrlProbe,
       ),
       CtlCommandSpec(
@@ -26,24 +29,19 @@ const List<CtlCommandGroup> urlImportCommandGroups = <CtlCommandGroup>[
         summary: '把 URL 导入视频库（与导入对话框粘贴 URL 同一路径，不下载）',
         usage: '<url>',
         configure: _configureImport,
-        build: _buildImport,
+        op: UrlImportOps.importVideo,
+        call: _callImport,
         render: renderUrlImported,
       ),
     ],
   ),
 ];
 
-const String _root = '/api/admin/url-import';
-
+/// 命令行就先拦非 http(s) 地址（用法错误，退出码 64）：判据与服务端
+/// [OpParam.httpOnly] 同一个 [isHttpUrl]。
 String _url(CtlCommandContext c) {
   final String raw = c.positional(0, 'url').trim();
-  final Uri? uri = Uri.tryParse(raw);
-  final String scheme = uri?.scheme.toLowerCase() ?? '';
-  if (uri == null ||
-      (scheme != 'http' && scheme != 'https') ||
-      uri.host.isEmpty) {
-    throw CtlUsageError('只认 http(s) 地址：$raw');
-  }
+  if (!isHttpUrl(raw)) throw CtlUsageError('只认 http(s) 地址：$raw');
   return raw;
 }
 
@@ -51,11 +49,10 @@ void _configureProbe(ArgParser parser) {
   parser.addOption('lang', help: '字幕轨排序优先的语言码（缺省 = 学习语言）');
 }
 
-CtlRequestSpec _buildProbe(CtlCommandContext c) => CtlRequestSpec.get(
-  '$_root/probe',
-  query: <String, String>{
-    'url': _url(c),
-    if (c.option('lang') != null) 'lang': c.option('lang')!,
+CtlOpCall _callProbe(CtlCommandContext c) => CtlOpCall(
+  args: <String, Object?>{
+    UrlImportOps.probeUrl.name: _url(c),
+    UrlImportOps.probeLang.name: c.option('lang'),
   },
 );
 
@@ -66,14 +63,12 @@ void _configureImport(ArgParser parser) {
     ..addOption('user-agent', help: '播放用 User-Agent');
 }
 
-CtlRequestSpec _buildImport(CtlCommandContext c) => CtlRequestSpec.post(
-  _root,
-  body: <String, Object?>{
-    'url': _url(c),
-    if (c.option('subtitle-url') != null)
-      'subtitleUrl': c.option('subtitle-url'),
-    if (c.option('referer') != null) 'referer': c.option('referer'),
-    if (c.option('user-agent') != null) 'userAgent': c.option('user-agent'),
+CtlOpCall _callImport(CtlCommandContext c) => CtlOpCall(
+  args: <String, Object?>{
+    UrlImportOps.importUrl.name: _url(c),
+    UrlImportOps.importSubtitleUrl.name: c.option('subtitle-url'),
+    UrlImportOps.importReferer.name: c.option('referer'),
+    UrlImportOps.importUserAgent.name: c.option('user-agent'),
   },
 );
 

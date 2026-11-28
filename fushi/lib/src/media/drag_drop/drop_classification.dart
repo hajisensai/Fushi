@@ -1,3 +1,4 @@
+import 'package:fushi_cli/fushi_cli.dart' show isHttpUrl;
 import 'package:fushi_engine/media/audiobook/audiobook_subtitle_formats.dart';
 import 'package:fushi_engine/media/media_extensions.dart'
     show isAudioOnlyMediaPath;
@@ -349,18 +350,12 @@ String _ext(String path) {
 
 /// 纯函数：判断拖入的字符串是否是一条可导入的网络流 URL（http/https + 非空 host）。
 ///
-/// 语义与 `isPlayableStreamUrl`（url_stream_video.dart）钉死同步（守卫测试
-/// `url_drop_url_predicate_guard_test`），是「拖入的这条字符串到底是文件路径还是可
-/// 导入 URL」的单一判据：Windows 盘符路径 `C:\a.mp4` 的 scheme 会被解析成 `c`、UNC /
+/// 与流媒体导入接受的地址（`isPlayableStreamUrl`，url_stream_video.dart）是同一个实现
+/// （`fushi_cli` 的 [isHttpUrl]），不会漂移。是「拖入的这条字符串到底是文件路径还是可
+/// 导入 URL」的判据：Windows 盘符路径 `C:\a.mp4` 的 scheme 会被解析成 `c`、UNC /
 /// POSIX 路径 scheme 为空，均非 http(s) → 判为文件路径，不会误吞。纯字符串判定，不碰
 /// 文件系统 / 网络（TODO-1306）。
-bool isImportableDropUrl(String candidate) {
-  final Uri? uri = Uri.tryParse(candidate.trim());
-  if (uri == null) return false;
-  final String scheme = uri.scheme.toLowerCase();
-  if (scheme != 'http' && scheme != 'https') return false;
-  return uri.host.isNotEmpty;
-}
+bool isImportableDropUrl(String candidate) => isHttpUrl(candidate);
 
 /// 把拖入文件路径按扩展名分类。纯函数，无副作用。
 ///

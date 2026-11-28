@@ -41,19 +41,20 @@ List<OpDescription> describeLibraryScrapeOps(
       OpParam.number('rating', description: 'Rating 0-10.'),
       OpParam.integer('ratingCount', description: 'Number of ratings.'),
       OpParam.stringList('genres', description: 'Genre / tag names.'),
-      OpParam.string('detailUrl', description: 'Source page URL.'),
+      // 只存进刮削详情（来源页链接），不请求。
+      OpParam.storedAddress('detailUrl', description: 'Source page URL.'),
       OpParam.string('source', description: 'Source name; default manual.'),
       OpParam.string('subjectId', description: 'Id within the source.'),
       OpParam.string(
         'backdropPath',
         description: 'Absolute local image for the landscape backdrop.',
       ),
-      OpParam.string(
+      OpParam.remoteUrl(
         'backdropUrl',
         description: 'http(s) image URL for the landscape backdrop.',
       ),
       OpParam.string('logoPath', description: 'Absolute local logo image.'),
-      OpParam.string('logoUrl', description: 'http(s) logo image URL.'),
+      OpParam.remoteUrl('logoUrl', description: 'http(s) logo image URL.'),
       OpParam.boolean(
         'replace',
         description: 'Replace the whole details row instead of merging.',

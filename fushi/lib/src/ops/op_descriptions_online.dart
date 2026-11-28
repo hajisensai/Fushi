@@ -50,9 +50,10 @@ List<OpDescription> describeOnlineOps(OpDescribeKit kit) {
           'card. Undo removes the repository again.',
       risk: OpRisk.write,
       confirm: true,
+      installsCode: true,
       params: const <OpParam>[
         _kind,
-        OpParam.string(
+        OpParam.remoteUrl(
           'url',
           description: 'Repository index URL (https preferred).',
           required: true,
@@ -75,7 +76,8 @@ List<OpDescription> describeOnlineOps(OpDescribeKit kit) {
       risk: OpRisk.write,
       params: const <OpParam>[
         _kind,
-        OpParam.string(
+        // 只从已存的仓库表里删一条，不请求它。
+        OpParam.storedAddress(
           'url',
           description: 'Repository URL exactly as listed by online.repo.list.',
           required: true,
@@ -132,6 +134,7 @@ List<OpDescription> describeOnlineOps(OpDescribeKit kit) {
           'Undo uninstalls it (only if it was not installed before).',
       risk: OpRisk.write,
       confirm: true,
+      installsCode: true,
       params: const <OpParam>[
         _kind,
         OpParam.string(
@@ -161,6 +164,7 @@ List<OpDescription> describeOnlineOps(OpDescribeKit kit) {
           'version is not kept.',
       risk: OpRisk.irreversible,
       confirm: true,
+      installsCode: true,
       params: const <OpParam>[
         _kind,
         OpParam.string(
@@ -252,7 +256,8 @@ List<OpDescription> describeOnlineOps(OpDescribeKit kit) {
       params: const <OpParam>[
         _sourceId,
         _kind,
-        OpParam.string(
+        // 作品引用：交给已装扩展（安装时用户已确认，D9）按它自己的站点拼请求。
+        OpParam.entityRef(
           'url',
           description: 'Work url from online.source.search / browse.',
           required: true,
@@ -272,7 +277,8 @@ List<OpDescription> describeOnlineOps(OpDescribeKit kit) {
       params: const <OpParam>[
         _sourceId,
         _kind,
-        OpParam.string(
+        // 作品引用：交给已装扩展（安装时用户已确认，D9）按它自己的站点拼请求。
+        OpParam.entityRef(
           'url',
           description: 'Work url from online.source.search / browse.',
           required: true,
@@ -298,7 +304,8 @@ List<OpDescription> describeOnlineOps(OpDescribeKit kit) {
       params: const <OpParam>[
         _sourceId,
         _kind,
-        OpParam.string(
+        // 作品引用：交给已装扩展（安装时用户已确认，D9）按它自己的站点拼请求。
+        OpParam.entityRef(
           'url',
           description: 'Work url from online.source.search / browse.',
           required: true,

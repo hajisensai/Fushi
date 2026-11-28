@@ -53,6 +53,7 @@ OpCatalog _catalog(List<String> calls) {
         summary: 'Install an extension.',
         risk: OpRisk.write,
         confirm: true,
+        installsCode: true,
         params: const <OpParam>[
           OpParam.string('pkg', description: 'package', required: true),
           OpParam.userGate('trustSigner', description: 'user trusts signer'),

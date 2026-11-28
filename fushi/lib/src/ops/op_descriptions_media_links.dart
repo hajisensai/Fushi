@@ -110,7 +110,7 @@ List<OpDescription> describeMediaLinksOps(OpDescribeKit kit) {
       risk: OpRisk.write,
       params: const <OpParam>[
         _endpointParam,
-        OpParam.string(
+        OpParam.entityRef(
           'other',
           description: 'The item to link to, as <kind>:<key>.',
           required: true,
@@ -345,7 +345,8 @@ List<OpDescription> describeMediaLinksOps(OpDescribeKit kit) {
   ];
 }
 
-const OpParam _endpointParam = OpParam.string(
+/// 本地条目引用（`book:<key>` 等），不是网络地址。
+const OpParam _endpointParam = OpParam.entityRef(
   'endpoint',
   description:
       'Item as <kind>:<local key>; kind is book / audiobook / video_collection '
@@ -364,7 +365,7 @@ const OpParam _nodeParam = OpParam.string(
 
 const List<OpParam> _pickParams = <OpParam>[
   _endpointParam,
-  OpParam.string(
+  OpParam.entityRef(
     'other',
     description: 'The other end of the link as <kind>:<key> (from links.list).',
     required: true,

@@ -51,7 +51,7 @@ List<OpDescription> _describeBrowserOps(
     risk: OpRisk.irreversible,
     availability: web,
     params: const <OpParam>[
-      OpParam.string(
+      OpParam.remoteUrl(
         'url',
         description: 'Address (https://…, example.com) or search words.',
         required: true,
@@ -210,7 +210,8 @@ List<OpDescription> _describeBookmarkOps(
         description: 'What to add (default bookmark).',
         enumValues: <String>['bookmark', 'folder'],
       ),
-      OpParam.string(
+      // 只存书签，不打开；打开要经 web.open（先确认）或用户自己点。
+      OpParam.storedAddress(
         'url',
         description: 'Address (bookmark only; required for bookmarks).',
       ),
@@ -267,7 +268,10 @@ List<OpDescription> _describeBookmarkOps(
     params: const <OpParam>[
       _bookmarkIdParam,
       OpParam.string('title', description: 'New title.'),
-      OpParam.string('url', description: 'New address (bookmarks only).'),
+      OpParam.storedAddress(
+        'url',
+        description: 'New address (bookmarks only).',
+      ),
       OpParam.integer('parent', description: 'Move into this folder id.'),
       OpParam.boolean('root', description: 'Move to the root folder.'),
       OpParam.integer(
@@ -490,7 +494,8 @@ List<OpDescription> _describeAdblockOps(OpDescribeKit kit) => <OpDescription>[
         'previous allowlist.',
     risk: OpRisk.write,
     params: const <OpParam>[
-      OpParam.string(
+      // 只进广告拦截白名单文本，不请求它。
+      OpParam.storedAddress(
         'host',
         description: 'Site, e.g. example.com.',
         required: true,
@@ -507,7 +512,7 @@ List<OpDescription> _describeAdblockOps(OpDescribeKit kit) => <OpDescription>[
         'restores the previous allowlist.',
     risk: OpRisk.write,
     params: const <OpParam>[
-      OpParam.string(
+      OpParam.storedAddress(
         'host',
         description: 'Allowlisted host from web.adblock.status.',
         required: true,

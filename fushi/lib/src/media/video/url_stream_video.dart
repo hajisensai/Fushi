@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:fushi_audio/fushi_audio.dart' show AudioCue;
+import 'package:fushi_cli/fushi_cli.dart' show isHttpUrl;
 
 import 'package:fushi/src/media/source_library/stream_auth_scope.dart';
 import 'package:fushi/src/media/video/stream_url_resolver.dart';
@@ -28,13 +29,10 @@ import 'package:fushi_engine/utils/net/deadline_get.dart';
 /// 仅看 scheme：`http` / `https`（大小写不敏感）且 host 非空才算可播。`file://`、
 /// 裸路径、空串、非法 URI 一律 false——播放内核（libmpv）只对 http(s) 流做网络直传，
 /// 其它协议不在阶段①范围内。纯字符串判定，不碰文件系统 / 网络。
-bool isPlayableStreamUrl(String url) {
-  final Uri? uri = Uri.tryParse(url.trim());
-  if (uri == null) return false;
-  final String scheme = uri.scheme.toLowerCase();
-  if (scheme != 'http' && scheme != 'https') return false;
-  return uri.host.isNotEmpty;
-}
+///
+/// 判据只有一份：`fushi_cli` 的 [isHttpUrl]（控制通道的 `httpOnly` 参数、CLI 本地拦截
+/// 也是它），这里只是给播放 / 导入侧起的名字。
+bool isPlayableStreamUrl(String url) => isHttpUrl(url);
 
 /// 已知「网页视频站」域名白名单（TODO-1000 part-A1）：这些站点的 URL 指向 **HTML 播放页**
 /// 而非可直接 demux 的音视频流，libmpv 拿到 HTML 解不出轨 → duration 永不就绪 → 卡 loading /

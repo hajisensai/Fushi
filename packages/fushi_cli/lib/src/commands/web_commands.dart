@@ -1,6 +1,7 @@
 import 'package:args/args.dart';
 
 import '../ctl_commands.dart';
+import '../ops/specs/web_search_ops.dart';
 
 /// `fushi_cli web …`：内置浏览器与广告拦截规则（app 侧路由见 `fushi/lib/src/ops/ctl_web_routes.dart`）。
 ///
@@ -18,7 +19,8 @@ const List<CtlCommandGroup> webCommandGroups = <CtlCommandGroup>[
         summary: '用设置里配的搜索后端联网搜索，列出结果 id（首次使用需 --yes）',
         usage: '<搜索词...>',
         configure: _configureSearch,
-        build: _buildSearch,
+        op: WebSearchOps.search,
+        call: _callSearch,
         render: _renderSearch,
       ),
       CtlCommandSpec(
@@ -26,7 +28,8 @@ const List<CtlCommandGroup> webCommandGroups = <CtlCommandGroup>[
         summary: '读一条搜索结果的网页正文（只收 search 给的结果 id；--offset 取后续段）',
         usage: '<结果 id>',
         configure: _configureRead,
-        build: _buildRead,
+        op: WebSearchOps.read,
+        call: _callRead,
         render: _renderRead,
       ),
       CtlCommandSpec(
@@ -238,17 +241,16 @@ void _configureSearch(ArgParser parser) {
     );
 }
 
-CtlRequestSpec _buildSearch(CtlCommandContext c) {
+CtlOpCall _callSearch(CtlCommandContext c) {
   final String query = c.rest.join(' ').trim();
   if (query.isEmpty) throw const CtlUsageError('缺少参数 <搜索词>');
   final int? limit = c.intOption('limit');
   if (limit != null && limit <= 0) throw const CtlUsageError('--limit 必须是正整数');
-  return CtlRequestSpec.post(
-    '$_root/search',
-    body: <String, Object?>{
-      'query': query,
-      'limit': ?limit,
-      if (c.flag('yes')) 'confirm': true,
+  return CtlOpCall(
+    args: <String, Object?>{
+      WebSearchOps.searchQuery.name: query,
+      WebSearchOps.searchLimit.name: limit,
+      if (c.flag('yes')) WebSearchOps.consent.name: true,
     },
   );
 }
@@ -264,16 +266,15 @@ void _configureRead(ArgParser parser) {
     );
 }
 
-CtlRequestSpec _buildRead(CtlCommandContext c) {
+CtlOpCall _callRead(CtlCommandContext c) {
   final String id = c.positional(0, '结果 id').trim();
   final int? offset = c.intOption('offset');
   if (offset != null && offset < 0) throw const CtlUsageError('--offset 不能为负');
-  return CtlRequestSpec.post(
-    '$_root/read',
-    body: <String, Object?>{
-      'id': id,
-      'offset': ?offset,
-      if (c.flag('yes')) 'confirm': true,
+  return CtlOpCall(
+    args: <String, Object?>{
+      WebSearchOps.readId.name: id,
+      WebSearchOps.readOffset.name: offset,
+      if (c.flag('yes')) WebSearchOps.consent.name: true,
     },
   );
 }

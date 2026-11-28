@@ -6,7 +6,7 @@ import 'package:fushi_engine/ai/web_search.dart';
 import 'package:fushi/src/ai/ai_agent_web_search_policy.dart';
 import 'package:fushi/src/models/preference_keys.dart'
     show kAiAgentWebSearchAllow;
-import 'package:fushi/src/ops/op_context.dart';
+import 'package:fushi/src/ops/op_describe_kit.dart';
 
 /// AI 助手的通用联网搜索（操作 `web.search` / `web.read`，所有者 2026-11-20「ai 可以
 /// 自主搜索」「第一次要确认吧」；spec `docs/specs/2026-10-26-ai-operations-agent-design.md`
@@ -20,39 +20,30 @@ import 'package:fushi/src/ops/op_context.dart';
 ///   只回 {id, 标题, 摘要, 站点}；
 /// - `web.read`：只收 `web.search` 给的结果 id，不收任意地址——模型拼的地址路径 /
 ///   query 能夹带它看到的任何东西发给任意主机，撤销收不回；限定成刚才的搜索结果后，
-///   目的地址由搜索后端决定。正文剥成纯文本，按 [kWebReadChunkChars] 分段，`offset`
+///   目的地址由搜索后端决定。正文剥成纯文本，按 [WebSearchOps.readChunkChars] 分段，`offset`
 ///   取后续段，不整页塞回去。
 ///
 /// 门：没配后端 → 拒绝、不发任何请求；用户在设置里关了 → 拒绝；还没同意 → 要表态
 /// 参数 `confirm`（AI 助手的确认卡点了同意 / CLI `--yes`），这一次顺带记下同意
 /// （设备本地偏好），之后不再要。
 ///
-/// CLI 侧是 `fushi_cli web search` / `web read`
-/// （`packages/fushi_cli/lib/src/commands/web_commands.dart`）。
-List<CtlRoute> buildWebSearchCtlRoutes(OpContext context) =>
-    buildWebSearchCtlRoutesFor(
-      config: () => context.appModel.prefsRepo.aiWebSearchConfig,
-      consent: () => context.appModel.prefsRepo.aiAgentWebSearchConsent,
-      grantConsent: () => context.appModel.prefsRepo.grantAiAgentWebSearch(),
-      client: (WebSearchConfig config) => WebSearchClient(config: config),
-      cache: sharedWebSearchResultCache,
-    );
-
-/// 搜索路由。
-const String kWebSearchCtlSearch = '/api/admin/web/search';
-
-/// 读结果页路由。
-const String kWebSearchCtlRead = '/api/admin/web/read';
-
-/// 一次搜索默认 / 最多回几条。
-const int kWebSearchDefaultLimit = 5;
-const int kWebSearchMaxLimit = 10;
+/// 声明（路径、参数、风险、默认 / 最多条数、每段字数）在
+/// `packages/fushi_cli/lib/src/ops/specs/web_search_ops.dart`（[WebSearchOps]）；CLI 侧是
+/// `fushi_cli web search` / `web read`（`packages/fushi_cli/lib/src/commands/web_commands.dart`）。
+///
+/// 不在模块开关下：与内置浏览器（`web.open` 等，「浏览器」模块）无关，只看搜索后端
+/// 配没配、用户关没关（可用性与首次确认都由 [config] / [consent] 现算，与实现里的门
+/// 同一个判据）。
+List<FushiOp> buildWebSearchOps(OpDescribeKit kit) => buildWebSearchOpsFor(
+  config: () => kit.context.appModel.prefsRepo.aiWebSearchConfig,
+  consent: () => kit.context.appModel.prefsRepo.aiAgentWebSearchConsent,
+  grantConsent: () => kit.context.appModel.prefsRepo.grantAiAgentWebSearch(),
+  client: (WebSearchConfig config) => WebSearchClient(config: config),
+  cache: sharedWebSearchResultCache,
+);
 
 /// 摘要最多留几个字（摘要是搜索引擎给的，长的截掉省 token）。
 const int kWebSearchSnippetChars = 300;
-
-/// `web.read` 一段回多少字。
-const int kWebReadChunkChars = 4000;
 
 /// 一页正文最多留多少字（再长的后半截不给）。
 const int kWebReadMaxPageChars = 200000;
@@ -134,8 +125,8 @@ class WebSearchResultCache {
 /// 都能在另一张表里读（id 随机，不会串）。
 final WebSearchResultCache sharedWebSearchResultCache = WebSearchResultCache();
 
-/// 可注入依赖的路由表（测试换掉后端客户端与偏好）。
-List<CtlRoute> buildWebSearchCtlRoutesFor({
+/// 可注入依赖的操作（测试换掉后端客户端与偏好）。
+List<FushiOp> buildWebSearchOpsFor({
   required WebSearchConfig? Function() config,
   required String Function() consent,
   required Future<void> Function() grantConsent,
@@ -149,9 +140,20 @@ List<CtlRoute> buildWebSearchCtlRoutesFor({
     client: client,
     cache: cache,
   );
-  return <CtlRoute>[
-    CtlRoute.post(kWebSearchCtlSearch, ctl.search),
-    CtlRoute.post(kWebSearchCtlRead, ctl.read),
+  OpAvailability availability() =>
+      agentWebSearchAvailability(config(), consent());
+  bool granted() => agentWebSearchConsentGranted(consent());
+  return <FushiOp>[
+    WebSearchOps.search.bind(
+      handler: ctl.search,
+      availability: availability,
+      consentGranted: granted,
+    ),
+    WebSearchOps.read.bind(
+      handler: ctl.read,
+      availability: availability,
+      consentGranted: granted,
+    ),
   ];
 }
 
@@ -172,7 +174,7 @@ class _WebSearchCtl {
 
   /// 过门：后端配好、没被关掉、已同意（或这次带了表态参数 → 记下同意）。返回要用的
   /// 后端配置。任何一道不过都在发请求之前拒绝。
-  Future<WebSearchConfig> _gate(CtlCall call) async {
+  Future<WebSearchConfig> _gate(OpArgs args) async {
     final WebSearchConfig? cfg = config();
     final String state = consent();
     final OpAvailability availability = agentWebSearchAvailability(cfg, state);
@@ -186,7 +188,7 @@ class _WebSearchCtl {
       );
     }
     if (state != kAiAgentWebSearchAllow) {
-      if (call.optBool('confirm') != true) {
+      if (!args.gate(WebSearchOps.consent)) {
         throw CtlFailure(
           400,
           'consent_required',
@@ -200,18 +202,18 @@ class _WebSearchCtl {
   }
 
   /// `web search <搜索词>`：发给用户配置的后端，每条结果发一个结果 id。
-  Future<Object?> search(CtlCall call) async {
-    final String query = call.requireString('query').trim();
-    if (query.isEmpty) throw const CtlFailure.badRequest('query 不能为空');
-    final int limit = call.optInt('limit') ?? kWebSearchDefaultLimit;
+  Future<Object?> search(OpArgs args) async {
+    final String query = args.requiredText(WebSearchOps.searchQuery);
+    final int limit =
+        args.integer(WebSearchOps.searchLimit) ?? WebSearchOps.defaultLimit;
     if (limit <= 0) throw const CtlFailure.badRequest('limit 必须为正');
-    final WebSearchConfig cfg = await _gate(call);
+    final WebSearchConfig cfg = await _gate(args);
     final WebSearchClient searcher = client(cfg);
     final List<WebSearchHit> hits;
     try {
       hits = await searcher.search(
         query,
-        limit: math.min(limit, kWebSearchMaxLimit),
+        limit: math.min(limit, WebSearchOps.maxLimit),
       );
     } finally {
       searcher.close();
@@ -236,12 +238,12 @@ class _WebSearchCtl {
   }
 
   /// `web read <结果 id> [--offset N]`：抓这条结果的页面正文（纯文本），一段
-  /// [kWebReadChunkChars] 字；`nextOffset` 非空时还有下一段。
-  Future<Object?> read(CtlCall call) async {
-    final String id = call.requireString('id').trim();
-    final int offset = call.optInt('offset') ?? 0;
+  /// [WebSearchOps.readChunkChars] 字；`nextOffset` 非空时还有下一段。
+  Future<Object?> read(OpArgs args) async {
+    final String id = args.requiredText(WebSearchOps.readId);
+    final int offset = args.integer(WebSearchOps.readOffset) ?? 0;
     if (offset < 0) throw const CtlFailure.badRequest('offset 不能为负');
-    final WebSearchConfig cfg = await _gate(call);
+    final WebSearchConfig cfg = await _gate(args);
     final WebSearchResultEntry? entry = cache.lookup(id);
     if (entry == null) {
       throw CtlFailure.notFound(
@@ -267,7 +269,7 @@ class _WebSearchCtl {
     }
     final String text = page.text;
     final int start = math.min(offset, text.length);
-    final int end = math.min(start + kWebReadChunkChars, text.length);
+    final int end = math.min(start + WebSearchOps.readChunkChars, text.length);
     return <String, Object?>{
       'id': id,
       'title': page.title,

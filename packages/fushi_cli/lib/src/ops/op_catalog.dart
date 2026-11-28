@@ -3,6 +3,7 @@ library;
 
 import '../ctl_routes.dart';
 import 'fushi_op.dart';
+import 'op_spec.dart';
 
 /// 谁在调用。决定 [OpParam.userGate] 参数从哪来。
 enum OpCaller {
@@ -37,23 +38,26 @@ class OpCatalog {
     }
   }
 
-  /// 按 `METHOD pattern` 把 [descriptions] 挂到 [routes] 上，再并入 [extra]
-  /// （只在进程内有的操作，如 `ui.ask_choice`）。描述对不上任何路由时抛
-  /// [StateError]——描述与实现漂移要在测试里炸，不在运行时静默丢工具。
+  /// 组目录：[routes] 里由 [OpSpec.bind] 派生的路由直接取它的操作（[CtlRoute.op]）；
+  /// **旧路径**的 [descriptions] 按 `METHOD pattern` 挂到其余手写路由上；再并入
+  /// [extra]（只在进程内有的操作）。旧描述对不上任何手写路由时抛 [StateError]。
   factory OpCatalog.build(
     List<CtlRoute> routes,
     Iterable<OpDescription> descriptions, {
     Iterable<FushiOp> extra = const <FushiOp>[],
   }) {
-    final Map<String, CtlRoute> byKey = <String, CtlRoute>{
+    final List<FushiOp> ops = <FushiOp>[
       for (final CtlRoute route in routes)
-        '${route.method} ${route.pattern}': route,
+        if (route.op case final FushiOp op) op,
+    ];
+    final Map<String, CtlRoute> legacy = <String, CtlRoute>{
+      for (final CtlRoute route in routes)
+        if (route.op == null) '${route.method} ${route.pattern}': route,
     };
-    final List<FushiOp> ops = <FushiOp>[];
     for (final OpDescription d in descriptions) {
-      final CtlRoute? route = byKey[d.routeKey];
+      final CtlRoute? route = legacy[d.routeKey];
       if (route == null) {
-        throw StateError('操作 ${d.id} 的路由 ${d.routeKey} 不存在');
+        throw StateError('操作 ${d.id} 的路由 ${d.routeKey} 不存在（或已由 OpSpec 声明）');
       }
       ops.add(d.bind(route));
     }
@@ -112,11 +116,11 @@ class OpCatalog {
       .toList(growable: false);
 }
 
-/// 进程内调用器：AI 助手与 `/api/admin/ops/call` 都经它调路由 handler。
+/// 进程内调用器：AI 助手与 `/api/admin/ops/call` 都经它调操作。
 ///
 /// 参数严格校验（未知参数、类型、枚举、必填一律 400 回给调用方），表态参数按
-/// [OpCaller] 处理，然后拼出与 HTTP 等价的 [CtlCall] 直接调 handler——与按钮、
-/// `fushi_cli` 走同一个方法。
+/// [OpCaller] 处理，再经与 HTTP 直连同一个 [OpArgs.parse]（进程内口径）得到 [OpArgs]
+/// 调 [FushiOp.run]——与按钮、`fushi_cli` 走同一个方法。
 class OpInvoker {
   OpInvoker(this.catalog, {bool Function()? ready})
     : _ready = ready ?? _alwaysReady;
@@ -147,10 +151,10 @@ class OpInvoker {
         '${availability.message == null ? '' : ': ${availability.message}'}',
       );
     }
-    if (op.route.requiresReady && !_ready()) {
+    if (op.decl.requiresReady && !_ready()) {
       throw const CtlFailure.conflict('not_ready');
     }
-    final CtlCall call = buildCall(
+    final OpArgs call = buildCall(
       op,
       args,
       caller: caller,
@@ -160,7 +164,7 @@ class OpInvoker {
     final Map<String, Object?> before = undo?.capture == null
         ? const <String, Object?>{}
         : await undo!.capture!(call);
-    final Object? result = await op.route.handler(call);
+    final Object? result = await op.run(call);
     return OpInvocation(
       op: op,
       result: result,
@@ -168,8 +172,12 @@ class OpInvoker {
     );
   }
 
-  /// 校验参数并拼出 [CtlCall]（单独暴露给测试与「确认卡片」预览）。
-  CtlCall buildCall(
+  /// 校验参数并拼出 [OpArgs]（单独暴露给测试与「确认卡片」预览）。
+  ///
+  /// 这里只做进程内调用独有的两件事——表态参数由谁给（模型不许给）、对象参数铺进
+  /// body 顶层——然后交给 [OpArgs.parse]（进程内口径：拒绝未知参数、查必填），转换
+  /// 只有 [coerceOpParam] 一份。
+  OpArgs buildCall(
     FushiOp op,
     Map<String, Object?> args, {
     OpCaller caller = OpCaller.user,
@@ -186,18 +194,20 @@ class OpInvoker {
         throw CtlFailure.badRequest('未知参数：${entry.key}');
       }
       if (entry.value == null) continue;
-      final Object value = _coerce(param, entry.value!);
       if (param.inPath) {
-        pathParams[param.name] = '$value';
-      } else if (param.spread && value is Map<String, Object?>) {
-        for (final MapEntry<String, Object?> e in value.entries) {
+        pathParams[param.name] = '${_coerce(param, entry.value!)}';
+      } else if (param.spread) {
+        final Object value = _coerce(param, entry.value!);
+        for (final MapEntry<String, Object?> e
+            in (value as Map<String, Object?>).entries) {
           if (declared.containsKey(e.key)) {
             throw CtlFailure.badRequest('${param.name}.${e.key} 与参数重名');
           }
           body[e.key] = e.value;
         }
       } else {
-        body[param.name] = value;
+        // 旧路径的 handler 直接读 body：放转换后的值（与 [OpArgs.values] 同一份）。
+        body[param.name] = _coerce(param, entry.value!);
       }
     }
     for (final String gate in grantedGates) {
@@ -207,85 +217,24 @@ class OpInvoker {
       }
       body[gate] = true;
     }
-    for (final OpParam param in op.params) {
-      if (!param.required) continue;
-      final bool present = param.inPath
-          ? pathParams.containsKey(param.name)
-          : body.containsKey(param.name);
-      if (!present) throw CtlFailure.badRequest('${param.name} 缺失');
+    for (final String name in op.decl.pathSegmentNames) {
+      if (!pathParams.containsKey(name)) {
+        throw CtlFailure.badRequest('$name 缺失');
+      }
     }
-    final String path = op.route.pattern
-        .split('/')
-        .map((String seg) {
-          if (!seg.startsWith(':')) return seg;
-          final String name = seg.substring(1);
-          final String? value = pathParams[name];
-          if (value == null) throw CtlFailure.badRequest('$name 缺失');
-          return Uri.encodeComponent(value);
-        })
-        .join('/');
-    return CtlCall(
-      method: op.route.method,
-      path: path,
-      params: pathParams,
-      body: body,
-      fromModel: caller == OpCaller.model,
+    return OpArgs.parse(
+      op.decl,
+      CtlCall(
+        method: op.decl.method,
+        path: op.decl.fillPath(pathParams),
+        params: pathParams,
+        body: body,
+        fromModel: caller == OpCaller.model,
+      ),
+      surface: OpCallSurface.inProcess,
     );
   }
 
-  static Object _coerce(OpParam param, Object value) {
-    switch (param.type) {
-      case OpParamType.string:
-        final String text = value is String ? value : '$value';
-        final List<String>? allowed = param.enumValues;
-        if (allowed != null && !allowed.contains(text)) {
-          throw CtlFailure.badRequest(
-            '${param.name} 只能是 ${allowed.join(' / ')}',
-          );
-        }
-        return text;
-      case OpParamType.integer:
-        if (value is int) return value;
-        if (value is num && value == value.roundToDouble()) {
-          return value.toInt();
-        }
-        final int? parsed = int.tryParse('$value'.trim());
-        if (parsed == null) {
-          throw CtlFailure.badRequest('${param.name} 必须是整数');
-        }
-        return parsed;
-      case OpParamType.number:
-        if (value is num) return value;
-        final num? parsed = num.tryParse('$value'.trim());
-        if (parsed == null) {
-          throw CtlFailure.badRequest('${param.name} 必须是数字');
-        }
-        return parsed;
-      case OpParamType.boolean:
-        if (value is bool) return value;
-        switch ('$value'.trim().toLowerCase()) {
-          case 'true' || '1' || 'yes' || 'on':
-            return true;
-          case 'false' || '0' || 'no' || 'off':
-            return false;
-        }
-        throw CtlFailure.badRequest('${param.name} 必须是布尔值');
-      case OpParamType.stringList:
-        if (value is List) {
-          return <String>[for (final Object? item in value) '$item'];
-        }
-        if (value is String) return <String>[value];
-        throw CtlFailure.badRequest('${param.name} 必须是字符串数组');
-      case OpParamType.object:
-        if (value is Map) return Map<String, Object?>.from(value);
-        throw CtlFailure.badRequest('${param.name} 必须是对象');
-      case OpParamType.objectList:
-        if (value is List && value.every((Object? e) => e is Map)) {
-          return <Map<String, Object?>>[
-            for (final Object? e in value) Map<String, Object?>.from(e! as Map),
-          ];
-        }
-        throw CtlFailure.badRequest('${param.name} 必须是对象数组');
-    }
-  }
+  static Object _coerce(OpParam param, Object value) =>
+      coerceOpParam(param, value, OpCallSurface.inProcess);
 }

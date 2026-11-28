@@ -122,22 +122,27 @@ void main() {
           _plan('b', status: AnimeDownloadPlan.statusImported),
         ]),
       );
-      routes = buildAnimeDownloadCtlRoutesFor(() => available ? anime : null);
+      routes = <CtlRoute>[
+        for (final FushiOp op in buildAnimeDownloadOpsFor(
+          () => available ? anime : null,
+        ))
+          op.route,
+      ];
     });
 
     test('列出计划；边下边播只认下载中的计划', () async {
       final Map<Object?, Object?> listed =
-          await _call(routes, 'GET', kAnimeDownloadCtlRoot)
+          await _call(routes, 'GET', AnimeDownloadOps.root)
               as Map<Object?, Object?>;
       expect(listed['plans'], hasLength(2));
-      await _call(routes, 'POST', '$kAnimeDownloadCtlRoot/a/import-now');
+      await _call(routes, 'POST', '${AnimeDownloadOps.root}/a/import-now');
       expect(anime.importedNow, <String>['a']);
       expect(
-        () => _call(routes, 'POST', '$kAnimeDownloadCtlRoot/b/import-now'),
+        () => _call(routes, 'POST', '${AnimeDownloadOps.root}/b/import-now'),
         _status(409),
       );
       expect(
-        () => _call(routes, 'POST', '$kAnimeDownloadCtlRoot/x/import-now'),
+        () => _call(routes, 'POST', '${AnimeDownloadOps.root}/x/import-now'),
         _status(404),
       );
     });
@@ -145,11 +150,11 @@ void main() {
     test('元数据没就绪 409；服务不可用 501', () async {
       anime.ready = false;
       expect(
-        () => _call(routes, 'POST', '$kAnimeDownloadCtlRoot/a/import-now'),
+        () => _call(routes, 'POST', '${AnimeDownloadOps.root}/a/import-now'),
         _status(409),
       );
       available = false;
-      expect(() => _call(routes, 'GET', kAnimeDownloadCtlRoot), _status(501));
+      expect(() => _call(routes, 'GET', AnimeDownloadOps.root), _status(501));
     });
   });
 
@@ -159,7 +164,10 @@ void main() {
 
     setUp(() {
       service = _FakeLeaderboard();
-      routes = buildLeaderboardCtlRoutesFor(() => service);
+      routes = <CtlRoute>[
+        for (final FushiOp op in buildLeaderboardOpsFor(() => service))
+          op.route,
+      ];
     });
 
     test('用户导入：带 consent；格式错 400', () async {
@@ -167,7 +175,7 @@ void main() {
           await _call(
                 routes,
                 'POST',
-                '$kLeaderboardCtlRoot/recovery-code',
+                '${LeaderboardOps.root}/recovery-code',
                 body: <String, Object?>{'code': 'FUSHI-1', 'consent': true},
               )
               as Map<Object?, Object?>;
@@ -177,7 +185,7 @@ void main() {
         () => _call(
           routes,
           'POST',
-          '$kLeaderboardCtlRoot/recovery-code',
+          '${LeaderboardOps.root}/recovery-code',
           body: <String, Object?>{'code': 'bad'},
         ),
         _status(400),
@@ -189,7 +197,7 @@ void main() {
         () => _call(
           routes,
           'POST',
-          '$kLeaderboardCtlRoot/recovery-code',
+          '${LeaderboardOps.root}/recovery-code',
           body: <String, Object?>{'code': 'FUSHI-1'},
           fromModel: true,
         ),
@@ -197,7 +205,7 @@ void main() {
       );
       expect(service.imported, isEmpty);
       final Map<Object?, Object?> s =
-          await _call(routes, 'GET', kLeaderboardCtlRoot)
+          await _call(routes, 'GET', LeaderboardOps.root)
               as Map<Object?, Object?>;
       expect(s['status'], 'disabled');
     });

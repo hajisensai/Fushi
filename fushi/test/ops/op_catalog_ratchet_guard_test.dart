@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,9 +14,27 @@ class _UnusedRef implements WidgetRef {
       throw UnsupportedError('构造操作目录时不应访问 ref');
 }
 
-/// 没有描述的路由数上限（spec §4.2 棘轮）：只许减不许增。给路由补了描述就把它
-/// 调到新的实际值；新增路由必须同时带描述（否则这个数会涨）。
-const int kUndescribedRouteBaseline = 0;
+/// 还没迁到 [OpSpec] 的旧写法的全部存量——只许减不许增（架构重构 C1）。基线按**身份**
+/// 记，不只记个数：迁走一条、再新写一条旧写法的等量互换也会红。
+///
+/// - `legacyRoutes`：app 的手写路由（[CtlRoute.op] 为 null：手写 [CtlRoute] + 另写
+///   一份 [OpDescription]、靠 `METHOD pattern` 字符串配对），逐条列出；
+/// - `legacyCliCommands`：`fushi_cli` 里自己拼请求路径的命令（`CtlCommandSpec(build:)`，
+///   没有 `op`），逐条列出；
+/// - `legacyOpConstructions`：全仓 `lib/` 里 `OpDescription(` / `FushiOp(` 的构造处数，
+///   按文件记（app、`fushi_server` 的 `server.*` 目录、`fushi_engine` 的复习操作都在内）；
+/// - `stringRouteRefs`：按 `METHOD pattern` 字符串引用别的路由的调用处数
+///   （`callRoute` / `readBackUndo` / `readListField` / `kit.route`），按文件记。按文件
+///   记数挡不住同一个文件里迁一处、加一处的互换——那种改动在这个文件的 diff 里一眼可见。
+///
+/// 结构约束（id 形状、read 不带撤销、写操作可撤销或 irreversible、inPath 与模式一致、
+/// 地址类参数必须选语义角色、remoteUrl 参数 / 装扩展必须先确认）在 [FushiOp] 构造时
+/// 检查，组目录即炸，不在这里。
+///
+/// 迁走一批后缩小基线：
+/// `FUSHI_OP_LEGACY_SURFACE_WRITE=1 dart tool/heavy.dart --here -- flutter test test/ops/op_catalog_ratchet_guard_test.dart --no-pub`
+/// 重写只会缩小：实际存量有任何一项超出现有基线时拒绝写。
+const String _baselinePath = 'test/ops/goldens/op_legacy_surface.json';
 
 /// 有意不进操作目录的路由前缀，值写明理由。
 const Map<String, String> kRoutePrefixesNotForAi = <String, String>{
@@ -23,48 +42,79 @@ const Map<String, String> kRoutePrefixesNotForAi = <String, String>{
 };
 
 /// 没有任何现有路由能读出任务状态的 longRunning 操作，值写明理由。只许放真没有
-/// 状态路由的；能读就该写 taskStatus。
+/// 状态路由的；能读就该写 taskStatus。（这条只管 app 目录：服务端的
+/// `server.download.add` 还没有 taskStatus，见 fushi_server 的 admin_ops.dart。）
 const Map<String, String> kLongRunningWithoutTaskStatus = <String, String>{};
 
-/// 带「地址类」参数（名字像 url / link / endpoint / magnet…）却**不**先确认的操作，
-/// 值写明为什么模型给的地址到不了它自己选的主机。其余带地址参数的操作一律
-/// `needsConfirmation`：向模型给的任意地址发请求 = 把数据发给已指派 LLM 以外的
-/// 第三方（spec §5.2），路径 / query 里能夹带模型看到的任何东西，撤销收不回。
-/// 新增操作带地址参数时，先想清楚它会不会去请求那个地址。
-const Map<String, String> kAddressParamOpsWithoutConfirmation =
-    <String, String>{
-      'url.probe':
-          '只对 YouTube 地址联网，且只发往 YouTube（youtube_explode 只取 11 位 '
-          'videoId 拼 www.youtube.com）；直链 / 网页站不联网'
-          '（ctl_url_import_routes_test「直链 / 网页站探测只给种类，不联网」）',
-      'online.repo.remove': '只从已存的仓库列表里删一条，不请求它',
-      'online.source.get':
-          'url 是搜索 / 浏览结果里的作品引用，交给已装扩展（安装时用户已确认，D9）'
-          '自己的代码按它自己的站点拼请求；目的主机由扩展决定，不由模型决定',
-      'online.source.add': '同 online.source.get：作品引用交给已装扩展',
-      'online.source.download': '同 online.source.get：作品引用交给已装扩展',
-      'links.list': 'endpoint 是本地条目引用（book:<key> 等），不是网络地址',
-      'links.accept': 'endpoint 是本地条目引用，不是网络地址',
-      'links.reject': 'endpoint 是本地条目引用，不是网络地址',
-      'links.infer': 'endpoint 是本地条目引用，不是网络地址',
-      'links.add': 'endpoint / other 是本地条目引用，不是网络地址',
-      'links.remove': 'endpoint 是本地条目引用，不是网络地址',
-      'web.bookmark.add': '只存书签，不打开；打开要经 web.open（先确认）或用户自己点',
-      'web.bookmark.update': '只改书签字段，不打开',
-      'web.adblock.allowlist.add': 'host 只进广告拦截白名单文本，不请求它',
-      'web.adblock.allowlist.remove': 'host 只从白名单文本里删，不请求它',
-    };
+/// 源码扫描的范围：app 与各包的 `lib/`（cwd 是 `fushi/`）。
+List<File> _libSources() {
+  final List<Directory> roots = <Directory>[
+    Directory('lib'),
+    for (final FileSystemEntity pkg in Directory('../packages').listSync())
+      if (pkg is Directory) Directory('${pkg.path}/lib'),
+  ];
+  return <File>[
+    for (final Directory root in roots)
+      if (root.existsSync())
+        for (final FileSystemEntity f in root.listSync(recursive: true))
+          if (f is File &&
+              f.path.endsWith('.dart') &&
+              !f.path.endsWith('.g.dart'))
+            f,
+  ];
+}
 
-/// 「地址类」参数名：模型填的是一个会被请求的位置。
-final RegExp _addressParamName = RegExp(
-  r'(^|[a-z])(url|uri|link|endpoint|magnet|href|host|address)s?$',
-  caseSensitive: false,
+/// 仓库根相对的 posix 路径（`fushi/lib/…`、`packages/…`）。
+String _repoPath(File file) {
+  final String path = file.path.replaceAll(r'\', '/');
+  return path.startsWith('../') ? path.substring(3) : 'fushi/$path';
+}
+
+/// 每个文件里 [pattern] 的命中数（0 的不记）；[skip] 是定义这些 API 的文件。
+Map<String, int> _countPerFile(
+  List<File> sources,
+  RegExp pattern,
+  Set<String> skip,
+) {
+  final Map<String, int> out = <String, int>{};
+  for (final File file in sources) {
+    final String path = _repoPath(file);
+    if (skip.contains(path)) continue;
+    final int count = pattern.allMatches(file.readAsStringSync()).length;
+    if (count > 0) out[path] = count;
+  }
+  return Map<String, int>.fromEntries(
+    out.entries.toList()..sort(
+      (MapEntry<String, int> a, MapEntry<String, int> b) =>
+          a.key.compareTo(b.key),
+    ),
+  );
+}
+
+final RegExp _legacyOpConstruction = RegExp(
+  r'\b(?:OpDescription|FushiOp)\s*\(',
+);
+final RegExp _stringRouteRef = RegExp(
+  r'\b(?:callRoute|readBackUndo|readListField)\s*\(|\bkit\.route\s*\(',
 );
 
-/// 「装扩展一律先确认」（spec D9，所有者 2026-10-26 拍板）覆盖的操作 id 模式。
-final RegExp _extensionInstallOp = RegExp(
-  r'^online\.(extension\.(install|update)\w*|repo\.add)$',
-);
+/// [actual] 超出 [baseline] 的项（新增的身份，或某个文件的数涨了）。
+List<String> _growth(Object? actual, Object? baseline) {
+  if (actual is List) {
+    final Set<Object?> known = (baseline as List? ?? const <Object?>[]).toSet();
+    return <String>[
+      for (final Object? item in actual)
+        if (!known.contains(item)) '$item',
+    ];
+  }
+  final Map<String, Object?> counts = actual! as Map<String, Object?>;
+  final Map<Object?, Object?> known = baseline as Map? ?? const <String, int>{};
+  return <String>[
+    for (final MapEntry<String, Object?> e in counts.entries)
+      if ((e.value! as int) > (known[e.key] as int? ?? 0))
+        '${e.key}: ${known[e.key] ?? 0} → ${e.value}',
+  ];
+}
 
 void main() {
   final OpContext context = OpContext(ref: _UnusedRef());
@@ -73,25 +123,108 @@ void main() {
   final Set<CtlRoute> described = <CtlRoute>{
     for (final FushiOp op in catalog.ops) op.route,
   };
-  final List<CtlRoute> undescribed = <CtlRoute>[
-    for (final CtlRoute route in domain)
-      if (!described.contains(route) &&
-          !kRoutePrefixesNotForAi.keys.any(route.pattern.startsWith))
-        route,
-  ];
+  final List<File> sources = _libSources();
 
-  test('没描述的路由数只许减不许增', () {
+  test('旧写法的存量只许减不许增（手写路由 / 自拼路径的 CLI 命令 / OpDescription 构造处 / '
+      '字符串路由引用）', () {
+    final Map<String, Object?> actual = <String, Object?>{
+      'legacyRoutes': <String>[
+        for (final CtlRoute route in domain)
+          if (route.op == null) '${route.method} ${route.pattern}',
+      ]..sort(),
+      'legacyCliCommands': <String>[
+        for (final CtlCommandGroup group in kCtlCommandGroups)
+          for (final CtlCommandSpec command in group.commands)
+            if (command.op == null) '${group.name} ${command.name}',
+      ]..sort(),
+      'legacyOpConstructions': _countPerFile(
+        sources,
+        _legacyOpConstruction,
+        const <String>{'packages/fushi_cli/lib/src/ops/fushi_op.dart'},
+      ),
+      'stringRouteRefs': _countPerFile(sources, _stringRouteRef, const <String>{
+        'fushi/lib/src/ops/op_describe_kit.dart',
+      }),
+    };
+    final File file = File(_baselinePath);
+    final Map<String, Object?> baseline = file.existsSync()
+        ? jsonDecode(file.readAsStringSync()) as Map<String, Object?>
+        : const <String, Object?>{};
+    final List<String> grown = <String>[
+      if (file.existsSync())
+        for (final String key in actual.keys)
+          for (final String item in _growth(actual[key], baseline[key]))
+            '$key  $item',
+    ];
     expect(
-      undescribed.length,
-      lessThanOrEqualTo(kUndescribedRouteBaseline),
+      grown,
+      isEmpty,
       reason:
-          '新增了没描述的路由。给它写 OpDescription（op_descriptions_<域>.dart）。\n'
-          '${undescribed.map((CtlRoute r) => '${r.method} ${r.pattern}').join('\n')}',
+          '旧写法只减不增。新操作写 OpSpec（packages/fushi_cli/lib/src/ops/specs/）并 '
+          'bind；CLI 命令用 CtlCommandSpec(op:, call:)；调已迁操作用 kit.invoke。'
+          '基线不能靠重写放行。\n${grown.join('\n')}',
     );
+    final String rendered =
+        '${const JsonEncoder.withIndent('  ').convert(actual)}\n';
+    if (Platform.environment['FUSHI_OP_LEGACY_SURFACE_WRITE'] == '1') {
+      file
+        ..createSync(recursive: true)
+        ..writeAsStringSync(rendered);
+      return;
+    }
+    expect(file.existsSync(), isTrue, reason: '缺基线 $_baselinePath（见本文件头的重写命令）');
     expect(
-      undescribed.length,
-      kUndescribedRouteBaseline,
-      reason: '描述补上了，把 kUndescribedRouteBaseline 调到 ${undescribed.length}',
+      rendered,
+      file.readAsStringSync().replaceAll('\r\n', '\n'),
+      reason: '又迁走了一批：按本文件头的命令把基线缩小到现在的实际存量',
+    );
+  });
+
+  test('已迁到 OpSpec 的操作不再被字符串引用（路由模式只写在声明里）', () {
+    // 字符串引用（kit.callRoute 等）指向已迁路由要到执行撤销那一刻才抛错；这里在
+    // 源码层面挡住：app 源码里不出现已迁操作的路由模式字面量，也不从声明对象上取
+    // pattern / method / root 去拼字符串引用。
+    final Set<String> migrated = <String>{
+      for (final CtlRoute route in domain)
+        if (route.op != null) route.pattern,
+    };
+    expect(migrated, isNotEmpty);
+    final RegExp viaDecl = RegExp(
+      r'\b[A-Z]\w*Ops\.(?:\w+\.(?:pattern|method)|root)\b',
+    );
+    final List<String> offenders = <String>[];
+    for (final File file in sources) {
+      final String path = _repoPath(file);
+      if (!path.startsWith('fushi/lib/')) continue;
+      final String source = file.readAsStringSync();
+      for (final String pattern in migrated) {
+        if (source.contains("'$pattern'") || source.contains('"$pattern"')) {
+          offenders.add('$path: $pattern');
+        }
+      }
+      for (final RegExpMatch m in viaDecl.allMatches(source)) {
+        offenders.add('$path: ${m.group(0)}');
+      }
+    }
+    expect(
+      offenders,
+      isEmpty,
+      reason: '已迁操作按声明对象调（kit.invoke / OpSpec.bind），不写路径字符串',
+    );
+  });
+
+  test('旧路径的手写路由都有描述（豁免前缀除外）', () {
+    final List<String> undescribed = <String>[
+      for (final CtlRoute route in domain)
+        if (route.op == null &&
+            !described.contains(route) &&
+            !kRoutePrefixesNotForAi.keys.any(route.pattern.startsWith))
+          '${route.method} ${route.pattern}',
+    ];
+    expect(
+      undescribed,
+      isEmpty,
+      reason: '给它写 OpSpec（或迁之前在 op_descriptions_<域>.dart 补描述）',
     );
   });
 
@@ -102,36 +235,6 @@ void main() {
         isFalse,
         reason: op.id,
       );
-    }
-  });
-
-  test('操作 id 唯一、点分小写、不含 __（AI 线上名把点换成 __）', () {
-    final RegExp shape = RegExp(r'^[a-z][a-z0-9]*(\.[a-z][a-z0-9-]*)+$');
-    for (final FushiOp op in catalog.ops) {
-      expect(shape.hasMatch(op.id), isTrue, reason: op.id);
-      expect(op.id.contains('__'), isFalse, reason: op.id);
-      expect(op.summary.trim(), isNotEmpty, reason: op.id);
-    }
-  });
-
-  test('非 read 操作必须可撤销，或标成 irreversible（AI 执行前出确认卡片）', () {
-    for (final FushiOp op in catalog.ops) {
-      if (op.risk == OpRisk.read) {
-        expect(op.undo, isNull, reason: '${op.id}：read 操作不该声明撤销');
-        continue;
-      }
-      expect(
-        op.undo != null || op.risk == OpRisk.irreversible,
-        isTrue,
-        reason: '${op.id}：AI 写操作必须可回滚（fushi/CLAUDE.md §13）',
-      );
-      if (op.risk == OpRisk.irreversible) {
-        expect(
-          op.undo,
-          isNull,
-          reason: '${op.id}：能撤销就该是 write，不是 irreversible',
-        );
-      }
     }
   });
 
@@ -147,9 +250,9 @@ void main() {
       missing,
       isEmpty,
       reason:
-          '这些 longRunning 操作没有 taskStatus：用现有状态路由（kit.callRoute）'
-          '映射成 OpTaskStatus，结果里任务 id 不在顶层 taskId/jobId 时再写 '
-          'taskIdOf（见 lib/src/ops/op_task_status.dart）。确实没有状态路由才进 '
+          '这些 longRunning 操作没有 taskStatus：用现有状态路由映射成 OpTaskStatus，'
+          '结果里任务 id 不在顶层 taskId/jobId 时再写 taskIdOf（见 '
+          'lib/src/ops/op_task_status.dart）。确实没有状态路由才进 '
           'kLongRunningWithoutTaskStatus 并写明理由。\n${missing.join('\n')}',
     );
     for (final String id in kLongRunningWithoutTaskStatus.keys) {
@@ -159,50 +262,9 @@ void main() {
     }
   });
 
-  test('装扩展一律先确认（D9）', () {
-    for (final FushiOp op in catalog.ops) {
-      if (_extensionInstallOp.hasMatch(op.id)) {
-        expect(
-          op.confirm || op.risk == OpRisk.irreversible,
-          isTrue,
-          reason: '${op.id}：装扩展要用户点确认',
-        );
-      }
-    }
-  });
-
-  test('带地址参数的操作先确认（模型给的地址 = 不可撤销的出站，spec §5.2）', () {
-    final List<String> offenders = <String>[
-      for (final FushiOp op in catalog.ops)
-        if (!op.spec.needsConfirmation &&
-            !kAddressParamOpsWithoutConfirmation.containsKey(op.id))
-          for (final OpParam p in op.spec.modelParams)
-            if (_addressParamName.hasMatch(p.name)) '${op.id}(${p.name})',
-    ];
-    expect(
-      offenders,
-      isEmpty,
-      reason:
-          '这些操作让模型填一个地址却不先确认。会去请求它的：标 irreversible，'
-          '或可撤销写操作加 confirm: true；确实不请求（只存起来 / 只发往固定主机）'
-          '的进 kAddressParamOpsWithoutConfirmation 并写明理由。\n'
-          '${offenders.join('\n')}',
-    );
-    for (final String id in kAddressParamOpsWithoutConfirmation.keys) {
-      final FushiOp? op = catalog[id];
-      expect(op, isNotNull, reason: '$id：豁免表里的操作已不存在');
-      expect(
-        op!.spec.modelParams.any(
-          (OpParam p) => _addressParamName.hasMatch(p.name),
-        ),
-        isTrue,
-        reason: '$id：已没有地址参数，从豁免表删掉',
-      );
-      expect(op.spec.needsConfirmation, isFalse, reason: '$id：已经先确认了，从豁免表删掉');
-    }
-  });
-
-  test('路径参数与模式一致；表态参数真被路由读取', () {
+  test('旧路径：表态参数真被路由读取', () {
+    // OpSpec 来路的操作不在这里查：表态参数只能经 OpArgs.gate 读，FushiOp.run 在实现
+    // 成功返回后查读没读（没读抛 StateError），见 fushi_cli 的 op_spec_test.dart。
     final String routeSources = <String>[
       for (final FileSystemEntity f in Directory('lib/src/ops').listSync())
         if (f is File &&
@@ -215,19 +277,7 @@ void main() {
       ).readAsStringSync(),
     ].join('\n');
     for (final FushiOp op in catalog.ops) {
-      final Set<String> segments = <String>{
-        for (final String seg in op.route.pattern.split('/'))
-          if (seg.startsWith(':')) seg.substring(1),
-      };
-      final Set<String> inPath = <String>{
-        for (final OpParam p in op.params)
-          if (p.inPath) p.name,
-      };
-      expect(
-        inPath,
-        segments,
-        reason: '${op.id}：inPath 参数要与 ${op.route.pattern} 的 :段一致',
-      );
+      if (op.route.op != null) continue;
       for (final OpParam gate in op.params.where((OpParam p) => p.userGate)) {
         expect(
           routeSources.contains("'${gate.name}'"),

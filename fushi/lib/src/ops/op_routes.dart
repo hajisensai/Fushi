@@ -34,6 +34,7 @@ import 'package:fushi/src/ops/ctl_page_backdrop_routes.dart';
 import 'package:fushi/src/ops/ctl_video_routes.dart';
 import 'package:fushi/src/ops/op_catalog_assembly.dart';
 import 'package:fushi/src/ops/op_context.dart';
+import 'package:fushi/src/ops/op_describe_kit.dart';
 
 /// 全部按域注册的路由，外加操作目录的通用面（`/api/admin/ops*`，`fushi_cli op`）。
 /// 目录在第一次被访问时才组装（构造路由表本身不碰 AppModel）。
@@ -86,29 +87,41 @@ OpInvoker buildInProcessOpInvoker(
 );
 
 /// 全部按域注册的控制通道路由。每个域只改自己的 `ctl_<域>_routes.dart`。
-List<CtlRoute> buildDomainOpRoutes(OpContext context) => <CtlRoute>[
-  ...buildLibraryCtlRoutes(context),
-  ...buildDictionaryCtlRoutes(context),
-  ...buildSettingsCtlRoutes(context),
-  ...buildPageBackdropCtlRoutes(context),
-  ...buildDataCtlRoutes(context),
-  ...buildOnlineCtlRoutes(context),
-  ...buildVideoCtlRoutes(context),
-  ...buildGameCtlRoutes(context),
-  ...buildGameHookCodeCtlRoutes(context),
-  ...buildMusicCtlRoutes(context),
-  ...buildMusicImportCtlRoutes(context),
-  ...buildSrsCtlRoutes(context),
-  ...buildSrsMinedImportCtlRoutes(context),
-  ...buildTtsCtlRoutes(context),
-  ...buildBookMetadataCtlRoutes(context),
-  ...buildMediaLinksCtlRoutes(context),
-  ...buildDiscCtlRoutes(context),
-  ...buildUrlImportCtlRoutes(context),
-  ...buildWebCtlRoutes(context),
-  ...buildWebSearchCtlRoutes(context),
-  ...buildFeedbackCtlRoutes(context),
-  ...buildLeaderboardCtlRoutes(context),
-  ...buildAnimeDownloadCtlRoutes(context),
-  ...buildAiAgentCtlRoutes(context),
-];
+///
+/// 已迁到 [OpSpec] 的域给的是 [FushiOp]（声明 + 实现），路由由它派生（[FushiOp.route]），
+/// 目录组装时直接从路由上取操作；还在旧路径上的域给手写 [CtlRoute]。位置保持原顺序
+/// （路由按顺序匹配）。
+List<CtlRoute> buildDomainOpRoutes(OpContext context) {
+  final OpDescribeKit kit = OpDescribeKit(context);
+  final List<CtlRoute> routes = <CtlRoute>[
+    ...buildLibraryCtlRoutes(context),
+    ...buildDictionaryCtlRoutes(context),
+    ...buildSettingsCtlRoutes(context),
+    ...buildPageBackdropCtlRoutes(context),
+    ...buildDataCtlRoutes(context),
+    ...buildOnlineCtlRoutes(context),
+    ...buildVideoCtlRoutes(context),
+    ...buildGameCtlRoutes(context),
+    ...buildGameHookCodeCtlRoutes(context),
+    ...buildMusicCtlRoutes(context),
+    ...buildMusicImportCtlRoutes(context),
+    ...buildSrsCtlRoutes(context),
+    ...buildSrsMinedImportCtlRoutes(context),
+    ...buildTtsCtlRoutes(context),
+    ...buildBookMetadataCtlRoutes(context),
+    ...buildMediaLinksCtlRoutes(context),
+    ...buildDiscCtlRoutes(context),
+    ..._routesOf(buildUrlImportOps(kit)),
+    ...buildWebCtlRoutes(context),
+    ..._routesOf(buildWebSearchOps(kit)),
+    ...buildFeedbackCtlRoutes(context),
+    ..._routesOf(buildLeaderboardOps(kit)),
+    ..._routesOf(buildAnimeDownloadOps(kit)),
+    ...buildAiAgentCtlRoutes(context),
+  ];
+  kit.attach(routes);
+  return routes;
+}
+
+Iterable<CtlRoute> _routesOf(List<FushiOp> ops) =>
+    ops.map((FushiOp op) => op.route);
