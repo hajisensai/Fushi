@@ -23,6 +23,7 @@ void main() {
       '../packages/fushi_engine/lib/epub/epub_importer.dart',
       'lib/src/pdf/pdf_importer.dart',
       '../packages/fushi_engine/lib/media/manga/manga_importer.dart',
+      '../packages/fushi_engine/lib/epub/book_content_restore.dart',
       'lib/src/media/source_library/source_library_scanner.dart',
       '../packages/fushi_engine/lib/stats/stat_facts.dart',
       'lib/src/pages/implementations/reader_fushi_history_page.dart',
@@ -45,6 +46,9 @@ void main() {
     const Map<String, String> delegatesLibrarySnapshot = <String, String>{
       '../packages/fushi_engine/lib/media/manga/manga_importer.dart':
           'EpubImporter.placeUnderResolvedTitle(',
+      // PDF 的跳过预检与落位判重自 UXtYShn4Yj 起都交给共用实现（预检在
+      // book_content_restore.dart，那一侧同样在本组受瘦投影约束）。
+      'lib/src/pdf/pdf_importer.dart': 'EpubImporter.placeUnderResolvedTitle(',
     };
     for (final String rel in thinCallers) {
       test(rel, () {

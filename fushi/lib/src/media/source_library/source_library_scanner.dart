@@ -53,6 +53,7 @@ import 'package:fushi_engine/media/video/video_member_file.dart';
 import 'package:fushi_engine/media/video/video_content_fingerprint.dart';
 import 'package:fushi_engine/media/torrent/download_save_root.dart'
     show isSourceIncomingPath;
+import 'package:fushi_engine/epub/book_content_restore.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/epub/epub_image_index_cache.dart'
@@ -548,6 +549,18 @@ class _MangaSourceIdentity {
         return const DuplicatePolicy.skip();
       case SourceDuplicateKind.otherSourceFile:
         return const DuplicatePolicy.suffix();
+      case SourceDuplicateKind.sameSource || SourceDuplicateKind.foreign
+          when await findRestorableDuplicate(
+                db: db,
+                proposedTitle: title,
+                format: BookFormat.manga.dbValue,
+              ) !=
+              null:
+        // UXtYShn4Yj：撞上的同名漫画受管内容已丢（不论是不是本来源导入的），照常
+        // 导入，落位时导入器把这卷换进它的书目录（`placeUnderResolvedTitle` 的就地
+        // 恢复）。[finish] 据此按重建记账，不当新入库、不认领进索引。
+        _restoringPaths.add(path);
+        return const DuplicatePolicy.skip();
       case SourceDuplicateKind.sameSource:
         final String? uid = await adoptExistingBookForSource(
           db: db,
@@ -588,14 +601,7 @@ class _MangaSourceIdentity {
     )) {
       return null;
     }
-    final String base = await EpubStorage.baseDirectory();
-    if (!p.isWithin(p.canonicalize(base), p.canonicalize(row.extractDir))) {
-      throw StateError(
-        'content of "${row.title}" is missing and its book folder '
-        '(${row.extractDir}) is outside the library folder ($base); '
-        'not rebuilt',
-      );
-    }
+    await _throwIfOutsideLibrary(row);
     return (
       target: MangaRebuildTarget(
         bookKey: row.bookKey,
@@ -614,6 +620,13 @@ class _MangaSourceIdentity {
     ({MangaRebuildTarget target, int pageCount})? repair,
   ) async {
     if (repair == null) {
+      if (_restoringPaths.remove(path)) {
+        debugPrint(
+          'SourceLibraryScanner restored missing manga content of $bookKey '
+          'from $path',
+        );
+        return false;
+      }
       await record(path, bookKey);
       return true;
     }
@@ -630,6 +643,9 @@ class _MangaSourceIdentity {
 
   /// 本轮就地重建、但页数与原条目不同的卷（[finish]）。
   final List<String> repairedFromChangedPaths = <String>[];
+
+  /// [policyFor] 判为「撞上受管内容已丢的同名漫画、交给导入器就地恢复」的卷。
+  final Set<String> _restoringPaths = <String>{};
 
   /// 卷 [path] 导入成了书 [bookKey]：登记进索引。
   Future<void> record(String path, String bookKey) async {
@@ -1340,6 +1356,19 @@ class _BookSourceIdentity {
         row.sourceId == sourceId &&
         row.format == format &&
         (item.isPdf || row.epubPath == p.basename(path));
+  }
+
+  /// 书行 [row]（标题撞上了 [item]）丢了受管内容时能不能拿 [item] 这份原件重建它：
+  /// 格式一致（PDF 对 PDF、EPUB 对 EPUB）即可，**不要求**是本来源导入的
+  /// （UXtYShn4Yj：手动导入 / 删掉又重新添加的来源导入的书，丢了内容后用户重新
+  /// 扫描原件同样要能修回来——与导入器的就地恢复同一判据，见
+  /// `book_content_restore.dart`）。内容完好 / 书目录在库外由 `_repairBookContent`
+  /// 自己判。认领进索引（[record]）仍只认 [owns]。
+  bool canRebuild(ScanBookItem item, BookSourceRow row) {
+    final String format = item.isPdf
+        ? BookFormat.pdf.dbValue
+        : BookFormat.epub.dbValue;
+    return row.format == format;
   }
 
   /// 书行 [bookKey] 的瘦投影（刚导入 / 判重复后补进内存表用）。
@@ -2291,7 +2320,7 @@ class SourceLibraryScanner {
             // 导入器用 DuplicatePolicy.skip() 也会判它重复：结论一样，不开包。
             // 重建排在 [record] 之前：它要看的是「这份原件与入库时那份是否同一份」，
             // record 会把索引里的指纹换成现在的；重建失败时也不记，下一轮重试。
-            if (identity.owns(item.bookPath, item, taken)) {
+            if (identity.canRebuild(item, taken)) {
               await _repairBookContent(
                 item,
                 taken,
@@ -2432,7 +2461,7 @@ class SourceLibraryScanner {
       if (existing != null) {
         // BUG-5569：远端 EPUB 要下载下来才知道标题，走到这里时原件已在本地临时盘上，
         // 受管内容丢了就直接拿它重建（不再下第二遍）。
-        if (identity.owns(item.bookPath, item, existing)) {
+        if (identity.canRebuild(item, existing)) {
           await _repairBookContent(
             item,
             existing,
@@ -2485,16 +2514,9 @@ class SourceLibraryScanner {
     )) {
       return;
     }
-    final String base = await EpubStorage.baseDirectory();
-    if (!p.isWithin(p.canonicalize(base), p.canonicalize(row.extractDir))) {
-      throw StateError(
-        'content of "${row.title}" is missing and its book folder '
-        '(${row.extractDir}) is outside the library folder ($base); '
-        'not rebuilt',
-      );
-    }
     final EpubBookRow? full = await _db.getEpubBook(row.bookKey);
     if (full == null) return;
+    await _throwIfOutsideLibrary(full);
     Directory? tmp;
     try {
       String local = localBookPath ?? item.bookPath;
@@ -2510,17 +2532,13 @@ class SourceLibraryScanner {
               extractDir: row.extractDir,
             );
         structureChanged = rebuilt.pageCount != full.chapterCount;
-        await _db.updateEpubBookChapters(
-          row.bookKey,
+        await writeRestoredBookMetadata(
+          db: _db,
+          existing: full,
           chapterCount: rebuilt.pageCount,
           chaptersJson: full.chaptersJson,
+          coverPath: rebuilt.coverRel,
         );
-        if (full.coverPath == null && rebuilt.coverRel != null) {
-          await _db.updateEpubBookContentPaths(
-            row.bookKey,
-            coverPath: rebuilt.coverRel,
-          );
-        }
       } else {
         // 插图索引缓存按解压目录路径记，跟着旧树一起作废（重建后路径不变）。
         await deleteEpubImageIndexCache(row.extractDir);
@@ -2532,20 +2550,14 @@ class SourceLibraryScanner {
         structureChanged =
             rebuilt.chapterCount != full.chapterCount ||
             !sameChapterHrefs(full.chaptersJson, rebuilt.chaptersJson);
-        // 章节元数据必须与盘上的新树一致（阅读器按它定位章节文件）；原件没变时逐字
-        // 相同，只有字数口径可能升到当前版本。
-        await _db.updateEpubBookChapters(
-          row.bookKey,
+        // 原件没变时章节元数据逐字相同，只有字数口径可能升到当前版本。
+        await writeRestoredBookMetadata(
+          db: _db,
+          existing: full,
           chapterCount: rebuilt.chapterCount,
           chaptersJson: rebuilt.chaptersJson,
+          coverPath: rebuilt.coverPath,
         );
-        // 封面列只在原来为空时补：用户换过 / 刮削过的封面不被原件的封面盖掉。
-        if (full.coverPath == null && rebuilt.coverPath != null) {
-          await _db.updateEpubBookContentPaths(
-            row.bookKey,
-            coverPath: rebuilt.coverPath,
-          );
-        }
       }
       tally.repairedPaths.add(item.bookPath);
       if (sourceChanged || structureChanged) {
@@ -4401,29 +4413,6 @@ Future<bool> _isDeadLocalPath(String? path) async {
   return !await File(path).exists();
 }
 
-/// BUG-5569：一本已入库书的受管内容是否还在——只认阅读器开书必需的产物：书目录在且
-/// 非空；EPUB 还要有 `META-INF/container.xml`（重新解析解压树的入口），PDF / 漫画还要
-/// 有书目录里的 `extractDir/epubPath`（`document.pdf` / `manga.json`）。封面不算：它有
-/// 大小写不敏感的兜底解析，还可能被用户换成别处的文件。[extractDir] 为空或是别的格式
-/// 一律算「在」（没有可判、可重建的受管目录）。
-@visibleForTesting
-Future<bool> bookManagedContentIntact({
-  required String format,
-  required String extractDir,
-  required String epubPath,
-}) async {
-  if (extractDir.isEmpty) return true;
-  final bool isEpub = format == BookFormat.epub.dbValue;
-  final bool isFileBook =
-      format == BookFormat.pdf.dbValue || format == BookFormat.manga.dbValue;
-  if (!isEpub && !isFileBook) return true;
-  if (!await EpubStorage.bookDirExists(extractDir)) return false;
-  final String entry = isEpub
-      ? p.join(extractDir, 'META-INF', 'container.xml')
-      : p.join(extractDir, epubPath);
-  return File(entry).exists();
-}
-
 /// [a] 与 [b] 两份 `chaptersJson` 的章节 href 序列是否逐个相同（字数等别的字段不比）。
 /// 解析不了的一律算不同。
 @visibleForTesting
@@ -4457,4 +4446,16 @@ bool audiobookPersistedNameMatches(String persisted, String source) {
   final String original = p.basenameWithoutExtension(source).toLowerCase();
   return stored == original ||
       stored.replaceFirst(RegExp(r' _\d+$'), '') == original;
+}
+
+/// 受管内容丢了的书 [row] 的书目录不在当前书库根下（旧数据根、没 rebase 的路径）时
+/// 不重建：往那里写只会把书散落到库外，抛出交给逐本 / 逐卷失败记账提示出来。
+Future<void> _throwIfOutsideLibrary(EpubBookRow row) async {
+  if (await bookDirWithinLibrary(row.extractDir)) return;
+  final String base = await EpubStorage.baseDirectory();
+  throw StateError(
+    'content of "${row.title}" is missing and its book folder '
+    '(${row.extractDir}) is outside the library folder ($base); '
+    'not rebuilt',
+  );
 }

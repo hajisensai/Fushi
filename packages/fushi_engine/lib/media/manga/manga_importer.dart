@@ -7,6 +7,9 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi_compute/fushi_compute.dart' show FfcImageFormat;
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/epub/book_content_restore.dart'
+    show writeRestoredBookMetadata;
+import 'package:fushi_engine/epub/book_content_restore.dart' as restore;
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
@@ -175,8 +178,9 @@ class MangaImporter {
     );
   }
 
-  /// [DuplicatePolicy.skip] 的导入前预检（manga-10）：[proposedTitle] 已在书库里时抛
-  /// [DuplicateImportCancelledException]，否则什么都不做。只读一次瘦投影书目快照。
+  /// [DuplicatePolicy.skip] 的导入前预检（manga-10）：[proposedTitle] 已在书库里、且
+  /// 撞上的行不能就地恢复（受管内容完好 / 不是漫画，判据见 `book_content_restore.dart`）
+  /// 时抛 [DuplicateImportCancelledException]，否则什么都不做。
   ///
   /// 给「定书名之前要先做重活」的入口用（压缩包整包解压、页图文件夹逐页读尺寸）；
   /// 落位时 [EpubImporter.placeUnderResolvedTitle] 的判重照旧保留。其它策略直接返回，
@@ -185,15 +189,12 @@ class MangaImporter {
     required FushiDatabase db,
     required String proposedTitle,
     required DuplicatePolicy policy,
-  }) async {
-    if (policy is! SkipDuplicate) return;
-    final List<EpubBookMeta> books = await db.getEpubBookMetas();
-    throwIfSkippedDuplicate(
-      existingTitles: <String>[for (final EpubBookMeta b in books) b.title],
-      proposedTitle: proposedTitle,
-      policy: policy,
-    );
-  }
+  }) => restore.precheckSkippedDuplicate(
+    db: db,
+    proposedTitle: proposedTitle,
+    format: BookFormat.manga.dbValue,
+    policy: policy,
+  );
 
   /// 「一个装着页图的文件夹」→ [MokuroPayload] 的**唯一**枚举/解码口径：自然序枚举
   /// [root] 下的页图，逐张解码取真实宽高（`bakeOrientation` 后，EXIF 旋转过的页不会
@@ -676,63 +677,93 @@ class MangaImporter {
     String? placedDir;
     String? insertedKey;
     try {
-      final ({String storedTitle, String bookKey, int importedAtMs}) placed =
-          await EpubImporter.placeUnderResolvedTitle(
+      final ({
+        String storedTitle,
+        String bookKey,
+        int importedAtMs,
+        bool restored,
+      })
+      placed = await EpubImporter.placeUnderResolvedTitle(
+        db: db,
+        proposedTitle: proposedTitle,
+        policy: policy,
+        format: BookFormat.manga.dbValue,
+        // 同名漫画受管内容已丢（UXtYShn4Yj）：备好的页图 + manga.json 原子换进它的
+        // 书目录，回写页数（封面按 [writeRestoredBookMetadata] 的同一规则）。
+        restore: (EpubBookRow existing) async {
+          EpubStorage.moveDirIntoPlace(
+            srcDir: Directory(stagedDir!),
+            targetDir: existing.extractDir,
+            liveExtractDirs: const <String>[],
+          );
+          await writeRestoredBookMetadata(
             db: db,
-            proposedTitle: proposedTitle,
-            policy: policy,
-            // 第二遍：拷图 + 写 manga.json，进暂存目录。书名键在锁内被别人占了要
-            // 重新定夺时会再进来一次，已备好的不重做。
-            stage: () async {
-              if (artifacts != null) return;
-              final String dir = await EpubImporter.createStagingDir(db);
-              stagedDir = dir;
-              artifacts = await copyMangaArtifacts(
-                srcDir: srcDir,
-                payload: payload,
-                destRels: destRels,
-                bookDir: dir,
-                onProgress: onProgress,
-                pageSource: pageSource,
+            existing: existing,
+            chapterCount: artifacts!.pageCount,
+            chaptersJson: existing.chaptersJson,
+            coverPath: artifacts!.coverRel,
+          );
+          return (
+            storedTitle: existing.title,
+            bookKey: existing.bookKey,
+            importedAtMs: existing.importedAt,
+            restored: true,
+          );
+        },
+        // 第二遍：拷图 + 写 manga.json，进暂存目录。书名键在锁内被别人占了要
+        // 重新定夺时会再进来一次，已备好的不重做。
+        stage: () async {
+          if (artifacts != null) return;
+          final String dir = await EpubImporter.createStagingDir(db);
+          stagedDir = dir;
+          artifacts = await copyMangaArtifacts(
+            srcDir: srcDir,
+            payload: payload,
+            destRels: destRels,
+            bookDir: dir,
+            onProgress: onProgress,
+            pageSource: pageSource,
+          );
+        },
+        place:
+            (
+              String storedTitle,
+              String bookKey,
+              List<EpubBookMeta> liveBooks,
+            ) async {
+              final String bookDir = EpubStorage.moveDirIntoPlace(
+                srcDir: Directory(stagedDir!),
+                targetDir: await MangaStorage.bookPath(bookKey),
+                liveExtractDirs: liveBooks.map(
+                  (EpubBookMeta b) => b.extractDir,
+                ),
+              );
+              placedDir = bookDir;
+              final int importedAtMs = DateTime.now().millisecondsSinceEpoch;
+              // 封面 = 第一页页图的相对路径（书架封面解析器
+              // `p.join(extractDir, coverPath)`）。
+              insertedKey = await db.insertEpubBook(
+                bookRowFor(
+                  bookKey: bookKey,
+                  title: storedTitle,
+                  coverRel: artifacts!.coverRel,
+                  bookDir: bookDir,
+                  pageCount: artifacts!.pageCount,
+                  importedAt: importedAtMs,
+                  sourceId: sourceId,
+                  sourceMetadata: sourceMetadata,
+                ),
+              );
+              return (
+                storedTitle: storedTitle,
+                bookKey: bookKey,
+                importedAtMs: importedAtMs,
+                restored: false,
               );
             },
-            place:
-                (
-                  String storedTitle,
-                  String bookKey,
-                  List<EpubBookMeta> liveBooks,
-                ) async {
-                  final String bookDir = EpubStorage.moveDirIntoPlace(
-                    srcDir: Directory(stagedDir!),
-                    targetDir: await MangaStorage.bookPath(bookKey),
-                    liveExtractDirs: liveBooks.map(
-                      (EpubBookMeta b) => b.extractDir,
-                    ),
-                  );
-                  placedDir = bookDir;
-                  final int importedAtMs =
-                      DateTime.now().millisecondsSinceEpoch;
-                  // 封面 = 第一页页图的相对路径（书架封面解析器
-                  // `p.join(extractDir, coverPath)`）。
-                  insertedKey = await db.insertEpubBook(
-                    bookRowFor(
-                      bookKey: bookKey,
-                      title: storedTitle,
-                      coverRel: artifacts!.coverRel,
-                      bookDir: bookDir,
-                      pageCount: artifacts!.pageCount,
-                      importedAt: importedAtMs,
-                      sourceId: sourceId,
-                      sourceMetadata: sourceMetadata,
-                    ),
-                  );
-                  return (
-                    storedTitle: storedTitle,
-                    bookKey: bookKey,
-                    importedAtMs: importedAtMs,
-                  );
-                },
-          );
+      );
+      // 就地恢复不是新导入：不写「added」活动事件。
+      if (placed.restored) return placed.bookKey;
 
       // 与 EPUB/PDF 一致：写一条「added」活动事件喂首页时间轴。best-effort。
       try {
@@ -812,22 +843,13 @@ class MangaImporter {
           liveExtractDirs: const <String>[],
         );
       });
-      final String? cover = row.coverPath;
-      final bool coverGone =
-          cover == null ||
-          (!p.isAbsolute(cover) &&
-              !File(p.join(target.extractDir, cover)).existsSync());
-      await db.updateEpubBookChapters(
-        target.bookKey,
+      await writeRestoredBookMetadata(
+        db: db,
+        existing: row,
         chapterCount: artifacts.pageCount,
         chaptersJson: row.chaptersJson,
+        coverPath: artifacts.coverRel,
       );
-      if (coverGone) {
-        await db.updateEpubBookContentPaths(
-          target.bookKey,
-          coverPath: artifacts.coverRel,
-        );
-      }
       return target.bookKey;
     } catch (_) {
       try {
