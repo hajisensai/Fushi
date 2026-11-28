@@ -135,6 +135,11 @@ class VideoMetadataHttpResponse {
 typedef VideoMetadataRetrySleep = Future<void> Function(Duration duration);
 typedef VideoMetadataNow = DateTime Function();
 
+/// 真正发出网络请求前要过的闸门（来源限流，如 `MusicRequestThrottle.run`）。只包住
+/// 每一次实际发出的请求（含有界重试的每一次）；缓存命中不发请求，也就不过闸门、不排队。
+typedef VideoMetadataRequestGate =
+    Future<http.Response> Function(Future<http.Response> Function() request);
+
 class VideoMetadataHttpClient {
   VideoMetadataHttpClient({
     http.Client? client,
@@ -168,12 +173,14 @@ class VideoMetadataHttpClient {
     required String operation,
     String? cacheKey,
     Duration? cacheTtl,
+    VideoMetadataRequestGate? gate,
   }) {
     return send(
       () => _client.get(uri, headers: headers).timeout(timeout),
       operation: operation,
       cacheKey: cacheKey,
       cacheTtl: cacheTtl,
+      gate: gate,
     );
   }
 
@@ -184,6 +191,7 @@ class VideoMetadataHttpClient {
     required String operation,
     String? cacheKey,
     Duration? cacheTtl,
+    VideoMetadataRequestGate? gate,
   }) {
     return send(
       () => _client
@@ -199,6 +207,7 @@ class VideoMetadataHttpClient {
       operation: operation,
       cacheKey: cacheKey,
       cacheTtl: cacheTtl,
+      gate: gate,
     );
   }
 
@@ -207,6 +216,7 @@ class VideoMetadataHttpClient {
     required String operation,
     String? cacheKey,
     Duration? cacheTtl,
+    VideoMetadataRequestGate? gate,
   }) async {
     final String? effectiveCacheKey = cacheKey?.trim();
     if (effectiveCacheKey != null && effectiveCacheKey.isNotEmpty) {
@@ -221,7 +231,9 @@ class VideoMetadataHttpClient {
     StackTrace? lastStack;
     for (int attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
-        final http.Response response = await request();
+        final http.Response response = gate == null
+            ? await request()
+            : await gate(request);
         final Duration? retryAfter = parseRetryAfter(
           response.headers['retry-after'],
           now: _now(),

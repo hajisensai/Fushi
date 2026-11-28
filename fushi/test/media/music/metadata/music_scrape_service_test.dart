@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
@@ -8,11 +9,15 @@ import 'package:fushi/src/media/music/metadata/music_tag_writeback.dart';
 import 'package:fushi/src/pages/implementations/music/music_mv_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_scrape_sections.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/music/metadata/music_auxiliary_providers.dart';
 import 'package:fushi_engine/media/music/metadata/music_metadata_models.dart';
 import 'package:fushi_engine/media/music/metadata/music_metadata_provider.dart';
 import 'package:fushi_engine/media/music/metadata/music_metadata_resolver.dart';
 import 'package:fushi_engine/media/music/metadata/musicbrainz_provider.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart';
 import 'package:fushi_music/fushi_music.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 const String _rec = '79a8b80c-018d-4004-b3ff-cc10d21a3ddd';
 const String _original = '11111111-1111-1111-1111-111111111111';
@@ -21,9 +26,6 @@ const String _release = 'dad6dbbe-68a8-4b31-8c60-2fd287360d50';
 
 /// 假 MusicBrainz：搜索命中一首（这首是翻唱），作品里还有原曲；每个请求都记一条原始快照。
 class _FakeMb implements MusicRecordingProvider {
-  _FakeMb(this.sink);
-
-  final MusicRawResponseSink sink;
   int searches = 0;
   bool fail = false;
 
@@ -71,7 +73,7 @@ class _FakeMb implements MusicRecordingProvider {
 
   @override
   Future<MusicRecording?> fetchRecording(String id) async {
-    sink(
+    MusicRawResponseCapture.record(
       provider: providerKind,
       kind: 'recording',
       externalId: id,
@@ -150,12 +152,8 @@ void main() {
     coverDirectory: () async => Directory.systemTemp,
     fingerprinter: (MusicTrackRow _) async => null,
     scraperFactory:
-        ({
-          required MusicRawResponseSink sink,
-          required String acoustidApiKey,
-          required bool vgmdbEnabled,
-        }) {
-          final _FakeMb fake = mb ??= _FakeMb(sink);
+        ({required String acoustidApiKey, required bool vgmdbEnabled}) {
+          final _FakeMb fake = mb ??= _FakeMb();
           return MusicMetadataScraper(
             resolver: MusicMetadataResolver(musicBrainz: fake),
           );
@@ -237,14 +235,10 @@ void main() {
       vgmdbEnabled: () => vgmdb,
       fingerprinter: (MusicTrackRow _) async => null,
       scraperFactory:
-          ({
-            required MusicRawResponseSink sink,
-            required String acoustidApiKey,
-            required bool vgmdbEnabled,
-          }) {
+          ({required String acoustidApiKey, required bool vgmdbEnabled}) {
             seen.add((key: acoustidApiKey, vgmdb: vgmdbEnabled));
             return MusicMetadataScraper(
-              resolver: MusicMetadataResolver(musicBrainz: _FakeMb(sink)),
+              resolver: MusicMetadataResolver(musicBrainz: _FakeMb()),
             );
           },
     );
@@ -271,6 +265,137 @@ void main() {
     expect(r.total, 1);
     expect(r.matched, 1);
     expect(r.byMethod, <String, int>{'tag_search': 1});
+  });
+
+  test('曲库批量：整次共用一组 provider，同专辑的封面索引 / VGMdb 只请求一次（BUG-5611）', () async {
+    // 同专辑再加两首：三首都识别到同一张发行（同一个 CAA 封面索引、同一个目录编号）。
+    await db.writeMusicScanBatch(
+      MusicScanBatchWrite(
+        tracks: <MusicTracksCompanion>[
+          for (final String uid in <String>['t2', 't3'])
+            MusicTracksCompanion.insert(
+              trackUid: uid,
+              path: '/music/$uid.flac',
+              title: 'Lemon',
+              artistCredit: const Value<String?>('米津玄師'),
+              albumUid: const Value<String?>('a1'),
+              durationMs: const Value<int?>(255900),
+              trackNo: const Value<int?>(1),
+              fileMtimeAt: 1,
+              fileSize: 1,
+              addedAt: 1,
+            ),
+        ],
+        albums: const <MusicAlbumsCompanion>[],
+        artists: const <MusicArtistsCompanion>[],
+        credits: const <MusicTrackCreditsCompanion>[],
+      ),
+    );
+    final Map<String, int> hits = <String, int>{};
+    final MockClient client = MockClient((http.Request req) async {
+      final String host = req.url.host;
+      final String key = '$host${req.url.path}';
+      hits[key] = (hits[key] ?? 0) + 1;
+      if (host == 'coverartarchive.org') {
+        return http.Response(
+          jsonEncode(<String, Object?>{
+            'images': <Object?>[
+              <String, Object?>{
+                'image': 'https://archive.org/cover.jpg',
+                'front': true,
+                'approved': true,
+              },
+            ],
+          }),
+          200,
+        );
+      }
+      if (host == 'vgmdb.info') {
+        return http.Response(
+          jsonEncode(<String, Object?>{
+            'results': <String, Object?>{
+              'albums': <Object?>[
+                <String, Object?>{
+                  'catalog': 'SECL-2270',
+                  'link': 'album/77777',
+                  'titles': <String, Object?>{'ja': 'Lemon'},
+                },
+              ],
+            },
+          }),
+          200,
+        );
+      }
+      if (host == 'archive.org') {
+        return http.Response.bytes(<int>[1, 2, 3], 200);
+      }
+      return http.Response('', 404);
+    });
+    MusicRequestThrottle noWait() =>
+        MusicRequestThrottle(Duration.zero, sleep: (Duration _) async {});
+    final Directory covers = await Directory.systemTemp.createTemp(
+      'bug5611_covers',
+    );
+    addTearDown(() => covers.delete(recursive: true));
+    int built = 0;
+    final MusicScrapeService s = MusicScrapeService(
+      database: () => db,
+      acoustidApiKey: () => '',
+      vgmdbEnabled: () => true,
+      clock: () => 42,
+      coverDirectory: () async => covers,
+      fingerprinter: (MusicTrackRow _) async => null,
+      scraperFactory:
+          ({required String acoustidApiKey, required bool vgmdbEnabled}) {
+            built++;
+            return MusicMetadataScraper(
+              resolver: MusicMetadataResolver(musicBrainz: _FakeMb()),
+              covers: CoverArtArchiveProvider(
+                client: client,
+                throttle: noWait(),
+              ),
+              vgmdb: VgmdbProvider(
+                enabled: vgmdbEnabled,
+                transport: VideoMetadataHttpClient(client: client),
+                throttle: noWait(),
+              ),
+            );
+          },
+    );
+
+    final MusicLibraryScrapeReport r = await s.scrapeLibrary();
+
+    expect(r.total, 3);
+    expect(r.matched, 3);
+    expect(built, 1);
+    expect(hits, <String, int>{
+      'coverartarchive.org/release/$_release': 1,
+      'vgmdb.info/search/albums/SECL-2270': 1,
+      'archive.org/cover.jpg': 1,
+    });
+    // 命中缓存的那几首结论照旧：封面与 VGMdb 一样落库，快照照收。
+    for (final String uid in <String>['t1', 't2', 't3']) {
+      final MusicScrapeMetaRow meta = (await db.getMusicScrapeMeta(uid))!;
+      expect(meta.coverUrl, 'https://archive.org/cover.jpg', reason: uid);
+      expect(meta.vgmdbJson, contains('77777'), reason: uid);
+    }
+    expect(
+      await db.getMusicRawSnapshot(
+        provider: 'caa',
+        snapshotKind: 'release',
+        externalId: _release,
+      ),
+      isNotNull,
+    );
+    expect(
+      await db.getMusicRawSnapshot(
+        provider: 'vgmdb',
+        snapshotKind: 'catalog_search',
+        externalId: 'SECL-2270',
+      ),
+      isNotNull,
+    );
+    expect((await db.getMusicAlbum('a1'))!.coverPath, isNotNull);
   });
 
   group('写回标签 diff', () {

@@ -36,7 +36,6 @@ class AcoustidProvider implements MusicFingerprintProvider {
     http.Client? client,
     MusicRequestThrottle? throttle,
     Uri? baseUri,
-    this.onRawResponse,
   }) : apiKey = apiKey.trim(),
        _client = client ?? createAppHttpIoClient(),
        _ownsClient = client == null,
@@ -51,7 +50,6 @@ class AcoustidProvider implements MusicFingerprintProvider {
   final Duration timeout = const Duration(seconds: 20);
   final MusicRequestThrottle _throttle;
   final Uri _base;
-  final MusicRawResponseSink? onRawResponse;
 
   @override
   MusicMetadataProviderKind get providerKind =>
@@ -115,7 +113,7 @@ class AcoustidProvider implements MusicFingerprintProvider {
         statusCode: res.statusCode,
       );
     }
-    onRawResponse?.call(
+    MusicRawResponseCapture.record(
       provider: providerKind,
       kind: 'lookup',
       externalId: '${fingerprint.hashCode.toUnsigned(32)}:$durationSec',
@@ -188,7 +186,6 @@ class CoverArtArchiveProvider implements MusicCoverProvider {
     http.Client? client,
     MusicRequestThrottle? throttle,
     Uri? baseUri,
-    this.onRawResponse,
     this.downloadTimeout = const Duration(seconds: 30),
   }) : _client = client ?? createAppHttpIoClient(),
        _ownsClient = client == null,
@@ -202,7 +199,6 @@ class CoverArtArchiveProvider implements MusicCoverProvider {
   late final VideoMetadataHttpClient _transport;
   final MusicRequestThrottle _throttle;
   final Uri _base;
-  final MusicRawResponseSink? onRawResponse;
   final Duration downloadTimeout;
 
   @override
@@ -222,22 +218,21 @@ class CoverArtArchiveProvider implements MusicCoverProvider {
     final Uri uri = _base.resolve('release/$id');
     final VideoMetadataHttpResponse res;
     try {
-      res = await _throttle.run(
-        () => _transport.get(
-          uri,
-          headers: <String, String>{
-            'User-Agent': fushiUserAgent('cover-art-archive'),
-            'Accept': 'application/json',
-          },
-          operation: 'cover art archive release',
-          cacheKey: uri.toString(),
-        ),
+      res = await _transport.get(
+        uri,
+        headers: <String, String>{
+          'User-Agent': fushiUserAgent('cover-art-archive'),
+          'Accept': 'application/json',
+        },
+        operation: 'cover art archive release',
+        cacheKey: uri.toString(),
+        gate: _throttle.run,
       );
     } on VideoMetadataNetworkException catch (e) {
       if (e.statusCode == 404) return const <MusicCoverImage>[];
       rethrow;
     }
-    onRawResponse?.call(
+    MusicRawResponseCapture.record(
       provider: providerKind,
       kind: 'release',
       externalId: id,
@@ -328,7 +323,6 @@ class VgmdbProvider implements MusicAlbumCatalogProvider {
     VideoMetadataHttpClient? transport,
     MusicRequestThrottle? throttle,
     Uri? baseUri,
-    this.onRawResponse,
   }) : _transport = transport ?? VideoMetadataHttpClient(),
        _ownsTransport = transport == null,
        _throttle = throttle ?? MusicRequestThrottle.vgmdb,
@@ -339,7 +333,6 @@ class VgmdbProvider implements MusicAlbumCatalogProvider {
   final bool _ownsTransport;
   final MusicRequestThrottle _throttle;
   final Uri _base;
-  final MusicRawResponseSink? onRawResponse;
 
   @override
   MusicMetadataProviderKind get providerKind => MusicMetadataProviderKind.vgmdb;
@@ -362,23 +355,22 @@ class VgmdbProvider implements MusicAlbumCatalogProvider {
         .replace(queryParameters: <String, String>{'format': 'json'});
     final VideoMetadataHttpResponse res;
     try {
-      res = await _throttle.run(
-        () => _transport.get(
-          uri,
-          headers: <String, String>{
-            'User-Agent': fushiUserAgent('vgmdb'),
-            'Accept': 'application/json',
-          },
-          operation: 'vgmdb catalog search',
-          cacheKey: uri.toString(),
-          cacheTtl: const Duration(hours: 6),
-        ),
+      res = await _transport.get(
+        uri,
+        headers: <String, String>{
+          'User-Agent': fushiUserAgent('vgmdb'),
+          'Accept': 'application/json',
+        },
+        operation: 'vgmdb catalog search',
+        cacheKey: uri.toString(),
+        cacheTtl: const Duration(hours: 6),
+        gate: _throttle.run,
       );
     } on VideoMetadataNetworkException catch (e) {
       if (e.statusCode == 404) return null;
       rethrow;
     }
-    onRawResponse?.call(
+    MusicRawResponseCapture.record(
       provider: providerKind,
       kind: 'catalog_search',
       externalId: c,

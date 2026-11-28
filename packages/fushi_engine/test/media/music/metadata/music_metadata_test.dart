@@ -459,6 +459,53 @@ void main() {
       expect(r.warnings, isEmpty);
     });
 
+    test('缓存命中不过闸门；原始响应跟着调用收（BUG-5611）', () async {
+      final List<Duration> slept = <Duration>[];
+      final MusicRequestThrottle gate = MusicRequestThrottle(
+        const Duration(seconds: 1),
+        now: () => DateTime.utc(2026),
+        sleep: (Duration d) async => slept.add(d),
+      );
+      int requests = 0;
+      final CoverArtArchiveProvider caa = CoverArtArchiveProvider(
+        throttle: gate,
+        client: MockClient((http.Request req) async {
+          requests++;
+          return http.Response.bytes(
+            utf8.encode(_fixture('caa_release_lemon.json')),
+            200,
+          );
+        }),
+      );
+      const String release = 'dad6dbbe-68a8-4b31-8c60-2fd287360d50';
+      final List<String> first = <String>[];
+      final List<String> second = <String>[];
+      MusicRawResponseSink sinkInto(List<String> out) =>
+          ({
+            required MusicMetadataProviderKind provider,
+            required String kind,
+            required String externalId,
+            required String rawJson,
+          }) => out.add('${provider.wire}/$kind/$externalId');
+
+      await MusicRawResponseCapture.collect(
+        sinkInto(first),
+        () => caa.fetchReleaseCovers(release),
+      );
+      await MusicRawResponseCapture.collect(
+        sinkInto(second),
+        () => caa.fetchReleaseCovers(release),
+      );
+      // 不在任何收集范围里：照常返回，响应丢掉。
+      expect(await caa.fetchReleaseCovers(release), isNotEmpty);
+
+      expect(requests, 1);
+      expect(slept, isEmpty, reason: '缓存命中不该在 1 s 闸门上排队');
+      expect(first, <String>['caa/release/$release']);
+      expect(second, <String>['caa/release/$release']);
+      caa.close();
+    });
+
     test('闸门：同一闸门上的请求串行且间隔 ≥ minInterval', () async {
       DateTime t = DateTime.utc(2026);
       final List<Duration> slept = <Duration>[];

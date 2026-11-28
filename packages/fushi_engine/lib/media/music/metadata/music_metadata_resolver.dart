@@ -514,11 +514,27 @@ class MusicMetadataScraper {
     vgmdb?.close();
   }
 
-  /// 识别一首；[manualRecordingId] 给了就跳过识别（用户手选）。
+  /// 识别一首；[manualRecordingId] 给了就跳过识别（用户手选）。[sink] 收这一首的原始
+  /// 响应（[MusicRawResponseCapture]）：同一个识别器可以连刮多首（整库识别共用一组
+  /// provider，HTTP 响应缓存与限流闸门才在整次刮库里生效），每首的快照仍各归各。
   Future<MusicScrapeResult> scrape(
     MusicTrackFacts facts, {
     MusicFingerprintSource? fingerprint,
     String? manualRecordingId,
+    MusicRawResponseSink? sink,
+  }) {
+    Future<MusicScrapeResult> body() => _scrape(
+      facts,
+      fingerprint: fingerprint,
+      manualRecordingId: manualRecordingId,
+    );
+    return sink == null ? body() : MusicRawResponseCapture.collect(sink, body);
+  }
+
+  Future<MusicScrapeResult> _scrape(
+    MusicTrackFacts facts, {
+    required MusicFingerprintSource? fingerprint,
+    required String? manualRecordingId,
   }) async {
     final MusicIdentification id;
     final String? manual = normalizeMusicBrainzId(manualRecordingId);
