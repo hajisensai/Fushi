@@ -78,6 +78,30 @@ bool webVideoShowsPlayer({
 bool webVideoLeavesPlayer(String url) =>
     url.isNotEmpty && !webVideoIsWatchPage(url);
 
+/// 网页档键盘桥（[webVideoKeyBridgeScript]）回传的 token → 视频页动作。范围与页面持焦时的
+/// press-time 解析（[resolveVideoKeyboardShortcut]）一致：video → universal，global 里只认全屏键
+/// （BUG-2462：视频页把 F11 接成与双击 / F 同一件事；其余 global 动作留给 app 根）。
+@visibleForTesting
+ShortcutAction? resolveWebVideoKeyToken(
+  FushiShortcutRegistry registry,
+  String token,
+) {
+  final ShortcutAction? action = resolveDictionaryPopupInputToken(
+    registry: registry,
+    token: token,
+    scope: ShortcutScope.video,
+  );
+  if (action != null) return action;
+  final InputBinding? keyboard = InputBinding.deserialize(token);
+  if (keyboard == null) return null;
+  final ShortcutAction? global = registry.resolveKeyboard(
+    keyboard.key,
+    modifiers: keyboard.modifiers,
+    scope: ShortcutScope.global,
+  );
+  return global == ShortcutAction.globalToggleFullscreen ? global : null;
+}
+
 /// 网页档设置面板的分组：mpv / 弹幕都作用在 libmpv 或本地文件上，去掉。「画质增强」页签
 /// 保留（整页消失会被当成「画质增强按钮没了」，拍板 kp-No6loQi），面板在网页档把这一页画成
 /// 档位二选一 + 本档超分（[VideoQuickSettingsSheet.webPlaybackMode]，拍板 cbKi3PN0G7-r2）。
@@ -1766,10 +1790,9 @@ extension _VideoWebSource on _VideoFushiPageState {
   /// WebView2 持焦（登录页里点过）时截获的视频快捷键：走与键盘同一张动作表。
   void _onWebKeyToken(String token) {
     if (!mounted) return;
-    final ShortcutAction? action = resolveDictionaryPopupInputToken(
-      registry: appModel.shortcutRegistry,
-      token: token,
-      scope: ShortcutScope.video,
+    final ShortcutAction? action = resolveWebVideoKeyToken(
+      appModel.shortcutRegistry,
+      token,
     );
     if (action == null) return;
     // 网页档里 Esc 归站点自己（关站内弹窗 / 菜单），不当成「退一级」。

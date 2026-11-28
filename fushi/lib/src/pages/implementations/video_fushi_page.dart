@@ -456,6 +456,8 @@ import 'package:fushi/src/shortcuts/shortcut_action.dart'
     show ShortcutAction, ShortcutScope;
 import 'package:fushi/src/shortcuts/shortcut_labels.dart'
     show ShortcutActionLabel;
+import 'package:fushi/src/shortcuts/shortcut_registry.dart'
+    show FushiShortcutRegistry;
 import 'package:fushi/src/media/video/video_foreground_layers.dart'
     show VideoForegroundLayer, topVideoForegroundLayer;
 import 'package:fushi/src/media/video/video_shader_manager.dart';
@@ -1653,6 +1655,9 @@ abstract class VideoFushiTestHooks {
   /// 站点视频上、页面里有没有 `<video>`、站点上报的解码高度。
   bool get debugIsWebBackend;
   bool get debugWebHasVideo;
+
+  /// 网页档本页切的窗口全屏（[_webWindowFullscreen]）。
+  bool get debugWebWindowFullscreen;
   int get debugWebVideoHeight;
 
   /// 在站点页面里求值（取证：页面只留画面的 style 在不在、`<video>` 实际解码尺寸）。
@@ -2170,6 +2175,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   @override
   bool get debugWebHasVideo => _webPlayerMode;
+
+  @override
+  bool get debugWebWindowFullscreen => _webWindowFullscreen;
 
   @override
   int get debugWebVideoHeight => _webSession?.lastState?.videoHeight ?? 0;

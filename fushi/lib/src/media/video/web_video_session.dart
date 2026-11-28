@@ -202,14 +202,20 @@ Future<void> warmWebVideoAdblock(
 
 // ── 注入脚本 / cookie ───────────────────────────────────────────────────────
 
-/// WebView2 持焦期间截获视频作用域全部键盘绑定（token 直接取注册表序列化形式，
-/// 用户改绑后重开页面即生效），交回 Dart 走同一份动作表。输入框里打字照常放行
-/// （登录页要能输密码，见 [webViewKeyBridgeScript]）。
+/// WebView2 持焦期间截获视频页键盘解析认领的全部绑定（token 直接取注册表序列化形式，
+/// 用户改绑后重开页面即生效），交回 Dart 走同一份动作表（回传后的解析见
+/// `resolveWebVideoKeyToken`）。输入框里打字照常放行（登录页要能输密码，见
+/// [webViewKeyBridgeScript]）。
+///
+/// 范围与页面持焦时的 press-time 解析（`resolveVideoKeyboardShortcut`）一致：video 作用域全部、
+/// 「返回上一级」，以及 global 里唯一被视频页接管的全屏键（默认 F11，BUG-2462）。全屏键漏在
+/// 表外时，网页一拿 OS 键盘焦点（点过站点页面），F11 就只进 DOM、Flutter 收不到，按了没反应。
 String webVideoKeyBridgeScript(FushiShortcutRegistry registry) {
   final Set<String> tokens = <String>{};
   for (final ShortcutAction action in <ShortcutAction>{
     ...ShortcutAction.actionsForScope(ShortcutScope.video),
     ShortcutAction.globalBack,
+    ShortcutAction.globalToggleFullscreen,
   }) {
     for (final InputBinding b
         in registry.bindingsFor(action).keyboardBindings) {
