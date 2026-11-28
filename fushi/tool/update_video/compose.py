@@ -160,8 +160,8 @@ def still_segment(img: Image.Image, seconds: float, out: Path, work: Path,
     )
     run(["ffmpeg", "-y", "-loop", "1", "-framerate", str(FPS), "-t", f"{seconds}", "-i", str(png),
          "-f", "lavfi", "-t", f"{seconds}", "-i", "anullsrc=r=48000:cl=stereo",
-         "-vf", f"zoompan=z='1+0.02*on/{int(seconds * FPS)}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s={W}x{H}:fps={FPS}"
-                + (f",{fades}" if fades else ""),
+         # 不做缓放：zoompan 逐帧把裁切坐标取整到整像素，慢推时文字一抖一抖。
+         "-vf", f"scale={W}:{H},format=yuv420p" + (f",{fades}" if fades else ""),
          "-shortest", *ENC, str(out)])
 
 

@@ -2,7 +2,7 @@
 //
 // 与官网预览共用同一套录屏 / 假指针 / 时间线装置；成片由
 // tool/update_video/compose.py 按 spec 拼成 B 站横屏视频。
-// 指针只是画面上的示意（不动真鼠标）：按钮走焦点 + 激活，网格改尺寸走 Shift+方向键，
+// 指针只是画面上的示意（不动真鼠标）：按钮走焦点 + 激活，网格改尺寸把指针位移逐帧喂给改尺寸柄的拖动回调，
 // 与键盘 / 手柄用户的真实路径一致。
 //
 // 素材夹具（SITE_PREVIEW_UV，可空；空则用官网 demo 素材）：
@@ -152,48 +152,41 @@ Future<void> _sceneUvHome(_Ctx c) async {
     start,
     duration: const Duration(milliseconds: 900),
   );
-  await cursor.click(tester);
-  // 组件外层那个带 onKeyEvent 的 Focus 才收 Shift+方向键（home_widget_grid 的 _onKey）。
-  final Finder keyFocus = find.descendant(
-    of: tile,
-    matching: find.byWidgetPredicate(
-      (Widget w) => w is Focus && w.onKeyEvent != null,
-    ),
-  );
-  expect(keyFocus, findsWidgets, reason: '组件 $slot 应有收键的 Focus');
-  // :905 的 Focus 显式传了 focusNode；别在 Focus 自己的 _FocusInheritedScope 上
-  // 调 Focus.of（会让作用域依赖自己，notifyClients 断言红框）。
-  final FocusNode tileNode = tester.widget<Focus>(keyFocus.first).focusNode!;
-  tileNode.requestFocus();
-  await tester.pump(const Duration(milliseconds: 120));
-  expect(
-    FocusManager.instance.primaryFocus,
-    tileNode,
-    reason: '组件 $slot 应能拿到焦点',
-  );
-  // 指针一格一格往右下拖，每一步同时发一次 Shift+方向键（网格的键盘改尺寸路径）。
-  Future<void> step(LogicalKeyboardKey key, Offset to) async {
-    await cursor.moveTo(
+  await _hold(tester, const Duration(milliseconds: 250));
+  // 连续拖右下角改尺寸柄：逐帧把指针位移喂给柄自己的拖动回调（_ResizeHandle 的
+  // onStart / onUpdate / onEnd，与真指针拖动同一条路径；不发坐标点击）。网格的尺寸
+  // 预览随拖动实时跟手，抬起才落定。
+  final Rect box = tester.getRect(tile);
+  Future<void> dragTo(Offset to, Duration duration) async {
+    final dynamic handle = tester.widget(handles.first);
+    (handle.onStart as VoidCallback)();
+    await tester.pump(const Duration(milliseconds: 16));
+    await cursor.drag(
       tester,
       to,
-      duration: const Duration(milliseconds: 450),
+      duration: duration,
+      onDelta: (Offset d) {
+        (tester.widget(handles.first) as dynamic).onUpdate(d);
+      },
     );
-    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
-    await tester.sendKeyEvent(key);
-    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
-    await _hold(tester, const Duration(milliseconds: 700));
+    ((tester.widget(handles.first) as dynamic).onEnd as ValueChanged<bool>)(
+      true,
+    );
+    await _hold(tester, const Duration(milliseconds: 500));
   }
 
-  final Rect box = tester.getRect(tile);
-  await step(LogicalKeyboardKey.arrowRight, start + Offset(box.width / 2, 0));
-  await step(
-    LogicalKeyboardKey.arrowDown,
-    start + Offset(box.width / 2, box.height / 2),
+  await dragTo(
+    start + Offset(box.width * 0.95, box.height * 0.6),
+    const Duration(milliseconds: 1600),
   );
-  await _hold(tester, const Duration(milliseconds: 1200));
-  await step(LogicalKeyboardKey.arrowLeft, start + Offset(0, box.height / 2));
-  await step(LogicalKeyboardKey.arrowUp, start);
-  await _hold(tester, const Duration(milliseconds: 1000));
+  await _hold(tester, const Duration(milliseconds: 1100));
+  await cursor.moveTo(
+    tester,
+    tester.getCenter(handles.first),
+    duration: const Duration(milliseconds: 500),
+  );
+  await dragTo(start, const Duration(milliseconds: 1300));
+  await _hold(tester, const Duration(milliseconds: 900));
 
   final Finder done = find.byKey(
     const ValueKey<String>('home-widget-edit-done'),
@@ -478,39 +471,49 @@ Future<void> _sceneUvPaste(_Ctx c) async {
   await _hold(tester, const Duration(seconds: 1));
 }
 
-/// 歌词动画：官网 demo 有声书音频 + 同名 .lrc，依次展示几种样式。
+/// 音乐：在线音源（内置 YouTube）搜到的真歌，封面与逐行歌词由 app 自己拉（LRCLIB），
+/// 连着放几段、每段换一种全屏歌词动画。素材夹具 `uv.json` 的 `music`：
+/// `{query, videoId, audio, startMs, stepMs, modes}`；`audio` 是同一首的本地音频，
+/// 只给后期混音（录屏本身无声），与 app 在放的位置逐段对齐。
 Future<void> _sceneUvLyrics(_Ctx c) async {
+  expect(_kUv, isNotEmpty, reason: 'uv-lyrics 需要 SITE_PREVIEW_UV');
   final WidgetTester tester = c.tester;
   final FocusDriver driver = FocusDriver(tester);
-  final Map<String, Object?> book =
-      _demoJson()['book']! as Map<String, Object?>;
-  final List<Map<String, Object?>> cues = <Map<String, Object?>>[
-    for (final Object? e
-        in jsonDecode(
-              File(_demoPath(book['cues']! as String)).readAsStringSync(),
-            )
-            as List<Object?>)
-      e! as Map<String, Object?>,
+  final Map<String, Object?> m = _uvJson()['music']! as Map<String, Object?>;
+  final String audio = _uvPath(m['audio']! as String);
+  final int startMs = m['startMs']! as int;
+  final int stepMs = m['stepMs']! as int;
+  final List<String> modes = <String>[
+    for (final Object? e in m['modes']! as List<Object?>) e! as String,
   ];
-  final Directory dir = _scratch('lyrics');
-  final String song = p.join(dir.path, 'adachi.m4a');
-  File(_demoPath(book['audio']! as String)).copySync(song);
-  String stamp(int ms) =>
-      '[${(ms ~/ 60000).toString().padLeft(2, '0')}:'
-      '${(ms % 60000 / 1000).toStringAsFixed(2).padLeft(5, '0')}]';
-  File(p.join(dir.path, 'adachi.lrc')).writeAsStringSync(
-    <String>[
-      for (final Map<String, Object?> q in cues)
-        '${stamp(q['startMs']! as int)}${q['text']}',
-    ].join('\n'),
+
+  // 与「来源」页搜索同一条路径：内置 YouTube 音源搜索 → 服务器曲目 → 播放项。
+  final YoutubeMusicClient yt = YoutubeMusicClient(displayName: 'YouTube');
+  final MusicServerSearchResult hits = await yt.search(
+    m['query']! as String,
+    limit: 10,
   );
-  final int durationMs = (book['lastCueEndMs']! as int) + 1500;
+  final MusicServerTrack track = hits.tracks.firstWhere(
+    (MusicServerTrack t) => t.id == m['videoId'],
+    orElse: () => fail('YouTube 搜索结果里没有 ${m['videoId']}：${hits.tracks}'),
+  );
+  final MusicPlayItem item = musicServerPlayItem(yt, track);
+  final MusicPlayerEngine engine = c.appModel.musicSession.engine;
 
   final String userMode = c.appModel.prefsRepo.musicVisualizerMode;
   final bool userRandom = c.appModel.prefsRepo.musicVisualizerRandom;
   final PhysicalRect rect = await _resizeClient(tester, _kUvSceneSize);
   try {
     await c.appModel.prefsRepo.setMusicVisualizerRandom(false);
+    await engine.playQueue(<MusicPlayItem>[item]);
+    await engine.play();
+    await _waitFor(
+      tester,
+      () => engine.position > const Duration(seconds: 1),
+      timeout: const Duration(seconds: 60),
+      what: '在线曲目起播',
+    );
+    await engine.seek(Duration(milliseconds: startMs - 3000));
     unawaited(
       c.nav.push<void>(
         adaptivePageRoute<void>(
@@ -519,6 +522,18 @@ Future<void> _sceneUvLyrics(_Ctx c) async {
         ),
       ),
     );
+    // 封面（YouTube 缩略图）与歌词（LRCLIB）都是起播后在线拉的：等第一句出来（歌词行是
+    // RichText，要 findRichText）。
+    await _waitFor(
+      tester,
+      () => find
+          .textContaining('肩落としてる', findRichText: true)
+          .evaluate()
+          .isNotEmpty,
+      timeout: const Duration(seconds: 45),
+      what: '在线歌词',
+    );
+    await _hold(tester, const Duration(milliseconds: 2500));
     final (
       SitePreviewRecording rec,
       SitePreviewTimeline tl,
@@ -529,25 +544,36 @@ Future<void> _sceneUvLyrics(_Ctx c) async {
       const Offset(1300, 700),
     );
     cursor.hide();
-    // 每种样式从头放一遍同一段音频（成片里每段取 6～7 秒）。
-    // 样式面板的网格是懒构建的：只取排在前面、首屏就建出来的几种（注册表顺序
-    // luminous、mindscape、fume、partita、cappella、claddagh、monet …）。
-    for (final String mode in <String>['luminous', 'fume', 'monet']) {
+
+    // 从 [at] 起放 [lenMs]，后期按 app 此刻的真实播放位置对上本地音频。
+    Future<void> playFrom(int at, int lenMs) async {
+      await engine.seek(Duration(milliseconds: at));
+      if (!engine.isPlaying) await engine.play();
+      await _waitFor(
+        tester,
+        () =>
+            engine.isPlaying &&
+            engine.position > Duration(milliseconds: at + 100),
+        timeout: const Duration(seconds: 20),
+        what: '续播到 $at',
+      );
+      tl.playAudio(
+        audio,
+        fromMs: engine.position.inMilliseconds,
+        durationMs: lenMs + 400,
+      );
+    }
+
+    // 开场：歌词页本身（封面 + 滚动歌词）。
+    await engine.pause();
+    await playFrom(startMs - 3000, 3000);
+    await _hold(tester, const Duration(milliseconds: 3000));
+    int at = startMs;
+    for (final String mode in modes) {
+      // 停 → 开样式面板 → 选样式 → 跳到下一段续播：整段剪掉，成片里画面与歌声都接着上一段。
+      final int cutFrom = _sinceStart(rec);
+      await engine.pause();
       await c.appModel.prefsRepo.setMusicVisualizerMode(mode);
-      await c.appModel.musicSession.engine.playQueue(<MusicPlayItem>[
-        MusicPlayItem(
-          trackUid: 'uv-lyrics',
-          path: song,
-          title: '安達としまむら',
-          artist: 'Fushi demo',
-          durationMs: durationMs,
-        ),
-      ]);
-      await c.appModel.musicSession.engine.play();
-      tl.playAudio(song, durationMs: 7000);
-      await _hold(tester, const Duration(milliseconds: 600));
-      // 打开样式面板 → 选样式这段不进成片（剪掉，画面直接从歌词页切到动画）。
-      final int pickerFrom = _sinceStart(rec);
       final Finder button = find.byKey(
         const ValueKey<String>('music_lyrics_visualizer'),
       );
@@ -578,11 +604,14 @@ Future<void> _sceneUvLyrics(_Ctx c) async {
           await driver.focusWidget(tile, maxSteps: 120);
       expect(focused, isTrue, reason: '样式 $mode 应能拿到焦点');
       if (!await driver.activateIntent()) await driver.activate();
-      await _hold(tester, const Duration(milliseconds: 400));
-      tl.cut(pickerFrom, _sinceStart(rec));
-      await _hold(tester, const Duration(milliseconds: 6700));
-      // 退出全屏走歌词页的 PopScope（canPop: !_visualizerOn → _exitVisualizer），
-      // 与系统返回同一条路径；Esc 在全屏动画里不一定落到它上面。
+      await _hold(tester, const Duration(milliseconds: 500));
+      await playFrom(at, stepMs);
+      tl.cut(cutFrom, _sinceStart(rec));
+      await _hold(tester, Duration(milliseconds: stepMs));
+      at = engine.position.inMilliseconds;
+      // 退出全屏走歌词页的 PopScope（与系统返回同一条路径），剪掉。
+      final int exitFrom = _sinceStart(rec);
+      await engine.pause();
       await c.nav.maybePop();
       await _hold(tester, const Duration(milliseconds: 600));
       expect(
@@ -590,8 +619,8 @@ Future<void> _sceneUvLyrics(_Ctx c) async {
         isEmpty,
         reason: '$mode 之后应退出全屏动画',
       );
+      tl.cut(exitFrom, _sinceStart(rec));
     }
-    await c.appModel.musicSession.engine.pause();
     await c.end(
       'uv-lyrics',
       rec,
@@ -601,6 +630,7 @@ Future<void> _sceneUvLyrics(_Ctx c) async {
       outSize: _kUvSceneSize,
     );
   } finally {
+    await engine.pause();
     await c.appModel.prefsRepo.setMusicVisualizerMode(userMode);
     await c.appModel.prefsRepo.setMusicVisualizerRandom(userRandom);
     c.nav.popUntil((Route<dynamic> r) => r.isFirst);
