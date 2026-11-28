@@ -333,21 +333,16 @@ class AudiobookRepository {
   /// 两次独立提交，对端断点就能插进两次写之间——落下「对端的位置 + 本机的时间戳」，
   /// 进程在两次写之间被杀则是「新位置 + 旧时间戳」，LWW 拿一个不属于这个位置的时刻
   /// 去比。播放中每个整秒走一次这里，合成一次提交也少一次 fsync 与一次偏好版本号
-  /// 自增。
+  /// 自增。与调轴 [updateDelayMs] 共用同一原语
+  /// [FushiDatabase.writeLocalStampedIntPref]（BUG-5610）。
   Future<void> updatePositionMs({
     required String bookKey,
     required int positionMs,
-  }) => _db.transaction(() async {
-    final String posKey = '$_kPositionMsKeyPrefix$bookKey';
-    final int current = await _db.getPrefTyped<int>(posKey, 0);
-    if (current == positionMs) return;
-    await _db.setPrefs(<String, String>{
-      posKey: PrefCodec.encode(positionMs),
-      '$_kPositionAtMsKeyPrefix$bookKey': PrefCodec.encode(
-        DateTime.now().millisecondsSinceEpoch,
-      ),
-    });
-  });
+  }) => _db.writeLocalStampedIntPref(
+    valueKey: '$_kPositionMsKeyPrefix$bookKey',
+    stampKey: '$_kPositionAtMsKeyPrefix$bookKey',
+    value: positionMs,
+  );
 
   /// BUG-3197：cue 整组换过之后，把 `audiobook_pos_<positionKey>` 存着的全书毫秒
   /// 从 [oldDurationsMs] 编码换算到 [newDurationsMs] 编码（真实时间位置不变，见
@@ -408,12 +403,20 @@ class AudiobookRepository {
   /// 写调轴（毫秒）并同时盖更新时间戳（互联 LWW 用，与 [updatePositionMs] 同
   /// 纪律：值与时间戳是同一调轴的两个 pref，必须一起写，否则 LWW 无依据——本机
   /// 调整无戳恒 0，会永远输给对端旧戳、再也传不出去）。
-  Future<void> updateDelayMs({required String bookKey, required int ms}) async {
-    await _db.setPrefTyped('$_kDelayMsKeyPrefix$bookKey', ms);
-    await _db.setPrefTyped(
-      '$_kDelayAtMsKeyPrefix$bookKey',
-      DateTime.now().millisecondsSinceEpoch,
-    );
+  ///
+  /// BUG-5610：值与戳**一次提交**（旧实现是两次独立 `setPrefTyped`，同步落地能插进
+  /// 中间、进程死在中间留下「新值 + 旧戳」）；值没变不重盖戳（否则会无故压过对端
+  /// 真实的更新调轴）；戳严格晚于已存戳（见 [FushiDatabase.writeLocalStampedIntPref]）。
+  Future<void> updateDelayMs({required String bookKey, required int ms}) =>
+      _db.writeLocalStampedIntPref(
+        valueKey: '$_kDelayMsKeyPrefix$bookKey',
+        stampKey: '$_kDelayAtMsKeyPrefix$bookKey',
+        value: ms,
+      );
+
+  /// 读调轴最后写入时刻（epoch 毫秒）；无记录返回 0。
+  Future<int> readDelayUpdatedAtMs(String bookKey) async {
+    return _db.getPrefTyped('$_kDelayAtMsKeyPrefix$bookKey', 0);
   }
 
   Future<double> readSpeed(String bookKey) async {

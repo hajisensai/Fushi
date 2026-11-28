@@ -156,26 +156,14 @@ mixin _LocalLibraryHostAudiobooks
       updatedAtMs,
       nowMs: DateTime.now().millisecondsSinceEpoch,
     );
-    final ({int delayMs, int updatedAtMs}) current = await getAudiobookDelay(
-      identity,
-    );
-    final ({int delayMs, int updatedAtMs}) winner = resolveDelayLww(
-      aDelayMs: current.delayMs,
-      aUpdatedAtMs: current.updatedAtMs,
-      bDelayMs: clamped,
-      bUpdatedAtMs: cappedAt,
-    );
-    if (winner.updatedAtMs == current.updatedAtMs &&
-        winner.delayMs == current.delayMs) {
-      return; // host 已存更新或相等，no-op。
-    }
-    await _db.setPrefTyped<int>(
-      audiobookDelayPrefKey(identity),
-      winner.delayMs,
-    );
-    await _db.setPrefTyped<int>(
-      audiobookDelayAtPrefKey(identity),
-      winner.updatedAtMs,
+    // 「严格较新者胜」（[resolveDelayLww] 的 a=已存值 平局规则）的比较与写入同一
+    // 事务（BUG-5610）：旧实现先读后写，读与写之间 host 本机调轴写下的更新值会被
+    // 这次过期判定盖掉，值与戳也分两次提交。
+    await _db.applyStampedIntPrefIfNewer(
+      valueKey: audiobookDelayPrefKey(identity),
+      stampKey: audiobookDelayAtPrefKey(identity),
+      value: clamped,
+      stampMs: cappedAt,
     );
   }
 

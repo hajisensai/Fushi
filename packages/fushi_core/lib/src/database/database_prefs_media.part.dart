@@ -365,6 +365,54 @@ mixin _FushiDbPrefsMedia
     return true;
   });
 
+  // ── 带戳 int 偏好对（BUG-5610）────────────────────────────────────
+  //
+  // 有声书断点 `audiobook_pos_` / 调轴 `audiobook_delay_` 等是「值键 + `…at_` 戳键」
+  // 成对存在偏好表里的 LWW 状态：值与戳必须同一事务读、判、写，否则并发写者能插进
+  // 两次提交之间（落下「对端的值 + 本机的戳」），进程死在中间则是「新值 + 旧戳」，
+  // 「先读后写」的 LWW 还会拿过期快照把更新的值覆盖掉。这一对只经下面两个入口写。
+
+  /// 本机发起的带戳写（用户调轴 / 播放器落断点）：值没变（缺省按 0 读）什么都不写、
+  /// 返回 false（戳的语义是「值最后一次变动的时刻」，BUG-2328）；变了就把值与戳**一次提交**
+  /// 写下，返回 true。
+  ///
+  /// 戳取 `max(now, 已存戳 + 1)`：已存戳可能来自时钟略快的对端（host 允许 +5 分钟
+  /// 偏差），本机这次写入在因果上晚于它，必须严格更新，否则下一轮 LWW 会让旧的
+  /// 对端值把用户刚做的改动拉回去。
+  Future<bool> writeLocalStampedIntPref({
+    required String valueKey,
+    required String stampKey,
+    required int value,
+  }) => transaction(() async {
+    if (await getPrefTyped<int>(valueKey, 0) == value) return false;
+    final int stored = await getPrefTyped<int>(stampKey, 0);
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    await setPrefs(<String, String>{
+      valueKey: PrefCodec.encode(value),
+      stampKey: PrefCodec.encode(now > stored ? now : stored + 1),
+    });
+    return true;
+  });
+
+  /// 落地对端带戳值（同步 pull / host 收 PUT）：仅当 [stampMs] **严格大于**库里
+  /// [stampKey] 的当前值（缺省 0）时把值与戳一次提交写下，返回是否写入。重读与
+  /// 写入同一事务，调用方拿着过期快照也不会盖掉期间本机写下的更新值。平局保留已存
+  /// 值（与 `resolveDelayLww` 的 a 侧平局规则一致）。
+  Future<bool> applyStampedIntPrefIfNewer({
+    required String valueKey,
+    required String stampKey,
+    required int value,
+    required int stampMs,
+  }) => transaction(() async {
+    final int stored = await getPrefTyped<int>(stampKey, 0);
+    if (stampMs <= stored) return false;
+    await setPrefs(<String, String>{
+      valueKey: PrefCodec.encode(value),
+      stampKey: PrefCodec.encode(stampMs),
+    });
+    return true;
+  });
+
   Future<void> deletePref(String key) async {
     await (delete(preferences)..where((t) => t.key.equals(key))).go();
   }
