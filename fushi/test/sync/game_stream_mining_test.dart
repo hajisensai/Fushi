@@ -37,7 +37,7 @@ void main() {
         },
       );
   setUp(() {
-    text = TexthookerService.test()..foldProgressiveLines = false;
+    text = TexthookerService.test()..foldProgressiveLinesReader = () => false;
     mined = <GalHookLineScreenshot>[];
     fields = <Map<String, String>>[];
     capture = (_) async =>
@@ -117,7 +117,7 @@ void main() {
   test(
     'progressive text recaptures the latest text for the same lineId',
     () async {
-      text.foldProgressiveLines = true;
+      text.foldProgressiveLinesReader = () => true;
       final List<Completer<WindowCaptureResult>> captures =
           <Completer<WindowCaptureResult>>[];
       capture = (_) {
@@ -283,7 +283,7 @@ void main() {
   );
 
   test('clear prevents a queued progressive capture from restarting', () async {
-    text.foldProgressiveLines = true;
+    text.foldProgressiveLinesReader = () => true;
     final Completer<WindowCaptureResult> pending =
         Completer<WindowCaptureResult>();
     int captureCount = 0;

@@ -85,7 +85,7 @@ void main() {
 
   setUp(() {
     service = TexthookerService.test();
-    service.foldProgressiveLines = false;
+    service.foldProgressiveLinesReader = () => false;
     activeState = GalHookSessionState(
       phase: GalHookSessionPhase.running,
       externalWindowMode: true,

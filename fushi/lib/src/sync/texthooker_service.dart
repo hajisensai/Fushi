@@ -569,7 +569,18 @@ class TexthookerService extends ChangeNotifier {
   /// 默认开：引擎逐段重绘是 galgame 的常态，不折的话工作台、字数统计、浮窗全都会
   /// 把同一句重复计一遍。留开关是因为万一某个引擎的两句不同台词真的构成前缀关系，
   /// 用户需要一个不改代码就能退回旧行为的逃生口。
-  bool foldProgressiveLines = true;
+  ///
+  /// 真值是偏好 `gal_hook_fold_progressive_lines`，每次判定都经
+  /// [foldProgressiveLinesReader] 现读，服务里不存副本：偏好随 Profile 走，切
+  /// Profile / 别的进程改过偏好后 `AppModel.refreshPrefCache` 只重载偏好缓存，
+  /// 存副本就会停在旧 Profile 的值上（BUG-5609）。
+  bool get foldProgressiveLines => foldProgressiveLinesReader();
+
+  /// [foldProgressiveLines] 的现读入口。服务是没有 ref 的进程级单例，由
+  /// `AppModel.initialise` 接到偏好上；没接（单测 / 初始化前）按默认开算。
+  bool Function() foldProgressiveLinesReader = _foldProgressiveLinesDefault;
+
+  static bool _foldProgressiveLinesDefault() => true;
 
   /// 上一次 [appendLine] 实际**新增**的文本。
   ///
