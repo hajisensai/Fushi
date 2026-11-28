@@ -28,8 +28,8 @@
 | Windows | ✅ | O hooking de texto e voz de galgames só está disponível no Windows |
 | macOS | ✅ | Somente Apple Silicon; Macs com Intel não são compatíveis |
 | iOS | ✅ ([TestFlight](https://testflight.apple.com/join/j88d69jx)) | Sem descoberta, fontes online nem central de downloads (diretrizes da App Store) |
-| Linux | 🔧 Compilar a partir do código-fonte | Ainda não há versão pré-compilada; o leitor de EPUB precisa do WPE WebKit |
-| Fushi Server | 🧪 Beta ([fushi-server](https://github.com/hajisensai/fushi-server/releases)) | Host sem interface para Linux / Windows / macOS com interface web — veja [packages/fushi_server](../../packages/fushi_server/README.md) |
+| Linux | ✅ Flatpak (x86_64) | Repositório Flatpak assinado com atualização automática no app, mais um `.tar.gz` portátil; não está no Flathub |
+| Fushi Server | 🧪 Beta ([fushi-server](https://github.com/hajisensai/fushi-server/releases)) | Host sem interface para Linux x64 / Windows x64 + Docker (ghcr.io) com interface web — veja [packages/fushi_server](../../packages/fushi_server/README.md) |
 
 **Sistema de design** — todas as plataformas usam **Material 3 Expressive** por padrão; um sistema de design **Cupertino** (estilo Apple) pode ser selecionado em *Configurações › Aparência › Sistema de design*; com o Cupertino, o fundo da janela usa Mica no Windows 11 e vibrancy no macOS (a menos que a configuração do sistema de reduzir a transparência ou de alto contraste esteja ativada).
 
@@ -41,7 +41,7 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 
 ## Instalação
 
-Baixe a versão mais recente no [site do Fushi](https://fushi.moe/) — estão disponíveis o APK do Android, o instalador do Windows e as compilações do macOS (somente Apple Silicon; Macs com Intel não são compatíveis); o iOS é instalado pelo [TestFlight](https://testflight.apple.com/join/j88d69jx). O Linux ainda não tem uma versão pré-compilada do aplicativo; compile a partir do código-fonte. O Fushi Server, o servidor sem interface, é lançado separadamente em [hajisensai/fushi-server](https://github.com/hajisensai/fushi-server/releases).
+Baixe a versão mais recente no [site do Fushi](https://fushi.moe/) — estão disponíveis o APK do Android, o instalador do Windows e as compilações do macOS (somente Apple Silicon; Macs com Intel não são compatíveis); o iOS é instalado pelo [TestFlight](https://testflight.apple.com/join/j88d69jx). No Linux, instale o Flatpak (x86_64) com `flatpak install --user https://hajisensai.github.io/Fushi/app.fushi.reader.flatpakref` — ele se atualiza sozinho no app e por `flatpak update`; para distribuições sem Flatpak, cada release inclui um `.tar.gz` portátil (sem instalador no app). Não está no Flathub. O Fushi Server, o servidor sem interface, é lançado separadamente em [hajisensai/fushi-server](https://github.com/hajisensai/fushi-server/releases).
 
 > Requer Android 8.0 (API 26) ou superior.
 

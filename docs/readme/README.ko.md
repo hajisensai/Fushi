@@ -28,8 +28,8 @@
 | Windows | ✅ | 갈게임 텍스트/음성 후킹은 Windows 전용 |
 | macOS | ✅ | Apple Silicon 전용, Intel Mac은 지원하지 않음 |
 | iOS | ✅ ([TestFlight](https://testflight.apple.com/join/j88d69jx)) | App Store 심사 지침에 따라 발견, 온라인 소스, 다운로드 센터는 제외 |
-| Linux | 🔧 소스에서 빌드 | 아직 빌드된 릴리스 없음; EPUB 리더에 WPE WebKit 필요 |
-| Fushi Server | 🧪 Beta ([fushi-server](https://github.com/hajisensai/fushi-server/releases)) | Linux / Windows / macOS용 헤드리스 호스트(웹 UI 포함), [packages/fushi_server](../../packages/fushi_server/README.md) 참조 |
+| Linux | ✅ Flatpak (x86_64) | 서명된 Flatpak 저장소, 앱 내 자동 업데이트; 휴대용 `.tar.gz`도 제공; Flathub에는 없음 |
+| Fushi Server | 🧪 Beta ([fushi-server](https://github.com/hajisensai/fushi-server/releases)) | Linux x64 / Windows x64 + Docker (ghcr.io)용 헤드리스 호스트(웹 UI 포함), [packages/fushi_server](../../packages/fushi_server/README.md) 참조 |
 
 **디자인 시스템**: 모든 플랫폼의 기본값은 **Material 3 Expressive**이며, 「설정 › 외관 › 디자인 시스템」에서 **Cupertino**(Apple 스타일)로 전환할 수 있습니다. Cupertino 사용 시 창 배경은 Windows 11에서는 Mica, macOS에서는 vibrancy를 사용합니다(시스템의 투명도 줄이기 또는 고대비 설정이 켜져 있으면 제외).
 
@@ -41,7 +41,7 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 
 ## 설치
 
-[Fushi 웹사이트](https://fushi.moe/)에서 최신 버전을 다운로드하세요. Android APK, Windows 설치 프로그램, macOS 빌드(Apple Silicon 전용, Intel Mac은 지원하지 않음)를 제공합니다. iOS는 [TestFlight](https://testflight.apple.com/join/j88d69jx)로 설치합니다. Linux용 앱은 아직 빌드된 릴리스가 없으므로 소스에서 직접 빌드해야 합니다. 헤드리스 Fushi Server는 [hajisensai/fushi-server](https://github.com/hajisensai/fushi-server/releases)에서 별도로 릴리스됩니다.
+[Fushi 웹사이트](https://fushi.moe/)에서 최신 버전을 다운로드하세요. Android APK, Windows 설치 프로그램, macOS 빌드(Apple Silicon 전용, Intel Mac은 지원하지 않음)를 제공합니다. iOS는 [TestFlight](https://testflight.apple.com/join/j88d69jx)로 설치합니다. Linux에서는 Flatpak(x86_64)을 `flatpak install --user https://hajisensai.github.io/Fushi/app.fushi.reader.flatpakref` 로 설치합니다. 앱 안과 `flatpak update`로 자동 업데이트됩니다. Flatpak을 쓰지 않는 배포판을 위해 각 릴리스에 휴대용 `.tar.gz`(앱 내 설치 프로그램 없음)도 첨부됩니다. Flathub에는 올라가 있지 않습니다. 헤드리스 Fushi Server는 [hajisensai/fushi-server](https://github.com/hajisensai/fushi-server/releases)에서 별도로 릴리스됩니다.
 
 > Android 8.0(API 26) 이상이 필요합니다.
 

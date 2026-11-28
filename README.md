@@ -28,8 +28,8 @@
 | Windows | ✅ | Galgame text and voice hooking is Windows-only |
 | macOS | ✅ | Apple Silicon only; Intel Macs are not supported |
 | iOS | ✅ ([TestFlight](https://testflight.apple.com/join/j88d69jx)) | No discovery, online sources, or download center (App Store guidelines) |
-| Linux | 🔧 Build from source | No prebuilt release yet; the EPUB reader needs WPE WebKit |
-| Fushi Server | 🧪 Beta ([fushi-server](https://github.com/hajisensai/fushi-server/releases)) | Headless host for Linux / Windows / macOS with a web UI — see [packages/fushi_server](packages/fushi_server/README.md) |
+| Linux | ✅ Flatpak (x86_64) | Signed Flatpak repo with in-app auto-update, plus a portable `.tar.gz`; Flathub is not used |
+| Fushi Server | 🧪 Beta ([fushi-server](https://github.com/hajisensai/fushi-server/releases)) | Headless host for Linux x64 / Windows x64 + Docker (ghcr.io) with a web UI — see [packages/fushi_server](packages/fushi_server/README.md) |
 
 **Design system** — every platform defaults to **Material 3 Expressive**; a **Cupertino** (Apple-style) design system can be selected in *Settings › Appearance › Design system*; with Cupertino, the window background uses Mica on Windows 11 and vibrancy on macOS (unless the system's reduce-transparency or high-contrast setting is on).
 
@@ -41,7 +41,7 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 
 ## Installation
 
-Download the latest release from the [Fushi website](https://fushi.moe/) — Android APK, Windows installer, and macOS builds (Apple Silicon only; Intel Macs are not supported) are available; iOS is installed through [TestFlight](https://testflight.apple.com/join/j88d69jx). Linux has no prebuilt app release yet; build it from source. The headless Fushi Server is released separately on [hajisensai/fushi-server](https://github.com/hajisensai/fushi-server/releases).
+Download the latest release from the [Fushi website](https://fushi.moe/) — Android APK, Windows installer, and macOS builds (Apple Silicon only; Intel Macs are not supported) are available; iOS is installed through [TestFlight](https://testflight.apple.com/join/j88d69jx). On Linux, install the Flatpak (x86_64) with `flatpak install --user https://hajisensai.github.io/Fushi/app.fushi.reader.flatpakref` — it updates itself in the app and through `flatpak update`; a portable `.tar.gz` is attached to each release for distros without Flatpak (no in-app installer). It is not on Flathub. The headless Fushi Server is released separately on [hajisensai/fushi-server](https://github.com/hajisensai/fushi-server/releases).
 
 > Requires Android 8.0 (API 26) or higher.
 

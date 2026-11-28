@@ -28,8 +28,8 @@
 | Windows | ✅ | Galgame 文字 / 語音 Hook 僅限 Windows |
 | macOS | ✅ | 僅 Apple Silicon，不支援 Intel Mac |
 | iOS | ✅（[TestFlight](https://testflight.apple.com/join/j88d69jx)） | 依 App Store 審核指南不含發現、線上來源與下載中心 |
-| Linux | 🔧 需從原始碼建置 | 暫無預編譯套件；EPUB 閱讀器需要 WPE WebKit |
-| Fushi Server | 🧪 Beta（[fushi-server](https://github.com/hajisensai/fushi-server/releases)） | 無頭伺服端，支援 Linux / Windows / macOS，附 Web 管理介面，見 [packages/fushi_server](../../packages/fushi_server/README.md) |
+| Linux | ✅ Flatpak（x86_64） | 附簽章的 Flatpak 倉庫，應用內自動更新；另附可攜 `.tar.gz`；未上架 Flathub |
+| Fushi Server | 🧪 Beta（[fushi-server](https://github.com/hajisensai/fushi-server/releases)） | 無頭伺服端，支援 Linux x64 / Windows x64 + Docker (ghcr.io)，附 Web 管理介面，見 [packages/fushi_server](../../packages/fushi_server/README.md) |
 
 **設計系統**：所有平台預設 **Material 3 Expressive**；可在「設定 › 外觀 › 設計系統」切換為 **Cupertino**（Apple 風格）。選用 Cupertino 時，Windows 11 視窗背景使用 Mica、macOS 使用 vibrancy（系統開啟「降低透明度」或「增強對比」時除外）。
 
@@ -41,7 +41,7 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 
 ## 安裝
 
-從 [Fushi 官網](https://fushi.moe/) 下載最新版本，提供 Android APK、Windows 安裝包與 macOS 建置（僅 Apple Silicon，不支援 Intel Mac）；iOS 透過 [TestFlight](https://testflight.apple.com/join/j88d69jx) 安裝。Linux 暫無預編譯的 App 安裝包，需自行從原始碼建置。無頭伺服端 Fushi Server 另在 [hajisensai/fushi-server](https://github.com/hajisensai/fushi-server/releases) 發佈。
+從 [Fushi 官網](https://fushi.moe/) 下載最新版本，提供 Android APK、Windows 安裝包與 macOS 建置（僅 Apple Silicon，不支援 Intel Mac）；iOS 透過 [TestFlight](https://testflight.apple.com/join/j88d69jx) 安裝。Linux 安裝 Flatpak（x86_64）：`flatpak install --user https://hajisensai.github.io/Fushi/app.fushi.reader.flatpakref`，之後應用內與 `flatpak update` 都會自動更新；不用 Flatpak 的發行版可用每個 release 附帶的可攜 `.tar.gz`（沒有應用內安裝器）。未上架 Flathub。無頭伺服端 Fushi Server 另在 [hajisensai/fushi-server](https://github.com/hajisensai/fushi-server/releases) 發佈。
 
 > 最低 Android 8.0（API 26）。
 

@@ -28,8 +28,8 @@
 | Windows | ✅ | Hook văn bản và giọng nói của galgame chỉ có trên Windows |
 | macOS | ✅ | Chỉ Apple Silicon; không hỗ trợ Mac Intel |
 | iOS | ✅ ([TestFlight](https://testflight.apple.com/join/j88d69jx)) | Không có khám phá, nguồn trực tuyến và trung tâm tải xuống (nguyên tắc của App Store) |
-| Linux | 🔧 Tự biên dịch từ mã nguồn | Chưa có bản phát hành dựng sẵn; trình đọc EPUB cần WPE WebKit |
-| Fushi Server | 🧪 Beta ([fushi-server](https://github.com/hajisensai/fushi-server/releases)) | Máy chủ headless cho Linux / Windows / macOS kèm giao diện web — xem [packages/fushi_server](../../packages/fushi_server/README.md) |
+| Linux | ✅ Flatpak (x86_64) | Kho Flatpak có chữ ký, tự cập nhật trong ứng dụng, kèm `.tar.gz` di động; không có trên Flathub |
+| Fushi Server | 🧪 Beta ([fushi-server](https://github.com/hajisensai/fushi-server/releases)) | Máy chủ headless cho Linux x64 / Windows x64 + Docker (ghcr.io) kèm giao diện web — xem [packages/fushi_server](../../packages/fushi_server/README.md) |
 
 **Hệ thống thiết kế**: mọi nền tảng mặc định dùng **Material 3 Expressive**; có thể chuyển sang hệ thống thiết kế **Cupertino** (phong cách Apple) tại *Cài đặt › Giao diện › Hệ thống thiết kế*. Khi dùng Cupertino, nền cửa sổ dùng Mica trên Windows 11 và vibrancy trên macOS (trừ khi bật tùy chọn giảm độ trong suốt hoặc độ tương phản cao của hệ thống).
 
@@ -41,7 +41,7 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 
 ## Cài đặt
 
-Tải bản mới nhất từ [trang web Fushi](https://fushi.moe/) — có APK Android, trình cài đặt Windows và bản dựng macOS (chỉ Apple Silicon; không hỗ trợ Mac Intel); iOS được cài đặt qua [TestFlight](https://testflight.apple.com/join/j88d69jx). Linux chưa có bản phát hành ứng dụng dựng sẵn; hãy biên dịch từ mã nguồn. Fushi Server (headless) được phát hành riêng tại [hajisensai/fushi-server](https://github.com/hajisensai/fushi-server/releases).
+Tải bản mới nhất từ [trang web Fushi](https://fushi.moe/) — có APK Android, trình cài đặt Windows và bản dựng macOS (chỉ Apple Silicon; không hỗ trợ Mac Intel); iOS được cài đặt qua [TestFlight](https://testflight.apple.com/join/j88d69jx). Trên Linux, cài Flatpak (x86_64) bằng `flatpak install --user https://hajisensai.github.io/Fushi/app.fushi.reader.flatpakref` — tự cập nhật trong ứng dụng và qua `flatpak update`; với bản phân phối không dùng Flatpak, mỗi bản phát hành kèm một `.tar.gz` di động (không có trình cài đặt trong ứng dụng). Không có trên Flathub. Fushi Server (headless) được phát hành riêng tại [hajisensai/fushi-server](https://github.com/hajisensai/fushi-server/releases).
 
 > Yêu cầu Android 8.0 (API 26) trở lên.
 
