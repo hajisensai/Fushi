@@ -8,6 +8,8 @@
 /// JSON 两种形态都吃：搜索结果的 `media[].track[]` 与详情的 `media[].tracks[]`。
 library;
 
+import 'dart:async';
+
 import 'package:fushi_engine/media/music/metadata/music_metadata_models.dart';
 import 'package:fushi_engine/media/music/metadata/music_metadata_provider.dart';
 import 'package:fushi_engine/media/music/metadata/music_release_match.dart';
@@ -22,6 +24,39 @@ typedef MusicRawResponseSink =
       required String externalId,
       required String rawJson,
     });
+
+/// 原始响应按「这一次刮削」收集：provider 一律经 [record] 报告每个原始响应，落到
+/// 包住这次调用的 [collect] 给的 sink 上（外面没有 [collect] 就丢掉）。
+///
+/// sink 跟着调用走（zone 值），不跟着 provider 实例走：整次刮库共用一组 provider（及其
+/// HTTP 响应缓存与限流闸门），每首曲子的快照仍各自收齐；并发的两次调用也互不串。
+abstract final class MusicRawResponseCapture {
+  static final Object _zoneKey = Object();
+
+  /// 在 [body] 期间（含其中的全部异步续体）把 provider 报告的原始响应交给 [sink]。
+  static Future<T> collect<T>(
+    MusicRawResponseSink sink,
+    Future<T> Function() body,
+  ) => runZoned<Future<T>>(body, zoneValues: <Object, Object?>{_zoneKey: sink});
+
+  /// provider 侧：报告一个原始响应。
+  static void record({
+    required MusicMetadataProviderKind provider,
+    required String kind,
+    required String externalId,
+    required String rawJson,
+  }) {
+    final Object? sink = Zone.current[_zoneKey];
+    if (sink is MusicRawResponseSink) {
+      sink(
+        provider: provider,
+        kind: kind,
+        externalId: externalId,
+        rawJson: rawJson,
+      );
+    }
+  }
+}
 
 /// MusicBrainz 的 MBID 形态（小写 UUID）。
 final RegExp kMusicBrainzIdPattern = RegExp(
@@ -67,7 +102,6 @@ class MusicBrainzProvider
     MusicRequestThrottle? throttle,
     Uri? baseUri,
     String? userAgent,
-    this.onRawResponse,
   }) : _transport =
            transport ??
            // 503 = MusicBrainz 限流：退避必须比 1 req/s 的闸门更长，否则重试本身又撞限流
@@ -83,7 +117,6 @@ class MusicBrainzProvider
   final MusicRequestThrottle _throttle;
   final Uri _base;
   final String _userAgent;
-  final MusicRawResponseSink? onRawResponse;
 
   @override
   MusicMetadataProviderKind get providerKind =>
@@ -106,22 +139,21 @@ class MusicBrainzProvider
         .resolve(path)
         .replace(queryParameters: <String, String>{...query, 'fmt': 'json'});
     try {
-      final VideoMetadataHttpResponse res = await _throttle.run(
-        () => _transport.get(
-          uri,
-          headers: <String, String>{
-            'User-Agent': _userAgent,
-            'Accept': 'application/json',
-          },
-          operation: operation,
-          cacheKey: uri.toString(),
-        ),
+      final VideoMetadataHttpResponse res = await _transport.get(
+        uri,
+        headers: <String, String>{
+          'User-Agent': _userAgent,
+          'Accept': 'application/json',
+        },
+        operation: operation,
+        cacheKey: uri.toString(),
+        gate: _throttle.run,
       );
       final Map<String, Object?> json = res.decodeJsonObject(
         operation: operation,
       );
       if (rawKind != null && rawId != null) {
-        onRawResponse?.call(
+        MusicRawResponseCapture.record(
           provider: providerKind,
           kind: rawKind,
           externalId: rawId,

@@ -28,6 +28,7 @@ import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/music/metadata/music_auxiliary_providers.dart';
 import 'package:fushi_engine/media/music/metadata/music_metadata_models.dart';
+import 'package:fushi_engine/media/music/metadata/music_metadata_provider.dart';
 import 'package:fushi_engine/media/music/metadata/music_metadata_resolver.dart';
 import 'package:fushi_engine/media/music/metadata/music_versions.dart';
 import 'package:fushi_engine/media/music/metadata/musicbrainz_provider.dart';
@@ -61,30 +62,27 @@ abstract final class MusicScrapeStatus {
   static const String error = 'error';
 }
 
-/// 一次刮削调用的 provider 组。[sink] 收集原始响应（落快照表）。
+/// 一组 provider（各自持有 HTTP 连接与进程内响应缓存）。单首识别用一组，整库识别**整次
+/// 共用一组**（BUG-5611：同专辑的 CAA 封面索引 / VGMdb 目录编号查询只发一次）；每首的
+/// 原始响应经 `scrape(sink: …)` 按调用收集，不绑在 provider 上。
 typedef MusicScraperFactory =
     MusicMetadataScraper Function({
-      required MusicRawResponseSink sink,
       required String acoustidApiKey,
       required bool vgmdbEnabled,
     });
 
 /// 默认 provider 组：MusicBrainz 主源 + AcoustID（有 key 才可用）+ CAA + VGMdb（开关）。
 MusicMetadataScraper defaultMusicScraper({
-  required MusicRawResponseSink sink,
   required String acoustidApiKey,
   required bool vgmdbEnabled,
-}) {
-  final MusicBrainzProvider mb = MusicBrainzProvider(onRawResponse: sink);
-  return MusicMetadataScraper(
-    resolver: MusicMetadataResolver(
-      musicBrainz: mb,
-      acoustid: AcoustidProvider(apiKey: acoustidApiKey, onRawResponse: sink),
-    ),
-    covers: CoverArtArchiveProvider(onRawResponse: sink),
-    vgmdb: VgmdbProvider(enabled: vgmdbEnabled, onRawResponse: sink),
-  );
-}
+}) => MusicMetadataScraper(
+  resolver: MusicMetadataResolver(
+    musicBrainz: MusicBrainzProvider(),
+    acoustid: AcoustidProvider(apiKey: acoustidApiKey),
+  ),
+  covers: CoverArtArchiveProvider(),
+  vgmdb: VgmdbProvider(enabled: vgmdbEnabled),
+);
 
 /// 曲目 → AcoustID 查询串 + 时长（秒）。算不出返回 null（解码失败）。
 typedef MusicAcoustidFingerprinter =
@@ -355,11 +353,25 @@ class MusicScrapeService {
   Future<MusicScrapeOutcome> scrapeTrack(
     String trackUid, {
     String? manualRecordingId,
-  }) => _serial(() => _scrapeTrack(trackUid, manualRecordingId));
+  }) => _serial(() async {
+    final MusicMetadataScraper scraper = _newScraper();
+    try {
+      return await _scrapeTrack(trackUid, manualRecordingId, scraper);
+    } finally {
+      scraper.close();
+    }
+  });
+
+  /// 按调用时的偏好建一组 provider。
+  MusicMetadataScraper _newScraper() => _scraperFactory(
+    acoustidApiKey: _acoustidApiKey(),
+    vgmdbEnabled: _vgmdbEnabled(),
+  );
 
   Future<MusicScrapeOutcome> _scrapeTrack(
     String trackUid,
     String? manualRecordingId,
+    MusicMetadataScraper scraper,
   ) async {
     final FushiDatabase? db = _database();
     if (db == null) {
@@ -393,11 +405,6 @@ class MusicScrapeService {
       );
     }
 
-    final MusicMetadataScraper scraper = _scraperFactory(
-      sink: sink,
-      acoustidApiKey: _acoustidApiKey(),
-      vgmdbEnabled: _vgmdbEnabled(),
-    );
     final MusicScrapeResult result;
     try {
       // `music_tracks.mb_recording_id` 可能是上一次识别叠加上去的（不是文件标签）：重新
@@ -412,9 +419,9 @@ class MusicScrapeService {
         musicTrackFactsOf(track, album, ignoreRecordingTag: overlaid),
         manualRecordingId: manualRecordingId,
         fingerprint: () => _fingerprinter(track),
+        sink: sink,
       );
     } on Exception catch (e) {
-      scraper.close();
       // 资料源整体连不上（主源失败）：记一行 error，不覆盖已有的成功结论。
       final MusicScrapeMetaRow? prev = await db.getMusicScrapeMeta(trackUid);
       if (prev == null || prev.status != MusicScrapeStatus.matched) {
@@ -430,7 +437,6 @@ class MusicScrapeService {
       }
       return MusicScrapeOutcome(status: MusicScrapeStatus.error, error: e);
     }
-    scraper.close();
     final MusicScrapeMetaCompanion meta = musicScrapeMetaOf(
       trackUid: trackUid,
       result: result,
@@ -438,28 +444,29 @@ class MusicScrapeService {
     );
     await db.writeMusicScrapeResult(meta: meta, snapshots: snapshots);
     if (album != null && album.coverPath == null) {
-      await _maybeDownloadCover(db, album, result);
+      await _maybeDownloadCover(db, album, result, scraper.covers);
     }
     return MusicScrapeOutcome(status: meta.status.value, result: result);
   }
 
-  /// 专辑没有目录封面、封面没上锁、CAA 有正面图 → 下到 `<documents>/music_covers`。
+  /// 专辑没有目录封面、封面没上锁、CAA 有正面图 → 经给出这张图的封面源 [covers]
+  /// 下到 `<documents>/music_covers`。
   Future<void> _maybeDownloadCover(
     FushiDatabase db,
     MusicAlbumRow album,
     MusicScrapeResult result,
+    MusicCoverProvider? covers,
   ) async {
     final MusicCoverImage? cover = result.cover;
     final String? releaseId = result.release?.mbReleaseId;
-    if (cover == null || releaseId == null) return;
+    if (cover == null || releaseId == null || covers == null) return;
     final Set<String> locks = await db.listMusicLockedFields(
       entityKind: 'album',
       entityUid: album.albumUid,
     );
     if (locks.contains('cover')) return;
-    final CoverArtArchiveProvider caa = CoverArtArchiveProvider();
     try {
-      final List<int> bytes = await caa.download(cover.displayUrl);
+      final List<int> bytes = await covers.download(cover.displayUrl);
       if (bytes.isEmpty) return;
       final Directory dir = await _coverDirectory();
       if (!dir.existsSync()) await dir.create(recursive: true);
@@ -473,8 +480,6 @@ class MusicScrapeService {
     } on Exception {
       // 封面下不来不影响识别结论；下次重刮再试（meta 里已记 coverUrl）。
       return;
-    } finally {
-      caa.close();
     }
   }
 
@@ -512,20 +517,30 @@ class MusicScrapeService {
       olderThanVersion: kMusicScraperVersion,
     );
     report.total = todo.length;
-    for (int i = 0; i < todo.length; i++) {
-      if (cancelled()) break;
-      final MusicScrapeOutcome o = await scrapeTrack(todo[i].trackUid);
-      switch (o.status) {
-        case MusicScrapeStatus.matched:
-          report.matched++;
-          final String m = o.result?.identification.method?.wire ?? '?';
-          report.byMethod[m] = (report.byMethod[m] ?? 0) + 1;
-        case MusicScrapeStatus.unmatched:
-          report.unmatched++;
-        default:
-          report.failed++;
+    // 整次刮库一组 provider（BUG-5611）：每首新建一组会把各自的 HTTP 响应缓存一起
+    // 丢掉，同专辑的 CAA 封面索引 / VGMdb 查询就每首重发一遍。
+    final MusicMetadataScraper scraper = _newScraper();
+    try {
+      for (int i = 0; i < todo.length; i++) {
+        if (cancelled()) break;
+        final String uid = todo[i].trackUid;
+        final MusicScrapeOutcome o = await _serial(
+          () => _scrapeTrack(uid, null, scraper),
+        );
+        switch (o.status) {
+          case MusicScrapeStatus.matched:
+            report.matched++;
+            final String m = o.result?.identification.method?.wire ?? '?';
+            report.byMethod[m] = (report.byMethod[m] ?? 0) + 1;
+          case MusicScrapeStatus.unmatched:
+            report.unmatched++;
+          default:
+            report.failed++;
+        }
+        onProgress?.call(i + 1, todo.length);
       }
-      onProgress?.call(i + 1, todo.length);
+    } finally {
+      scraper.close();
     }
     return report;
   }
