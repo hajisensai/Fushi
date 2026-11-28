@@ -7,6 +7,32 @@ import 'package:fushi_engine/tts/tts_voice_preset.dart';
 import 'package:path/path.dart' as p;
 
 void main() {
+  group('ttsVoiceForPickedId', () {
+    const List<TtsVoice> listed = <TtsVoice>[
+      TtsVoice(id: 'roger', displayName: 'Roger', locale: 'en'),
+    ];
+
+    test('列表里有的 id 用列表那项（带显示名 / 语言）', () {
+      final TtsVoice v = ttsVoiceForPickedId(listed, 'roger');
+      expect(v.displayName, 'Roger');
+      expect(v.locale, 'en');
+    });
+
+    test('手填、列表里没有的 id（Fish Audio 公共库声音）只有 id 本身', () {
+      final TtsVoice v = ttsVoiceForPickedId(
+        listed,
+        '2e65f0bfcdb04895a97a825fdc8546f6',
+      );
+      expect(v.id, '2e65f0bfcdb04895a97a825fdc8546f6');
+      expect(v.displayName, v.id);
+      expect(v.locale, isEmpty);
+    });
+
+    test('列表为空也能用手填的 id', () {
+      expect(ttsVoiceForPickedId(const <TtsVoice>[], 'x').id, 'x');
+    });
+  });
+
   group('ttsApplyPickedOptionParams', () {
     test('选 Unsloth Studio 声音时把文字稿 / 参考语言快照进预设，清空时一起删', () {
       const UnslothStudioTtsDescriptor d = UnslothStudioTtsDescriptor();

@@ -19,6 +19,7 @@ class TtsParamSpec {
     this.defaultValue,
     this.choices = const <String>[],
     this.affectsAudio = true,
+    this.allowsCustomValue = false,
   });
 
   final String key;
@@ -32,6 +33,10 @@ class TtsParamSpec {
   /// 改了它声音会变 → 进缓存键。地址、密钥这类不影响音色的参数为 false：
   /// 换个局域网 IP 不该让整本书的缓存失效。
   final bool affectsAudio;
+
+  /// [TtsParamKind.voice] 的选择列表之外还能手填一个 id：服务端的声音库太大、
+  /// 列不全（Fish Audio 公共声音库、ElevenLabs 共享声音），用户从网页复制 id 来用。
+  final bool allowsCustomValue;
 }
 
 /// 宿主注入：出站 HTTP 与诊断日志。默认走全应用代理装配点。

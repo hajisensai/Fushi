@@ -55,6 +55,7 @@ Duration? ttsParseRetryAfter(String? raw, {DateTime? now}) {
 TtsFailure ttsFailureForStatus(int status, {Duration? retryAfter}) =>
     switch (status) {
       401 || 403 => TtsFailure(TtsFailureCode.unauthorized, 'HTTP $status'),
+      402 => TtsFailure(TtsFailureCode.quotaExceeded, 'HTTP $status'),
       429 => TtsFailure.withRetry(
         TtsFailureCode.rateLimited,
         detail: 'HTTP $status',
@@ -70,7 +71,46 @@ TtsFailure ttsFailureForStatus(int status, {Duration? retryAfter}) =>
       _ => TtsFailure(TtsFailureCode.badResponse, 'HTTP $status'),
     };
 
-/// 发一个请求，把 2xx 响应体写进 [outputPath]；非 2xx 抛 [TtsFailure]（不读正文）。
+/// 按错误响应的 JSON 正文细分失败（服务端用正文区分「额度用完」与「key 错」这类同一个
+/// HTTP 状态的情况，如 ElevenLabs 额度用完回 401）。返回 null = 按状态码归一
+/// （[ttsFailureForStatus]）。[body] 解析不了时为 null。正文只用来判类，不进日志。
+typedef TtsErrorClassifier =
+    TtsFailure? Function(int status, Object? body, Duration? retryAfter);
+
+/// 错误正文最多读这么多字节（只用来判类）。
+const int _kTtsErrorBodyMaxBytes = 16 * 1024;
+
+/// 非 2xx 响应 → [TtsFailure]。没有 [classify] 时不读正文（直接丢弃）。
+Future<TtsFailure> _failureForResponse(
+  HttpClientResponse response,
+  TtsErrorClassifier? classify,
+) async {
+  final int status = response.statusCode;
+  final Duration? retryAfter = ttsParseRetryAfter(
+    response.headers.value(HttpHeaders.retryAfterHeader),
+  );
+  if (classify == null) {
+    await response.drain<void>().catchError((Object _) {});
+    return ttsFailureForStatus(status, retryAfter: retryAfter);
+  }
+  Object? body;
+  try {
+    final BytesBuilder bytes = BytesBuilder(copy: false);
+    await for (final List<int> chunk in response.timeout(
+      const Duration(seconds: 10),
+    )) {
+      if (bytes.length + chunk.length > _kTtsErrorBodyMaxBytes) break;
+      bytes.add(chunk);
+    }
+    body = jsonDecode(utf8.decode(bytes.takeBytes(), allowMalformed: true));
+  } on Object {
+    body = null;
+  }
+  return classify(status, body, retryAfter) ??
+      ttsFailureForStatus(status, retryAfter: retryAfter);
+}
+
+/// 发一个请求，把 2xx 响应体写进 [outputPath]；非 2xx 抛 [TtsFailure]（给了 [classifyError] 才读错误正文判类）。
 /// 返回写入的字节数。
 Future<int> ttsSendToFile({
   required HttpClient client,
@@ -80,6 +120,7 @@ Future<int> ttsSendToFile({
   required TtsCancelToken cancel,
   Map<String, String> headers = const <String, String>{},
   List<int>? body,
+  TtsErrorClassifier? classifyError,
 }) async {
   cancel.throwIfCancelled();
   HttpClientRequest? request;
@@ -100,13 +141,7 @@ Future<int> ttsSendToFile({
       kTtsRequestTimeout,
     );
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      await response.drain<void>().catchError((Object _) {});
-      throw ttsFailureForStatus(
-        response.statusCode,
-        retryAfter: ttsParseRetryAfter(
-          response.headers.value(HttpHeaders.retryAfterHeader),
-        ),
-      );
+      throw await _failureForResponse(response, classifyError);
     }
     final IOSink sink = File(outputPath).openWrite();
     int written = 0;
@@ -157,6 +192,7 @@ Future<Object?> ttsGetJson({
   Map<String, String> headers = const <String, String>{},
   TtsCancelToken? cancel,
   int maxResponseBytes = kTtsMaxResponseBytes,
+  TtsErrorClassifier? classifyError,
 }) async {
   final TtsCancelToken token = cancel ?? TtsCancelToken();
   try {
@@ -166,13 +202,7 @@ Future<Object?> ttsGetJson({
       const Duration(seconds: 30),
     );
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      await response.drain<void>().catchError((Object _) {});
-      throw ttsFailureForStatus(
-        response.statusCode,
-        retryAfter: ttsParseRetryAfter(
-          response.headers.value(HttpHeaders.retryAfterHeader),
-        ),
-      );
+      throw await _failureForResponse(response, classifyError);
     }
     token.throwIfCancelled();
     return await _readJsonBody(
@@ -230,6 +260,7 @@ Future<Object?> ttsSendForJson({
   Map<String, String> headers = const <String, String>{},
   List<int>? body,
   int maxResponseBytes = kTtsMaxResponseBytes,
+  TtsErrorClassifier? classifyError,
 }) async {
   cancel.throwIfCancelled();
   HttpClientRequest? request;
@@ -250,13 +281,7 @@ Future<Object?> ttsSendForJson({
       kTtsRequestTimeout,
     );
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      await response.drain<void>().catchError((Object _) {});
-      throw ttsFailureForStatus(
-        response.statusCode,
-        retryAfter: ttsParseRetryAfter(
-          response.headers.value(HttpHeaders.retryAfterHeader),
-        ),
-      );
+      throw await _failureForResponse(response, classifyError);
     }
     final Object? decoded = await _readJsonBody(
       response,
