@@ -1400,6 +1400,7 @@ mixin _FushiDbContentMisc
     required String chaptersJson,
     String? coverPath,
     String? mangaReadingMode,
+    Value<String?> tocJson = const Value.absent(),
   }) {
     return (update(epubBooks)..where((t) => t.bookKey.equals(bookKey))).write(
       EpubBooksCompanion(
@@ -1409,6 +1410,7 @@ mixin _FushiDbContentMisc
         chaptersJson: Value(chaptersJson),
         coverPath: coverPath == null ? const Value.absent() : Value(coverPath),
         mangaReadingMode: Value(mangaReadingMode),
+        tocJson: tocJson,
       ),
     );
   }
@@ -1462,14 +1464,19 @@ mixin _FushiDbContentMisc
   /// [updateEpubBookChaptersJson] 的理由——`chaptersJson` 不是主键，plain UPDATE，
   /// 无级联 re-key。与 [updateEpubBookFormat] 的区别是**不碰 format/epubPath**，
   /// 避免为了改两列而把无关列一起重写。
+  ///
+  /// [tocJson]：解压树整棵换掉时（就地恢复，UXtYShn4Yj）目录 href 必须与新树同一次
+  /// 写入；默认 absent = 不动目录列。
   Future<void> updateEpubBookChapters(
     String bookKey, {
     required int chapterCount,
     required String chaptersJson,
+    Value<String?> tocJson = const Value.absent(),
   }) => (update(epubBooks)..where((t) => t.bookKey.equals(bookKey))).write(
     EpubBooksCompanion(
       chapterCount: Value(chapterCount),
       chaptersJson: Value(chaptersJson),
+      tocJson: tocJson,
     ),
   );
 
@@ -1479,16 +1486,21 @@ mixin _FushiDbContentMisc
   /// collections, tags and reader identity keep working. The descriptor only
   /// contains extension/source identities, manga metadata and chapter URLs;
   /// cookies, request headers and bearer tokens must never be written here.
+  ///
+  /// [tocJson]：解压树换了 / OPF 续了章时，目录与章节同一次写入（UXtYShn4Yj 同类）；
+  /// 默认 absent = 不动目录列。
   Future<void> updateEpubBookMihonState(
     String bookKey, {
     required String sourceMetadata,
     required int chapterCount,
     required String chaptersJson,
+    Value<String?> tocJson = const Value.absent(),
   }) => (update(epubBooks)..where((t) => t.bookKey.equals(bookKey))).write(
     EpubBooksCompanion(
       sourceMetadata: Value(sourceMetadata),
       chapterCount: Value(chapterCount),
       chaptersJson: Value(chaptersJson),
+      tocJson: tocJson,
     ),
   );
 

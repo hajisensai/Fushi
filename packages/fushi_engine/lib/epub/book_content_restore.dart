@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_core/fushi_core.dart';
@@ -99,19 +100,22 @@ Future<void> precheckSkippedDuplicate({
   if (!books.any((EpubBookMeta b) => sanitizeTtuFilename(b.title) == key)) {
     return;
   }
-  if (await findRestorableDuplicate(
-        db: db,
-        proposedTitle: proposedTitle,
-        format: format,
-      ) !=
-      null) {
+  if (policy.restoreMissing &&
+      await findRestorableDuplicate(
+            db: db,
+            proposedTitle: proposedTitle,
+            format: format,
+          ) !=
+          null) {
     return;
   }
   throw DuplicateImportCancelledException(proposedTitle);
 }
 
 /// 就地恢复（新导入换进原条目 / 来源扫描按原件重建）之后回写原行的**唯一**口径：
-/// 章节元数据必须与盘上的新树一致（阅读器按它定位章节文件 / 页图），所以照写；
+/// 章节元数据必须与盘上的新树一致（阅读器按它定位章节文件 / 页图），所以照写；EPUB
+/// 的目录（[tocJson]，href 指向解压树里的文件）同理，换了树就必须一起换；PDF / 漫画
+/// 没有解压树目录，传 absent 不动；
 /// 封面列只在它为空、或指着书目录里已经不存在的文件时才换成新树的封面——用户换过 /
 /// 刮削过的封面不被原件的封面盖掉。bookKey / uid / 进度 / 统计 / 合集一概不动。
 Future<void> writeRestoredBookMetadata({
@@ -120,11 +124,13 @@ Future<void> writeRestoredBookMetadata({
   required int chapterCount,
   required String chaptersJson,
   required String? coverPath,
+  Value<String?> tocJson = const Value.absent(),
 }) async {
   await db.updateEpubBookChapters(
     existing.bookKey,
     chapterCount: chapterCount,
     chaptersJson: chaptersJson,
+    tocJson: tocJson,
   );
   final String? cover = existing.coverPath;
   final bool coverGone =

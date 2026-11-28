@@ -522,6 +522,68 @@ void main() {
       expect(File(p.join(row.extractDir, row.epubPath)).existsSync(), true);
     });
 
+    // 审查发现（PR #4612）：同一来源里两份同名文件，撞上的是另一份文件导入的行时，
+    // 不能拿这一份去重建它——只认它自己那份原件。
+    testWidgets('同来源两份同名 EPUB → 丢了内容的行只由它自己的原件重建', (WidgetTester tester) async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      _writeEpub(p.join(tmp.path, 'a.epub'), 'TwinNovel');
+      final SourceLibraryRow source = await addSource(db);
+      await scan(tester, db, source);
+      final EpubBookRow before = (await db.getAllEpubBooks()).single;
+      expect(before.chapterCount, 1);
+
+      // 同来源里又放进一份同名、章数不同的文件，然后原条目的内容丢了。
+      _writeEpub(p.join(tmp.path, 'b.epub'), 'TwinNovel', chapters: 3);
+      Directory(before.extractDir).deleteSync(recursive: true);
+      await scan(tester, db, source);
+
+      final EpubBookRow row = (await db.getAllEpubBooks()).single;
+      expect(row.uid, before.uid);
+      expect(row.chapterCount, 1, reason: '必须由 a.epub 重建，不能装进 b.epub');
+      expect(
+        File(p.join(row.extractDir, 'META-INF', 'container.xml')).existsSync(),
+        true,
+      );
+    });
+
+    testWidgets('同来源两卷同名漫画 → 一卷书目录丢了只由它自己的文件重建', (WidgetTester tester) async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final Directory a = Directory(p.join(tmp.path, 'a'))..createSync();
+      final Directory b = Directory(p.join(tmp.path, 'b'))..createSync();
+      _writeMokuro(a.path, title: 'TwinVolume', pages: 2);
+      _writeMokuro(b.path, title: 'TwinVolume', pages: 3);
+      final SourceLibraryRow source = await addMangaSource(db);
+      await scan(tester, db, source);
+      final List<EpubBookRow> first = await db.getAllEpubBooks();
+      expect(first, hasLength(2));
+      final EpubBookRow twoPages = first.singleWhere(
+        (EpubBookRow r) => r.chapterCount == 2,
+      );
+      final EpubBookRow threePages = first.singleWhere(
+        (EpubBookRow r) => r.chapterCount == 3,
+      );
+
+      Directory(twoPages.extractDir).deleteSync(recursive: true);
+      await scan(tester, db, source);
+
+      final List<EpubBookRow> after = await db.getAllEpubBooks();
+      expect(after, hasLength(2), reason: '不另起第三本，也不把两卷并成一本');
+      final EpubBookRow rebuilt = after.singleWhere(
+        (EpubBookRow r) => r.uid == twoPages.uid,
+      );
+      expect(rebuilt.chapterCount, 2, reason: '由 a/ 那一卷重建，不装进 b/ 的 3 页');
+      expect(
+        File(p.join(rebuilt.extractDir, rebuilt.epubPath)).existsSync(),
+        true,
+      );
+      final EpubBookRow other = after.singleWhere(
+        (EpubBookRow r) => r.uid == threePages.uid,
+      );
+      expect(other.chapterCount, 3);
+    });
+
     testWidgets('有声书持久目录里的音频与字幕副本丢了 → 补回原路径，进度不变', (WidgetTester tester) async {
       final FushiDatabase db = _memDb();
       addTearDown(db.close);

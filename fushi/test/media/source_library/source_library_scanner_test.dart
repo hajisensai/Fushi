@@ -3485,8 +3485,14 @@ Attributes = A
       isTrue,
       reason: '单文件卷的载体身份必须与手动导入同一份判据',
     );
+    // 书籍导入经常量 `_scanBookDuplicatePolicy`：跳过策略，且不让导入器就地恢复
+    // （能否拿这份原件重建由扫描按归属判，UXtYShn4Yj / BUG-5608）。
     expect(
-      src.contains('policy: const DuplicatePolicy.skip()'),
+      src.contains(
+            'const DuplicatePolicy _scanBookDuplicatePolicy = '
+            'DuplicatePolicy.skip(',
+          ) &&
+          src.contains('policy: _scanBookDuplicatePolicy'),
       isTrue,
       reason: '后台扫描必须静默去重，不能重扫生成 X (2)',
     );

@@ -548,35 +548,52 @@ class _MangaSourceIdentity {
       case SourceDuplicateKind.none:
         return const DuplicatePolicy.skip();
       case SourceDuplicateKind.otherSourceFile:
-        return const DuplicatePolicy.suffix();
-      case SourceDuplicateKind.sameSource || SourceDuplicateKind.foreign
-          when await findRestorableDuplicate(
-                db: db,
-                proposedTitle: title,
-                format: BookFormat.manga.dbValue,
-              ) !=
-              null:
-        // UXtYShn4Yj：撞上的同名漫画受管内容已丢（不论是不是本来源导入的），照常
-        // 导入，落位时导入器把这卷换进它的书目录（`placeUnderResolvedTitle` 的就地
-        // 恢复）。[finish] 据此按重建记账，不当新入库、不认领进索引。
-        _restoringPaths.add(path);
-        return const DuplicatePolicy.skip();
-      case SourceDuplicateKind.sameSource:
-        final String? uid = await adoptExistingBookForSource(
+        // 撞名的是本来源另一个在场文件的那一卷：明知是另一本书，就算它的内容丢了
+        // 也不能拿这一卷去恢复它（它由自己的文件经 [repairFor] 重建）。
+        return const DuplicatePolicy.suffix(restoreMissing: false);
+      case SourceDuplicateKind.sameSource || SourceDuplicateKind.foreign:
+        final EpubBookRow? restorable = await findRestorableDuplicate(
           db: db,
-          sourceId: sourceId,
           proposedTitle: title,
-          format: BookFormat.manga,
+          format: BookFormat.manga.dbValue,
         );
-        if (uid != null) index.put(rel, uid);
-        debugPrint(
-          'SourceLibraryScanner manga already imported: $title ($path)',
+        if (restorable != null) {
+          // UXtYShn4Yj：撞上的同名漫画受管内容已丢（不论是不是本来源导入的），照常
+          // 导入，落位时导入器把这卷换进它的书目录（`placeUnderResolvedTitle` 的
+          // 就地恢复）。[finish] 按落地结果的 uid 判是不是恢复成了这一行。
+          _restoringUids[path] = restorable.uid;
+          return const DuplicatePolicy.skip();
+        }
+        return _adoptOrSkip(
+          sameSource: verdict.kind == SourceDuplicateKind.sameSource,
+          path: path,
+          rel: rel,
+          title: title,
         );
-        return null;
-      case SourceDuplicateKind.foreign:
-        debugPrint('SourceLibraryScanner skip duplicate manga $title ($path)');
-        return null;
     }
+  }
+
+  /// [policyFor] 里撞上本来源旧行 / 别处的书、且不可恢复时：本来源旧行认领回索引，
+  /// 别处的书跳过。两种都不导入（返回 null）。
+  Future<DuplicatePolicy?> _adoptOrSkip({
+    required bool sameSource,
+    required String path,
+    required String rel,
+    required String title,
+  }) async {
+    if (!sameSource) {
+      debugPrint('SourceLibraryScanner skip duplicate manga $title ($path)');
+      return null;
+    }
+    final String? uid = await adoptExistingBookForSource(
+      db: db,
+      sourceId: sourceId,
+      proposedTitle: title,
+      format: BookFormat.manga,
+    );
+    if (uid != null) index.put(rel, uid);
+    debugPrint('SourceLibraryScanner manga already imported: $title ($path)');
+    return null;
   }
 
   /// BUG-5569：卷 [path] 已在索引里（本来源早先导进来的那一行），但它的书目录丢了：
@@ -620,7 +637,9 @@ class _MangaSourceIdentity {
     ({MangaRebuildTarget target, int pageCount})? repair,
   ) async {
     if (repair == null) {
-      if (_restoringPaths.remove(path)) {
+      final String? restoredUid = _restoringUids.remove(path);
+      if (restoredUid != null &&
+          (await db.getEpubBook(bookKey))?.uid == restoredUid) {
         debugPrint(
           'SourceLibraryScanner restored missing manga content of $bookKey '
           'from $path',
@@ -644,8 +663,10 @@ class _MangaSourceIdentity {
   /// 本轮就地重建、但页数与原条目不同的卷（[finish]）。
   final List<String> repairedFromChangedPaths = <String>[];
 
-  /// [policyFor] 判为「撞上受管内容已丢的同名漫画、交给导入器就地恢复」的卷。
-  final Set<String> _restoringPaths = <String>{};
+  /// [policyFor] 判为「撞上受管内容已丢的同名漫画、交给导入器就地恢复」的卷 → 被
+  /// 恢复那一行的 uid。[finish] 据落地的书是不是这一行判恢复 / 新入库（锁内复核时
+  /// 原行已被删掉、导入器改走正常落位的，按新入库记账）。
+  final Map<String, String> _restoringUids = <String, String>{};
 
   /// 卷 [path] 导入成了书 [bookKey]：登记进索引。
   Future<void> record(String path, String bookKey) async {
@@ -1364,11 +1385,15 @@ class _BookSourceIdentity {
   /// 扫描原件同样要能修回来——与导入器的就地恢复同一判据，见
   /// `book_content_restore.dart`）。内容完好 / 书目录在库外由 `_repairBookContent`
   /// 自己判。认领进索引（[record]）仍只认 [owns]。
-  bool canRebuild(ScanBookItem item, BookSourceRow row) {
+  ///
+  /// 本来源自己的行只由它自己那份文件重建（[owns]）：同一来源里两份同名文件时，撞上
+  /// 的是另一份文件的行，拿这一份去重建就装错了书。
+  bool canRebuild(String path, ScanBookItem item, BookSourceRow row) {
     final String format = item.isPdf
         ? BookFormat.pdf.dbValue
         : BookFormat.epub.dbValue;
-    return row.format == format;
+    if (row.format != format) return false;
+    return row.sourceId != sourceId || owns(path, item, row);
   }
 
   /// 书行 [bookKey] 的瘦投影（刚导入 / 判重复后补进内存表用）。
@@ -2320,7 +2345,7 @@ class SourceLibraryScanner {
             // 导入器用 DuplicatePolicy.skip() 也会判它重复：结论一样，不开包。
             // 重建排在 [record] 之前：它要看的是「这份原件与入库时那份是否同一份」，
             // record 会把索引里的指纹换成现在的；重建失败时也不记，下一轮重试。
-            if (identity.canRebuild(item, taken)) {
+            if (identity.canRebuild(item.bookPath, item, taken)) {
               await _repairBookContent(
                 item,
                 taken,
@@ -2438,14 +2463,14 @@ class SourceLibraryScanner {
               fileName: p.basename(item.bookPath),
               title: p.basenameWithoutExtension(item.bookPath),
               sourceId: source.id,
-              policy: const DuplicatePolicy.skip(),
+              policy: _scanBookDuplicatePolicy,
             )
           : await EpubImporter.importFromPath(
               db: _db,
               filePath: localBook,
               fileName: p.basename(item.bookPath),
               sourceId: source.id,
-              policy: const DuplicatePolicy.skip(),
+              policy: _scanBookDuplicatePolicy,
             );
       tally.imported++;
       final BookSourceRow? row = await identity.rowOf(bookKey);
@@ -2461,7 +2486,7 @@ class SourceLibraryScanner {
       if (existing != null) {
         // BUG-5569：远端 EPUB 要下载下来才知道标题，走到这里时原件已在本地临时盘上，
         // 受管内容丢了就直接拿它重建（不再下第二遍）。
-        if (identity.canRebuild(item, existing)) {
+        if (identity.canRebuild(item.bookPath, item, existing)) {
           await _repairBookContent(
             item,
             existing,
@@ -2542,11 +2567,11 @@ class SourceLibraryScanner {
       } else {
         // 插图索引缓存按解压目录路径记，跟着旧树一起作废（重建后路径不变）。
         await deleteEpubImageIndexCache(row.extractDir);
-        final ({int chapterCount, String chaptersJson, String? coverPath})
-        rebuilt = await EpubImporter.rebuildExtractedInPlace(
-          epubFilePath: local,
-          extractDir: row.extractDir,
-        );
+        final RebuiltEpubTree rebuilt =
+            await EpubImporter.rebuildExtractedInPlace(
+              epubFilePath: local,
+              extractDir: row.extractDir,
+            );
         structureChanged =
             rebuilt.chapterCount != full.chapterCount ||
             !sameChapterHrefs(full.chaptersJson, rebuilt.chaptersJson);
@@ -2557,6 +2582,7 @@ class SourceLibraryScanner {
           chapterCount: rebuilt.chapterCount,
           chaptersJson: rebuilt.chaptersJson,
           coverPath: rebuilt.coverPath,
+          tocJson: Value(rebuilt.tocJson),
         );
       }
       tally.repairedPaths.add(item.bookPath);
@@ -4447,6 +4473,13 @@ bool audiobookPersistedNameMatches(String persisted, String source) {
   return stored == original ||
       stored.replaceFirst(RegExp(r' _\d+$'), '') == original;
 }
+
+/// 来源扫描导入书（EPUB / PDF）用的重复策略：撞名就跳过，且**不让导入器就地恢复**
+/// ——撞上的行能不能拿这份原件重建由扫描自己按归属判（`_BookSourceIdentity.canRebuild`，
+/// 在判重复的 catch 里走 `_repairBookContent`），同一来源两份同名文件不会互相覆写。
+const DuplicatePolicy _scanBookDuplicatePolicy = DuplicatePolicy.skip(
+  restoreMissing: false,
+);
 
 /// 受管内容丢了的书 [row] 的书目录不在当前书库根下（旧数据根、没 rebase 的路径）时
 /// 不重建：往那里写只会把书散落到库外，抛出交给逐本 / 逐卷失败记账提示出来。

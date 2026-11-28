@@ -94,8 +94,10 @@ class WebNovelLibrary {
       required DuplicatePolicy policy,
     })?
     importEpub,
-    Future<({int chapterCount, String chaptersJson, String? coverPath})>
-    Function({required String epubFilePath, required String extractDir})?
+    Future<RebuiltEpubTree> Function({
+      required String epubFilePath,
+      required String extractDir,
+    })?
     rebuildInPlace,
   }) : _fetchImage = fetchImage ?? fetchWebNovelImage,
        _importEpub = importEpub ?? _defaultImport,
@@ -110,8 +112,10 @@ class WebNovelLibrary {
     required DuplicatePolicy policy,
   })
   _importEpub;
-  final Future<({int chapterCount, String chaptersJson, String? coverPath})>
-  Function({required String epubFilePath, required String extractDir})
+  final Future<RebuiltEpubTree> Function({
+    required String epubFilePath,
+    required String extractDir,
+  })
   _rebuildInPlace;
 
   static Future<String> _defaultImport({
@@ -398,8 +402,7 @@ class WebNovelLibrary {
     try {
       final File epub = File(p.join(temp.path, 'book.epub'));
       await epub.writeAsBytes(bytes, flush: true);
-      final ({int chapterCount, String chaptersJson, String? coverPath})
-      rebuilt = await _rebuildInPlace(
+      final RebuiltEpubTree rebuilt = await _rebuildInPlace(
         epubFilePath: epub.path,
         extractDir: row.extractDir,
       );
@@ -408,6 +411,8 @@ class WebNovelLibrary {
         sourceMetadata: raw,
         chapterCount: rebuilt.chapterCount,
         chaptersJson: rebuilt.chaptersJson,
+        // 整棵解压树换了：目录 href 跟着新树走。
+        tocJson: Value(rebuilt.tocJson),
       );
     } finally {
       try {
@@ -818,8 +823,7 @@ class WebNovelChapterLoader extends SerialOnlineNovelChapterLoader
     if (package != null) await _writePackage(package, next.lang ?? '');
     // 只重数这一章（和新续挂的占位，旧表里没有它）的字数，其余章沿用书行里的：
     // 整本重解析会逐章重读全部正文，连续追 N 章累计 O(N²)（HBK-AUDIT-040）。
-    final ({int chapterCount, String chaptersJson, String? coverPath})
-    reindexed = await EpubImporter.reindexExtractedBook(
+    final RebuiltEpubTree reindexed = await EpubImporter.reindexExtractedBook(
       extractDir: extractDir,
       previousChaptersJson: current.chaptersJson,
       changedHrefs: <String>{p.relative(file.path, from: extractDir)},
@@ -829,6 +833,8 @@ class WebNovelChapterLoader extends SerialOnlineNovelChapterLoader
       sourceMetadata: next.raw,
       chapterCount: reindexed.chapterCount,
       chaptersJson: reindexed.chaptersJson,
+      // 续了章，OPF 的目录也跟着长：只写章节不写目录，新章进不了目录。
+      tocJson: Value(reindexed.tocJson),
     );
     final List<int?> counts = _chapterCharacters(reindexed.chaptersJson);
     final bool grew = package?.placeholderNumber != null;

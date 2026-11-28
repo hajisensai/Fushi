@@ -18,6 +18,15 @@ import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:meta/meta.dart';
 
+/// [EpubImporter.rebuildExtractedInPlace] 的结果：换上的新解压树对应的行元数据。
+/// 目录（[tocJson]）与章节一样指向解压树里的文件，换树时必须一起回写（UXtYShn4Yj）。
+typedef RebuiltEpubTree = ({
+  int chapterCount,
+  String chaptersJson,
+  String? coverPath,
+  String? tocJson,
+});
+
 class EpubImporter {
   EpubImporter._();
 
@@ -190,6 +199,7 @@ class EpubImporter {
             chapterCount: book.chapters.length,
             chaptersJson: buildChaptersJson(book, characterCounts),
             coverPath: book.coverHref,
+            tocJson: Value(buildTocJson(book)),
           );
           return (
             storedTitle: existing.title,
@@ -312,8 +322,9 @@ class EpubImporter {
   /// 判「被占」与 [resolveDuplicateTitle] 用同一口径（净化后的标题），所以回到第 1 步
   /// 必然得到一个不同的结论，不会原地打转。
   ///
-  /// **就地恢复**（UXtYShn4Yj）：撞名的行格式同为 [format]、受管内容已丢、书目录在
-  /// 书库根下（[findRestorableDuplicate]）时不按 [policy] 处置——那本书本来就打不开，
+  /// **就地恢复**（UXtYShn4Yj）：[policy] 允许（`restoreMissing`，默认允许）且撞名的
+  /// 行格式同为 [format]、受管内容已丢、书目录在书库根下（[findRestorableDuplicate]）
+  /// 时不按 [policy] 处置——那本书本来就打不开，
   /// 再导入一次原件就是用户唯一的修法。先 [stage]，再持落位锁**重新确认**它仍可恢复，
   /// 调 [restore]：由它把暂存内容换进 `existing.extractDir`（不得再取落位锁）并回写
   /// 原行（[writeRestoredBookMetadata]）；不插行、不改 bookKey。锁内发现已被别人
@@ -333,11 +344,13 @@ class EpubImporter {
     Future<void> Function()? stage,
   }) async {
     while (true) {
-      final EpubBookRow? restorable = await findRestorableDuplicate(
-        db: db,
-        proposedTitle: proposedTitle,
-        format: format,
-      );
+      final EpubBookRow? restorable = policy.restoreMissing
+          ? await findRestorableDuplicate(
+              db: db,
+              proposedTitle: proposedTitle,
+              format: format,
+            )
+          : null;
       if (restorable != null) {
         await stage?.call();
         final ({T value})? restored = await EpubStorage.withBookPlacementLock(
@@ -402,20 +415,10 @@ class EpubImporter {
       extractDir: extractDir,
       chapterCount: book.chapters.length,
       chaptersJson: buildChaptersJson(book, characterCounts),
-      tocJson: book.toc.isNotEmpty
-          ? Value(
-              jsonEncode(
-                book.toc
-                    .map(
-                      (e) => <String, Object?>{
-                        'title': e.label,
-                        'href': e.href,
-                      },
-                    )
-                    .toList(),
-              ),
-            )
-          : const Value.absent(),
+      tocJson: switch (buildTocJson(book)) {
+        final String toc => Value(toc),
+        null => const Value.absent(),
+      },
       importedAt: importedAt,
       // TODO-817 M1b：扫描器入库时回填来源库 id；手动导入 sourceId==null
       // → Value.absent() 落 NULL（向后兼容）。
@@ -481,6 +484,17 @@ class EpubImporter {
   static Future<String> readExtractedTitle(String extractDir) =>
       Isolate.run(() => EpubParser.parseFromExtracted(extractDir).title);
 
+  /// `EpubBooks.tocJson` 的**唯一**序列化口径（每项 `title` / `href`）：导入建行
+  /// （[bookRowFor]）与换树回写（就地恢复 / [rebuildExtractedInPlace]）共用。包里
+  /// 没有目录时为 null（列落 NULL，阅读器回落按章节列表）。
+  static String? buildTocJson(EpubBook book) {
+    if (book.toc.isEmpty) return null;
+    return jsonEncode(<Map<String, Object?>>[
+      for (final e in book.toc)
+        <String, Object?>{'title': e.label, 'href': e.href},
+    ]);
+  }
+
   /// `EpubBooks.chaptersJson` 的**唯一**序列化口径：每章 `id`/`href`/`mediaType`/
   /// `characters` + 计数口径版本 [kChapterCharCountCaliber]。
   ///
@@ -520,8 +534,7 @@ class EpubImporter {
   /// 写盘用与导入同一套原子替换（[moveExtractedDirIntoPlace]）：新树先解到临时
   /// 目录，成功后旧树改名成 `.bak-<ts>` 让位、新树就位、再删 bak；中途失败把 bak
   /// 改回来。绝不先删后建——中间崩一次两份都没了。
-  static Future<({int chapterCount, String chaptersJson, String? coverPath})>
-  rebuildExtractedInPlace({
+  static Future<RebuiltEpubTree> rebuildExtractedInPlace({
     required String epubFilePath,
     required String extractDir,
   }) async {
@@ -552,6 +565,7 @@ class EpubImporter {
         chapterCount: result.book.chapters.length,
         chaptersJson: chaptersJson,
         coverPath: result.book.coverHref,
+        tocJson: buildTocJson(result.book),
       );
     } catch (e, stack) {
       engineLog.log('EpubImporter.rebuildInPlace', e, stack);
@@ -566,13 +580,13 @@ class EpubImporter {
   /// 用于「漫画 → 书」转回：本仓的 EPUB 在盘上只有解压树、没有独立 `.epub`
   /// （BUG-088），所以「撤销」不存在——只能拿解压树重新算一遍。DOM 解析与字数统计
   /// 放 isolate（与导入同款 [compute]），不卡 UI。
-  static Future<({int chapterCount, String chaptersJson, String? coverPath})>
-  reparseExtractedBook(String extractDir) async {
+  static Future<RebuiltEpubTree> reparseExtractedBook(String extractDir) async {
     final _ParseResult result = await _reparseExtracted(extractDir);
     return (
       chapterCount: result.book.chapters.length,
       chaptersJson: buildChaptersJson(result.book, result.characterCounts),
       coverPath: result.book.coverHref,
+      tocJson: buildTocJson(result.book),
     );
   }
 
@@ -585,8 +599,7 @@ class EpubImporter {
   /// 给按需追章（网页小说书阅读器会话内续章，HBK-AUDIT-040）用：[reparseExtractedBook]
   /// 每次都逐章读全部正文、重扫字数，连续追 N 章累计读 O(N²) 章。章节文件与 id
   /// 仍以本次 OPF 为准（spine 变了照样跟上），只有字数是复用的。
-  static Future<({int chapterCount, String chaptersJson, String? coverPath})>
-  reindexExtractedBook({
+  static Future<RebuiltEpubTree> reindexExtractedBook({
     required String extractDir,
     required String previousChaptersJson,
     required Set<String> changedHrefs,
@@ -606,6 +619,7 @@ class EpubImporter {
       chapterCount: result.book.chapters.length,
       chaptersJson: buildChaptersJson(result.book, result.characterCounts),
       coverPath: result.book.coverHref,
+      tocJson: buildTocJson(result.book),
     );
   }
 

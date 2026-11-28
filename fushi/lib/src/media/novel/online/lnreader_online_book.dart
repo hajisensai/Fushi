@@ -209,8 +209,10 @@ class LnReaderOnlineLibrary {
       required DuplicatePolicy policy,
     })?
     importEpub,
-    Future<({int chapterCount, String chaptersJson, String? coverPath})>
-    Function({required String epubFilePath, required String extractDir})?
+    Future<RebuiltEpubTree> Function({
+      required String epubFilePath,
+      required String extractDir,
+    })?
     rebuildInPlace,
   }) : _importEpub = importEpub ?? _defaultImport,
        _rebuildInPlace = rebuildInPlace ?? EpubImporter.rebuildExtractedInPlace;
@@ -225,8 +227,10 @@ class LnReaderOnlineLibrary {
     required DuplicatePolicy policy,
   })
   _importEpub;
-  final Future<({int chapterCount, String chaptersJson, String? coverPath})>
-  Function({required String epubFilePath, required String extractDir})
+  final Future<RebuiltEpubTree> Function({
+    required String epubFilePath,
+    required String extractDir,
+  })
   _rebuildInPlace;
 
   static Future<String> _defaultImport({
@@ -393,8 +397,7 @@ class LnReaderOnlineLibrary {
     try {
       final File epub = File(p.join(temp.path, 'book.epub'));
       await epub.writeAsBytes(bytes, flush: true);
-      final ({int chapterCount, String chaptersJson, String? coverPath})
-      rebuilt = await _rebuildInPlace(
+      final RebuiltEpubTree rebuilt = await _rebuildInPlace(
         epubFilePath: epub.path,
         extractDir: extractDir,
       );
@@ -408,6 +411,8 @@ class LnReaderOnlineLibrary {
         ).encode(),
         chapterCount: rebuilt.chapterCount,
         chaptersJson: rebuilt.chaptersJson,
+        // 整棵解压树换了：目录 href 跟着新树走。
+        tocJson: Value(rebuilt.tocJson),
       );
     } finally {
       try {

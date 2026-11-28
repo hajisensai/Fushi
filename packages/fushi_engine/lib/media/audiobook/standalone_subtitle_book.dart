@@ -8,6 +8,7 @@ library;
 
 import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:fushi_audio/fushi_audio_core.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_cue_file_split.dart';
@@ -350,15 +351,16 @@ Future<bool> rebuildGeneratedSubtitleBody({
       outputPath: epub.path,
       author: author,
     );
-    final ({int chapterCount, String chaptersJson, String? coverPath}) parsed =
-        await EpubImporter.rebuildExtractedInPlace(
-          epubFilePath: epub.path,
-          extractDir: row.extractDir,
-        );
+    final RebuiltEpubTree parsed = await EpubImporter.rebuildExtractedInPlace(
+      epubFilePath: epub.path,
+      extractDir: row.extractDir,
+    );
+    // 目录随正文一起重新生成：换了树不写目录，目录 href 就指着旧章节文件。
     await db.updateEpubBookChapters(
       row.bookKey,
       chapterCount: parsed.chapterCount,
       chaptersJson: parsed.chaptersJson,
+      tocJson: Value(parsed.tocJson),
     );
     fushiDebugPrint(
       '[fushi-import] subtitle book body rebuilt key=${row.bookKey} '

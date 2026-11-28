@@ -101,8 +101,7 @@ void main() {
     await root.delete(recursive: true);
   });
 
-  Future<({int chapterCount, String chaptersJson, String? coverPath})>
-  rebuildInPlace({
+  Future<RebuiltEpubTree> rebuildInPlace({
     required String epubFilePath,
     required String extractDir,
   }) async {
@@ -127,6 +126,7 @@ void main() {
           <String, Object?>{'href': 'OEBPS/chapter-${i + 1}.xhtml'},
       ]),
       coverPath: null,
+      tocJson: null,
     );
   }
 
@@ -960,8 +960,9 @@ void main() {
     );
     EpubBookRow row = (await db.getEpubBook(bookKey))!;
     // 书行换成真实导入口径的 chaptersJson（测试的假重建不数字数）。
-    final ({int chapterCount, String chaptersJson, String? coverPath})
-    reparsed = await EpubImporter.reparseExtractedBook(row.extractDir);
+    final RebuiltEpubTree reparsed = await EpubImporter.reparseExtractedBook(
+      row.extractDir,
+    );
     await db.updateEpubBookMihonState(
       bookKey,
       sourceMetadata: row.sourceMetadata!,
