@@ -66,13 +66,15 @@ class BookDetailSnapshot {
 /// 进度，并给「刮削资料」行动点。
 ///
 /// 动作全部回调给书架页：主按钮 [onOpen] 与点书卡完全同一条路径（漫画先进作品页），
-/// [onScrape] 是书卡菜单「在线刮削封面」的同一个流程（门面写封面 + 资料 + 背景）。
+/// [onScrape] 是书卡菜单「在线刮削封面」的同一个流程（门面写封面 + 资料 + 背景）；
+/// [onBanner] 打开「横幅…」面板（用户自己挑横版背景，之后刮削不覆盖）。
 class BookDetailPage extends StatefulWidget {
   const BookDetailPage({
     required this.snapshot,
     required this.loadDetail,
     required this.onOpen,
     this.onScrape,
+    this.onBanner,
     this.changes,
     this.launchLink,
     super.key,
@@ -84,6 +86,9 @@ class BookDetailPage extends StatefulWidget {
 
   /// null = 刮削不可用（「在线服务」模块关着），不出刮削按钮。
   final Future<void> Function()? onScrape;
+
+  /// 「横幅…」面板；null = 不出这一项（认不出条目身份）。
+  final Future<void> Function()? onBanner;
   final Stream<void>? changes;
 
   /// 「查看条目」打开外链（测试接缝；null = 系统浏览器）。
@@ -98,6 +103,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
   StreamSubscription<void>? _changesSub;
   bool _opening = false;
   bool _scraping = false;
+  bool _bannerOpen = false;
 
   @override
   void initState() {
@@ -142,6 +148,18 @@ class _BookDetailPageState extends State<BookDetailPage> {
       await onScrape();
     } finally {
       if (mounted) setState(() => _scraping = false);
+    }
+    await _reload();
+  }
+
+  Future<void> _banner() async {
+    final Future<void> Function()? onBanner = widget.onBanner;
+    if (onBanner == null || _bannerOpen) return;
+    setState(() => _bannerOpen = true);
+    try {
+      await onBanner();
+    } finally {
+      if (mounted) setState(() => _bannerOpen = false);
     }
     await _reload();
   }
@@ -191,6 +209,14 @@ class _BookDetailPageState extends State<BookDetailPage> {
         view.scrapeAction(
           enabled: !_scraping,
           onSelected: () => unawaited(_scrape()),
+        ),
+      if (widget.onBanner != null)
+        MediaDetailMenuItem(
+          key: const ValueKey<String>('book-detail-banner'),
+          icon: FushiIcons.image,
+          label: t.media_banner_action,
+          enabled: !_bannerOpen,
+          onSelected: () => unawaited(_banner()),
         ),
       ?view.sourceLinkAction(launch: widget.launchLink),
     ];

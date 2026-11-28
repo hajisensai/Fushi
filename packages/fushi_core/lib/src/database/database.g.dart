@@ -37037,7 +37037,7 @@ class ItemScrapeMetaRow extends DataClass
   /// 本行写入毫秒戳。
   final int scrapedAt;
 
-  /// v172 字段锁（与视频 `video_metadata_works.locked_fields` 同形）：逗号分隔的
+  /// v177 字段锁（与视频 `video_metadata_works.locked_fields` 同形）：逗号分隔的
   /// 可锁字段名，例如 `summary`。用户手填过的字段进这里，之后条目刮削一律保留
   /// 旧值（BUG-5111）。NULL / 空 = 无锁；值域由引擎 `ItemScrapeLockableField`
   /// 维护，未知值静默忽略（前向兼容）。
@@ -37564,6 +37564,21 @@ class $ItemImagesTable extends ItemImages
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _userChosenMeta = const VerificationMeta(
+    'userChosen',
+  );
+  @override
+  late final GeneratedColumn<bool> userChosen = GeneratedColumn<bool>(
+    'user_chosen',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("user_chosen" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     mediaType,
@@ -37572,6 +37587,7 @@ class $ItemImagesTable extends ItemImages
     position,
     path,
     sourceUrl,
+    userChosen,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -37629,6 +37645,12 @@ class $ItemImagesTable extends ItemImages
         sourceUrl.isAcceptableOrUnknown(data['source_url']!, _sourceUrlMeta),
       );
     }
+    if (data.containsKey('user_chosen')) {
+      context.handle(
+        _userChosenMeta,
+        userChosen.isAcceptableOrUnknown(data['user_chosen']!, _userChosenMeta),
+      );
+    }
     return context;
   }
 
@@ -37662,6 +37684,10 @@ class $ItemImagesTable extends ItemImages
         DriftSqlType.string,
         data['${effectivePrefix}source_url'],
       ),
+      userChosen: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}user_chosen'],
+      )!,
     );
   }
 
@@ -37689,6 +37715,12 @@ class ItemImageRow extends DataClass implements Insertable<ItemImageRow> {
 
   /// 来源远程 URL（重下 / 诊断用；本地文件写入为 null）。
   final String? sourceUrl;
+
+  /// v183 来源锁：用户亲手选的图（书详情页「横幅…」、AI / 控制通道的明确写入）为
+  /// true，刮削写入（元数据刮削写回、卷封面横幅、游戏刮削）一律跳过这一组，不覆盖；
+  /// 用户换图 / 移除照常生效（移除 = 解锁，交还给下一次刮削）。存量行 false = 刮削
+  /// 来源。判据与写入口只在引擎 `ItemScrapeStore`。
+  final bool userChosen;
   const ItemImageRow({
     required this.mediaType,
     required this.entryKey,
@@ -37696,6 +37728,7 @@ class ItemImageRow extends DataClass implements Insertable<ItemImageRow> {
     required this.position,
     required this.path,
     this.sourceUrl,
+    required this.userChosen,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -37708,6 +37741,7 @@ class ItemImageRow extends DataClass implements Insertable<ItemImageRow> {
     if (!nullToAbsent || sourceUrl != null) {
       map['source_url'] = Variable<String>(sourceUrl);
     }
+    map['user_chosen'] = Variable<bool>(userChosen);
     return map;
   }
 
@@ -37721,6 +37755,7 @@ class ItemImageRow extends DataClass implements Insertable<ItemImageRow> {
       sourceUrl: sourceUrl == null && nullToAbsent
           ? const Value.absent()
           : Value(sourceUrl),
+      userChosen: Value(userChosen),
     );
   }
 
@@ -37736,6 +37771,7 @@ class ItemImageRow extends DataClass implements Insertable<ItemImageRow> {
       position: serializer.fromJson<int>(json['position']),
       path: serializer.fromJson<String>(json['path']),
       sourceUrl: serializer.fromJson<String?>(json['sourceUrl']),
+      userChosen: serializer.fromJson<bool>(json['userChosen']),
     );
   }
   @override
@@ -37748,6 +37784,7 @@ class ItemImageRow extends DataClass implements Insertable<ItemImageRow> {
       'position': serializer.toJson<int>(position),
       'path': serializer.toJson<String>(path),
       'sourceUrl': serializer.toJson<String?>(sourceUrl),
+      'userChosen': serializer.toJson<bool>(userChosen),
     };
   }
 
@@ -37758,6 +37795,7 @@ class ItemImageRow extends DataClass implements Insertable<ItemImageRow> {
     int? position,
     String? path,
     Value<String?> sourceUrl = const Value.absent(),
+    bool? userChosen,
   }) => ItemImageRow(
     mediaType: mediaType ?? this.mediaType,
     entryKey: entryKey ?? this.entryKey,
@@ -37765,6 +37803,7 @@ class ItemImageRow extends DataClass implements Insertable<ItemImageRow> {
     position: position ?? this.position,
     path: path ?? this.path,
     sourceUrl: sourceUrl.present ? sourceUrl.value : this.sourceUrl,
+    userChosen: userChosen ?? this.userChosen,
   );
   ItemImageRow copyWithCompanion(ItemImagesCompanion data) {
     return ItemImageRow(
@@ -37774,6 +37813,9 @@ class ItemImageRow extends DataClass implements Insertable<ItemImageRow> {
       position: data.position.present ? data.position.value : this.position,
       path: data.path.present ? data.path.value : this.path,
       sourceUrl: data.sourceUrl.present ? data.sourceUrl.value : this.sourceUrl,
+      userChosen: data.userChosen.present
+          ? data.userChosen.value
+          : this.userChosen,
     );
   }
 
@@ -37785,14 +37827,22 @@ class ItemImageRow extends DataClass implements Insertable<ItemImageRow> {
           ..write('kind: $kind, ')
           ..write('position: $position, ')
           ..write('path: $path, ')
-          ..write('sourceUrl: $sourceUrl')
+          ..write('sourceUrl: $sourceUrl, ')
+          ..write('userChosen: $userChosen')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode =>
-      Object.hash(mediaType, entryKey, kind, position, path, sourceUrl);
+  int get hashCode => Object.hash(
+    mediaType,
+    entryKey,
+    kind,
+    position,
+    path,
+    sourceUrl,
+    userChosen,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -37802,7 +37852,8 @@ class ItemImageRow extends DataClass implements Insertable<ItemImageRow> {
           other.kind == this.kind &&
           other.position == this.position &&
           other.path == this.path &&
-          other.sourceUrl == this.sourceUrl);
+          other.sourceUrl == this.sourceUrl &&
+          other.userChosen == this.userChosen);
 }
 
 class ItemImagesCompanion extends UpdateCompanion<ItemImageRow> {
@@ -37812,6 +37863,7 @@ class ItemImagesCompanion extends UpdateCompanion<ItemImageRow> {
   final Value<int> position;
   final Value<String> path;
   final Value<String?> sourceUrl;
+  final Value<bool> userChosen;
   final Value<int> rowid;
   const ItemImagesCompanion({
     this.mediaType = const Value.absent(),
@@ -37820,6 +37872,7 @@ class ItemImagesCompanion extends UpdateCompanion<ItemImageRow> {
     this.position = const Value.absent(),
     this.path = const Value.absent(),
     this.sourceUrl = const Value.absent(),
+    this.userChosen = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   ItemImagesCompanion.insert({
@@ -37829,6 +37882,7 @@ class ItemImagesCompanion extends UpdateCompanion<ItemImageRow> {
     this.position = const Value.absent(),
     required String path,
     this.sourceUrl = const Value.absent(),
+    this.userChosen = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : mediaType = Value(mediaType),
        entryKey = Value(entryKey),
@@ -37841,6 +37895,7 @@ class ItemImagesCompanion extends UpdateCompanion<ItemImageRow> {
     Expression<int>? position,
     Expression<String>? path,
     Expression<String>? sourceUrl,
+    Expression<bool>? userChosen,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -37850,6 +37905,7 @@ class ItemImagesCompanion extends UpdateCompanion<ItemImageRow> {
       if (position != null) 'position': position,
       if (path != null) 'path': path,
       if (sourceUrl != null) 'source_url': sourceUrl,
+      if (userChosen != null) 'user_chosen': userChosen,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -37861,6 +37917,7 @@ class ItemImagesCompanion extends UpdateCompanion<ItemImageRow> {
     Value<int>? position,
     Value<String>? path,
     Value<String?>? sourceUrl,
+    Value<bool>? userChosen,
     Value<int>? rowid,
   }) {
     return ItemImagesCompanion(
@@ -37870,6 +37927,7 @@ class ItemImagesCompanion extends UpdateCompanion<ItemImageRow> {
       position: position ?? this.position,
       path: path ?? this.path,
       sourceUrl: sourceUrl ?? this.sourceUrl,
+      userChosen: userChosen ?? this.userChosen,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -37895,6 +37953,9 @@ class ItemImagesCompanion extends UpdateCompanion<ItemImageRow> {
     if (sourceUrl.present) {
       map['source_url'] = Variable<String>(sourceUrl.value);
     }
+    if (userChosen.present) {
+      map['user_chosen'] = Variable<bool>(userChosen.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -37910,6 +37971,7 @@ class ItemImagesCompanion extends UpdateCompanion<ItemImageRow> {
           ..write('position: $position, ')
           ..write('path: $path, ')
           ..write('sourceUrl: $sourceUrl, ')
+          ..write('userChosen: $userChosen, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -57255,7 +57317,7 @@ class StudySegmentRow extends DataClass implements Insertable<StudySegmentRow> {
   /// 页数（漫画 / PDF；EPUB 恒 0）。
   final int pages;
 
-  /// v172（拍板台 4KOWK3c2mn 方案 b）：本段时间里**在这个媒体上**的查词次数。
+  /// v178（拍板台 4KOWK3c2mn 方案 b）：本段时间里**在这个媒体上**的查词次数。
   ///
   /// 查词发生时本媒体的 [StudySegments] 时钟在跑，就记进当前段（与字数同一行、同一
   /// uid、同一次绝对值写）；这样查词与字数 / 时长同一小时粒度，编辑会话改日期时随段
@@ -114763,6 +114825,7 @@ typedef $$ItemImagesTableCreateCompanionBuilder =
       Value<int> position,
       required String path,
       Value<String?> sourceUrl,
+      Value<bool> userChosen,
       Value<int> rowid,
     });
 typedef $$ItemImagesTableUpdateCompanionBuilder =
@@ -114773,6 +114836,7 @@ typedef $$ItemImagesTableUpdateCompanionBuilder =
       Value<int> position,
       Value<String> path,
       Value<String?> sourceUrl,
+      Value<bool> userChosen,
       Value<int> rowid,
     });
 
@@ -114812,6 +114876,11 @@ class $$ItemImagesTableFilterComposer
 
   ColumnFilters<String> get sourceUrl => $composableBuilder(
     column: $table.sourceUrl,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get userChosen => $composableBuilder(
+    column: $table.userChosen,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -114854,6 +114923,11 @@ class $$ItemImagesTableOrderingComposer
     column: $table.sourceUrl,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<bool> get userChosen => $composableBuilder(
+    column: $table.userChosen,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$ItemImagesTableAnnotationComposer
@@ -114882,6 +114956,11 @@ class $$ItemImagesTableAnnotationComposer
 
   GeneratedColumn<String> get sourceUrl =>
       $composableBuilder(column: $table.sourceUrl, builder: (column) => column);
+
+  GeneratedColumn<bool> get userChosen => $composableBuilder(
+    column: $table.userChosen,
+    builder: (column) => column,
+  );
 }
 
 class $$ItemImagesTableTableManager
@@ -114921,6 +115000,7 @@ class $$ItemImagesTableTableManager
                 Value<int> position = const Value.absent(),
                 Value<String> path = const Value.absent(),
                 Value<String?> sourceUrl = const Value.absent(),
+                Value<bool> userChosen = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ItemImagesCompanion(
                 mediaType: mediaType,
@@ -114929,6 +115009,7 @@ class $$ItemImagesTableTableManager
                 position: position,
                 path: path,
                 sourceUrl: sourceUrl,
+                userChosen: userChosen,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -114939,6 +115020,7 @@ class $$ItemImagesTableTableManager
                 Value<int> position = const Value.absent(),
                 required String path,
                 Value<String?> sourceUrl = const Value.absent(),
+                Value<bool> userChosen = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ItemImagesCompanion.insert(
                 mediaType: mediaType,
@@ -114947,6 +115029,7 @@ class $$ItemImagesTableTableManager
                 position: position,
                 path: path,
                 sourceUrl: sourceUrl,
+                userChosen: userChosen,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -145290,7 +145373,18 @@ class $$MusicVideoPrintsTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$MusicVideoPrintsTable, MusicVideoPrintRow>(
+                    table,
+                  ),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $MusicVideoPrintsTable,
+                    MusicVideoPrintRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -145513,7 +145607,19 @@ class $$MusicVideoMatchChecksTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<
+                    $MusicVideoMatchChecksTable,
+                    MusicVideoMatchCheckRow
+                  >(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $MusicVideoMatchChecksTable,
+                    MusicVideoMatchCheckRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),

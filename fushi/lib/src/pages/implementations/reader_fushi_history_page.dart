@@ -133,6 +133,10 @@ import 'package:fushi/src/media/collections/collection_context_dialog.dart';
 import 'package:fushi/src/media/metadata/book_cover_scrape_dialog.dart';
 import 'package:fushi/src/media/metadata/book_metadata_scrape_facade.dart';
 import 'package:fushi/src/media/detail/item_scrape_detail.dart';
+import 'package:fushi/src/media/banner/banner_picker_sheet.dart'
+    show BannerPickerTarget, showBannerPickerSheet;
+import 'package:fushi/src/media/banner/book_banner_sources.dart'
+    show loadBookBannerPickerTarget;
 import 'package:fushi/src/pages/implementations/book_detail_page.dart';
 import 'package:fushi_engine/media/item_scrape/item_scrape_store.dart'
     show ItemScrapeKey;
@@ -1105,7 +1109,10 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   }
 
   /// 合集详情页成员信息（最后阅读 / 进度 / 读完）的版本号：源数据 provider 刷新、
-  /// 本页重建完之后 +1，详情页订阅它重算「继续阅读」（4h4uGUck4k）。
+  /// 本页重建完之后 +1，详情页订阅它重算「继续阅读」（4h4uGUck4k）。书架映射重载
+  /// 完（[_loadShelfMaps]）也 +1：详情页 hero 借的成员刮削资料 / 背景图
+  /// （`collectionSeriesFallback`，含「获取各卷封面与横幅」贴上的横幅，BUG-5609）
+  /// 读的就是这些映射。
   final ValueNotifier<int> _memberInfoRevision = ValueNotifier<int>(0);
 
   void _bumpMemberInfoRevision() {
@@ -1889,6 +1896,8 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       for (final MediaCollectionRow c in collections) c.id: c,
     };
     _primaryCollectionByEntry = primaryMap;
+    // 打开着的合集详情页借的成员背景图 / 刮削资料变了：通知它重算 hero。
+    _bumpMemberInfoRevision();
   }
 
   /// [collectionIds] 里各合集附加图组中 [kind] 种类、position 最小且文件还在的
@@ -3587,7 +3596,8 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 只读 [_loadShelfMaps] 已批量预取的映射，零查询 / 零 IO。
   ///
   /// 合集自己没刮削过时借成员的（[_borrowedCollectionSeries]，2026-11-16 用户
-  /// 拍板）：最前那卷的横版海报 / 类型 / 评分画成系列块。
+  /// 拍板）：最前那卷的横版海报 / 类型 / 评分画成系列块；合集有资料行但没有背景图
+  /// 时只借背景图（[fushiCollectionSeriesInfo]，与合集详情页 / 首页同一口径）。
   FushiSeriesMeta? _shelfCollectionSeriesMeta(
     CollectionGroup<_ShelfBookSlot> group,
   ) {
@@ -3595,13 +3605,16 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     if (collection == null) return null;
     final String? backdrop = _collectionBackdropPathById[collection.id];
     final String? logo = _collectionLogoPathById[collection.id];
-    return collectionSeriesMeta(
-          scrape: _collectionScrapeMetaById[collection.id],
-          backdrop: backdrop == null ? null : resizedFileImage(File(backdrop)),
-          logo: logo == null ? null : resizedFileImage(File(logo)),
-          countLabel: t.shelf_collection_volume_count(n: group.items.length),
-        ) ??
-        _borrowedCollectionSeries(group)?.meta;
+    final FushiSeriesMeta? own = collectionSeriesMeta(
+      scrape: _collectionScrapeMetaById[collection.id],
+      backdrop: backdrop == null ? null : resizedFileImage(File(backdrop)),
+      logo: logo == null ? null : resizedFileImage(File(logo)),
+      countLabel: t.shelf_collection_volume_count(n: group.items.length),
+    );
+    return fushiCollectionSeriesInfo(
+      own: own == null ? null : (meta: own, summary: null),
+      borrowed: () => _borrowedCollectionSeries(group),
+    )?.meta;
   }
 
   /// 合集借用的成员刮削资料：先看「继续」会打开的那卷（[_collectionContinueIndex]），
@@ -5302,6 +5315,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       },
       onOpen: () => _openEpubCard(current()),
       scrapeItem: current,
+      bannerKey: () => itemScrapeKeyForBook(appModel.database, item),
     );
   }
 
@@ -5356,6 +5370,21 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       },
       onOpen: () => _openSrtBook(current()),
       scrapeItem: () => _srtBookMediaItem(current()),
+      // 横幅写到详情页实际显示的那份资料上（与上面 loadDetail 同一个判据）：自己
+      // 没有刮削数据时是配对 EPUB 的，否则写到自己身上会把配对书的资料挡掉。
+      bannerKey: () async {
+        final ItemScrapeKey own = ItemScrapeKey(MediaKind.srt, book.uid);
+        if (book.bookKey.isEmpty ||
+            !(await ItemScrapeDetail.load(appModel.database, own)).isEmpty) {
+          return own;
+        }
+        final String? uid = await appModel.database.resolveEpubBookUid(
+          book.bookKey,
+        );
+        return uid == null || uid.isEmpty
+            ? own
+            : ItemScrapeKey(MediaKind.epub, uid);
+      },
     );
   }
 
@@ -5364,6 +5393,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     required Future<ItemScrapeDetail> Function() loadDetail,
     required Future<void> Function() onOpen,
     required MediaItem Function() scrapeItem,
+    required Future<ItemScrapeKey?> Function() bannerKey,
   }) async {
     // 刮削要打第三方 API，属「在线服务」模块（与书卡菜单同一道门）。
     final bool canScrape = _moduleVisibility.isEnabled(ModuleId.services);
@@ -5376,10 +5406,37 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           changes: appModel.database.watchItemScrapeChanged(),
           onOpen: onOpen,
           onScrape: canScrape ? () => _scrapeBookItem(scrapeItem()) : null,
+          onBanner: () =>
+              _openBookBanner(key: bannerKey, title: snapshot().title),
         ),
       ),
     );
     if (mounted) _rebuild(() {});
+  }
+
+  /// 书 / 漫画 / 字幕书详情页「横幅…」：装配来源（在线来源跟刮削同一道「在线服务」
+  /// 模块门）后弹面板；换了横幅就重取书架映射（系列色块读横版背景）。
+  Future<void> _openBookBanner({
+    required Future<ItemScrapeKey?> Function() key,
+    required String title,
+  }) async {
+    final ItemScrapeKey? itemKey = await key();
+    if (itemKey == null || !mounted) return;
+    final BannerPickerTarget target = await loadBookBannerPickerTarget(
+      db: appModel.database,
+      key: itemKey,
+      title: title,
+      onlineEnabled: _moduleVisibility.isEnabled(ModuleId.services),
+      thumbnailsDirectory: appModel.thumbnailsDirectory,
+    );
+    if (!mounted) return;
+    final bool changed = await showBannerPickerSheet(
+      context: context,
+      target: target,
+    );
+    if (!changed || !mounted) return;
+    _shelfMapsFuture = _loadShelfMaps();
+    _rebuild(() {});
   }
 
   /// 单卡「标签」（统一三库页卡菜单，用户 2026-07-28 拍板推翻 TODO-455）：先收起

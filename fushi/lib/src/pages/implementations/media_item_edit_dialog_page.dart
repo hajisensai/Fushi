@@ -60,7 +60,10 @@ class _MediaItemEditDialogPageState
       ? ReaderFushiSource.parseBookKey(widget.item.mediaIdentifier)
       : null;
 
-  BookArtStore get _artStore => BookArtStore.of(appModel.thumbnailsDirectory);
+  BookArtStore get _artStore => BookArtStore.of(
+    appModel.thumbnailsDirectory,
+    database: appModel.database,
+  );
 
   final TextEditingController _nameOverrideController = TextEditingController();
   // BUG-220: author editing, only shown when the source supports it (EPUB).

@@ -1,4 +1,4 @@
-// 单本书 / 漫画 / 字幕书 / 游戏的刮削资料与附加图（schema v155）。
+// 单本书 / 漫画 / 字幕书 / 游戏的刮削资料与附加图（schema v155；v183 附加图来源锁）。
 // 表语义见 tables.dart 的 [ItemScrapeMeta] / [ItemImages]。
 part of 'database.dart';
 
@@ -116,13 +116,71 @@ mixin _FushiDbItemScrape on _$FushiDatabase {
   /// 全表附加图（文件回收的保留集）。
   Future<List<ItemImageRow>> getAllItemImages() => select(itemImages).get();
 
-  /// 整体替换某条目某一种附加图（[paths] 按顺序成为 position 0..n；空 = 清空）。
+  /// 某条目某一种附加图里有没有用户亲手选的（v183 `user_chosen`）：刮削写入前
+  /// 先问一句，省掉注定被跳过的下载。最终裁决仍在
+  /// [replaceScrapedItemImagesOfKind] 的事务里。
+  Future<bool> hasUserChosenItemImage(
+    MediaKind mediaType,
+    String entryKey,
+    MediaImageKind kind,
+  ) async {
+    final ItemImageRow? row =
+        await (select(itemImages)
+              ..where(
+                ($ItemImagesTable t) =>
+                    t.mediaType.equals(mediaType.dbValue) &
+                    t.entryKey.equals(entryKey) &
+                    t.kind.equals(kind.dbValue) &
+                    t.userChosen.equals(true),
+              )
+              ..limit(1))
+            .getSingleOrNull();
+    return row != null;
+  }
+
+  /// 明确的整体替换（用户换图 / 移除、AI 与控制通道的写入、撤销写回）：某条目某
+  /// 一种附加图换成 [images]（按顺序成为 position 0..n；空 = 清空），新行的来源锁
+  /// 记为 [userChosen]。用户选的图也照换——这是用户自己的操作。
   /// 返回被替换掉、且不在新组里的旧文件路径（调用方据此回收文件）。
   Future<List<String>> replaceItemImagesOfKind({
     required MediaKind mediaType,
     required String entryKey,
     required MediaImageKind kind,
     required List<({String path, String? sourceUrl})> images,
+    bool userChosen = false,
+  }) async => (await _replaceItemImages(
+    mediaType: mediaType,
+    entryKey: entryKey,
+    kind: kind,
+    images: images,
+    userChosen: userChosen,
+    yieldToUserChosen: false,
+  ))!;
+
+  /// 刮削口径的整体替换：这一组里已有用户亲手选的图（v183 来源锁）时**什么都不
+  /// 动**、返回 null；否则同 [replaceItemImagesOfKind]（新行记为刮削来源）。查锁与
+  /// 替换在同一个事务里，与用户的并发换图不会互相踩掉。
+  Future<List<String>?> replaceScrapedItemImagesOfKind({
+    required MediaKind mediaType,
+    required String entryKey,
+    required MediaImageKind kind,
+    required List<({String path, String? sourceUrl})> images,
+  }) => _replaceItemImages(
+    mediaType: mediaType,
+    entryKey: entryKey,
+    kind: kind,
+    images: images,
+    userChosen: false,
+    yieldToUserChosen: true,
+  );
+
+  Future<List<String>?> _replaceItemImages({
+    required MediaKind mediaType,
+    required String entryKey,
+    required MediaImageKind kind,
+    required List<({String path, String? sourceUrl})> images,
+    required bool userChosen,
+    required bool yieldToUserChosen,
   }) {
     _checkItemScrapeKind(mediaType);
     if (kind != MediaImageKind.backdrop && images.length > 1) {
@@ -141,6 +199,9 @@ mixin _FushiDbItemScrape on _$FushiDatabase {
                     t.kind.equals(kind.dbValue),
               ))
               .get();
+      if (yieldToUserChosen && old.any((ItemImageRow r) => r.userChosen)) {
+        return null;
+      }
       await (delete(itemImages)..where(
             ($ItemImagesTable t) =>
                 t.mediaType.equals(mediaType.dbValue) &
@@ -157,6 +218,7 @@ mixin _FushiDbItemScrape on _$FushiDatabase {
             position: Value<int>(i),
             path: images[i].path,
             sourceUrl: Value<String?>(images[i].sourceUrl),
+            userChosen: Value<bool>(userChosen),
           ),
         );
       }

@@ -211,7 +211,10 @@ void main() {
 
   testWidgets('刮削过卷封面：作品页封面 / hero 背景与书架卡一致用刮削封面', (WidgetTester tester) async {
     final _Fixture f = await _setUp(tester);
-    final BookArtStore store = BookArtStore.of(f.appModel.thumbnailsDirectory);
+    final BookArtStore store = BookArtStore.of(
+      f.appModel.thumbnailsDirectory,
+      database: f.appModel.database,
+    );
     await tester.runAsync(
       () => store.write(
         record: const BookArtRecord(
@@ -249,7 +252,10 @@ void main() {
 
   testWidgets('用户 override 封面优先于刮削封面（与书架卡同一优先级）', (WidgetTester tester) async {
     final _Fixture f = await _setUp(tester);
-    final BookArtStore store = BookArtStore.of(f.appModel.thumbnailsDirectory);
+    final BookArtStore store = BookArtStore.of(
+      f.appModel.thumbnailsDirectory,
+      database: f.appModel.database,
+    );
     await tester.runAsync(
       () => store.write(
         record: const BookArtRecord(

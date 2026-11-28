@@ -211,28 +211,37 @@ BookArtVolumeChoice chooseBookArtVolume({
 /// 横幅：`type=banner`、不限语言、分级 ≤ suggestive、白名单格式；宽高比
 /// ≥ [kBookArtBannerMinAspect] 的取面积最大，没有返回 null。
 BookArtImageOption? pickMangaBakaBanner(Iterable<MangaBakaImage> images) {
-  MangaBakaImage? best;
-  for (final MangaBakaImage image in images) {
-    final int w = image.raw.width ?? 0;
-    final int h = image.raw.height ?? 0;
-    if (image.type != 'banner' ||
-        _ratingRank(image.contentRating) > 1 ||
-        !_downloadable(image.raw) ||
-        w <= 0 ||
-        h <= 0 ||
-        w / h < kBookArtBannerMinAspect) {
-      continue;
-    }
-    if (best == null || image.raw.area > best.raw.area) best = image;
-  }
-  return best == null
-      ? null
-      : BookArtImageOption(
-          source: BookArtSource.mangabaka,
-          url: best.raw.url,
-          width: best.raw.width,
-          height: best.raw.height,
-        );
+  final List<MangaBakaImage> eligible = listMangaBakaBanners(images);
+  if (eligible.isEmpty) return null;
+  final MangaBakaImage best = eligible.first;
+  return BookArtImageOption(
+    source: BookArtSource.mangabaka,
+    url: best.raw.url,
+    width: best.raw.width,
+    height: best.raw.height,
+  );
+}
+
+/// [pickMangaBakaBanner] 的同一组判据下够格的**全部**横幅，按面积降序（「横幅…」
+/// 面板的在线候选要把每一张都给用户挑，不只最大的那张）。
+List<MangaBakaImage> listMangaBakaBanners(Iterable<MangaBakaImage> images) {
+  final List<MangaBakaImage> out = <MangaBakaImage>[
+    for (final MangaBakaImage image in images)
+      if (image.type == 'banner' &&
+          _ratingRank(image.contentRating) <= 1 &&
+          _downloadable(image.raw) &&
+          (image.raw.width ?? 0) > 0 &&
+          (image.raw.height ?? 0) > 0 &&
+          image.raw.width! / image.raw.height! >= kBookArtBannerMinAspect)
+        image,
+  ];
+  // 稳定排序：面积相同保持源站顺序（与旧的「严格更大才换」同一个赢家）。
+  final List<int> order = List<int>.generate(out.length, (int i) => i);
+  order.sort((int a, int b) {
+    final int byArea = out[b].raw.area.compareTo(out[a].raw.area);
+    return byArea != 0 ? byArea : a.compareTo(b);
+  });
+  return <MangaBakaImage>[for (final int i in order) out[i]];
 }
 
 /// PNG 签名（8 字节）。
