@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-28T09:17:35Z",
+ "generatedAt": "2026-11-28T09:21:16Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "4d853cf79195e335c36454886fed25e9ec0d235e",
@@ -12,8 +12,8 @@
    "version": "3.4.1",
    "sha": "4d853cf79195e335c36454886fed25e9ec0d235e",
    "unknown": false,
-   "publishedAt": "2026-11-28T09:17:22Z",
-   "testflight": false,
+   "publishedAt": "2026-11-28T09:21:03Z",
+   "testflight": true,
    "baseSeq": 33039,
    "prs": [
     4612,
@@ -40,16 +40,13 @@
      "state": "ok"
     },
     "windows": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/46125697711"
+     "state": "ok"
     },
     "macos": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/46125697711"
+     "state": "ok"
     },
     "ios": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/46125697711"
+     "state": "ok"
     }
    }
   },
@@ -413,7 +410,7 @@
    "unknown": false,
    "publishedAt": "2026-11-27T05:38:32Z",
    "testflight": true,
-   "baseSeq": 32862,
+   "baseSeq": 32769,
    "prs": [],
    "direct": [
     {
@@ -427,34 +424,7 @@
     {
      "sha": "6d1e2464929f9aceefca6fdf6387ef232f769a78",
      "subject": "chore(bugs): settle BUG number collisions on 06de0be3b"
-    }
-   ],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
     },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "ok"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
-  },
-  {
-   "seq": 32862,
-   "version": "3.4.0",
-   "sha": "06de0be3bc520671196aa8e12b13876e12977f27",
-   "unknown": false,
-   "publishedAt": "2026-11-26T20:08:14Z",
-   "testflight": true,
-   "baseSeq": 32769,
-   "prs": [],
-   "direct": [
     {
      "sha": "06de0be3bc520671196aa8e12b13876e12977f27",
      "subject": "fix(merge): 截屏识字回包期望补上 BUG-5494 下发的文本块字段；设置重置钮测试跟上 PR #4518 换的 restoreBackup 图标"
@@ -579,8 +549,7 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45878377342"
+     "state": "ok"
     },
     "windows": {
      "state": "ok"
