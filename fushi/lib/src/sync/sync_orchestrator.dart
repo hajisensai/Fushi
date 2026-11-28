@@ -866,10 +866,60 @@ class _ObservedErrorList extends ListBase<String> {
 /// `No reachable Fushi server address`），自动 sweep 也因此绕过了 BUG-5368 「对端离线
 /// 不算失败、只推进退避」的通道级判定。这里把它原样抛出本轮，交给通道层统一处理：
 /// 自动 sweep 记 peerOffline，手动同步报一条通道级的本地化失败。
+///
+/// 「哪些错误必须中止整轮」只在 [syncErrorAbortsRound] 判一次（BUG-5614）；各维度的
+/// catch 不再各写各的 `on X { rethrow; }`。
 void _noteDimensionError(SyncRunReport report, String label, Object error) {
-  if (error is SyncPeerUnreachableError) throw error;
+  _rethrowIfAbortsRound(error);
   report.noteError(label, error);
 }
+
+/// 尽力而为、失败不进报告的 catch（只 `debugPrint` 或置标志位）也先过这一道：
+/// 取消 / 凭据失效 / 对端离线照样冲出本轮，不被「尽力而为」吞掉（BUG-5614）。
+void _rethrowIfAbortsRound(Object error) {
+  // 中止类错误全是 [Exception]（判据里三种类型都是），`is` 只为让类型收窄成可抛的。
+  if (error is Exception && syncErrorAbortsRound(error)) throw error;
+}
+
+/// 一个异常是**本轮同步的事实**（必须中止整轮、交给通道层处理），还是只属于某一个
+/// 维度 / 条目的失败（记进报告、流水线继续）。编排器错误边界的唯一判据（BUG-5614）。
+///
+/// - [SyncCancelledException]：模块被关掉。记成维度错误会让流水线接着跑后续阶段，
+///   取消形同虚设，还把「取消」误报成「N 项失败」。
+/// - [SyncPeerUnreachableError]：所有候选地址都探不到对端（见 [_noteDimensionError]）。
+/// - [SyncAuthError]：按 [syncAuthFailureAbortsRound] 分流——凭据类失效必须冲出
+///   `run()`，手动同步才走得到登出 / 重新配对的提示（TODO-836 / BUG-1323），
+///   后续维度拿同一份凭据也只会逐个再被拒一遍。
+@visibleForTesting
+bool syncErrorAbortsRound(Object error) => switch (error) {
+  SyncCancelledException() => true,
+  SyncPeerUnreachableError() => true,
+  SyncAuthError(:final SyncAuthFailureKind kind) => syncAuthFailureAbortsRound(
+    kind,
+  ),
+  _ => false,
+};
+
+/// 鉴权失败是否是**通道级**（这条通道的凭据本身出了问题，整轮都不用跑了）。
+///
+/// 逐值 switch 而非 `!= forbidden`：枚举一加新值，编译器就逼着在这里表态（同
+/// `shouldSignOutOnAuthError` 的理由）。
+///
+/// - 403 一族（[SyncAuthFailureKind.forbidden] / [SyncAuthFailureKind.htmlPage]）：
+///   凭据已被接受或根本没被评估，只是服务端拒了**这一次**请求（如 host 对明文会话
+///   拒发 service config，BUG-1311）。它属于那一个维度：记进报告并带类型进
+///   `authFailures`（BUG-1324），其余维度照常同步。
+/// - 其余：凭据失效 / 配对被拒 / 没配对 / 授权流程超时或被用户取消——同一通道上的
+///   后续请求必然同样失败，中止本轮。
+bool syncAuthFailureAbortsRound(SyncAuthFailureKind kind) => switch (kind) {
+  SyncAuthFailureKind.credentials => true,
+  SyncAuthFailureKind.forbidden => false,
+  SyncAuthFailureKind.browserTimeout => true,
+  SyncAuthFailureKind.cancelled => true,
+  SyncAuthFailureKind.pairingRejected => true,
+  SyncAuthFailureKind.pairingNotConfigured => true,
+  SyncAuthFailureKind.htmlPage => false,
+};
 
 class SyncOrchestrator {
   SyncOrchestrator({
@@ -1002,9 +1052,9 @@ class SyncOrchestrator {
   /// 只放在「上一项已完整落地、下一项还没开始」的位置——阶段之间、逐项循环的循环头
   /// （在逐项 try 之外，不会被逐项 catch 吞掉）。中止留下的状态与网络失败在同一处
   /// 抛错同形：锁与临时文件由各自的 finally 收拾，冷却戳 `lastSyncMs` 只在整轮
-  /// 跑完才写。整段 try/catch 吞错的阶段在 catch 前先放行它（`on
-  /// SyncCancelledException { rethrow; }`），否则取消会被记成一条阶段错误、流水线
-  /// 接着往下跑。
+  /// 跑完才写。整段 try/catch 吞错的阶段经 [_noteDimensionError] /
+  /// [_rethrowIfAbortsRound] 放行它（判据 [syncErrorAbortsRound]，BUG-5614），否则
+  /// 取消会被记成一条阶段错误、流水线接着往下跑。
   void _checkpoint() => cancellation.throwIfCancelled();
 
   /// 收藏词 / 收藏句是否参与聚合同步。互联通道由「共享收藏夹」开关驱动，与
@@ -1171,10 +1221,6 @@ class SyncOrchestrator {
       await _syncSourceShareLive(report, b);
       try {
         await _recoverMissingLiveBooks(report, b);
-      } on SyncAuthError {
-        rethrow;
-      } on SyncCancelledException {
-        rethrow;
       } on Exception catch (e) {
         _noteDimensionError(report, 'recover books from peer', e);
       }
@@ -1244,7 +1290,8 @@ class SyncOrchestrator {
     // 永远落不了库、库页永远散卡）。对齐其余 _sync*Live 阶段的形状：失败记
     // report.errors，流水线继续。
     //
-    // SyncAuthError 例外放行：它冲出 run() 是承重契约——manual_sync_ui 靠捕获它
+    // 凭据类 SyncAuthError / 取消例外放行（统一由 [_noteDimensionError] →
+    // [syncErrorAbortsRound] 判）：它冲出 run() 是承重契约——manual_sync_ui 靠捕获它
     // 登出并引导重新登录（TODO-836 / BUG-1323），吞成 report.errors 会把「凭据已
     // 失效」降级成一条无操作性的杂项错误；且鉴权死了后续阶段本来也无法工作。
     //
@@ -1315,16 +1362,12 @@ class SyncOrchestrator {
               },
             );
         bookStageComplete = true;
-      } on SyncAuthError {
-        rethrow;
-      } on SyncCancelledException {
-        rethrow;
       } on SyncBooksIncompleteError catch (e) {
         // 云后端这一轮认不出账号：书阶段已照常跑完能判的书，结果照收，只记一条错。
         bookResults = e.results;
         report.errors.add('books: ${e.cause}');
       } catch (e) {
-        report.errors.add('books: $e');
+        _noteDimensionError(report, 'books', e);
       }
       settleReadingBook();
       mark('readingData');
@@ -1498,7 +1541,7 @@ class SyncOrchestrator {
         );
         report.pendingMinesReceived += r.received;
       } catch (e) {
-        report.errors.add('pending mines: $e');
+        _noteDimensionError(report, 'pending mines', e);
       }
       mark('pendingMines');
     }
@@ -2505,8 +2548,6 @@ class SyncOrchestrator {
           merged.toJson(),
         );
       }
-    } on SyncCancelledException {
-      rethrow;
     } catch (e) {
       _noteDimensionError(report, 'video assets sync', e);
     }
@@ -3248,7 +3289,8 @@ Future<void> _pullRemoteFolderAudiobook({
       audioDatabaseRoot: audioDatabaseRoot,
       bookKeyOverride: bookKey,
     );
-  } catch (_) {
+  } catch (e) {
+    _rethrowIfAbortsRound(e);
     // best-effort：音频补下失败不影响 EPUB 已成功导入。
   } finally {
     try {

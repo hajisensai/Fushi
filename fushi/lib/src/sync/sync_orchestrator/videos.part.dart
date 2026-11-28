@@ -189,6 +189,7 @@ extension _SyncOrchestratorVideos on SyncOrchestrator {
           try {
             await backend.putRemoteVideoPlayback(uid, push);
           } catch (e) {
+            _rethrowIfAbortsRound(e);
             debugPrint(
               '[SyncOrchestrator] video playback push "$uid" failed: $e',
             );

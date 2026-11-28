@@ -33,8 +33,6 @@ extension _SyncOrchestratorOnlineLibrary on SyncOrchestrator {
       if (local.canonicalJson() != ownCanonical) {
         await backend.putRemoteOnlineLibraryManifest(local);
       }
-    } on SyncCancelledException {
-      rethrow;
     } catch (e) {
       _noteDimensionError(report, 'online library live sync', e);
     }
@@ -77,8 +75,6 @@ extension _SyncOrchestratorOnlineLibrary on SyncOrchestrator {
           } else {
             peers.add(m);
           }
-        } on SyncCancelledException {
-          rethrow;
         } catch (err) {
           _noteDimensionError(
             report,
@@ -100,8 +96,6 @@ extension _SyncOrchestratorOnlineLibrary on SyncOrchestrator {
       if (local.canonicalJson() != ownCanonical) {
         await _backend.putJsonAsset(ns, ownName, local.toJson());
       }
-    } on SyncCancelledException {
-      rethrow;
     } catch (e) {
       _noteDimensionError(report, 'online library cloud sync', e);
     }

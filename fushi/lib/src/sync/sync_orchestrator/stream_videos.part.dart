@@ -54,8 +54,6 @@ extension _SyncOrchestratorStreamVideos on SyncOrchestrator {
           (VideoBookRow a, VideoBookRow b) => a.bookUid.compareTo(b.bookUid),
         ),
       );
-    } on SyncCancelledException {
-      rethrow;
     } catch (e) {
       _noteDimensionError(report, 'live push stream videos', e);
     }
@@ -75,8 +73,6 @@ extension _SyncOrchestratorStreamVideos on SyncOrchestrator {
         localUids,
         since: SyncRepository.streamVideoPullSinceMsFromPrefs(_scope, prefs),
       );
-    } on SyncCancelledException {
-      rethrow;
     } catch (e) {
       _noteDimensionError(report, 'live pull stream videos', e);
       // 中途抛出时可能已落了几行：按「落过」处理，调用方重读一次行表。

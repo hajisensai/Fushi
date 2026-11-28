@@ -36,10 +36,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4880 条。点号进各自文件。
+> 共 4881 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5614](bugs/BUG-5614-sync-dimension-swallows-cancel-and-auth.md) | ✅ | ✅ | 同步编排各维度把取消与凭据失效吞成维度错误，整轮照常跑完 |
 | [BUG-5608](bugs/BUG-5608-library-missing-content-reimport-skipped.md) | ✅ | ✅ | 书文件丢了之后重新导入恢复不了：同名判重复只认原来源 |
 | [BUG-5607](bugs/BUG-5607-torrent-dht-test-default-timeout.md) | ✅ | ✅ | torrent-dht-test-default-timeout |
 | [BUG-5606](bugs/BUG-5606-host-isolate-offload.md) | ✅ | ✅ | 电脑当互联 host，iPhone 连过来同步时电脑界面一卡一卡 |
