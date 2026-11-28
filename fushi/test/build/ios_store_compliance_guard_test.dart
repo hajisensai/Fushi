@@ -427,10 +427,11 @@ void main() {
           'StoreRestrictedCapability.externalDiscovery.isAvailable;'
           'finalbooluserServerSources='
           'userConfiguredServersAvailable&&isPreferencesReady;'
-          'return_mediaDiscoveryService=MediaDiscoveryService('
+          'return_mediaDiscoveryServiceSlot.obtain('
+          '_requireSession(),()=>MediaDiscoveryService('
           'sources:<MediaDiscoverySource>['
           'if(builtInSources)..._builtInDiscoverySources(),'
-          'if(userServerSources)..._userServerDiscoverySources(),],);',
+          'if(userServerSources)..._userServerDiscoverySources(),],),);',
         ),
         reason: '两类源分别过各自判据，且只在这一处组装。',
       );

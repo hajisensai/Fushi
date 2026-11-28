@@ -137,11 +137,9 @@ void main() {
       // needle 用赋值形式：方法名 `startAnimeDownloadService()` 自身就含子串
       // `AnimeDownloadService(`，直接找会命中函数签名（永远在最前面）。
       final int refresh = body.indexOf('await _refreshAnimeDownloadPlanIds(');
-      final int service = body.indexOf(
-        '_animeDownloadService = _requireSession().own<AnimeDownloadService>(',
-      );
+      final int service = body.indexOf('_animeDownloadServiceSlot.obtain(');
       final int subscription = body.indexOf(
-        '_animeDownloadSubscriptionService = _requireSession()',
+        '_animeDownloadSubscriptionServiceSlot.obtain(',
       );
       expect(
         refresh,

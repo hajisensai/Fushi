@@ -248,14 +248,34 @@ void main() {
     model.removeDatabaseCloseQuiescer(quiesce);
   });
 
+  test('后台写手的排空上界只由 closeDatabase 的调用方给（BUG-1505）', () async {
+    final _GenerationAppModel unbounded = _GenerationAppModel()
+      ..wireDatabaseForTesting(_CountingDatabase(NativeDatabase.memory()));
+    await unbounded.closeDatabase();
+    expect(
+      unbounded.databaseSessionForTesting!.drainTimeout,
+      isNull,
+      reason: '迁移导入 / 备份导入 / 数据根迁移不给上界：等到真收尾',
+    );
+
+    final _GenerationAppModel exiting = _GenerationAppModel()
+      ..wireDatabaseForTesting(_CountingDatabase(NativeDatabase.memory()));
+    await exiting.closeDatabase(
+      pipelineDrainTimeout: const Duration(seconds: 2),
+    );
+    expect(
+      exiting.databaseSessionForTesting!.drainTimeout,
+      const Duration(seconds: 2),
+    );
+  });
+
   test('dispose 收尾这一代的模型侧资源；连接、它名下的后台工作、关库信号都不动', () async {
     final _CountingDatabase db = _CountingDatabase(NativeDatabase.memory());
     final _GenerationAppModel model = _GenerationAppModel()
       ..wireDatabaseForTesting(
         db,
         dictionaryRepository: DictionaryRepository(db),
-      )
-      ..markInitialisedForTesting();
+      );
     int quiesced = 0;
     Future<void> quiesce() async => quiesced++;
     model.addDatabaseCloseQuiescer(quiesce);
