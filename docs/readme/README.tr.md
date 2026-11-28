@@ -28,8 +28,8 @@
 | Windows | ✅ | Galgame metin ve ses hook'lama yalnızca Windows'ta çalışır |
 | macOS | ✅ | Yalnızca Apple Silicon; Intel Mac'ler desteklenmez |
 | iOS | ✅ ([TestFlight](https://testflight.apple.com/join/j88d69jx)) | Keşif, çevrimiçi kaynaklar ve indirme merkezi yok (App Store yönergeleri) |
-| Linux | 🔧 Kaynaktan derleyin | Henüz hazır sürüm yok; EPUB okuyucu WPE WebKit gerektirir |
-| Fushi Server | 🧪 Beta ([fushi-server](https://github.com/hajisensai/fushi-server/releases)) | Linux / Windows / macOS için web arayüzlü başsız (headless) sunucu — bkz. [packages/fushi_server](../../packages/fushi_server/README.md) |
+| Linux | ✅ Flatpak (x86_64) | İmzalı Flatpak deposu, uygulama içi otomatik güncelleme, ayrıca taşınabilir `.tar.gz`; Flathub'da yok |
+| Fushi Server | 🧪 Beta ([fushi-server](https://github.com/hajisensai/fushi-server/releases)) | Linux x64 / Windows x64 + Docker (ghcr.io) için web arayüzlü başsız (headless) sunucu — bkz. [packages/fushi_server](../../packages/fushi_server/README.md) |
 
 **Tasarım sistemi** — her platformda varsayılan **Material 3 Expressive**'dir; *Ayarlar › Görünüm › Tasarım sistemi* bölümünden bir **Cupertino** (Apple tarzı) tasarım sistemi seçilebilir; Cupertino ile pencere arka planı Windows 11'de Mica, macOS'ta vibrancy kullanır (sistemin saydamlığı azalt veya yüksek karşıtlık ayarı açık değilse).
 
@@ -41,7 +41,7 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 
 ## Kurulum
 
-En son sürümü [Fushi web sitesinden](https://fushi.moe/) indirin — Android APK, Windows yükleyicisi ve macOS sürümleri mevcuttur (yalnızca Apple Silicon; Intel Mac'ler desteklenmez); iOS, [TestFlight](https://testflight.apple.com/join/j88d69jx) üzerinden kurulur. Linux için henüz hazır bir uygulama sürümü yoktur; kaynaktan derleyin. Başsız Fushi Server ise ayrıca [hajisensai/fushi-server](https://github.com/hajisensai/fushi-server/releases) adresinden yayımlanır.
+En son sürümü [Fushi web sitesinden](https://fushi.moe/) indirin — Android APK, Windows yükleyicisi ve macOS sürümleri mevcuttur (yalnızca Apple Silicon; Intel Mac'ler desteklenmez); iOS, [TestFlight](https://testflight.apple.com/join/j88d69jx) üzerinden kurulur. Linux'ta Flatpak'i (x86_64) `flatpak install --user https://hajisensai.github.io/Fushi/app.fushi.reader.flatpakref` ile kurun — uygulama içinde ve `flatpak update` ile kendini günceller; Flatpak kullanmayan dağıtımlar için her sürümde taşınabilir bir `.tar.gz` bulunur (uygulama içi yükleyici yok). Flathub'da yoktur. Başsız Fushi Server ise ayrıca [hajisensai/fushi-server](https://github.com/hajisensai/fushi-server/releases) adresinden yayımlanır.
 
 > Android 8.0 (API 26) veya üzeri gerekir.
 

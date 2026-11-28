@@ -28,8 +28,8 @@
 | Windows | ✅ | การ hook ข้อความและเสียงของ galgame ใช้ได้เฉพาะ Windows |
 | macOS | ✅ | เฉพาะ Apple Silicon; ไม่รองรับ Mac แบบ Intel |
 | iOS | ✅ ([TestFlight](https://testflight.apple.com/join/j88d69jx)) | ไม่มีการค้นหาแหล่ง แหล่งออนไลน์ และศูนย์ดาวน์โหลด (ตามแนวทางของ App Store) |
-| Linux | 🔧 สร้างจากซอร์สโค้ด | ยังไม่มีรุ่นที่สร้างไว้ล่วงหน้า; ตัวอ่าน EPUB ต้องใช้ WPE WebKit |
-| Fushi Server | 🧪 Beta ([fushi-server](https://github.com/hajisensai/fushi-server/releases)) | โฮสต์แบบ headless สำหรับ Linux / Windows / macOS พร้อมเว็บ UI — ดู [packages/fushi_server](../../packages/fushi_server/README.md) |
+| Linux | ✅ Flatpak (x86_64) | คลัง Flatpak ที่ลงลายเซ็น อัปเดตอัตโนมัติในแอป พร้อม `.tar.gz` แบบพกพา; ไม่มีบน Flathub |
+| Fushi Server | 🧪 Beta ([fushi-server](https://github.com/hajisensai/fushi-server/releases)) | โฮสต์แบบ headless สำหรับ Linux x64 / Windows x64 + Docker (ghcr.io) พร้อมเว็บ UI — ดู [packages/fushi_server](../../packages/fushi_server/README.md) |
 
 **ระบบการออกแบบ** — ทุกแพลตฟอร์มใช้ **Material 3 Expressive** เป็นค่าเริ่มต้น และสามารถเลือกระบบการออกแบบ **Cupertino** (สไตล์ Apple) ได้ที่ *การตั้งค่า › รูปลักษณ์ › ระบบการออกแบบ* เมื่อใช้ Cupertino พื้นหลังหน้าต่างจะใช้ Mica บน Windows 11 และ vibrancy บน macOS (เว้นแต่จะเปิดการลดความโปร่งใสหรือความคมชัดสูงของระบบ)
 
@@ -41,7 +41,7 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 
 ## การติดตั้ง
 
-ดาวน์โหลดรุ่นล่าสุดได้จาก[เว็บไซต์ Fushi](https://fushi.moe/) — มี Android APK, ตัวติดตั้ง Windows และบิลด์ macOS (เฉพาะ Apple Silicon; ไม่รองรับ Mac แบบ Intel) ส่วน iOS ติดตั้งผ่าน [TestFlight](https://testflight.apple.com/join/j88d69jx) Linux ยังไม่มีรุ่นแอปที่สร้างไว้ล่วงหน้า ให้สร้างจากซอร์สโค้ดเอง Fushi Server แบบ headless เผยแพร่แยกต่างหากที่ [hajisensai/fushi-server](https://github.com/hajisensai/fushi-server/releases)
+ดาวน์โหลดรุ่นล่าสุดได้จาก[เว็บไซต์ Fushi](https://fushi.moe/) — มี Android APK, ตัวติดตั้ง Windows และบิลด์ macOS (เฉพาะ Apple Silicon; ไม่รองรับ Mac แบบ Intel) ส่วน iOS ติดตั้งผ่าน [TestFlight](https://testflight.apple.com/join/j88d69jx) บน Linux ติดตั้ง Flatpak (x86_64) ด้วย `flatpak install --user https://hajisensai.github.io/Fushi/app.fushi.reader.flatpakref` — อัปเดตเองในแอปและผ่าน `flatpak update`; สำหรับดิสโทรที่ไม่มี Flatpak ทุก release แนบ `.tar.gz` แบบพกพา (ไม่มีตัวติดตั้งในแอป) ไม่มีบน Flathub Fushi Server แบบ headless เผยแพร่แยกต่างหากที่ [hajisensai/fushi-server](https://github.com/hajisensai/fushi-server/releases)
 
 > ต้องใช้ Android 8.0 (API 26) ขึ้นไป
 

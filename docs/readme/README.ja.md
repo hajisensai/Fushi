@@ -28,8 +28,8 @@
 | Windows | ✅ | ギャルゲーのテキスト／音声フックは Windows 限定 |
 | macOS | ✅ | Apple Silicon のみ。Intel Mac は非対応 |
 | iOS | ✅（[TestFlight](https://testflight.apple.com/join/j88d69jx)） | App Store の審査ガイドラインにより、発見・オンラインソース・ダウンロードセンターは含まれません |
-| Linux | 🔧 ソースからビルド | ビルド済みリリースはまだありません。EPUB リーダーには WPE WebKit が必要です |
-| Fushi Server | 🧪 Beta（[fushi-server](https://github.com/hajisensai/fushi-server/releases)） | Linux / Windows / macOS 向けの Web UI 付きヘッドレスホスト。[packages/fushi_server](../../packages/fushi_server/README.md) を参照 |
+| Linux | ✅ Flatpak（x86_64） | 署名付き Flatpak リポジトリでアプリ内自動更新。ポータブルな `.tar.gz` も同梱。Flathub には未掲載 |
+| Fushi Server | 🧪 Beta（[fushi-server](https://github.com/hajisensai/fushi-server/releases)） | Linux x64 / Windows x64 + Docker (ghcr.io) 向けの Web UI 付きヘッドレスホスト。[packages/fushi_server](../../packages/fushi_server/README.md) を参照 |
 
 **デザインシステム**：すべてのプラットフォームで既定は **Material 3 Expressive** です。「設定 › 外観 › デザインシステム」で **Cupertino**（Apple スタイル）に切り替えられます。Cupertino 使用時、ウィンドウ背景は Windows 11 では Mica、macOS では vibrancy になります（システムの「透明度を下げる」または高コントラスト設定がオンの場合を除く）。
 
@@ -41,7 +41,7 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 
 ## インストール
 
-[Fushi 公式サイト](https://fushi.moe/)から最新版をダウンロードしてください。Android APK、Windows インストーラー、macOS ビルド（Apple Silicon のみ。Intel Mac は非対応）を提供しています。iOS は [TestFlight](https://testflight.apple.com/join/j88d69jx) からインストールします。Linux 向けのビルド済みアプリはまだないため、ソースからビルドしてください。ヘッドレスの Fushi Server は [hajisensai/fushi-server](https://github.com/hajisensai/fushi-server/releases) で別途リリースされます。
+[Fushi 公式サイト](https://fushi.moe/)から最新版をダウンロードしてください。Android APK、Windows インストーラー、macOS ビルド（Apple Silicon のみ。Intel Mac は非対応）を提供しています。iOS は [TestFlight](https://testflight.apple.com/join/j88d69jx) からインストールします。Linux では Flatpak（x86_64）を `flatpak install --user https://hajisensai.github.io/Fushi/app.fushi.reader.flatpakref` でインストールします。アプリ内および `flatpak update` で自動更新されます。Flatpak を使わないディストリビューション向けに、各リリースにポータブルな `.tar.gz`（アプリ内インストーラーなし）も付属します。Flathub には未掲載です。ヘッドレスの Fushi Server は [hajisensai/fushi-server](https://github.com/hajisensai/fushi-server/releases) で別途リリースされます。
 
 > Android 8.0（API 26）以降が必要です。
 
