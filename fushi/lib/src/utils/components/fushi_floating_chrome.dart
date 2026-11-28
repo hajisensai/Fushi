@@ -842,12 +842,20 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
     // 桌面自绘标题行：页头大字的页面把内容层向上铺到窗口上沿——滚动内容从
     // 窗口按钮底下穿过去，标题行那一条不再是一道裁掉内容的实色边（2026-11-12
     // 用户：「顶部白边改透明，右上角三个按钮直接悬浮」）。内容层上移、让位同步
-    // 加这么多，静止时版面不变。手机状态栏那段不铺（状态栏图标不随内容变色）。
+    // 加这么多，静止时版面不变。
+    //
+    // Apple（iOS 27 导航栏 scroll edge）手机状态栏那段同样铺：scroll edge 底
+    // （[FushiAppleScrollEdgeBackdrop]）从窗口顶到最深一行吸顶工具下沿是**一整块**
+    // 模糊 + 压暗，状态栏底下若没有内容，那一段只能模糊到纯页面底色，下面一段
+    // 模糊的却是内容——两种底在状态栏下沿接成一条分界线（2026-11-25 用户 iPhone
+    // 截图，库页音乐页）。内容滚进状态栏之前底已经淡入完（头
+    // [kFushiAppleScrollEdgeDistance] 内），状态栏图标始终压在这块底上。MD3 手机
+    // 状态栏那段仍不铺（MD3 底板不保证状态栏图标的对比度）。
     final double contentBleed =
         _parent == null &&
             widget.masthead &&
             shellRedesignActive(context) &&
-            FushiDesktopTitleBar.isEnabled
+            (FushiDesktopTitleBar.isEnabled || isGlassDesign(context))
         ? shellStageTopBleedOf(context)
         : 0;
     if (_parent == null) _contentBleed = contentBleed;
@@ -1013,6 +1021,13 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
             // 0.72 薄纱上合成成一条比上下都深的横线（BUG-3338）。
             final bool continuesBelow =
                 _nestedReach.value > outer + shown * _chromeHeight + 0.5;
+            // 页头大字随滚动收短了 [collapse]：嵌套层自己画的工具行（浏览页的
+            // 内容域页签、库页的标签行）跟着上移同样多，贴在收短后的页头底下——
+            // 底板已经按 `scrimTop` 上移，工具行留在原位就是悬在列表中间、和
+            // 页头之间空出一截。Apple 页头大字外壳里的嵌套工具行改为随内容滚走
+            // （[appleScrollAway]）。
+            final bool appleScrollAway = nested && appleBar && !widget.masthead;
+            final double nestedCollapse = nested ? collapse : 0;
             return Stack(
               clipBehavior: Clip.none,
               children: <Widget>[
@@ -1104,42 +1119,50 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
                           ),
                         ),
                 ),
+                // BUG-5544（反馈 ki-PPMWRKt）：位移拆成两段，
+                // 命中盒跟着工具行的「可见槽位」走。
+                // - 外段 [Transform.translate]（Positioned 的直接子节点）：页头
+                //   大字收短的 [collapse]。嵌套工具行整行贴在收短后的页头底下、
+                //   整行都看得见，命中盒必须一起上移。曾经它和下面的位移一起
+                //   包在 ExcludeSemantics / IgnorePointer / 淡出里面：这几层按
+                //   自己（仍在 `outer` 原位）的 size 判命中，[RenderTransform]
+                //   只平移绘制，桌面宽窗 collapse ≈ 62 px 超过整行高度，滚下去
+                //   后标签栏整行点不动（窄窗上半截死区），只有滚回顶部才恢复。
+                // - 内段：弹簧收起滑出 + Apple 外壳里随内容滚到导航栏背后的那段。
+                //   这两段里工具行确实被上面一层盖住，命中盒留在槽位里，等于只有
+                //   槽位内露出的部分可点，藏在导航栏背后的那截不被穿透误点。
+                // 两段都只改绘制与命中变换，滚动期间不重排。
                 Positioned(
                   top: outer,
                   left: 0,
                   right: 0,
-                  child: ExcludeSemantics(
-                    excluding: hidden,
-                    child: IgnorePointer(
-                      // 收起途中就不再接指针（正在离开的工具栏不该还能被点到）。
-                      ignoring: hidden || !controller.visible,
-                      // 玻璃安全的淡出（[fushiChromeFade]）：Apple 的玻璃栏
-                      // 不能压在 Opacity 下，否则采不到背景、淡出时成灰团。
-                      child: fushiChromeFade(
-                        context,
-                        hidden ? 0 : opacity,
-                        Transform.translate(
-                          // 用未截断的弹簧值：MD3 的轻微回弹体现在位置上
-                          // （Apple 弹簧临界阻尼，本就不越界）。
-                          // 页头大字随滚动收短了 [collapse]：嵌套层自己画的工具行
-                          // （浏览页的内容域页签）跟着上移同样多，贴在收短后的
-                          // 页头底下——底板已经按 `scrimTop` 上移，工具行留在
-                          // 原位就是悬在列表中间、和页头之间空出一截。
-                          // Apple 页头大字外壳里，页面自己的嵌套工具行（搜索
-                          // 框、标签行）不吸顶：跟内容一起滚走（iOS 27 图书：
-                          // 只有导航栏与分段吸顶），滚进页头底下被背板盖住。
-                          offset: Offset(
-                            0,
-                            -(1 - value) * (travel - selfFloor) -
-                                (nested
-                                    ? (appleBar && !widget.masthead
-                                          ? controller
-                                                .mastheadScrollOffset
-                                                .value
-                                          : collapse)
-                                    : 0),
+                  child: Transform.translate(
+                    offset: Offset(0, appleScrollAway ? 0 : -nestedCollapse),
+                    child: ExcludeSemantics(
+                      excluding: hidden,
+                      child: IgnorePointer(
+                        // 收起途中就不再接指针（正在离开的工具栏不该还能被点到）。
+                        ignoring: hidden || !controller.visible,
+                        // 玻璃安全的淡出（[fushiChromeFade]）：Apple 的玻璃栏
+                        // 不能压在 Opacity 下，否则采不到背景、淡出时成灰团。
+                        child: fushiChromeFade(
+                          context,
+                          hidden ? 0 : opacity,
+                          Transform.translate(
+                            // 用未截断的弹簧值：MD3 的轻微回弹体现在位置上
+                            // （Apple 弹簧临界阻尼，本就不越界）。
+                            // Apple 页头大字外壳里，页面自己的嵌套工具行（搜索
+                            // 框、标签行）不吸顶：跟内容一起滚走（iOS 27 图书：
+                            // 只有导航栏与分段吸顶），滚进页头底下被背板盖住。
+                            offset: Offset(
+                              0,
+                              -(1 - value) * (travel - selfFloor) -
+                                  (appleScrollAway
+                                      ? controller.mastheadScrollOffset.value
+                                      : 0),
+                            ),
+                            child: chrome,
                           ),
-                          child: chrome,
                         ),
                       ),
                     ),
@@ -1890,11 +1913,12 @@ class _FushiFloatingChromeBarState extends State<FushiFloatingChromeBar> {
         ? _tabsNaturalWidth ?? 0
         : 0;
     final String probe = title ?? 'A';
-    final double titleBaseline = fushiMastheadBaselineFromBottom(
+    final FushiMastheadLineMetrics titleLine = fushiMastheadLineMetrics(
       context,
       probe,
       titleStyle,
     );
+    final double titleBaseline = titleLine.baseline;
     final double switchBaseline = soloTabs
         ? titleBaseline
         : fushiMastheadBaselineFromBottom(context, probe, switchStyle);
@@ -1965,6 +1989,8 @@ class _FushiFloatingChromeBarState extends State<FushiFloatingChromeBar> {
                           : kFushiMastheadActionExtent,
                       textDirection: Directionality.of(context),
                       titleBaseline: titleBaseline,
+                      titleInkCenter: titleLine.inkCenter,
+                      titleLineHeight: titleLine.height,
                       switchBaseline: switchBaseline,
                       headlineNatural: headlineNatural,
                       scrollOffset: host?.scrollOffset,
@@ -2221,6 +2247,8 @@ class _MastheadLayout extends MultiChildRenderObjectWidget {
     required this.minActionsExtent,
     required this.textDirection,
     required this.titleBaseline,
+    required this.titleInkCenter,
+    required this.titleLineHeight,
     required this.switchBaseline,
     required this.headlineNatural,
     required this.scrollOffset,
@@ -2239,6 +2267,11 @@ class _MastheadLayout extends MultiChildRenderObjectWidget {
   final double minActionsExtent;
   final TextDirection textDirection;
   final double titleBaseline;
+
+  /// 主标题的字面中心到行盒底边的距离与行盒高（见
+  /// [FushiMastheadGeometry.titleInkCenter]）。
+  final double titleInkCenter;
+  final double titleLineHeight;
   final double switchBaseline;
 
   /// 主标题（页名或标题形态的一级切换）的自然宽；0 = 没有主标题。
@@ -2255,6 +2288,8 @@ class _MastheadLayout extends MultiChildRenderObjectWidget {
         minActionsExtent: minActionsExtent,
         textDirection: textDirection,
         titleBaseline: titleBaseline,
+        titleInkCenter: titleInkCenter,
+        titleLineHeight: titleLineHeight,
         switchBaseline: switchBaseline,
         headlineNatural: headlineNatural,
         scrollOffset: scrollOffset,
@@ -2273,6 +2308,8 @@ class _MastheadLayout extends MultiChildRenderObjectWidget {
       ..minActionsExtent = minActionsExtent
       ..textDirection = textDirection
       ..titleBaseline = titleBaseline
+      ..titleInkCenter = titleInkCenter
+      ..titleLineHeight = titleLineHeight
       ..switchBaseline = switchBaseline
       ..headlineNatural = headlineNatural
       ..scrollOffset = scrollOffset
@@ -2308,6 +2345,8 @@ class _RenderMastheadLayout extends RenderBox
     required double minActionsExtent,
     required TextDirection textDirection,
     required double titleBaseline,
+    required double titleInkCenter,
+    required double titleLineHeight,
     required double switchBaseline,
     required double headlineNatural,
     required ValueListenable<double>? scrollOffset,
@@ -2319,6 +2358,8 @@ class _RenderMastheadLayout extends RenderBox
        _minActionsExtent = minActionsExtent,
        _textDirection = textDirection,
        _titleBaseline = titleBaseline,
+       _titleInkCenter = titleInkCenter,
+       _titleLineHeight = titleLineHeight,
        _switchBaseline = switchBaseline,
        _headlineNatural = headlineNatural,
        _scrollOffset = scrollOffset,
@@ -2374,6 +2415,22 @@ class _RenderMastheadLayout extends RenderBox
   set titleBaseline(double value) {
     if (value == _titleBaseline) return;
     _titleBaseline = value;
+    markNeedsLayout();
+  }
+
+  double get titleInkCenter => _titleInkCenter;
+  double _titleInkCenter;
+  set titleInkCenter(double value) {
+    if (value == _titleInkCenter) return;
+    _titleInkCenter = value;
+    markNeedsLayout();
+  }
+
+  double get titleLineHeight => _titleLineHeight;
+  double _titleLineHeight;
+  set titleLineHeight(double value) {
+    if (value == _titleLineHeight) return;
+    _titleLineHeight = value;
     markNeedsLayout();
   }
 
@@ -2739,6 +2796,8 @@ class _RenderMastheadLayout extends RenderBox
         leading: c[_kSlotLeading].size,
         title: c[_kSlotTitle].size,
         titleBaseline: _titleBaseline,
+        titleInkCenter: _titleInkCenter,
+        titleLineHeight: _titleLineHeight,
         badge: c[_kSlotBadge].size,
         switcher: c[_kSlotSwitch].size,
         switchBaseline: _switchBaseline,
@@ -2789,10 +2848,14 @@ class _RenderMastheadLayout extends RenderBox
       return out;
     }
     final double rowBottom = g.topPadAt(p) + g.firstRowHeightAt(p);
-    final double actionBottom = g.actionBottomAt(p);
+    // 前导 / 动作组 / 主按钮各按自己的高度以同一条中线垂直居中（有主标题时
+    // 是它的字面中心，见 [FushiMastheadGeometry.actionCenterLiftAt]）。
+    final double actionCenter = g.actionCenterAt(p);
+    double onCenter(Size s, double scale) =>
+        actionCenter + s.height * scale / 2;
     double cursor = 0;
     if (g.leading.width > 0) {
-      place(_kSlotLeading, 0, actionBottom, 1);
+      place(_kSlotLeading, 0, onCenter(g.leading, 1), 1);
       // 主标题单独一行时前导留在动作行，标题行从起始边排。
       if (!g.stacked) {
         cursor = g.leading.width + FushiMastheadGeometry.leadingGap;
@@ -2816,7 +2879,7 @@ class _RenderMastheadLayout extends RenderBox
     );
     final double sP = g.primaryScaleAt(p);
     final double primaryX = w - g.primary.width * sP;
-    place(_kSlotPrimary, primaryX, actionBottom, sP);
+    place(_kSlotPrimary, primaryX, onCenter(g.primary, sP), sP);
     place(
       _kSlotActions,
       primaryX -
@@ -2824,7 +2887,7 @@ class _RenderMastheadLayout extends RenderBox
               ? g.actionsPrimaryGap
               : 0) -
           g.actions.width,
-      actionBottom,
+      onCenter(g.actions, 1),
       1,
     );
     place(_kSlotSecondary, 0, g.secondaryTopAt(p) + g.secondary.height, 1);
@@ -2985,4 +3048,85 @@ class _FushiMastheadHost extends InheritedWidget {
   bool updateShouldNotify(_FushiMastheadHost oldWidget) =>
       !identical(overlay, oldWidget.overlay) ||
       !identical(scrollOffset, oldWidget.scrollOffset);
+}
+
+/// 页头大字主按钮位 / 动作组里的**次要**部件：Apple 窄窗页头收成导航栏小标题
+/// 时（与 `_RenderMasthead._layoutApple` 同一判据：进度 ≥ 0.5）折叠让位，
+/// 滚回顶部再展开。
+///
+/// 收起态小标题居中，右侧只剩半行：主按钮位不让，动作组再怎么收进「⋯」也会
+/// 把小标题压在按钮底下（2026-11-26 用户 iPhone 录屏：首页「首页」被 ⋯ /
+/// 头像 /「Default」配置胶囊盖住）。不在页头大字宿主里、M3E、宽窗时原样画
+/// [child]。
+///
+/// @design dual（只管让位，外观由 [child] 自己按设计系统画）
+class FushiMastheadCollapseAway extends StatefulWidget {
+  const FushiMastheadCollapseAway({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  State<FushiMastheadCollapseAway> createState() =>
+      _FushiMastheadCollapseAwayState();
+}
+
+class _FushiMastheadCollapseAwayState extends State<FushiMastheadCollapseAway> {
+  ValueListenable<double>? _offset;
+  bool _compact = false;
+  bool _motion = true;
+  bool _collapsed = false;
+
+  bool _computeCollapsed() {
+    final ValueListenable<double>? offset = _offset;
+    if (offset == null || !_compact) return false;
+    return fushiMastheadProgressOf(
+          compact: true,
+          motionEnabled: _motion,
+          offset: offset.value,
+        ) >=
+        0.5;
+  }
+
+  void _onOffset() {
+    final bool next = _computeCollapsed();
+    if (next != _collapsed) setState(() => _collapsed = next);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final _FushiMastheadHost? host = context
+        .dependOnInheritedWidgetOfExactType<_FushiMastheadHost>();
+    final ValueListenable<double>? offset =
+        host != null && isGlassDesign(context) ? host.scrollOffset : null;
+    if (!identical(offset, _offset)) {
+      _offset?.removeListener(_onOffset);
+      _offset = offset;
+      _offset?.addListener(_onOffset);
+    }
+    _compact = fushiMastheadCompact(context);
+    _motion = fushiExpressiveMotionEnabled(context);
+    _collapsed = _computeCollapsed();
+  }
+
+  @override
+  void dispose() {
+    _offset?.removeListener(_onOffset);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FushiAnimatedSize(
+      duration: fushiMotionDuration(context, FushiMotion.short),
+      curve: FushiMotion.standard,
+      alignment: AlignmentDirectional.centerStart,
+      clipBehavior: Clip.hardEdge,
+      // Offstage 而不是换成空盒：子树状态（配置胶囊的库订阅等）收起时保留。
+      child: ExcludeFocus(
+        excluding: _collapsed,
+        child: Offstage(offstage: _collapsed, child: widget.child),
+      ),
+    );
+  }
 }

@@ -362,22 +362,36 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
     );
   }
 
-  Future<void> _pickPreset() async {
-    final String? picked = await showFushiChoiceDialog<String>(
-      context: context,
-      title: t.audiobook_studio_voice,
-      icon: FushiIcons.voice,
-      selected: _presetId,
-      options: <FushiChoiceOption<String>>[
+  /// 声音选择弹窗的候选（声音预设 + 声音包）。
+  List<FushiChoiceOption<String>> get _voiceOptions =>
+      <FushiChoiceOption<String>>[
         for (final TtsVoicePreset p in _presets)
           FushiChoiceOption<String>(
             value: p.id,
             label: _presetName(p),
             subtitle: ttsProviderLabel(p.providerId),
           ),
-      ],
+      ];
+
+  /// 声音选择弹窗里的「添加声音」：加完重读清单，返回仍在清单里的新声音 id。
+  Future<String?> _addVoice() async {
+    final String? id = await addTtsVoiceFromPicker(context, _tts);
+    if (!mounted) return null;
+    setState(_reloadPresets);
+    return id != null && _presets.any((TtsVoicePreset p) => p.id == id)
+        ? id
+        : null;
+  }
+
+  Future<void> _pickPreset() async {
+    final String? picked = await showTtsVoicePickDialog(
+      context: context,
+      title: t.audiobook_studio_voice,
+      selected: _presetId,
+      options: _voiceOptions,
+      onAdd: _addVoice,
     );
-    if (picked == null || picked == _presetId || !mounted) return;
+    if (picked == null || !mounted) return;
     setState(() => _presetId = picked);
   }
 
@@ -666,10 +680,10 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
   }
 
   Future<void> _pickCastVoice(String speaker) async {
-    final String? picked = await showFushiChoiceDialog<String>(
+    final String? picked = await showTtsVoicePickDialog(
       context: context,
       title: ttsCastSpeakerLabel(speaker),
-      icon: FushiIcons.voice,
+      onAdd: _addVoice,
       message: _series == null
           ? null
           : '${t.audiobook_studio_voice_scope}: ${_voiceScope == TtsVoiceScope.series ? t.audiobook_studio_voice_scope_series : t.audiobook_studio_voice_scope_book}',
@@ -680,12 +694,7 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
           label: t.audiobook_studio_cast_default_voice,
           subtitle: _preset == null ? null : _presetName(_preset!),
         ),
-        for (final TtsVoicePreset p in _presets)
-          FushiChoiceOption<String>(
-            value: p.id,
-            label: _presetName(p),
-            subtitle: ttsProviderLabel(p.providerId),
-          ),
+        ..._voiceOptions,
       ],
     );
     if (picked == null || !mounted || _castLocked) return;
@@ -796,14 +805,7 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
       title: t.audiobook_studio_retry_voices,
       message: t.audiobook_studio_retry_voices_hint,
       initial: current.toSet(),
-      options: <FushiChoiceOption<String>>[
-        for (final TtsVoicePreset p in _presets)
-          FushiChoiceOption<String>(
-            value: p.id,
-            label: _presetName(p),
-            subtitle: ttsProviderLabel(p.providerId),
-          ),
-      ],
+      options: _voiceOptions,
     );
     if (picked == null || !mounted) return;
     // 已有的保持原顺序，新勾的按声音列表顺序接在后面。
@@ -979,14 +981,8 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
         builder: (_) => TtsUnvoicedPage(
           load: _unvoicedViews,
           backfill: _backfill,
-          voiceOptions: () => <FushiChoiceOption<String>>[
-            for (final TtsVoicePreset p in _presets)
-              FushiChoiceOption<String>(
-                value: p.id,
-                label: _presetName(p),
-                subtitle: ttsProviderLabel(p.providerId),
-              ),
-          ],
+          voiceOptions: () => _voiceOptions,
+          onAddVoice: _addVoice,
           retryVoicesSummary: () => _retryVoicesSummary,
           onEditRetryVoices: _editRetryVoices,
         ),
@@ -1627,9 +1623,8 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
               subtitle: _voiceUsable
                   ? ttsProviderLabel(preset.providerId)
                   : t.audiobook_tts_voice_incomplete,
-              onTap: _presets.length > 1
-                  ? () => unawaited(_pickPreset())
-                  : null,
+              // 只有一个声音时也能点开：弹窗末尾有「添加声音」。
+              onTap: () => unawaited(_pickPreset()),
             ),
           AdaptiveSettingsRow(
             key: const ValueKey<String>('tts-studio-voice-settings'),

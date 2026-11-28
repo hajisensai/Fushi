@@ -41,7 +41,10 @@ Future<void> _seedDictionary(
   );
   final Directory dir = Directory(p.join(dictRoot.path, name))
     ..createSync(recursive: true);
+  // 装载必需的三组文件都在（kDictionaryRequiredFileGroups）：同步按文件判「本机有没有这本」。
+  File(p.join(dir.path, 'index.json')).writeAsStringSync('{}');
   File(p.join(dir.path, 'blobs.bin')).writeAsBytesSync(<int>[1, 2, 3]);
+  File(p.join(dir.path, 'key.index')).writeAsBytesSync(<int>[4, 5]);
 }
 
 Future<Set<String>> _names(FushiDatabase db) async => <String>{
@@ -330,6 +333,52 @@ void main() {
       expect(postRuns, isEmpty);
     });
 
+    // 反馈 ujt4V8GdT8：本机登记着、文件被删了（外部书库整树被删）——以前按元数据判「已装」，
+    // 直接回 AlreadyPresent，host 上明明有却拉不回来。
+    test('local dictionary whose files are gone is restored from the host, '
+        'keeping local order / switches / rename', () async {
+      await _seedDictionary(hostA.db, hostA.dictRoot, 'JMdict');
+      await _seedDictionary(local, localDictRoot, 'JMdict');
+      await local.applyDictionaryMetaProfileColumns(
+        name: 'JMdict',
+        order: 5,
+        hiddenLanguagesJson: '["ja"]',
+        collapsedLanguagesJson: '["ja"]',
+        expandedLanguagesJson: '[]',
+        languageOverride: 'ja',
+        metadataJson: '{"kanjiHidden":"true"}',
+      );
+      await (local.update(
+        local.dictionaryMetadata,
+      )..where(($DictionaryMetadataTable t) => t.name.equals('JMdict'))).write(
+        const DictionaryMetadataCompanion(displayName: Value<String?>('辞書')),
+      );
+      Directory(
+        p.join(localDictRoot.path, 'JMdict'),
+      ).deleteSync(recursive: true);
+
+      final DictionaryTransferResult result = await service().downloadFromHost(
+        'host-a',
+        'JMdict',
+      );
+
+      expect(result, isA<DictionaryTransferDone>());
+      expect(
+        File(p.join(localDictRoot.path, 'JMdict', 'key.index')).existsSync(),
+        isTrue,
+        reason: '文件拉回来了',
+      );
+      final DictionaryMetaRow row =
+          (await local.getAllDictionaryMetadata()).single;
+      expect(row.order, 5, reason: '恢复不是新装：顺序照旧');
+      expect(row.hiddenLanguagesJson, '["ja"]', reason: '开关照旧');
+      expect(row.collapsedLanguagesJson, '["ja"]');
+      expect(row.languageOverride, 'ja');
+      expect(row.displayName, '辞書', reason: '改名照旧');
+      expect(row.metadataJson, contains('"kanjiHidden":"true"'));
+      expect(postRuns.single.dictionariesImported, 1);
+    });
+
     test(
       'host deleting it between list and fetch (package 404) is notFound',
       () async {
@@ -388,6 +437,25 @@ void main() {
 
       expect(result, isA<DictionaryTransferAlreadyPresent>());
       expect(postRuns.single.dictionariesExported, 0);
+    });
+
+    // 文件丢了的那本只剩元数据：推出去是空包（对端会装上一本坏词典），当本机没有。
+    test('local dictionary whose files are gone is not pushed', () async {
+      await _seedDictionary(local, localDictRoot, 'JMdict');
+      Directory(
+        p.join(localDictRoot.path, 'JMdict'),
+      ).deleteSync(recursive: true);
+
+      final DictionaryTransferResult result = await service().pushToHost(
+        'host-a',
+        'JMdict',
+      );
+
+      expect(
+        (result as DictionaryTransferFailed).kind,
+        DictionaryTransferFailureKind.notFound,
+      );
+      expect(await _names(hostA.db), isNot(contains('JMdict')));
     });
 
     test('a second transfer while one runs reports busy', () async {

@@ -19,7 +19,8 @@
 // SQL 与校验全部复用 decisions.js（与网页、wrangler 模式的 CLI 同一份）。
 // 鉴权只认请求头，不读 Cookie，所以没有 CSRF 面；限流在 worker.js 按 IP 过 READ_LIMITER。
 
-import { HttpError, b64urlEncode, hex, json, parseJsonBytes, randomId, readBodyBytes, sha256 } from './util.js';
+import { HttpError, json, parseJsonBytes, readBodyBytes } from './util.js';
+import { API_KEY_LIMITS, apiKeyAccount, createApiKey, listApiKeys, revokeApiKey } from './api_keys.js';
 import {
   ADD_NOTE_SQL, CLOSE_DECISION_SQL, DECISION_ID_RE, DECISION_LIMITS, DECISION_VERDICTS, INSERT_DECISION_SQL, SET_VERDICT_SQL,
   cleanDecisionText, decisionFileResponse, decisionFileType, decisionStage, getDecision, insertDecisionArgs, listDecisions,
@@ -28,97 +29,80 @@ import {
 
 export const DECISION_KEY_PREFIX = 'fdk_';
 export const DECISION_KEY_RE = /^fdk_[A-Za-z0-9_-]{43}$/;
-export const DECISION_KEY_LIMITS = { activePerAccount: 5, labelMax: 60, touchEveryMs: 10 * 60 * 1000 };
+export const DECISION_KEY_LIMITS = API_KEY_LIMITS;
+
+/** 拍板台密钥：只给开发者，只能读写拍板台。 */
+export const DECISION_KEY_KIND = Object.freeze({
+  table: 'decision_api_keys',
+  prefix: DECISION_KEY_PREFIX,
+  re: DECISION_KEY_RE,
+  roleOk: (role) => role === 'dev',
+  missingCode: 'decision_key_required',
+  badCode: 'bad_decision_key',
+});
 
 /** 写入事项的请求体上限：每条最长约 2 万字（UTF-8 最坏 3 字节 / 字），一批 20 条够用。 */
 const ADD_BODY_MAX = 1024 * 1024;
 const SMALL_BODY_MAX = 64 * 1024;
 
 /**
- * @param {string} token
- * @returns {Promise<string>}
+ * 密钥备注的唯一清洗口径（拍板台 / 反馈两种密钥共用）：最多 labelMax 字、不能换行；空 → null。
+ * @param {string} label
+ * @returns {string|null}
  */
-async function keyHash(token) {
-  return hex(await sha256(new TextEncoder().encode(token)));
+export function cleanKeyLabel(label) {
+  let name;
+  try {
+    name = cleanDecisionText(label, API_KEY_LIMITS.labelMax, '备注');
+  } catch {
+    throw new HttpError(400, 'bad_label');
+  }
+  if (name && name.includes('\n')) throw new HttpError(400, 'bad_label');
+  return name || null;
 }
 
 /**
- * 本账户的全部密钥（含已吊销），新的在前。不含哈希。
+ * 本账户的全部拍板台密钥（含已吊销），新的在前。不含哈希。
  * @param {object} env
  * @param {string} accountId
- * @returns {Promise<Array<{id: string, hint: string, label: string|null, created_at: number, last_used_at: number|null, revoked_at: number|null}>>}
  */
-export async function listDecisionKeys(env, accountId) {
-  const r = await env.DB.prepare(`SELECT id, hint, label, created_at, last_used_at, revoked_at FROM decision_api_keys
-    WHERE account_id = ?1 ORDER BY created_at DESC, id`).bind(accountId).all();
-  return r.results || [];
+export function listDecisionKeys(env, accountId) {
+  return listApiKeys(env, DECISION_KEY_KIND, accountId);
 }
 
 /**
- * 签发一把新密钥；明文只在返回值里出现这一次。每个账户最多 activePerAccount 把未吊销的。
+ * 签发一把拍板台密钥；明文只在返回值里出现这一次。
  * @param {object} env
  * @param {{id: string}} dev
  * @param {string} label
  * @param {number} now
  * @returns {Promise<{id: string, token: string}>}
  */
-export async function createDecisionKey(env, dev, label, now) {
-  let name;
-  try {
-    name = cleanDecisionText(label, DECISION_KEY_LIMITS.labelMax, '备注');
-  } catch {
-    throw new HttpError(400, 'bad_label');
-  }
-  if (name && name.includes('\n')) throw new HttpError(400, 'bad_label');
-  const bytes = new Uint8Array(32);
-  crypto.getRandomValues(bytes);
-  const token = DECISION_KEY_PREFIX + b64urlEncode(bytes);
-  const id = randomId(10);
-  // 名额检查与插入在同一条语句里：并发签发也不会超过上限。
-  const r = await env.DB.prepare(`INSERT INTO decision_api_keys (id, account_id, token_hash, hint, label, created_at)
-    SELECT ?1, ?2, ?3, ?4, ?5, ?6
-    WHERE (SELECT COUNT(*) FROM decision_api_keys WHERE account_id = ?2 AND revoked_at IS NULL) < ?7`)
-    .bind(id, dev.id, await keyHash(token), token.slice(-4), name, now, DECISION_KEY_LIMITS.activePerAccount).run();
-  if (!r.meta || r.meta.changes !== 1) throw new HttpError(409, 'too_many_keys');
-  return { id, token };
+export function createDecisionKey(env, dev, label, now) {
+  return createApiKey(env, DECISION_KEY_KIND, dev, cleanKeyLabel(label), now);
 }
 
 /**
- * 吊销本人的一把密钥（别人的或不存在的 → 404；已吊销的幂等）。
+ * 吊销本人的一把拍板台密钥（别人的或不存在的 → 404；已吊销的幂等）。
  * @param {object} env
  * @param {{id: string}} dev
  * @param {string} keyId
  * @param {number} now
  */
-export async function revokeDecisionKey(env, dev, keyId, now) {
-  const row = await env.DB.prepare('SELECT revoked_at FROM decision_api_keys WHERE id = ?1 AND account_id = ?2')
-    .bind(keyId, dev.id).first();
-  if (!row) throw new HttpError(404, 'not_found');
-  if (row.revoked_at) return;
-  await env.DB.prepare('UPDATE decision_api_keys SET revoked_at = ?3 WHERE id = ?1 AND account_id = ?2 AND revoked_at IS NULL')
-    .bind(keyId, dev.id, now).run();
+export function revokeDecisionKey(env, dev, keyId, now) {
+  return revokeApiKey(env, DECISION_KEY_KIND, dev, keyId, now);
 }
 
 /**
  * Bearer 密钥 → 开发者账户。缺 / 格式不对 → 401 decision_key_required；
  * 不存在、已吊销、账户已不是开发者 → 401 bad_decision_key（不区分，免得探测）。
- * last_used_at 最多每 touchEveryMs 写一次。
  * @param {object} env
  * @param {Request} request
  * @param {number} now
- * @returns {Promise<{id: string, nickname: string, key_id: string}>}
+ * @returns {Promise<{id: string, nickname: string, role: string, key_id: string}>}
  */
-export async function decisionKeyAccount(env, request, now) {
-  const m = /^Bearer\s+(\S+)$/.exec(request.headers.get('Authorization') || '');
-  if (!m || !DECISION_KEY_RE.test(m[1])) throw new HttpError(401, 'decision_key_required');
-  const row = await env.DB.prepare(`SELECT k.id AS key_id, k.last_used_at AS key_used_at, a.id, a.nickname, a.role
-    FROM decision_api_keys k JOIN accounts a ON a.id = k.account_id
-    WHERE k.token_hash = ?1 AND k.revoked_at IS NULL`).bind(await keyHash(m[1])).first();
-  if (!row || row.role !== 'dev') throw new HttpError(401, 'bad_decision_key');
-  if (!row.key_used_at || now - row.key_used_at >= DECISION_KEY_LIMITS.touchEveryMs) {
-    await env.DB.prepare('UPDATE decision_api_keys SET last_used_at = ?2 WHERE id = ?1').bind(row.key_id, now).run();
-  }
-  return { id: row.id, nickname: row.nickname, key_id: row.key_id };
+export function decisionKeyAccount(env, request, now) {
+  return apiKeyAccount(env, DECISION_KEY_KIND, request, now);
 }
 
 export function isDecisionsApiPath(path) {

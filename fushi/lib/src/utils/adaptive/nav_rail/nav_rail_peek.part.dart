@@ -1,12 +1,18 @@
 part of '../adaptive_navigation.dart';
 
 /// 速览卡里的一个条目（继续项或最近项）。
+///
+/// 带封面的条目一律走默认构造：[cover] 与 [blurCover] 都是 required，加载方必须
+/// 当场回答「这张封面要不要按 NSFW 模糊」，漏判写不出来（BUG：音乐速览漏传
+/// blurCover，NSFW 专辑封面原样露出）。没有封面的列表行（查词、网页、设置、牌组）
+/// 用 [AdaptiveNavPeekEntry.noCover]。
 @immutable
 class AdaptiveNavPeekEntry {
   const AdaptiveNavPeekEntry({
     required this.title,
     required this.onOpen,
-    this.cover,
+    required this.cover,
+    required this.blurCover,
     this.subtitle,
     this.progress,
     this.icon,
@@ -14,8 +20,21 @@ class AdaptiveNavPeekEntry {
     this.statusTone = AdaptiveNavPeekStatusTone.neutral,
     this.statusIcon,
     this.action,
-    this.blurCover = false,
   });
+
+  /// 没有封面的条目（画 [icon] 或模块图标），自然也没有 NSFW 模糊可言。
+  const AdaptiveNavPeekEntry.noCover({
+    required this.title,
+    required this.onOpen,
+    this.subtitle,
+    this.progress,
+    this.icon,
+    this.status,
+    this.statusTone = AdaptiveNavPeekStatusTone.neutral,
+    this.statusIcon,
+    this.action,
+  }) : cover = null,
+       blurCover = false;
 
   final String title;
 

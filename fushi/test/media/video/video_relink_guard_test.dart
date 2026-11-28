@@ -7,7 +7,8 @@ import 'package:test/test.dart';
 ///
 /// 断言 `_relinkMissingResource` 存在且：① 经既有统一拾取 [pickRealFilePathDetailed]
 /// （TODO-1112 的真实路径拾取：安卓 SAF 真实路径 / 桌面 file_picker）拿新路径，不新造
-/// 第二套文件通道；② 经 `updateLocalMediaPaths(..., videoPath:` 持久化重链。
+/// 第二套文件通道；② 经 `applyMediaFileMoves(` 一次事务迁全部按路径关联的列
+/// （BUG-5530，不再只改 videoPath）。
 ///
 /// BUG-805：原来「重新选择文件」是独立按钮、「重新导入」是空操作 `nav.pop()`（用户点了
 /// 「没反应」）。现合并为单一「重新导入」真动作 [_reimportMissingResource]——单视频委托
@@ -46,17 +47,18 @@ void main() {
       greaterThan(pickAt),
       reason: '拾取到的路径必须先经 adoptPickedVideoCopy 处理临时副本再作为 newPath',
     );
-    final int persistAt = body.indexOf('updateLocalMediaPaths(');
+    final int persistAt = body.indexOf('applyMediaFileMoves(');
     expect(
       persistAt,
       greaterThan(adoptAt),
-      reason: '拾取到新路径后必须经 updateLocalMediaPaths 持久化重链',
+      reason: '拾取到新路径后必须经 applyMediaFileMoves 迁全部路径关联列（BUG-5530）',
     );
-    // 只重链 videoPath（不动进度 / 字幕 / 音轨等其它列）。
     expect(
-      body.contains('videoPath: newPath'),
+      body.contains(
+        'MovedMediaFiles(<String, String>{row.videoPath: newPath})',
+      ),
       isTrue,
-      reason: '重链只写新 videoPath',
+      reason: '重链只搬这一个视频文件：旧 videoPath → 新路径',
     );
     // 重链后原地重新载入播放（复用单视频加载路径）。
     expect(body.contains('_loadSingle('), isTrue, reason: '重链后必须重新载入播放');

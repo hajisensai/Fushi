@@ -306,6 +306,7 @@ class EpubBook {
   /// a real prose chapter from ever being absorbed.
   bool isImageOnlyChapter(int index) {
     if (index < 0 || index >= chapters.length) return false;
+    if (chapters[index].isRasterImage) return true;
     final bool? memo = _imageOnlyChapterMemo[index];
     if (memo != null) return memo;
     // 字数提示短路（方向安全性见 [_charCountHints]）：实义字数已超阈值的正文章
@@ -353,6 +354,11 @@ class EpubBook {
   /// turned each page into five manga pages / five merged figures.
   List<String> chapterImageSrcs(int index) {
     if (index < 0 || index >= chapters.length) return const <String>[];
+    // 位图章节就是页图本身：相对自己所在目录的引用即自己的文件名。
+    final EpubChapter chapter = chapters[index];
+    if (chapter.isRasterImage) {
+      return <String>[p.posix.basename(normalizeHref(chapter.href))];
+    }
     final List<String> refs = _scanChapter(
       index,
       EpubScanRequest.imageRefs,
@@ -797,6 +803,14 @@ class EpubChapter {
   final String id;
   final String href;
   final String mediaType;
+
+  /// spine 项本身就是一张位图（`image/jpeg` / `image/png` …，不含 SVG）：只有漫画
+  /// 导入（`includeImageSpineItems`）会收这种章节，它就是一页，没有 HTML 可读。
+  bool get isRasterImage {
+    final String type = mediaType.trim().toLowerCase();
+    return type.startsWith('image/') && type != 'image/svg+xml';
+  }
+
   final int? spineIndex;
   final bool linear;
 

@@ -6,10 +6,10 @@ part of '../video_fushi_page.dart';
 /// 去掉画面中央的大三键。M3E（含 iOS / macOS 上的 M3E 用户）完全不走这里。
 ///
 /// - 左上：返回玻璃圆钮 + 靠左标题；右上：一枚玻璃胶囊（少量动作 + 唯一的「⋯」）。
-/// - 桌面（macOS 宽窗）：底部一条单行宽浮动玻璃条——播放 / −10 / +10 · 前导簇 ·
+/// - 桌面（macOS 宽窗）：底部一条单行宽浮动玻璃条——播放 / −N / +N · 前导簇 ·
 ///   已播时间 · 进度条（行内）· 剩余时间 · 后随簇。
 /// - 触屏（iOS 横屏）：进度条 + 两端时间一行（fork 原生进度条，横滑 seek 预览照旧），
-///   其下左右两枚玻璃胶囊（左：播放 / −10 / +10 · 前导簇；右：后随簇）。
+///   其下左右两枚玻璃胶囊（左：播放 / −N / +N · 前导簇；右：后随簇）。
 /// - 画面中央任何时候都不放控件（[_m3eCenterControlsBar] 对 Apple 恒空）。
 ///
 /// 区域归属是纯函数 [planVideoAppleChrome]；放不下时逐颗收进「⋯」仍是
@@ -137,7 +137,7 @@ extension _VideoAppleChrome on _VideoFushiPageState {
   /// 按钮自带插入时的弹簧缩放 + 淡入（强调态 [FushiToolbarButton]）。
   ///
   /// 「⋯」是整套 chrome 唯一的常驻溢出菜单：被移出播放器的全部动作（M3E 分在右上 /
-  /// 右下两个「⋯」）、触屏收进来的截图、跳转记录都在这里；传输组（播放 / ±10）恒在
+  /// 右下两个「⋯」）、触屏收进来的截图、跳转记录都在这里；传输组（播放 / ±N）恒在
   /// 底部条，不进菜单。跳转记录随历史变化、全屏路由不随页面 setState 重建，所以整组
   /// 包一层 [ListenableBuilder]（与 M3E 右上组同一个 listenable）。
   Widget _appleTopTrailingGroup(
@@ -291,7 +291,7 @@ extension _VideoAppleChrome on _VideoFushiPageState {
           p,
           controller,
           desktop: desktop,
-          // 传输组恒在（画面中央不再有第二套），放不下时最后才收（±10 仍可收，
+          // 传输组恒在（画面中央不再有第二套），放不下时最后才收（±N 仍可收，
           // 播放 / 暂停本就是钉死项）。
         ),
       for (final VideoApplePlacement p in plan.bottomLeading)

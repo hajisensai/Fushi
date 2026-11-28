@@ -460,7 +460,7 @@ struct Fold {
     today: bool,
     reviewed: bool,
     introduced: bool,
-    /// 作答用时（`duration_ms`，负数按 0）。
+    /// 作答用时（`duration_ms`，负数按 0；调用方已按计入口径 `history::counted_answer_ms` 封过顶）。
     duration_ms: i64,
 }
 
@@ -497,14 +497,14 @@ pub(crate) fn answer_visits() -> usize {
 
 /// 最近 30 天的复习日志（参数：profile, 30 天前的日界, 今天的日界）。
 pub(crate) const LOGS_SQL: &str = "SELECT srs_idt(card_id) AS card_id, occurred_at, review_type, \
-     CASE WHEN review_type = 'learn' AND occurred_at >= ?3 THEN json END, srs_idt(id) AS id, duration_ms \
-     FROM srs_review_logs WHERE profile_uid = srs_id(?1) AND kind = 'review' AND occurred_at >= ?2";
+     CASE WHEN review_type = 'learn' AND occurred_at >= ?3 THEN json END, srs_idt(id) AS id, duration_ms, \
+     origin FROM srs_review_logs WHERE profile_uid = srs_id(?1) AND kind = 'review' AND occurred_at >= ?2";
 
 /// 按 id 重读几条日志（参数同 [LOGS_SQL]，其后是 id）：走主键，profile / 种类 / 时刻只当过滤（`+`），不让 SQLite 改走
 /// 区间索引把 30 天日志扫一遍。
 pub(crate) fn logs_by_id_sql(n: usize) -> String {
     format!(
-        "SELECT srs_idt(card_id) AS card_id, occurred_at, review_type, CASE WHEN review_type = 'learn' AND occurred_at >= ?3 THEN json END, srs_idt(id) AS id, duration_ms          FROM srs_review_logs WHERE id IN ({}) AND +profile_uid = srs_id(?1) AND +kind = 'review' AND +occurred_at >= ?2",
+        "SELECT srs_idt(card_id) AS card_id, occurred_at, review_type, CASE WHEN review_type = 'learn' AND occurred_at >= ?3 THEN json END, srs_idt(id) AS id, duration_ms, origin          FROM srs_review_logs WHERE id IN ({}) AND +profile_uid = srs_id(?1) AND +kind = 'review' AND +occurred_at >= ?2",
         marks(n)
     )
 }
@@ -594,7 +594,11 @@ impl LogState {
         let at: i64 = r.get(1).map_err(sql)?;
         let card: String = r.get(0).map_err(sql)?;
         let id: String = r.get(4).map_err(sql)?;
-        let duration_ms: Option<i64> = r.get(5).map_err(sql)?;
+        // 「按分钟」的每日上限按计入口径算（日志存真实用时，Fushi 记的单次封顶 60 秒，`history::counted_answer_ms`）。
+        let origin: Option<String> = r.get(6).map_err(sql)?;
+        let duration_ms: Option<i64> = r.get::<_, Option<i64>>(5).map_err(sql)?.map(|d| {
+            crate::history::counted_answer_ms(crate::history::Origin::of_wire(origin.as_deref()), d)
+        });
         let today_log = at >= today_start;
         let (review_type, learn_json) = if today_log {
             (

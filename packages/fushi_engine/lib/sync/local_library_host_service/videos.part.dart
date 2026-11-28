@@ -90,10 +90,18 @@ mixin _LocalLibraryHostVideos
     // 并发的同目录行共用一次列举）。
     final Map<String, Future<List<String>?>> sidecarDirCache =
         <String, Future<List<String>?>>{};
+    // 每个视频挑 sidecar 的目标语言：证据整库读一次（逐行查合集成员表会退化成
+    // 每行一次全表扫）。
+    final VideoSubtitleLanguageEvidence languageEvidence =
+        await VideoSubtitleLanguageEvidence.load(_db);
     final List<_VideoFileFacts> fileFacts = await _mapWithConcurrency(
       rows,
       _kListVideosFsConcurrency,
-      (VideoBookRow row) => _videoFileFacts(row, sidecarDirCache),
+      (VideoBookRow row) => _videoFileFacts(
+        row,
+        sidecarDirCache,
+        _videoSubtitleLanguageTagFrom(languageEvidence, row),
+      ),
     );
     final List<RemoteVideoInfo> videos = <RemoteVideoInfo>[];
     for (int i = 0; i < rows.length; i++) {
@@ -127,6 +135,7 @@ mixin _LocalLibraryHostVideos
   Future<_VideoFileFacts> _videoFileFacts(
     VideoBookRow row,
     Map<String, Future<List<String>?>> sidecarDirCache,
+    String subtitleLanguageTag,
   ) async {
     final String videoPath = row.videoPath;
     int? sizeBytes;
@@ -164,7 +173,7 @@ mixin _LocalLibraryHostVideos
               : pickSidecar(
                   p.basenameWithoutExtension(videoPath),
                   dirFiles,
-                  langCode: _videoSubtitleLangCode,
+                  langCode: subtitleLanguageTag,
                 );
           if (picked != null) {
             hasSubtitle = true;
@@ -523,9 +532,12 @@ mixin _LocalLibraryHostVideos
     // 只碰同目录 sidecar：网络流地址（[isNetworkOnlyVideoPath]）没有本地目录可扫；
     // 本地 `.strm` 的同目录字幕是真实文件，照常可找。
     if (isNetworkOnlyVideoPath(videoPath)) return null;
-    final String effectiveLangCode = langCode.isEmpty
-        ? _videoSubtitleLangCode
-        : langCode;
+    final VideoBookRow? languageRow = langCode.isEmpty
+        ? await _db.getVideoBookByBookUid(id)
+        : null;
+    final String effectiveLangCode = languageRow == null
+        ? langCode
+        : await _videoSubtitleLanguageTagFor(languageRow);
     final String? subPath = await findSidecarSubtitle(
       videoPath,
       langCode: effectiveLangCode,
@@ -564,6 +576,25 @@ mixin _LocalLibraryHostVideos
       if (existing != null) files.add(File(existing));
     }
     return files;
+  }
+
+  /// 这一集视频旁的全部外挂音轨（[VideoSidecarAudioListHost]，M9OEh1PeYH）：与
+  /// [resolveVideoFile] 同一份「这一集是哪个文件」，判据与本机播放器同一份
+  /// [discoverSidecarAudioTrackFiles]。网络流 / `.strm` / 光盘标题（成员路径是
+  /// `.mpls` / `VIDEO_TS` 里的东西，旁边没有发布组外挂音轨）不列。
+  @override
+  Future<List<SidecarAudioTrackFile>> listVideoSidecarAudioTracks(
+    String id, {
+    int episodeIndex = 0,
+  }) async {
+    final String? videoPath = await _resolveEpisodeVideoPath(id, episodeIndex);
+    if (videoPath == null ||
+        videoPath.isEmpty ||
+        lacksLocalMediaFile(videoPath) ||
+        discRootForMemberPath(videoPath) != null) {
+      return const <SidecarAudioTrackFile>[];
+    }
+    return discoverSidecarAudioTrackFiles(videoPath);
   }
 
   /// BUG-1004：host 端本地裁 mining 句子音频（见抽象声明）。用 [resolveVideoFile] 反查真实
@@ -1228,7 +1259,7 @@ mixin _LocalLibraryHostVideos
   ///
   /// 落盘名 = `<host 视频文件 stem><suffix>`，与 [resolveVideoSubtitle] 的同 stem
   /// 匹配规则天然一致；[suffix] 经 [isSidecarSubtitleSuffix] 白名单校验（拒路径
-  /// 分隔符/穿越）。落位后按 host 学习语言重解析首选 sidecar（多字幕推送顺序无关、
+  /// 分隔符/穿越）。落位后按这一视频的目标语言重解析首选 sidecar（多字幕推送顺序无关、
   /// 结果收敛），镜像 client 下载路径（home_video_page `_registerDownloadedVideo`）
   /// 的行语义：`subtitleSource`/`subtitleFormat` 指向首选 sidecar、
   /// `embeddedSubtitleTrack=null`（播放走外挂）、解析 cue 落库（坏字幕 best-effort
@@ -1265,21 +1296,24 @@ mixin _LocalLibraryHostVideos
     if (episodeIndex < 0) {
       throw ArgumentError.value(episodeIndex, 'episodeIndex', 'negative');
     }
-    final String? suffix = defaultSidecarSubtitleSuffix(
-      format,
-      langCode: _videoSubtitleLangCode,
-    );
-    if (suffix == null) {
+    if (defaultSidecarSubtitleSuffix(format, langCode: '') == null) {
       throw ArgumentError.value(format, 'format', 'not a subtitle format');
     }
     // 实际落盘后缀：名字会被同目录 stem 更长的视频认领时省掉语言标记
     // （[_ownedSidecarSuffixFor]），回给 client 的是这个。
-    String placed = suffix;
+    String placed = '';
     await _runExclusive(() async {
       final VideoBookRow row = await _videoRowWithLocalFile(id);
+      // 这一视频的目标语言标记版后缀（`.ja.srt` / `.zh-Hant.ass`）：上传的默认字幕
+      // 要成为这一视频自动挑中的那份。
+      final String languageTag = await _videoSubtitleLanguageTagFor(row);
+      final String suffix = defaultSidecarSubtitleSuffix(
+        format,
+        langCode: languageTag,
+      )!;
       if (episodeIndex == 0) {
         placed = await _ownedSidecarSuffixFor(row.videoPath, suffix);
-        await _displaceSidecarsFor(row.videoPath, placed);
+        await _displaceSidecarsFor(row.videoPath, placed, languageTag);
         await _placeVideoSubtitleSidecar(
           subtitleFile,
           row: row,
@@ -1301,7 +1335,7 @@ mixin _LocalLibraryHostVideos
         throw StateError('video $id has no local episode $episodeIndex');
       }
       placed = await _ownedSidecarSuffixFor(episodePath, suffix);
-      await _displaceSidecarsFor(episodePath, placed);
+      await _displaceSidecarsFor(episodePath, placed, languageTag);
       await _moveFileInto(
         subtitleFile,
         File(
@@ -1468,15 +1502,16 @@ mixin _LocalLibraryHostVideos
   /// 视频认领的同名字幕是人家的，不碰。
   /// 备份名已被占用说明原始文件早就备份过，眼前这份是之前某次上传的产物，直接删。
   /// 全程 async IO：视频目录常在网络盘上（BUG-3756）。
-  Future<void> _displaceSidecarsFor(String videoPath, String suffix) async {
+  ///
+  /// 谁「压过」它按这一视频的目标语言 [languageTag] 排（[sidecarNamesDisplacedBy]，与
+  /// 播放器 / [resolveVideoSubtitle] 挑字幕同一条排序）。
+  Future<void> _displaceSidecarsFor(
+    String videoPath,
+    String suffix,
+    String languageTag,
+  ) async {
     final String dir = p.dirname(videoPath);
-    final String stemLower = p
-        .basenameWithoutExtension(videoPath)
-        .toLowerCase();
-    final Set<String> displaced = sidecarSuffixesDisplacedBy(
-      suffix,
-      langCode: _videoSubtitleLangCode,
-    ).map((String s) => '$stemLower$s').toSet();
+    final String stem = p.basenameWithoutExtension(videoPath);
     final List<File> siblings = <File>[];
     try {
       await for (final FileSystemEntity e in Directory(
@@ -1487,10 +1522,18 @@ mixin _LocalLibraryHostVideos
     } on FileSystemException {
       return;
     }
-    final Set<String> owned = listSidecarSubtitles(
-      p.basenameWithoutExtension(videoPath),
-      <String>[for (final File f in siblings) p.basename(f.path)],
-    ).map((String n) => n.toLowerCase()).toSet();
+    final List<String> ownedNames = listSidecarSubtitles(stem, <String>[
+      for (final File f in siblings) p.basename(f.path),
+    ]);
+    final Set<String> owned = ownedNames
+        .map((String n) => n.toLowerCase())
+        .toSet();
+    final Set<String> displaced = sidecarNamesDisplacedBy(
+      stem,
+      suffix,
+      ownedNames,
+      langCode: languageTag,
+    );
     for (final File f in siblings) {
       final String nameLower = p.basename(f.path).toLowerCase();
       if (!displaced.contains(nameLower) || !owned.contains(nameLower)) {
@@ -1505,8 +1548,28 @@ mixin _LocalLibraryHostVideos
     }
   }
 
-  /// 把上传的 [subtitleFile] 落到 `<视频 stem><suffix>`，再按 host 学习语言重解析首选
-  /// sidecar 落库（[importVideoSubtitle] / [importDefaultVideoSubtitle] 共用）。
+  /// 这一视频挑 sidecar 用的目标语言标签（空串 = 未知），只读它自己的证据。
+  Future<String> _videoSubtitleLanguageTagFor(VideoBookRow row) async =>
+      _videoSubtitleLanguageTagFrom(
+        await VideoSubtitleLanguageEvidence.load(_db, bookUid: row.bookUid),
+        row,
+      );
+
+  String _videoSubtitleLanguageTagFrom(
+    VideoSubtitleLanguageEvidence evidence,
+    VideoBookRow row,
+  ) =>
+      evidence
+          .targetFor(
+            row,
+            explicitSubtitlePreference: _videoSubtitleExplicitLanguage(),
+            globalDefaultContentLanguage: _videoDefaultContentLanguage(),
+          )
+          ?.tag ??
+      '';
+
+  /// 把上传的 [subtitleFile] 落到 `<视频 stem><suffix>`，再按这一视频的目标语言重解析
+  /// 首选 sidecar 落库（[importVideoSubtitle] / [importDefaultVideoSubtitle] 共用）。
   Future<void> _placeVideoSubtitleSidecar(
     File subtitleFile, {
     required VideoBookRow row,
@@ -1523,7 +1586,7 @@ mixin _LocalLibraryHostVideos
     await _moveFileInto(subtitleFile, dest);
     final String? preferred = await findSidecarSubtitle(
       videoPath,
-      langCode: _videoSubtitleLangCode,
+      langCode: await _videoSubtitleLanguageTagFor(row),
     );
     if (preferred == null) return; // 防御：刚落位的 dest 本身就是候选。
     final String ext = p

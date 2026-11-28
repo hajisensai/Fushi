@@ -61,6 +61,7 @@ import 'package:fushi_engine/utils/net/app_proxy.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:fushi/src/platform/host_platform.dart';
+import 'package:fushi/src/platform/desktop/desktop_tray.dart';
 
 /// 「首页入口」：首页模块关掉后，首页浮动工具栏上那四个入口的落脚处。
 ///
@@ -436,6 +437,25 @@ SettingsDestination buildSystemDestination() {
         presentation: SettingsSectionPresentation.alwaysExpanded,
         title: t.settings_system_section_background,
         items: <SettingsItem>[
+          // Windows：关闭按钮 / Alt+F4 收进托盘继续运行（默认关 = 关闭即退出）。
+          // 托盘图标始终在，菜单里有「退出 Fushi」；安装器的关闭不受影响。
+          SettingsSwitchItem(
+            id: 'system.desktop_close_to_tray',
+            title: t.desktop_tray_close_to_tray,
+            subtitle: t.desktop_tray_close_to_tray_hint,
+            icon: FushiIcons.close,
+            defaultValue: false,
+            visible: (_) => hostPlatform.isWindows,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.prefsRepo.desktopCloseToTray,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.prefsRepo.setDesktopCloseToTray(
+                value,
+              );
+              DesktopTray.instance.setCloseToTray(value);
+              settingsContext.refresh();
+            },
+          ),
           // 媒体库在线作品自动补新集（默认开）：与上面的「番剧新集提醒」分开——
           // 关提醒不停补集，关这里不影响订阅下载的提醒。
           SettingsSwitchItem(

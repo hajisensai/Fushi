@@ -45,6 +45,7 @@ import 'package:fushi/src/srs/srs_directory_key.dart';
 import 'package:fushi/src/srs/srs_interconnect_watch.dart';
 import 'package:fushi_engine/srs/srs_remote_store.dart';
 import 'package:fushi_engine/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_note_conflict_resolve.dart';
 import 'package:fushi_engine/srs/srs_optimization_scheduler.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_sync_scheduler.dart';
@@ -114,6 +115,8 @@ srsAppRuntimeProvider = Provider<SrsAppRuntime?>((Ref ref) {
       SrsOpLedger.mark('rev:pulled');
       // 别的设备可能改了复习翻日时刻：本机统计日界跟上（单向，不写回复习）。
       unawaited(runtime.adoptSyncedDayRollover());
+      // 拉进来的修改 / 媒体可能刚好凑齐了消解伪冲突的条件（BUG-5551）。
+      runtime.reconcileMediaRefConflicts();
     },
     // 同步前的 profile 关联（铁律 E）：采用目录里已有的 uid 后按新身份重开 store。
     profileLinker: SrsDbProfileLinker(
@@ -224,6 +227,7 @@ class SrsAppRuntime {
         runOnAuthenticatedSyncChannels(
           db: app.database,
           body: (SyncBackend backend) => body(backend),
+          onChannelError: _noteChannelError,
         ),
     directoryKeyOf: (SyncAssetStore backend) =>
         srsDirectoryKeyOf(backend, SyncRepository(app.database)),
@@ -251,6 +255,8 @@ class SrsAppRuntime {
     locationDisabled: (String id) => app.srsDisabledLocations.contains(id),
     // 一轮跑完问通道那头的设备（互联 host）加入复习同步了没有（BUG-4320）：没加入时摘要 / 立即同步不说「已同步」。
     peerJoined: srsChannelPeerJoined,
+    // 经互联 host 的那一路（进复习 tab 只为它的缺口补跑这一路，见 [SrsSyncScheduler.hasHostLaneGap]）。
+    viaHost: (SyncAssetStore backend) => backend is InterconnectSyncBackend,
   );
 
   /// 互联快速通道（srs_interconnect_watch.dart）：长轮询所连 host，有新数据立刻同步这一条通道。
@@ -270,7 +276,15 @@ class SrsAppRuntime {
     }),
     // host 重新可达：推送不必再等退避期满。
     onReachable: () => localPush.resetBackoff(),
+    // 长轮询失败 / host 不支持 / 第一次拿基线：经 host 那一路记一个缺口，进复习 tab 时补（BUG-5603）。
+    onGap: () => sync.markHostLaneGap(),
   );
+
+  /// 复习同步跑某条通道时它抛了错（认证阶段或轮次里）：互联通道的就记成经 host 那一路的缺口——认证阶段的异常轮次本身
+  /// 没跑到，[SrsSyncScheduler] 看不出是哪一路的错（BUG-5603）。
+  void _noteChannelError(SyncChannel channel, Object _) {
+    if (channel.isInterconnect) sync.markHostLaneGap();
+  }
 
   /// 本机变动后去抖推送（设计 §6.3），按通道分两条、各自一个 [SrsLocalPush]（反馈 O4MSorhpie：以前只推互联，云盘
   /// 通道要等进复习 tab / 常规同步 / 「立即同步」才带上答卡记录）：
@@ -342,6 +356,7 @@ class SrsAppRuntime {
               db: app.database,
               where: (SyncChannel c) => c.isInterconnect == interconnect,
               body: (SyncBackend backend) => body(backend),
+              onChannelError: _noteChannelError,
             ),
         lane: interconnect ? kInterconnectPushLane : kCloudPushLane,
         ready: () async => _syncAllowedNow(allowBackground: leaving),
@@ -435,6 +450,44 @@ class SrsAppRuntime {
   /// AnkiConnect 兼容端点的本实例 id（防自环）。
   final String instanceId = srsAnkiConnectNewInstanceId();
 
+  /// 媒体引用伪冲突的自动消解（BUG-5551，见 srs_note_conflict_resolve.dart）：同一时刻只跑一趟，跑的期间又来的请求
+  /// 合成一趟，跑完接着补。
+  Future<void>? _mediaRefReconcile;
+  bool _mediaRefReconcileAgain = false;
+
+  /// 消解「同一份 Anki 数据两台设备各导入一次、一台没读到媒体」造成的字段伪冲突：运行时装上时一次（已有的伪冲突），
+  /// 之后每次同步拉进了别的设备的修改 / 媒体再一次。写下了消解记录就当本机写入（界面重读、推给别的设备）。
+  void reconcileMediaRefConflicts() {
+    if (_mediaRefReconcile != null) {
+      _mediaRefReconcileAgain = true;
+      return;
+    }
+    _mediaRefReconcile = _runMediaRefReconcile().whenComplete(
+      () => _mediaRefReconcile = null,
+    );
+  }
+
+  Future<void> _runMediaRefReconcile() async {
+    do {
+      _mediaRefReconcileAgain = false;
+      try {
+        final SrsDbStore? store = await _readStore();
+        final SrsMediaStore? media = await _readMedia();
+        if (store == null || media == null) return;
+        if (await srsReconcileMediaRefConflicts(store, media) > 0) {
+          _bumpRevision();
+        }
+      } catch (e, stack) {
+        ErrorLogService.instance.log(
+          'SrsAppRuntime.reconcileMediaRefConflicts',
+          e,
+          stack,
+        );
+        return;
+      }
+    } while (_mediaRefReconcileAgain && _installed);
+  }
+
   void install() {
     if (_installed) return;
     _installed = true;
@@ -474,6 +527,8 @@ class SrsAppRuntime {
         ErrorLogService.instance.log('SrsAppRuntime.forgetPending', e, stack);
       }),
     );
+    // 升级前就攒下的媒体引用伪冲突（BUG-5551）：装上就消解一次，不等下一次同步。
+    reconcileMediaRefConflicts();
     // 旧版定时备份已由同步 v2 的时间线 / 归档 / 手动导出取代：本机旧备份文件（仍可经「导入」恢复）从升级后
     // 第一次看到起留 30 天再清（起算时刻持久化在目录里的标记文件，见 srs_legacy_backup_cleanup.dart）。
     unawaited(
@@ -563,22 +618,67 @@ class SrsAppRuntime {
   /// 这一轮跑遍全部通道与本机目录，是两条推送的超集：此刻排着的推送由它带上、撤掉（[SrsLocalPush.takePending]，
   /// BUG-4382）。以前排着的推送在「已同步」提示之后去抖到期又各跑一轮空同步，同步状态行在提示后继续走。这一轮
   /// 没同步成功（有错 / 抛错）就把撤掉的推送排回去，本机改动照常等推送补上。
-  Future<SrsSyncNowResult> syncNow() => srsSyncSupersedingPushes(
-    <SrsLocalPush>[localPush, cloudPush],
-    sync.syncNow,
-    synced: (SrsSyncNowResult r) => r.errors.isEmpty,
-  );
+  Future<SrsSyncNowResult> syncNow() {
+    // 用户明说「现在就同步」：互联选路的失败退避也一并清掉。
+    InterconnectSyncBackend.instance.resetResolveBackoff();
+    return srsSyncSupersedingPushes(
+      <SrsLocalPush>[localPush, cloudPush],
+      sync.syncNow,
+      synced: (SrsSyncNowResult r) => r.errors.isEmpty,
+    );
+  }
 
   void _onHomeTabChanged() {
     if (homeShellTabNotifier.value != HomeTab.srs) return;
     _maybeShowProfileConflict(tabEntry: true);
     unawaited(
-      sync.syncThrottled().catchError((Object e, StackTrace stack) {
+      _syncOnTabEntry().catchError((Object e, StackTrace stack) {
         ErrorLogService.instance.log('SrsAppRuntime.tabSync', e, stack);
-        return false;
+        return SrsTabEntrySync.pushAndPull;
       }),
     );
   }
+
+  /// 进复习 tab：经 host 那一路有已知缺口、且不在退避 / 节流期才补跑这一路，云盘 / 文件夹只节流拉（[srsSyncOnTabEntry]）。
+  Future<SrsTabEntrySync> _syncOnTabEntry() => srsSyncOnTabEntry(
+    throttledOnly: () async =>
+        !app.srsSync2MergeConfirmed || !await sync.isAutoSyncEnabled(),
+    throttledRound: () async {
+      await sync.syncThrottled();
+    },
+    hasHostGap: () => sync.hasHostLaneGap,
+    hostHeldOff: () =>
+        InterconnectSyncBackend.instance.resolveBackedOff ||
+        sync.hostLaneGapThrottled,
+    hostGapRound: () async {
+      final SrsSyncNowResult r = await sync.syncHostLaneGap(
+        _srsChannels(interconnect: true),
+      );
+      // 本机状态类原因（库没开等）不算失败，同 [SrsSyncScheduler.autoPush]。
+      return r.errors.every(
+        (Object e) =>
+            e is SrsSyncReportError &&
+            kSrsSyncLocalStateErrors.contains(e.message),
+      );
+    },
+    pullDirect: () async {
+      await sync.pullDirectLocationsThrottled(
+        _srsChannels(interconnect: false),
+      );
+    },
+    hostPush: localPush,
+    directPush: cloudPush,
+  );
+
+  /// 复习同步用的一组通道：[interconnect] 为真 = 互联通道（经 host 那一路），否则 = 云盘通道。
+  SrsChannelRunner _srsChannels({required bool interconnect}) =>
+      (Future<void> Function(SyncAssetStore backend) body) =>
+          runOnAuthenticatedSyncChannels(
+            db: app.database,
+            where: (SyncChannel c) => c.isInterconnect == interconnect,
+            body: (SyncBackend backend) => body(backend),
+            onChannelError: _noteChannelError,
+          );
 
   void _onReviewSessionsChanged() {
     final int now = srsActiveReviewSessions.value;

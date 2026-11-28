@@ -10,8 +10,8 @@ void main() {
       'lib/src/pages/implementations/dictionary_dialog_page.dart',
     ).readAsStringSync();
     final String desktopActions = source.substring(
-      source.indexOf('List<Widget> _buildDesktopPageActions()'),
-      source.indexOf('List<Widget> _buildMobilePageActions()'),
+      source.indexOf('List<Widget> _buildApplePageActions()'),
+      source.indexOf('Future<void> showDictionaryClearDialog()'),
     );
 
     expect(desktopActions, contains('FushiIconButton('));

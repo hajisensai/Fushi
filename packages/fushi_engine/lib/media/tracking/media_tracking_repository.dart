@@ -593,6 +593,12 @@ class MediaTrackingRepository {
 
   final FushiDatabase _db;
 
+  /// 发送失败后的最长退避（6 小时）。
+  static const int _maxBackoffSeconds = 6 * 60 * 60;
+
+  /// `30 << 10` 已超过 [_maxBackoffSeconds]，移位次数钳在这里就永不溢出。
+  static const int _maxBackoffShift = 10;
+
   /// 作品级私密标记快照（口径见 [MediaPrivacySnapshot]）。
   Future<MediaPrivacySnapshot> loadPrivacy() => MediaPrivacySnapshot.load(_db);
 
@@ -1167,10 +1173,12 @@ class MediaTrackingRepository {
     // 分栏与合集详情页同一入口（手动分栏 / 手动季集指定优先）。
     final Map<String, String> sectionKeys =
         await loadCollectionGroupKeysForVideos(_db, videos);
+    // 下面只认库内视频（videosByUid）：不含库内视频的合集（媒体服务器镜像的
+    // 播放列表可达数万成员）一条也贡献不了，不读进来。
     final List<MediaCollectionRow> collections = await _db
-        .getAllMediaCollections();
+        .getCollectionsOfLibraryVideos();
     final List<MediaCollectionItemRow> members = await _db
-        .getAllCollectionItems();
+        .getCollectionItemsOfLibraryVideos();
     final Map<int, List<MediaCollectionItemRow>> videoMembersByCollection =
         <int, List<MediaCollectionItemRow>>{};
     for (final MediaCollectionItemRow member in members) {
@@ -3041,9 +3049,11 @@ class MediaTrackingRepository {
     final int now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
     final int attempts = sent.attemptCount + 1;
     // 30s, 1m, 2m… 最长 6h；设置页“立即同步”会忽略此门槛主动重置。
+    // 指数先钳住再移位：2^(attempts-1) 在第 ~60 次失败后 int 溢出成负数 / 0，退避归零，
+    // 一行长期失败（如令牌过期）就每轮 5 秒重发、连带整库对账，拖慢别的同步（BUG-5453）。
     final int backoffSeconds = math.min(
-      6 * 60 * 60,
-      30 * math.pow(2, attempts - 1).toInt(),
+      _maxBackoffSeconds,
+      30 << math.min(attempts - 1, _maxBackoffShift),
     );
     final String message = error.toString();
     await (_db.update(_db.mediaTrackingOutbox)..where(

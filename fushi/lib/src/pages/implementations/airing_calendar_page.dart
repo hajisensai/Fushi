@@ -4,6 +4,7 @@ import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:fushi/src/pages/implementations/discovery/discovery_logo.dart';
@@ -192,10 +193,11 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
       masthead: true,
       title: t.download_airing_calendar_title,
       actions: <Widget>[
-        FushiIconButtonControl(
+        FushiIconButton(
           tooltip: t.refresh,
-          icon: const FushiIcon(FushiIcons.refresh),
-          onPressed: _loading ? null : () => unawaited(_load(force: true)),
+          icon: FushiIcons.refresh,
+          enabled: !_loading,
+          onTap: _loading ? null : () => unawaited(_load(force: true)),
         ),
       ],
       headerBottom: _buildToolbar(theme),

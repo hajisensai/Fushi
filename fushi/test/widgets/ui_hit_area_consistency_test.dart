@@ -416,8 +416,18 @@ void main() {
     ).readAsStringSync();
     final int at = src.indexOf('class _AppleBarScrollEdgeState');
     final String body = src.substring(at, src.indexOf('\nclass ', at + 10));
-    expect(body, contains('top: 0,'));
-    expect(body, contains('bandExtent: _kGlassTopEdgeExtent'));
+    // 9b97d7975b（所有者 2026-11-24 照 iOS 27 定版）起顶栏 scroll edge 是一整块
+    // 模糊压暗底（FushiAppleScrollEdgeBackdrop）：Positioned.fill 铺满栏区，
+    // fill 形态的底高取父级给的整段高（从窗口顶到栏下沿），下沿外再一小段渐隐。
+    expect(body, contains('Positioned.fill('));
+    expect(body, contains('FushiAppleSoftScrollEdge('));
+    expect(body, contains('fill: true'));
+    final int soft = src.indexOf('class FushiAppleSoftScrollEdge');
+    final String softBody = src.substring(
+      soft,
+      src.indexOf('\nclass ', soft + 10),
+    );
+    expect(softBody, contains('height: constraints.maxHeight'));
   });
 
   testWidgets('设置页头（页头大字外壳）：返回 / 动作同高的方形命中区，标题不贴动作', (

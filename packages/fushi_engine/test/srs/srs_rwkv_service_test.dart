@@ -621,10 +621,8 @@ class _Fixture {
     );
     if (ready) {
       final File weights = models.weightsFile
-        ..writeAsBytesSync(Uint8List(kSrsRwkvSmallWeightsBytes));
-      File(
-        '${weights.path}.verified',
-      ).writeAsStringSync(kSrsRwkvSmallWeightsSha256);
+        ..writeAsBytesSync(Uint8List(models.model.expectedBytes));
+      File('${weights.path}.verified').writeAsStringSync(models.model.sha256);
     }
     return models;
   }
@@ -723,14 +721,15 @@ void main() {
     expect(kSrsRwkvRetiredWeightsNames, contains('sm56-package.zip'));
     // 2026-11-15 换成 Instant-Only 的 sm98：sm72e25 的权重也要清掉。
     expect(kSrsRwkvRetiredWeightsNames, contains('sm72e25_weights.int8.bin'));
-    expect(
-      kSrsRwkvRetiredWeightsNames,
-      containsAll(<String>['sm56-package.zip', 'sm56-package.zip.part']),
-    );
-    expect(
-      kSrsRwkvRetiredWeightsNames,
-      isNot(contains(kSrsRwkvSmallWeightsName)),
-    );
+    // 2026-11-27 换成 sm113 / 六层 sm130io：sm98 / sm101 的权重也要清掉。
+    expect(kSrsRwkvRetiredWeightsNames, contains('sm98_weights.int8.bin'));
+    expect(kSrsRwkvRetiredWeightsNames, contains('sm101_weights.int8.bin'));
+    for (final SrsRwkvModelSize size in SrsRwkvModelSize.values) {
+      expect(
+        kSrsRwkvRetiredWeightsNames,
+        isNot(contains(size.weights.fileName)),
+      );
+    }
     models.weightsFile.writeAsStringSync('current');
 
     await models.deleteRetired();
@@ -821,6 +820,29 @@ void main() {
       )).single;
       expect(undone.keptIds, hasLength(2));
       expect(undone.appendRows(<String>[last]), isNull);
+
+      // 末条（缓存层物化的 rwkv_last，BUG-5525）与逐卡重放的 last 是同一条：撤销前后、没有评分的卡都一致。
+      final List<SrsRwkvLastRating?> lasts = await f.store.rwkvLastRatings(
+        cards,
+      );
+      final List<SrsRwkvCardRows> replayed = await f.store.rwkvCardRows(
+        cards,
+        <int>[for (int i = 0; i < cards.length; i++) ...ids(i)],
+        day,
+      );
+      expect(lasts, hasLength(cards.length));
+      for (int i = 0; i < cards.length; i++) {
+        final SrsRwkvLastRating? want = replayed[i].last;
+        expect(lasts[i]?.at, want?.at, reason: 'card $i at');
+        expect(lasts[i]?.rating, want?.rating, reason: 'card $i rating');
+        expect(lasts[i]?.reviewType, want?.reviewType, reason: 'card $i type');
+      }
+      expect(lasts[0]?.at, undone.last?.at);
+      expect(lasts[0]?.at, isNot(card0.last?.at));
+      expect(
+        (await f.store.rwkvLastRatings(<String>[cards[0]])).single?.at,
+        undone.last?.at,
+      );
     });
   });
 

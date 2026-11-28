@@ -838,8 +838,18 @@ class SrsDbStore implements SrsSync2Host {
 
   /// RWKV-Instant 排队时「此刻回忆率」的来源（app 装配 `SrsRwkvService`，见 [_instantInput]）。它没准备好时
   /// RWKV 牌组的复习卡一张都不出（[SrsStudyState.rwkvPending]），**不**退回按 FSRS-7 存下的到期日排队。
-  /// null = 这个宿主根本没有 RWKV 运行时（无头引擎 / 测试），RWKV 牌组按到期日排。
+  /// null 且没有声明 [hostsRwkv] = 这个宿主根本没有 RWKV 运行时（离线工具 / 裸 store 的单测），RWKV 牌组按到期日排。
   SrsRwkvScheduling? rwkv;
+
+  /// 这个宿主有 RWKV 运行时、会给本库装配 [rwkv]（app 在交出库之前声明，[srsAttachRwkv] 也会置上）。声明之后
+  /// [rwkv] 暂时为 null（启动时服务还在建、换模型档位 / 换库时旧服务已摘新服务未挂）一律按「RWKV 没准备好」处理：
+  /// RWKV 牌组交零个候选并标 pending，**不**退回存下的 FSRS-7 到期日。以前 app 的库先于 RWKV 服务交出去，
+  /// 启动后第一轮牌组计数把 RWKV 牌组按到期日数成几百上千张，RWKV 挂上后又没有写入推进修订号，列表一直停在
+  /// 那个数（BUG-5482）。
+  bool hostsRwkv = false;
+
+  /// 排队时 RWKV 牌组归 RWKV 排（宿主有 RWKV 运行时：已装配或已声明）。
+  bool get _rwkvHost => hostsRwkv || rwkv != null;
 
   /// 释义样式去重的共享样式文件库；null = 不去重（字段值原样落库）。见 [compactStoredStyles]。
   final SrsStyleStore? styles;
@@ -2823,44 +2833,73 @@ class SrsDbStore implements SrsSync2Host {
   }
 
   Future<SrsNoteView?> note(String id) async =>
-      (await _materializeNotes(<String>[id]))[id];
+      (await _noteViews(<String>[id]))[id];
 
-  /// 一组笔记的物化（身份记录 / 修改记录先查预读）：整组一次 FFI 调用（字段寄存器内核）。
-  /// 不存在的 ID 映射到 null。
-  Future<Map<String, SrsNoteView?>> _materializeNotes(List<String> ids) async {
-    final Map<String, SrsNoteView?> out = <String, SrsNoteView?>{};
-    final List<SrsEntitySource> src = <SrsEntitySource>[];
-    for (final String id in ids) {
-      out[id] = null;
-      final _EntityRow? row = await _entityRow(id);
-      if (row == null) continue;
-      src.add(
-        SrsEntitySource(
-          id,
-          row.payloadJson,
-          await _editItems(SrsEntityKind.note, id),
-        ),
-      );
+  /// 一组笔记的物化（内核 `read note_views`，native/fushi_fsrs/src/store/gen4/cmd/reads.rs）：寄存器与视图在内核里就地
+  /// 算好，修改行原文按笔记首尾相接跟着带回来（[SrsNoteView.edits] 要；Dart 侧不解析，用到时才解）。以前是 `read
+  /// entities` + `read edits` 读出来、再整块送回内核 `ffsrs_materialize` 物化——每条笔记几十 KB 的修改行出内核、回内核、
+  /// 再解析一遍（BUG-5572）。不存在 / 不是笔记的 ID 映射到 null；别名成员经回包的 `canon` 对回请求里的 ID。
+  Future<Map<String, SrsNoteView?>> _noteViews(List<String> ids) async {
+    final Map<String, SrsNoteView?> out = <String, SrsNoteView?>{
+      for (final String id in ids) id: null,
+    };
+    final SrsReadResult res = await _read('note_views', <String, Object?>{
+      'ids': ids,
+    });
+    final SrsColumns t = res.table;
+    final SrsColumns? e = res.tables['e'];
+    final SrsColumns? f = res.tables['f'];
+    if (e == null || f == null) {
+      throw StateError('note_views: reply has no edit / field table');
     }
-    final List<SrsNoteView> views = srsMaterializeNotes(src);
-    for (int i = 0; i < src.length; i++) {
-      out[src[i].id] = views[i];
+    final SrsStringColumn id = t.strings('id');
+    final SrsStringColumn v = t.strings('v');
+    final SrsIntColumn n = t.ints('n');
+    final SrsIntColumn nf = t.ints('nf');
+    final SrsStringColumn j = e.strings('j');
+    final SrsIntColumn st = e.ints('st');
+    final SrsStringColumn fk = f.strings('k');
+    final SrsStringColumn fs = f.strings('s');
+    final Map<String, _KernelNote> byId = <String, _KernelNote>{};
+    int at = 0;
+    int fAt = 0;
+    for (int i = 0; i < t.rows; i++) {
+      final int end = at + n[i];
+      final int fEnd = fAt + nf[i];
+      byId[id[i]] = (
+        edits: <SrsEditItem>[
+          for (int k = at; k < end; k++)
+            SrsEditItem.stored(j.bytes(k), st.at(k)),
+        ],
+        fields: <String, String>{for (int k = fAt; k < fEnd; k++) fk[k]: fs[k]},
+        v: v.bytes(i),
+      );
+      at = end;
+      fAt = fEnd;
+    }
+    for (final MapEntry<String, _KernelNote> r in srsRowsByRequest(
+      byId,
+      ids,
+      res.json,
+    ).entries) {
+      out[r.key] = srsNoteViewOfKernel(
+        r.key,
+        r.value.edits,
+        (_utf8Json.convert(r.value.v)! as Map).cast<String, Object?>(),
+        fields: r.value.fields,
+      );
     }
     return out;
   }
 
-  /// 一组笔记的物化视图（含已删除的；不存在的 ID 映射到 null；按输入顺序去重）。按 ID 分块
-  /// 预读身份记录 / 修改记录 / 服务器时刻，每块几次往返——批量读笔记的地方（导出、改标签、
-  /// 更改笔记类型、旧 Lapis 迁移）不再每条笔记各查三次（BUG-3543）。
+  /// 一组笔记的物化视图（含已删除的；不存在的 ID 映射到 null；按输入顺序去重）。按 ID 分块，每块一条内核读命令
+  /// （[_noteViews]）——批量读笔记的地方（导出、改标签、更改笔记类型、旧 Lapis 迁移）不再每条笔记各查几次（BUG-3543）。
   Future<Map<String, SrsNoteView?>> notes(Iterable<String> ids) async {
     final Map<String, SrsNoteView?> out = <String, SrsNoteView?>{};
     final Set<String> wanted = ids.toSet();
     srsDebugMaxNotesPerRead = max(srsDebugMaxNotesPerRead, wanted.length);
     for (final List<String> chunk in _chunks(wanted)) {
-      final _RefreshPrefetch pre = _RefreshPrefetch();
-      await _prefetchEntities(pre, chunk);
-      await _prefetchEdits(pre, SrsEntityKind.note, chunk);
-      out.addAll(await _readWith(pre, () => _materializeNotes(chunk)));
+      out.addAll(await _noteViews(chunk));
     }
     return out;
   }
@@ -2878,25 +2917,22 @@ class SrsDbStore implements SrsSync2Host {
     final List<SrsEntityView> out = <SrsEntityView>[];
     final Set<String> seen = <String>{};
     for (int at = 0; at < wanted.length; at += kSrsEntityViewsBatchMax) {
-      final Map<String, Object?> r = await _sync2(<String, Object?>{
+      // 视图在列式表 `t` 的字符串列里（原样字节，不套进回包 JSON 再转义一层，内核 views.rs 文件头「线上形状」）。
+      final SrsColumns? t = (await _columnsCommand(<String, Object?>{
         'op': 'entity_views',
         'kind': kind.wire,
         'ids': wanted.sublist(
           at,
           min(at + kSrsEntityViewsBatchMax, wanted.length),
         ),
-      });
-      for (final Object? v in r['views']! as List<Object?>) {
-        if (v case {
-          'id': final String id,
-          'tag': final String tag,
-          'v': final String json,
-        }) {
-          // 分块之间同一个类的另一份成员：只留第一次。
-          if (seen.add(id)) out.add(SrsEntityView(id, tag, json));
-        } else {
-          throw StateError('entity_views: malformed view $v');
-        }
+      })).tables['t'];
+      if (t == null) throw StateError('entity_views: reply has no view table');
+      final SrsStringColumn id = t.strings('id');
+      final SrsStringColumn tag = t.strings('tag');
+      final SrsStringColumn json = t.strings('v');
+      for (int i = 0; i < t.rows; i++) {
+        // 分块之间同一个类的另一份成员：只留第一次。
+        if (seen.add(id[i])) out.add(SrsEntityView(id[i], tag[i], json[i]));
       }
     }
     return out;
@@ -3071,9 +3107,13 @@ class SrsDbStore implements SrsSync2Host {
       final SrsStringColumn card = c.strings('card_id');
       final SrsStringColumn json = c.strings('json');
       final SrsIntColumn st = c.ints('st');
+      // 别名归一前的原值日志 ID（native/fushi_fsrs/src/store/gen4/cmd/reads.rs `logs`，BUG-5476）。
+      final SrsStringColumn? oid = c.has('oid') ? c.strings('oid') : null;
       for (int i = 0; i < c.rows; i++) {
         pre.logsByCard[card[i]]!.add(json[i]);
         _noteServerTime(pre, id[i], st.at(i));
+        final String? orderId = oid?.at(i);
+        if (orderId != null) pre.orderIds[id[i]] = orderId;
       }
     }
   }
@@ -3190,6 +3230,8 @@ class SrsDbStore implements SrsSync2Host {
 
   /// 注册本 profile 的缓存配置（`cache_config_set`，native/fushi_fsrs/src/store/gen4/dispatch.rs）：与库里存的按 JSON
   /// 值比，相同回 `{changed: false}`；变了内核写下并在同一个事务里整层重建派生层，回 `{changed: true, settled}`。
+  /// 回包带 `rwkvLastFill: true`（只差 `rwkv_last` 的旧口径库就地升级了，BUG-5547）时后台分批回填
+  /// （[_startRwkvLastFill]）。
   /// 整层重建不推进本机状态行的修订号（刷新键），所以变了时这里把本对象按刷新键 / 缓存日志记的缓存一并作废。失败照常
   /// 抛出（打开失败），下次打开重来。
   ///
@@ -3204,7 +3246,47 @@ class SrsDbStore implements SrsSync2Host {
     final Object? revive = r['revive'];
     if (revive is Map) _absorbLocalWrite(revive.cast<String, Object?>());
     if (r['changed'] == true || revive != null) _invalidateDerivedCaches();
+    if (r['rwkvLastFill'] == true) _startRwkvLastFill();
   });
+
+  /// 一步回填的卡数（[_runRwkvLastFill]）：每张卡逐卡重放全部历史，手机上一步约零点几秒，期间别的写入在内核写锁上排队。
+  static const int _kRwkvLastFillBatch = 64;
+
+  /// 在跑的 `rwkv_last` 回填（[_startRwkvLastFill]）；没有在跑 = null。
+  Future<void>? _rwkvLastFill;
+
+  /// 在跑的 `rwkv_last` 回填（测试等它跑完）。
+  @visibleForTesting
+  Future<void>? get debugRwkvLastFill => _rwkvLastFill;
+
+  /// 内核要求分批回填 `rwkv_last`（`cache_config_set` 回包 `rwkvLastFill`，BUG-5547：只差这张表的旧口径库就地升级，
+  /// 不在开库的写事务里整层重建）：后台一批一笔地填，不挡打开。中途被杀 / 关库只丢在途那一批，下次开库内核照样回
+  /// `rwkvLastFill`，从游标接着填。填完之前 RWKV 末条读对没填到的卡逐卡重放（内核 `cmd/training.rs` `rwkv_last`），
+  /// 结果不变、只是慢。
+  void _startRwkvLastFill() {
+    _rwkvLastFill ??= _runRwkvLastFill().whenComplete(
+      () => _rwkvLastFill = null,
+    );
+  }
+
+  Future<void> _runRwkvLastFill() async {
+    // 先让打开走完（`ensureBuiltins` / 根上 ID），回填排在后面。
+    await Future<void>.delayed(Duration.zero);
+    while (!isWindingDown && !isClosed) {
+      final Map<String, Object?> r;
+      try {
+        r = await _sync2(const <String, Object?>{
+          'op': 'rwkv_last_fill',
+          'limit': _kRwkvLastFillBatch,
+        });
+      } on Object {
+        // 副本作废 / 库关了：在途那一批随之回滚，下次开库接着填，不是错误。别的失败照常抛出（进错误日志）。
+        if (isWindingDown || isClosed) return;
+        rethrow;
+      }
+      if (r['done'] == true) return;
+    }
+  }
 
   /// 派生层整层重建（`rebuild_caches`，`Settle::Rebuild`）：新代的派生层是真相的纯函数，重建结果与随写入维护的
   /// 相同；用于诊断 / 覆盖恢复之后。重建不推进修订号，本对象记的缓存一并作废。
@@ -3335,7 +3417,10 @@ class SrsDbStore implements SrsSync2Host {
           for (final List<String> l in lineages) await _historyInput(l),
         ];
         // 整块一次 FFI 调用（卡片历史内核），不逐卡跨边界。
-        final List<SrsCardHistory> hs = SrsCardHistory.many(inputs);
+        final List<SrsCardHistory> hs = SrsCardHistory.many(
+          inputs,
+          orderIdOf: pre.orderIdOf,
+        );
         for (int k = 0; k < chunk.length; k++) {
           out[chunk[k]] = hs[k];
         }
@@ -3419,6 +3504,15 @@ class SrsDbStore implements SrsSync2Host {
     );
   }
 
+  /// RWKV 末条：[cardIds] 每张卡最后一条保留评分（没有 = null），读缓存层物化好的表，不重放历史
+  /// （冷启动打分 / 统计整表查询行用它，BUG-5525）。
+  Future<List<SrsRwkvLastRating?>> rwkvLastRatings(List<String> cardIds) async {
+    if (cardIds.isEmpty) return const <SrsRwkvLastRating?>[];
+    return srsDecodeRwkvLastRatings(
+      await _coreRwkvLast(core.address, core.libraryPath, profileUid, cardIds),
+    );
+  }
+
   /// RWKV 全量回放：[cardIds]（回放的加入顺序）的保留评分行按评分时刻排好序，连同同一快照里的日志指纹；
   /// [since] 之后出现、不在这些卡血统里的卡作为 [SrsRwkvReplay.strays] 返回。
   ///
@@ -3493,20 +3587,29 @@ class SrsDbStore implements SrsSync2Host {
   );
 
   Future<SrsCardHistory> _historyOf(List<String> cardIds) async {
+    final _RefreshPrefetch p = await _logsPrefetch(cardIds);
     final (List<SrsReviewLog> logs, int? Function(String)? s) =
-        await _historyInput(cardIds);
-    return SrsCardHistory(logs, serverTimeOf: s);
+        _historyInputFrom(p, cardIds);
+    return SrsCardHistory(logs, serverTimeOf: s, orderIdOf: p.orderIdOf);
   }
 
   /// 一组卡（一张卡的血统）的全部日志与服务器时刻：[SrsCardHistory] 的输入。
-  Future<SrsHistoryInput> _historyInput(List<String> cardIds) async {
-    _RefreshPrefetch? pre = _RefreshPrefetch.current;
-    if (pre == null || !cardIds.every(pre.logsByCard.containsKey)) {
-      // 没预读：这几张卡的日志与服务器时刻一条读命令取回（同 [_prefetchLogs]）。
-      pre = _RefreshPrefetch();
-      await _prefetchLogs(pre, cardIds);
+  Future<SrsHistoryInput> _historyInput(List<String> cardIds) async =>
+      _historyInputFrom(await _logsPrefetch(cardIds), cardIds);
+
+  /// 已预读了 [cardIds] 日志的预读（本 zone 的 [_RefreshPrefetch.current]），没有就为它们读一次。
+  Future<_RefreshPrefetch> _logsPrefetch(List<String> cardIds) async {
+    final _RefreshPrefetch? current = _RefreshPrefetch.current;
+    if (current != null && cardIds.every(current.logsByCard.containsKey)) {
+      return current;
     }
-    final _RefreshPrefetch p = pre;
+    // 没预读：这几张卡的日志与服务器时刻一条读命令取回（同 [_prefetchLogs]）。
+    final _RefreshPrefetch pre = _RefreshPrefetch();
+    await _prefetchLogs(pre, cardIds);
+    return pre;
+  }
+
+  SrsHistoryInput _historyInputFrom(_RefreshPrefetch p, List<String> cardIds) {
     final List<SrsReviewLog> logs = <SrsReviewLog>[
       for (final String c in cardIds)
         for (final String json in p.logsByCard[c]!)
@@ -4966,6 +5069,10 @@ class SrsDbStore implements SrsSync2Host {
       next: r['next'] as String?,
       after: r['after'] as String?,
       custom: SrsCustomStudyProgress.fromValue(r['custom']),
+      wakeIn: switch (r['wakeIn']) {
+        final int ms => Duration(milliseconds: ms),
+        _ => null,
+      },
     );
   }
 
@@ -5329,7 +5436,7 @@ class SrsDbStore implements SrsSync2Host {
     SrsDeckTree tree,
     Iterable<String> decks,
   ) {
-    if (rwkv == null) return const <String, double>{};
+    if (!_rwkvHost) return const <String, double>{};
     return <String, double>{
       for (final String d in decks)
         if (_schedulingConfigIn(tree, d) case final SrsSchedulingConfig c
@@ -5338,11 +5445,11 @@ class SrsDbStore implements SrsSync2Host {
     };
   }
 
-  /// 按 [config] 排程的牌组在这个宿主上是不是由 RWKV-Instant 排队：算法是 RWKV **且**宿主装配了 RWKV 运行时
-  /// （[rwkv]）。没有运行时的宿主（无头服务端 / CLI）上 RWKV 牌组照存下的 FSRS-7 到期日排队（[_instantInput]
+  /// 按 [config] 排程的牌组在这个宿主上是不是由 RWKV-Instant 排队：算法是 RWKV **且**宿主有 RWKV 运行时
+  /// （已装配 [rwkv]，或已声明 [hostsRwkv]、服务还没挂上）。没有运行时的宿主（无头服务端 / CLI）上 RWKV 牌组照存下的 FSRS-7 到期日排队（[_instantInput]
   /// 返回 null），这时评分日志的 `alg` 也必须是 FSRS-7（[_previewOf]）——日志记的是实际排它的算法。
   bool _queuesByRwkv(SrsSchedulingConfig config) =>
-      rwkv != null && config.algorithm.usesRwkv;
+      _rwkvHost && config.algorithm.usesRwkv;
 
   /// 这些牌组里可能有按 RWKV-Instant 排队的（有 RWKV 服务且有 RWKV 牌组）。
   bool _instantPossible(SrsDeckTree tree, Iterable<String> decks) =>
@@ -5353,8 +5460,8 @@ class SrsDbStore implements SrsSync2Host {
   /// （RWKV 服务是另一个原生库，[SrsRwkvScheduling]），排队规则（目标保留率、同日间隔守卫、每天最少复习数、
   /// 按 R 升序、每日上限）在内核（store/study.rs `instant_eligible`）。
   ///
-  /// 返回 null = [decks] 里没有 RWKV 牌组，或这个宿主没有 RWKV 运行时（[rwkv] 为 null）。RWKV 没准备好（权重
-  /// 没下载 / 正在回放 / 出错）时交出这些牌组、**零个候选**并标 `pending`：内核于是不出它们的复习卡
+  /// 返回 null = [decks] 里没有 RWKV 牌组，或这个宿主没有 RWKV 运行时（[rwkv] 为 null 且没声明 [hostsRwkv]）。
+  /// RWKV 没准备好（宿主声明了但服务还没挂上 / 权重没下载 / 正在回放 / 出错）时交出这些牌组、**零个候选**并标 `pending`：内核于是不出它们的复习卡
   /// （[SrsStudyState.rwkvPending]），复习页等 RWKV 就绪再出。绝不退回按 FSRS-7 存下的到期日排队——那是另一种
   /// 排程，日志的 `alg` 会混进 FSRS-7，时钟出问题时还会把「回放失败 → 改按到期日」放大成整批重复出卡。
   /// 只交 R 不高于目标保留率的卡，加上「每天最少复习数」补足可能用到的卡（[_minimumTopUp]）；其余的内核也只会丢掉。
@@ -5365,7 +5472,6 @@ class SrsDbStore implements SrsSync2Host {
     int nowMs,
   ) async {
     final SrsRwkvScheduling? source = rwkv;
-    if (source == null) return null;
     final Map<String, double> targets = _instantTargets(tree, decks);
     if (targets.isEmpty) return null;
     // 排队设置与目标保留率同一条继承（参数归属的 own 祖先）。
@@ -5390,6 +5496,8 @@ class SrsDbStore implements SrsSync2Host {
       'cands': const <Object?>[],
       'pending': true,
     };
+    // 宿主声明了 RWKV、服务还没挂上：挂上后由宿主启动准备（[srsRwkvStartIfUsed]），这里只报 pending。
+    if (source == null) return pending;
     if (!source.ready) {
       // 不读候选卡：没准备好时 [SrsRwkvScheduling.instantRetrievability] 只触发准备并返回 null。
       unawaited(
@@ -6419,6 +6527,7 @@ class SrsStudyState {
     required this.next,
     required this.after,
     this.custom,
+    this.wakeIn,
   });
 
   final SrsDeckSummary summary;
@@ -6432,14 +6541,32 @@ class SrsStudyState {
   /// 排除 [next] 之后的下一张（预取的猜测：真正的下一张仍以评分后的排队为准）。
   final String? after;
 
+  /// [next] 为 null（排空）时，再过多久不靠任何写入就又排得出卡：RWKV 同日间隔守卫只差时间的卡到点解除、学习卡
+  /// 进入 20 分钟提前窗口（内核 `Picker::wake`）。null = 没有这样的时刻（只能等跨日或库变化）。复习页「复习完」
+  /// 据此定时重排、亮出「继续」，不改排程。
+  final Duration? wakeIn;
+
   /// 子树里有 RWKV 牌组而 RWKV 还没准备好（下载 / 回放 / 出错）：这些牌组的复习卡这一次一张没出，等就绪后
   /// 再排一次。[next] 为 null 时界面据此说「等 RWKV」，不说「今天复习完了」。与 [summary] 的同名标志同源。
   bool get rwkvPending => summary.rwkvPending;
 }
 
-/// 单次作答记入日志的最长用时（与 Anki「最长作答秒数」默认 60 秒同口径）：走神、切出去之类的长停顿
-/// 不该把复习用时统计撑爆。本机复习页与远程复习库主机端（srs_remote_store.dart）共用。
+/// 单次作答**计入学习用时**的上限（与 Anki「最长作答秒数」默认 60 秒同口径；Rust `history::MAX_COUNTED_ANSWER_MS`
+/// 同值）：走神、切出去之类的长停顿不该把复习用时统计撑爆。
+///
+/// 日志里存的是**真实**用时（2026-11-26 起；之前的版本在记日志时就封到这个值，所以老日志都 ≤ 它）：复习页与远程
+/// 复习库主机端只去掉负数。封顶只在读用时去聚合 / 显示的地方做——统计投影、今天的「按分钟」每日上限、RWKV 输入行在
+/// 内核里（`history::counted_answer_ms`），Dart 侧显示单条日志用 [srsCountedAnswerMs]，普通 Anki 导出写 revlog
+/// `time` 时同样封顶；只有复习历史捐赠包写原值。
 const int kSrsMaxAnswerDurationMs = 60000;
+
+/// [log] 计入学习用时的作答用时（与内核 `history::counted_answer_ms` 同一条规则）：负数按 0；Fushi 记的封到
+/// [kSrsMaxAnswerDurationMs]；Anki 导入的照 Anki 记的值（它已按那份集合的 `maxTaken` 封过）。
+int srsCountedAnswerMs(SrsReviewLog log) {
+  final int ms = log.durationMs < 0 ? 0 : log.durationMs;
+  if (log.origin == SrsLogOrigin.anki) return ms;
+  return ms > kSrsMaxAnswerDurationMs ? kSrsMaxAnswerDurationMs : ms;
+}
 
 /// [SrsDbStore.answerAndStudy] 拒绝作答：这张卡出题之后已在别处被复习过（只有远程复习库会抛——
 /// 本机库没有「出题之后」这一说）。没记日志；调用方跳过这张、重新排队。
@@ -6498,6 +6625,16 @@ typedef _PreviewRaw = ({
 /// 一条身份记录（`read` 的 `entities`）。
 typedef _EntityRow = ({String id, String kind, String payloadJson});
 
+/// `read note_views` 的一条笔记（[SrsDbStore._noteViews]）：修改行、字段正文、视图 JSON（不含字段）的原文。
+typedef _KernelNote = ({
+  List<SrsEditItem> edits,
+  Map<String, String> fields,
+  Uint8List v,
+});
+
+/// UTF-8 字节直接解成 JSON（不先建 Dart 字符串；[SrsDbStore._noteViews] 解内核算好的笔记视图）。
+final Converter<List<int>, Object?> _utf8Json = utf8.decoder.fuse(json.decoder);
+
 /// 一次批量读的预读（见 [SrsDbStore._readWith]）：只在那次读的 Zone 里可见。
 /// 各 Map 里「有键」= 已预读（值可能为空 / null）；没键的照常查库。
 class _RefreshPrefetch {
@@ -6516,6 +6653,12 @@ class _RefreshPrefetch {
 
   final Map<String, int> serverTimes = <String, int>{};
   final Set<String> serverTimesKnown = <String>{};
+
+  /// 日志 ID → 别名归一前的原值日志 ID（只记与 ID 不同的；[SrsDbStore._prefetchLogs]）。
+  final Map<String, String> orderIds = <String, String>{};
+
+  /// [SrsCardHistory] 的 `orderIdOf`：同一事件的副本按原值 ID 选代表，与内核同序（BUG-5476）。
+  String? orderIdOf(String logId) => orderIds[logId];
 }
 
 // ------------------------------------------------------------------ 内核命令的后台 isolate 入口
@@ -6570,6 +6713,20 @@ Future<Uint8List> _coreCalibrationItems(
       rolloverHour: rolloverHour,
       profile: profile,
     ),
+  ),
+  measure: (Uint8List b) => (b.length, 0),
+);
+
+Future<Uint8List> _coreRwkvLast(
+  int address,
+  String? libraryPath,
+  String profile,
+  List<String> cardIds,
+) => SrsOpLedger.track(
+  'core:rwkv_last',
+  () => SrsCoreWorkers.of(libraryPath).run<Uint8List>(
+    address,
+    (SrsCore c) => c.rwkvLastRatings(cardIds, profile: profile),
   ),
   measure: (Uint8List b) => (b.length, 0),
 );

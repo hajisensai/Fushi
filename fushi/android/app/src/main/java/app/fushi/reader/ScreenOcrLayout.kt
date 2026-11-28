@@ -224,8 +224,12 @@ object ScreenOcrLayout {
      * 每项 `{text, rect: [l, t, r, b], vertical, segments: [[start, length, l, t, r, b]…]}`
      * （Dart `screenOcrLinesToNative`），坐标是定格帧像素。词框必须按行内顺序、互不
      * 重叠、落在行文本里，否则整行不用词框、退回 [proportionalGlyphs]——宁可等分，
-     * 也不能让点字定位到错字。没有块信息：每行自成一块（[Line.blockText] = 本行）。
-     * 形状不对的项跳过。
+     * 也不能让点字定位到错字。
+     *
+     * 块信息 `blockText` / `blockOffset` / `blockRect` 由 Dart 按与桌面同一条行框聚合规则
+     * 算好（`screenOcrTextBlockOf`，BUG-5494），查词窗据它跨 OCR 折行拼续文、截整句，
+     * 制卡卡图按块框裁。块信息缺失或与本行对不上（块全文在偏移处不是本行原文、块框
+     * 不含行框）时这一行自成一块（[Line.blockText] = 本行）。形状不对的项跳过。
      */
     @JvmStatic
     fun linesFromWire(raw: Any?): List<Line> {
@@ -240,7 +244,24 @@ object ScreenOcrLayout {
             val vertical = map["vertical"] == true
             val glyphs = segmentGlyphs(map["segments"], text)
                 ?: proportionalGlyphs(text, rect[0], rect[1], rect[2], rect[3], vertical)
-            out.add(Line(text, rect[0], rect[1], rect[2], rect[3], glyphs, vertical))
+            val blockText = map["blockText"] as? String
+            val blockOffset = (map["blockOffset"] as? Number)?.toInt() ?: -1
+            val blockRect = intsOf(map["blockRect"], 4)
+            val blockFits = blockText != null && blockRect != null &&
+                blockOffset >= 0 && blockText.startsWith(text, blockOffset) &&
+                blockRect[0] <= rect[0] && blockRect[1] <= rect[1] &&
+                blockRect[2] >= rect[2] && blockRect[3] >= rect[3]
+            out.add(
+                if (blockFits) {
+                    Line(
+                        text, rect[0], rect[1], rect[2], rect[3], glyphs, vertical,
+                        blockText!!, blockOffset,
+                        blockRect!![0], blockRect[1], blockRect[2], blockRect[3],
+                    )
+                } else {
+                    Line(text, rect[0], rect[1], rect[2], rect[3], glyphs, vertical)
+                },
+            )
         }
         return out
     }

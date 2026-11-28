@@ -465,6 +465,18 @@ class _VideoPagePlaybackRemote
     if (subtitleFormatForPath(path) == null) {
       throw VideoRemoteFailure('unsupported', '不支持的字幕格式：${p.extension(path)}');
     }
+    if (_state._webMode) {
+      // 网页档：登记成站点视频的一条轨（主 / 副字幕都可），与面板「导入字幕文件」同一条链路。
+      final List<_VideoOsdMessage> osd = <_VideoOsdMessage>[];
+      final String? done = await _collectingOsd(
+        osd,
+        () => _state._importWebSubtitleFile(path, secondary: secondary),
+      );
+      if (done == null) {
+        throw VideoRemoteFailure('failed', _failureText(osd, '字幕没有导入'));
+      }
+      return done;
+    }
     final bool remote = _state._isRemote;
     if (!remote && _state._currentVideoPath == null) {
       throw const VideoRemoteFailure('unsupported', '当前视频没有可挂字幕的本机文件');

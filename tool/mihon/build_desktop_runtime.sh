@@ -1,14 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -lt 1 ]]; then
-  echo "usage: $0 OUTPUT_DIRECTORY [DOWNLOAD_CACHE]" >&2
+if [[ $# -ne 1 ]]; then
+  echo "usage: $0 OUTPUT_DIRECTORY" >&2
   exit 64
 fi
 
 mkdir -p "$(dirname "$1")"
 output_directory="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
-download_cache="${2:-${RUNNER_TEMP:-/tmp}/fushi-mihon-downloads}"
 script_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repository_root="$(cd "$script_directory/../.." && pwd)"
 overlay_root="$repository_root/third_party/m_extension_server"
@@ -21,14 +20,20 @@ server_commit="ee55c65106bb18bf81a5ddc660d321b4e14ea2f9"
 # vendored 树没有 .git 会退化成空串。走上游自带的 ProductRevision 钩子把它钉成
 # 被 vendor 的 commit 短 SHA，产物名与 manifest 因此直接指向真相源。
 server_revision="${server_commit:0:7}"
+# 离线构建包（third_party/mihon_build/README.md）：JDK 归档、Gradle 发行包、Gradle 依赖缓存都是
+# tool/vendored_binaries.json 钉住的 vendored 件，构建期不连 corretto.aws / services.gradle.org /
+# Maven Central（2026-11-27 发版时 Maven Central 回 429 把 Linux 构建弄红）。
+offline_kit="$repository_root/third_party/mihon_build"
+gradle_version="9.2.1"
 corretto_version="21.0.12.8.1"
-corretto_base_url="https://corretto.aws/downloads/resources/$corretto_version"
 # macOS 版只出 Apple Silicon（arm64），不再支持 Intel Mac：macOS 只出
 # runtime-macos-arm64 一份 JVM 镜像，也只钉 aarch64 的 JDK（x64 归档与哈希已删除）。
 x64_archive=""
 x64_archive_sha256=""
 arm64_archive="amazon-corretto-$corretto_version-macosx-aarch64.tar.gz"
 arm64_archive_sha256="cb230d7ac82784a4438663cdaf91d0d04037a9b4fb99ea41e138d88ce1224ab7"
+
+jdk_group="mihon-jdk-macos-arm64"
 
 # Linux：Dart 侧按 `<exe 目录>/mihon_bridge/runtime/bin/java` 找 JVM
 # （desktop_mihon_runtime.dart `_javaExecutablePath`，与 Windows 同布局），bundle
@@ -42,6 +47,7 @@ case "$host_os" in
     x64_archive_sha256="75faed442d38a89c27f920e45ab24f9f71ff8ca6b732bfea90cdb500decd3c6b"
     arm64_archive="amazon-corretto-$corretto_version-linux-aarch64.tar.gz"
     arm64_archive_sha256="fd94500b0d3d7e6e040a9dc1b34cbe25046454e5e3047b68c1842fa6894e9bbc"
+    jdk_group=""
     ;;
   *) echo "unsupported desktop runtime build host: $host_os" >&2; exit 1 ;;
 esac
@@ -54,6 +60,9 @@ esac
 if [[ "$host_os" == Darwin && "$host_architecture" != arm64 ]]; then
   echo "macOS 版只支持 Apple Silicon（arm64），不在 Intel Mac 上构建 Mihon runtime" >&2
   exit 1
+fi
+if [[ -z "$jdk_group" ]]; then
+  jdk_group="mihon-jdk-linux-$host_architecture"
 fi
 
 # 按宿主选校验工具，不按「PATH 里有没有 sha256sum」：macOS 14+ 自带的
@@ -75,9 +84,15 @@ case "$output_directory" in
   /|"") echo "refusing to write a desktop runtime to a filesystem root" >&2; exit 64 ;;
 esac
 
-mkdir -p "$download_cache"
+# 规范路径（pwd -P）：macOS 的 $TMPDIR 在 /var/folders 下，而 /var 是指向 /private/var 的符号链接。
+# GRADLE_RO_DEP_CACHE 若是带符号链接的路径，Kotlin DSL 编译 build script 时只读缓存里的插件 jar
+# 进不了 classpath（"Unresolved reference 'JvmTarget'"）。Apple Silicon Mac 上逐项对照过：只把
+# GRADLE_RO_DEP_CACHE 换成 /private/var 规范路径就 BUILD SUCCESSFUL，项目目录走不走符号链接无关。
+# mktemp 与规范化分两步：把 mktemp 嵌进 cd 的命令替换里时，mktemp 失败会让 `cd ""` 留在当前目录，
+# working_root 变成调用方的工作目录，EXIT trap 随后把它整个删掉；分开写则 set -e 在 mktemp 失败时就退出。
 working_root="$(mktemp -d "${TMPDIR:-/tmp}/fushi-mihon-build.XXXXXX")"
 trap 'rm -rf -- "$working_root"' EXIT
+working_root="$(cd "$working_root" && pwd -P)"
 source_root="$working_root/M-Extension-Server"
 staging_root="$working_root/output"
 
@@ -113,64 +128,17 @@ fi
 mkdir -p "$source_root/fushi-offline-maven/jogamp"
 cp -R "$jogamp_repo/org" "$source_root/fushi-offline-maven/jogamp/"
 
-download_verified_archive() {
-  local archive="$1"
-  local expected_sha256="$2"
-  local archive_path="$download_cache/$archive"
-  local partial_path="$archive_path.partial"
-  local download_url="$corretto_base_url/$archive"
-
-  if [[ -f "$archive_path" ]] &&
-    ! printf '%s  %s\n' "$expected_sha256" "$archive_path" | sha256_check; then
-    echo "resuming incomplete cached JDK archive: $archive_path" >&2
-    if [[ ! -f "$partial_path" ]]; then
-      mv "$archive_path" "$partial_path"
-    else
-      rm -f -- "$archive_path"
-    fi
-  fi
-
-  if [[ ! -f "$archive_path" ]]; then
-    local attempt
-    for attempt in 1 2 3; do
-      echo "downloading $archive (attempt $attempt/3)" >&2
-      if curl \
-        --fail \
-        --location \
-        --http1.1 \
-        --retry 5 \
-        --retry-all-errors \
-        --continue-at - \
-        --output "$partial_path" \
-        "$download_url"; then
-        if printf '%s  %s\n' "$expected_sha256" "$partial_path" | sha256_check; then
-          mv "$partial_path" "$archive_path"
-          break
-        fi
-        echo "checksum mismatch for completed JDK archive: $archive" >&2
-        rm -f -- "$partial_path"
-      fi
-    done
-  fi
-
-  if [[ ! -f "$archive_path" ]] ||
-    ! printf '%s  %s\n' "$expected_sha256" "$archive_path" | sha256_check; then
-    echo "failed to download a verified JDK archive: $archive" >&2
-    return 1
-  fi
-}
-
-if [[ "$host_architecture" == arm64 ]]; then
-  download_verified_archive "$arm64_archive" "$arm64_archive_sha256"
-else
-  download_verified_archive "$x64_archive" "$x64_archive_sha256"
-fi
+# 构建用到的离线件一次取齐（已在盘上且哈希对得上就只算一遍 sha256；CI 由
+# .github/actions/fetch-vendored-binaries 预先放好，这里只是校验）。
+py=python3
+if ! python3 -c '' >/dev/null 2>&1; then py=python; fi
+"$py" "$repository_root/tool/vendored_binaries.py" fetch --group mihon-build --group "$jdk_group"
 
 prepare_jdk() {
   local architecture="$1"
   local archive="$2"
   local expected_sha256="$3"
-  local archive_path="$download_cache/$archive"
+  local archive_path="$offline_kit/jdk/$archive"
 
   printf '%s  %s\n' "$expected_sha256" "$archive_path" | sha256_check
 
@@ -198,11 +166,33 @@ else
     "$x64_archive_sha256")"
 fi
 
+# Gradle 发行包（不走 gradlew：wrapper 会去 services.gradle.org 下发行包）。
+gradle_root="$working_root/gradle-dist"
+mkdir -p "$gradle_root"
+unzip -q "$offline_kit/gradle-$gradle_version-bin.zip" -d "$gradle_root"
+gradle_launcher="$gradle_root/gradle-$gradle_version/bin/gradle"
+
 # Compile and execute the Java 21-targeted server tests with the same verified
 # toolchain that is bundled. A host Java 17 can compile Kotlin JVM 21 bytecode
 # but cannot execute the resulting test classes.
-JAVA_HOME="$host_jdk_home" ProductRevision="$server_revision" "$source_root/gradlew" \
-  -p "$source_root" :server:test :server:shadowJar --no-daemon
+#
+# 依赖只从 vendored 的只读依赖缓存取（Gradle 官方的 GRADLE_RO_DEP_CACHE：目录下是一份
+# caches/modules-2 拷贝），GRADLE_USER_HOME 每次全新、--offline 禁止任何远端解析：缓存缺件就当场
+# 红并点名缺的坐标，而不是悄悄联网。依赖变了按 third_party/mihon_build/README.md 重新打包。
+# FUSHI_MIHON_GRADLE_ONLINE_HOME 只给重新打包用：指向一个空目录时联网解析并把缓存留在那里。
+if [[ -n "${FUSHI_MIHON_GRADLE_ONLINE_HOME:-}" ]]; then
+  mkdir -p "$FUSHI_MIHON_GRADLE_ONLINE_HOME"
+  JAVA_HOME="$host_jdk_home" ProductRevision="$server_revision" \
+    GRADLE_USER_HOME="$FUSHI_MIHON_GRADLE_ONLINE_HOME" \
+    sh "$gradle_launcher" -p "$source_root" :server:test :server:shadowJar --no-daemon
+else
+  ro_dep_cache="$working_root/gradle-ro-dep-cache"
+  mkdir -p "$ro_dep_cache"
+  tar -xzf "$offline_kit/gradle-ro-dep-cache.tar.gz" -C "$ro_dep_cache"
+  JAVA_HOME="$host_jdk_home" ProductRevision="$server_revision" \
+    GRADLE_USER_HOME="$working_root/gradle-home" GRADLE_RO_DEP_CACHE="$ro_dep_cache" \
+    sh "$gradle_launcher" -p "$source_root" :server:test :server:shadowJar --no-daemon --offline
+fi
 
 server_jar="$(find "$source_root/server/build" -maxdepth 1 -type f -name 'MExtensionServer-*.jar' -print -quit)"
 if [[ -z "$server_jar" ]]; then

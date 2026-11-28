@@ -5,7 +5,7 @@ import 'package:fushi/src/media/links/media_link_entries.dart'
 import 'package:fushi/src/media/links/media_link_inference_host.dart'
     show mediaLinkInferCallback;
 import 'package:fushi/src/media/links/media_link_opener.dart'
-    show mediaLinkSearchAction, openMediaLinkEntry;
+    show mediaLinkRemoteVideoSources, mediaLinkSearchAction, openMediaLinkEntry;
 import 'package:fushi/src/media/links/media_links_section.dart'
     show showMediaLinksDialog;
 import 'package:fushi/src/media/links/work_kinds_badge.dart';
@@ -25,6 +25,10 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/background_keyed_derivation.dart';
 import 'package:fushi/src/media/audio_cd/audio_cd_import.dart';
 import 'package:fushi/src/media/collections/collection_owned_subscriptions.dart';
+import 'package:fushi/src/media/video/subtitle/library_subtitle_fill_entry.dart'
+    show librarySubtitleFillController;
+import 'package:fushi/src/media/video/subtitle/library_subtitle_fill_sheet.dart'
+    show showLibrarySubtitleFillSheet;
 import 'package:fushi/src/media/video/cover_ui/video_series_meta.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi/src/pages/base_module_tab_page.dart';
@@ -59,6 +63,9 @@ import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/drop_decision.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/models/video_collection_open_request.dart';
+import 'package:fushi/src/media/video/remote_video_source_resolver.dart';
+import 'package:fushi/src/media/video/remote_video_sources.dart';
 import 'package:fushi/src/pages/implementations/manual_download_task_dialog.dart';
 import 'package:fushi/src/media/video/cover_ui/cover_orientation_builder.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
@@ -69,6 +76,7 @@ import 'package:fushi/src/media/video/cover_ui/video_scrape_actions.dart';
 import 'package:fushi/src/media/video/cover_ui/video_specs_badges.dart';
 import 'package:fushi/src/media/video/cover_ui/disc_format_badge.dart';
 import 'package:fushi/src/media/video/video_specs_service.dart';
+import 'package:fushi/src/media/video/video_specs_providers.dart';
 import 'package:fushi/src/media/torrent/anime_download_subscription.dart'
     show AnimeDownloadSubscription, AnimeDownloadSubscriptionStore;
 import 'package:fushi/src/media/video/video_continue_watching.dart';
@@ -198,7 +206,7 @@ import 'package:fushi/src/media/video/disc/remote_disc_menu_source.dart'
     show RemoteDiscHostTitle;
 import 'package:fushi/src/media/video/disc/remote_disc_download.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
-import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/persisted_remote_video_list.dart';
 import 'package:fushi/src/sync/jellyfin_library_scope.dart';
 import 'package:fushi/src/sync/jellyfin_video_client.dart'
     show JellyfinVideoClient;
@@ -442,12 +450,12 @@ class HomeVideoPage extends BaseModuleTabPage {
 
   /// 测试钩子（多端库联合视图 §2.2/§2.6）：注入云视频目录 client（[CloudRemoteVideoClient]），
   /// 让「云后端 → 云视频占位卡混排 + 按 uid 下载入库」在 widget 测试可落地。缺省时
-  /// 生产路径经 [_resolveCloudRemoteVideoClient]（resolveSyncBackend 产物包进 client）。
+  /// 生产路径经 [resolveCloudRemoteVideoClient]（resolveSyncBackend 产物包进 client）。
   final Future<CloudRemoteVideoClient?> Function()?
   cloudRemoteVideoClientLoader;
 
   /// 测试钩子：注入 Jellyfin/Emby client。混排闸门（`jellyfin_show_in_library`）
-  /// 在 [_resolveJellyfinVideoClient] 里先于本钩子判定，关着时注入的 client 也不会
+  /// 在 [resolveRemoteVideoSources] 里先于本钩子判定，关着时注入的 client 也不会
   /// 被问到——这正是闸门测试要断言的东西。缺省时生产路径从 SyncRepository 读配置。
   final Future<JellyfinVideoClient?> Function()? jellyfinVideoClientLoader;
   final Future<File> Function(RemoteVideoInfo video)?
@@ -590,26 +598,45 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   bool _pendingScrapeRecountQueued = false;
   _AllVideosLayout _allVideosLayout = _AllVideosLayout.grid;
 
-  /// 当前远端视频来源：互联 host live 库 或 云盘目录，**至多一个**（TODO-2119）。
+  /// 当前可用的远端视频来源，按优先级排好（互联 host live 库 > 媒体服务器 > 云盘
+  /// 目录，[resolveRemoteVideoSources]），**可以多个并存**（反馈 k5Ey2AglAf：此前
+  /// 是「至多一个」，开了 Jellyfin 混排云盘视频就整批消失）。
   ///
-  /// 此前是 `_remoteVideoClient` + `_cloudRemoteVideoClient` 两个互斥 nullable 字段，
-  /// 每条下载/封面/字幕路径都要 `if (cloud != null) ... else ...` 分派，两个字段还可能
-  /// 被写得不同步。收成一个之后「谁是当前源」只有一个真相，能力差异改由类型系统表达：
-  /// 只有 [RemoteVideoClient]（live）才有流播/字幕/断点，见 [_liveVideoClient]。
-  RemoteVideoSource? _remoteVideoSource;
+  /// 「哪条远端视频归哪个来源」只认 [_remoteSourceOf]：开播 / 下载 / 取封面 / 标记
+  /// 已看 / 删除都按条目找回产出它的来源，没有「页面当前的那个来源」。能力差异仍由
+  /// 类型系统表达：只有 [RemoteVideoClient]（live）才有流播/字幕/断点，见
+  /// [_liveClientOf]。
+  List<RemoteVideoSource> _remoteVideoSources = const <RemoteVideoSource>[];
 
-  /// 当前源的 live 能力视图；云盘源在这里是 null。拿不到它的地方**编译期**就调不出
-  /// 流播/字幕/断点方法，而不是运行时抛异常。
-  RemoteVideoClient? get _remoteVideoClient {
-    final RemoteVideoSource? source = _remoteVideoSource;
+  /// 合集详情按 id 查到的远端成员的归属（库页清单之外的那部分，如 Jellyfin 关掉
+  /// 「自动列出」时只按 id 查过的集）。库页清单里的归属在 [_lastRemoteState]。
+  final Map<String, RemoteVideoSource> _lookedUpRemoteOwners =
+      <String, RemoteVideoSource>{};
+
+  /// 远端视频 [id] 的归属来源；不认识这条（来源已不可用 / 从没列到过）时 null。
+  RemoteVideoSource? _remoteSourceOf(String id) =>
+      _lastRemoteState?.owners[id] ?? _lookedUpRemoteOwners[id];
+
+  /// [id] 所在来源的 live 能力视图；云盘源在这里是 null。拿不到它的地方**编译期**
+  /// 就调不出流播/字幕/断点方法，而不是运行时抛异常。
+  RemoteVideoClient? _liveClientOf(String id) {
+    final RemoteVideoSource? source = _remoteSourceOf(id);
     return source is RemoteVideoClient ? source : null;
   }
 
-  /// 当前源的云盘视图；互联源在这里是 null。仅用于云盘独有的收尾动作
-  /// （下载后按资产名取封面，见 [_registerDownloadedCloudVideo]）。
-  CloudRemoteVideoClient? get _cloudRemoteVideoClient {
-    final RemoteVideoSource? source = _remoteVideoSource;
+  /// [id] 所在来源的云盘视图；其它源在这里是 null。仅用于云盘独有的动作（流播
+  /// client、下载后按资产名取封面，见 [_registerDownloadedCloudVideo]）。
+  CloudRemoteVideoClient? _cloudClientOf(String id) {
+    final RemoteVideoSource? source = _remoteSourceOf(id);
     return source is CloudRemoteVideoClient ? source : null;
+  }
+
+  /// 第一个满足 [T] 能力的当前来源（互联独有的元数据 / 原盘端点等）。
+  T? _firstRemoteSourceOf<T extends Object>() {
+    for (final RemoteVideoSource source in _remoteVideoSources) {
+      if (source is T) return source as T;
+    }
+    return null;
   }
 
   /// 远端清单的共享 TTL 缓存（BUG-1180）。与书架 / 首页 dashboard 同一实例
@@ -1109,10 +1136,43 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       onResume: _onVideoRemoteConfigChanged,
     );
     unawaited(_refreshVideoRemoteTargets());
+    // 别处（「同一作品」等）要打开某个视频合集 = 请本页用唯一出口打开
+    // （[requestVideoCollectionOpen]）。tab 懒构建时请求先于本页存在，补查一次。
+    videoCollectionOpenRequest.addListener(_onVideoCollectionOpenRequested);
+    if (videoCollectionOpenRequest.value != null) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _onVideoCollectionOpenRequested(),
+      );
+    }
     assert(() {
       HomeVideoPage.debugRefreshVideos = _refresh;
       return true;
     }());
+  }
+
+  /// 接「打开视频合集」请求（[requestVideoCollectionOpen]），用与视频库合集卡同一个
+  /// 出口 [_openCollectionDetail] 打开，详情页因此带着本页的远端上下文
+  /// （Jellyfin / 互联上「本机没有」的集照常出现、可流播）。
+  void _onVideoCollectionOpenRequested() {
+    if (!mounted) return;
+    final int? collectionId = takeVideoCollectionOpenRequest();
+    if (collectionId == null) return;
+    unawaited(_openRequestedVideoCollection(collectionId));
+  }
+
+  Future<void> _openRequestedVideoCollection(int collectionId) async {
+    // 远端来源平时由首轮远端取数（[_loadRemoteVideos]）产出，请求可能先于它到达
+    // （tab 刚懒构建、清单还在取）。不等整份清单——Jellyfin 大库全量枚举要几十秒，
+    // 切过来干等就像没反应——只按同一条判据解析来源（不发清单请求）就打开；详情页
+    // 自己的成员加载经共享 [RemoteLibraryCache] 拿清单，正在取的那一次会被复用。
+    // 没有来源时详情页拿不到远端上下文、远端集全被丢弃（「合集为空」）。
+    if (_remoteVideoSources.isEmpty && _shouldLoadRemoteVideos) {
+      _remoteVideoSources = await _resolveRemoteVideoSources();
+    }
+    final MediaCollectionRow? collection = await appModelNoUpdate.database
+        .getMediaCollectionById(collectionId);
+    if (collection == null || !mounted) return;
+    _openCollectionDetail(collection);
   }
 
   // BUG-994：顶层 tab 保活后，切回视频 tab 不再隐式重拉远端 → 远端视频要手动
@@ -1211,18 +1271,38 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     _RemoteVideoState? state,
   ) async {
     if (state == null || state.failed || state.videos.isEmpty) return state;
-    return _RemoteVideoState(
-      videos: await withLocalRemoteVideoPositions(
+    return state.copyWithVideos(
+      await _withRemoteVideoPositions(state.videos, state.owners),
+    );
+  }
+
+  /// 给远端卡叠上断点（BUG-4303 / BUG-4436）：互联 host 走三方判定，其余取清单
+  /// 快照与本机库断点的较新者。基线按来源取，所以按归属来源分组各叠一次，再按
+  /// [videos] 原顺序拼回。
+  Future<List<RemoteVideoInfo>> _withRemoteVideoPositions(
+    List<RemoteVideoInfo> videos,
+    Map<String, RemoteVideoSource> owners,
+  ) async {
+    final Map<String, RemoteVideoInfo> byId = <String, RemoteVideoInfo>{};
+    for (final MapEntry<RemoteVideoSource, List<RemoteVideoInfo>> group
+        in groupRemoteVideosBySource(
+          videos,
+          (String id) => owners[id],
+        ).entries) {
+      for (final RemoteVideoInfo video in await withLocalRemoteVideoPositions(
         appModelNoUpdate.database,
-        state.videos,
+        group.value,
         threeWay: await remoteVideoCardBaselines(
           appModelNoUpdate.database,
-          state.source,
+          group.key,
         ),
-      ),
-      localCopies: state.localCopies,
-      source: state.source,
-    );
+      )) {
+        byId[video.id] = video;
+      }
+    }
+    return <RemoteVideoInfo>[
+      for (final RemoteVideoInfo video in videos) byId[video.id] ?? video,
+    ];
   }
 
   /// 露出来时补做被推迟的进度重读（没有推迟的就什么都不做）。
@@ -1266,6 +1346,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
 
   @override
   void dispose() {
+    videoCollectionOpenRequest.removeListener(_onVideoCollectionOpenRequested);
     _continueShare.clearOwner(this);
     _companion.dispose();
     _collectionDisplayCounts.dispose();
@@ -1719,7 +1800,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     _maybeBackfillCovers();
     final _RemoteVideoState? state = await remote;
     if (!mounted) return;
-    if (state != null && state.failed) {
+    if (state != null && state.anyFailed) {
       // 只给用户一句本地化、可执行的友好提示；原始异常（TimeoutException /
       // SocketException 等开发者文本）绝不进 UI，只留在下方 debugPrint 供排查。
       ScaffoldMessenger.of(
@@ -1883,10 +1964,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     final Future<List<VideoBookRow>> folderBooksF = db.allVideoBooks();
     final Future<List<MediaSourceRow>> folderSourcesF = db
         .getMediaSourcesByKind('video');
-    final Future<Map<String, int>> primaryMapF = db
-        .getPrimaryCollectionIdByEntry();
-    final Future<List<MediaCollectionItemRow>> collectionItemsF = db
-        .getAllCollectionItems();
+    // 折叠归属 + 组内序：后台 isolate 里读库套策略，不把成员行搬进 UI isolate
+    // （见 [loadVideoLibraryMembership]）。
+    final Future<VideoLibraryMembership> membershipF = folderBooksF.then(
+      (List<VideoBookRow> books) =>
+          loadVideoLibraryMembership(db, books: books),
+    );
     final Future<List<VideoWatchStatisticRow>> watchRowsF = db
         .getAllVideoWatchStatistics();
     final Future<Map<String, int>> segmentEndAtByUidF = db
@@ -1898,31 +1981,18 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       collectionsF,
       folderBooksF,
       folderSourcesF,
-      primaryMapF,
-      collectionItemsF,
+      membershipF,
       watchRowsF,
       segmentEndAtByUidF,
       scrapeMapsF,
     ]);
     final List<MediaCollectionRow> collections = await collectionsF;
     final List<MediaSourceRow> videoSources = await folderSourcesF;
-    final Map<String, int> primaryMap = applyVideoFolderCollectionPolicy(
-      primary: await primaryMapF,
-      collections: collections,
-      items: await collectionItemsF,
-      books: await folderBooksF,
-      sources: videoSources,
-    );
     // 层次 C：条目在其主折叠合集里的 sortIndex（只记归属合集的行——一条目属多
-    // 合集时行内序跟随折叠归属，与 primaryMap 同口径）。一次 [getAllCollectionItems]
-    // 查全部成员内存分组，替代逐合集 [getCollectionItems] 的 N+1（合集越多越慢，
-    // 首屏合集行渲染被它 gate）。判据 `primaryMap[key] == m.collectionId` 与旧
-    // 逐合集 `== c.id` 等价（旧循环里 members 的 collectionId 恒为 c.id）。
-    final List<MediaCollectionItemRow> collectionItems = await collectionItemsF;
-    final Map<String, int> memberSortIndex = buildVideoMemberSortIndex(
-      primaryCollectionByEntry: primaryMap,
-      items: collectionItems,
-    );
+    // 合集时行内序跟随折叠归属，与 primaryMap 同口径），不逐合集 N+1。
+    final VideoLibraryMembership membership = await membershipF;
+    final Map<String, int> primaryMap = membership.primary;
+    final Map<String, int> memberSortIndex = membership.memberSortIndex;
     // UI v2 Phase B / v39：watch-stats 全量行 → 最近观看时间（内存聚合）。
     // v39 新行按 bookUid 键控；迁移遗留 NULL-uid 行按 title 建回退映射。
     // v92 起 `video_watch_statistics` 冻结为 legacy 只读（历史数据还在），新的
@@ -2251,65 +2321,18 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// [_maybeBackfillCovers] 里书架重列的最小间隔。
   static const Duration _coverBackfillRefreshInterval = Duration(seconds: 1);
 
-  Future<RemoteVideoClient?> _resolveRemoteVideoClient() async {
-    final Future<RemoteVideoClient?> Function()? injected =
-        widget.remoteVideoClientLoader;
-    if (injected != null) return injected();
-
-    final AppModel appModel = ref.read(appProvider);
-    final SyncRepository syncRepo = SyncRepository(appModel.database);
-    // 互联已从 backendType 解耦成独立开关，可与云备份并存：互联启用且已配对时用它的
-    // live 库；未启用则本方法返 null，`_loadRemoteVideos` 回退云视频占位卡。
-    if (!await syncRepo.isInterconnectEnabled()) return null;
-    final InterconnectSyncBackend backend = InterconnectSyncBackend.instance;
-    if (!await backend.restoreAuth(syncRepo)) return null;
-    return backend;
-  }
-
-  /// 多端库联合视图 §2.2/§2.6 云后端分支：把 `resolveSyncBackend` 的产物（含解混淆
-  /// 装饰层）包进 [CloudRemoteVideoClient]，读 `__videos__/videos.json` 目录清单渲染
-  /// 云视频占位卡 + 按 uid 下载入库。与书侧 `_resolveRemoteBookClient` 云分支同范式；
-  /// 互联后端（fushiServer）走 [_resolveRemoteVideoClient]，此处只对云盘后端出 client，
-  /// 鉴权失败/无后端返 null（不显示云视频占位）。
-  Future<CloudRemoteVideoClient?> _resolveCloudRemoteVideoClient() async {
-    final Future<CloudRemoteVideoClient?> Function()? injected =
-        widget.cloudRemoteVideoClientLoader;
-    if (injected != null) return injected();
-
-    final AppModel appModel = ref.read(appProvider);
-    final SyncRepository syncRepo = SyncRepository(appModel.database);
-    // 云备份通道被用户关掉：不读云盘视频目录（与同步通道枚举同一判据）。
-    if (!await syncRepo.isCloudSyncEnabled()) return null;
-    final SyncBackendType type = await syncRepo.getBackendType();
-    // 互联后端不在此处理（已由 _resolveRemoteVideoClient 覆盖）。
-    if (type == SyncBackendType.fushiServer) return null;
-    final SyncBackend backend = resolveSyncBackend(type);
-    if (!await backend.restoreAuth(syncRepo)) return null;
-    return CloudRemoteVideoClient(backend: backend, backendType: type);
-  }
-
-  /// Jellyfin/Emby 媒体服务器分支：设置里登录过服务器（配置在 SyncRepository
-  /// `sync_jellyfin_server`）即可出 client——它具备完整 [RemoteVideoClient] 能力
-  /// （直连流播/字幕/服务器端断点），与互联 live 库同级；每次取数新建实例，
-  /// 缓存身份按服务器细分（`jellyfin:<serverUrl>`，BUG-1202 口径）。
-  ///
-  /// B4：混排是显式 opt-in（`jellyfin_show_in_library`，默认关）。关着时这里直接
-  /// 返 null，`??` 链落到云盘分支，服务器条目只在视频页「媒体服务器」分区按服务器
-  /// 自己的树浏览——一进视频页就整库拍平枚举（BUG-1891 的根源）从此不再是默认行为。
-  /// 闸门放在注入点之前：测试注入的 client 同样过闸，测的才是真判据。
-  Future<JellyfinVideoClient?> _resolveJellyfinVideoClient() async {
-    if (!appModelNoUpdate.prefsRepo.jellyfinShowInLibrary) return null;
-    final Future<JellyfinVideoClient?> Function()? injected =
-        widget.jellyfinVideoClientLoader;
-    if (injected != null) return injected();
-
-    final AppModel appModel = ref.read(appProvider);
-    // 判据与首页同一份；手动「加入媒体库」的条目是本地行，不靠这条混排。
-    return resolveJellyfinLibraryClient(
-      prefs: appModelNoUpdate.prefsRepo,
-      syncRepo: SyncRepository(appModel.database),
-    );
-  }
+  /// 当前可用的远端视频来源（TODO-2119 / 反馈 k5Ey2AglAf：互联、Jellyfin 媒体服务器、
+  /// 云盘并存，按这个优先级）。只解析来源、不取清单；库页取数与「打开视频合集」请求
+  /// 共用这一条判据。链本身在 [resolveRemoteVideoSources]（与「同一作品」卡片的远端
+  /// 海报共用），这里只把本页的 widget 测试钩子转进去。
+  Future<List<RemoteVideoSource>> _resolveRemoteVideoSources() =>
+      resolveRemoteVideoSources(
+        prefs: appModelNoUpdate.prefsRepo,
+        database: appModelNoUpdate.database,
+        interconnect: widget.remoteVideoClientLoader,
+        jellyfin: widget.jellyfinVideoClientLoader,
+        cloud: widget.cloudRemoteVideoClientLoader,
+      );
 
   /// 是否应该去问远端要视频清单。
   ///
@@ -2339,16 +2362,64 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     }
     _remoteGateAtLastLoad = gate;
     // 混排开关翻转：这台服务器的旧清单作废，重取到的是新范围而不是 TTL 内的旧清单。
-    final String? sourceId = _remoteVideoSource?.remoteLibrarySourceId;
-    if (sourceId != null) _remoteCache.invalidateSource(sourceId);
+    for (final RemoteVideoSource source in _remoteVideoSources) {
+      _remoteCache.invalidateSource(source.remoteLibrarySourceId);
+    }
     setState(() {
       _remoteFuture = _loadRemoteVideos();
     });
   }
 
+  /// 每轮 [_loadRemoteVideos] 自增。后台重验（[_swapInRevalidatedList]）落定时
+  /// 比对它：期间已经开了新的一轮（下拉刷新、切来源、开关翻转），旧重验的结果就
+  /// 不再回头改 [_remoteFuture]。
+  int _remoteLoadGeneration = 0;
+
+  /// 先用旧清单画出卡片之后，等后台重验（[RemoteLibraryRead.fresh]）落定：
+  ///  * 拿到的还是同一个清单对象（服务器报「没变」）→ 什么都不做；
+  ///  * 换了清单 → 重跑一轮 [_loadRemoteVideos]（这时缓存已新鲜，直接拿到新清单，
+  ///    收养只写差异）；
+  ///  * 失败 → 与首轮取数失败同一语义（spec §2.4：该来源的占位卡不出现，其它来源
+  ///    照旧），不再重试——重试会在离线时反复「显示旧清单 → 失败」打转。
+  void _swapInRevalidatedList({
+    required Future<List<RemoteVideoInfo>> fresh,
+    required List<RemoteVideoInfo> stale,
+    required RemoteVideoSource source,
+  }) {
+    final int generation = _remoteLoadGeneration;
+    bool superseded() => !mounted || generation != _remoteLoadGeneration;
+    unawaited(
+      fresh.then(
+        (List<RemoteVideoInfo> videos) {
+          if (superseded() || identical(videos, stale)) return;
+          setState(() {
+            _remoteFuture = _loadRemoteVideos();
+          });
+        },
+        onError: (Object e) {
+          if (superseded()) return;
+          debugPrint('[home-video] remote video list revalidation failed: $e');
+          final Future<_RemoteVideoState?>? current = _remoteFuture;
+          final _RemoteVideoState onlyThisFailed = _RemoteVideoState.failedFor(
+            <RemoteVideoSource>[source],
+          );
+          setState(() {
+            _remoteFuture = current == null
+                ? Future<_RemoteVideoState?>.value(onlyThisFailed)
+                : current.then(
+                    (_RemoteVideoState? state) =>
+                        state?.withSourceFailed(source) ?? onlyThisFailed,
+                  );
+          });
+        },
+      ),
+    );
+  }
+
   Future<_RemoteVideoState?> _loadRemoteVideos({
     bool forceRefresh = false,
   }) async {
+    final int generation = ++_remoteLoadGeneration;
     _remoteGateAtLastLoad = _shouldLoadRemoteVideos;
     _jellyfinGateAtLastLoad = _jellyfinGate;
     // 每轮都按此刻的本机断点重算（[withLocalRemoteVideoPositions]），之前记下的
@@ -2359,22 +2430,107 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     if (!_shouldLoadRemoteVideos) {
       return null;
     }
-    // TODO-2119：互联优先、次选 Jellyfin 媒体服务器、否则回退云盘；三者都是
-    // [RemoteVideoSource]，所以下面「列清单 → 去重 → 出占位卡」这条主干只写
-    // 一遍，不再按后端类型分叉。
-    final RemoteVideoSource? source =
-        await _resolveRemoteVideoClient() ??
-        await _resolveJellyfinVideoClient() ??
-        await _resolveCloudRemoteVideoClient();
-    if (source == null) return null;
+    // TODO-2119 / 反馈 k5Ey2AglAf：互联、Jellyfin 媒体服务器、云盘**并存**；三者都是
+    // [RemoteVideoSource]，所以下面「列清单 → 去重 → 出占位卡」这条主干只写一遍，
+    // 不按后端类型分叉，也不再三选一。
+    final List<RemoteVideoSource> sources = await _resolveRemoteVideoSources();
+    if (sources.isEmpty) return null;
+    // 来源先于清单落定：首轮整库枚举（媒体服务器大库要几十秒）期间点开合集，详情页
+    // 也拿得到远端上下文、按 id 查成员（[_collectionRemoteContext]），不必等清单。
+    // 只在此前没有来源时补上（那时也没有远端卡片）；换来源时旧卡片仍配着产出它们的
+    // 旧 client，直到新清单落定（build 里按 snapshot 同步）。
+    if (_remoteVideoSources.isEmpty) _remoteVideoSources = sources;
+    // 各来源互不依赖，并行取；一个来源失败只丢它自己的卡片（spec §2.4 离线语义）。
+    final List<_RemoteSourceListing> listings =
+        await Future.wait(<Future<_RemoteSourceListing>>[
+          for (final RemoteVideoSource source in sources)
+            _listRemoteSource(
+              source,
+              generation: generation,
+              forceRefresh: forceRefresh,
+            ),
+        ]);
+    final List<_RemoteSourceListing> listed = <_RemoteSourceListing>[
+      for (final _RemoteSourceListing l in listings)
+        if (l.videos != null) l,
+    ];
+    // 按来源优先级合并：同一 id 只留优先级最高的来源那一条。占位卡只给对端真能
+    // 经 host 播放的条目（BUG-3875：网络流书 / `.strm` host 照常列出供同步，但没有
+    // 字节可给），并剔除「从所有设备删除」过、墓碑还没送达的（BUG-3508 同形缺口）
+    // ——两道过滤都按来源先做、再合并，一个来源给不出字节的条目可以由下一个来源补上。
+    final MergedRemoteVideos all =
+        mergeRemoteVideoListings(<RemoteVideoSourceListing>[
+          for (final _RemoteSourceListing l in listed)
+            RemoteVideoSourceListing(source: l.source, videos: l.videos!),
+        ]);
+    final MergedRemoteVideos playable =
+        mergeRemoteVideoListings(<RemoteVideoSourceListing>[
+          for (final _RemoteSourceListing l in listed)
+            RemoteVideoSourceListing(
+              source: l.source,
+              videos: filterOutLocallyDeletedRemoteVideos(
+                remote: peerPlayableRemoteVideos(l.videos!),
+                deletedKeys: l.deletedKeys,
+              ),
+            ),
+        ]);
+    final Map<String, RemoteVideoSource> owners = <String, RemoteVideoSource>{
+      ...all.owners,
+      ...playable.owners,
+    };
+    final Set<RemoteVideoSource> failedSources = <RemoteVideoSource>{
+      for (final _RemoteSourceListing l in listings)
+        if (l.failed) l.source,
+    };
+    try {
+      // #6: 远端与本地是同一视频时（同 bookUid）不在混排网格重复展示。
+      final List<VideoBookRow> localVideos = await widget.repo.listAll();
+      final Set<String> localUids = localVideos
+          .map((VideoBookRow r) => r.bookUid)
+          .toSet();
+      final List<RemoteVideoInfo> remoteOnly = dedupeRemoteVideos(
+        remote: playable.videos,
+        localBookUids: localUids,
+      );
+      // BUG-2714：清单到手才知道哪些中断的下载还能接（不挡列表渲染）。
+      for (final MapEntry<RemoteVideoSource, List<RemoteVideoInfo>> group
+          in groupRemoteVideosBySource(
+            remoteOnly,
+            (String id) => owners[id],
+          ).entries) {
+        unawaited(_resumeInterruptedRemoteDownloads(group.key, group.value));
+      }
+      return _RemoteVideoState(
+        // BUG-4303 / BUG-4436：卡片的断点与开播判定同一份。
+        videos: await _withRemoteVideoPositions(remoteOnly, owners),
+        localCopies: <String, RemoteVideoInfo>{
+          for (final RemoteVideoInfo video in all.videos)
+            if (localUids.contains(video.id)) video.id: video,
+        },
+        sources: sources,
+        owners: owners,
+        failedSources: failedSources,
+      );
+    } catch (e) {
+      debugPrint('[home-video] remote video list failed: $e');
+      return _RemoteVideoState.failedFor(sources);
+    }
+  }
+
+  /// 问一个来源要清单（[_loadRemoteVideos] 的每来源一段）：墓碑、清单、后台重验、
+  /// 合集收养都按来源做。
+  Future<_RemoteSourceListing> _listRemoteSource(
+    RemoteVideoSource source, {
+    required int generation,
+    required bool forceRefresh,
+  }) async {
     try {
       // BUG-1180：经共享缓存取清单——切回视频 tab（[onTabActivated]）不再必然打一轮
-      // 网络，TTL 内直接复用。缓存只包住「问对端要清单」这一步，下面的本地库查询与
-      // 去重仍每次照跑，本地新增/删除的视频立即反映在混排网格里。
+      // 网络，TTL 内直接复用。缓存只包住「问对端要清单」这一步，本地库查询与去重
+      // 仍每次照跑，本地新增/删除的视频立即反映在混排网格里。
       //
-      // 槽 = 来源身份 + 域（BUG-1202）。上面那行 `?? ` 让本方法**故意**不知道拿到的
-      // 是互联还是云盘，所以来源身份只能由 source 自己申报；靠调用点分辨来源、或靠
-      // 「换后端时记得失效」都治不了串味（换云盘后端根本不经过互联的失效信号）。
+      // 槽 = 来源身份 + 域（BUG-1202）：来源身份由 source 自己申报，多个来源并存时
+      // 各占各的槽，不会互相串味。
       //
       // 「从所有设备删除」过的视频（BUG-3508 同形缺口）：墓碑送达 host 前 host 清单里
       // 还有它，本地行一删去重就命不中，刚删的视频以远端占位卡复活。**先于取清单读**
@@ -2382,70 +2538,50 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       final Set<String> deletedVideoKeys = await _pendingRemoteVideoDeletions(
         source,
       );
-      final List<RemoteVideoInfo>? videos = await _readRemoteVideoList(
-        source: source,
-        forceRefresh: forceRefresh,
-      );
+      final RemoteLibraryRead<List<RemoteVideoInfo>>? read =
+          await _readRemoteVideoList(
+            source: source,
+            forceRefresh: forceRefresh,
+          );
       // BUG-1891：Jellyfin/Emby 关掉「自动列出条目」且手里还没有清单 → 本轮一个
-      // 请求都不发，也不渲染远端卡（与「显示远端条目」关闭同款空态，不是失败态）。
-      if (videos == null) return null;
-      // 2026-10 切 tab 卡顿：[RemoteLibraryCache] 在 TTL 内回的是**同一个**清单
-      // 对象，而这份清单的合集收养已经落过库——再逐条收养一遍（每条一个事务）、
-      // 再整套重载十几张映射表，全是切回视频 tab 时压在 UI isolate 上的白功。
-      // 清单对象换了（TTL 过期重取 / 下拉强刷 / 换来源）才需要重新收养。
-      if (!identical(videos, _adoptedRemoteVideos)) {
-        final RemoteCollectionAdoptionService adoption =
-            RemoteCollectionAdoptionService(appModelNoUpdate.database);
-        for (final RemoteVideoInfo video in videos) {
-          await adoption.adoptVideo(video);
-        }
-        _adoptedRemoteVideos = videos;
-        if (mounted) await _loadLibraryMaps();
+      // 请求都不发，也不渲染它的远端卡（与「显示远端条目」关闭同款空态，不是失败态）。
+      if (read == null) return _RemoteSourceListing(source: source);
+      // 媒体服务器清单过期（含冷启动时从磁盘灌进来的上一份）：先用它把卡片画
+      // 出来，后台重验落定再换（[_swapInRevalidatedList]）。
+      final List<RemoteVideoInfo>? stale = read.stale;
+      if (stale != null && generation == _remoteLoadGeneration) {
+        _swapInRevalidatedList(fresh: read.fresh, stale: stale, source: source);
       }
-      // #6: 远端与本地是同一视频时（同 bookUid）不在混排网格重复展示。
-      final List<VideoBookRow> localVideos = await widget.repo.listAll();
-      final Set<String> localUids = localVideos
-          .map((VideoBookRow r) => r.bookUid)
-          .toSet();
-      // 收养用整份清单（同步层事实）；占位卡只给对端真能经 host 播放的条目
-      // （BUG-3875：网络流书 / `.strm` host 照常列出供同步，但没有字节可给）。
-      final List<RemoteVideoInfo> remoteOnly = dedupeRemoteVideos(
-        remote: filterOutLocallyDeletedRemoteVideos(
-          remote: peerPlayableRemoteVideos(videos),
-          deletedKeys: deletedVideoKeys,
-        ),
-        localBookUids: localUids,
-      );
-      // BUG-2714：清单到手才知道哪些中断的下载还能接（不挡列表渲染）。
-      unawaited(_resumeInterruptedRemoteDownloads(source, remoteOnly));
-      return _RemoteVideoState(
-        // BUG-4303 / BUG-4436：卡片的断点与开播判定同一份——互联 host 走三方判定，
-        // 其余取清单快照与本机库断点的较新者。
-        videos: await withLocalRemoteVideoPositions(
+      final List<RemoteVideoInfo> videos = stale ?? await read.fresh;
+      // 2026-10 切 tab 卡顿：[RemoteLibraryCache] 在 TTL 内回的是**同一个**清单
+      // 对象，而这份清单的合集收养已经落过库——再收养一遍、再整套重载十几张映射
+      // 表，全是切回视频 tab 时压在 UI isolate 上的白功。清单对象换了（TTL 过期
+      // 重取 / 下拉强刷 / 换来源）才需要重新收养；收养本身是差分批量的（清单没变
+      // 时一次只读查询、零写入，有变化的条目同一个事务落库），没有任何归属变化
+      // 时映射表也不重载。
+      final String sourceId = source.remoteLibrarySourceId;
+      if (!identical(videos, _adoptedRemoteVideos[sourceId])) {
+        final int adopted = await RemoteCollectionAdoptionService(
           appModelNoUpdate.database,
-          remoteOnly,
-          threeWay: await remoteVideoCardBaselines(
-            appModelNoUpdate.database,
-            source,
-          ),
-        ),
-        localCopies: <String, RemoteVideoInfo>{
-          for (final RemoteVideoInfo video in videos)
-            if (localUids.contains(video.id)) video.id: video,
-        },
+        ).adoptVideos(videos);
+        _adoptedRemoteVideos[sourceId] = videos;
+        if (adopted > 0 && mounted) await _loadLibraryMaps();
+      }
+      return _RemoteSourceListing(
         source: source,
+        videos: videos,
+        deletedKeys: deletedVideoKeys,
       );
     } catch (e) {
-      // spec §2.4 离线语义：拉取失败 → 占位卡不出现（failed 门控），只剩本地库。
+      // spec §2.4 离线语义：拉取失败 → 这个来源的占位卡不出现（其它来源照旧）。
       // 云盘侧清单结构非法（FormatException）也落这里 → 本轮云视频不可用。
       // 原始异常只落 debugPrint 供排查；显式下拉刷新时的用户可见反馈用本地化友好
       // 文案（见 _pullToRefresh），不把 TimeoutException 等开发者文本泄漏进 UI。
-      debugPrint('[home-video] remote video list failed: $e');
-      return _RemoteVideoState(
-        videos: const <RemoteVideoInfo>[],
-        failed: true,
-        source: source,
+      debugPrint(
+        '[home-video] remote video list failed '
+        '(${source.remoteLibrarySourceId}): $e',
       );
+      return _RemoteSourceListing(source: source, failed: true);
     }
   }
 
@@ -2462,7 +2598,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// ——否则切一次 tab 回来卡片全没了，用户只能反复手动刷新，比自动枚举还糟。
   /// `null` = 本轮无清单可显示（且没有发出任何请求）。
   /// 手动刷新（下拉 = `forceRefresh: true`）永远照拉，开关不挡用户自己按的那一次。
-  Future<List<RemoteVideoInfo>?> _readRemoteVideoList({
+  ///
+  /// 媒体服务器（[PersistableRemoteVideoSource]）的清单另经 [PersistedRemoteVideoList]：
+  /// 上一份清单落盘、冷启动先显示（[RemoteLibraryRead.stale]）、重验先问服务器
+  /// 「变了没」，没变不整库枚举。关掉自动列出时的「上一份」也从磁盘来，跨重启仍在。
+  Future<RemoteLibraryRead<List<RemoteVideoInfo>>?> _readRemoteVideoList({
     required RemoteVideoSource source,
     required bool forceRefresh,
   }) async {
@@ -2471,17 +2611,82 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       forceRefresh: forceRefresh,
       jellyfinAutoList: appModelNoUpdate.prefsRepo.jellyfinAutoListVideos,
     )) {
-      return _remoteCache.peek<List<RemoteVideoInfo>>(
-        sourceId: source.remoteLibrarySourceId,
-        key: RemoteLibraryCacheKeys.videos,
+      final List<RemoteVideoInfo>? cached =
+          source is PersistableRemoteVideoSource
+          ? await PersistedRemoteVideoList.peek(
+              cache: _remoteCache,
+              source: source,
+            )
+          : _remoteCache.peek<List<RemoteVideoInfo>>(
+              sourceId: source.remoteLibrarySourceId,
+              key: RemoteLibraryCacheKeys.videos,
+            );
+      return cached == null
+          ? null
+          : RemoteLibraryRead<List<RemoteVideoInfo>>.settled(cached);
+    }
+    if (source is PersistableRemoteVideoSource) {
+      return PersistedRemoteVideoList.read(
+        cache: _remoteCache,
+        source: source,
+        forceRefresh: forceRefresh,
       );
     }
-    return _remoteCache.read<List<RemoteVideoInfo>>(
-      sourceId: source.remoteLibrarySourceId,
-      key: RemoteLibraryCacheKeys.videos,
-      forceRefresh: forceRefresh,
-      fetch: source.listRemoteVideos,
+    return RemoteLibraryRead<List<RemoteVideoInfo>>(
+      stale: null,
+      fresh: _remoteCache.read<List<RemoteVideoInfo>>(
+        sourceId: source.remoteLibrarySourceId,
+        key: RemoteLibraryCacheKeys.videos,
+        forceRefresh: forceRefresh,
+        fetch: source.listRemoteVideos,
+      ),
     );
+  }
+
+  /// 不需要「先画旧的」的消费方取整份远端清单：有可先用的旧值就用它，否则等新的；
+  /// 闸门关且无缓存 → 空清单。
+  Future<List<RemoteVideoInfo>> _readRemoteVideoListNow(
+    RemoteVideoSource source,
+  ) async {
+    final RemoteLibraryRead<List<RemoteVideoInfo>>? read =
+        await _readRemoteVideoList(source: source, forceRefresh: false);
+    if (read == null) return const <RemoteVideoInfo>[];
+    return read.stale ?? await read.fresh;
+  }
+
+  /// 只取远端视频里 id 在 [ids] 中的那几条（合集详情页的远端成员）。
+  ///
+  /// 打开合集不等整库清单：Jellyfin / Emby 大库的首轮全量枚举要几十秒，合集详情
+  /// 此前经 [_readRemoteVideoList] 复用那次在途请求，整页骨架屏陪它转到底。来源支持
+  /// 按 id 查（[RemoteVideoLookup]）时经 [RemoteLibraryCache.readByIds] 只问这几个
+  /// id：整份清单已新鲜就从清单里挑，否则发一次按 id 查询、与在途的整库请求并行，
+  /// 查到的条目记进同一份缓存（受同一套失效约束，但不冒充整份清单）。
+  ///
+  /// 按 id 查不是全库枚举，所以不受「自动列出条目」闸门（BUG-1891）约束——那道闸
+  /// 挡的是对整台服务器的递归枚举；与「同一作品」卡片的远端海报同口径。不支持按 id
+  /// 查的来源（互联 host / 云盘目录）退回整份清单，仍走 [_readRemoteVideoList] 那
+  /// 一道闸门。
+  Future<List<RemoteVideoInfo>> _readRemoteVideosByIds({
+    required RemoteVideoSource source,
+    required List<String> ids,
+  }) async {
+    if (ids.isEmpty) return const <RemoteVideoInfo>[];
+    if (source is RemoteVideoLookup) {
+      final RemoteVideoLookup lookup = source as RemoteVideoLookup;
+      return _remoteCache.readByIds<RemoteVideoInfo>(
+        sourceId: source.remoteLibrarySourceId,
+        key: RemoteLibraryCacheKeys.videos,
+        ids: ids,
+        idOf: (RemoteVideoInfo video) => video.id,
+        fetch: lookup.remoteVideosByIds,
+        ttl: remoteVideoListTtlOf(source),
+      );
+    }
+    final Set<String> wanted = ids.toSet();
+    return <RemoteVideoInfo>[
+      for (final RemoteVideoInfo video in await _readRemoteVideoListNow(source))
+        if (wanted.contains(video.id)) video,
+    ];
   }
 
   /// 本端视频删除墓碑里对 [source] 仍有效的键（远端占位卡据此剔除）。
@@ -3870,20 +4075,37 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     if (mounted) _refreshAfterPlayback();
   }
 
+  /// [members] 里与 [video] 同一来源的成员（顺序不变）；全部同源时原样返回同一个
+  /// 列表对象。
+  List<RemoteVideoInfo>? _membersFromSameSource(
+    RemoteVideoInfo video,
+    List<RemoteVideoInfo>? members,
+  ) {
+    if (members == null) return null;
+    final RemoteVideoSource? owner = _remoteSourceOf(video.id);
+    if (members.every((RemoteVideoInfo m) => _remoteSourceOf(m.id) == owner)) {
+      return members;
+    }
+    return <RemoteVideoInfo>[
+      for (final RemoteVideoInfo m in members)
+        if (_remoteSourceOf(m.id) == owner) m,
+    ];
+  }
+
   Future<void> _openRemote(
     RemoteVideoInfo video, {
     List<RemoteVideoInfo>? collectionMembers,
     int startIndex = 0,
-    // 云盘视频的「播放（流播）」动作显式传入 [CloudStreamVideoClient]；缺省按当前源
-    // 的 live 能力（互联 / 媒体服务器）走。
+    // 云盘视频的「播放（流播）」动作显式传入 [CloudStreamVideoClient]；缺省按这条
+    // 视频所在来源的 live 能力（互联 / 媒体服务器）走。
     RemoteVideoClient? streamClient,
   }) async {
-    final RemoteVideoClient? client = streamClient ?? _remoteVideoClient;
+    final RemoteVideoClient? client = streamClient ?? _liveClientOf(video.id);
     if (client == null) {
       // #4：云后端视频无 live host、不能流播；短按 = 下载入库（对齐书侧短按=下载语义），
-      // 而不是静默 return（占位卡点了像没反应）。仅当存在云 client 时分派；两者都无时
+      // 而不是静默 return（占位卡点了像没反应）。仅当它来自云盘时分派；来源不明时
       // _downloadRemote 自身会给「不可达」提示。
-      if (_cloudRemoteVideoClient != null) {
+      if (_cloudClientOf(video.id) != null) {
         await _downloadRemote(video);
         return;
       }
@@ -3902,14 +4124,21 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     // 「点击立即建立远端流」（home_video_remote_interconnect_test），把一次性的着色器
     // 提示放到 await 导航前会让远端串流请求永远不发出（TODO-026 回归）。提示是纯信息
     // 性的（只置 videoAnime4kPromptShown），叠加在已打开的播放页之上即可，不必先于导航。
+    // 远端来源多个并存时，一部合集的成员可能分属不同来源；播放器的剧集列表只能用
+    // 一个 client 取流，所以连播只带与这一集同一来源的成员。
+    final List<RemoteVideoInfo>? members = streamClient != null
+        ? collectionMembers
+        : _membersFromSameSource(video, collectionMembers);
     unawaited(
       openRemoteVideoStream(
         context: context,
         repo: widget.repo,
         client: client,
         video: video,
-        collectionMembers: collectionMembers,
-        startIndex: startIndex,
+        collectionMembers: members,
+        startIndex: members == null || identical(members, collectionMembers)
+            ? startIndex
+            : members.indexWhere((RemoteVideoInfo m) => m.id == video.id),
       ),
     );
     await _showAnime4kFirstUsePromptIfNeeded();
@@ -4002,7 +4231,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   }
 
   Future<void> _downloadRemote(RemoteVideoInfo video) async {
-    final RemoteVideoSource? source = _remoteVideoSource;
+    final RemoteVideoSource? source = _remoteSourceOf(video.id);
     // #3: 服务不可达 / 未鉴权时给明确提示，不再静默 return（用户点了像没反应）。
     if (source == null) {
       if (!mounted) return;
@@ -4062,7 +4291,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     final _RemoteVideoState? state = _lastRemoteState;
     _exitSelectionMode();
     if (state == null) return;
-    if (_remoteVideoSource == null) {
+    if (_remoteVideoSources.isEmpty) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(FushiSnackBar(content: Text(t.remote_video_unavailable)));
@@ -4106,14 +4335,20 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     File dest,
   ) {
     // 收尾登记仍按源分流：互联要回填外挂字幕 + host 断点，云盘要按资产名取封面、
-    // 且没有字幕/进度可回填。这是两种源**真实**的能力差异，不是样板分支。
-    final CloudRemoteVideoClient? cloud = _cloudRemoteVideoClient;
-    final RemoteVideoClient? client = _remoteVideoClient;
-    final InterconnectDownloadComplete onComplete = client != null
-        ? (File downloaded) =>
-              _registerDownloadedVideo(client, video, downloaded)
-        : (File downloaded) =>
-              _registerDownloadedCloudVideo(cloud!, video, downloaded);
+    // 且没有字幕/进度可回填。这是两种源**真实**的能力差异，不是样板分支。分流看的是
+    // 这条视频**自己的**来源 [source]（多个来源并存，反馈 k5Ey2AglAf）。
+    final InterconnectDownloadComplete onComplete = switch (source) {
+      final RemoteVideoClient client =>
+        (File downloaded) =>
+            _registerDownloadedVideo(client, video, downloaded),
+      final CloudRemoteVideoClient cloud =>
+        (File downloaded) =>
+            _registerDownloadedCloudVideo(cloud, video, downloaded),
+      _ => throw StateError(
+        'remote video source ${source.remoteLibrarySourceId} '
+        'has no download registration',
+      ),
+    };
     return _RemoteVideoDownloadPlan(
       video: video,
       source: source,
@@ -4206,8 +4441,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     MediaCollectionRow collection,
     List<RemoteVideoInfo> members,
   ) async {
-    final RemoteVideoSource? source = _remoteVideoSource;
-    if (source == null) {
+    if (_remoteVideoSources.isEmpty) {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
@@ -4232,22 +4466,28 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       );
       return;
     }
-    // 原盘标题（`.mpls` / DVD title）不是一个能单独存下来的文件：按盘整体下载
-    // （远端原盘第二期，一张盘一个任务），其余成员照旧逐集下载。
-    final List<RemoteVideoInfo> discMembers = <RemoteVideoInfo>[
-      for (final RemoteVideoInfo video in pending)
-        if (isRemoteDiscMemberFileName(video.fileName)) video,
-    ];
-    final List<Future<void> Function()> discStarters = discMembers.isEmpty
-        ? const <Future<void> Function()>[]
-        : await _prepareRemoteDiscDownloads(discMembers, source, manager);
     // 先把整批启动器解析完再起跑：启动器不依赖本页 State（见 _prepareRemoteDownload）。
-    final List<Future<void> Function()> starters = <Future<void> Function()>[
-      ...discStarters,
-      for (final RemoteVideoInfo video in pending)
-        if (!isRemoteDiscMemberFileName(video.fileName))
-          await _prepareRemoteDownload(video, source, manager),
-    ];
+    // 远端来源多个并存时一部合集的成员可能分属不同来源：每个成员从它自己的来源下。
+    final List<Future<void> Function()> starters = <Future<void> Function()>[];
+    for (final MapEntry<RemoteVideoSource, List<RemoteVideoInfo>> group
+        in groupRemoteVideosBySource(pending, _remoteSourceOf).entries) {
+      final RemoteVideoSource source = group.key;
+      // 原盘标题（`.mpls` / DVD title）不是一个能单独存下来的文件：按盘整体下载
+      // （远端原盘第二期，一张盘一个任务），其余成员照旧逐集下载。
+      final List<RemoteVideoInfo> discMembers = <RemoteVideoInfo>[
+        for (final RemoteVideoInfo video in group.value)
+          if (isRemoteDiscMemberFileName(video.fileName)) video,
+      ];
+      if (discMembers.isNotEmpty) {
+        starters.addAll(
+          await _prepareRemoteDiscDownloads(discMembers, source, manager),
+        );
+      }
+      for (final RemoteVideoInfo video in group.value) {
+        if (isRemoteDiscMemberFileName(video.fileName)) continue;
+        starters.add(await _prepareRemoteDownload(video, source, manager));
+      }
+    }
     if (starters.isEmpty) return;
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -4417,7 +4657,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     final List<CollectionEpisodeSlot> slots = await loadCollectionEpisodeSlots(
       repository: widget.repo,
       collectionId: collection.id,
-      loadRemoteVideos: remote.loadRemoteVideos,
+      loadRemoteMembers: remote.loadRemoteMembers,
     );
     await _downloadRemoteMembers(collection, <RemoteVideoInfo>[
       for (final CollectionEpisodeSlot slot in slots)
@@ -5182,21 +5422,24 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     }
   }
 
-  /// [book] 若是从当前远端来源（互联 host / 媒体服务器）下载来的，返回服务端清单里
-  /// 对应的那一条；否则 null（菜单不露「重新从服务端拉取字幕」）。云盘来源没有字幕
-  /// 端点（[_remoteVideoClient] 为 null），播放列表书没有单一字幕语义，都不露。
+  /// [book] 若是从当前某个远端来源（互联 host / 媒体服务器）下载来的，返回服务端
+  /// 清单里对应的那一条；否则 null（菜单不露「重新从服务端拉取字幕」）。云盘来源没有
+  /// 字幕端点（[_liveClientOf] 为 null），播放列表书没有单一字幕语义，都不露。
   RemoteVideoInfo? _remoteSubtitleRefetchSource(VideoBookRow book) {
-    if (_remoteVideoClient == null) return null;
     if (playlistEpisodeCount(book.playlistJson) >= 2) return null;
-    return _lastRemoteState?.localCopies[book.bookUid];
+    final RemoteVideoInfo? video = _lastRemoteState?.localCopies[book.bookUid];
+    if (video == null || _liveClientOf(video.id) == null) return null;
+    return video;
   }
 
   /// 「重新从服务端拉取字幕」：列出服务端当前能给的文本字幕（默认外挂 + 容器文本轨），
   /// 多于一份时让用户挑，然后经 [refetchRemoteVideoSubtitle] 原子替换本机字幕与 cue。
   /// 观看进度 / 调轴 / 统计不受影响。
   Future<void> _refetchRemoteSubtitle(VideoBookRow book) async {
-    final RemoteVideoClient? client = _remoteVideoClient;
     final RemoteVideoInfo? video = _remoteSubtitleRefetchSource(book);
+    final RemoteVideoClient? client = video == null
+        ? null
+        : _liveClientOf(video.id);
     if (client == null || video == null) return;
     final List<RemoteSubtitleRefetchOption> options =
         remoteSubtitleRefetchOptions(video);
@@ -5332,6 +5575,30 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     await _listenToVideos(books);
   }
 
+  /// 批量「补齐字幕」：选中的合集展开成全部视频成员，再接散卡；同一集只算一次。
+  /// 判缺与补齐全在 [showLibrarySubtitleFillSheet] 背后的编排里。
+  Future<void> _batchFillSubtitles() async {
+    if (!await _pruneStaleSelection() || !mounted) return;
+    final AppModel appModel = ref.read(appProvider);
+    final List<int> collectionIds = _selectedCollectionIds.toList()..sort();
+    final List<String> order = <String>[];
+    for (final int id in collectionIds) {
+      for (final MediaCollectionItemRow m
+          in await appModel.database.getCollectionItems(id)) {
+        if (MediaKind.tryParse(m.mediaType) == MediaKind.video) {
+          order.add(m.entryKey);
+        }
+      }
+    }
+    order.addAll(_selectedLocalUids);
+    if (!mounted) return;
+    await showLibrarySubtitleFillSheet(
+      context: context,
+      controller: librarySubtitleFillController(appModel),
+      bookUids: <String>{...order}.toList(),
+    );
+  }
+
   /// 手动标记已看 / 未看（本地行 + 媒体服务器条目）。落地见 [setVideosWatched]
   /// （本地入库的媒体服务器条目同时回写服务器）；之后刷新本页（本地行走表级流，
   /// 这里再显式 [_refresh] 一次）。服务器上有东西被改过就作废当前来源的清单缓存
@@ -5341,20 +5608,29 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     List<String> localUids = const <String>[],
     List<String> remoteIds = const <String>[],
   }) async {
-    final RemoteVideoSource? source = _remoteVideoSource;
+    // 远端来源多个并存（反馈 k5Ey2AglAf）：每条远端视频按它自己的来源标；来源没有
+    // 「已播放」协议（互联 / 云盘，看完状态归对端）的不进服务器回写。
+    final RoutedRemoteVideoPlayedMark marker = RoutedRemoteVideoPlayedMark(
+      (String id) => remoteVideoPlayedMarkOf(_remoteSourceOf(id)),
+    );
+    final List<String> markable = <String>[
+      for (final String id in remoteIds)
+        if (marker.supports(id)) id,
+    ];
     final WatchedMarkResult result = await setVideosWatched(
       db: appModelNoUpdate.database,
       tracking: appModelNoUpdate.libraryFinishTracking,
       watched: watched,
       localUids: localUids,
-      remoteIds: remoteIds,
-      remoteMarker: source is RemoteVideoPlayedMark
-          ? source as RemoteVideoPlayedMark
-          : null,
+      remoteIds: markable,
+      remoteMarker: marker,
     );
     if (!mounted) return;
-    if (source != null && (remoteIds.isNotEmpty || result.remoteChanged > 0)) {
-      _remoteCache.invalidateSource(source.remoteLibrarySourceId);
+    if (_remoteVideoSources.isNotEmpty &&
+        (markable.isNotEmpty || result.remoteChanged > 0)) {
+      for (final RemoteVideoSource source in _remoteVideoSources) {
+        _remoteCache.invalidateSource(source.remoteLibrarySourceId);
+      }
       setState(() {
         _remoteFuture = _loadRemoteVideos(forceRefresh: true);
       });
@@ -5376,6 +5652,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   ).countsAsWatched;
 
   /// 合集菜单「全部标记已看 / 未看」的目标：本地成员 + 媒体服务器上的成员。
+  ///
+  /// 远端成员只收归属来源有「已播放」协议的那些（[remoteVideoPlayedMarkOf]）：多个
+  /// 远端来源并存时一部合集可能混着云盘 / 互联成员，它们的看完状态归对端，
+  /// [_markWatched] 不会回写——收进来只会让菜单对一部纯云盘合集也露出、点了却什么都
+  /// 没改。与单集菜单、合集详情页（`_canMarkWatched`）同一判据。
   ({List<String> local, List<String> remote}) _collectionWatchedTargets(
     int collectionId,
     Set<String> localUids,
@@ -5388,7 +5669,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     final List<String> remote = <String>[
       for (final RemoteVideoInfo v
           in _lastRemoteState?.videos ?? const <RemoteVideoInfo>[])
-        if (_remoteCollectionId(v) == collectionId && !localUids.contains(v.id))
+        if (_remoteCollectionId(v) == collectionId &&
+            !localUids.contains(v.id) &&
+            remoteVideoPlayedMarkOf(_remoteSourceOf(v.id)) != null)
           v.id,
     ];
     return (local: local, remote: remote);
@@ -5491,7 +5774,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   CollectionMemberVisibility _videoCollectionMemberVisibility() {
     final List<VideoBookRow> local = _videosCache ?? const <VideoBookRow>[];
     final _RemoteVideoState? remote =
-        _remoteVideoSource != null && _shouldLoadRemoteVideos
+        _remoteVideoSources.isNotEmpty && _shouldLoadRemoteVideos
         ? _lastRemoteState
         : null;
     return videoCollectionMemberVisibility(
@@ -6131,7 +6414,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                 // 多端库联合视图（spec 2026-07-12 §2.1/§2.4/§2.5，撤独立远端分区）：把
                 // 互联「远端有、本地无」的视频混排成主网格占位卡（云角标 + 远端封面，
                 // 点击走现有远端流播 [_openRemote] / 下载 [_downloadRemote]）。云端视频本批
-                // 不接（其目录 client 由并行批产出）——[_resolveRemoteVideoClient] 只对互联
+                // 不接（其目录 client 由并行批产出）——[resolveInterconnectVideoClient] 只对互联
                 // 后端返回 client，故 remoteSnap 天然只含互联视频，不为云视频造假入口。
                 // 离线/未配对/拉取失败（state==null 或 failed）→ 占位卡不出现（只剩本地）；
                 // 「显示远端条目」开关关闭 / 标签筛选激活时同样不混排（远端视频无本地标签）。
@@ -6142,18 +6425,21 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                   _lastRemoteState = snapState;
                 }
                 if (snapState != null) {
-                  // 来源与清单同步：卡片总是配着产出它们的 client。
-                  _remoteVideoSource = snapState.source;
+                  // 来源与清单同步：卡片总是配着产出它们的 client（每条的归属
+                  // 在 [_RemoteVideoState.owners]）。
+                  _remoteVideoSources = snapState.sources;
                 } else if (remoteSnap.connectionState == ConnectionState.done) {
                   // 加载完成但没有来源（开关关闭等）：丢弃旧清单，别留幽灵卡片。
                   _lastRemoteState = null;
-                  _remoteVideoSource = null;
+                  _remoteVideoSources = const <RemoteVideoSource>[];
+                  _lookedUpRemoteOwners.clear();
                 }
                 // 侧栏速览与首页同一份远端清单（不另取数）。
                 _continueShare.publishRemote(
                   this,
                   _lastRemoteState?.videos,
-                  _lastRemoteState == null ? null : _remoteVideoSource,
+                  _lastRemoteState?.owners ??
+                      const <String, RemoteVideoSource>{},
                 );
                 // TODO-2486：远端条目与本地同规则过年份/看完状态筛选（远端无刮削
                 // 资料 = 未知年份桶；无完成标记按未完成、进度取 positionMs）。
@@ -8565,7 +8851,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     final RemoteVideoInfo remote = slot.remote!;
     // 远端独立作品与本地同口径：「剧集」库页点开先进资料页（BUG-3613）。资料只有
     // 能按需取单部作品的来源（互联 host）才有；其余远端源照旧直接开播。
-    final RemoteVideoClient? client = _remoteVideoClient;
+    final RemoteVideoClient? client = _liveClientOf(remote.id);
     return _buildRemoteVideoCard(
       remote,
       orientation: orientation,
@@ -8621,7 +8907,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     if (coverFileExists) return resizedFileImage(File(video.coverPath!));
     final String? coverUrl = video.coverUrl;
     final RemoteCoverFetcher? fetcher = remoteCoverFetcherFor(
-      _remoteVideoClient,
+      _liveClientOf(video.id),
     );
     if (coverUrl != null && coverUrl.isNotEmpty && fetcher != null) {
       return ResizeImage(
@@ -8638,7 +8924,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   ImageProvider? _remoteSeriesCoverProvider(RemoteVideoInfo video) {
     final String? url = video.seriesCoverUrl;
     final RemoteCoverFetcher? fetcher = remoteCoverFetcherFor(
-      _remoteVideoClient,
+      _liveClientOf(video.id),
     );
     if (url == null || url.isEmpty || fetcher == null) return null;
     return ResizeImage(
@@ -8661,8 +8947,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     return null;
   }
 
-  /// 最近一次已完成合集收养的远端清单（对象身份，见 [_loadRemoteVideos]）。
-  List<RemoteVideoInfo>? _adoptedRemoteVideos;
+  /// 每个来源最近一次已完成合集收养的远端清单（来源身份 → 清单对象身份，见
+  /// [_listRemoteSource]）。
+  final Map<String, List<RemoteVideoInfo>> _adoptedRemoteVideos =
+      <String, List<RemoteVideoInfo>>{};
 
   /// 过滤后视频（本地 + 远端占位 union）→ 合集折叠 + 按当前排序方式排 group。
   List<CollectionGroup<_VideoSlot>> _groupVideos(
@@ -8814,6 +9102,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   void _showWorkLinks(MediaLinkEndpoint self) {
     unawaited(
       showMediaLinksDialog(
+        remoteVideoSources: mediaLinkRemoteVideoSources(ref: ref),
         context: context,
         database: ref.read(appProvider).database,
         self: self,
@@ -9623,8 +9912,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// * 多选不再占页头按钮：卡片长按 / 右键菜单第一项「选择」进入（键盘 / 手柄
   ///   用户在「⋯」里也有同一入口）。
   /// * 「⋯」：布局切换（全部视频）、遥控、管理标签、管理合集、管理来源（独立
-  ///   使用时）、刷新（桌面，BUG-2567）、选择。刷新进行中页头另露一颗转圈的刷新
-  ///   按钮，免得「按了没反应、于是连按五次」。
+  ///   使用时）、刷新（桌面，BUG-2567）、选择。刷新进行中这一项置灰（平铺时就是
+  ///   那颗按钮本身，恒外露），免得「按了没反应、于是连按五次」。
   Widget _buildPageHeader(List<BookTagRow> tags) {
     final bool libraryGrid =
         widget.section != VideoLibrarySection.home &&
@@ -9658,17 +9947,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           key: const ValueKey<String>('video-background-tasks'),
           controller: scrapeTasks,
           onTap: openScrapeTasks,
-        ),
-      // 刷新进行中：转圈按钮临时露出（idle 时刷新在「⋯」里）。
-      if (videoLibraryNeedsHeaderRefresh(defaultTargetPlatform) &&
-          _headerRefreshBusy)
-        FushiIconButton(
-          key: const ValueKey<String>('video-library-refresh'),
-          overflowPriority: 5,
-          tooltip: t.refresh,
-          icon: Icons.refresh_outlined,
-          busy: _headerRefreshBusy,
-          onTap: _headerRefreshBusy ? null : _refreshFromHeader,
         ),
       if (_headerMoreEntries(libraryGrid: libraryGrid)
           case final List<FushiHeaderMoreEntry> entries when entries.isNotEmpty)
@@ -9765,7 +10043,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           key: const ValueKey<String>('video-library-refresh-menu'),
           icon: Icons.refresh_outlined,
           label: t.refresh,
-          enabled: !_headerRefreshBusy,
+          // 进行中：平铺时就是这一颗置灰（且恒外露），留在「⋯」里也置灰——
+          // 不再另挂一颗「进行中」刷新钮，否则宽窗平铺后并排两颗。
+          busy: _headerRefreshBusy,
           onSelected: _refreshFromHeader,
         ),
     ];
@@ -10208,7 +10488,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     RemoteVideoInfo video, {
     bool selectable = false,
   }) {
-    final RemoteVideoClient? client = _remoteVideoClient;
+    final RemoteVideoClient? client = _liveClientOf(video.id);
     final InterconnectSyncBackend? deleter = client is InterconnectSyncBackend
         ? client
         : null;
@@ -10226,8 +10506,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     // 云盘视频：后端能按 Range 读（OneDrive / Dropbox / Google Drive / WebDAV /
     // SFTP）时多给一个「播放（流播）」，不下载直接看；短按卡片仍是下载入库（#4 语义
     // 不变）。
-    final CloudStreamVideoClient? cloudStream = _cloudRemoteVideoClient
-        ?.streamingClient();
+    final CloudStreamVideoClient? cloudStream = _cloudClientOf(
+      video.id,
+    )?.streamingClient();
     showMediaItemActions<void>(
       context: context,
       // 远端删除只在对端此刻在线、可达时可用（反馈 R8duEiqRuy，与远端书卡同规则）。
@@ -10336,7 +10617,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                         },
                       ),
                       // 媒体服务器（Jellyfin / Emby）条目：手动标记已看 / 未看并同步到服务器。
-                      if (_remoteVideoSource is RemoteVideoPlayedMark)
+                      if (_remoteSourceOf(video.id) is RemoteVideoPlayedMark)
                         DialogQuickAction(
                           label: video.completedAt != null
                               ? t.video_mark_unwatched
@@ -10435,8 +10716,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     if (!failed && supported) {
       // 该来源整库已变：全域失效（不止 videos——activity 槽不失效的话，首页
       // 时间轴 TTL 内继续显示已删条目的活动）。
-      final String? sourceId = _remoteVideoSource?.remoteLibrarySourceId;
-      if (sourceId != null) _remoteCache.invalidateSource(sourceId);
+      _remoteCache.invalidateSource(backend.remoteLibrarySourceId);
       setState(() {
         _remoteFuture = _loadRemoteVideos(forceRefresh: true);
       });
@@ -10454,7 +10734,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     // 就带全量字段、不实现该能力，走 null 分支，行为与补齐前一字不差。
     // 经 Object? 中转促成类型提升（同 video_fushi_page._pushRemotePlayback）：
     // RemoteVideoDetailFetch 是能力接口，不是 RemoteVideoSource 的子类型。
-    final Object? source = _remoteVideoSource;
+    final Object? source = _remoteSourceOf(video.id);
     final Future<RemoteVideoInfo>? detail =
         source is RemoteVideoDetailFetch && video.sizeBytes == null
         // 必须在这里就接住错误：FutureBuilder 要到下一帧才订阅，中间这段真空期
@@ -11727,35 +12007,30 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// （共享 [RemoteLibraryCache]，TTL 内不打网络）、同一条鉴权封面链、同一个流播入口
   /// ——否则用户在库页看得见合集、点进去却是「合集为空」。
   ///
-  /// 清单必须经 [_readRemoteVideoList]——它是 BUG-1891 止血闸门的唯一入口。此前这里
-  /// 直接 `_remoteCache.read(fetch:)`，Jellyfin/Emby 关掉「自动列出」的大库用户点进
-  /// 任意含远端成员的合集，TTL 一过照样触发整台服务器的全库递归枚举。闸门关且手里
-  /// 没有缓存时给空清单：详情页退化成「只有本地成员」，与库页空态同一语义。
+  /// 成员经 [_readRemoteVideosByIds] 取：只问合集缺的那几个 id，打开合集不等整库
+  /// 清单。整份清单仍只能经 [_readRemoteVideoList]（BUG-1891 止血闸门的唯一入口）：
+  /// 此前这里直接 `_remoteCache.read(fetch:)`，Jellyfin/Emby 关掉「自动列出」的大库
+  /// 用户点进任意含远端成员的合集，TTL 一过照样触发整台服务器的全库递归枚举。
+  ///
+  /// 远端来源可以多个并存（反馈 k5Ey2AglAf）：成员向每个来源各问一次、按来源优先级
+  /// 合并，每一集配着查到它的来源开播 / 取封面 / 标记已看 / 下载。
   ///
   /// 没有远端源（未启用互联 / 未配对 / 关掉「显示远端条目」）→ null = 纯本地视图。
   CollectionRemoteContext? _collectionRemoteContext() {
-    final RemoteVideoSource? source = _remoteVideoSource;
-    if (source == null || !_shouldLoadRemoteVideos) return null;
+    final List<RemoteVideoSource> sources = _remoteVideoSources;
+    if (sources.isEmpty || !_shouldLoadRemoteVideos) return null;
+    RemoteDiscActions? discActions;
+    for (final RemoteVideoSource source in sources) {
+      discActions ??= _remoteDiscActions(source);
+    }
     return CollectionRemoteContext(
-      // 与库页同一道删除墓碑过滤：先读墓碑、再取清单（顺序见
-      // loadPendingRemoteDeletionKeys），详情页不出已「从所有设备删除」的集。
-      loadRemoteVideos: () async {
-        final Set<String> deleted = await _pendingRemoteVideoDeletions(source);
+      loadRemoteMembers: (List<String> ids) async {
+        final List<RemoteVideoSourceListing> listings =
+            await _loadCollectionMembersFromSources(sources, ids);
+        final MergedRemoteVideos merged = mergeRemoteVideoListings(listings);
+        _lookedUpRemoteOwners.addAll(merged.owners);
         // BUG-4303 / BUG-4436：与库页同一口径（[withLocalRemoteVideoPositions]）。
-        return withLocalRemoteVideoPositions(
-          appModelNoUpdate.database,
-          filterOutLocallyDeletedRemoteVideos(
-            remote: peerPlayableRemoteVideos(
-              await _readRemoteVideoList(source: source, forceRefresh: false) ??
-                  const <RemoteVideoInfo>[],
-            ),
-            deletedKeys: deleted,
-          ),
-          threeWay: await remoteVideoCardBaselines(
-            appModelNoUpdate.database,
-            source,
-          ),
-        );
+        return _withRemoteVideoPositions(merged.videos, merged.owners);
       },
       openEpisode:
           (RemoteVideoInfo episode, List<RemoteVideoInfo> members, int index) =>
@@ -11766,7 +12041,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                   startIndex: index,
                 ),
               ),
-      coverFetcher: remoteCoverFetcherFor(_remoteVideoClient),
+      coverFetcherFor: (RemoteVideoInfo video) =>
+          remoteCoverFetcherFor(_liveClientOf(video.id)),
       downloadMembers: _downloadRemoteMembers,
       // 详情页每集的下载进度 / 失败角标从这里取任务快照（页内不取 provider）。
       downloads: ref.read(interconnectDownloadManagerProvider),
@@ -11779,13 +12055,62 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           ? null
           : _chooseTmdbOrderingOnHost,
       deleteLocalCopy: _deleteDownloadedLocalCopy,
-      discActions: _remoteDiscActions(source),
-      playedMark: source is RemoteVideoPlayedMark
-          ? source as RemoteVideoPlayedMark
-          : null,
-      onPlayedMarked: () =>
-          _remoteCache.invalidateSource(source.remoteLibrarySourceId),
+      discActions: discActions,
+      playedMarkFor: (String id) =>
+          remoteVideoPlayedMarkOf(_remoteSourceOf(id)),
+      onPlayedMarked: () {
+        for (final RemoteVideoSource source in sources) {
+          _remoteCache.invalidateSource(source.remoteLibrarySourceId);
+        }
+      },
     );
+  }
+
+  /// 合集详情的远端成员：每个来源各问一次（[_readRemoteVideosByIds]），与库页同一道
+  /// 删除墓碑过滤——先读墓碑、再取成员（顺序见 loadPendingRemoteDeletionKeys），详情页
+  /// 不出已「从所有设备删除」的集。一个来源失败只丢它的成员；全部失败才抛（详情页
+  /// 按失败态处理）。
+  Future<List<RemoteVideoSourceListing>> _loadCollectionMembersFromSources(
+    List<RemoteVideoSource> sources,
+    List<String> ids,
+  ) async {
+    Object? firstError;
+    StackTrace? firstStack;
+    final List<RemoteVideoSourceListing?> listings =
+        await Future.wait(<Future<RemoteVideoSourceListing?>>[
+          for (final RemoteVideoSource source in sources)
+            () async {
+              try {
+                final Set<String> deleted = await _pendingRemoteVideoDeletions(
+                  source,
+                );
+                return RemoteVideoSourceListing(
+                  source: source,
+                  videos: filterOutLocallyDeletedRemoteVideos(
+                    remote: peerPlayableRemoteVideos(
+                      await _readRemoteVideosByIds(source: source, ids: ids),
+                    ),
+                    deletedKeys: deleted,
+                  ),
+                );
+              } on Object catch (e, stack) {
+                debugPrint(
+                  '[home-video] collection members from '
+                  '${source.remoteLibrarySourceId} failed: $e',
+                );
+                firstError ??= e;
+                firstStack ??= stack;
+                return null;
+              }
+            }(),
+        ]);
+    final List<RemoteVideoSourceListing> ok = <RemoteVideoSourceListing>[
+      for (final RemoteVideoSourceListing? l in listings) ?l,
+    ];
+    if (ok.isEmpty && firstError != null) {
+      Error.throwWithStackTrace(firstError!, firstStack!);
+    }
+    return ok;
   }
 
   /// 远端原盘（第二期）：只有互联 host 能把一张盘按目录共享出来；它同时是视频遥控
@@ -11969,10 +12294,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   // `docs/specs/2026-09-12-interconnect-scrape-metadata.md` §3。
 
   /// 元数据端点只在互联 backend 上有；云盘源没有。
-  InterconnectSyncBackend? get _metadataBackend {
-    final RemoteVideoClient? client = _remoteVideoClient;
-    return client is InterconnectSyncBackend ? client : null;
-  }
+  InterconnectSyncBackend? get _metadataBackend =>
+      _firstRemoteSourceOf<InterconnectSyncBackend>();
 
   static VideoMetadataWorkKey _metadataKeyOf(MediaCollectionRow collection) =>
       VideoMetadataWorkKey.collection(
@@ -12156,15 +12479,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   Future<VideoMetadataWorkKey?> _pickRemoteWorkKey(
     List<VideoMetadataWorkKey> works,
   ) async {
-    final RemoteVideoSource? source = _remoteVideoSource;
+    // 作品单元是 host 报的，标题也只问 host（[_metadataBackend]）的清单。
+    final RemoteVideoSource? source = _metadataBackend;
     final Map<String, String> titles = <String, String>{};
     if (source != null) {
       try {
-        for (final RemoteVideoInfo v in await _remoteCache.read(
-          sourceId: source.remoteLibrarySourceId,
-          key: RemoteLibraryCacheKeys.videos,
-          fetch: source.listRemoteVideos,
-        )) {
+        // 与库页同一入口（闸门 / TTL / 媒体服务器落盘清单都在那里判一次）。
+        for (final RemoteVideoInfo v in await _readRemoteVideoListNow(source)) {
           titles[v.id] = v.title;
         }
       } catch (_) {
@@ -12566,6 +12887,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         onPressed: () => unawaited(_batchListen()),
         icon: FushiIcons.audiobook,
         label: t.video_listen_action,
+      ),
+      // 补齐所选（散卡 + 合集全部集）缺的字幕；全选即整库。
+      BatchAction(
+        key: 'home_video_batch_fill_subtitles',
+        enabled: hasLocalSelection,
+        onPressed: () => unawaited(_batchFillSubtitles()),
+        icon: FushiIcons.subtitles,
+        label: t.video_subtitle_fill_title,
       ),
       // AI 整理所选（spec 2026-10-20 §10.1）。
       if (isAiModuleEnabled(ref.read(appProvider).moduleVisibility))
@@ -13324,14 +13653,26 @@ bool shouldFetchRemoteVideoList({
 class _RemoteVideoState {
   const _RemoteVideoState({
     required this.videos,
-    this.failed = false,
     this.localCopies = const <String, RemoteVideoInfo>{},
-    this.source,
+    this.sources = const <RemoteVideoSource>[],
+    this.owners = const <String, RemoteVideoSource>{},
+    this.failedSources = const <RemoteVideoSource>{},
   });
 
-  /// 产出这份清单的来源。卡片只能用生成它们的 client 取封面 / 开播，
-  /// 否则来源被关掉后旧卡片还在、封面空白且点击无反应。
-  final RemoteVideoSource? source;
+  /// 每个来源都没取到清单（离线 / 未配对 / 后端不可达 / host 响应超时）。
+  _RemoteVideoState.failedFor(List<RemoteVideoSource> sources)
+    : this(
+        videos: const <RemoteVideoInfo>[],
+        sources: sources,
+        failedSources: sources.toSet(),
+      );
+
+  /// 产出这份清单的来源（按优先级，可多个并存）。
+  final List<RemoteVideoSource> sources;
+
+  /// 远端视频 id（[videos] 与 [localCopies] 里的）→ 产出它的来源。卡片只能用生成
+  /// 它们的 client 取封面 / 开播，否则来源被关掉后旧卡片还在、封面空白且点击无反应。
+  final Map<String, RemoteVideoSource> owners;
 
   final List<RemoteVideoInfo> videos;
 
@@ -13340,9 +13681,68 @@ class _RemoteVideoState {
   /// 哪些字幕。
   final Map<String, RemoteVideoInfo> localCopies;
 
-  /// 远端目录拉取失败（离线/未配对/后端不可达/host 响应超时）：占位卡不渲染
-  /// （spec §2.4）。初次静默加载走离线语义不打扰用户；**显式下拉刷新**失败时
-  /// [_pullToRefresh] 据此弹一句本地化友好提示（不再「看不到远端视频还不知为何」）。
+  /// 这一轮没取到清单的来源（它们的占位卡不出现，其它来源照旧）。
+  final Set<RemoteVideoSource> failedSources;
+
+  /// 远端目录拉取失败（每个来源都失败）：占位卡不渲染（spec §2.4）。初次静默加载
+  /// 走离线语义不打扰用户；**显式下拉刷新**时 [_pullToRefresh] 按 [anyFailed] 弹一句
+  /// 本地化友好提示（不再「看不到远端视频还不知为何」）。
+  bool get failed =>
+      sources.isNotEmpty && sources.every(failedSources.contains);
+
+  /// 至少一个来源没取到清单。
+  bool get anyFailed => failedSources.isNotEmpty;
+
+  _RemoteVideoState copyWithVideos(List<RemoteVideoInfo> videos) =>
+      _RemoteVideoState(
+        videos: videos,
+        localCopies: localCopies,
+        sources: sources,
+        owners: owners,
+        failedSources: failedSources,
+      );
+
+  /// [source] 后台重验失败：丢掉它的卡片，其它来源照旧。
+  _RemoteVideoState withSourceFailed(RemoteVideoSource source) {
+    bool kept(String id) => !identical(owners[id], source);
+    return _RemoteVideoState(
+      videos: <RemoteVideoInfo>[
+        for (final RemoteVideoInfo video in videos)
+          if (kept(video.id)) video,
+      ],
+      localCopies: <String, RemoteVideoInfo>{
+        for (final MapEntry<String, RemoteVideoInfo> e in localCopies.entries)
+          if (kept(e.key)) e.key: e.value,
+      },
+      sources: sources.contains(source)
+          ? sources
+          : <RemoteVideoSource>[...sources, source],
+      owners: <String, RemoteVideoSource>{
+        for (final MapEntry<String, RemoteVideoSource> e in owners.entries)
+          if (kept(e.key)) e.key: e.value,
+      },
+      failedSources: <RemoteVideoSource>{...failedSources, source},
+    );
+  }
+}
+
+/// 一个来源这一轮的清单（[_HomeVideoPageState._listRemoteSource]）。
+class _RemoteSourceListing {
+  const _RemoteSourceListing({
+    required this.source,
+    this.videos,
+    this.deletedKeys = const <String>{},
+    this.failed = false,
+  });
+
+  final RemoteVideoSource source;
+
+  /// 整份清单；null = 本轮没有清单（失败，或「自动列出」关着且无缓存）。
+  final List<RemoteVideoInfo>? videos;
+
+  /// 本端对这个来源仍有效的删除墓碑键。
+  final Set<String> deletedKeys;
+
   final bool failed;
 }
 

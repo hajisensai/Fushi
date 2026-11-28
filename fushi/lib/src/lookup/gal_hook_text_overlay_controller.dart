@@ -11,6 +11,7 @@ import 'package:fushi_anki/fushi_anki.dart';
 
 import 'package:fushi/src/anki/mined_card_undo.dart';
 import 'package:fushi/src/anki/mined_state_signal.dart';
+import 'package:fushi/src/lookup/pre_mine_sentence_edit.dart';
 import 'package:fushi/src/lookup/gal_attached_text_controller.dart';
 import 'package:fushi/src/lookup/gal_ingame_lookup_controller.dart';
 import 'package:fushi/src/lookup/gal_ingame_mining_binding.dart';
@@ -2940,9 +2941,14 @@ class GalHookTextOverlayController extends ChangeNotifier {
     );
     final BaseAnkiRepository repo = model.miningAnkiRepository;
     final TexthookerLineEntry? entry = _session.entryById(lineId);
-    final String? cardSentence = entry == null
-        ? sentenceOverride
-        : _cardSentenceForGame(entry, sentenceOverride ?? entry.text);
+    // 反馈 uEnwXmBIR0：用户在查词卡「编辑例句后制卡」里改过的例句原样上卡，不再按台词行
+    // 重新取句 / 过滤；台词行仍用来对齐游戏画面与语音。
+    final String? editedSentence = editedMineSentenceOf(fields);
+    final String? cardSentence =
+        editedSentence ??
+        (entry == null
+            ? sentenceOverride
+            : _cardSentenceForGame(entry, sentenceOverride ?? entry.text));
     // 全局 gal 制卡设置 + 当前游戏的覆盖层（反馈 3dRZdakRdJ）。
     final GalMiningSettings mining = model.galMiningSettingsForGame(
       _session.activityGameKey,
@@ -2951,7 +2957,8 @@ class GalHookTextOverlayController extends ChangeNotifier {
       lineId: lineId,
       fields: fields,
       sentenceOverride:
-          sentenceOverride != null ||
+          editedSentence != null ||
+              sentenceOverride != null ||
               (entry != null && cardSentence != entry.text)
           ? cardSentence
           : null,

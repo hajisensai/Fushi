@@ -149,9 +149,38 @@ import 'package:test/test.dart';
 /// `home_profile_chip` 为取库 / 打开配置管理 / 切换配置 import AppModel 与
 /// `profile_view_model`——改由首页注入库与两个回调。最大环降到 622，上限随之下调。
 ///
+/// 2026-11-26 批量合并后实测 627（develop 626 + 本轮 1）。新进环 5 个：查词弹窗排队覆盖回执、
+/// 流媒体书选集、网页档字幕生成、gal 场景卡中止文案、字段 AI 共用入口。不调上限，拆五条底层边：
+/// galgame 浮窗后台写卡登记 `overlay_queued_mines` 只为两个回执值类型 import
+/// `dictionary_popup_webview`——值类型挪到叶子 `dictionary_popup_queued_overwrite.dart`
+/// （webview 原样 re-export）；流媒体书选集 `stream_book_episodes` 为单集封面 import 读 AppModel
+/// 的 `media_cover_source`——单集没有书目分支，改用 `media_cover_standalone_source`；gal 中止
+/// 文案 `gal_hook_mining_failure_text` 为结果值类型 import 整个编排器——结果类型挪到叶子
+/// `gal_hook_mining_result.dart`（编排器 re-export）；视频字幕服务本体
+/// `app_video_subtitle_service` 只为一个装配函数 import AppModel——装配挪到
+/// `app_video_subtitle_service_entry.dart`，服务连同只持服务的字幕生成面板 / 术语表页 / 网页档
+/// 字幕生成一起出环；它要的硬字幕 OCR `burned_in_subtitle_ocr` 为建服务 import 读 AppModel 的
+/// `manga_ocr_provider`——纯工厂挪到 `manga_ocr_service_factory.dart`（provider re-export）。
+/// 剩下新进环的只有本就读 AppModel 的 SRS 字段 AI 入口 `srs_field_ai_action` 与新装配入口，
+/// 最大环降到 620，上限随之下调。
+///
+/// 2026-11-27 develop 实测 626（+6）：新进环的是复习捐赠三件（`srs_donation_banner` / `_page` /
+/// `_providers`，复习首页 import，本身读 AppModel 与复习库 provider——`srs_providers` 直读
+/// AppModel，整个复习模块都在环里，捐赠没有更窄的落脚处）与整库补字幕三件（控制器 / 端口实现 /
+/// 面板）。不调上限，拆五条底层边：整库补字幕的控制器只为取库与建编排器、端口实现只为取偏好与
+/// 解析 OCR 引擎、面板只为取控制器单例 import AppModel——控制器改收注入的库与 `createFill`，端口
+/// 实现改收 `PreferencesRepository` 与 OCR 准备回调，面板改由调用方传控制器，AppModel 装配与
+/// OCR 引擎解析挪到 `library_subtitle_fill_entry.dart`，三件出环；视频规格服务
+/// `video_specs_service` 只为一个 provider import AppModel，把规格角标 / 规格面板一起拖进环——
+/// provider 挪到 `video_specs_providers.dart`（只有视频库页 import）；放送日历取数
+/// `airing_calendar_loader` 只读库 / 订阅 / 偏好缓存 / 下载出口，改收窄接口 `AiringCalendarHost`
+/// （AppModel 实现），发现详情页与作品 logo 随它出环；远端字幕服务的装配函数
+/// `appRemoteVideoSubtitleService` 只用库，改收 `FushiDatabase`，服务与远端字幕面板出环。最大环
+/// 降到 617，上限随之下调。
+///
 /// 红了：新加的 import 把底层模块接到了 UI / AppModel 上。把用到的东西挪到
 /// 更底层的文件，或改用参数 / 回调注入，不要调大上限、不要把文件从目录里豁免。
-const int kMaxCycleFiles = 622;
+const int kMaxCycleFiles = 617;
 
 const String kAppModel = 'lib/src/models/app_model.dart';
 
@@ -190,6 +219,25 @@ const List<String> kLeafEntries = <String>[
   'lib/src/media/tracking/page/tracking_page.dart',
   // 首页默认配置胶囊的库与动作由首页注入。
   'lib/src/pages/implementations/home_profile_chip.dart',
+  // 2026-11-26 拆出大环的五个件（见 [kMaxCycleFiles] 文档）：回执 / 结果值类型、单集封面、
+  // 字幕服务本体与它的硬字幕 OCR 都不经 AppModel。
+  'lib/src/lookup/overlay_queued_mines.dart',
+  'lib/src/media/video/stream_book_episodes.dart',
+  'lib/src/mining/gal_hook_mining_failure_text.dart',
+  'lib/src/media/video/subtitle/app_video_subtitle_service.dart',
+  'lib/src/media/video/subtitle/burned_in_subtitle_ocr.dart',
+  'lib/src/media/video/web_video_subtitle_generation.dart',
+  // 2026-11-27 拆出大环的件（见 [kMaxCycleFiles] 文档）：整库补字幕的控制器 / 端口实现 / 面板只收
+  // 注入的依赖（AppModel 装配在 library_subtitle_fill_entry.dart）；规格服务与角标不经 provider
+  // 接线读 AppModel；放送日历取数只经 AiringCalendarHost；远端字幕服务只收库。
+  'lib/src/media/video/subtitle/library_subtitle_fill_controller.dart',
+  'lib/src/media/video/subtitle/library_subtitle_fill_host.dart',
+  'lib/src/media/video/subtitle/library_subtitle_fill_sheet.dart',
+  'lib/src/media/video/video_specs_service.dart',
+  'lib/src/media/video/cover_ui/video_specs_panel.dart',
+  'lib/src/media/video/airing_calendar_loader.dart',
+  'lib/src/media/video/subtitle/remote_video_subtitle_service.dart',
+  'lib/src/media/video/subtitle/remote_video_subtitle_sheet.dart',
 ];
 
 const List<String> kBarrels = <String>[

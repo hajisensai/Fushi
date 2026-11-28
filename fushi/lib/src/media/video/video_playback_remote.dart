@@ -292,6 +292,9 @@ enum VideoRemoteJobKind {
   /// 与 [subtitleGenerate] 分开：主体是 `music:...` 目标键，不是某个视频条目，视频遥控
   /// 不能把它当成哪个视频的任务。
   musicSubtitleGenerate,
+
+  /// 整库补字幕（`library_subtitle_fill_controller.dart`）；主体是任务 id。
+  subtitleFill,
 }
 
 enum VideoRemoteJobStatus { running, succeeded, failed, cancelled }

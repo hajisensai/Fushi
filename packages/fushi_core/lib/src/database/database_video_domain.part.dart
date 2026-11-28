@@ -3827,6 +3827,79 @@ mixin _FushiDbVideoDomain
     });
   }
 
+  /// 清掉 `book_uid` 指向已不存在的 `video_books` 的行（BUG-5545）：正常删除走
+  /// [deleteVideoBooks]，这些行由外键级联 / 显式清理带走；但库文件在 checkpoint
+  /// 中途被杀、之后又丢了 WAL 这类页级撕裂，会留下父行没了、子树还在的「孤儿」——
+  /// 用户库里实测 79 部作品、148 条刮削快照、1 条本地花絮。孤儿作品被库管家
+  /// ⑤ 的系列关系补填当成 owner 往 `collection_relations` 插行，外键失败
+  /// （SqliteException 787）。schema v182 迁移跑一次；幂等，返回动到的行数。
+  ///
+  /// 语义与外键一致：CASCADE 的删掉，SET NULL 的置空；`source_kind='local'` 的本地
+  /// 花絮直接删（它就是那条视频本身，置空会撞 CHECK，见 [deleteVideoBooks]）。作品
+  /// 子树（季 / 集 / 身份 / 演职员 / 图 / 词条 / 花絮）随作品行级联——生产连接都开着
+  /// `foreign_keys`（`_applyOpenPragmas`）。没有外键的逻辑引用（标签、书架条目、合集
+  /// 成员——其中合集成员的远端集本来就允许不在本机）不在这里动。
+  Future<int> purgeDanglingVideoBookRefs() => transaction(() async {
+    const String dead = 'NOT IN (SELECT book_uid FROM video_books)';
+    int n = 0;
+    Future<void> run(
+      String sql,
+      TableInfo<Table, Object?> table,
+      UpdateKind kind,
+    ) async {
+      n += await customUpdate(
+        sql,
+        updates: <TableInfo<Table, Object?>>{table},
+        updateKind: kind,
+      );
+    }
+
+    await run(
+      "DELETE FROM video_metadata_extras WHERE source_kind = 'local' "
+      'AND book_uid IS NOT NULL AND book_uid $dead',
+      videoMetadataExtras,
+      UpdateKind.delete,
+    );
+    await run(
+      'UPDATE video_metadata_extras SET book_uid = NULL '
+      'WHERE book_uid IS NOT NULL AND book_uid $dead',
+      videoMetadataExtras,
+      UpdateKind.update,
+    );
+    await run(
+      'UPDATE video_metadata_episodes SET book_uid = NULL '
+      'WHERE book_uid IS NOT NULL AND book_uid $dead',
+      videoMetadataEpisodes,
+      UpdateKind.update,
+    );
+    await run(
+      'UPDATE collection_relations SET target_book_uid = NULL '
+      'WHERE target_book_uid IS NOT NULL AND target_book_uid $dead',
+      collectionRelations,
+      UpdateKind.update,
+    );
+    for (final (String sqlTable, TableInfo<Table, Object?> table)
+        in <(String, TableInfo<Table, Object?>)>[
+          ('collection_relations', collectionRelations),
+          ('video_episode_binding_overrides', videoEpisodeBindingOverrides),
+          (
+            'video_collection_section_overrides',
+            videoCollectionSectionOverrides,
+          ),
+          ('media_images', mediaImages),
+          ('video_scrape_meta', videoScrapeMeta),
+          // 最后删作品：它的子树经外键级联一并带走。
+          ('video_metadata_works', videoMetadataWorks),
+        ]) {
+      await run(
+        'DELETE FROM $sqlTable WHERE book_uid IS NOT NULL AND book_uid $dead',
+        table,
+        UpdateKind.delete,
+      );
+    }
+    return n;
+  });
+
   // ── video_file_specs（v95 规格探测缓存）────────────────────────────
 
   /// 读一个文件的规格；没探过返回 null。

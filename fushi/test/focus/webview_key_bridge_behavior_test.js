@@ -250,4 +250,81 @@ function key(over) {
     '未开 deferToPopupModal 的宿主不得被 popup 模态标志影响');
 }
 
+// ---- 鼠标按住连发（repeatMouseHold）：节奏、Dart 回 false 即停、松开即停 ------
+{
+  const env = makeEnv();
+  const winListeners = Object.create(null);
+  const timers = [];
+  let now = 0;
+  let nextId = 1;
+  env.sandbox.addEventListener = (type, fn) => {
+    (winListeners[type] ||= []).push(fn);
+  };
+  env.sandbox.setTimeout = (fn, ms) => {
+    const t = { fn, at: now + ms, id: nextId++, live: true };
+    timers.push(t);
+    return t.id;
+  };
+  env.sandbox.clearTimeout = (id) => {
+    const t = timers.find((x) => x.id === id);
+    if (t) t.live = false;
+  };
+  let reply = true;
+  env.sandbox.window.flutter_inappwebview = {
+    callHandler(name, ...args) {
+      env.calls.push([name, ...args]);
+      return Promise.resolve(reply);
+    },
+  };
+  const flush = () => new Promise((r) => setImmediate(r));
+  async function advance(ms) {
+    const target = now + ms;
+    for (;;) {
+      await flush();
+      const due = timers
+        .filter((t) => t.live && t.at <= target)
+        .sort((a, b) => a.at - b.at)[0];
+      if (!due) break;
+      due.live = false;
+      now = due.at;
+      due.fn();
+    }
+    now = target;
+    await flush();
+  }
+
+  run(env, scripts.mouseHold);
+  dispatch(env, 'mousedown', { button: 3 });
+  assert.deepStrictEqual(env.calls, [['onMangaMouseButton', 'Mouse3']],
+    '按下当场回传一次，不带连发标记');
+  await advance(499);
+  assert.strictEqual(env.calls.length, 1, '起步延迟内不连发');
+  await advance(1);
+  assert.deepStrictEqual(env.calls[1], ['onMangaMouseButton', 'Mouse3', true],
+    '起步延迟到点后带 true 回传同一个 token');
+  await advance(33 * 3);
+  assert.strictEqual(env.calls.length, 5, '之后按 33ms 间隔连发');
+  dispatch(env, 'mouseup', { button: 4 });
+  await advance(33);
+  assert.strictEqual(env.calls.length, 6, '别的键松开不影响连发');
+  dispatch(env, 'mouseup', { button: 3 });
+  await advance(1000);
+  assert.strictEqual(env.calls.length, 6, '这颗键松开即停');
+
+  env.calls.length = 0;
+  reply = false;
+  dispatch(env, 'mousedown', { button: 3 });
+  await advance(500);
+  await advance(1000);
+  assert.strictEqual(env.calls.length, 2, 'Dart 回 false（动作不连发）后不再连发');
+
+  env.calls.length = 0;
+  reply = true;
+  dispatch(env, 'mousedown', { button: 3 });
+  await advance(500);
+  for (const fn of winListeners.blur || []) fn({});
+  await advance(1000);
+  assert.strictEqual(env.calls.length, 2, '窗口失焦即停');
+}
+
 console.log('all assertions passed');

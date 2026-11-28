@@ -106,12 +106,14 @@ class CollectionEpisodeSlot {
 /// 落在它在 host 上的位置——「第 5 集只在 host、1~4 在本机」显示成连续的 1..5，而不是
 /// 把远端集堆到末尾。
 ///
-/// [loadRemoteVideos] = null（日历页一类没有远端上下文的调用方）或对端不可达时，
-/// 解析不到本地行的成员**照旧丢弃**，与远端支持引入前逐字节同行为。
+/// [loadRemoteMembers] = null（日历页一类没有远端上下文的调用方）或对端不可达时，
+/// 解析不到本地行的成员**照旧丢弃**，与远端支持引入前逐字节同行为。远端只问
+/// 「本机缺的那几集」的 id（[CollectionRemoteContext.loadRemoteMembers]），不要整份
+/// 远端清单。
 Future<List<CollectionEpisodeSlot>> loadCollectionEpisodeSlots({
   required VideoBookRepository repository,
   required int collectionId,
-  Future<List<RemoteVideoInfo>> Function()? loadRemoteVideos,
+  Future<List<RemoteVideoInfo>> Function(List<String> ids)? loadRemoteMembers,
 }) async {
   final List<MediaCollectionItemRow> items = await repository
       .getCollectionItems(collectionId);
@@ -124,15 +126,17 @@ Future<List<CollectionEpisodeSlot>> loadCollectionEpisodeSlots({
     final VideoBookRow? row = await repository.getByBookUid(key);
     if (row != null) localByUid[key] = row;
   }
-  final bool anyMissing = videoKeys.any(
-    (String key) => !localByUid.containsKey(key),
-  );
+  final List<String> missingKeys = <String>[
+    for (final String key in videoKeys)
+      if (!localByUid.containsKey(key)) key,
+  ];
   Map<String, RemoteVideoInfo> remoteById = const <String, RemoteVideoInfo>{};
-  // 全员本地时一次远端清单都不问：详情页是高频入口，没有缺口就没有理由付网络/缓存
-  // 代价（有缓存也仍是一次 provider 往返）。
-  if (anyMissing && loadRemoteVideos != null) {
+  // 全员本地时一次远端都不问：详情页是高频入口，没有缺口就没有理由付网络/缓存
+  // 代价（有缓存也仍是一次 provider 往返）。有缺口也只问缺的那几个 id——远端成员
+  // 只可能是它们（本地优先，下面归并也只在缺口集合里配对）。
+  if (missingKeys.isNotEmpty && loadRemoteMembers != null) {
     try {
-      final List<RemoteVideoInfo> remote = await loadRemoteVideos();
+      final List<RemoteVideoInfo> remote = await loadRemoteMembers(missingKeys);
       remoteById = <String, RemoteVideoInfo>{
         for (final RemoteVideoInfo info in remote) info.id: info,
       };
@@ -321,9 +325,9 @@ Set<String> remoteEpisodesMirroredLocally({
 /// 上下文（如日历页），合集视图退化成纯本地，与远端支持引入前逐字节相同。
 class CollectionRemoteContext {
   const CollectionRemoteContext({
-    required this.loadRemoteVideos,
+    required this.loadRemoteMembers,
     required this.openEpisode,
-    this.coverFetcher,
+    this.coverFetcherFor,
     this.downloadMembers,
     this.scrapeOnHost,
     this.scrapeForHost,
@@ -331,20 +335,25 @@ class CollectionRemoteContext {
     this.downloads,
     this.deleteLocalCopy,
     this.discActions,
-    this.playedMark,
+    this.playedMarkFor,
     this.onPlayedMarked,
   });
 
-  /// 当前远端来源的「已播放」协议（媒体服务器 Jellyfin / Emby）。null = 该来源
-  /// 不支持（互联 / 云盘的看完状态归对端），详情页不给纯远端集出标记菜单项。
-  /// 落地统一走 `setVideosWatched`（本地行 + 服务器回写同一入口）。
-  final RemoteVideoPlayedMark? playedMark;
+  /// 远端集 id → 它所在来源的「已播放」协议（媒体服务器 Jellyfin / Emby）。远端来源
+  /// 可以多个并存（反馈 k5Ey2AglAf），所以按集问；返回 null = 这一集的来源不支持
+  /// （互联 / 云盘的看完状态归对端），详情页不给这一集出标记菜单项。null 函数 = 都不
+  /// 支持。落地统一走 `setVideosWatched`（本地行 + 服务器回写同一入口）。
+  final RemoteVideoPlayedMark? Function(String remoteId)? playedMarkFor;
 
   /// 远端集被标记后通知调用方（作废该来源的清单缓存，之后重读拿到新的已播放）。
   final void Function()? onPlayedMarked;
 
-  /// 拉对端视频清单（调用方走共享的 [RemoteLibraryCache]，TTL 内不打网络）。
-  final Future<List<RemoteVideoInfo>> Function() loadRemoteVideos;
+  /// 查对端视频里 id 在 [ids] 中的那几条（合集成员行的 `entryKey` 就是远端视频
+  /// id）；服务器上没有的 id 略去，顺序不保证。调用方走共享的 [RemoteLibraryCache]：
+  /// 整份清单新鲜时从清单里挑，否则来源支持按 id 查（`RemoteVideoLookup`）就只问
+  /// 这几个 id、不等整库枚举，不支持的来源退回整份清单。
+  final Future<List<RemoteVideoInfo>> Function(List<String> ids)
+  loadRemoteMembers;
 
   /// 打开一个远端成员：收到本合集**全部**远端成员与起播下标，播放器据此建剧集
   /// 列表并跨成员连播（与库页远端占位卡同一入口）。
@@ -355,8 +364,9 @@ class CollectionRemoteContext {
   )
   openEpisode;
 
-  /// 远端封面取数器（钉扎 HTTP 客户端）；null = 远端集只画占位图标。
-  final RemoteCoverFetcher? coverFetcher;
+  /// 远端集的封面取数器（钉扎 HTTP 客户端），按集取——每集配着产出它的那个来源
+  /// （多个远端来源并存，反馈 k5Ey2AglAf）；返回 null = 该集只画占位图标。
+  final RemoteCoverFetcher? Function(RemoteVideoInfo video)? coverFetcherFor;
 
   /// 把本合集**只在对端**的成员整批下载到本机（串行排队，见
   /// `InterconnectDownloadManager.startBatch`）。null = 该远端源不支持下载

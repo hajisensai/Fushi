@@ -39,6 +39,8 @@ import 'package:fushi_engine/media/metadata/image_download.dart'
     show looksLikeImageBytes;
 import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
+import 'package:fushi_engine/media/video/media_path_probe.dart'
+    show awaitMediaPathExists;
 import 'package:fushi_engine/media/video/strm_file.dart'
     show lacksLocalMediaFile;
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
@@ -109,7 +111,9 @@ Future<String?> extractEmbeddedVideoCoverViaFfmpeg({
   // 导入/换封面路径保持默认 false。
   bool diagnosticOnly = false,
 }) async {
-  if (!File(inputPath).existsSync()) return null;
+  // BUG-5605 审查后修正：导入 / 换封面 / 回填是必达路径——无时限异步检查，网络盘冷挂载
+  // 首个 stat 慢就等它答复，不静默返回 null（有界探测只给推测性路径）。
+  if (!await awaitMediaPathExists(inputPath)) return null;
   // BUG-2496：与 [extractVideoFrameViaFfmpeg] 同款——ffmpeg 写 staged 文件，校验是
   // 完整图片后原子发布。原实现让 ffmpeg 直写 outputPath，且非零退出只要文件非空就
   // 当成功：损坏的 attached_pic 解码到一半报错退出，留下的半截 JPEG 照样被当封面。

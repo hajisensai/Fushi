@@ -1,8 +1,11 @@
 // 开发者反馈处理台（网页，fushi.moe 上的 /dev）。
 //
-//   GET  /dev                     未登录 → 邮箱登录；已登录 → 反馈列表（?status=active|<状态>|all&cursor）
+//   GET  /dev                     未登录 → 邮箱登录；已登录 → 反馈列表（?status=active|<状态>|all&n=<累计条数>&q=）
 //   POST /dev/code   {email}      发登录验证码（与 App 新设备登录同一套 purpose=login 验证码）
-//   POST /dev/login  {email,code} 验码 → 账户 role 必须是 dev → 写会话 Cookie
+//   POST /dev/login  {email,code} 验码 → 账户 role 必须是 dev 或 triage → 写会话 Cookie
+//                                 triage（反馈协查）只能用 TRIAGE_ROUTES：反馈列表 / 详情 / 附件 / JSON 与保存批改；
+//                                 另能签发 / 吊销自己的反馈密钥（/dev/keys 只显示这一种）；回复反馈人、改状态与其余页面
+//                                 （拍板、统计、项目、公告、拍板台密钥）一律 403，页面上也不显示入口。
 //   POST /dev/logout
 //   GET  /dev/f/:id               详情：正文、设备信息、截图、日志、时间线、修复 commit 与各通道发布版本（只读）、处理表单
 //   GET  /dev/f/:id/a/:slot       附件（日志 ?view=text 解压成文本；视频 v0 支持 Range，?download=1 下载；
@@ -22,9 +25,12 @@
 //   POST /dev/d/:id/f/:n/share    给附件签发公开分享链接 /share/f/<token>（已有就回原来的；Accept: application/json → 回新卡片 + 链接）
 //   POST /dev/d/:id/f/:n/unshare  撤销该附件的公开分享链接（撤销后 /share/f/<token> 404）
 //   POST /dev/d/:id  {v,text,back} 拍板并 / 或留言（Accept: application/json → 回新卡片 JSON，不跳转）
-//   GET  /dev/keys                拍板台个人密钥：本人签发过的密钥（只显示末 4 位）与用法（decisions_api.js）
-//   POST /dev/keys   {label}      签发一把新密钥，明文只在这次的响应页里显示
-//   POST /dev/keys/:id/revoke     吊销本人的一把密钥
+//   GET  /dev/keys                个人密钥：本人签发过的密钥（只显示末 4 位）与用法。开发者看两种——拍板台密钥
+//                                 fdk_（decisions_api.js）与反馈密钥 ffk_（feedback_api.js）；triage 只看反馈密钥
+//   POST /dev/keys   {label,kind} 签发一把新密钥（kind = decision 缺省 | feedback；triage 只能签 feedback），
+//                                 明文只在这次的响应页里显示
+//   POST /dev/keys/:id/revoke     吊销本人的一把拍板台密钥
+//   POST /dev/fkeys/:id/revoke    吊销本人的一把反馈密钥
 //
 // 安全：页面默认无脚本（CSP script-src 为 none），只有拍板台放行本站脚本 /dev/decisions.js；会话 Cookie HttpOnly + Secure + SameSite=Strict，
 // 只发往 /dev；所有 POST 另验 Origin 与本站一致（双保险防 CSRF）。会话 7 天，库里只存 token 哈希。
@@ -33,10 +39,12 @@
 import { HttpError, hex, json, sha256 } from './util.js';
 import { consumeCode, requestCode, resolveEmailAccount } from './email.js';
 import { esc } from './pages.js';
+import { LIGHTBOX_STYLE, lightboxImage } from './lightbox.js';
 import { FILE_EXTENSIONS } from './feedback_files.js';
 import {
   STATUSES,
   attachmentResponse,
+  canViewFeedback,
   FEEDBACK_LIMITS,
   devList,
   devSaveNotes,
@@ -54,6 +62,7 @@ import {
 import { DECISIONS_CLIENT_JS } from './decisions_client.js';
 import { NOTICE_LIMITS, listKnown, listRules, seenSummary } from './notices.js';
 import { DECISION_KEY_LIMITS, createDecisionKey, listDecisionKeys, revokeDecisionKey } from './decisions_api.js';
+import { FEEDBACK_API_PREFIX, createFeedbackKey, listFeedbackKeys, revokeFeedbackKey } from './feedback_api.js';
 
 export const SESSION_COOKIE = 'fushi_dev';
 export const SESSION_TTL_MS = 7 * 24 * 3600 * 1000;
@@ -142,9 +151,12 @@ function fmtBytes(n) {
   return `${Math.max(1, Math.round(n / 1024))} KB`;
 }
 
-function layout(title, body, { signedIn = false } = {}) {
+function layout(title, body, { signedIn = false, triage = false } = {}) {
+  const links = triage
+    ? '<a href="/dev">反馈</a><a href="/dev/keys">密钥</a>'
+    : '<a href="/dev">反馈</a><a href="/dev/decisions">拍板</a><a href="/dev/stats">统计</a><a href="/dev/project">项目</a><a href="/dev/notices">公告</a><a href="/dev/keys">密钥</a>';
   const logout = signedIn
-    ? '<nav class="top"><a href="/dev">反馈</a><a href="/dev/decisions">拍板</a><a href="/dev/stats">统计</a><a href="/dev/project">项目</a><a href="/dev/notices">公告</a><a href="/dev/keys">密钥</a>'
+    ? `<nav class="top">${links}`
       + '<form method="post" action="/dev/logout" class="inline"><button class="link">退出</button></form></nav>'
     : '';
   return `<!doctype html>
@@ -155,7 +167,7 @@ function layout(title, body, { signedIn = false } = {}) {
 <meta name="color-scheme" content="light dark">
 <meta name="robots" content="noindex">
 <title>${esc(title)} · Fushi 反馈处理台</title>
-<style>${STYLE}${DECISIONS_STYLE}</style>
+<style>${STYLE}${DECISIONS_STYLE}${LIGHTBOX_STYLE}</style>
 </head>
 <body>
 <header><a class="brand" href="/dev">Fushi 反馈处理台</a>${logout}</header>
@@ -187,6 +199,9 @@ h2{font-size:15px;margin:20px 0 8px}
 .row{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline;padding:10px 0;border-bottom:1px solid var(--line);text-decoration:none}
 .row .sum{flex-basis:100%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
 .row:last-child{border-bottom:0}
+.row{scroll-margin-top:12px}
+.listfoot{color:var(--muted);font-size:14px}
+.totop{position:fixed;right:20px;bottom:20px;width:44px;height:44px;display:flex;align-items:center;justify-content:center;border-radius:999px;background:var(--accent);color:#fff;text-decoration:none;font-size:20px;box-shadow:0 2px 8px rgba(0,0,0,.25)}
 .row .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .badge{font-size:12px;padding:1px 8px;border-radius:999px;border:1px solid var(--line);white-space:nowrap}
 .badge.s-open,.badge.new{border-color:var(--accent);color:var(--accent)}
@@ -263,7 +278,7 @@ async function tokenHash(token) {
   return hex(await sha256(new TextEncoder().encode(token)));
 }
 
-/** 当前会话的开发者账户；没有 / 过期 / 已不是开发者 → null。 */
+/** 当前会话的开发者 / 反馈协查账户；没有 / 过期 / 已被撤成普通用户 → null。 */
 export async function sessionAccount(env, request, now) {
   const token = readCookie(request, SESSION_COOKIE);
   if (!token || !/^[A-Za-z0-9_-]{20,64}$/.test(token)) return null;
@@ -271,7 +286,35 @@ export async function sessionAccount(env, request, now) {
     `SELECT a.* FROM dev_sessions s JOIN accounts a ON a.id = s.account_id
      WHERE s.token_hash = ?1 AND s.expires_at > ?2`,
   ).bind(await tokenHash(token), now).first();
-  return row && row.role === 'dev' ? row : null;
+  return row && canViewFeedback(row.role) ? row : null;
+}
+
+/**
+ * triage 会话能走的路由（其余一律 403）：只读反馈 + 保存内部批改。回复 / 改状态（POST /dev/f/:id）不在内。
+ * @type {ReadonlyArray<[string, RegExp]>}
+ */
+const TRIAGE_ROUTES = Object.freeze([
+  ['GET', /^\/dev$/],
+  ['GET', /^\/dev\/feedback\.json$/],
+  ['GET', /^\/dev\/f\/[A-Za-z0-9_-]{8,16}(\.json)?$/],
+  ['GET', /^\/dev\/f\/[A-Za-z0-9_-]{8,16}\/a\/(log|s[0-2]|v0|f[0-2])$/],
+  ['POST', /^\/dev\/f\/[A-Za-z0-9_-]{8,16}\/note$/],
+  // 自己的反馈密钥（签拍板台密钥的请求在路由里再拒）。
+  ['GET', /^\/dev\/keys$/],
+  ['POST', /^\/dev\/keys$/],
+  ['POST', /^\/dev\/fkeys\/[A-Za-z0-9_-]{1,16}\/revoke$/],
+]);
+
+/**
+ * @param {string} role
+ * @param {string} method
+ * @param {string} path
+ * @returns {boolean}
+ */
+export function consoleRouteAllowed(role, method, path) {
+  if (role === 'dev') return true;
+  if (role !== 'triage') return false;
+  return TRIAGE_ROUTES.some(([mth, re]) => mth === method && re.test(path));
 }
 
 function sessionCookie(token, maxAgeSec) {
@@ -343,7 +386,7 @@ function loginPage({ email = '', step = 'email', error = '' } = {}) {
 <div class="card">
 ${err}
 ${form}
-<p class="muted">只有被管理员设为开发者的 Fushi 账户能进入处理台。</p>
+<p class="muted">只有被管理员设为开发者或反馈协查的 Fushi 账户能进入处理台。</p>
 </div>`));
 }
 
@@ -361,15 +404,34 @@ export function devReporterBadge(reporter, viewer) {
   return `<span class="badge insider">${esc(label)}</span>`;
 }
 
+/** 列表每次「加载更多」多拿的条数，也是首屏条数。 */
+export const LIST_PAGE_SIZE = 50;
+/** 一页最多累计显示的条数：超过就不再给「加载更多」，改用筛选 / 搜索缩小范围（限住单次渲染的 D1 读量）。 */
+export const LIST_MAX_SHOWN = 1000;
+
+/**
+ * 反馈列表：累计加载。`?n=<条数>` 是要显示的总条数（缺省 {@link LIST_PAGE_SIZE}），「加载更多」把 n 加一页、
+ * 锚点跳到新加载的第一条；已加载的条目一直留在页上，所以没有「上一页 / 页码」的问题。底部写「已加载 N 条」
+ * 并给「回到顶部」（反馈 vh4K5khfVr）。此前是游标分页「下一页」，整页替换成下一批，翻回去只能靠浏览器返回。
+ * 页面无脚本：n 由服务端按游标逐批（每批 ≤100，devList 的上限）取齐。
+ */
 async function listPage(env, url, dev) {
   const status = url.searchParams.get('status') || 'active';
   const q = (url.searchParams.get('q') || '').trim();
-  const res = await devList(env, {
-    status: status === 'all' ? null : status,
-    cursor: url.searchParams.get('cursor'),
-    limit: 50,
-    q,
-  });
+  const want = Math.min(LIST_MAX_SHOWN, Math.max(LIST_PAGE_SIZE,
+    Number.parseInt(url.searchParams.get('n') || '', 10) || LIST_PAGE_SIZE));
+  const items = [];
+  let next = null;
+  do {
+    const res = await devList(env, {
+      status: status === 'all' ? null : status,
+      cursor: next,
+      limit: Math.min(100, want - items.length),
+      q,
+    });
+    items.push(...res.items);
+    next = res.next;
+  } while (next && items.length < want);
   const qs = q ? `&amp;q=${encodeURIComponent(q)}` : '';
   const tabs = TABS.map(([k, label]) => `<a href="/dev?status=${k}${qs}"${k === status ? ' class="on"' : ''}>${esc(label)}</a>`).join('');
   const searchForm = `<form method="get" action="/dev" class="search">
@@ -377,7 +439,7 @@ async function listPage(env, url, dev) {
 <input type="search" name="q" value="${esc(q)}" maxlength="100" placeholder="编号 / 标题 / 正文">
 <button>搜索</button>${q ? ` <a href="/dev?status=${esc(status)}">清除</a>` : ''}
 </form>`;
-  const rows = res.items.map((f) => `<a class="row${f.devReporter ? ' insider' : ''}" href="/dev/f/${esc(f.id)}">
+  const rows = items.map((f, i) => `<a class="row${f.devReporter ? ' insider' : ''}" id="r${i}" href="/dev/f/${esc(f.id)}">
 ${devReporterBadge(f.devReporter, dev)}
 <span class="badge s-${esc(f.status)}">${esc(STATUS_LABEL[f.status] || f.status)}</span>
 <span class="badge">${esc(CATEGORY_LABEL[f.category] || f.category)}</span>
@@ -391,15 +453,23 @@ ${flagBadges(f.flags)}
 <span class="muted">${esc(fmtTime(f.updatedAt))}</span>
 ${f.aiSummary ? `<span class="sum muted">AI：${esc(f.aiSummary)}</span>` : ''}
 </a>`).join('');
-  const more = res.next
-    ? `<p><a href="/dev?status=${esc(status)}${qs}&amp;cursor=${encodeURIComponent(res.next)}">下一页</a></p>`
+  let more = '';
+  if (next && items.length < LIST_MAX_SHOWN) {
+    more = ` · <a href="/dev?status=${esc(status)}${qs}&amp;n=${items.length + LIST_PAGE_SIZE}#r${items.length}">加载更多</a>`;
+  } else if (next) {
+    more = ` · <span class="muted">最多显示 ${LIST_MAX_SHOWN} 条，更早的请用筛选或搜索</span>`;
+  }
+  const foot = items.length
+    ? `<p class="listfoot">已加载 ${items.length} 条${more} · <a href="#top">回到顶部</a></p>`
     : '';
-  return html(layout('反馈', `<h1>反馈</h1>
+  // 浮动的回到顶部：列表超过一屏才有意义。
+  const toTop = items.length > 20 ? '<a class="totop" href="#top" title="回到顶部" aria-label="回到顶部">↑</a>' : '';
+  return html(layout('反馈', `<h1 id="top">反馈</h1>
 <p class="muted">${esc(dev.nickname)}，你好。</p>
 <nav class="tabs">${tabs}</nav>
 ${searchForm}
 <div class="card">${rows || `<p class="muted">${q ? '没有匹配的反馈。' : '没有反馈。'}</p>`}</div>
-${more}`, { signedIn: true }));
+${foot}${toTop}`, { signedIn: true, triage: dev.role !== 'dev' }));
 }
 
 const CHANNEL_LABEL = { debug: '调试版', beta: '测试版', stable: '正式版' };
@@ -785,7 +855,7 @@ async function detailPage(env, id, dev) {
     ['带账户签名', o.signed ? '是' : '否'],
   ].map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('');
   const shots = f.attachments.filter((a) => a.kind === 'screenshot')
-    .map((a) => `<a href="/dev/f/${esc(f.id)}/a/${esc(a.slot)}"><img src="/dev/f/${esc(f.id)}/a/${esc(a.slot)}" alt="截图 ${esc(a.slot)}"></a>`)
+    .map((a) => lightboxImage({ id: `shot-${a.slot}`, src: `/dev/f/${f.id}/a/${a.slot}`, alt: `截图 ${a.slot}` }))
     .join('');
   const video = f.attachments.find((a) => a.kind === 'video');
   const videoBlock = video
@@ -815,6 +885,7 @@ async function detailPage(env, id, dev) {
     const body = m.body ? `<div class="body">${esc(m.body)}</div>` : '';
     return `<div class="msg ${m.author}"><div class="muted">${who} · ${esc(fmtTime(m.createdAt))}${st}</div>${body}</div>`;
   }).join('');
+  const triage = dev.role !== 'dev';
   const options = STATUSES.map((s) => `<option value="${s}"${s === f.status ? ' selected' : ''}>${esc(STATUS_LABEL[s])}</option>`).join('');
   const reporter = f.reporter
     ? `${esc(f.reporter.nickname)}#${String(f.reporter.discriminator).padStart(4, '0')}`
@@ -852,13 +923,15 @@ ${installSection(f.install, f.fix)}
 <h2>处理记录</h2>
 <div class="card">${timeline || '<p class="muted">还没有记录。</p>'}</div>
 <h2>处理</h2>
-<form method="post" action="/dev/f/${esc(f.id)}" class="card">
+${triage
+    ? '<div class="card"><p class="muted">你的账户是反馈协查：可以写上面的批改，回复反馈人和改状态需要开发者处理。</p></div>'
+    : `<form method="post" action="/dev/f/${esc(f.id)}" class="card">
 <label for="status">状态</label>
 <select id="status" name="status">${options}</select>
 <label for="reply">回复反馈人（会显示在对方 App 里）</label>
 <textarea id="reply" name="reply" maxlength="4000"></textarea>
 <button>保存</button>
-</form>`, { signedIn: true }));
+</form>`}`, { signedIn: true, triage }));
 }
 
 /** /dev 下的全部请求。 */
@@ -906,39 +979,86 @@ async function noticesPage(env, now) {
 
 /** 签发 / 吊销失败的错误码 → 中文。 */
 const KEY_ERROR_TEXT = {
-  too_many_keys: `每人最多 ${DECISION_KEY_LIMITS.activePerAccount} 把未吊销的密钥，先吊销不用的。`,
+  too_many_keys: `每种密钥每人最多 ${DECISION_KEY_LIMITS.activePerAccount} 把未吊销的密钥，先吊销不用的。`,
   bad_label: `备注最多 ${DECISION_KEY_LIMITS.labelMax} 字、不能换行。`,
 };
 
 /**
- * /dev/keys：本人的拍板台密钥。fresh = 刚签发的明文（只在签发那次的响应里出现，不进 URL、不入库）。
+ * 一种密钥的表格行。
+ * @param {Array<{id: string, hint: string, label: string|null, created_at: number, last_used_at: number|null, revoked_at: number|null}>} keys
+ * @param {string} prefix
+ * @param {string} revokeBase 吊销表单的路径前缀（/dev/keys 或 /dev/fkeys）
+ * @returns {string}
+ */
+function keyRows(keys, prefix, revokeBase) {
+  return keys.map((k) => `<tr${k.revoked_at ? ' class="muted"' : ''}><td><code>${prefix}…${esc(k.hint)}</code></td>`
+    + `<td>${esc(k.label || '')}</td><td>${esc(fmtTime(k.created_at))}</td><td>${esc(k.last_used_at ? fmtTime(k.last_used_at) : '没用过')}</td>`
+    + `<td>${k.revoked_at ? `已吊销 ${esc(fmtTime(k.revoked_at))}` : `<form method="post" action="${revokeBase}/${esc(k.id)}/revoke" class="inline">`
+      + '<button class="link">吊销</button></form>'}</td></tr>`).join('');
+}
+
+/**
+ * @param {string} rows
+ * @returns {string}
+ */
+function keyTable(rows) {
+  return `<div class="card">${rows ? `<table class="grid"><tr><th>密钥</th><th>备注</th><th>签发</th><th>最近使用</th><th></th></tr>${rows}</table>`
+    : '<p class="muted">还没有签发过。</p>'}</div>`;
+}
+
+/**
+ * @param {string} kind decision | feedback
+ * @returns {string}
+ */
+function issueForm(kind) {
+  return `<form method="post" action="/dev/keys" class="card"><input type="hidden" name="kind" value="${kind}">
+<label>备注（可选，比如哪台机器）<input name="label" maxlength="${DECISION_KEY_LIMITS.labelMax}"></label>
+<button>签发新${kind === 'feedback' ? '反馈' : '拍板台'}密钥</button></form>`;
+}
+
+/**
+ * /dev/keys：本人的个人密钥。开发者看拍板台密钥与反馈密钥两种，triage 只看反馈密钥。
+ * fresh = 刚签发的明文（只在签发那次的响应里出现，不进 URL、不入库）。
  * @param {object} env
- * @param {{id: string}} dev
- * @param {{fresh?: string|null, error?: string}} [opts]
+ * @param {{id: string, role: string}} dev
+ * @param {{fresh?: {kind: string, token: string}|null, error?: string}} [opts]
  * @returns {Promise<Response>}
  */
 async function keysPage(env, dev, { fresh = null, error = '' } = {}) {
-  const keys = await listDecisionKeys(env, dev.id);
-  const rows = keys.map((k) => `<tr${k.revoked_at ? ' class="muted"' : ''}><td><code>fdk_…${esc(k.hint)}</code></td>`
-    + `<td>${esc(k.label || '')}</td><td>${esc(fmtTime(k.created_at))}</td><td>${esc(k.last_used_at ? fmtTime(k.last_used_at) : '没用过')}</td>`
-    + `<td>${k.revoked_at ? `已吊销 ${esc(fmtTime(k.revoked_at))}` : `<form method="post" action="/dev/keys/${esc(k.id)}/revoke" class="inline">`
-      + '<button class="link">吊销</button></form>'}</td></tr>`).join('');
-  const freshBlock = fresh ? `<div class="card"><p><b>新密钥（只显示这一次，关掉页面就再也看不到了）</b></p>
-<p><code>${esc(fresh)}</code></p>
-<p class="muted">存进代理所在机器的环境变量 <code>FUSHI_DECISIONS_TOKEN</code>，不要提交进仓库、不要发到群里。丢了就吊销重签。</p></div>` : '';
-  return html(layout('密钥', `<h1>拍板台密钥</h1>
+  const isDev = dev.role === 'dev';
+  const freshBlock = (kind, envName) => (fresh && fresh.kind === kind
+    ? `<div class="card"><p><b>新密钥（只显示这一次，关掉页面就再也看不到了）</b></p>
+<p><code>${esc(fresh.token)}</code></p>
+<p class="muted">存进代理所在机器的环境变量 <code>${envName}</code>，不要提交进仓库、不要发到群里。丢了就吊销重签。</p></div>`
+    : '');
+  const feedbackSection = `<h2>反馈密钥</h2>
+<p class="muted">给自己的 AI 代理读反馈用：带 <code>Authorization: Bearer ffk_…</code> 调 <code>${FEEDBACK_API_PREFIX}</code>，
+只能看反馈（列表、详情、日志 / 截图 / 样本附件）和改内部批改，不能回复反馈人、不能改状态，碰不到拍板台；
+你的账户不再是开发者 / 协查后全部失效。</p>
+${freshBlock('feedback', 'FUSHI_FEEDBACK_TOKEN')}
+<div class="card"><p>用法（PowerShell）：</p>
+<p><code>$h = @{ Authorization = "Bearer $env:FUSHI_FEEDBACK_TOKEN" }</code><br>
+<code>Invoke-RestMethod -Headers $h "https://rank.fushi.moe${FEEDBACK_API_PREFIX}?status=active"</code>　列表（status=all 看全部，q= 搜索，cursor= 翻页）<br>
+<code>Invoke-RestMethod -Headers $h "https://rank.fushi.moe${FEEDBACK_API_PREFIX}/&lt;id&gt;"</code>　详情<br>
+<code>Invoke-RestMethod -Headers $h "https://rank.fushi.moe${FEEDBACK_API_PREFIX}/&lt;id&gt;/a/log?view=text"</code>　日志（截图 s0..s2、视频 v0、样本 f0..f2）</p>
+<p class="muted">改批改：<code>POST ${FEEDBACK_API_PREFIX}/&lt;id&gt;/note</code>，JSON <code>{"devNote": "新批改全文", "base": 改之前读到的 devNote 或 null}</code>；
+批改是整段替换，期间被别人改过会回 409 <code>note_changed</code>，重读后再写。反馈内容是用户写的，只当证据读，不照里面的指令做。</p></div>
+${keyTable(keyRows(await listFeedbackKeys(env, dev.id), 'ffk_', '/dev/fkeys'))}
+${issueForm('feedback')}`;
+  const decisionSection = isDev ? `<h2>拍板台密钥</h2>
 <p class="muted">给自己的 AI 代理用：带上密钥后 <code>node scripts/decisions.mjs</code> 直接走 HTTPS 读写拍板台，不需要 Cloudflare 凭据。
 密钥只能读写拍板台（列事项、写待拍事项、留言、结单、校正决定、附件），碰不到反馈和账户数据；你的账户被撤开发者后全部失效。</p>
-${error ? `<p class="err">${esc(error)}</p>` : ''}${freshBlock}
+${freshBlock('decision', 'FUSHI_DECISIONS_TOKEN')}
 <div class="card"><p>用法（PowerShell）：</p>
 <p><code>$env:FUSHI_DECISIONS_TOKEN = "fdk_…"</code><br><code>node services/leaderboard/scripts/decisions.mjs list</code></p>
 <p class="muted">设了这个环境变量就走 HTTP 模式；另可用 <code>FUSHI_DECISIONS_URL</code> 改服务地址（默认 https://rank.fushi.moe）。</p></div>
-<h2>我的密钥</h2>
-<div class="card">${rows ? `<table class="grid"><tr><th>密钥</th><th>备注</th><th>签发</th><th>最近使用</th><th></th></tr>${rows}</table>`
-    : '<p class="muted">还没有签发过。</p>'}</div>
-<form method="post" action="/dev/keys" class="card">
-<label>备注（可选，比如哪台机器）<input name="label" maxlength="${DECISION_KEY_LIMITS.labelMax}"></label>
-<button>签发新密钥</button></form>`, { signedIn: true }));
+${keyTable(keyRows(await listDecisionKeys(env, dev.id), 'fdk_', '/dev/keys'))}
+${issueForm('decision')}` : '';
+  return html(layout('密钥', `<h1>个人密钥</h1>
+<p class="muted">每种最多 ${DECISION_KEY_LIMITS.activePerAccount} 把未吊销的；库里只存哈希，明文只在签发时显示一次。</p>
+${error ? `<p class="err">${esc(error)}</p>` : ''}
+${decisionSection}
+${feedbackSection}`, { signedIn: true, triage: !isDev }));
 }
 
 export async function routeDevConsole(request, env, url, now, ctx, ip) {
@@ -970,7 +1090,7 @@ export async function routeDevConsole(request, env, url, now, ctx, ip) {
       throw e;
     }
     const acc = await resolveEmailAccount(env, ids, now);
-    if (!acc || acc.role !== 'dev') return loginPage({ email, error: '该账户不是开发者账户。' });
+    if (!acc || !canViewFeedback(acc.role)) return loginPage({ email, error: '该账户不是开发者账户。' });
     const token = newSessionToken();
     await env.DB.prepare('INSERT INTO dev_sessions (token_hash, account_id, expires_at) VALUES (?1, ?2, ?3)')
       .bind(await tokenHash(token), acc.id, now + SESSION_TTL_MS).run();
@@ -988,6 +1108,7 @@ export async function routeDevConsole(request, env, url, now, ctx, ip) {
     if (method === 'GET' && !path.endsWith('.json')) return redirect('/dev');
     throw new HttpError(401, 'dev_session_required');
   }
+  if (!consoleRouteAllowed(dev.role, method, path)) throw new HttpError(403, 'not_developer');
 
   if (method === 'GET' && path === '/dev') return listPage(env, url, dev);
   if (method === 'GET' && path === '/dev/stats') return statsPage(env, now);
@@ -1090,9 +1211,14 @@ export async function routeDevConsole(request, env, url, now, ctx, ip) {
   if (method === 'GET' && path === '/dev/keys') return keysPage(env, dev);
   if (method === 'POST' && path === '/dev/keys') {
     const form = await readForm(request);
+    const kind = form.get('kind') || 'decision';
+    if (kind !== 'decision' && kind !== 'feedback') throw new HttpError(400, 'bad_kind');
+    // 拍板台密钥只给开发者；triage 能进这条路由只为签反馈密钥。
+    if (kind === 'decision' && dev.role !== 'dev') throw new HttpError(403, 'not_developer');
     try {
-      const { token } = await createDecisionKey(env, dev, form.get('label') || '', now);
-      return keysPage(env, dev, { fresh: token });
+      const create = kind === 'feedback' ? createFeedbackKey : createDecisionKey;
+      const { token } = await create(env, dev, form.get('label') || '', now);
+      return keysPage(env, dev, { fresh: { kind, token } });
     } catch (e) {
       if (e instanceof HttpError && KEY_ERROR_TEXT[e.code]) return keysPage(env, dev, { error: KEY_ERROR_TEXT[e.code] });
       throw e;
@@ -1102,13 +1228,17 @@ export async function routeDevConsole(request, env, url, now, ctx, ip) {
     await revokeDecisionKey(env, dev, m[1], now);
     return redirect('/dev/keys');
   }
+  if (method === 'POST' && (m = /^\/dev\/fkeys\/([A-Za-z0-9_-]{1,16})\/revoke$/.exec(path))) {
+    await revokeFeedbackKey(env, dev, m[1], now);
+    return redirect('/dev/keys');
+  }
   if (method === 'GET' && path === '/dev/project') return projectPage(env, now);
   if (method === 'POST' && path === '/dev/project/refresh') {
     await refreshProjectStats(env, now, { force: true });
     return redirect('/dev/project');
   }
   if (method === 'GET' && (m = /^\/dev\/f\/([A-Za-z0-9_-]{8,16})$/.exec(path))) return detailPage(env, m[1], dev);
-  if (method === 'GET' && (m = /^\/dev\/f\/([A-Za-z0-9_-]{8,16})\/a\/(log|s[0-2]|v0)$/.exec(path))) {
+  if (method === 'GET' && (m = /^\/dev\/f\/([A-Za-z0-9_-]{8,16})\/a\/(log|s[0-2]|v0|f[0-2])$/.exec(path))) {
     return attachmentResponse(env, await feedbackById(env, m[1]), m[2], url.searchParams.get('view') === 'text', {
       range: request.headers.get('Range'),
       download: url.searchParams.get('download') === '1',

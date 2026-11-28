@@ -1,5 +1,11 @@
 # Fushi 快捷键清单（TODO-048a 统计）
 
+> **2026-11-27 增补（打开待发卡片）：** global scope 新增 `globalOpenPendingCards`（`global_open_pending_cards`），
+> 三平台默认空绑定（用户拍板，应用内反馈 OElRvCndxk），不在播放器 / 阅读器工具栏放常驻按钮。全屏 / AI 助手 / 待发卡片
+> 三个「直接做一件事」的 global 动作收口到 `runGlobalCommandAction`（`shortcuts/global_navigation.dart`）；桌面手柄
+> 以前只经页面 Actions 派发、到不了 app 根的键事件处理器，这三个动作绑在手柄上按了没反应，现在由
+> `GamepadService.runGlobalCommand`（main.dart 装上）兜底（BUG-5556）。
+
 > **2026-11-24 增补（音乐推荐页刷新）：** home scope 新增 `musicRecommendRefresh`（`music_recommend_refresh`），
 > 默认 Ctrl + R（macOS ⌘R），移动端无键盘绑定。执行体是音乐「推荐」（在线）Apple 布局的键事件节点
 > （`music/apple/apple_music_recommend_layout.part.dart`，只在 Apple 外壳生效；焦点在推荐页内时命中即重载全部来源，
@@ -179,6 +185,7 @@
 | globalScrollToBottom | End | — | 滚到底 |
 | globalScrollToTop | Home | — | 滚到顶 |
 | globalOpenAiAssistant | Ctrl+J（macOS ⌘J） | — | 呼出 AI 助手浮层（带当前悬浮球场景上下文；AI 模块关着时不响应、照常冒泡）。执行体在 app 根 `wrapWithGlobalNavigation`，三通道（键盘 / 手柄 / 鼠标）共用 `openAiAgentFromShortcut` |
+| globalOpenPendingCards | —（默认不绑） | — | 打开「待发卡片」列表（应用内反馈 OElRvCndxk）。与「已加入待发队列」提示上的「查看队列」同一个落点 `openPendingMinesPage`（已在栈顶不再叠一份）。执行体 `runGlobalCommandAction`：app 根 `wrapWithGlobalNavigation`（键盘 / Android 手柄键事件 / 鼠标）+ 桌面手柄 `GamepadService.runGlobalCommand` |
 
 > 页面滚动六件套（2026-09-12）：键盘 / 手柄 / 鼠标三通道共用执行体
 > `shortcuts/page_scroll_shortcuts.dart`，目标解析唯一入口
@@ -221,6 +228,7 @@
 | ← / A / J | 时间后退（seekBackward） |
 | → / D / I | 时间前进（seekForward） |
 | Ctrl+← / Ctrl+→ | 上一句 / 下一句字幕 |
+| Shift+← / Shift+→ | 长步进后退 / 前进（videoLongSeekBackward/Forward，±longSeekSeconds，默认 30 秒；手柄无默认） |
 | Shift+F | seekForward（**与 F=全屏冲突，见待优化**） |
 | C | 切换着色器对比 |
 | ↑ / 0 | 音量+ |
@@ -277,6 +285,15 @@
 | 长按 ← →（翻页） | 连发（BUG-687 / TODO-1370） | 连发，但等上一页翻页动画落定才翻下一页（`MangaHeldTurnGate`） |
 | 查词弹窗开着时 ← → | 关弹窗并翻页（正文持焦 / 弹窗持焦两条路都接） | 关弹窗并翻页 |
 | 「反转方向键翻页」开关 | 阅读控制 · `reverse_arrow_page_turn`（冻结键名） | 漫画 · 翻页 · `manga_reverse_arrow_page_turn`（两边分开） |
+
+**鼠标键按住连发**（2026-11-26）：直接绑在中键 / 右键 / 侧键上的动作，按住时与键盘长按
+同节奏连发（起步 500 ms、之后 33 ms 一次，取 Windows 键盘重复默认值），松开即停。只放行
+步进类动作：判据 `mouseBindingRepeatsWhileHeld`（`mouse_binding_dispatch.dart`；阅读器段复用
+`isRepeatableReaderKeyboardShortcut`），漫画复用自己的长按判决（翻页仍等动画落定）。
+宿主拥有指针时由 `dispatchClaimedMouseAction(onHeldRepeat:)` 计时；指针归 WebView 的平台由页内
+`webViewMouseHoldRepeatScript` 计时、每跳问 Dart，回 false 即停。外部改键软件（Logi Options+
+等）把侧键映射成键盘快捷键时，按下瞬间就发完「按下 + 松开」，Fushi 看不到按住，这种映射下
+无法连发——要连发就在软件里把侧键恢复成默认的前进 / 后退，再在 Fushi 里绑鼠标键。
 
 用户改绑 / 解绑过左右键时上表全部让路，交回注册表的真实绑定。手柄 D-pad 跟随阅读方向，
 但不受「反转方向键翻页」与有声切句影响。

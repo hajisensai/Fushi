@@ -236,8 +236,6 @@ void main() {
 
     expect(find.text(t.remote_book_info), findsOneWidget);
     expect(client.downloadedTitles, isEmpty);
-    // 色块按封面取色（图片加载挂 10 秒超时）：走完超时再结束。
-    await tester.pump(const Duration(seconds: 11));
   });
 
   testWidgets('collage layout: long-press remote video block opens the action '
@@ -266,7 +264,6 @@ void main() {
 
     expect(find.text(t.remote_video_info), findsOneWidget);
     expect(find.byType(VideoFushiPage), findsNothing);
-    await tester.pump(const Duration(seconds: 11));
   });
 
   test('remote book card onLongPress is bound to _showRemoteBookDialog '

@@ -468,6 +468,26 @@ class SrsMiner with AnkiNoteComposer {
   }
 
   /// 一条现存笔记及其笔记类型（不存在 / 已删为 null）。
+  /// 覆写成功提示里的牌组名：笔记的首选牌组（[SrsNoteView.deckId]）；首选牌组为空或已删（卡片早挪到别的牌组）时
+  /// 取它的卡片实际所在的牌组（按 cloze 序号、卡片 ID 取第一张能认出牌组的卡）。都认不出给 null，提示走不带牌组名的
+  /// 文案（反馈 OGj5irRpo7：以前认不出首选牌组就显示「卡片已覆盖到『』」）。
+  Future<String?> _landedDeckName(String noteId, String? preferred) async {
+    final SrsDeckTree tree = await store.deckTree();
+    if (preferred != null && tree[preferred] != null) {
+      return tree.fullName(preferred);
+    }
+    final List<SrsCardCacheRow> cards =
+        <SrsCardCacheRow>[...await store.cardsOfNote(noteId)]
+          ..sort((SrsCardCacheRow a, SrsCardCacheRow b) {
+            final int byOrd = a.clozeOrd.compareTo(b.clozeOrd);
+            return byOrd != 0 ? byOrd : a.id.compareTo(b.id);
+          });
+    for (final SrsCardCacheRow c in cards) {
+      if (tree[c.deckId] != null) return tree.fullName(c.deckId);
+    }
+    return null;
+  }
+
   Future<(SrsNoteView, SrsNoteTypeView)?> _live(String noteId) async {
     final SrsNoteView? note = await store.note(noteId);
     if (note == null || note.deletedAt != null) return null;
@@ -806,13 +826,9 @@ class SrsMiner with AnkiNoteComposer {
           ).toJson(),
         });
       }
-      final SrsDeckTree tree = await store.deckTree();
-      final String? deckId = note.deckId;
       return MineOutcome.success(
         noteId: SrsIds.ankiNumericId(noteId),
-        deckName: deckId == null || tree[deckId] == null
-            ? null
-            : tree.fullName(deckId),
+        deckName: await _landedDeckName(noteId, note.deckId),
         audioWarning: rendered.audioWarning,
       );
     } catch (e, stack) {

@@ -7,6 +7,7 @@ import 'package:fushi_anki/fushi_anki.dart' show AnkiOpenWordOutcome;
 import 'package:flutter/scheduler.dart' show SchedulerBinding;
 import 'package:flutter/services.dart' show KeyDownEvent, KeyEvent;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi/src/dictionary/dictionary_file_health.dart';
 import 'package:fushi/src/media/video/underlay_composition.dart'
     show UnderlayInputRegion;
 import 'package:fushi/src/lookup/effective_lookup_size.dart'
@@ -46,6 +47,7 @@ import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 // BUG-2953：根 Overlay 查词浮层的自带导航层；宿主经本文件取用，故此处 re-export。
@@ -1377,6 +1379,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.onClearSentenceDraft,
     this.onOpenAdvancedMining,
     this.crossAppAudio,
+    this.preMineSentenceEdit = false,
     this.isSearching = false,
     this.keepWebViewWarm = false,
     this.showMiningTargetSwitch = false,
@@ -1543,6 +1546,9 @@ class DictionaryPopupLayer extends StatelessWidget {
 
   /// 跨应用语音缓存的查词快照，透传给 webview（见 [DictionaryPopupWebView.crossAppAudio]）。
   final Future<CrossAppAudioSnapshot?>? crossAppAudio;
+
+  /// 「编辑例句后制卡」入口，透传给 webview（见 [DictionaryPopupWebView.preMineSentenceEdit]）。
+  final bool preMineSentenceEdit;
   final VoidCallback? onTapOutside;
   final VoidCallback? onScrolledToBottom;
   final VoidCallback? onRendered;
@@ -2131,7 +2137,8 @@ class DictionaryPopupLayer extends StatelessWidget {
   static Widget _overflowMenuLabel(IconData icon, String label) => Row(
     mainAxisSize: MainAxisSize.min,
     children: <Widget>[
-      Icon(icon, size: 20),
+      // FushiIcon：Apple 设计系统下换 SF 风格字形（裸 Icon 不换）。
+      FushiIcon(icon, size: 20),
       const SizedBox(width: 12),
       Flexible(child: Text(label)),
     ],
@@ -2171,7 +2178,7 @@ class DictionaryPopupLayer extends StatelessWidget {
       child: ConstrainedBox(
         constraints: _topActionConstraints,
         child: const Center(
-          child: Icon(
+          child: FushiIcon(
             Icons.more_horiz,
             size: kDictionaryPopupTopActionIconSize,
           ),
@@ -2290,6 +2297,7 @@ class DictionaryPopupLayer extends StatelessWidget {
               onSetSentenceContext: onSetSentenceContext,
               onOpenAdvancedMining: onOpenAdvancedMining,
               crossAppAudio: crossAppAudio,
+              preMineSentenceEdit: preMineSentenceEdit,
               onClearSentenceDraft: onClearSentenceDraft,
               onScrolledToBottom: onScrolledToBottom,
               onScrolledUnderChanged: (bool under) =>
@@ -2357,15 +2365,22 @@ class DictionaryPopupLayer extends StatelessWidget {
         onRefineQuery;
     final String source = _refineSourceFor(result?.searchTerm);
     final bool showRefine = refine != null && source.isNotEmpty;
+    // BUG-5489：查不到是因为词典文件不在 / 读不到时如实说，不只是「未找到」。
+    final String? fileNotice = dictionaryLookupFileNotice(
+      DictionaryFileHealthMonitor.instance.value,
+    );
     return Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         child: FushiPlaceholderMessage(
           icon: FushiIcons.searchOff,
           message: dictionaryPopupNoResultsMessage(result?.searchTerm),
-          detail: showRefine
-              ? t.dictionary_popup_refine_hint
-              : t.settings_search_empty_hint,
+          detailMaxLines: fileNotice == null ? 3 : 5,
+          detail:
+              fileNotice ??
+              (showRefine
+                  ? t.dictionary_popup_refine_hint
+                  : t.settings_search_empty_hint),
           action: showRefine
               ? LookupRefinePanel(
                   key: const ValueKey<String>('lookup-refine-empty'),

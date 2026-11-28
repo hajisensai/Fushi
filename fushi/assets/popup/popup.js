@@ -988,6 +988,8 @@ const ICON_PATHS = {
     close: 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
     // tune（Niratan「调整上下文」按钮：打开制卡前句子上下文调整模态）
     tune: 'M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z',
+    // Material Symbols「edit_note」：制卡前编辑例句（反馈 uEnwXmBIR0）。
+    editNote: 'M3 10h11v2H3v-2zm0-2h11V6H3v2zm0 8h7v-2H3v2zm15.01-3.13.71-.71c.39-.39 1.02-.39 1.41 0l.71.71c.39.39.39 1.02 0 1.41l-.71.71-2.12-2.12zm-.71.71-5.3 5.3V21h2.12l5.3-5.3-2.12-2.12z',
     // open_in_new（TODO-1360：已制卡的词旁「在 Anki 中打开卡片」按钮，直接跳去
     // Anki 定位该词的已存在卡；仅 data-mined 时显示）
     openInAnki: 'M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z',
@@ -995,7 +997,71 @@ const ICON_PATHS = {
     searchOff: 'M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3 6.08 3 3.28 5.64 3.03 9h2.02C5.3 6.75 7.18 5 9.5 5 11.99 5 14 7.01 14 9.5S11.99 14 9.5 14c-.17 0-.33-.03-.5-.05v2.02c.17.02.33.03.5.03 1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zM6.47 10.82L4 13.29 1.53 10.82l-.71.71L3.29 14 .82 16.47l.71.71L4 14.71l2.47 2.47.71-.71L4.71 14l2.47-2.47z',
 };
 
+// Apple 设计系统（用户 2026-11-26「按钮都切换 SF」）：同一组语义名换成 SF 风格字形——取自
+// CupertinoIcons（MIT，Flutter 侧 Apple 设计系统 FushiIcon 用的同一套字体），fontTools 把字形
+// 轮廓导成 path（y 轴已翻转、按字形包围盒居中，四周留 28 单位余量，视觉大小与同排一致）。
+// 弹窗根挂 fushi-apple（app 内 = html.fushi-glass-host.fushi-apple，扩展 = #entries-container.
+// fushi-apple，Cupertino 风格）时 iconSvg 出这一套；Material / 墨水屏照旧 ICON_PATHS。
+// 新增语义名时两张表都要补（缺了 Apple 回落 Material 路径，不会空白）。
+const APPLE_ICON_PATHS = {
+    // speaker.2
+    audio: { viewBox: '-34.5 -22 568 568', d: 'M244 459Q232 459 215 445L114 354Q113 353 109 353H45Q0 353 0 305V220Q0 172 45 172H109Q112 172 114 170L215 81Q234 65 244 65Q255 65 262.5 73.0Q270 81 270 92V434Q270 445 262.5 452.0Q255 459 244 459ZM430 415Q417 405 427 390Q465 336 465 263Q465 192 427 136Q417 121 430.0 111.0Q443 101 454 116Q499 179 499.0 263.0Q499 347 454 410Q444 425 430 415ZM232 413Q235 413 235 410V114Q235 111 232 111Q230 111 228 113L134 199Q129 204 118 204H47Q34 204 34 217V308Q34 320 47 320H118Q128 320 134 326L228 411Q230 413 232 413ZM344 357Q329 347 340 331Q360 303 360.0 263.0Q360 223 340 195Q328 180 344 169Q358 160 368 174Q395 211 395.0 263.0Q395 315 368 352Q357 366 344 357Z' },
+    // speaker.slash
+    audioOff: { viewBox: '-84 -22.2 568 568', d: 'M307 313 273 278V103Q273 100 270 100Q268 100 266 102L178 182L154 158L253 70Q271 55 282.0 55.0Q293 55 300.0 62.5Q307 70 307 81ZM372 463 5 96Q-6 84 5.0 73.0Q16 62 28 73L395 440Q406 450 395 463Q384 474 372 463ZM282 448Q270 448 253 434L152 344Q150 342 147 342H84Q38 342 38 293V210Q38 188 46 176L72 203V296Q72 309 86 309H157Q164 309 170 314L279 408L305 433Q298 448 282 448Z' },
+    // star
+    favorite: { viewBox: '-46.2 -23.3 568 568', d: 'M91 484Q79 474 86 451L131 318L16 235Q-5 221 1 205Q6 190 31 190L171 191L214 57Q222 33 238.0 33.0Q254 33 262 57L305 191L445 190Q470 190 475 205Q480 222 460 235L345 318L390 451Q397 474 385 484Q371 495 351 479L238 396L125 479Q105 495 91 484ZM122 442Q123 442 124 441L227 363Q238 355 249 363L352 441Q354 443 354 442V440L311 317Q306 304 317 297L424 223L425 222Q425 221 423 221L294 223Q280 223 276 211L239 87Q239 85 238 85Q237 86 237 87L200 211Q196 223 182 223L53 221Q51 221 51 222L52 223L159 297Q170 304 165 317L122 440Z' },
+    // star.fill
+    favorited: { viewBox: '-46.2 -23.3 568 568', d: 'M91 484Q79 474 86 451L131 318L16 235Q-5 221 1 205Q6 190 31 190L171 191L214 57Q222 33 238.0 33.0Q254 33 262 57L305 191L445 190Q470 190 475 205Q480 222 460 235L345 318L390 451Q397 474 385 484Q371 495 351 479L238 396L125 479Q105 495 91 484Z' },
+    // waveform
+    graphicEq: { viewBox: '-113 -22 568 568', d: 'M125 444V80Q125 65 140.0 65.0Q155 65 155 80V444Q155 459 140.0 459.0Q125 459 125 444ZM249 401V123Q249 108 264.0 108.0Q279 108 279 123V401Q279 416 264.0 416.0Q249 416 249 401ZM78 382Q71 382 66.5 377.5Q62 373 62 367V157Q62 151 66.5 146.5Q71 142 78 142Q93 142 93 157V367Q93 382 78 382ZM187 344V180Q187 165 202.0 165.0Q217 165 217 180V344Q217 359 202.0 359.0Q187 359 187 344ZM312 305V219Q312 204 327.0 204.0Q342 204 342 219V305Q342 320 327.0 320.0Q312 320 312 305ZM0 288V236Q0 221 15.0 221.0Q30 221 30 236V288Q30 303 15.0 303.0Q0 303 0 288Z' },
+    // plus
+    add: { viewBox: '-107 -22 568 568', d: 'M158 424V281H19Q12 281 6.0 275.5Q0 270 0.0 262.0Q0 254 6.0 248.5Q12 243 19 243H158V100Q158 93 163.5 87.5Q169 82 177.0 82.0Q185 82 190.5 87.5Q196 93 196 100V243H334Q342 243 348.0 249.0Q354 255 354.0 262.0Q354 269 348.0 275.0Q342 281 334 281H196V424Q196 431 190.5 436.5Q185 442 177.0 442.0Q169 442 163.5 436.5Q158 431 158 424Z' },
+    // minus
+    remove: { viewBox: '-107 -22 568 568', d: 'M19 281Q12 281 6.0 275.5Q0 270 0.0 262.0Q0 254 6.0 248.5Q12 243 19 243H334Q342 243 348.0 249.0Q354 255 354.0 262.0Q354 269 348.0 275.0Q342 281 334 281Z' },
+    // xmark
+    close: { viewBox: '-114 -22 568 568', d: 'M6 399 143 262 6 125Q-7 112 6.0 98.0Q19 84 33 98L170 235L307 98Q320 84 334 98Q348 111 334 125L197 262L334 399Q347 412 334 426Q320 440 307 426L170 289L33 426Q20 438 6 426Q-8 413 6 399Z' },
+    // slider.horizontal.3
+    tune: { viewBox: '-68 -22 568 568', d: 'M293 183Q256 183 244 149H17Q0 149 0 131Q0 114 17 114H244Q256 80 293 80Q329 80 341 114H415Q422 114 427.0 119.0Q432 124 432.0 131.0Q432 138 427.0 143.5Q422 149 415 149H341Q329 183 293 183ZM275.0 149.0Q282 156 293.0 156.0Q304 156 311.0 149.0Q318 142 318.0 131.0Q318 120 311.0 113.0Q304 106 293.0 106.0Q282 106 275.0 113.0Q268 120 268.0 131.0Q268 142 275.0 149.0ZM16 245H93Q105 211 141 211Q178 211 190 245H414Q432 245 432.0 262.0Q432 279 414 279H190Q178 314 141 314Q125 314 111.5 304.0Q98 294 93 279H16Q0 279 0.0 262.0Q0 245 16 245ZM123.0 279.5Q130 287 141.0 287.0Q152 287 159.0 279.5Q166 272 166.0 262.0Q166 252 159.0 244.5Q152 237 141.0 237.0Q130 237 123.0 244.5Q116 252 116.0 262.0Q116 272 123.0 279.5ZM293 444Q256 444 244 410H17Q0 410 0.0 393.0Q0 376 17 376H244Q256 342 293 342Q329 342 341 376H415Q422 376 427.0 381.0Q432 386 432.0 393.0Q432 400 427.0 405.0Q422 410 415 410H341Q329 444 293 444ZM275.0 411.0Q282 418 293.0 418.0Q304 418 311.0 411.0Q318 404 318.0 393.0Q318 382 311.0 375.0Q304 368 293.0 368.0Q282 368 275.0 375.0Q268 382 268.0 393.0Q268 404 275.0 411.0Z' },
+    // square.and.pencil
+    editNote: { viewBox: '-72 -21.4 568 568', d: 'M403 97 374 68 389 52Q402 39 414 51L418 56Q430 68 418 81ZM156 320Q153 321 150.5 318.5Q148 316 150 313L169 273L358 84L387 113L198 302ZM67 480Q0 480 0 413V166Q0 100 67 100H288L253 134H68Q34 134 34 168V411Q34 445 68 445H318Q330 445 337.5 436.0Q345 427 345 411V209L380 175V413Q380 480 319 480Z' },
+    // arrow.up.right.square
+    openInAnki: { viewBox: '-86.5 -22 568 568', d: 'M67 459Q0 459 0 393V131Q0 65 67 65H327Q395 65 395 131V393Q395 459 327 459ZM68 425H327Q360 425 360 391V133Q360 99 327 99H68Q35 99 35 133V391Q35 425 68 425ZM265 315Q249 315 249 298V261L252 228L221 261L143 339Q138 344 130 344Q114 344 114 329Q114 323 120 317L199 238L232 207L200 210H161Q144 210 144 195Q144 179 161 179H262Q280 179 280 197V298Q280 315 265 315Z' },
+    // search
+    searchOff: { viewBox: '-82 -22 568 568', d: 'M165 388Q97 388 48.5 339.5Q0 291 0.0 223.0Q0 155 48.5 106.5Q97 58 165.0 58.0Q233 58 281.5 106.5Q330 155 330 223Q330 278 296 323L397 424Q404 431 404 441Q404 452 397.0 459.0Q390 466 380 466Q369 466 362 459L261 357Q217 388 165 388ZM74.0 314.0Q112 352 165.0 352.0Q218 352 256.0 314.0Q294 276 294.0 223.0Q294 170 256.0 132.0Q218 94 165.0 94.0Q112 94 74.0 132.0Q36 170 36.0 223.0Q36 276 74.0 314.0Z' },
+    // checkmark
+    mined: { viewBox: '-99.5 -22 568 568', d: 'M140 445Q127 445 117 433L6 291Q0 284 0 275Q0 255 21 255Q32 255 39 266L139 396L331 90Q338 79 350 79Q369 79 369 98Q369 106 364 114L161 433Q154 445 140 445Z' },
+    // cloud
+    remote: { viewBox: '-39.5 -22 568 568', d: 'M101 424Q54 424 27.0 398.0Q0 372 0 333Q0 300 19.0 275.0Q38 250 68 242Q73 182 117.0 141.0Q161 100 222 100Q268 100 304.0 123.5Q340 147 361 187Q416 187 452.5 220.5Q489 254 489 305Q489 355 454.0 389.5Q419 424 367 424ZM100 390H369Q406 390 430.5 365.5Q455 341 455 306Q455 270 428.5 246.0Q402 222 356 222Q339 222 332 208Q297 134 222 134Q175 134 141.0 168.0Q107 202 103 254Q102 271 86 275Q34 289 34 334Q34 359 51.0 374.5Q68 390 100 390Z' },
+    // checkmark + arrow.uturn.left 角标（文本版的「✓↩」：已制卡、点一下覆盖更新最近这张）
+    latest: { viewBox: '-99.5 -22 600 600', d: 'M140 445Q127 445 117 433L6 291Q0 284 0 275Q0 255 21 255Q32 255 39 266L139 396L331 90Q338 79 350 79Q369 79 369 98Q369 106 364 114L161 433Q154 445 140 445Z', transform: 'translate(-4.3 11.2) scale(0.8)', badge: { d: 'M255 462H206Q197 462 191.5 456.5Q186 451 186.0 443.0Q186 435 191.5 429.5Q197 424 206 424H255Q308 424 337.5 396.0Q367 368 367.0 323.0Q367 278 338.0 251.5Q309 225 255 225H108L58 223L98 258L160 318Q165 323 165 331Q165 350 146 350Q138 350 132 344L6 220Q0 214 0.0 206.0Q0 198 6 192L132 68Q138 62 146 62Q165 62 165 81Q165 89 160 94L98 154L58 189L108 187H252Q324 187 364.5 224.5Q405 262 405.0 325.0Q405 388 365.5 425.0Q326 462 255 462Z', transform: 'translate(214.5 292) scale(0.56) translate(53.5 -6)' } },
+};
+
+// 当前弹窗是不是 Apple 设计系统：app 内是 html.fushi-glass-host.fushi-apple（宿主主题注入段），
+// 浏览器扩展（Cupertino 风格）是弹窗容器 #entries-container.fushi-glass-host.fushi-apple
+// （theme.js applyPopupStyle；content script / 侧栏 / 嵌套弹窗三处，前者的 documentElement 是
+// 宿主网页，不能看它）。
+function __fushiAppleIcons() {
+    const has = (node) => !!(node && node.classList && typeof node.classList.contains === 'function'
+        && node.classList.contains('fushi-apple'));
+    const doc = document.documentElement;
+    if (has(doc) && doc.classList.contains('fushi-glass-host')) return true;
+    // 图标路径绝不能抛（无 DOM 查询能力的宿主 / 测试桩按 Material 画）。
+    let container = null;
+    try { container = __fushiContainer(); } catch (_) { container = null; }
+    return has(container);
+}
+
 function iconSvg(name) {
+    const apple = __fushiAppleIcons() ? APPLE_ICON_PATHS[name] : null;
+    if (apple) {
+        const badge = apple.badge
+            ? '<path transform="' + apple.badge.transform + '" d="' + apple.badge.d + '"></path>'
+            : '';
+        return '<svg class="inline-action-icon fushi-sf-icon" viewBox="' + apple.viewBox
+            + '" fill="currentColor" aria-hidden="true"><path'
+            + (apple.transform ? ' transform="' + apple.transform + '"' : '')
+            + ' d="' + apple.d + '"></path>' + badge + '</svg>';
+    }
     const d = ICON_PATHS[name] || '';
     return '<svg class="inline-action-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="' + d + '"></path></svg>';
 }
@@ -1005,6 +1071,59 @@ function setButtonIcon(button, name) {
     if (!button) return;
     button.dataset.icon = name;
     button.innerHTML = iconSvg(name);
+}
+
+// 设计系统切换后重盖已渲染按钮的字形（app 热槽 WebView 跨渲染常驻，宿主改设计系统后
+// 主题注入段 / 扩展 applyPopupStyle 调它；下次查词整页重渲染本来也会换）。
+window.__fushiRefreshIcons = function () {
+    const root = __fushiContainer() || document;
+    if (!root || typeof root.querySelectorAll !== 'function') return;
+    // 制卡按钮按 data-mine-glyph 认：Material 下 __fushiPaintMineGlyph 会删掉它的
+    // data-icon（画文本标记），只按 [data-icon] 找，Material → Apple 翻转时它会漏掉、
+    // 停在文本 '+' / '✓'。
+    root.querySelectorAll('[data-icon], [data-mine-glyph]').forEach(button => {
+        if (button.dataset.mineGlyph !== undefined) {
+            __fushiPaintMineGlyph(button);
+        } else {
+            button.innerHTML = iconSvg(button.dataset.icon);
+        }
+    });
+    // 远端词典角标（__fushiRemoteDictGlyph）没有 data-icon，同样按当前设计系统重建。
+    root.querySelectorAll('.dict-remote-glyph').forEach(glyph => {
+        glyph.replaceWith(__fushiRemoteDictGlyph());
+    });
+};
+
+// app 内：设计系统 class 由宿主主题注入段 toggle 在 documentElement 上（热槽 WebView 跨渲染
+// 常驻），这里自己盯 class 变化，Apple ↔ Material 翻转时重盖字形，不必改宿主注入段。
+// 扩展里弹窗容器的 class 由 theme.js applyPopupStyle 改，它翻转后直接调 __fushiRefreshIcons。
+(function watchAppleIconsFlip() {
+    if (typeof MutationObserver !== 'function' || !document.documentElement) return;
+    let last = null;
+    const check = () => {
+        const now = __fushiAppleIcons();
+        if (last !== null && now !== last) window.__fushiRefreshIcons();
+        last = now;
+    };
+    try {
+        new MutationObserver(check).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+        check();
+    } catch (_) {}
+})();
+
+// 制卡按钮的字形。Material / 墨水屏：文本标记 + / ✓ / ✓↩（TODO-1325 应用户要求，静息 '+'
+// 由 popup.css 用两条矩形画十字）；Apple：SF 字形 plus / checkmark / checkmark + arrow.uturn.left
+// 角标（用户 2026-11-26「按钮都切换 SF」只针对 Apple 设计系统）。state 由 setMineState 写进
+// data-mine-glyph（'add' | 'mined' | 'latest'），这里只负责画。
+function __fushiPaintMineGlyph(button) {
+    const glyph = button.dataset.mineGlyph || 'add';
+    if (__fushiAppleIcons()) {
+        button.dataset.icon = glyph;
+        button.innerHTML = iconSvg(glyph);
+        return;
+    }
+    delete button.dataset.icon;
+    button.textContent = glyph === 'latest' ? '✓↩︎' : (glyph === 'mined' ? '✓' : '+');
 }
 
 function toHiragana(text) {
@@ -3477,6 +3596,27 @@ function buildCrossAppAudioButton() {
     return button;
 }
 
+// 反馈 uEnwXmBIR0：应用外查词卡「编辑例句后制卡」。点了带 {editSentence: true} 回点同一颗
+// 「+」（fushiPopupMineEntryByIndex，制卡桥仍只此一处调用）：宿主先弹编辑框让用户改例句，
+// 改完照常走这张卡的制卡路径，截图 / 句子音频由宿主照旧带上；在编辑框里取消 = 不制这张卡。
+// 编辑框在宿主那边（Flutter 对话框）：桌面覆盖窗收不到键盘，画不了输入框。
+function buildSentenceEditButton() {
+    const button = el('button', {
+        className: 'inline-action-button ctx-adjust-button sentence-edit-button',
+        // BUG-3210：回点「+」那条路没有 pointerdown，选区只能在这里快照。
+        onpointerdown: () => { snapshotSelection(); },
+        ontouchstart: () => { snapshotSelection(); },
+        onclick: () => {
+            window.fushiPopupMineEntryByIndex(
+                __fushiEntryIndexOf(button), { editSentence: true });
+        },
+    });
+    setButtonIcon(button, 'editNote');
+    if (__fushiPopupReducedMotion()) button.classList.add('no-motion');
+    setInlineButtonTip(button, window.i18nSentenceEdit || '');
+    return button;
+}
+
 function __fushiDecodeDataUrlBytes(dataUrl) {
     const comma = dataUrl.indexOf(',');
     const binary = atob(dataUrl.slice(comma + 1));
@@ -4369,7 +4509,7 @@ const DICT_SANDBOX_HELPER_JS = `(function () {
   }
   function anchorOf(event) {
     var target = event.target && event.target.nodeType === 3 ? event.target.parentElement : event.target;
-    return target && target.closest ? target.closest('a[href]') : null;
+    return target && target.nodeType === 1 ? rawClosest.call(target, 'a[href]') : null;
   }
   // caretRangeFromPoint 给的是离点最近的字间缝：点在字的右半边，偏移已经指向下一个字
   // （BUG-4753，点「訪」查成「問」）。与 selection.js getCharacterAtPoint 同一判据：在
@@ -4405,12 +4545,199 @@ const DICT_SANDBOX_HELPER_JS = `(function () {
     post({ type: 'link', href: anchor.getAttribute('href') || '', text: baseText(anchor),
            rect: rectOf(event.clientX, event.clientY, anchor) });
   }, true);
-  document.addEventListener('click', function (event) {
-    if (event.defaultPrevented) return;
+  // 词典脚本自己接管的点击（OALDPE 顶部的 noun / verb / All 词性切换、OALD 的 Verb Forms
+  // 折叠……）不能再被当成点词查词。这类控件多是没有 href 的 span，词典脚本用元素监听或
+  // jQuery 委托处理，通常既不 preventDefault 也不拦传播；点的若是已选中的那一项，或脚本
+  // 在定时器里才改 DOM，这次点击期间 DOM 根本不变。所以不看「点完变没变」，看「词典脚本
+  // 有没有认领被点的这个控件」（dictScriptClaims），DOM 同步变动只作补充（dictScriptReacted）。
+  // 本辅助脚本排在全部词典脚本之前执行，下面的记录在词典脚本注册任何监听之前就已就位。
+  //
+  // 「控件」= 被点元素自身或祖先里、文字不超过 CONTROL_TEXT_MAX 的元素（<html> / <body> 除外）：
+  // 词性标签、折叠标题、按钮都在此列；整条词条、整个释义容器不算——词典常在根节点上挂一个
+  // 总监听，若把它也算认领，整本词典的点词查词就废了。
+  var CLAIM_TYPES = { click: 1, mousedown: 1, mouseup: 1, pointerdown: 1, pointerup: 1, touchstart: 1, touchend: 1 };
+  var CLAIM_PROPS = ['onclick', 'onmousedown', 'onmouseup', 'onpointerdown', 'onpointerup', 'ontouchstart', 'ontouchend'];
+  var CONTROL_TEXT_MAX = 64;
+  var rawClosest = Element.prototype.closest;
+  var rawMatches = Element.prototype.matches;
+  function isContent(node) {
+    return !!node && node.nodeType === 1 && node !== document.documentElement && node !== document.body;
+  }
+  function isControl(node) {
+    return isContent(node) && (node.textContent || '').trim().length <= CONTROL_TEXT_MAX;
+  }
+  // ① 词典脚本在哪些元素上直接挂了点击类监听（jQuery 的 .on / .click 最终也落到这里）。
+  var boundListeners = new WeakMap();
+  (function () {
+    var proto = EventTarget.prototype;
+    var add = proto.addEventListener;
+    var remove = proto.removeEventListener;
+    proto.addEventListener = function (type, listener) {
+      if (listener && CLAIM_TYPES[type] && isContent(this)) {
+        boundListeners.set(this, (boundListeners.get(this) || 0) + 1);
+      }
+      return add.apply(this, arguments);
+    };
+    proto.removeEventListener = function (type, listener) {
+      if (listener && CLAIM_TYPES[type] && isContent(this)) {
+        var count = boundListeners.get(this) || 0;
+        if (count > 0) boundListeners.set(this, count - 1);
+      }
+      return remove.apply(this, arguments);
+    };
+  })();
+  // ② 委托式监听（挂在 document / 容器上，先用选择器认目标）：这次点击派发期间，词典代码
+  //    对哪些元素做过选择器判断并命中。jQuery 的委托不走原生 matches（带 seed 的选择器由它
+  //    自己的匹配器求值），另在 jQueryClaims 里按它登记的选择器比对。
+  var selectorHits = null;
+  function recordHit(element) {
+    if (selectorHits && element && selectorHits.length < 256) selectorHits.push(element);
+  }
+  Element.prototype.closest = function () {
+    var hit = rawClosest.apply(this, arguments);
+    if (hit) recordHit(hit);
+    return hit;
+  };
+  Element.prototype.matches = function () {
+    var hit = rawMatches.apply(this, arguments);
+    if (hit) recordHit(this);
+    return hit;
+  };
+  if (typeof Element.prototype.webkitMatchesSelector === 'function') {
+    var rawWebkitMatches = Element.prototype.webkitMatchesSelector;
+    Element.prototype.webkitMatchesSelector = function () {
+      var hit = rawWebkitMatches.apply(this, arguments);
+      if (hit) recordHit(this);
+      return hit;
+    };
+  }
+  // 词典自带的 jQuery 可能改过名（noConflict），按形状在全局里找。
+  function jQueries() {
+    var found = [];
+    var keys = [];
+    try { keys = Object.keys(window); } catch (e) {}
+    for (var i = 0; i < keys.length; i++) {
+      var value;
+      try { value = window[keys[i]]; } catch (e) { continue; }
+      if (typeof value === 'function' && value.fn && typeof value.fn.jquery === 'string' &&
+          typeof value._data === 'function' && found.indexOf(value) < 0) found.push(value);
+    }
+    return found;
+  }
+  function jQueryClaims(chain) {
+    var jqs = jQueries();
+    var holders = chain.concat([document]);
+    for (var j = 0; j < jqs.length; j++) {
+      for (var h = 0; h < holders.length; h++) {
+        var events = null;
+        try { events = jqs[j]._data(holders[h], 'events'); } catch (e) {}
+        if (!events) continue;
+        for (var type in events) {
+          if (!CLAIM_TYPES[type] || !events[type]) continue;
+          for (var k = 0; k < events[type].length; k++) {
+            var selector = events[type][k] && events[type][k].selector;
+            if (!selector) continue;
+            for (var c = 0; c < chain.length && chain[c] !== holders[h]; c++) {
+              if (!isControl(chain[c])) continue;
+              try { if (rawMatches.call(chain[c], selector)) return true; } catch (e) {}
+            }
+          }
+        }
+      }
+    }
+    return false;
+  }
+  function dictScriptClaims(target) {
+    var chain = [];
+    for (var node = target; node && node.nodeType === 1; node = node.parentElement) chain.push(node);
+    var i;
+    var hits = selectorHits || [];
+    for (i = 0; i < hits.length; i++) {
+      if (chain.indexOf(hits[i]) >= 0 && isControl(hits[i])) return true;
+    }
+    for (i = 0; i < chain.length; i++) {
+      if (!isControl(chain[i])) continue;
+      if (boundListeners.get(chain[i]) > 0) return true;
+      for (var p = 0; p < CLAIM_PROPS.length; p++) {
+        if (typeof chain[i][CLAIM_PROPS[p]] === 'function') return true;
+      }
+    }
+    if (jQueryClaims(chain)) return true;
+    // ③ 词典 CSS 把控件标成可点（cursor: pointer），且不是从外层大容器继承来的。
+    var outer = null;
+    for (i = 0; i < chain.length; i++) {
+      if (isContent(chain[i]) && !isControl(chain[i])) { outer = chain[i]; break; }
+    }
+    var inherited = false;
+    try { inherited = !!outer && getComputedStyle(outer).cursor === 'pointer'; } catch (e) {}
+    if (!inherited) {
+      for (i = 0; i < chain.length && chain[i] !== outer; i++) {
+        if (!isControl(chain[i])) continue;
+        try { if (getComputedStyle(chain[i]).cursor === 'pointer') return true; } catch (e) {}
+      }
+    }
+    return false;
+  }
+  // ④ 补充：这次点击派发期间，词典脚本同步改了被点元素的祖先链或后代（<html> / <body> 除外，
+  //    免得「每次点击都顺手改别处」的全局监听把整本词典的点词废掉）。
+  var clickObserver = null;
+  try { clickObserver = new MutationObserver(function () {}); } catch (e) {}
+  window.addEventListener('click', function () {
+    selectorHits = [];
+    if (!clickObserver) return;
+    clickObserver.disconnect();
+    clickObserver.observe(document.documentElement,
+      { subtree: true, childList: true, attributes: true, characterData: true });
+  }, true);
+  function dictScriptReacted(target) {
+    if (!clickObserver) return false;
+    var records = clickObserver.takeRecords();
+    clickObserver.disconnect();
+    for (var i = 0; i < records.length; i++) {
+      var node = records[i].target;
+      if (node && node.nodeType !== 1) node = node.parentElement;
+      if (!node || node === document.documentElement || node === document.body) continue;
+      if (node === target || node.contains(target) || target.contains(node)) return true;
+    }
+    return false;
+  }
+  // 页内跳转（#id、MDict 的 entry://#id）：在本词典块里滚到目标，不拿链接文字去查词。
+  // iframe 按内容撑高、自己不滚动，真正滚动的是父页面，所以只报目标在 frame 里的纵坐标。
+  // 词典脚本自己也处理跳转时照样滚（它在不滚动的 iframe 里滚不动），所以不看认领判据。
+  function fragmentOf(anchor) {
+    var match = /^(?:entry:\\/\\/)?#(.+)$/i.exec((anchor.getAttribute('href') || '').trim());
+    if (!match) return null;
+    try { return decodeURIComponent(match[1]); } catch (e) { return match[1]; }
+  }
+  function fragmentTarget(id) {
+    var byId = document.getElementById(id);
+    if (byId) return byId;
+    var named = document.getElementsByName(id);
+    return named.length ? named[0] : null;
+  }
+  window.addEventListener('click', function (event) {
+    var target = event.target && event.target.nodeType === 3 ? event.target.parentElement : event.target;
+    var reacted = target ? dictScriptReacted(target) : false;
+    // 必须在下面替链接 preventDefault 之前读：之后读到的就是我们自己设的。
+    var dictPrevented = event.defaultPrevented;
     var anchor = anchorOf(event);
-    if (anchor && isSoundLink(anchor)) return;
+    if (anchor && isSoundLink(anchor)) { selectorHits = null; return; }
     if (anchor) {
       event.preventDefault();
+      var fragment = fragmentOf(anchor);
+      if (fragment !== null) {
+        selectorHits = null;
+        var jumpTo = fragmentTarget(fragment);
+        if (jumpTo) post({ type: 'scroll', y: jumpTo.getBoundingClientRect().top });
+        return;
+      }
+    }
+    // 链接本来就是控件（UA 样式给它 cursor: pointer），认领判据只用在点词上；链接只在词典
+    // 脚本明确接管（preventDefault / 同步改了它）时不回查，交叉引用照常可用。
+    var claimed = dictPrevented || reacted || (!anchor && !!target && dictScriptClaims(target));
+    selectorHits = null;
+    if (claimed) return;
+    if (anchor) {
       post({ type: 'link', href: anchor.getAttribute('href') || '', text: baseText(anchor),
              rect: rectOf(event.clientX, event.clientY, anchor) });
       return;
@@ -4491,6 +4818,15 @@ function __dictSandboxHandleMessage(frame, data) {
     }
     if (data.type === 'error') {
         reportDictScriptError(dictName, 'sandbox', { message: `${data.message || ''}`.slice(0, 500) });
+        return;
+    }
+    if (data.type === 'scroll') {
+        // 沙箱里点了页内跳转（#id / entry://#id）：frame 按内容撑高、不自己滚动，由这里
+        // 把 frame 内纵坐标 y 处滚到弹窗可视区顶端。只动弹窗自己的滚动，不碰原生桥，
+        // 所以不占下面的动作节流；仍要求用户激活，沙箱脚本不能自顾自地把弹窗滚走。
+        if (!__dictSandboxUserActive(frame)) return;
+        const y = Number(data.y);
+        if (Number.isFinite(y)) scrollPopupToElementOffset(frame, Math.max(0, Math.min(y, 20000)));
         return;
     }
     if (data.type !== 'link' && data.type !== 'select') return;
@@ -6509,7 +6845,8 @@ function createEntryHeader(entry, idx) {
         // ✓ 已制卡 / ✓↩ 最新可改），不再走 SVG 图标（audio/favorite 等其余按钮保留 SVG）。
         // TODO-1338：给 ↩ 追加 VS15(U+FE0E) 强制「文本呈现」，杜绝系统把 U+21A9 走彩色
         // emoji 回退变乱码（字体隔离在 popup.css .mine-button 单色符号栈里，此处是双保险）。
-        mineButton.textContent = isMined ? (latest ? '✓↩︎' : '✓') : (queued ? '✓' : '+');
+        mineButton.dataset.mineGlyph = isMined ? (latest ? 'latest' : 'mined') : (queued ? 'mined' : 'add');
+        __fushiPaintMineGlyph(mineButton);
         if (isMined || queued) {
             mineButton.classList.add('duplicate');
         } else {
@@ -6841,6 +7178,9 @@ function createEntryHeader(entry, idx) {
     // 只是不走 mineEntry 桥、不改按钮状态。见 fushiPopupBuildMinePayloadByIndex。
     mineButton.__fushiBuildMinePayload = () => buildMinePayload(
         expression, reading, frequencies, pitches, rules, matched, idx, lastSelection);
+    // 初始字形（未制卡）：Apple 下立即画 SF plus，查重回来后 setMineState 再改。
+    mineButton.dataset.mineGlyph = 'add';
+    __fushiPaintMineGlyph(mineButton);
     if (miningEnabled) {
         buttonsContainer.appendChild(mineButton);
     }
@@ -7053,6 +7393,11 @@ function createEntryHeader(entry, idx) {
     // 确认这次查词录到了声音才露出。确认制卡回点的是同一颗「+」，所以「+」不渲染时它也不渲染。
     if (miningEnabled && window.__fushiCrossAppAudioHost === true) {
         buttonsContainer.appendChild(buildCrossAppAudioButton());
+    }
+    // 反馈 uEnwXmBIR0：应用外查词卡（宿主注入 __fushiPreMineSentenceEdit）给「编辑例句后
+    // 制卡」。回点的是同一颗「+」，所以「+」不渲染时它也不渲染。
+    if (miningEnabled && window.__fushiPreMineSentenceEdit === true) {
+        buttonsContainer.appendChild(buildSentenceEditButton());
     }
 
     const advancedMining = window.advancedMiningEnabled === true;
@@ -7567,7 +7912,10 @@ function __fushiRemoteDictGlyph() {
     svg.setAttribute('aria-hidden', 'true');
     const path = document.createElementNS(ns, 'path');
     path.setAttribute('fill', 'currentColor');
-    path.setAttribute('d', 'M19 15v4H5v-4h14m1-2H4c-.55 0-1 .45-1 1v6c0 .55.45 1 1 1h16c.55 0 1-.45 1-1v-6c0-.55-.45-1-1-1zM7 18.5c-.82 0-1.5-.67-1.5-1.5s.68-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM19 5v4H5V5h14m1-2H4c-.55 0-1 .45-1 1v6c0 .55.45 1 1 1h16c.55 0 1-.45 1-1V4c0-.55-.45-1-1-1zM7 8.5c-.82 0-1.5-.67-1.5-1.5S6.18 5.5 7 5.5s1.5.68 1.5 1.5S7.83 8.5 7 8.5z');
+    // Apple 设计系统换 SF 的 cloud（同 iconSvg 的分流）。
+    const appleRemote = __fushiAppleIcons() ? APPLE_ICON_PATHS.remote : null;
+    if (appleRemote) svg.setAttribute('viewBox', appleRemote.viewBox);
+    path.setAttribute('d', appleRemote ? appleRemote.d : 'M19 15v4H5v-4h14m1-2H4c-.55 0-1 .45-1 1v6c0 .55.45 1 1 1h16c.55 0 1-.45 1-1v-6c0-.55-.45-1-1-1zM7 18.5c-.82 0-1.5-.67-1.5-1.5s.68-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM19 5v4H5V5h14m1-2H4c-.55 0-1 .45-1 1v6c0 .55.45 1 1 1h16c.55 0 1-.45 1-1V4c0-.55-.45-1-1-1zM7 8.5c-.82 0-1.5-.67-1.5-1.5S6.18 5.5 7 5.5s1.5.68 1.5 1.5S7.83 8.5 7 8.5z');
     svg.appendChild(path);
     const glyph = el('span', { className: 'dict-remote-glyph', title: label });
     glyph.setAttribute('role', 'img');
@@ -9785,8 +10133,23 @@ function updateEffectiveDictColumns() {
     if (!doc || !doc.style || typeof doc.style.setProperty !== 'function') {
         return;
     }
-    doc.style.setProperty(
-        '--dict-columns-effective', String(effectiveDictColumns()));
+    const cols = effectiveDictColumns();
+    doc.style.setProperty('--dict-columns-effective', String(cols));
+    // Apple 设计系统层（popup.css html.fushi-glass-host.fushi-apple）按「单列 = 一个 inset
+    // grouped 分组、多列 = 各自独立的圆角 cell」分两种卡片几何。判据必须是这里算好的有效
+    // 列数：data-masonry-cols 只在 masonry 接管后才有，CSS grid 回落（masonry 未跑 / 被跳过
+    // 渲染的词条）时多列也会被当成单列分组。
+    // app 内挂 documentElement（只有 app 内弹窗文档带 fushi-glass-host）；扩展挂弹窗容器
+    // （generate-content-css.mjs 把 html.fushi-glass-host.fushi-apple 重根成
+    // :where(#entries-container).fushi-glass-host.fushi-apple，.fushi-dict-multicol 跟在同一
+    // 复合选择器里）。扩展的 content script 里 documentElement 是宿主网页，绝不往上挂。
+    const container = __fushiContainer();
+    if (container && container.classList) {
+        container.classList.toggle('fushi-dict-multicol', cols > 1);
+    }
+    if (doc.classList && doc.classList.contains('fushi-glass-host')) {
+        doc.classList.toggle('fushi-dict-multicol', cols > 1);
+    }
 }
 if (typeof window.addEventListener === 'function'
     && !window.__fushiDictColsResizeHooked) {
@@ -10984,9 +11347,48 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
     });
 }
 
+// 把 element 内纵坐标 offsetY 处滚到它所在滚动容器的可视区顶端。弹窗的滚动容器因宿主而异
+// （app 内是文档本身，扩展里是 shadow root 下的内层容器），所以沿祖先找第一个真能滚的。
+function scrollPopupToElementOffset(element, offsetY) {
+    let container = element.parentElement;
+    while (container && container !== document.body && container !== document.documentElement) {
+        const overflowY = getComputedStyle(container).overflowY;
+        if ((overflowY === 'auto' || overflowY === 'scroll') &&
+            container.scrollHeight > container.clientHeight) break;
+        container = container.parentElement;
+    }
+    const scroller = container && container !== document.body && container !== document.documentElement
+        ? container : (document.scrollingElement || document.documentElement);
+    const viewportTop = scroller === (document.scrollingElement || document.documentElement)
+        ? 0 : scroller.getBoundingClientRect().top;
+    scroller.scrollTop += element.getBoundingClientRect().top + offsetY - viewportTop;
+}
+
+// MDX 的页内跳转：`#id`，以及 MDict 约定的 `entry://#id`（= 当前词条内的锚点）。返回解码后
+// 的 id；不是页内跳转返回 null。`entry://word#id` 指向另一个词条，仍按交叉引用回查。
+function dictFragmentOf(href) {
+    const match = /^(?:entry:\/\/)?#(.+)$/i.exec(href);
+    if (!match) return null;
+    try { return decodeURIComponent(match[1]); } catch (_) { return match[1]; }
+}
+
 function handleGlossaryAnchorClick(event, anchor) {
     event.preventDefault();
     const href = (anchor.getAttribute('href') || '').trim();
+    const fragment = dictFragmentOf(href);
+    if (fragment !== null) {
+        // OALD 的「Idioms」「Phrasal verbs」跳转等：在本词典块里滚到目标，不拿链接文字去查词
+        // （此前会查成「Idioms」这个词）。同一弹窗里多张词条卡可能各有一份同名 id，只在被点
+        // 的这一块里找；找不到就什么也不做。
+        const scope = anchor.closest('[data-dictionary]') || anchor.closest('.glossary-content');
+        const escaped = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(fragment)
+            : fragment.replace(/["\\]/g, '\\$&');
+        const jumpTo = scope
+            ? scope.querySelector(`[id="${escaped}"], [name="${escaped}"]`)
+            : null;
+        if (jumpTo) scrollPopupToElementOffset(jumpTo, 0);
+        return;
+    }
     if (/^https?:\/\//i.test(href)) {
         openExternalLink(href);
         return;
@@ -11080,7 +11482,7 @@ function __fushiPopupClick(e) {
             window.flutter_inappwebview.callHandler('tapOutside');
             return;
         }
-        window.fushiSelection?.selectText(e.clientX, e.clientY, 20);
+        window.fushiSelection?.selectText(e.clientX, e.clientY, FUSHI_POPUP_SCAN_TEXT_MAX_LEN);
         return;
     }
     // TODO-859 方案1：用「点击是否落在某张词条卡片内」的正向判定取代旧黑名单。旧逻辑
@@ -11111,6 +11513,10 @@ function __fushiPopupClick(e) {
     window.flutter_inappwebview.callHandler('tapOutside');
 }
 
+// BUG-5485：弹窗内嵌套取词交给宿主的文本上限，不是扫描窗口（窗口由引擎按「扫描长度」设置切）。
+// 与 app 阅读器 / 内置浏览器 / 浏览器扩展页面取词同为 400；旧值 20 会截断更长的英文词，
+// 也让调到 20 以上的扫描长度在嵌套层不生效。
+const FUSHI_POPUP_SCAN_TEXT_MAX_LEN = 400;
 var _popupShiftLastX = -1, _popupShiftLastY = -1;
 // 弹窗内悬停扫描延迟（反馈 r4tpeIzVuD，与网页侧反馈 L4Vhk0hOjM 同一个设置）：浏览器扩展各 realm
 // 注入 __fushiScanDelayMs（content.js / side-panel.js / nested-popup.js，判据 = 各自的
@@ -11133,7 +11539,7 @@ function __fushiPopupScanAt(x, y) {
     if (dx * dx + dy * dy < 64) return;
     _popupShiftLastX = x; _popupShiftLastY = y;
     if (window.fushiSelection) {
-        window.fushiSelection.selectText(x, y, 20);
+        window.fushiSelection.selectText(x, y, FUSHI_POPUP_SCAN_TEXT_MAX_LEN);
     }
 }
 function __fushiPopupMouseMove(e) {

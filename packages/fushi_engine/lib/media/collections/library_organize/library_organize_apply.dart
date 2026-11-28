@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:drift/drift.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/ai_library_organize_assistant.dart';
+import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
 import 'package:fushi_engine/media/collections/collection_merge.dart';
 import 'package:fushi_engine/media/collections/library_organize/library_organize_plan.dart';
 
@@ -39,6 +40,11 @@ Future<Set<int>> applyOrganizeActions(
           a.targetCollectionId!,
         );
         if (c == null) continue;
+        final Map<String, Object?>? identity = await _identityIfEmptied(
+          db,
+          c.id,
+          a.entries,
+        );
         final List<OrganizeMemberRow> removed = <OrganizeMemberRow>[];
         final Set<String> present = <String>{
           for (final MediaCollectionItemRow i in await db.getCollectionItems(
@@ -76,6 +82,10 @@ Future<Set<int>> applyOrganizeActions(
             'members': _rowsJson(removed),
             // 移空自删后撤销要按原来源重建（用户合集重建成用户的）。
             'origin': c.origin,
+            // 移空自删了：记下合集身份，撤销按原 id 还原（BUG-5461）。
+            if (identity != null &&
+                await db.getMediaCollectionById(c.id) == null)
+              'identity': identity,
             if (a.reason != null) 'reason': a.reason,
           },
         );
@@ -87,6 +97,11 @@ Future<Set<int>> applyOrganizeActions(
           a.targetCollectionId!,
         );
         if (from == null || to == null || from.id == to.id) continue;
+        final Map<String, Object?>? fromIdentity = await _identityIfEmptied(
+          db,
+          from.id,
+          a.entries,
+        );
         final Set<String> tombstoned = await db
             .collectionMemberTombstoneKeysFor(to.name, to.collectionType);
         final Set<String> inFrom = await _memberKeysOf(db, from.id);
@@ -138,6 +153,9 @@ Future<Set<int>> applyOrganizeActions(
               'type': from.collectionType,
               'origin': from.origin,
               'key': from.organizeKey,
+              if (fromIdentity != null &&
+                  await db.getMediaCollectionById(from.id) == null)
+                'identity': fromIdentity,
             },
             // members = 从来处移出的；added = 这次才放进去处的（去处原本就有的不算，
             // 撤销时不从去处移出它）。
@@ -298,7 +316,13 @@ Future<Set<int>> applyOrganizeActions(
 }
 
 /// 合并前的快照（撤销用）：胜方原有成员键 `targetBefore`，败方的名字 / 来源 / 分组
-/// 身份与成员（连同 pinned）`sources`。整理合并与用户接受的合并建议共用。
+/// 身份与成员（连同 pinned）`sources`，以及胜方上会被作品图谱改挂动到的连接原状
+/// `targetLinksBefore`。整理合并与用户接受的合并建议共用。
+///
+/// 合并把败方的作品图谱连接改挂到胜方（BUG-5457），撞同一身份时按 LWW 还会改写胜方
+/// 原有的行；败方身份快照只记败方自己的连接，撤销插回它们还原不了胜方——同一对端会
+/// 同时连着两边，被改写的内容也回不来，所以胜方一侧单独记原状。全部在合并之前取：
+/// 多个败方连向同一对端时，后一个败方看到的已是前一个改挂后的胜方。
 Future<Map<String, Object?>> _mergeSnapshot(
   FushiDatabase db,
   int targetId,
@@ -306,15 +330,32 @@ Future<Map<String, Object?>> _mergeSnapshot(
 ) async {
   final Set<String> before = await _memberKeysOf(db, targetId);
   final List<Map<String, Object?>> sources = <Map<String, Object?>>[];
-  for (final int id in sourceIds) {
+  final List<Map<String, Object?>> targetLinksBefore = <Map<String, Object?>>[];
+  final MediaLinkEndpoint targetEndpoint = (
+    kind: MediaLinkKind.videoCollection,
+    key: collectionTagEntryKey(targetId),
+  );
+  for (final int id in sourceIds.toSet()) {
+    if (id == targetId) continue;
     final MediaCollectionRow? s = await db.getMediaCollectionById(id);
     if (s == null) continue;
+    targetLinksBefore.addAll(
+      await db.captureMediaLinkRetargetPreimage(
+        from: (
+          kind: MediaLinkKind.videoCollection,
+          key: collectionTagEntryKey(id),
+        ),
+        to: targetEndpoint,
+      ),
+    );
     sources.add(<String, Object?>{
       'name': s.name,
       'type': s.collectionType,
       'origin': s.origin,
       'key': s.organizeKey,
       'aliases': s.organizeAliases,
+      // 败方合并后被删：撤销按原 id 还原它的身份（BUG-5461）。
+      'identity': await db.captureMediaCollectionSnapshot(id),
       // pinned：用户亲手放进来 / 否决过移出的成员，撤销重建时照原样钉住
       // （缺字段的旧记录按 false）。
       'members': <Map<String, Object?>>[
@@ -330,7 +371,54 @@ Future<Map<String, Object?>> _mergeSnapshot(
   return <String, Object?>{
     'sources': sources,
     'targetBefore': before.toList()..sort(),
+    'targetLinksBefore': targetLinksBefore,
   };
+}
+
+/// 这次移出 / 挪走 [entries] 可能把合集 [collectionId] 移空（现有成员全在 [entries]
+/// 里、且都没钉住）时，先记下它的身份快照
+/// （[FushiDatabase.captureMediaCollectionSnapshot]）；不可能移空返回 null。移空会让
+/// 合集随最后一个成员自删，挂在它 id 上的一切（作品图谱连接、标签、刮削资料……）都
+/// 跟着没了，撤销要靠这份快照按原 id 还原（BUG-5461）。调用方移完后合集确实没了才
+/// 把它写进记录。
+Future<Map<String, Object?>?> _identityIfEmptied(
+  FushiDatabase db,
+  int collectionId,
+  List<OrganizeEntry> entries,
+) async {
+  final Set<String> moving = <String>{
+    for (final OrganizeEntry e in entries)
+      for (final OrganizeMemberRow r in e.rows)
+        '${r.mediaType}\u0000${r.entryKey}',
+  };
+  final bool empties = (await db.getCollectionItems(collectionId)).every(
+    (MediaCollectionItemRow i) =>
+        !i.pinnedByUser && moving.contains('${i.mediaType}\u0000${i.entryKey}'),
+  );
+  return empties ? db.captureMediaCollectionSnapshot(collectionId) : null;
+}
+
+/// 撤销时找回一个被整理删掉的合集，返回它的 id：
+/// - 记录里有身份快照（[identity]）→ 按原 id 还原合集行与挂在它身上的一切
+///   （[FushiDatabase.restoreMediaCollectionSnapshot]；同名合集已在就挂回它身上），
+///   新插回的合集再清掉指向已不存在文件的封面 / 附加图（合并时已回收的资产）；
+/// - 没有快照（旧记录）→ 同名合集还在就用它，否则 [recreate] 按名字新建。
+Future<int> _reviveCollection(
+  FushiDatabase db, {
+  required Object? identity,
+  required MediaCollectionRow? existing,
+  required Future<int> Function() recreate,
+}) async {
+  if (identity is Map) {
+    final int? id = await db.restoreMediaCollectionSnapshot(
+      identity.cast<String, Object?>(),
+    );
+    if (id != null) {
+      if (existing == null) await dropMissingCollectionAssetRefs(db, id);
+      return id;
+    }
+  }
+  return existing?.id ?? await recreate();
 }
 
 Future<Set<String>> _memberKeysOf(FushiDatabase db, int collectionId) async =>
@@ -469,15 +557,19 @@ Future<int> undoLibraryOrganizeChanges(
         }
         did = true;
       case 'evict':
-        // 移出最后一个成员时合集会被移空自删（不写合集墓碑）：按记录重建它。
-        final int id =
-            c?.id ??
-            await db.createMediaCollection(
-              r.collectionName,
-              collectionType: r.collectionType,
-              origin: _originOr(payload['origin'], CollectionOrigin.ai),
-              organizeKey: r.organizeKey,
-            );
+        // 移出最后一个成员时合集会被移空自删（不写合集墓碑）：按身份快照原 id 还原，
+        // 旧记录没有快照就按记录重建。
+        final int id = await _reviveCollection(
+          db,
+          identity: payload['identity'],
+          existing: c,
+          recreate: () => db.createMediaCollection(
+            r.collectionName,
+            collectionType: r.collectionType,
+            origin: _originOr(payload['origin'], CollectionOrigin.ai),
+            organizeKey: r.organizeKey,
+          ),
+        );
         // 撤销移出 = 用户否决这次移出：成员加回去并钉住（pinned），任何设备上的
         // AI 都不再移它；不接手合集所有权（AI 库管家设计稿 §7）。
         await _restorePinned(db, id, _members(payload['members']));
@@ -499,14 +591,17 @@ Future<int> undoLibraryOrganizeChanges(
         final String fromType = rawFrom['type'] as String;
         final MediaCollectionRow? from = await db
             .getMediaCollectionByNaturalKey(fromName, fromType);
-        final int fromId =
-            from?.id ??
-            await db.createMediaCollection(
-              fromName,
-              collectionType: fromType,
-              origin: _originOr(rawFrom['origin'], CollectionOrigin.ai),
-              organizeKey: rawFrom['key'] as String?,
-            );
+        final int fromId = await _reviveCollection(
+          db,
+          identity: rawFrom['identity'],
+          existing: from,
+          recreate: () => db.createMediaCollection(
+            fromName,
+            collectionType: fromType,
+            origin: _originOr(rawFrom['origin'], CollectionOrigin.ai),
+            organizeKey: rawFrom['key'] as String?,
+          ),
+        );
         await _restorePinned(db, fromId, _members(payload['members']));
         did = true;
       case 'merge':
@@ -572,11 +667,16 @@ Future<void> _undoMergeSnapshot(
     final Map<Object?, Object?> s = raw;
     final String name = s['name'] as String;
     final String type = s['type'] as String;
-    final int id = await db.createMediaCollection(
-      name,
-      collectionType: type,
-      origin: CollectionOrigin.user,
-      organizeKey: s['key'] as String?,
+    final int id = await _reviveCollection(
+      db,
+      identity: s['identity'],
+      existing: await db.getMediaCollectionByNaturalKey(name, type),
+      recreate: () => db.createMediaCollection(
+        name,
+        collectionType: type,
+        origin: CollectionOrigin.user,
+        organizeKey: s['key'] as String?,
+      ),
     );
     final Set<String> sourceAliases = decodeOrganizeAliases(
       s['aliases'] as String?,
@@ -607,6 +707,12 @@ Future<void> _undoMergeSnapshot(
   }
   final MediaCollectionRow? target = await db.getMediaCollectionById(c.id);
   if (target != null) {
+    // 胜方上改挂进来的连接删掉、被 LWW 改写的写回原状（败方自己的连接已随身份快照
+    // 回到败方）。胜方已不在就不动：写回会留下端点不存在的死连接。缺字段的旧记录
+    // 什么也不做。
+    await db.restoreMediaLinkRetargetPreimage(
+      payload['targetLinksBefore'] as List<Object?>? ?? const <Object?>[],
+    );
     await db.setMediaCollectionOrganizeState(
       target.id,
       origin: CollectionOrigin.user,
@@ -637,6 +743,90 @@ Future<void> _restorePinned(
 
 CollectionOrigin _originOr(Object? raw, CollectionOrigin fallback) =>
     raw is String ? CollectionOrigin.parse(raw) : fallback;
+
+/// 本机整理记录里 AI 自动从合集移出、且还没撤销的条目键，按合集自然键 + 媒体类型
+/// 索引：`evict`（移出 / 拆散，记在来处合集名下）与 `move`（挪走，来处记在
+/// `payload.from`）。用户同意的待确认建议（`proposal`）是用户意图，不算。
+///
+/// 每个键带那次运行（`library_organize_runs`，按 `runId` 关联）的结束时刻，作 AI
+/// 写下的成员墓碑 `deletedAt` 的上界：收养入口只清不晚于它的墓碑，用户之后（加回
+/// 又）亲手移出写下的更新墓碑照常拦（BUG-5016）。还没结束（`finishedAt` 为空）的
+/// 运行给不出上界，不算——宁可照旧拦，也不误清用户的移出。
+///
+/// 收养入口据此分辨「AI 移出留下的成员墓碑」与「用户自己移出的」：前者在用户亲手
+/// 再加入这部作品时清掉（BUG-5518）。一次「加入媒体库」只读一次整理记录
+/// （[load]），逐集查 [keysFor]。整理记录设备本地、不同步，所以只认得本机 AI 做的
+/// 移出；别的设备上 AI 移出、同步过来的墓碑仍照常拦。
+class OrganizerRemovals {
+  const OrganizerRemovals._(this._keys);
+
+  /// 什么都没移出过（被动收养不查整理记录时用）。
+  static const OrganizerRemovals none = OrganizerRemovals._(
+    <(String, String, String), Map<String, int>>{},
+  );
+
+  final Map<(String, String, String), Map<String, int>> _keys;
+
+  /// 读一次整理记录（连同所属运行的结束时刻），只收 [collectionNames] 这些合集的
+  /// 移出（`evict` 在 SQL 里按合集名筛；`move` 的来处在载荷里，解码后筛）。
+  static Future<OrganizerRemovals> load(
+    FushiDatabase db, {
+    required Set<String> collectionNames,
+  }) async {
+    if (collectionNames.isEmpty) return none;
+    final String evict = OrganizeActionKind.evict.name;
+    final String move = OrganizeActionKind.move.name;
+    final $LibraryOrganizeChangesTable c = db.libraryOrganizeChanges;
+    final $LibraryOrganizeRunsTable r = db.libraryOrganizeRuns;
+    final List<TypedResult> rows =
+        await (db.select(c).join(<Join>[innerJoin(r, r.id.equalsExp(c.runId))])
+              ..where(
+                c.undoneAt.isNull() &
+                    r.finishedAt.isNotNull() &
+                    (c.kind.equals(move) |
+                        (c.kind.equals(evict) &
+                            c.collectionName.isIn(collectionNames))),
+              ))
+            .get();
+    final Map<(String, String, String), Map<String, int>> keys =
+        <(String, String, String), Map<String, int>>{};
+    for (final TypedResult row in rows) {
+      final LibraryOrganizeChangeRow change = row.readTable(c);
+      final int until = row.readTable(r).finishedAt!;
+      final Map<String, Object?>? payload = _decode(change.payloadJson);
+      if (payload == null) continue;
+      final String name;
+      final String type;
+      if (change.kind == evict) {
+        (name, type) = (change.collectionName, change.collectionType);
+      } else if (payload['from'] case {
+        'name': final String n,
+        'type': final String t,
+      }) {
+        (name, type) = (n, t);
+      } else {
+        continue;
+      }
+      if (!collectionNames.contains(name)) continue;
+      for (final ({String t, String k}) m in _members(payload['members'])) {
+        final Map<String, int> byKey = keys[(name, type, m.t)] ??=
+            <String, int>{};
+        final int? prev = byKey[m.k];
+        if (prev == null || until > prev) byKey[m.k] = until;
+      }
+    }
+    return OrganizerRemovals._(keys);
+  }
+
+  /// [mediaType] 是 `MediaKind.dbValue`。返回条目键 → AI 移出墓碑 `deletedAt` 的上界。
+  Map<String, int> keysFor({
+    required String collectionName,
+    required String collectionType,
+    required String mediaType,
+  }) =>
+      _keys[(collectionName, collectionType, mediaType)] ??
+      const <String, int>{};
+}
 
 /// 撤销一次整理里还没撤销的全部改动（待确认建议不算改动，不动）。
 Future<int> undoLibraryOrganizeRun(FushiDatabase db, int runId) async {
@@ -1294,6 +1484,10 @@ _acceptProposal(FushiDatabase db, LibraryOrganizeProposalView view) async {
         });
       }
       if (removed.isEmpty) return stale;
+      // 全部移走 = 合集随最后一个成员自删：先记身份快照，撤销按原 id 还原（BUG-5461）。
+      final Map<String, Object?>? identity = removed.length == items.length
+          ? await db.captureMediaCollectionSnapshot(target.id)
+          : null;
       for (final Map<String, Object?> m in removed) {
         await db.removeFromCollectionRaw(
           target.id,
@@ -1309,6 +1503,9 @@ _acceptProposal(FushiDatabase db, LibraryOrganizeProposalView view) async {
           'origin': target.origin,
           'key': target.organizeKey,
           'aliases': target.organizeAliases,
+          if (identity != null &&
+              await db.getMediaCollectionById(target.id) == null)
+            'identity': identity,
         },
       );
   }
@@ -1413,23 +1610,26 @@ Future<bool> _undoRemoveMembers(
     applied['origin'],
     CollectionOrigin.user,
   );
-  final int id;
-  if (existing != null) {
-    id = existing.id;
-  } else {
-    id = await db.createMediaCollection(
-      view.targetName,
-      collectionType: view.targetType,
-      origin: origin,
-      organizeKey: applied['key'] as String?,
-    );
-    await db.setMediaCollectionOrganizeState(
-      id,
-      origin: origin,
-      organizeKey: applied['key'] as String?,
-      organizeAliases: decodeOrganizeAliases(applied['aliases'] as String?),
-    );
-  }
+  final int id = await _reviveCollection(
+    db,
+    identity: applied['identity'],
+    existing: existing,
+    recreate: () async {
+      final int id = await db.createMediaCollection(
+        view.targetName,
+        collectionType: view.targetType,
+        origin: origin,
+        organizeKey: applied['key'] as String?,
+      );
+      await db.setMediaCollectionOrganizeState(
+        id,
+        origin: origin,
+        organizeKey: applied['key'] as String?,
+        organizeAliases: decodeOrganizeAliases(applied['aliases'] as String?),
+      );
+      return id;
+    },
+  );
   final Set<String> restored = <String>{};
   for (final ({String t, String k, int pos, bool pinned}) m in removed) {
     await db.addToCollectionRaw(

@@ -1,5 +1,10 @@
 /// AI 库管家的自动路径（spec `docs/specs/2026-11-18-ai-library-curator-design.md` §9）：
-/// 入库 / 扫描后去抖跑一趟。
+/// 入库 / 扫描后去抖跑一趟。**默认关**（用户 2026-11-26）：只有用户自己打开
+/// `library_curate_auto` 后才自动跑，默认只有手动触发。
+///
+/// 触发点是各库页重载 / 来源扫描（[scheduleAutomaticLibraryCurate]），它们只表示
+/// 「库可能变了」——书架连阅读进度、合集变化都会重载。真正的「有没有新内容」由
+/// 编排器的 [LibraryCurator.runAuto] 按库变化戳判断，没有就什么都不做（BUG-5546）。
 ///
 /// **这是 import 叶子**：只依赖引擎，不 import `package:fushi` 的任何文件——
 /// `AppModel` 与库整理 runner（都在 app 的 import 大环里）要 import 它，它再往回
@@ -73,7 +78,7 @@ class LibraryCurateAutoHost {
   /// AI 指派（偏好仓库）。
   final AiSettingsSource settings;
 
-  /// 偏好 `library_curate_auto`（默认开）。
+  /// 偏好 `library_curate_auto`（默认关，用户自己打开才自动跑）。
   final bool Function() autoOn;
   final bool Function() aiModuleEnabled;
 
@@ -93,14 +98,14 @@ void installLibraryCurateAutomatic(LibraryCurateAutoHost? host) {
   _debounce = null;
 }
 
-/// 自动路径此刻接管入库后的自动任务吗：装了宿主且开关开着（默认开）。接管时旧的
+/// 自动路径此刻接管入库后的自动任务吗：装了宿主且开关开着（默认关）。接管时旧的
 /// 「导入后自动整理」不再单独跑——库管家第一阶段就是同一个整理（两套自动任务不
 /// 重复跑）。
 bool libraryCurateAutoOwnsTriggers() =>
     _autoHost != null && _autoHost!.autoOn();
 
-/// spec §9：默认开只对已经配了提供商的用户生效——三步一个 AI 都没指派时自动路径
-/// 什么都不跑。
+/// spec §9：开关开着也只对已经配了提供商的用户生效——三步一个 AI 都没指派时自动
+/// 路径什么都不跑。
 bool _autoEnabled(LibraryCurateAutoHost? host) {
   if (host == null || !host.autoOn()) return false;
   final LibraryCurateAiAvailability ai = libraryCurateAiOf(
@@ -146,8 +151,8 @@ void scheduleAutomaticLibraryCurate() {
 
 /// 跑一趟自动路径（去抖到点后调；测试直接调）：先跑库管家流水线（便宜、证据硬的
 /// 部分），再交 AI 助手复查（全局判断）。手动整理正在跑时这一次整体跳过，下一次
-/// 触发再来（复查要看到流水线的结果）。流水线没跑或没跑成时返回 null。失败只记
-/// 日志（自动路径没人看着）。
+/// 触发再来（复查要看到流水线的结果）。流水线没跑、没有新内容（[LibraryCurator.
+/// runAuto] 返回 null）或没跑成时返回 null。失败只记日志（自动路径没人看着）。
 @visibleForTesting
 Future<LibraryCurateRun?> runAutomaticLibraryCurate() async {
   _debounce = null;
@@ -158,7 +163,7 @@ Future<LibraryCurateRun?> runAutomaticLibraryCurate() async {
     if (curator == null) return null;
     if (curator.isRunning) return null;
     try {
-      run = await curator.run(trigger: LibraryCurateTrigger.auto);
+      run = await curator.runAuto();
     } on LibraryCurateBusy {
       return null;
     } on Object catch (error, stack) {

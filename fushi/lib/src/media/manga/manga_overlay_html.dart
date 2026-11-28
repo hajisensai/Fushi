@@ -1198,6 +1198,7 @@ String mangaWindowDocument(
       '<script>'
       'window.__mangaDocumentGeneration=$documentGeneration;'
       '${_mangaGestureJs(isWebtoon: isWebtoon, rtl: rtl, currentSpread: currentSpread, restoreFraction: restoreFraction, zoomPercent: zoomPercent, restZoomPercent: restZoomPercent ?? zoomPercent, zoomMinPercent: zoomMinPercent, zoomMaxPercent: zoomMaxPercent, zoomSensitivity: zoomSensitivity, pageAnimation: pageAnimation, pageAnimationSpeed: pageAnimationSpeed, followDrag: followDrag, swipeSensitivity: swipeSensitivity, tapZonePaging: tapZonePaging, tapZoneLayout: tapZoneLayout, disableZoomOut: disableZoomOut, animateDoubleTap: animateDoubleTap, invertHorizontal: invertHorizontal, invertVertical: invertVertical, invertBoth: invertBoth, doubleTapAnimationMs: doubleTapAnimationMs, splitWidePages: splitWidePages, rotateWidePages: rotateWidePages, autoZoomWidePages: autoZoomWidePages, panWidePages: panWidePages, zoomStartPosition: zoomStartPosition, preferences: preferences, hoverKey: hoverKey, cropBorders: cropBorders, scaleType: scaleType, longStripSidePadding: longStripSidePadding, isVerticalPaged: isVerticalPaged, enableMouseTextSelection: enableMouseTextSelection, fitImagesToDisplay: fitImagesToDisplay, spreadGutterPx: spreadGutterPx, bookRtl: spreadDirection == 'rtl', bubbleZoomOpenMs: bubbleZoomOpenMs, bubbleZoomCloseMs: bubbleZoomCloseMs, textStripLayout: textStripLayout, bubbleFocusLabel: bubbleFocusLabel, bubbleFocusResume: bubbleFocusResume, textStripEmptyLabel: textStripEmptyLabel, bubbleZoomCloseLabel: bubbleZoomCloseLabel)}'
+      '$mangaDocumentReadySignalJs'
       '</script>'
       '</body></html>';
 }
@@ -1238,6 +1239,23 @@ const int kMangaActivityReportIntervalMs = 5000;
 /// 按 data-spread 测量。
 /// 翻页动画统一缓动（CSS 过渡与 JS 逐帧滚动动画同一条曲线）。
 const String kMangaPageTurnEasing = 'cubic-bezier(.2,.7,.2,1)';
+
+/// 窗口文档自报就绪的 JS handler 名（BUG-5495，宿主见 `_markWindowReady`）。
+const String kMangaDocumentReadyHandler = 'onMangaDocumentReady';
+
+/// 窗口文档末尾的就绪信号：手势脚本与全部 `window.__manga*` 钩子装完后，立刻把本文档
+/// 的 generation 报给宿主。
+///
+/// 不能只靠 `onLoadStop`：它跟着 load 事件走，要等首屏 eager 页图全部取完（Android
+/// 上每张都经 `shouldInterceptRequest` 过一趟平台通道、再按显示宽度转码），慢的时候
+/// 超过 10 秒，宿主的导航锁一直挂着，翻页全排在队里（反馈 eMhRJkkQOW / p8PxXVb-xH）。
+/// 桥（`window.flutter_inappwebview`）在文档开始时注入；没注入上就不发，交给
+/// `onLoadStop` 兜底。
+const String mangaDocumentReadySignalJs =
+    '(function(){var b=window.flutter_inappwebview;'
+    'if(b&&typeof b.callHandler==="function")'
+    'b.callHandler("$kMangaDocumentReadyHandler",window.__mangaDocumentGeneration);'
+    '})();';
 
 /// `#manga-root` 的过渡声明，由翻页动画效果与速度决定（JS 侧 `_rootTransitionDecl`
 /// 是它的运行时镜像，设置变化时换掉 `#manga-anim-css` 的内容）。
@@ -3789,6 +3807,44 @@ String _mangaGestureJs({
       // 向下/向右滚 = 页序前进（next），向上/向左 = 后退（prev）；Dart 端按阅读
       // 方向已统一 clamp（与 swipe 同口径）。
       b.callHandler('onMangaTurn', dir > 0 ? 'next' : 'prev');
+    }, {passive: false});
+  }
+  // ── webtoon 触控板 / 高精度滚轮：页内 1:1 同步滚动（反馈 AmYIZcxlKr，BUG-5555）──
+  // 条漫靠文档原生竖向滚动。Windows 上触控板两指滑动由 WebView 宿主换算成一串**碎的
+  // 普通滚轮**（每帧几像素，WebView2 没有精确滚动的输入口），Chromium 对每个普通滚轮都
+  // 起一段平滑滚动动画、后一个不断改前一个的目标：跟手性全没了，慢、顿、方向乱。鼠标
+  // 一格是单个大 delta，动画正是想要的，所以只有触控板坏。查词弹窗（popup.js BUG-870 /
+  // BUG-2834）与正文连续模式早就是同一做法：像素模式下的小 delta 判为细粒度设备、本次
+  // 手势锁定，preventDefault 后同步 1:1 滚过去（亚像素余量跨帧累计）；粗滚轮（大 delta /
+  // 行 / 页模式）仍交给原生平滑滚动。
+  if (IS_WEBTOON) {
+    var WEBTOON_FINE_WHEEL_PX = 60;
+    var WEBTOON_FINE_IDLE_MS = 200;
+    var _webtoonWheelFine = false;
+    var _webtoonWheelAt = -Infinity;
+    var _webtoonWheelResidual = 0;
+    document.addEventListener('wheel', function(e){
+      if (e.ctrlKey || e.metaKey) return;
+      var now = performance.now();
+      if (now - _webtoonWheelAt > WEBTOON_FINE_IDLE_MS) {
+        _webtoonWheelFine = false;
+        _webtoonWheelResidual = 0;
+      }
+      _webtoonWheelAt = now;
+      if (e.deltaMode !== 0) return;
+      var dy = e.deltaY || 0;
+      var dx = e.deltaX || 0;
+      if (dy === 0 && dx === 0) return;
+      if (Math.abs(dy) < WEBTOON_FINE_WHEEL_PX) _webtoonWheelFine = true;
+      if (!_webtoonWheelFine) return;
+      e.preventDefault();
+      _stopFlick();
+      _webtoonWheelResidual += dy;
+      var step = Math.trunc(_webtoonWheelResidual);
+      _webtoonWheelResidual -= step;
+      if (step) window.scrollBy(0, step);
+      // 放大态的横向平移照旧走 _panBy（钳制只住在它里面）；不放大时条漫没有横向可滚。
+      if (dx && ZOOM > 1) _panBy(-dx, 0);
     }, {passive: false});
   }
   // ── 抑制原生拖拽残影（BUG-051「秃瓢」）──

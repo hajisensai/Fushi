@@ -33,6 +33,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_browse_preview.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart'
     show srsSoundPlayerProvider;
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_field_ai_action.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_field_editors.dart';
 import 'package:fushi/src/srs/srs_fushi_card_fields.dart' show srsPlainText;
 import 'package:fushi_engine/srs/srs_media_store.dart';
@@ -524,7 +525,7 @@ class _PreviewTab extends ConsumerWidget {
 
 // ---------------------------------------------------------------- 编辑
 
-class _EditTab extends StatefulWidget {
+class _EditTab extends ConsumerStatefulWidget {
   const _EditTab({
     super.key,
     required this.detail,
@@ -539,10 +540,10 @@ class _EditTab extends StatefulWidget {
   final void Function(String noteId) onOpenEditor;
 
   @override
-  State<_EditTab> createState() => _EditTabState();
+  ConsumerState<_EditTab> createState() => _EditTabState();
 }
 
-class _EditTabState extends State<_EditTab> {
+class _EditTabState extends ConsumerState<_EditTab> {
   final Map<String, SrsFieldModel> _models = <String, SrsFieldModel>{};
 
   /// 每个字段最近一次落库（或载入）的值：外部重读时只重置没在改的字段。
@@ -746,6 +747,20 @@ class _EditTabState extends State<_EditTab> {
                 key: ValueKey<String>('srs-browse-field-${f.name}'),
                 name: f.name,
                 model: _models[f.id]!,
+                // 与编辑页同一个字段 AI 键（BUG-5470）：结果换进模型后照常停笔自动保存，经浏览页写入压进撤销栈。
+                headerActions: srsFieldAiHeaderActions(
+                  this.context,
+                  ref,
+                  logTag: 'SrsBrowse.inlineFieldAi',
+                  noteType: type,
+                  field: f,
+                  model: () => _models[f.id],
+                  valuesById: () => <String, String>{
+                    for (final MapEntry<String, SrsFieldModel> e
+                        in _models.entries)
+                      e.key: e.value.value,
+                  },
+                ),
                 speechSources: srsSpeechSourcesOf<SrsFieldModel>(
                   f.name,
                   <({String name, SrsFieldModel value})>[
@@ -1128,9 +1143,11 @@ class _LogRow extends StatelessWidget {
           if (days != null && days > 0) t.srs_browse_history_days(n: days),
         ].join(' · '),
       ),
-      trailing: log.durationMs > 0
+      trailing: srsCountedAnswerMs(log) > 0
           ? Text(
-              t.srs_browse_history_seconds(n: (log.durationMs / 1000).round()),
+              t.srs_browse_history_seconds(
+                n: (srsCountedAnswerMs(log) / 1000).round(),
+              ),
             )
           : null,
     );

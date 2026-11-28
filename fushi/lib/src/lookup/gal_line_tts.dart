@@ -703,11 +703,15 @@ GalLineVoiceEvidence galLineVoiceEvidenceOf(TexthookerLineEntry line) =>
       TexthookerLineAudioStatus.pending => GalLineVoiceEvidence.pending,
       TexthookerLineAudioStatus.matched ||
       TexthookerLineAudioStatus.encoded => GalLineVoiceEvidence.voiced,
-      // 兜底切片只有在「判定这句没配音」时才算无配音；其余兜底是真录到了声音。
-      TexthookerLineAudioStatus.fallback =>
-        line.fallbackReason == kGalLineNoVoiceReason
-            ? GalLineVoiceEvidence.unvoiced
-            : GalLineVoiceEvidence.voiced,
+      // 兜底切片本身不是「有配音」的证据（BUG-5550）：系统 loopback 截的是整机混音，
+      // 旁白句截到的只有 BGM。只有人声检测落定为有人声（或用户补录 / 选轨、引擎侧的
+      // 兜底）才算 voiced；检测中等它，判定无人声 / 判不出都按无配音处理。
+      TexthookerLineAudioStatus.fallback => switch (line.fallbackReason) {
+        kGalLoopbackVoiceCheckingReason => GalLineVoiceEvidence.pending,
+        kGalLineNoVoiceReason ||
+        kGalLoopbackVoiceUnverifiedReason => GalLineVoiceEvidence.unvoiced,
+        _ => GalLineVoiceEvidence.voiced,
+      },
       TexthookerLineAudioStatus.missing ||
       TexthookerLineAudioStatus.unavailable => GalLineVoiceEvidence.unvoiced,
     };

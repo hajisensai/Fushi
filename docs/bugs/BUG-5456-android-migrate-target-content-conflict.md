@@ -1,0 +1,8 @@
+## BUG-5456 · Android 移动书库：目标里同路径不同内容的文件被当成中断残留整树删掉
+- **报告**：2026-11-25（应用内反馈 hjOW5xpIJ0，Fushi 3.4.0 Android）
+- **真实性**：✅ 真 bug（沿代码路径确认，upstream/develop 4299e148e69 仍在）。根因：
+  - `fushi/lib/src/storage/app_paths.dart:726-741`（旧 `firstAndroidMigrationTargetOnlyFile`）核实「固定目标是上次中断复制留下的半成品」时只看源根里**有没有同一相对路径**，不看内容。两个根放相同相对路径（如 `fushi_books/book/manga.json`）、内容不同的文件时它返回 null。
+  - `fushi/lib/src/sync/sync_settings_schema/data_root.part.dart:397` 随即 `newDocs.delete(recursive: true)`，目标里的完整正文或较新版本被删掉。BUG-5375 / 提交 9cc5ff91676 只堵了「目标里有源没有的文件」这一种，同名异内容漏了。
+- **[x] ① 已修复** — 判据改成「目标里的每个字节都能在源里同位置找到」：`AppPaths.androidMigrationTargetBlocker` 对目标里每个文件（`.nomedia`、`*.fushi-part` 除外）要求源里有同一相对路径的普通文件，且目标内容是源那份的**前缀**（`AppPaths.isInterruptedCopyOf`；逐字节相同是特例，前缀之后到末尾全是 0 也算——预分配 / 掉电留下的空洞）。依据：引擎跨盘复制不删源，Android 上 `File.copy` 以 `O_TRUNC` 打开正式名后顺序写，所以中断留下的每个文件不是完整副本就是源的开头一截，清掉不丢任何源里没有的数据；内容冲突的真数据（比源长、或同一位置字节不同，含同大小不同字节）必然不满足。不满足就拒绝清空、一个字节都不删，并按原因报给用户：源里没有该路径 → 原提示 `data_storage_migrate_target_has_library`；同名内容不同 → 新提示 `data_storage_migrate_target_conflict`（报出冲突文件）。先只比存在性与长度，过关才逐字节比；整套核实放后台 isolate（`androidMigrationTargetBlockerInBackground`），大书库不卡 UI。
+- **[x] ② 已加自动化测试** — `fushi/test/storage/android_documents_location_test.dart`「迁移前清理固定目标」组：同路径同大小不同字节 → 冲突；目标比源长 → 冲突；更短但不是前缀 → 冲突；差异落在第二个 1 MiB 读块 → 冲突；同名一边是目录 → 拒绝；中断复制残留（完整副本 + 跨读块边界截断的最后一个文件 + `*.fushi-part`）→ 可清；截断成 0 字节 → 可清；前缀后全 0 → 可清、空洞里有非 0 → 冲突；目标多出文件时先报 targetOnly；后台 isolate 版本结论一致；原有的「不存在 / 子集 / 目标独有」三条保留。
+- **备注**：已知取舍——中断迁移后用户继续在源根里**改写**了某个已复制过的文件（不是追加），目标那份旧副本与源对不上，会按冲突拒绝，需要用户自己处理目标里那份后再迁移。只凭内容分不出「过期副本」和「冲突的真数据」，按「宁可拦下报告、不删」处理。`planAndroidDocumentsMigration` 依赖 AppModel / path_provider，没有端到端单测，覆盖在判据函数这一层。

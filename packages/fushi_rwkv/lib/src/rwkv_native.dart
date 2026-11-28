@@ -13,7 +13,7 @@ enum RwkvModelKind {
   /// 2,762,884 参数的上游模型（质量优先）。
   large(1),
 
-  /// 小模型（Instant-Only sm98，331,511 参数，省内存）。曲线头没训练过：
+  /// 小模型（Instant-Only：Small sm113，331,511 参数；六层 Tiny sm130io，185,057 参数）。曲线头没训练过：
   /// [RwkvNativeRuntime.nextIntervals] 对它抛 [RwkvNativeException.isUnsupported]。
   small(2);
 
@@ -21,11 +21,13 @@ enum RwkvModelKind {
   final int code;
 }
 
-/// 状态精度（`frwkv_runtime_new` 的 precision）。[recommended]：大模型 int8、小模型 int4。
+/// 状态精度（`frwkv_runtime_new` 的 precision）。[recommended]：int8。
+///
+/// 曾经的 int4（code 4）已删：它让超长复习历史的卡 / 笔记状态指数发散、该卡预测卡死（BUG-5594），
+/// 原生库自 ABI 7 起拒收。
 enum RwkvPrecision {
   f32(0),
   int8(8),
-  int4(4),
   recommended(-1);
 
   const RwkvPrecision(this.code);
@@ -396,9 +398,7 @@ class RwkvNativeRuntime implements Finalizable {
     if (handle == nullptr) throw b.error(-1);
     final RwkvPrecision resolved = precision != RwkvPrecision.recommended
         ? precision
-        : (model.kind == RwkvModelKind.small
-              ? RwkvPrecision.int4
-              : RwkvPrecision.int8);
+        : RwkvPrecision.int8;
     final RwkvNativeRuntime runtime = RwkvNativeRuntime._(
       b,
       handle,

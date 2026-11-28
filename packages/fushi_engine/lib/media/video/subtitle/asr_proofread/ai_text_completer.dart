@@ -17,7 +17,7 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_pipelin
 /// [reason] 是脱敏短码，可直接进 UI 文案：
 /// - `AiChatClient` 的失败码原样带过：`quota_exhausted` / `unauthorized` /
 ///   `rate_limited` / `network_error` / `http_<状态码>` / `provider_not_configured` /
-///   `bad_response` / `empty_response`；
+///   `bad_response` / `empty_response` / [kAiOutputLimitCode]；
 /// - 管线自己的：[kSubtitleAiReplyIncomplete]（连续 3 次回复都没带来任何新的 id /
 ///   条目；截断与漏写的部分各阶段会保留已答的、只补问剩下的）、[kSubtitleAiNotConfigured]（开了 AI 却没解析出提供商）。
 class SubtitleAiRequestFailure implements Exception {
@@ -143,8 +143,10 @@ class AiChatTextCompleter implements AiTextCompleter {
       }
       // 模型回了空正文：请求本身成功、token 也花了（用量未知），是「回复不合格」
       // 而不是「请求失败」——交给各阶段的重试循环当一次解析失败，3 次仍不行才报
-      // reply_incomplete。
-      if (failure.message == 'empty_response') {
+      // reply_incomplete。思考把额度用光（[kAiOutputLimitCode]）同样是空正文，
+      // 口径不变（BUG-5469 只把它从 empty_response 里分出来）。
+      if (failure.message == 'empty_response' ||
+          failure.message == kAiOutputLimitCode) {
         return const AiChatCompletion(text: '');
       }
       throw SubtitleAiRequestFailure(failure.message);

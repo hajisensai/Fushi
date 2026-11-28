@@ -11,6 +11,9 @@ import 'package:fushi_engine/media/video/strm_file.dart'
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/subtitle/plain_subtitle_overlap.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_language_target.dart';
+import 'package:fushi_engine/media/video/video_sidecar.dart'
+    show isSidecarSubtitleSuffix, rankSidecarSubtitles;
 import 'package:fushi_engine/platform/media_disk_identity.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -66,9 +69,14 @@ class EmbeddedSubtitleTrackProbeResult {
     required this.status,
     required this.timeout,
     required this.sizeBytes,
+    this.audioLanguages = const <String>[],
   });
 
   final List<EmbeddedSubtitleTrack> tracks;
+
+  /// 同一次 `ffmpeg -i` 里各音轨声明的语言（按出现顺序，去掉没写 / `und`）。挑字幕
+  /// 时语言链全空的最后一条证据（[audioSubtitleLanguageTarget]），不另起进程。
+  final List<String> audioLanguages;
   final EmbeddedSubtitleTrackProbeStatus status;
   final Duration timeout;
   final int sizeBytes;
@@ -119,6 +127,34 @@ const Set<String> _handlerNameNoise = <String>{
   'core media audio',
   'core media video',
 };
+
+/// 匹配 `Stream #0:N(lang): Audio:` 行，取括号里的语言。
+final RegExp _audioStreamPattern = RegExp(
+  r'Stream #\d+:\d+(?:\[0x[0-9a-fA-F]+\])?\(([^)]+)\): Audio:',
+);
+
+/// **纯函数**：`ffmpeg -i` stderr 里各音轨声明的语言（按出现顺序；没写语言的轨、
+/// `und` 跳过）。
+List<String> parseAudioStreamLanguagesFromFfmpegLog(String ffmpegStderr) =>
+    <String>[
+      for (final String line in const LineSplitter().convert(ffmpegStderr))
+        if (_audioStreamPattern.firstMatch(line)?.group(1)?.trim()
+            case final String lang
+            when lang.isNotEmpty && lang.toLowerCase() != 'und')
+          lang,
+    ];
+
+/// 语言链全空时，从音轨语言推挑字幕的目标：第一条认得出语言的音轨。认不出 / 没有
+/// 音轨语言返回 null（不猜）。
+SubtitleLanguageTarget? audioSubtitleLanguageTarget(
+  List<String> audioLanguages,
+) {
+  for (final String lang in audioLanguages) {
+    final SubtitleLanguageTarget? target = SubtitleLanguageTarget.parse(lang);
+    if (target != null) return target;
+  }
+  return null;
+}
 
 /// **纯函数**：解析 `ffmpeg -i <video>` 的 stderr，提取所有内嵌字幕轨。
 ///
@@ -215,35 +251,6 @@ bool isImportedExternalSubtitlePath(String persisted) {
   if (persisted.startsWith(SubtitleSource.embeddedPrefix)) return false;
   if (SubtitleSource.isHostSidecarPersisted(persisted)) return false;
   return subtitleFormatForPath(persisted) != null;
-}
-
-/// **纯函数**：换集时是否应「原样沿用」上一集持久化的外挂字幕路径 [persisted]，
-/// 而非按新集名重新匹配同目录 sidecar。
-///
-/// 背景（BUG-165 / BUG-132）：BUG-132 给播放列表恢复加了「持久化值是显式导入字幕
-/// （[isImportedExternalSubtitlePath]）且文件在磁盘上就按路径直接加载」的捷径，救
-/// 「导入字幕住在 `<appDocs>/video_subtitles/`、不在剧集目录里、换集枚举不到」的丢
-/// 失。但该捷径只看扩展名，把**剧集自带、住在视频同目录**的 sidecar（如上一集
-/// `EP01.ja.srt`）也截下来跨集原样沿用 → 切到 `EP02` 仍显示 `EP01` 字幕（BUG-165）。
-///
-/// 区分依据是**目录归属**，不是扩展名：真正的导入/下载字幕住在独立目录
-/// （video_subtitles 等），与剧集目录无关；剧集自带 sidecar 与新集视频**同目录**。
-/// 规则：
-/// - [persisted] 非导入外挂字幕（内嵌 `embedded:` / 空 / 非字幕扩展名）→ false
-///   （捷径本就不该接管，交给原有同类匹配/枚举）。
-/// - [persisted] 的目录 == 新集视频 [episodeVideoPath] 的目录 → false：这是上一集
-///   的同目录 sidecar，换集应按新集 basename 重新匹配（走 [pickEpisodeSubtitleSource]）。
-/// - 否则（导入字幕，住别处）→ true：与剧集目录无关，跨集沿用同一文件。
-///
-/// 不碰文件系统（是否真在磁盘上由调用方另查），可单测。
-bool shouldReusePersistedSubtitleAcrossEpisode(
-  String persisted,
-  String episodeVideoPath,
-) {
-  if (!isImportedExternalSubtitlePath(persisted)) return false;
-  final String subtitleDir = p.canonicalize(p.dirname(persisted));
-  final String episodeDir = p.canonicalize(p.dirname(episodeVideoPath));
-  return subtitleDir != episodeDir;
 }
 
 /// 从一组拖入文件路径 [paths] 中挑出第一个受支持的字幕文件
@@ -608,7 +615,7 @@ loadDefaultTextEmbeddedSubtitleCuesWithReadinessRetry({
   required String bookUid,
   required Future<void> Function() waitForReady,
   required bool Function() isStillCurrent,
-  String langCode = 'ja',
+  String langCode = '',
   List<String> preferredLanguages = const <String>[],
   Future<void>? cancel,
   void Function(SubtitleSource chosen)? onExtractionStarted,
@@ -631,7 +638,7 @@ loadDefaultTextEmbeddedSubtitleCuesWithReadinessRetry({
       ({
         required String videoPath,
         required String bookUid,
-        String langCode = 'ja',
+        String langCode = '',
         List<String> preferredLanguages = const <String>[],
       }) => loadDefaultTextEmbeddedSubtitleCues(
         videoPath: videoPath,
@@ -709,6 +716,9 @@ Future<EmbeddedSubtitleTrackProbeResult> probeEmbeddedSubtitleTracks(
     ], timeout);
     final List<EmbeddedSubtitleTrack> tracks =
         parseSubtitleStreamsFromFfmpegLog(result.output);
+    final List<String> audioLanguages = parseAudioStreamLanguagesFromFfmpegLog(
+      result.output,
+    );
     // 真正失败（超时 SIGKILL → returnCode:null）必须留痕，否则「0 条字幕」与
     // 「真无字幕」无从区分，整类静默失败不可调试。不抛，保持优雅降级契约。
     if (result.returnCode == null) {
@@ -722,6 +732,7 @@ Future<EmbeddedSubtitleTrackProbeResult> probeEmbeddedSubtitleTracks(
         status: EmbeddedSubtitleTrackProbeStatus.timeout,
         timeout: timeout,
         sizeBytes: sizeBytes,
+        audioLanguages: audioLanguages,
       );
     }
     if (result.returnCode != 0 && result.output.trim().isEmpty) {
@@ -742,6 +753,7 @@ Future<EmbeddedSubtitleTrackProbeResult> probeEmbeddedSubtitleTracks(
       status: EmbeddedSubtitleTrackProbeStatus.success,
       timeout: timeout,
       sizeBytes: sizeBytes,
+      audioLanguages: audioLanguages,
     );
   } on ProcessException catch (e) {
     // ffmpeg 未安装：优雅降级为无内嵌字幕。
@@ -787,9 +799,10 @@ const Set<String> _externalSubtitleExtensions = <String>{
 /// `S01E01.ja.srt` / `S01E01.en.srt`，**不挑** `S01E02.ja.srt`。这样换集/同目录混放
 /// 多集字幕时，字幕菜单只列当前集的字幕，不被别集刷屏。
 ///
-/// [langCode] 是 app 目标学习语言代码（如 `'ja'`）。**列全部同名字幕不变**，但带该
-/// 语言标记 `.<langCode>.` 的字幕排在前（稳定排序：组内保持 [dirFiles] 原序），让
-/// 菜单第一项是学习语言对应的字幕。
+/// [langCode] 是本视频的目标语言标签（`ja` / `zh-Hant` …，空串 = 未知）。**列全部
+/// 同名字幕不变**，但会被自动加载的那些按自动加载的先后排在前
+/// （[rankSidecarSubtitles]，与播放器起播挑的是同一条），其余保持 [dirFiles] 原序，
+/// 让菜单第一项就是自动加载会选的那份。
 ///
 /// 不碰文件系统，可单测。
 List<String> pickSameNameSubs(
@@ -798,83 +811,30 @@ List<String> pickSameNameSubs(
   required String langCode,
 }) {
   final String baseLower = videoBaseNoExt.toLowerCase();
-  final String langMarker = '.${langCode.toLowerCase()}.';
-  final List<String> langFirst = <String>[];
-  final List<String> rest = <String>[];
-  for (final String name in dirFiles) {
-    final String nameLower = name.toLowerCase();
-    if (!nameLower.startsWith(baseLower)) continue;
-    final String ext = p.extension(nameLower);
-    if (!_externalSubtitleExtensions.contains(ext)) continue;
-    if (nameLower.contains(langMarker)) {
-      langFirst.add(name);
-    } else {
-      rest.add(name);
-    }
-  }
-  return <String>[...langFirst, ...rest];
-}
-
-/// **纯函数**：换集时按「同类偏好」从新集可用字幕源 [sources] 里挑一个。
-///
-/// [lastPersisted] 是上一集持久化的字幕源（外挂路径 / `embedded:<n>` / null）。
-/// 规则：
-/// - null（无偏好）→ 返回 null（调用方走默认 sidecar 检测）。
-/// - `embedded:<n>` → 优先新集同 streamIndex 的内嵌轨；无则回退第一个内嵌轨；
-///   无内嵌轨则 null。
-/// - 外挂路径 → 取其语言/扩展名后缀（如 `.ja.srt` / `.ass`），优先新集同后缀的
-///   外挂源；无同后缀则回退新集第一个外挂源；无外挂源则 null。
-///
-/// 不碰文件系统，可单测。
-SubtitleSource? pickEpisodeSubtitleSource(
-  String? lastPersisted,
-  List<SubtitleSource> sources,
-) {
-  if (lastPersisted == null || lastPersisted.isEmpty) return null;
-  if (sources.isEmpty) return null;
-
-  final List<SubtitleSource> embedded = sources
-      .where((SubtitleSource s) => s.isEmbedded)
-      .toList();
-  final List<SubtitleSource> external = sources
-      .where((SubtitleSource s) => !s.isEmbedded)
-      .toList();
-
-  if (lastPersisted.startsWith(SubtitleSource.embeddedPrefix)) {
-    final int? wantIndex = int.tryParse(
-      lastPersisted.substring(SubtitleSource.embeddedPrefix.length),
-    );
-    for (final SubtitleSource s in embedded) {
-      if (s.streamIndex == wantIndex) return s;
-    }
-    return embedded.isNotEmpty ? embedded.first : null;
-  }
-
-  // 外挂偏好：按「语言+扩展名」后缀匹配（去掉同名 base 前缀后剩下的尾巴）。
-  final String wantSuffix = _externalSubtitleSuffix(lastPersisted);
-  for (final SubtitleSource s in external) {
-    if (_externalSubtitleSuffix(s.externalPath!) == wantSuffix) return s;
-  }
-  return external.isNotEmpty ? external.first : null;
-}
-
-/// 取外挂字幕路径的「语言+扩展名」后缀（小写），用于换集同类匹配。
-///
-/// `S01E01.ja.srt` → `.ja.srt`；`S01E01.ass` → `.ass`。规则：basename 去掉首个
-/// `.` 之前的主名后剩下的全部（含中间语言段），保证 `.ja.srt` 与 `.srt` 区分开。
-String _externalSubtitleSuffix(String path) {
-  final String name = p.basename(path).toLowerCase();
-  final int firstDot = name.indexOf('.');
-  if (firstDot < 0) return '';
-  return name.substring(firstDot);
+  final List<String> matches = <String>[
+    for (final String name in dirFiles)
+      if (name.toLowerCase().startsWith(baseLower) &&
+          _externalSubtitleExtensions.contains(p.extension(name.toLowerCase())))
+        name,
+  ];
+  final List<String> ranked = rankSidecarSubtitles(videoBaseNoExt, <String>[
+    for (final String name in matches)
+      if (isSidecarSubtitleSuffix(name.substring(videoBaseNoExt.length))) name,
+  ], langCode: langCode);
+  final Set<String> rankedSet = ranked.toSet();
+  return <String>[
+    ...ranked,
+    for (final String name in matches)
+      if (!rankedSet.contains(name)) name,
+  ];
 }
 
 /// 枚举 [videoPath] 的全部字幕源：① 内嵌轨 ② 同目录**同名前缀**外挂字幕文件。
 ///
 /// 返回合并列表（内嵌在前，外挂在后）。外挂只收与视频同 basename（去扩展名）前缀的
 /// srt/ass/ssa/vtt（含 `.ja.srt` 等带语言后缀），见 [pickSameNameSubs]——别集字幕
-/// 不列。[langCode] 是 app 学习语言代码，让带该语言标记的外挂字幕排在前。目录读取
-/// 失败时只返回内嵌部分。
+/// 不列。[langCode] 是本视频的目标语言标签（见 [pickSameNameSubs]），让自动加载会选的
+/// 外挂字幕排在前。目录读取失败时只返回内嵌部分。
 Future<SubtitleSourceListing> listAllSubtitleSourcesWithDiagnostics(
   String videoPath, {
   required String langCode,
@@ -1057,7 +1017,7 @@ bool sameSubtitleFilePath(String a, String b) =>
 ///
 /// 与 [isImportedExternalSubtitlePath] 是**两件事**，不要合并：那个判的是「一条**持久化
 /// 值**是否可以按路径直接重放」，扩展名是它的必要条件（restore 时要真去解析这个档），
-/// 消费方在 [shouldReusePersistedSubtitleAcrossEpisode] 与视频页的换集恢复链路上，保持
+/// 消费方是视频页的持久化字幕恢复链路（`_restorePersistedSubtitle` 的导入字幕捷径），保持
 /// 不变。
 bool isExternalSubtitleFilePathForMenu(String path) {
   if (path.trim().isEmpty) return false;
@@ -1231,16 +1191,21 @@ Future<SubtitleCueLoadResult> loadSubtitleCueResult(
   return loadExternalSubtitleCueResult(source.externalPath!, bookUid);
 }
 
-/// 自动挑一条能转文本的内封轨抽成 cue。[preferredLanguages]（用户的主字幕默认语言，
-/// 见 [parseSubtitleLanguagePreferences]）非空时按其顺序挑第一条命中的文本轨，都不命中
-/// 才回退「第一条文本轨」（反馈 Fz9HXThdSW）。
+/// 自动挑一条能转文本的内封轨抽成 cue。挑轨顺序：
+/// 1. [preferredLanguages]（用户的主字幕默认语言，见 [parseSubtitleLanguagePreferences]，
+///    反馈 Fz9HXThdSW）按其顺序第一条命中的文本轨；
+/// 2. 本视频的目标语言 [langCode]（语言标签，`ja` / `zh-Hant` …，见
+///    `subtitle_language_target.dart`）最匹配的文本轨——中文先挑繁 / 简对上的；
+///    [langCode] 为空（语言链全空）时退用同一次探测里的音轨语言
+///    （[audioSubtitleLanguageTarget]）；
+/// 3. 都不命中才回退「第一条文本轨」（旧行为）。
 ///
 /// [onExtractionStarted]：挑中的轨缓存未命中、要整轨抽取时回调挑中的源（语义同
 /// [loadSubtitleCueResult]）。
 Future<DefaultEmbeddedSubtitleLoadResult> loadDefaultTextEmbeddedSubtitleCues({
   required String videoPath,
   required String bookUid,
-  String langCode = 'ja',
+  String langCode = '',
   List<String> preferredLanguages = const <String>[],
   Future<void>? cancel,
   void Function(SubtitleSource chosen)? onExtractionStarted,
@@ -1310,6 +1275,12 @@ Future<DefaultEmbeddedSubtitleLoadResult> _loadDefaultTextEmbeddedSubtitleCues({
       pickSubtitleSourceByPreference(
         listing.sources,
         preferredLanguages,
+        accept: isTextEmbeddedSubtitleSource,
+      ) ??
+      pickSubtitleSourceForTarget(
+        listing.sources,
+        SubtitleLanguageTarget.parse(langCode) ??
+            audioSubtitleLanguageTarget(probe.audioLanguages),
         accept: isTextEmbeddedSubtitleSource,
       ) ??
       firstTextEmbeddedSubtitleSource(listing.sources);

@@ -201,8 +201,7 @@ pub(crate) struct Known {
     /// 「同一次复习的副本按规范卡成了一个事件」的卡 → 证出的那几条协议 3 多算的副本日志（[event_copies]）：只这几条
     /// 统计行不比，同卡其余统计行盖重放列、卡行盖 `CARD_DERIVED`。
     pub stats_event_copies: BTreeMap<String, BTreeSet<String>>,
-    /// 同一事件的几份副本里两边选了不同的代表（协议 3 按原值日志 ID 取最小、新代按规范日志 ID 取最小，带盐的原值与
-    /// 规范值先后可以相反；BUG-5063）：协议 3 一侧统计行的日志 → 新代同一行的日志（[stat_representative_swaps]）。
+    /// 同一事件的几份副本里两边选了不同的代表：协议 3 一侧统计行的日志 → 新代同一行的日志（[stat_representative_swaps]）。
     /// 只换这一格，行的其余列照比。
     pub stat_swaps: BTreeMap<String, String>,
     /// 同上、落在卡行 `last_log_id` 上的卡（[card_representative_swaps]）。
@@ -1136,10 +1135,9 @@ fn copies_of_one_event(
 
 /// 统计行上两边选了不同代表的事件（[Known::stat_swaps]）：协议 3 一侧的日志 → 新代一侧的日志。
 ///
-/// 同一事件的几份副本（卡片历史的 `EventKey`；BUG-4254 的血统里同一条 Anki revlog 按两张带盐卡各派生一份日志）只算
-/// 一份，代表取 ID 最小的那份（`history.rs` `select`）。协议 3 比原值 ID、新代比规范 ID（重放读的是归一过的日志，
-/// `cache.rs` `log_at`），带盐的原值与规范值先后可以相反：两边算的是同一次复习，统计行只差日志 ID 这一格（BUG-5063：
-/// 带盐的 Anki 库几十万行都是这样，对拍判失败、回滚）。
+/// 同一事件的几份副本（卡片历史的 `EventKey`）只算一份。两代在同一组输入上都按原值选取代表（BUG-5476）。
+/// 归一还可能改变参加选取的成员，例如按类取日志时会合并别名。这里验证两侧选出的日志是否仍属同一次复习
+/// （BUG-5063），并继续比较由历史推导出的所有列。
 ///
 /// 只认佐证得了的：同一张（规范）归属卡、同一发生时刻上，协议 3 一侧恰好一行的日志不在新代的统计里、新代一侧恰好
 /// 一行的日志不在协议 3 的统计里，且两条日志是同一事件的副本（[copies_of_one_event]）。[copies] 是 [event_copies]

@@ -93,6 +93,14 @@ extension _FushiSyncServerSyncState on FushiSyncServer {
   ) async {
     final FushiLibraryHostService? svc = _libraryService;
     if (svc == null) return shelf.Response.notFound('Library service off');
+    if (svc is HostManifestBodyHost) {
+      return _handleManifestBody(
+        request,
+        method,
+        svc as HostManifestBodyHost,
+        HostManifestKind.collections,
+      );
+    }
 
     switch (method) {
       case 'GET':
@@ -128,6 +136,63 @@ extension _FushiSyncServerSyncState on FushiSyncServer {
     }
   }
 
+  /// 清单端点（合集 / 标签 / 作品图谱）的字节进字节出路径：读库、合并、JSON
+  /// 编解码都在 host 服务的后台所有者里做（`host_manifest_bodies.dart`），这里只搬
+  /// 字节——app 当 host 时本 isolate 就是 UI isolate。
+  ///
+  /// GET 带弱 ETag（`W/"…"`，gzip 与明文共用，见 [weakContentEtag]）；请求带的
+  /// `If-None-Match` 按弱比较命中就回 304 空体（老 client 不发这个头，照旧拿 200
+  /// 全量）。POST 回并入后的清单，与旧对象接口同形（400 文案一致）。
+  Future<shelf.Response> _handleManifestBody(
+    shelf.Request request,
+    String method,
+    HostManifestBodyHost host,
+    HostManifestKind kind,
+  ) async {
+    switch (method) {
+      case 'GET':
+        final HostManifestBody body = await host.getManifestBody(kind);
+        final Map<String, String> headers = <String, String>{
+          'ETag': body.etag,
+          // 允许对端缓存，但每次都要带 ETag 回来问（清单随时会变）。
+          'Cache-Control': 'no-cache',
+        };
+        if (ifNoneMatchHits(request.headers['if-none-match'], body.etag)) {
+          return shelf.Response.notModified(headers: headers);
+        }
+        return shelf.Response.ok(
+          body.bytes,
+          headers: <String, String>{
+            ...headers,
+            'Content-Type': 'application/json; charset=utf-8',
+          },
+        );
+      case 'POST':
+        final Uint8List bytes = await readBoundedRequestBody(
+          request.read(),
+          declaredLength: request.contentLength,
+          maxBytes: kInterconnectJsonBodyMaxBytes,
+        );
+        switch (await host.mergeManifestBody(
+          kind,
+          bytes,
+          encodingName: request.encoding?.name,
+        )) {
+          case HostManifestRejected(:final String message):
+            return shelf.Response(400, body: message);
+          case HostManifestMerged(bytes: final Uint8List merged):
+            return shelf.Response.ok(
+              merged,
+              headers: const <String, String>{
+                'Content-Type': 'application/json; charset=utf-8',
+              },
+            );
+        }
+      default:
+        return shelf.Response(405);
+    }
+  }
+
   /// 标签清单跨设备 live 端点（互联标签同步，`tag_sync.dart`）。
   ///
   /// GET /api/library/tags — host 全部宿主的标签时钟清单；
@@ -143,6 +208,14 @@ extension _FushiSyncServerSyncState on FushiSyncServer {
     final Object? svc = _libraryService;
     if (svc is! TagSyncHost) return shelf.Response.notFound('Tag sync off');
     final TagSyncHost host = svc;
+    if (svc is HostManifestBodyHost) {
+      return _handleManifestBody(
+        request,
+        method,
+        svc as HostManifestBodyHost,
+        HostManifestKind.tags,
+      );
+    }
     const Map<String, String> jsonHeaders = <String, String>{
       'Content-Type': 'application/json; charset=utf-8',
     };
@@ -184,6 +257,14 @@ extension _FushiSyncServerSyncState on FushiSyncServer {
       return shelf.Response.notFound('Media link sync off');
     }
     final MediaLinkSyncHost host = svc;
+    if (svc is HostManifestBodyHost) {
+      return _handleManifestBody(
+        request,
+        method,
+        svc as HostManifestBodyHost,
+        HostManifestKind.mediaLinks,
+      );
+    }
     const Map<String, String> jsonHeaders = <String, String>{
       'Content-Type': 'application/json; charset=utf-8',
     };

@@ -3,6 +3,113 @@ part of '../sync_orchestrator.dart';
 /// 书籍域互联 live 内容 / 进度 / 阅读位置同步的私有实现（B2 按域拆出）。
 /// 公开入口 [SyncOrchestrator.importRemoteBooks] 留在本体；方法逐字搬自 SyncOrchestrator。
 extension _SyncOrchestratorBooks on SyncOrchestrator {
+  /// Download content only for existing managed rows whose primary content
+  /// disappeared. Remote-only books stay in their explicit download flow.
+  Future<void> _recoverMissingLiveBooks(
+    SyncRunReport report,
+    InterconnectSyncBackend backend,
+  ) async {
+    final BookContentRecovery recovery = BookContentRecovery(
+      db: _db,
+      tempDir: _tempDir,
+    );
+    final List<EpubBookRow> missing = await recovery.missingBooks();
+    if (missing.isEmpty) return;
+
+    final InterconnectHostPin pin = (await backend.liveHostScope()).pin;
+    await backend.withLiveBookSourcePin(pin, () async {
+      final DeletionTombstoneEntries? tombstones =
+          await _loadHostPushVetoTombstones(report, backend, 'recover books');
+      if (tombstones == null) return;
+
+      final List<RemoteBookInfo> remote = await backend.listRemoteBooks();
+      backend.checkHostPin(pin);
+      final Map<String, String> aliases = await _db.getPeerToLocalBookKeys();
+      final Map<String, List<RemoteBookInfo>> byKey =
+          <String, List<RemoteBookInfo>>{};
+      for (final RemoteBookInfo item in remote) {
+        final String? key = item.bookKey;
+        if (key == null ||
+            key.isEmpty ||
+            item.locked ||
+            item.isSubtitleBookBody) {
+          continue;
+        }
+        byKey.putIfAbsent(key, () => <RemoteBookInfo>[]).add(item);
+        final String? alias = aliases[key];
+        if (alias != null && alias != key) {
+          byKey.putIfAbsent(alias, () => <RemoteBookInfo>[]).add(item);
+        }
+      }
+
+      for (final (int index, EpubBookRow book) in missing.indexed) {
+        _checkpoint();
+        final List<RemoteBookInfo>? candidates = byKey[book.bookKey];
+        if (candidates == null) continue;
+        final List<RemoteBookInfo> matches = candidates
+            .where((RemoteBookInfo item) => _matchesRecoverySource(book, item))
+            .toList();
+        if (matches.length != 1) continue;
+        final RemoteBookInfo match = matches.single;
+        if (_hostVetoesPush(
+          tombstones,
+          kinds: const <SyncTombstoneKind>[SyncTombstoneKind.book],
+          itemKeys: <String>{book.bookKey, match.downloadId},
+          presentSinceAt: book.localAddedAt,
+        )) {
+          continue;
+        }
+
+        try {
+          _emit(
+            SyncPhase.books,
+            itemIndex: index,
+            itemTotal: missing.length,
+            title: book.title,
+            itemKind: SyncItemKind.book,
+          );
+          final bool restored = await recovery.restore(
+            book,
+            download: (File file) => backend.getRemoteBook(
+              match.downloadId,
+              file,
+              onProgress: (double fraction) => _emit(
+                SyncPhase.books,
+                itemIndex: index,
+                itemTotal: missing.length,
+                title: book.title,
+                itemKind: SyncItemKind.book,
+                fileFraction: fraction,
+              ),
+            ),
+            checkCanPlace: () {
+              _checkpoint();
+              backend.checkHostPin(pin);
+            },
+          );
+          if (restored) report.booksRecovered++;
+        } on SyncCancelledException {
+          rethrow;
+        } on SyncAuthError {
+          rethrow;
+        } on InterconnectHostChangedException {
+          rethrow;
+        } on Exception catch (e) {
+          _noteDimensionError(report, 'recover book "${book.title}"', e);
+        }
+      }
+    });
+  }
+
+  bool _matchesRecoverySource(EpubBookRow book, RemoteBookInfo item) {
+    if (book.title != item.title || book.format != item.format) return false;
+    return switch (BookFormat.parseOrEpub(book.format)) {
+      BookFormat.epub => item.hasContent,
+      BookFormat.manga => item.hasMangaContent,
+      BookFormat.pdf => item.hasPdfContent,
+    };
+  }
+
   /// 互联书籍内容 live 上传。
   ///
   /// 直打对端 `/api/library/books` 端点，按 `sanitizeTtuFilename(title)` 只处理
@@ -178,7 +285,7 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
           ),
         );
       } catch (e) {
-        report.noteError('live push book "$title"', e);
+        _noteDimensionError(report, 'live push book "$title"', e);
       } finally {
         _safeDelete(tmp);
       }
@@ -226,7 +333,7 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
     try {
       await sync.bind();
     } catch (e) {
-      report.noteError('live book progress', e);
+      _noteDimensionError(report, 'live book progress', e);
       return;
     }
     // BUG-1569③：退出书的单本同步不再等整轮 sweep 结束，它在互联上只锁那本书。
@@ -248,7 +355,7 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
       remotes = await sync.readRemoteForSweep(localBooks);
     } catch (e) {
       // 整批读不到（网络 / 鉴权 / 5xx）：本阶段整体失败，记一条，后续阶段照跑。
-      report.noteError('live book progress', e);
+      _noteDimensionError(report, 'live book progress', e);
       return;
     }
     try {
@@ -269,7 +376,7 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
     } on InterconnectHostChangedException catch (e) {
       // 会话中途换了 host（BUG-4434）：用这台 host 的基线判另一台 host 的值会把它
       // 当成「对端单边改动」落到本机。本阶段到此为止，报一条，下一轮重新绑定。
-      report.noteError('live progress: host changed mid-round', e);
+      _noteDimensionError(report, 'live progress: host changed mid-round', e);
     }
   }
 
@@ -338,7 +445,7 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
     } on InterconnectHostChangedException {
       rethrow;
     } catch (e) {
-      report.noteError('live book progress "${book.title}"', e);
+      _noteDimensionError(report, 'live book progress "${book.title}"', e);
     }
   }
 
@@ -365,7 +472,11 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
     try {
       capabilities = await _roundHostCapabilities(report, backend);
     } catch (e) {
-      report.noteError('live manga chapter progress: capabilities', e);
+      _noteDimensionError(
+        report,
+        'live manga chapter progress: capabilities',
+        e,
+      );
       return;
     }
     if (capabilities is! Map ||
@@ -403,11 +514,19 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
         } on InterconnectHostChangedException {
           rethrow;
         } catch (e) {
-          report.noteError('live manga chapter progress "${book.title}"', e);
+          _noteDimensionError(
+            report,
+            'live manga chapter progress "${book.title}"',
+            e,
+          );
         }
       }
     } on InterconnectHostChangedException catch (e) {
-      report.noteError('live manga chapter progress: host changed', e);
+      _noteDimensionError(
+        report,
+        'live manga chapter progress: host changed',
+        e,
+      );
     }
   }
 
@@ -448,7 +567,7 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
     try {
       await sync.bind();
     } catch (e) {
-      report.noteError(errorLabel, e);
+      _noteDimensionError(report, errorLabel, e);
       return;
     }
     // 整轮一次读齐基线 / 待确认基线（两条查询）；本端位置由调用方从 sweep 开头的
@@ -484,7 +603,7 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
         );
       }
     } on InterconnectHostChangedException catch (e) {
-      report.noteError('live progress: host changed mid-round', e);
+      _noteDimensionError(report, 'live progress: host changed mid-round', e);
     }
   }
 
@@ -552,7 +671,7 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
     } on InterconnectHostChangedException {
       rethrow;
     } catch (e) {
-      report.noteError('$errorLabel "$key"', e);
+      _noteDimensionError(report, '$errorLabel "$key"', e);
     }
   }
 }

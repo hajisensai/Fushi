@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/video/web_video_hosting.dart';
 import 'package:fushi/src/media/video/web_video_mode_chip.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 import '../../helpers/source_guard.dart';
 
@@ -77,7 +78,7 @@ void main() {
       );
       await tester.pumpWidget(chip(WebVideoHosting.builtin));
       expect(find.text(t.web_video_mode_capture_title), findsOneWidget);
-      expect(find.byIcon(Icons.style_outlined), findsOneWidget);
+      expect(find.byIcon(FushiIcons.ankiCard), findsOneWidget);
       await tester.tap(find.byType(WebVideoModeChip));
       await tester.pump();
       expect(taps, 1);
@@ -380,6 +381,31 @@ void main() {
         open,
         contains('_webQualityFirstAvailable = qualityFirstAvailable;'),
       );
+    });
+  });
+
+  group('网页宿主页步进跟 asbplayer 配置走（不写死 5 秒）', () {
+    late String hostPage;
+
+    setUpAll(() {
+      hostPage = maskComments(File(_hostPagePath).readAsStringSync());
+    });
+
+    test('键盘短 / 长步进、遥控快照与 seekStep 都读 seekSeconds / longSeekSeconds', () {
+      expect(hostPage, isNot(contains('_kShortSeekMs')));
+      expect(hostPage, contains('_asbConfig.seekSeconds * 1000'));
+      expect(hostPage, contains('_asbConfig.longSeekSeconds * 1000'));
+      for (final String wired in <String>[
+        'seekBackward: () => unawaited(_seekRelative(-_shortSeekMs))',
+        'seekForward: () => unawaited(_seekRelative(_shortSeekMs))',
+        'longSeekBackward: () => unawaited(_seekRelative(-_longSeekMs))',
+        'longSeekForward: () => unawaited(_seekRelative(_longSeekMs))',
+        "'seekSeconds': _asbConfig.seekSeconds",
+        "'longSeekSeconds': _asbConfig.longSeekSeconds",
+        'final int ms = long ? _longSeekMs : _shortSeekMs;',
+      ]) {
+        expect(hostPage, contains(wired), reason: wired);
+      }
     });
   });
 }

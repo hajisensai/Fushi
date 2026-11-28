@@ -85,7 +85,7 @@
 - `move`：`from` 省略 = 从条目当前所在的全部非目录合集移出；`to=standalone` = 只移出；`new:<名字>` = 新建 AI 合集（同名已存在则并入它）。
 - `relink`：把一对端点之间 AI 生效 / 建议态的连接换成新的关系或方向（用户确认过的不动）。
 - 有方向的关系 `from → to`：`adaptation` 原作 → 改编，`sequel` 前作 → 续作，`side_story` 本篇 → 外传，`theme_song` / `soundtrack` 作品 → 音乐，`cast` 作品 → 人。
-- 每条独立校验，不过的进 `skipped`（下标 + 原因码：`unknown_ref` / `cross_domain` / `folder_collection` / `pinned_by_user` / `name_taken` / `vetoed` / `user_confirmed` / `exists` / `invalid`），其余照常执行。不整批作废。
+- 每条独立校验，不过的进 `skipped`（下标 + 原因码：`unknown_ref` / `cross_domain` / `folder_collection` / `pinned_by_user` / `name_taken` / `vetoed` / `user_confirmed` / `exists` / `invalid` / `work_identity`），其余照常执行。不整批作废。`work_identity`（BUG-5480）：与条目的权威作品身份矛盾——把它从同一部作品的合集里拆出来，或放进来源（媒体服务器 / 在线源）给的另一部剧的合集，规则见 [AI 整理库](2026-10-20-ai-library-organize-design.md) §7.8 第 10 条。
 - 合集部分复用 `applyOrganizeActions`（新增 `rename` 动作种类），记一条 `library_organize_runs`（trigger = `agent`）；关系部分用 `applyAiMediaLink` / 新增的 AI 改类型写入，收集回执。
 - 结果：`{runId, applied: [{i, op, …}], skipped: [{i, op, reason}], undo: {…}}`；`undo` 是撤销载荷（runId + 关系回执），由路由交给操作记录。
 - 撤销：`undoLibraryOrganizeRun(runId)` + 倒序退回关系回执。后续被用户改过的那一处跳过（「已被后续修改覆盖」）。
@@ -140,7 +140,7 @@
 起因：所有者问「库管家是一条写死步骤的流水线，确定不会有问题吗……我希望效果最好的」。流水线有结构性盲区：只看新条目、每次只看一桶、关系只加不改，它从不回头纠正已有的错。所以自动路径改成两段：
 
 1. **流水线**（不变）：规则归组、共享外部 id 的连接、声纹主题曲、唯一候选认领——便宜、证据硬、没有判断空间的部分。
-2. **AI 助手复查**（新，设置 › AI「导入后让 AI 助手复查整个库」，**默认开**，偏好 `library_agent_review_auto`）：流水线跑完后起一场无人值守的助手会话（`AiAgentController.unattended`），提示词让它先调 `skill.library.reorganize`：
+2. **AI 助手复查**（新，设置 › AI「导入后让 AI 助手复查整个库」，**默认关**——用户 2026-11-26 改拍板，原默认开作废，用户自己打开后才自动跑，偏好 `library_agent_review_auto`）：流水线跑完后起一场无人值守的助手会话（`AiAgentController.unattended`），提示词让它先调 `skill.library.reorganize`：
    - **增量**：把上次复查以来新入库的条目交给它——`library.map` 新增 `addedSince`（毫秒时间戳）过滤，只给这些条目连同它们所在合集的全部成员；再用 `q` 查它们的系列。检查流水线做得对不对、补上漏的。
    - **全库**：第一次、自上次全库复查累积 100 个新条目、或距上次全库复查满 30 天且期间有新条目时，整库过一遍。
    - 无人值守：确认卡一律拒绝、候选卡一律取消（`AiAgentUnattendedHost`，不替用户表态、不挂起）；提示词要求不提问，拿不准的写进汇报。对话存档在「AI 操作记录」（场景 `library_review`），能看汇报、能整场撤销。

@@ -55,6 +55,11 @@
           text: String(data.text || '').slice(0, 128),
           rect: rectOf(data.rect),
         };
+      case 'scroll': {
+        var y = Number(data.y);
+        if (!isFinite(y)) return null;
+        return { __fushiDictSandbox: 1, type: 'scroll', y: Math.max(0, Math.min(y, MAX_HEIGHT)) };
+      }
       case 'select':
         return {
           __fushiDictSandbox: 1,

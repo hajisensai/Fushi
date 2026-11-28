@@ -1111,7 +1111,11 @@ class HeadlessHost {
     onLocalAudioImported: localAudio.importPackage,
     removeLocalAudioEntry: localAudio.remove,
     audioDatabaseRoot: Directory(p.join(paths.documents.path, 'audiobooks')),
-    videoSubtitleLangCode: config.subtitleLanguage,
+    // 自动挑字幕的目标语言：配置 `subtitle_language`（空 = 自动）> 每个视频自己的语言链
+    // > 偏好 `default_content_language`（与下载 / 补字幕同一份默认内容语言）。
+    videoSubtitleExplicitLanguage: () => config.subtitleLanguage,
+    videoDefaultContentLanguage: () =>
+        serverDefaultContentLanguage(prefs) ?? '',
     // 客户端经互联发起的重刮 / 手动指定身份 / 分集排序：以前这里没接，
     // 这些请求在服务端恒返回空结果或 notPlanned。
     scrapeController: () async => _videoScrape?.controller,

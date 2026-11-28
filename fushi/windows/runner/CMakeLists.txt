@@ -28,6 +28,7 @@ add_executable(${BINARY_NAME} WIN32
   "layer_origin_solver.cpp"
   "voice_hook_reader.cpp"
   "crash_dump.cpp"
+  "dart_aot_image.cpp"
   "external_video_handoff.cpp"
   "flutter_window.cpp"
   "floating_ball_window.cpp"
@@ -39,6 +40,7 @@ add_executable(${BINARY_NAME} WIN32
   "global_lookup_window.cpp"
   "global_mouse_trigger.cpp"
   "hang_watchdog.cpp"
+  "code_integrity_probe.cpp"
   "hdr_desktop_capture.cpp"
   "hdr_display_info.cpp"
   "hook_toolbar_window.cpp"
@@ -52,6 +54,7 @@ add_executable(${BINARY_NAME} WIN32
   "system_ocr_channel_host.cpp"
   "system_ocr_windows.cpp"
   "system_transparency_channel.cpp"
+  "tray_icon.cpp"
   "utils.cpp"
   "win32_window.cpp"
   "window_capture.cpp"
@@ -114,6 +117,9 @@ target_link_libraries(${BINARY_NAME} PRIVATE bcrypt)
 # BUG-1450: ImmAssociateContextEx — detach the IME from the window while no text
 # field has focus so CJK IMEs stop swallowing every shortcut key.
 target_link_libraries(${BINARY_NAME} PRIVATE imm32)
+# BUG-5484: code_integrity_probe.cpp reads the CodeIntegrity/Operational event
+# log (EvtQuery) to record Smart App Control / WDAC blocks of Fushi files.
+target_link_libraries(${BINARY_NAME} PRIVATE wevtapi)
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 add_dependencies(${BINARY_NAME} flutter_assemble)
 
@@ -190,6 +196,54 @@ add_custom_target(fushi_windows_activation_policy_gate
   VERBATIM
 )
 add_dependencies(${BINARY_NAME} fushi_windows_activation_policy_gate)
+
+# Startup reveal deadline + second-launch classification (startup_reveal_policy.h):
+# a hidden-but-never-shown main window is a starting instance, not an exiting
+# one, and a window Dart never reveals is force-shown once after the deadline.
+add_executable(fushi_windows_startup_reveal_policy_test
+  "tests/startup_reveal_policy_test.cpp"
+)
+apply_standard_settings(fushi_windows_startup_reveal_policy_test)
+target_compile_definitions(fushi_windows_startup_reveal_policy_test PRIVATE
+  "NOMINMAX")
+add_custom_target(fushi_windows_startup_reveal_policy_gate
+  COMMAND "$<TARGET_FILE:fushi_windows_startup_reveal_policy_test>"
+  DEPENDS fushi_windows_startup_reveal_policy_test
+  VERBATIM
+)
+add_dependencies(${BINARY_NAME} fushi_windows_startup_reveal_policy_gate)
+
+# BUG-5484: Smart App Control / WDAC block evidence (code_integrity_report.h) —
+# event XML parsing, the "is this a Fushi file" match, user-profile redaction and
+# the report-once record cursor stay executable on every Windows runner build.
+add_executable(fushi_windows_code_integrity_report_test
+  "tests/code_integrity_report_test.cpp"
+)
+apply_standard_settings(fushi_windows_code_integrity_report_test)
+target_compile_definitions(fushi_windows_code_integrity_report_test PRIVATE
+  "NOMINMAX")
+add_custom_target(fushi_windows_code_integrity_report_gate
+  COMMAND "$<TARGET_FILE:fushi_windows_code_integrity_report_test>"
+  DEPENDS fushi_windows_code_integrity_report_test
+  VERBATIM
+)
+add_dependencies(${BINARY_NAME} fushi_windows_code_integrity_report_gate)
+
+# BUG-5568: hang / crash dumps record where the Dart AOT image (app.so) is
+# loaded and its build-id (dart_aot_image.h) so Dart frames can be symbolized;
+# keep the ELF parsing and the watchdog starvation threshold executable.
+add_executable(fushi_windows_dart_aot_image_test
+  "tests/dart_aot_image_test.cpp"
+)
+apply_standard_settings(fushi_windows_dart_aot_image_test)
+target_compile_definitions(fushi_windows_dart_aot_image_test PRIVATE
+  "NOMINMAX")
+add_custom_target(fushi_windows_dart_aot_image_gate
+  COMMAND "$<TARGET_FILE:fushi_windows_dart_aot_image_test>"
+  DEPENDS fushi_windows_dart_aot_image_test
+  VERBATIM
+)
+add_dependencies(${BINARY_NAME} fushi_windows_dart_aot_image_gate)
 
 # BUG-3768: the FUSHI_TEST_HIDDEN window must stay where the runner parked it;
 # Dart startup placement (setBounds / maximize) otherwise pulls it onto the
@@ -665,12 +719,7 @@ add_custom_target(fushi_windows_printwindow_helper_gate
 )
 add_dependencies(${BINARY_NAME} fushi_windows_printwindow_helper_gate)
 
-add_executable(fushi_update_launcher WIN32
-  "update_launcher.cpp"
-)
-apply_standard_settings(fushi_update_launcher)
-target_compile_definitions(fushi_update_launcher PRIVATE "NOMINMAX")
-target_link_libraries(fushi_update_launcher PRIVATE shell32 bcrypt)
+# fushi_update_launcher 在 ../update_launcher/（静态 CRT，BUG-5529）。
 
 # BUG-2726: game-stream input regression (window-targeted input, SGRE native
 # gamepad channel, release-without-visibility). Unlike the gates above it is

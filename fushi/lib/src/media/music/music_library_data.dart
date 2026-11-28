@@ -3,6 +3,7 @@ library;
 
 import 'package:drift/drift.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/music/music_cover_source.dart';
 
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_remote_tracks.dart';
@@ -80,8 +81,11 @@ class MusicLibrarySnapshot {
   /// 专辑内嵌封面所在的音频文件（[MusicAlbumRow.coverTrackUid] → 路径）。
   String? embeddedCoverPathOf(MusicAlbumRow album) {
     final String? uid = album.coverTrackUid;
-    return uid == null ? null : _trackByUid[uid]?.path;
+    return uid == null ? null : trackPathOf(uid);
   }
+
+  /// 曲库里某首本地曲目的音频路径（[musicPlayItemOf] 的 `trackPathOf`）；不在曲库为 null。
+  String? trackPathOf(String trackUid) => _trackByUid[trackUid]?.path;
 
   /// 某张专辑的曲目，按碟号 / 轨号排。
   List<MusicTrackRow> tracksOfAlbum(String albumUid) =>
@@ -185,7 +189,12 @@ sealed class MusicLibraryEntry {
 
   /// 换成播放项；远程曲目的种类不认识（将来版本写的）或服务器曲目在这台设备上不可用时
   /// 回 null。
-  MusicPlayItem? playItem(Map<String, MusicAlbumRow> albums);
+  ///
+  /// [trackPathOf] 查专辑选定的内嵌封面曲目的路径（见 [musicPlayItemOf]）。
+  MusicPlayItem? playItem(
+    Map<String, MusicAlbumRow> albums, {
+    MusicTrackPathOf? trackPathOf,
+  });
 }
 
 /// 本地曲库曲目。
@@ -204,9 +213,13 @@ final class MusicLocalEntry extends MusicLibraryEntry {
   int? get durationMs => track.durationMs;
 
   @override
-  MusicPlayItem playItem(Map<String, MusicAlbumRow> albums) => musicPlayItemOf(
+  MusicPlayItem playItem(
+    Map<String, MusicAlbumRow> albums, {
+    MusicTrackPathOf? trackPathOf,
+  }) => musicPlayItemOf(
     track,
     album: track.albumUid == null ? null : albums[track.albumUid!],
+    trackPathOf: trackPathOf,
   );
 }
 
@@ -245,8 +258,10 @@ final class MusicRemoteEntry extends MusicLibraryEntry {
   int? get durationMs => track.durationMs;
 
   @override
-  MusicPlayItem? playItem(Map<String, MusicAlbumRow> albums) =>
-      musicPlayItemOfRemote(track, server: server);
+  MusicPlayItem? playItem(
+    Map<String, MusicAlbumRow> albums, {
+    MusicTrackPathOf? trackPathOf,
+  }) => musicPlayItemOfRemote(track, server: server);
 }
 
 /// 远程曲目行 → 条目：滤掉种类不认识的（将来版本写的）与本平台不显示的（[online] 为合规门，
@@ -367,31 +382,77 @@ Map<int?, List<MusicTrackRow>> groupTracksByDisc(List<MusicTrackRow> sorted) {
   return out;
 }
 
-/// 曲目行 → 播放项。
+/// 按曲目 uid 查本地曲目的音频路径（查不到为 null）。只会拿专辑的
+/// [MusicAlbumRow.coverTrackUid] 来查——调用方手里只有那一首的路径时可以直接回它。
+typedef MusicTrackPathOf = String? Function(String trackUid);
+
+/// [tracks] 的 uid → 路径查表（同一张专辑的曲目列表常用来查封面曲目）。
+MusicTrackPathOf musicTrackPathsOf(Iterable<MusicTrackRow> tracks) {
+  final Map<String, String> byUid = <String, String>{
+    for (final MusicTrackRow t in tracks) t.trackUid: t.path,
+  };
+  return (String uid) => byUid[uid];
+}
+
+/// 本地曲目用哪张封面——曲目行、播放项（播放页 / 播放条 / 队列）共用的唯一一处规则
+/// （BUG-4494 / BUG-5504）：专辑的目录封面（[MusicAlbumRow.coverPath]）优先，其次专辑选定的
+/// 内嵌封面曲目（[MusicAlbumRow.coverTrackUid]，路径经 [trackPathOf] 查；就是这首自己时直接
+/// 用它），那首查不到时退回这首自己的内嵌封面；都没有为两个 null（占位）。
+MusicCoverSource musicLocalCoverSourceOf(
+  MusicTrackRow track, {
+  MusicAlbumRow? album,
+  MusicTrackPathOf? trackPathOf,
+}) {
+  final String? coverUid = album?.coverTrackUid;
+  return musicCoverSourceOf(
+    track: track,
+    album: album,
+    albumEmbeddedPath: coverUid == null
+        ? null
+        : coverUid == track.trackUid
+        ? track.path
+        : trackPathOf?.call(coverUid),
+  );
+}
+
+/// 曲目行 → 播放项。封面按 [musicLocalCoverSourceOf]（与曲目行同一规则）；[coverPath]
+/// 是调用方给的目录封面覆盖（非空时不带内嵌来源）。
 MusicPlayItem musicPlayItemOf(
   MusicTrackRow track, {
   MusicAlbumRow? album,
   String? coverPath,
-}) => MusicPlayItem(
-  trackUid: track.trackUid,
-  path: track.path,
-  title: track.title,
-  startMs: track.cueStartMs,
-  endMs: track.cueEndMs,
-  artist: track.artistCredit ?? album?.albumArtistCredit,
-  album: album?.title,
-  albumUid: track.albumUid,
-  discNo: track.discNo,
-  trackNo: track.trackNo,
-  durationMs: track.durationMs,
-  coverPath: coverPath ?? album?.coverPath,
-  codec: track.codec,
-  sampleRate: track.sampleRate,
-  bitDepth: track.bitDepth,
-  channels: track.channels,
-  rgTrackGain: track.rgTrackGain,
-  rgTrackPeak: track.rgTrackPeak,
-  rgAlbumGain: track.rgAlbumGain,
-  rgAlbumPeak: track.rgAlbumPeak,
-  sourceId: track.sourceId,
-);
+  MusicTrackPathOf? trackPathOf,
+}) {
+  final MusicCoverSource cover = musicLocalCoverSourceOf(
+    track,
+    album: album,
+    trackPathOf: trackPathOf,
+  );
+  final String? dirCover = coverPath == null || coverPath.isEmpty
+      ? cover.coverPath
+      : coverPath;
+  return MusicPlayItem(
+    trackUid: track.trackUid,
+    path: track.path,
+    title: track.title,
+    startMs: track.cueStartMs,
+    endMs: track.cueEndMs,
+    artist: track.artistCredit ?? album?.albumArtistCredit,
+    album: album?.title,
+    albumUid: track.albumUid,
+    discNo: track.discNo,
+    trackNo: track.trackNo,
+    durationMs: track.durationMs,
+    coverPath: dirCover,
+    embeddedCoverPath: dirCover == null ? cover.embeddedFromPath : null,
+    codec: track.codec,
+    sampleRate: track.sampleRate,
+    bitDepth: track.bitDepth,
+    channels: track.channels,
+    rgTrackGain: track.rgTrackGain,
+    rgTrackPeak: track.rgTrackPeak,
+    rgAlbumGain: track.rgAlbumGain,
+    rgAlbumPeak: track.rgAlbumPeak,
+    sourceId: track.sourceId,
+  );
+}

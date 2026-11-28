@@ -2,6 +2,8 @@
 ///
 /// - **Beat This!**（CPJKU，ISMIR 2024，final0 检查点，MIT，https://github.com/CPJKU/beat_this）——拍点 / 强拍；
 /// - **htdemucs**（Meta Research Demucs v4，MIT，https://github.com/facebookresearch/demucs）——鼓 / 人声分轨。
+///   Meta 的原仓库已归档，原作者在 https://github.com/adefossez/demucs 继续维护；权重仍是 Meta
+///   发布的那份（MIT），署名不变。
 ///
 /// 两个 ONNX 文件与 folia-major 早期版本下载的是同一份（folia 的模型清单按 sha256 钉死，
 /// `htdemucs.onnx` = sha256 099b5be7…）。托管在本仓预发行 `music-analysis-models-v1`

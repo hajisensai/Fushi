@@ -1,4 +1,6 @@
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi_engine/sync/video_remote_service.dart'
+    show videoRemoteCapabilitySeekStep;
 import 'package:fushi/src/media/video/video_remote_control_layout.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:material_ui/material_ui.dart';
@@ -61,6 +63,8 @@ class VideoRemoteNowPlaying {
     this.subtitlesVisible = true,
     this.currentFavorited = false,
     this.volume,
+    this.seekSeconds = kVideoRemoteLegacySeekSeconds,
+    this.longSeekSeconds = kVideoRemoteLegacyLongSeekSeconds,
   });
 
   /// 作品名。
@@ -88,6 +92,11 @@ class VideoRemoteNowPlaying {
 
   /// 电脑音量 0..100；电脑不上报（旧版本）为 null。
   final int? volume;
+
+  /// 短 / 长步进键实际跳的秒数（[videoRemoteSeekStepSeconds]：电脑上报的配置，
+  /// 旧版电脑为手机自己的回退步长）。
+  final int seekSeconds;
+  final int longSeekSeconds;
 
   /// 「作品名 · 集数」。
   String get titleWithEpisode {
@@ -234,6 +243,42 @@ class VideoRemoteTranscriptController extends ChangeNotifier {
   }
 }
 
+/// 电脑不支持 `seekStep`（旧版本）时手机自己执行的短 / 长步进秒数：短步进是旧版
+/// 遥控一直用的固定 10 秒，长步进取电脑端长步进的出厂默认 30 秒。
+const int kVideoRemoteLegacySeekSeconds = 10;
+const int kVideoRemoteLegacyLongSeekSeconds = 30;
+
+/// 短 / 长步进键实际跳的秒数：电脑声明了 `seekStep` 且快照带合法的
+/// `seekSeconds` / `longSeekSeconds` 时用电脑的配置（电脑是步长的唯一真相源），
+/// 否则用手机的回退步长（[kVideoRemoteLegacySeekSeconds] /
+/// [kVideoRemoteLegacyLongSeekSeconds]）。
+int videoRemoteSeekStepSeconds(
+  Map<String, dynamic> state,
+  Set<String> capabilities, {
+  required bool long,
+}) {
+  final int fallback = long
+      ? kVideoRemoteLegacyLongSeekSeconds
+      : kVideoRemoteLegacySeekSeconds;
+  if (!capabilities.contains(videoRemoteCapabilitySeekStep)) return fallback;
+  final Object? raw = state[long ? 'longSeekSeconds' : 'seekSeconds'];
+  return raw is int && raw > 0 ? raw : fallback;
+}
+
+/// `seekStep` 命令体（`{step, size}`）；电脑不支持（旧版本）时为 null，调用方改发
+/// 绝对 `seek`（当前位置 ± [videoRemoteSeekStepSeconds]）。
+Map<String, dynamic>? videoRemoteSeekStepCommand(
+  Set<String> capabilities, {
+  required bool forward,
+  required bool long,
+}) {
+  if (!capabilities.contains(videoRemoteCapabilitySeekStep)) return null;
+  return <String, dynamic>{
+    'step': forward ? 'forward' : 'back',
+    'size': long ? 'long' : 'short',
+  };
+}
+
 /// 控制按钮的图标（语义图标层，Apple 设计系统自动换 SF 替身）。
 IconData videoRemoteControlIcon(
   VideoRemoteControlItem item, {
@@ -251,8 +296,11 @@ IconData videoRemoteControlIcon(
   VideoRemoteControlItem.speed => FushiIcons.speed,
   VideoRemoteControlItem.subtitleVisibility =>
     active ? FushiIcons.subtitles : FushiIcons.subtitlesOff,
-  VideoRemoteControlItem.seekBack => FushiIcons.replay10,
-  VideoRemoteControlItem.seekForward => FushiIcons.forward10,
+  // 步长随电脑配置变（不一定是 10 秒），不用带数字的字形；秒数在文案里。
+  VideoRemoteControlItem.seekBack => FushiIcons.fastRewind,
+  VideoRemoteControlItem.seekForward => FushiIcons.fastForward,
+  VideoRemoteControlItem.longSeekBack => FushiIcons.doubleChevronLeft,
+  VideoRemoteControlItem.longSeekForward => FushiIcons.doubleChevronRight,
   VideoRemoteControlItem.episodes => FushiIcons.playlist,
   VideoRemoteControlItem.subtitleTrack => FushiIcons.subtitles,
   VideoRemoteControlItem.volume =>
@@ -260,10 +308,22 @@ IconData videoRemoteControlIcon(
 };
 
 /// 控制按钮的文案（tooltip / 无障碍 / 横屏网格标签 / 编辑器）。
+///
+/// 传 [nowPlaying]（播放中的控制区）时短 / 长步进写出实际秒数；不传（按钮编辑器，
+/// 没有连着的电脑）时写动作名。
 String videoRemoteControlLabel(
   VideoRemoteControlItem item, {
   bool active = false,
+  VideoRemoteNowPlaying? nowPlaying,
 }) => switch (item) {
+  VideoRemoteControlItem.seekBack when nowPlaying != null =>
+    t.video_control_seek_backward_seconds(seconds: nowPlaying.seekSeconds),
+  VideoRemoteControlItem.seekForward when nowPlaying != null =>
+    t.video_control_seek_forward_seconds(seconds: nowPlaying.seekSeconds),
+  VideoRemoteControlItem.longSeekBack when nowPlaying != null =>
+    t.video_control_seek_backward_seconds(seconds: nowPlaying.longSeekSeconds),
+  VideoRemoteControlItem.longSeekForward when nowPlaying != null =>
+    t.video_control_seek_forward_seconds(seconds: nowPlaying.longSeekSeconds),
   VideoRemoteControlItem.previousCue => t.video_remote_previous,
   VideoRemoteControlItem.playPause => active ? t.pause : t.play,
   VideoRemoteControlItem.nextCue => t.video_remote_next,
@@ -277,8 +337,12 @@ String videoRemoteControlLabel(
   VideoRemoteControlItem.speed => t.playback_speed,
   VideoRemoteControlItem.subtitleVisibility =>
     t.video_remote_control_subtitle_visibility,
-  VideoRemoteControlItem.seekBack => t.video_remote_control_seek_back,
-  VideoRemoteControlItem.seekForward => t.video_remote_control_seek_forward,
+  VideoRemoteControlItem.seekBack => t.shortcut_action_video_seek_backward,
+  VideoRemoteControlItem.seekForward => t.shortcut_action_video_seek_forward,
+  VideoRemoteControlItem.longSeekBack =>
+    t.shortcut_action_video_long_seek_backward,
+  VideoRemoteControlItem.longSeekForward =>
+    t.shortcut_action_video_long_seek_forward,
   VideoRemoteControlItem.episodes => t.video_episode_list,
   VideoRemoteControlItem.subtitleTrack => t.video_control_subtitle_track,
   VideoRemoteControlItem.volume => t.audio_volume,

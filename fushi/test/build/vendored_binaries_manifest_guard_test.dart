@@ -77,6 +77,12 @@ void main() {
       'windows',
       'galgame',
       'mihon',
+      // Mihon offline build kit (third_party/mihon_build/README.md).
+      'mihon-build',
+      'mihon-jdk-linux-x64',
+      'mihon-jdk-linux-arm64',
+      'mihon-jdk-macos-arm64',
+      'mihon-jdk-windows-x64',
       'android',
       'ios',
       'macos',
@@ -279,34 +285,36 @@ void main() {
 
   group('fetch is wired into every consumer', () {
     /// workflow -> job -> groups the job's consumers need.
-    const Map<String, Map<String, Set<String>>> jobs =
-        <String, Map<String, Set<String>>>{
-          'main.yml': <String, Set<String>>{
-            'build': <String>{'android'},
-            'unit-tests': <String>{'all'},
-          },
-          'release.yml': <String, Set<String>>{
-            'build': <String>{'android'},
-            'tests': <String>{'all'},
-          },
-          'build-multiplatform.yml': <String, Set<String>>{
-            'android': <String>{'android'},
-            'macos': <String>{'macos', 'mihon'},
-            'ios': <String>{'ios'},
-            'windows': <String>{'windows', 'galgame', 'mihon'},
-          },
-          'release-desktop.yml': <String, Set<String>>{
-            'windows': <String>{'windows', 'galgame', 'mihon'},
-            'macos': <String>{'macos', 'mihon'},
-            'ios': <String>{'ios'},
-          },
-          'ci-config-gate.yml': <String, Set<String>>{
-            'guards': <String>{'all'},
-          },
-          'native-galgame-gate.yml': <String, Set<String>>{
-            'guards': <String>{'galgame'},
-          },
-        };
+    const Map<String, Map<String, Set<String>>>
+    jobs = <String, Map<String, Set<String>>>{
+      'main.yml': <String, Set<String>>{
+        'build': <String>{'android'},
+        'unit-tests': <String>{'all'},
+      },
+      'release.yml': <String, Set<String>>{
+        'build': <String>{'android'},
+        'tests': <String>{'all'},
+      },
+      'build-multiplatform.yml': <String, Set<String>>{
+        'android': <String>{'android'},
+        'macos': <String>{'macos', 'mihon'},
+        'ios': <String>{'ios'},
+        'windows': <String>{'windows', 'galgame', 'mihon'},
+      },
+      'release-desktop.yml': <String, Set<String>>{
+        'windows': <String>{'windows', 'galgame', 'mihon'},
+        'macos': <String>{'macos', 'mihon'},
+        'ios': <String>{'ios'},
+        // The bundle container runs bootstrap with FUSHI_VENDORED_GROUPS=mihon.
+        'linux': <String>{'mihon'},
+      },
+      'ci-config-gate.yml': <String, Set<String>>{
+        'guards': <String>{'all'},
+      },
+      'native-galgame-gate.yml': <String, Set<String>>{
+        'guards': <String>{'galgame'},
+      },
+    };
 
     jobs.forEach((String workflow, Map<String, Set<String>> byJob) {
       byJob.forEach((String job, Set<String> needed) {
@@ -376,6 +384,65 @@ void main() {
           },
         );
       });
+    });
+
+    test('release builds take the vendored bytes from a second, durable source', () {
+      // 2026-11-27: the release asset CDN answered HTTP 500 long enough to outlast every
+      // retry. Release jobs keep the bytes in the native artifact store as well
+      // (fetch-vendored-binaries `durable`), so one GitHub backend hiccup cannot fail them.
+      const Map<String, List<String>> releaseJobs = <String, List<String>>{
+        'release-desktop.yml': <String>['windows', 'macos', 'ios', 'linux'],
+        'release.yml': <String>['build'],
+      };
+      releaseJobs.forEach((String workflow, List<String> jobNames) {
+        final List<String> lines = File(
+          '$repo/.github/workflows/$workflow',
+        ).readAsStringSync().replaceAll('\r\n', '\n').split('\n');
+        for (final String job in jobNames) {
+          final int start = lines.indexOf('  $job:');
+          expect(start, isNot(-1), reason: '$workflow has no job $job');
+          int end = lines.length;
+          for (int i = start + 1; i < lines.length; i++) {
+            if (RegExp(r'^  [A-Za-z0-9_-]+:\s*$').hasMatch(lines[i])) {
+              end = i;
+              break;
+            }
+          }
+          final String body = lines.sublist(start, end).join('\n');
+          final Iterable<RegExpMatch> fetches = RegExp(
+            r'uses: \./\.github/actions/fetch-vendored-binaries\n((?:\s+.*\n?){1,4})',
+          ).allMatches(body);
+          expect(fetches, isNotEmpty, reason: '$workflow:$job');
+          for (final RegExpMatch fetch in fetches) {
+            expect(
+              fetch.group(1),
+              contains("durable: 'true'"),
+              reason:
+                  '$workflow:$job: every vendored fetch of a release job is durable',
+            );
+          }
+          expect(
+            RegExp(
+              r'^\s+actions: (read|write)$',
+              multiLine: true,
+            ).hasMatch(body),
+            isTrue,
+            reason: '$workflow:$job: the store lookup needs `actions: read`',
+          );
+        }
+      });
+      final String action = File(
+        '$repo/.github/actions/fetch-vendored-binaries/action.yml',
+      ).readAsStringSync();
+      expect(action, contains('tool/vendored_binaries.py digest'));
+      expect(action, contains('uses: ./.github/actions/native-artifact-store'));
+      // Saved only from trusted refs: the store trusts develop / main entries everywhere.
+      expect(
+        action,
+        contains(
+          "github.event_name != 'pull_request' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main')",
+        ),
+      );
     });
 
     test(

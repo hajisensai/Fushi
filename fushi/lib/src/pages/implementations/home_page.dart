@@ -128,7 +128,9 @@ import 'package:fushi/src/pages/implementations/browse_moved_notice.dart'
 import 'package:fushi/src/pages/implementations/overwrite_snapshot_notice.dart'
     show maybeShowOverwriteSnapshotNotice;
 import 'package:fushi/src/pages/implementations/android_storage_move_prompt.dart'
-    show maybeShowAndroidStorageMovePrompt;
+    show maybeShowAndroidStorageMoveBackPrompt, maybeShowLibraryVanishedAlert;
+import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart'
+    show openFeedbackComposeWith;
 import 'package:fushi/src/sync/sync_settings_schema.dart'
     show startAndroidDocumentsMigration;
 import 'package:fushi/src/pages/implementations/media_server/media_server_browse_page.dart'
@@ -782,15 +784,31 @@ class _HomePageState extends BasePageState<HomePage>
         );
       }
 
-      // Android 老安装：一次性提示把书库移到可访问的外部 app 专属目录（新装已在那里）。
-      // 选「现在迁移」时迁移遮罩接管界面并自动重启，后面的更新检查不会再跑。
+      // BUG-5586：启动期哨兵发现书库文件被清空（外部目录被文件管理器 / 清理工具删掉
+      // 之类），请用户带日志反馈。排在移回提示之前：先让用户知道丢了什么。
+      // BUG-5570：同一入口也接书库内容对账（哨兵还在、但成片的书 / 有声书文件不在），
+      // 五端都弹；可重新扫描书 / 漫画来源（与来源页「重新扫描」同一个扫描入口）。
       if (mounted) {
-        await maybeShowAndroidStorageMovePrompt(
+        await maybeShowLibraryVanishedAlert(
+          context: context,
+          supportRoot: appModelNoUpdate.databaseDirectory,
+          openFeedback: openFeedbackComposeWith,
+          contentAudit: appModelNoUpdate.libraryContentAudit,
+          countRescannableSources: () async =>
+              (await _loadLibraryRescanSources()).length,
+          rescanSources: _rescanLibrarySources,
+        );
+      }
+
+      // BUG-5586：书库还在外部 `Android/data` 的安装，一次性建议移回内部存储。
+      // 选「移回内部存储」时迁移遮罩接管界面并自动重启，后面的更新检查不会再跑。
+      if (mounted) {
+        await maybeShowAndroidStorageMoveBackPrompt(
           context: context,
           startMigration: () => startAndroidDocumentsMigration(
             context: context,
             appModel: appModelNoUpdate,
-            toExternal: true,
+            toExternal: false,
           ),
         );
       }
@@ -2063,12 +2081,10 @@ class _HomePageState extends BasePageState<HomePage>
     );
   }
 
-  /// [tab] 自己在顶栏 / 工具栏下沿画 scroll edge，外壳不再在内容区顶部叠一条。
-  /// 设置页各形态（窄屏导航栏、宽屏详情的 macOS 27 窗口工具栏、二级侧栏）都把
-  /// 滚动内容排在自己的栏下面并自带渐隐；外壳这条带贴的是**内容区顶部**，对设置
-  /// 来说那是栏的上沿——宽窗会在窗口按钮行与设置工具栏之间压出一道页面底色
-  /// （深色是黑）的横带，并横穿二级侧栏的搜索框（2026-11-24 用户截图）。
-  bool _tabOwnsTopScrollEdge(HomeTab tab) => tab == HomeTab.settings;
+  /// [tab] 自己画顶部 scroll edge，外壳不再在内容区顶部叠一条（见
+  /// [homeTabOwnsTopScrollEdge]）。
+  bool _tabOwnsTopScrollEdge(HomeTab tab) =>
+      homeTabOwnsTopScrollEdge(tab, redesign: shellRedesignActive(context));
 
   /// 外壳为 [tab] 显示的页面大标题：有自己分区页签行、却没有页面名的库页
   /// （书架 / 漫画 / 视频 / 游戏）与浏览、浏览器、查词。桌面自绘控制条已不再显示
@@ -2225,7 +2241,9 @@ class _HomePageState extends BasePageState<HomePage>
         // NavRailContentSync 与 buildBody），免得它们每帧重排；可见内容照常
         // 随 rail 重排，否则右侧贴边内容整段过渡被裁、结束时弹回（BUG-3447）。
         child: NavRailContentSync(
-          child: isGlassDesign(context) && sizeClass == WindowSizeClass.expanded
+          child:
+              isGlassDesign(context) &&
+                  adaptiveNavSidebarByWindow(context, sizeClass: sizeClass)
               ? _appleSidebarShell(
                   tabs: tabs,
                   reversed: reversed,
@@ -4214,6 +4232,32 @@ class _HomePageState extends BasePageState<HomePage>
     );
   }
 
+  /// BUG-5570：书库内容成片缺失时可重扫的来源：书 / 漫画来源（扫描会对照原件重建）。
+  /// 视频 / 音乐是原地播放，不在受管书库里，不在此列。库处于「已迁移只读」时一个都不扫。
+  Future<List<SourceLibraryRow>> _loadLibraryRescanSources() async {
+    if (appModelNoUpdate.isMigrationReadonly) return const <SourceLibraryRow>[];
+    final ModuleVisibility visibility = appModelNoUpdate.moduleVisibility;
+    return <SourceLibraryRow>[
+      for (final SourceLibraryRow source
+          in await appModelNoUpdate.database.getAllMediaSources())
+        if (switch (SourceLibraryKind.tryParse(source.mediaKind)) {
+          SourceLibraryKind.book => visibility.isEnabled(ModuleId.books),
+          SourceLibraryKind.manga => visibility.isEnabled(ModuleId.manga),
+          _ => false,
+        })
+          source,
+    ];
+  }
+
+  /// 「书库里有些文件不见了」提示选「重新扫描来源」：逐个走自动扫描同一个入口
+  /// （[_runAutoSourceScan]，与来源页「重新扫描」收尾一致、与其它扫描共用每来源锁），串行。
+  Future<void> _rescanLibrarySources() async {
+    for (final SourceLibraryRow source in await _loadLibraryRescanSources()) {
+      if (!mounted) return;
+      await _runAutoSourceScan(source);
+    }
+  }
+
   /// 自动扫描一个来源，收尾与来源页「重新扫描」一致；分支（视频门被占延后、只在新增
   /// 了视频时串联「扫描后自动刮削」）见 [runAutoSourceScan]。
   Future<SourceAutoScanOutcome> _runAutoSourceScan(SourceLibraryRow source) {
@@ -4971,6 +5015,40 @@ String? homeShellBarTitleFor(
     redesign: redesign,
   );
 }
+
+/// [tab] 的内容自己画顶部 scroll edge，外壳（Apple）不再在内容区顶部叠那条
+/// 「页面底色 → 透明」的 soft 带（`_withAppleTopEdge`）。外壳那条带贴的是
+/// **内容区顶部**，对自带顶栏 / 页头的页来说那正是自己底板的中段：
+/// - 设置页各形态（窄屏导航栏、宽屏详情的 macOS 27 窗口工具栏、二级侧栏）把
+///   滚动内容排在自己的栏下面并自带渐隐；叠上外壳的带，宽窗会在窗口按钮行与
+///   设置工具栏之间压出一道页面底色（深色是黑）的横带（2026-11-24 用户截图）。
+/// - 挂 `FushiFloatingChromeOverlay` 的库页 / 浏览 / 浏览器（[_tabHasFloatingChrome]）
+///   与重设计外壳下的首页（页头大字）：overlay 自己从窗口顶起画整块 scroll edge
+///   （Apple：[FushiAppleScrollEdgeBackdrop]）。外壳的带再从状态栏下沿起叠一条
+///   不透明页面底色，正好横在状态栏与顶栏行之间，成了一条分割线（2026-11-25
+///   用户 iPhone 截图，音乐页）。
+/// - 重设计外壳下的复习页：页头是 [FushiStaticMasthead]，`FushiPageScaffold`
+///   把它挂进同一套 `FushiFloatingChromeOverlay(masthead: true)`，与库页同理
+///   自带整块 scroll edge（2026-11-26 用户 iPhone 截图，复习页状态栏下沿白条）。
+///
+/// 穷举每个 tab：新增模块必须在这里表态它的顶部归谁画，不再靠白名单漏项。
+@visibleForTesting
+bool homeTabOwnsTopScrollEdge(HomeTab tab, {required bool redesign}) =>
+    switch (tab) {
+      HomeTab.settings => true,
+      HomeTab.books ||
+      HomeTab.manga ||
+      HomeTab.video ||
+      HomeTab.music ||
+      HomeTab.browse ||
+      HomeTab.games ||
+      HomeTab.web => _HomePageState._tabHasFloatingChrome(tab),
+      // 页头大字 overlay 只在重设计外壳下挂（墨水屏走旧页头，排在正文上面）。
+      HomeTab.home || HomeTab.srs => redesign,
+      // 查词页的页头排在 Column 里（iOS 不画页头），正文从内容区顶部起、
+      // 不铺进状态栏，内容区顶部那条渐隐仍由外壳画。
+      HomeTab.dictionaries => false,
+    };
 
 /// 「后台任务」入口（同步 / 复习同步 / 补刮）是否由外壳的栏承载（承载时首页
 /// body 不再画右下 FAB）。

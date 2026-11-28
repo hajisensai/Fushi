@@ -210,8 +210,6 @@ void main() {
     expect(omega.backdrop, isNull);
     expect(omega.overview, isNull);
     expect(omega.chip, isNull);
-    // 色块按封面取色（图片加载挂 10 秒超时），fakeAsync 里走完超时再结束。
-    await tester.pump(const Duration(seconds: 11));
   });
 
   testWidgets('背景图文件已不在：只有刮削资料也画系列色块，但不带背景图', (WidgetTester tester) async {
@@ -231,7 +229,6 @@ void main() {
     expect(alpha.art, FushiCoverBlockArt.portrait);
     expect(alpha.backdrop, isNull);
     expect(alpha.overview, '奇幻 / 冒险 · ★ 7.6');
-    await tester.pump(const Duration(seconds: 11));
   });
 
   testWidgets('字幕书：按 (srt, uid) 取单本刮削资料画系列色块', (WidgetTester tester) async {
@@ -249,6 +246,5 @@ void main() {
     expect(sigma.art, FushiCoverBlockArt.portrait);
     expect(sigma.overview, '奇幻 / 冒险 · ★ 7.6');
     expect(sigma.chip, '2019');
-    await tester.pump(const Duration(seconds: 11));
   });
 }

@@ -22,6 +22,8 @@ import 'package:fushi/src/lookup/ocr_block_sentence.dart';
 import 'package:fushi/src/lookup/source_line_sentence.dart';
 import 'package:fushi/src/lookup/source_lookup_sentence.dart'
     show withFallbackMiningSentence;
+import 'package:fushi/src/media/favorites/favorite_lookup_context.dart'
+    show FavoriteLookupContext;
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
@@ -46,6 +48,7 @@ import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/lookup/pre_mine_sentence_edit.dart';
 
 class PopupDictionaryPage extends ConsumerStatefulWidget {
   const PopupDictionaryPage({
@@ -659,7 +662,24 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       );
 
   Future<MinePopupResult> _mineBaseEntry(Map<String, String> fields) =>
-      _reportMined(onMineEntry(_withSourceSentence(fields)));
+      _reportMined(_editSentenceThen(_withSourceSentence(fields), onMineEntry));
+
+  /// 反馈 uEnwXmBIR0：卡上点了「编辑例句后制卡」（payload 带「先编辑例句」标记）就先在
+  /// 本窗口弹编辑框，改好的句子交给 [mine]；在编辑框里取消 = 不制这张卡。其余请求原样
+  /// 交给 [mine]。句子音频随这次查词的快照照旧带上（与例句无关）。
+  Future<MinePopupResult> _editSentenceThen(
+    Map<String, String> fields,
+    Future<MinePopupResult> Function(Map<String, String> fields) mine,
+  ) async {
+    final Map<String, String>? edited = await applyPreMineSentenceEdit(
+      fields,
+      initialSentence: fields['sentence'] ?? '',
+      editor: (String sentence) async =>
+          mounted ? showPreMineSentenceEditor(context, sentence) : null,
+    );
+    if (edited == null) return const MinePopupResult.cancelled();
+    return mine(edited);
+  }
 
   Future<MinePopupResult> _reportMined(Future<MinePopupResult> pending) async {
     final MinePopupResult result = await pending;
@@ -670,7 +690,10 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   Future<MinePopupResult> _updateBaseEntry(
     int noteId,
     Map<String, String> fields,
-  ) => onUpdateEntry(noteId, _withSourceSentence(fields));
+  ) => _editSentenceThen(
+    _withSourceSentence(fields),
+    (Map<String, String> edited) => onUpdateEntry(noteId, edited),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -1290,20 +1313,41 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       onMineEntry: isBase
           ? _mineBaseEntry
           : (Map<String, String> fields) => _reportMined(
-              onMineEntry(
+              _editSentenceThen(
                 withFallbackMiningSentence(fields, entry.contextSentence),
+                onMineEntry,
               ),
             ),
       onUpdateEntry: isBase
           ? _updateBaseEntry
-          : (int noteId, Map<String, String> fields) => onUpdateEntry(
-              noteId,
+          : (int noteId, Map<String, String> fields) => _editSentenceThen(
               withFallbackMiningSentence(fields, entry.contextSentence),
+              (Map<String, String> edited) => onUpdateEntry(noteId, edited),
             ),
+      // 反馈 uEnwXmBIR0：应用外查词窗给「编辑例句后制卡」（编辑框就在本窗口弹）。
+      preMineSentenceEdit: true,
       // BUG-3652 续：制卡失败回包回来时这一层已关 / 停驻，原因就改由宿主 toast。
       isSessionOnScreen: () => _popup.isEntryOnScreen(entry),
       onDuplicateCheck: checkDuplicate,
       onOverwriteTargetNoteId: findOverwriteTargetNoteId,
+      // 反馈 z26A3IZcKZ：☆ 收藏此前没接线，webview 的 favoriteEntry 桥见回调为 null 直接回
+      // false（点了没反应、不落库）。收藏写主库 FavoriteWords（:popup 已以可写方式开着 Drift
+      // 主库，与本窗的查词 / 制卡统计同一个库），与 app 内弹窗同一个 [onFavoriteEntry]；
+      // 原句与制卡 `{sentence}` 同源（基础层补外部入口那一行，嵌套层是被点处那一句）。
+      onFavoriteEntry: (Map<String, String> fields) => onFavoriteEntry(
+        fields,
+        lookupContext: FavoriteLookupContext(
+          sentence:
+              (isBase
+                  ? _withSourceSentence(fields)
+                  : withFallbackMiningSentence(
+                      fields,
+                      entry.contextSentence,
+                    ))['sentence'] ??
+              '',
+        ),
+      ),
+      onFavoriteCheck: onFavoriteCheck,
       // 制卡目标切换不放层顶栏：基础层没有 header / 关闭 / 返回 / 历史，层顶栏整条不画，
       // 按钮跟着消失（BUG-3731）。本窗口在自己的搜索条上给一颗（[_buildMiningTargetButton]），
       // 基础层与嵌套层共用，不在子层顶栏里重复出现。

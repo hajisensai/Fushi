@@ -1,0 +1,6 @@
+## BUG-5592 · 侧栏音乐速览卡不模糊 NSFW 专辑封面
+- **报告**：2026-11-27（用户：应用内反馈 xec4EVKZb4）
+- **真实性**：✅ 真 bug。鼠标悬停左侧导航「音乐」弹出的速览卡里，标了 NSFW 的专辑封面原样露出。根因：`fushi/lib/src/pages/implementations/home_nav_peek.dart:1616`（`_loadMusic` 的 `entryOf`，最近播放）与 `:1672`（`navPeekNowPlayingEntry`，正在播放）构造 `AdaptiveNavPeekEntry` 时都没传 `blurCover`，而 `AdaptiveNavPeekEntry` 的 `blurCover` 默认 `false`（`fushi/lib/src/utils/adaptive/nav_rail/nav_rail_peek.part.dart:17`）。书 / 视频 / 游戏分支各自记得经 `_loadNsfwJudge` 传了，音乐分支漏了（BUG-5334 只补了游戏）。同类根因：带封面的速览条目「要不要模糊」靠每个分支自觉，默认值让漏判静默通过。
+- **[x] ① 已修复** — 按类：`AdaptiveNavPeekEntry` 默认构造改为 `required cover` + `required blurCover`（无默认值），无封面的列表行走新的 `AdaptiveNavPeekEntry.noCover`，漏判编不过；`_loadNsfwJudge` 闭包收成唯一入口 `NavPeekNsfwJudge`（`call(MediaNsfwTarget)` + `music(...)`）；音乐判定与系统媒体卡（`musicMediaSessionArtHidden`）共用 fushi_engine 新增的 `MediaNsfwSnapshot.isMusicItemNsfw`（专辑标记或封面图源）；`_musicCover` 同一份图源一起返回封面与模糊判定，正在播放按播放项的专辑 / 封面路径判、补曲库封面时并入曲库图源判定。远端 / 媒体服务器 / 下载条目显式 `blurCover: false` 并注明不是本机可标宿主。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/home_nav_peek_music_nsfw_test.dart`（真内存库：专辑标记 / 目录封面 / 内嵌封面判定、开关关闭、与系统媒体卡同口径、正在播放条目带判定；源码守卫：默认构造无 blurCover 默认值、音乐两类条目经 `NavPeekNsfwJudge`、全文件只一处 `MediaNsfwSnapshot.load`）。
+- **备注**：速览卡模糊渲染本身（`nav_rail_peek.part.dart` 读 `entry.blurCover`）未改，未做设备肉眼复测。

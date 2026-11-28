@@ -19,7 +19,7 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
   Future<RemoteMangaManifest> mangaManifest(String bookKey) async {
     _assertSafeName(bookKey);
     final EpubBookRow row = await _requireMangaRow(bookKey);
-    final MokuroPayload? volume = _readExportableVolume(row);
+    final MokuroPayload? volume = await _readExportableVolume(row);
     if (volume != null) return _volumeManifest(row, volume);
     final List<RemoteMangaChapterInfo> chapters = await _downloadedChapters(
       row,
@@ -51,7 +51,7 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
     // 是别的文件名时不走这条近路。
     final File json = _mangaJsonFile(row);
     if (p.basename(json.path) == kMangaPackageMarker) {
-      final MokuroPayload? cached = _mangaPayloads.lookup(json);
+      final MokuroPayload? cached = await _mangaPayloads.lookup(json);
       if (cached != null) {
         _checkExpectedPage(
           expectedKeyDigest,
@@ -59,7 +59,7 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
           bookKey,
           index,
         );
-        return _pageFile(
+        return await _pageFile(
           payload: cached,
           imagesRoot: imagesRoot,
           index: index,
@@ -67,7 +67,7 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
         );
       }
     }
-    final MokuroPayload? volume = _readExportableVolume(row);
+    final MokuroPayload? volume = await _readExportableVolume(row);
     if (volume == null) {
       throw StateError('manga book has no volume pages: $bookKey');
     }
@@ -156,11 +156,11 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
     // 这一章的 manga.json 没变过（缓存命中）：它上次已按「完整下载」过关，这次
     // 只核对被请求的那一页，不再对整章每一页 stat（一章 N 页读完是 N² 次）。那一页
     // 不在（越界 / 文件被删）就回到下面的完整判定，结论与没有缓存时一致。
-    final MokuroPayload? cached = _mangaPayloads.lookup(
+    final MokuroPayload? cached = await _mangaPayloads.lookup(
       mangaChapterJsonFile(chapterDir),
     );
     if (cached != null && index >= 0 && index < cached.images.length) {
-      final String? path = MangaStorage.resolvePageFilePath(
+      final String? path = await MangaStorage.resolvePageFilePathAsync(
         imagesRoot,
         MangaStorage.pageRelativePath(cached.images[index].url),
       );
@@ -204,7 +204,7 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
   /// stat + 新内容」，下次 stat 对不上自然重读，不会把旧内容配上新 stat。
   Future<MokuroPayload?> _readDownloadedChapter(Directory chapterDir) async {
     final File json = mangaChapterJsonFile(chapterDir);
-    final FileStat stat = json.statSync();
+    final FileStat stat = await json.stat();
     final MokuroPayload? payload = await readDownloadedChapterPayload(
       chapterDir,
     );
@@ -255,7 +255,7 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
     Directory chapterDir,
   ) async {
     final File file = mangaChapterSourcePagesFile(chapterDir);
-    final FileStat stat = file.statSync();
+    final FileStat stat = await file.stat();
     if (stat.type != FileSystemEntityType.file) {
       _sourcePagesCache.remove(file.path);
       return const <MangaChapterSourcePage?>[];
@@ -338,16 +338,16 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
   /// 第 [index] 页的页图文件。路径解析 + 穿越守卫恒在 host 侧（client 只送 index，
   /// 从不送路径）。用的是本仓阅读器读本地漫画时的**同一个**
   /// `MangaStorage.resolvePageFilePath`——安全边界靠复制粘贴维持，抄漏一处就是真漏洞。
-  File _pageFile({
+  Future<File> _pageFile({
     required MokuroPayload payload,
     required String imagesRoot,
     required int index,
     required String label,
-  }) {
+  }) async {
     if (index < 0 || index >= payload.images.length) {
       throw StateError('manga page out of range: $label#$index');
     }
-    final String? path = MangaStorage.resolvePageFilePath(
+    final String? path = await MangaStorage.resolvePageFilePathAsync(
       imagesRoot,
       MangaStorage.pageRelativePath(payload.images[index].url),
     );
@@ -449,7 +449,7 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
     final String stem = pageKey == null
         ? '$index'
         : '$index-${mangaChapterDigest(pageKey)}';
-    final File? cached = _cachedOnlinePage(dir, stem);
+    final File? cached = await _cachedOnlinePage(dir, stem);
     if (cached != null) return cached;
     // 判缓存与登记在途之间没有 await：同一 isolate 内这两步是原子的。
     final String key = p.join(dir.path, stem);
@@ -499,10 +499,14 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
     if (bytes.isEmpty) {
       throw StateError('online manga page is empty: ${row.bookKey}#$index');
     }
-    if (!dir.existsSync()) {
+    if (!await dir.exists()) {
       await dir.create(recursive: true);
-      // 新开一章才清一次：每页都扫整棵缓存树不值。
-      pruneOnlineMangaPageCache(onlineMangaPageCacheRoot(), keep: dir);
+      // 新开一章才清一次：每页都扫整棵缓存树不值。整棵树的 stat / 删除放进
+      // 一次性后台 isolate（本 isolate 在 app 里就是 UI isolate）。
+      await pruneOnlineMangaPageCacheInIsolate(
+        onlineMangaPageCacheRoot().path,
+        dir.path,
+      );
     }
     final File file = File(
       p.join(dir.path, '$stem${onlineMangaPageExtension(bytes)}'),
@@ -519,7 +523,7 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
     } on FileSystemException {
       // 另一个进程先产出了同一页（目标在、非空，且可能正被它 serve 着，Windows
       // 上覆盖会被拒）：那份就是这一页，丢掉自己的暂存用它。其余情况照常抛。
-      if (file.existsSync() && file.lengthSync() > 0) {
+      if (await file.exists() && await file.length() > 0) {
         await staging.delete();
         return file;
       }
@@ -529,15 +533,19 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
 
   /// [dir] 里名为 [stem]（页序 + 页身份摘要）的已落好的缓存文件（暂存 `.part` 与
   /// 空文件不算）。
-  File? _cachedOnlinePage(Directory dir, String stem) {
-    if (!dir.existsSync()) return null;
-    for (final FileSystemEntity entity in dir.listSync()) {
-      if (entity is File &&
-          p.extension(entity.path) != '.part' &&
-          p.basenameWithoutExtension(entity.path) == stem &&
-          entity.lengthSync() > 0) {
-        return entity;
+  Future<File?> _cachedOnlinePage(Directory dir, String stem) async {
+    if (!await dir.exists()) return null;
+    try {
+      await for (final FileSystemEntity entity in dir.list()) {
+        if (entity is File &&
+            p.extension(entity.path) != '.part' &&
+            p.basenameWithoutExtension(entity.path) == stem &&
+            await entity.length() > 0) {
+          return entity;
+        }
       }
+    } on FileSystemException {
+      // 目录在列举途中被清理（[pruneOnlineMangaPageCache]）：当作没有缓存，现取。
     }
     return null;
   }
@@ -653,16 +661,23 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
   /// 判据文件是根 [kMangaPackageMarker]；行里记的 `manga.json` 就是它时（常态）只读
   /// 一遍。行里记的是别的文件名时判据与页表不是同一份文件，照旧判完再读页表文件。
   /// stat 取在读之前，理由同 [_readDownloadedChapter]。
-  MokuroPayload? _readExportableVolume(EpubBookRow row) {
+  ///
+  /// 读 + 解析 + 逐页核对在一次性后台 isolate 里做（200 页带 OCR 的卷约 16 ms，
+  /// 本 isolate 在 app 里就是 UI isolate）。
+  Future<MokuroPayload?> _readExportableVolume(EpubBookRow row) async {
     final File json = _mangaJsonFile(row);
-    final FileStat stat = json.statSync();
-    if (p.equals(json.path, p.join(row.extractDir, kMangaPackageMarker))) {
-      final MokuroPayload? payload = readExportableMangaPayload(row.extractDir);
-      if (payload != null) _mangaPayloads.store(json, stat, payload);
-      return payload;
-    }
-    if (!hasExportableMangaContent(row.extractDir)) return null;
-    final MokuroPayload payload = parseMangaJson(json.readAsStringSync());
+    final FileStat stat = await json.stat();
+    final String extractDir = row.extractDir;
+    final String jsonPath = json.path;
+    final bool rootMarker = p.equals(
+      jsonPath,
+      p.join(extractDir, kMangaPackageMarker),
+    );
+    final MokuroPayload? payload = await readExportableVolumeInIsolate(
+      extractDir: extractDir,
+      jsonPath: jsonPath,
+      rootMarker: rootMarker,
+    );
     _mangaPayloads.store(json, stat, payload);
     return payload;
   }
@@ -688,16 +703,17 @@ class _MangaPayloadCache {
       <String, _CachedMangaPayload>{};
 
   /// [json] 现在的修改时间与大小都和记下时一样才给；否则 null（并丢掉旧记录）。
-  MokuroPayload? lookup(File json) {
+  Future<MokuroPayload?> lookup(File json) async {
     final _CachedMangaPayload? entry = _entries.remove(json.path);
     if (entry == null) return null;
-    final FileStat stat = json.statSync();
+    final FileStat stat = await json.stat();
     if (stat.type != FileSystemEntityType.file ||
         stat.size != entry.size ||
         stat.modified != entry.modified) {
       return null;
     }
-    _entries[json.path] = entry;
+    // stat 期间别的请求可能已存了更新的一份：不覆盖它。
+    _entries.putIfAbsent(json.path, () => entry);
     return entry.payload;
   }
 

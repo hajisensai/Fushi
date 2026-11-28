@@ -83,6 +83,61 @@ void main() {
     expect(clock.elapsed, lessThan(const Duration(milliseconds: 800)));
   });
 
+  // BUG-5603：视频页每次切 tab 都探一遍能力表；改成条件请求——正文没变只回 304，host 改了设置下一次就看到。
+  test(
+    'declaresCapability：重复探测带 If-None-Match、304 不传正文；host 改了能力位下一次就看到',
+    () async {
+      const FushiClientUrl live = FushiClientUrl(
+        url: 'https://h.example:38766',
+        token: 'secret',
+        hostId: 'H',
+      );
+      await repository.setFushiClientUrls(<FushiClientUrl>[live]);
+      debugInterconnectAddressProbeOverride =
+          (FushiClientUrl c, String? hostId) async => hostId == 'H';
+      final List<String?> conditional = <String?>[];
+      int fullBodies = 0;
+      String body = '{"videoRemoteControlV1":true}';
+      String tag = '"v1"';
+      final MockClient plain = MockClient((http.Request r) async {
+        if (r.url.path != '/api/capabilities') return http.Response('', 404);
+        conditional.add(r.headers['If-None-Match']);
+        if (r.headers['If-None-Match'] == tag) {
+          return http.Response('', 304, headers: <String, String>{'etag': tag});
+        }
+        fullBodies++;
+        return http.Response(body, 200, headers: <String, String>{'etag': tag});
+      });
+      Future<bool?> declares(String name) async {
+        final InterconnectHostClient client = InterconnectHostClient(
+          repository: repository,
+          peer: live,
+          httpClient: plain,
+        );
+        try {
+          return await client.declaresCapability(name);
+        } finally {
+          client.cancelPending();
+        }
+      }
+
+      for (int i = 0; i < 3; i++) {
+        expect(await declares('videoRemoteControlV1'), isTrue);
+      }
+      expect(fullBodies, 1, reason: '后两次都是 304');
+      expect(conditional, <String?>[null, '"v1"', '"v1"']);
+
+      body = '{}';
+      tag = '"v2"';
+      expect(
+        await declares('videoRemoteControlV1'),
+        isFalse,
+        reason: '不等任何有效期',
+      );
+      expect(fullBodies, 2);
+    },
+  );
+
   test(
     'postJson：缓存胜者是同组的死 LAN（连接被拒）→ 换到活地址，不再整次失败（评审 compat-1 / tests-1）',
     () async {

@@ -1459,9 +1459,11 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     final InterconnectDownloadManager manager = ref.read(
       interconnectDownloadManagerProvider,
     );
+    // 同一本书已有在跑的任务（含自动同步 sweep 的补拉，B5trcDxSnf）就不再并跑。
     if (manager.isRunning(
-      InterconnectDownloadManager.bookTaskId(book.downloadId),
-    )) {
+          InterconnectDownloadManager.bookTaskId(book.downloadId),
+        ) ||
+        manager.isBookDownloadRunning(localBookKey)) {
       return;
     }
     // 管理器要一个 dest 作任务登记；本任务的临时包路径由 [_downloadRemoteAudiobook]
@@ -1580,9 +1582,11 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     final InterconnectDownloadManager manager = ref.read(
       interconnectDownloadManagerProvider,
     );
+    // 同一本书已有在跑的任务（含自动同步 sweep 的补拉，B5trcDxSnf）就不再并跑。
     if (manager.isRunning(
-      InterconnectDownloadManager.bookTaskId(book.downloadId),
-    )) {
+          InterconnectDownloadManager.bookTaskId(book.downloadId),
+        ) ||
+        manager.isBookDownloadRunning(localBookKey)) {
       return;
     }
     final File dest = await _remoteAudiobookDestination(book);

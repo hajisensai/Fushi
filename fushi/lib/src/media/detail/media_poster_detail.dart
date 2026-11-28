@@ -193,6 +193,10 @@ class _MediaPosterDetailThemeState extends State<MediaPosterDetailTheme> {
 /// 标题同排、其余整宽。两种都是取色底铺满整页。
 const double kMediaPosterDetailWideMinWidth = 720;
 
+/// 首屏在背景带下面至少要露出的高度：一行大标题、作者 / 原名、进度或续播行、
+/// 主按钮与它们之间的间距。背景带（含页头让位）不超过视口高减去它。
+const double kMediaPosterDetailFirstScreenReserve = 240;
+
 /// 宽式 hero 的 [MediaPosterDetailHero.aside] 单独成右列所需的最小宽度（再窄就
 /// 接在下段末尾）：左列至少要放得下标题块 + 一行动作按钮。
 const double kMediaPosterDetailAsideMinWidth = 1300;
@@ -661,6 +665,9 @@ class MediaPosterDetailHero extends StatelessWidget {
   /// 固有比例时按整宽铺满所需的高度给（整张图看得全），但不超过视口高的
   /// [maxViewportFraction]——超过时 [_HeroBand] 把整张图等比缩进带里、贴尾侧，
   /// 空出的部分垫同图模糊。比例未知（首帧解码前 / 没有背景图）时用 [fallback]。
+  ///
+  /// 三种情况最后都不超过 [_bandFirstScreenCap]：矮窗口（横屏手机）里背景带再
+  /// 好看也不能把标题与主按钮挤出首屏。
   double _artBandHeight(
     BuildContext context, {
     required double width,
@@ -670,15 +677,31 @@ class MediaPosterDetailHero extends StatelessWidget {
     required double minArt,
     required double maxViewportFraction,
   }) {
+    final double cap = _bandFirstScreenCap(context, topInset);
     final double? aspect = backdropAspect;
     if (backdrop == null || aspect == null || aspect <= 0) {
-      return topInset + fallback;
+      return math.min(topInset + fallback, cap);
     }
     final double viewport = MediaQuery.sizeOf(context).height;
     final double natural = width / aspect;
+    return math.min(
+      math.max(
+        topInset + minArt,
+        math.min(natural, viewport * maxViewportFraction),
+      ),
+      cap,
+    );
+  }
+
+  /// 背景带（含 [topInset]）的高度上限：视口高减去首屏要露出的标题块与主按钮
+  /// （[kMediaPosterDetailFirstScreenReserve]），但至少留够页头一行。桌面窗口
+  /// 与竖屏手机够高、比各自的视口比例上限宽松，不受影响；只在横屏手机这种矮
+  /// 窗口里收紧（BUG-5587）。
+  double _bandFirstScreenCap(BuildContext context, double topInset) {
+    final double viewport = MediaQuery.sizeOf(context).height;
     return math.max(
-      topInset + minArt,
-      math.min(natural, viewport * maxViewportFraction),
+      topInset + kMediaPosterDetailChromeRowHeight + 16,
+      viewport - kMediaPosterDetailFirstScreenReserve,
     );
   }
 
@@ -694,8 +717,17 @@ class MediaPosterDetailHero extends StatelessWidget {
   ) {
     const double px = 40;
     final bool hasPoster = poster != null;
+    // 海报上沿要落在背景带里（带高 ≥ topInset + 海报高 × 0.62 + 16）：矮窗口里
+    // 带高被 [_bandFirstScreenCap] 收紧后，海报跟着缩，不把带子重新撑高。
+    final double posterFitW =
+        (_bandFirstScreenCap(context, topInset) - topInset - 16) /
+        0.62 *
+        fit.slot;
     final double posterW = hasPoster
-        ? (_hasArt ? (width * 0.17).clamp(150.0, 220.0) : 170.0)
+        ? math.min(
+            _hasArt ? (width * 0.17).clamp(150.0, 220.0) : 170.0,
+            math.max(96.0, posterFitW),
+          )
         : 0;
     final double posterH = posterW / fit.slot;
     final double overhang = posterH * 0.38;
@@ -1397,6 +1429,11 @@ class _HeroImageAspectState extends State<_HeroImageAspect>
 
   @override
   bool needsBackdropSeed(double aspect) => false;
+
+  /// 背景带高度按比例算：轮播换图时沿用上一张的比例直到新图解码，带高不先塌回
+  /// 兜底高度再撑开（反馈 hmsIkQ9zIv）。
+  @override
+  bool get holdsAspectAcrossImageChange => true;
 
   @override
   Widget build(BuildContext context) =>

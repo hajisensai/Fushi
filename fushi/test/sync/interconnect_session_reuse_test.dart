@@ -3,7 +3,10 @@ import 'dart:async';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
-import 'package:fushi/src/sync/sync_backend.dart' show SyncBackendError;
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart'
+    show reportInterconnectCandidateReached;
+import 'package:fushi/src/sync/sync_backend.dart'
+    show SyncBackendError, SyncPeerUnreachableError;
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -356,7 +359,156 @@ void main() {
     final int failedProbes = probes;
 
     reachable = true;
+    // 失败后进了选路退避：用户手动同步（或网络变化）清零后立即重新选路。
+    backend.resetResolveBackoff();
     await backend.ensureResolved();
     expect(probes, greaterThan(failedProbes), reason: '失败的那轮必须清掉，不能被下一次调用复用');
+  });
+
+  group('选路失败退避', () {
+    late Duration now;
+    late int probes;
+    late bool reachable;
+    late InterconnectSyncBackend backend;
+
+    setUp(() async {
+      now = Duration.zero;
+      probes = 0;
+      reachable = false;
+      backend = InterconnectSyncBackend.withProbe((
+        String url,
+        String token,
+      ) async {
+        probes++;
+        return reachable;
+      })..monotonicNow = () => now;
+      expect(await backend.restoreAuth(repo), isTrue);
+    });
+
+    tearDown(() => backend.resetResolveBackoff());
+
+    Future<void> expectUnreachable() => expectLater(
+      backend.ensureResolved(),
+      throwsA(isA<SyncPeerUnreachableError>()),
+    );
+
+    test('退避时长从 2 s 起翻倍，封顶', () {
+      expect(InterconnectSyncBackend.resolveBackoffFor(0), Duration.zero);
+      expect(
+        InterconnectSyncBackend.resolveBackoffFor(1),
+        const Duration(seconds: 2),
+      );
+      expect(
+        InterconnectSyncBackend.resolveBackoffFor(2),
+        const Duration(seconds: 4),
+      );
+      expect(
+        InterconnectSyncBackend.resolveBackoffFor(3),
+        const Duration(seconds: 8),
+      );
+      expect(
+        InterconnectSyncBackend.resolveBackoffFor(7),
+        InterconnectSyncBackend.resolveBackoffMax,
+      );
+      expect(
+        InterconnectSyncBackend.resolveBackoffFor(1000),
+        InterconnectSyncBackend.resolveBackoffMax,
+      );
+    });
+
+    test('退避期内请求直接抛 SyncPeerUnreachableError、不发探测；到期后才重探，间隔逐次翻倍', () async {
+      await expectUnreachable();
+      expect(probes, 1);
+      expect(backend.resolveBackoffRemaining, const Duration(seconds: 2));
+
+      // 会话被打回未选路（连接出错 / 重试前 clearCache）后的连串请求：都不探测。
+      backend.clearCache();
+      for (int i = 0; i < 5; i++) {
+        await expectUnreachable();
+      }
+      expect(probes, 1, reason: '退避期内不该逐个探测死地址');
+
+      now = const Duration(seconds: 2);
+      await expectUnreachable();
+      expect(probes, 2, reason: '到期后重探一次');
+      expect(backend.resolveBackoffRemaining, const Duration(seconds: 4));
+
+      now += const Duration(seconds: 3);
+      await expectUnreachable();
+      expect(probes, 2);
+      now += const Duration(seconds: 1);
+      await expectUnreachable();
+      expect(probes, 3);
+      expect(backend.resolveBackoffRemaining, const Duration(seconds: 8));
+    });
+
+    test('多次失败后封顶在 resolveBackoffMax', () async {
+      for (int i = 0; i < 12; i++) {
+        await expectUnreachable();
+        now += backend.resolveBackoffRemaining!;
+      }
+      expect(probes, 12);
+      await expectUnreachable();
+      expect(
+        backend.resolveBackoffRemaining,
+        InterconnectSyncBackend.resolveBackoffMax,
+      );
+    });
+
+    test('resetResolveBackoff（手动同步 / 网络变化）立即重探；选路成功清零', () async {
+      await expectUnreachable();
+      await expectUnreachable();
+      expect(probes, 1);
+
+      backend.resetResolveBackoff();
+      expect(backend.resolveBackoffRemaining, isNull);
+      reachable = true;
+      await backend.ensureResolved();
+      expect(probes, 2);
+
+      // 成功清零：再掉线时从 2 s 重新起算，而不是接着上次的次数翻倍。
+      reachable = false;
+      backend.clearCache();
+      await expectUnreachable();
+      expect(backend.resolveBackoffRemaining, const Duration(seconds: 2));
+    });
+
+    test('配置变了（重新配对 / 换地址）清零退避', () async {
+      await expectUnreachable();
+      expect(probes, 1);
+      await repo.setFushiClientUrls(<FushiClientUrl>[
+        const FushiClientUrl(url: 'http://192.168.1.11:8384'),
+      ]);
+      await backend.restoreAuth(repo);
+      reachable = true;
+      await backend.ensureResolved();
+      expect(probes, 2);
+    });
+
+    test('显式认证（登录 / 测试连接）不受退避约束', () async {
+      await expectUnreachable();
+      reachable = true;
+      await backend.authenticate(repo: repo);
+      expect(probes, 2);
+    });
+
+    test('别的互联请求经这台 host 的地址拿到应答：退避作废', () async {
+      await expectUnreachable();
+      expect(backend.resolveBackoffRemaining, isNotNull);
+
+      // 别的 host 的应答不算。
+      reportInterconnectCandidateReached(
+        const FushiClientUrl(url: 'http://10.9.9.9:8384'),
+      );
+      expect(backend.resolveBackoffRemaining, isNotNull);
+
+      reportInterconnectCandidateReached(
+        const FushiClientUrl(url: 'http://192.168.1.10:8384'),
+      );
+      expect(backend.resolveBackoffRemaining, isNull);
+      reachable = true;
+      await backend.ensureResolved();
+      expect(probes, 2);
+    });
   });
 }

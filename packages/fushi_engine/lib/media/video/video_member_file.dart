@@ -43,6 +43,10 @@ import 'package:fushi_engine/media/video/disc/disc_format.dart'
     show discMemberBackingFilePath;
 import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart'
     show isDvdTitlePath;
+import 'package:fushi_engine/media/video/media_path_probe.dart';
+
+export 'package:fushi_engine/media/video/media_path_probe.dart'
+    show MediaPathPresence, kMediaPathProbeTimeout;
 import 'package:fushi_engine/media/video/strm_file.dart'
     show lacksLocalMediaFile;
 
@@ -61,6 +65,50 @@ bool videoMemberExistsSync(String videoPath) {
 Future<bool> videoMemberExists(String videoPath) async {
   if (videoPath.isEmpty) return false;
   return File(videoMemberPresencePath(videoPath)).exists();
+}
+
+/// [videoMemberExists] 的有界三态版（BUG-5605）：只给推测性 / 悬停类路径用（缩略图取帧、
+/// 起播前的「文件丢失」预检）。库条目常在网络盘上，卷卡住时答
+/// [MediaPathPresence.unavailable]，调用方按「这次不做」处理，不当成文件丢失（见
+/// `media_path_probe.dart`）。导入 / 扫描 / 回填 / 用户主动操作用 [awaitVideoMemberExists]。
+Future<MediaPathPresence> probeVideoMember(
+  String videoPath, {
+  Duration timeout = kMediaPathProbeTimeout,
+}) {
+  if (videoPath.isEmpty) {
+    return Future<MediaPathPresence>.value(MediaPathPresence.missing);
+  }
+  return probeMediaPath(videoMemberPresencePath(videoPath), timeout: timeout);
+}
+
+/// [hasLocalMediaFile] 的有界三态版（BUG-5605），同 [probeVideoMember] 只给推测性路径
+/// 用；必达路径用 [awaitLocalMediaFileExists]。没有本机媒体字节的路径（网络流、`.strm`）
+/// 恒 [MediaPathPresence.missing]，不碰文件系统。
+Future<MediaPathPresence> probeLocalMediaFile(
+  String videoPath, {
+  Duration timeout = kMediaPathProbeTimeout,
+}) {
+  final String? backing = _mediaBackingPath(videoPath);
+  if (backing == null) {
+    return Future<MediaPathPresence>.value(MediaPathPresence.missing);
+  }
+  return probeMediaPath(backing, timeout: timeout);
+}
+
+/// [videoMemberExists] 的必达版（BUG-5605 审查后修正）：导入 / 扫描 / 回填 / 用户主动
+/// 操作用。无时限、不同步碰文件系统；卷卡着就等它恢复再问，给出真实的在 / 不在（见
+/// `media_path_probe.dart` 的 [awaitMediaPathExists]）。
+Future<bool> awaitVideoMemberExists(String videoPath) {
+  if (videoPath.isEmpty) return Future<bool>.value(false);
+  return awaitMediaPathExists(videoMemberPresencePath(videoPath));
+}
+
+/// [hasLocalMediaFile] 的必达版，语义同 [awaitVideoMemberExists]。没有本机媒体字节的
+/// 路径（网络流、`.strm`）恒 false，不碰文件系统。
+Future<bool> awaitLocalMediaFileExists(String videoPath) {
+  final String? backing = _mediaBackingPath(videoPath);
+  if (backing == null) return Future<bool>.value(false);
+  return awaitMediaPathExists(backing);
 }
 
 /// [videoPath] 这个路径本身是不是磁盘上的一个文件（见文件头第 4 种问法）：DVD title

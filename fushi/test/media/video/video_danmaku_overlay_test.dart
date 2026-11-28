@@ -149,6 +149,56 @@ void main() {
     },
   );
 
+  testWidgets(
+    'scroll danmaku moves at a steady pace under a coarse, late player clock',
+    (WidgetTester tester) async {
+      // 真实播放器时钟：约 200ms 才更新一次，每次到达还带不定延迟（这里交替 0 / 90ms）。
+      // 修前每次采样都硬重锚 + 只进不退钳制：采样偏晚时弹幕原地停住、偏早时一下跳过去，
+      // 就是「一卡一卡地抽动前进」。修后每帧位移必须连续、均匀。
+      int trueMs = 2000;
+      int raw = 2000;
+      int sample = 0;
+      await _pump(
+        tester,
+        VideoDanmakuOverlay(
+          items: <VideoDanmakuItem>[_item(0, 'x')],
+          enabled: true,
+          maxActive: 20,
+          positionMs: () => raw,
+          isPlaying: () => true,
+          speed: () => 1.0,
+        ),
+      );
+
+      double last = scrollLeft(tester, 'x');
+      final List<double> steps = <double>[];
+      for (int frame = 0; frame < 120; frame++) {
+        trueMs += 16;
+        if (trueMs - 2000 >= (sample + 1) * 200) {
+          sample++;
+          raw = trueMs - (sample.isOdd ? 90 : 0);
+        }
+        await tester.pump(const Duration(milliseconds: 16));
+        final double now = scrollLeft(tester, 'x');
+        steps.add(last - now);
+        last = now;
+      }
+
+      final double minStep = steps.reduce(
+        (double a, double b) => a < b ? a : b,
+      );
+      final double maxStep = steps.reduce(
+        (double a, double b) => a > b ? a : b,
+      );
+      expect(minStep, greaterThan(0), reason: '任何一帧都不能停住（修前采样偏晚时原地顿住）');
+      expect(
+        maxStep / minStep,
+        lessThan(1.5),
+        reason: '帧间位移均匀，不能一顿一跳（实测 steps: $steps）',
+      );
+    },
+  );
+
   testWidgets('paused danmaku freezes (no extrapolation drift)', (
     WidgetTester tester,
   ) async {

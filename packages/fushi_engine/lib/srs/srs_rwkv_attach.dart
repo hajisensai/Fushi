@@ -24,31 +24,31 @@ export 'package:fushi_rwkv/fushi_rwkv.dart' show RwkvRows, RwkvScoreLookup;
 Directory srsRwkvModelsDir(Directory support) =>
     Directory(p.join(support.path, 'srs_rwkv', 'models'));
 
-/// RWKV 状态快照目录（每个 profile 一份主快照 + 至多两份检查点）。每档模型一个目录：默认的 Small 沿用
-/// `<support>/srs_rwkv/state`，Tiny 是 `state-tiny`——切换时新旧两个服务（旧的关闭时存快照、新的恢复 / 重放）
-/// 不写同一个文件，切回来也能直接恢复上次的快照。
+/// RWKV 状态快照目录（每个 profile 一份主快照 + 至多两份检查点）。每档模型一个目录
+/// （[SrsRwkvModelSize.stateDirName]）：Small 沿用 `<support>/srs_rwkv/state`（它曾是默认档位），Tiny 是
+/// `state-tiny`——切换时新旧两个服务（旧的关闭时存快照、新的恢复 / 重放）不写同一个文件，切回来也能直接恢复
+/// 上次的快照。别的档位没用了的快照目录由 [SrsRwkvModels.deleteOrphanedStates] 清掉。
 Directory srsRwkvStateDir(
   Directory support, [
-  SrsRwkvModelSize size = SrsRwkvModelSize.small,
-]) => Directory(
-  p.join(support.path, 'srs_rwkv', switch (size) {
-    SrsRwkvModelSize.small => 'state',
-    SrsRwkvModelSize.tiny => 'state-tiny',
-  }),
-);
+  SrsRwkvModelSize size = SrsRwkvModelSize.fallback,
+]) => Directory(p.join(support.path, 'srs_rwkv', size.stateDirName));
 
 /// 设备的 RWKV 模型档位设置文件（`<support>/srs_rwkv/model_size`，内容是 [SrsRwkvModelSize.persistedName]）。
 /// 放在 support 目录而不是 app 偏好里：app 与无头服务端（fushi_server）读同一个位置、同一套规则。
 File srsRwkvModelSizeFile(Directory support) =>
     File(p.join(support.path, 'srs_rwkv', 'model_size'));
 
-/// 读档位；文件不存在 / 读不了 / 内容认不出时是默认的 [SrsRwkvModelSize.small]。
+/// 读档位；文件不存在 / 读不了 / 内容认不出时是默认的 [SrsRwkvModelSize.fallback]（Tiny）。
+///
+/// 默认档位 2026-11-27 从 Small 改成 Tiny 时**不**给老用户补写设置文件：没有设置文件的老用户随之换到 Tiny。
+/// 同一次升级里 Small 的权重也从 sm98 换成了 sm113，旧快照无论哪一档都按权重指纹被拒、要全量重放一次，所以
+/// 换到 Tiny 不多付代价；补写「small」反而会把用户要的新默认挡在老用户门外。
 SrsRwkvModelSize readSrsRwkvModelSize(Directory support) {
   final File file = srsRwkvModelSizeFile(support);
   try {
     return SrsRwkvModelSize.fromPersisted(file.readAsStringSync());
   } on FileSystemException {
-    return SrsRwkvModelSize.small;
+    return SrsRwkvModelSize.fallback;
   }
 }
 
@@ -66,6 +66,9 @@ Future<void> writeSrsRwkvModelSize(
 
 /// 把 RWKV 排程服务挂到 [store] 上并返回它。对象本身很轻：后台 runtime、权重下载与全量回放只在
 /// [srsRwkvStartIfUsed]（库里有 RWKV 牌组）或第一次给 RWKV 牌组排队时启动。
+///
+/// 同时置上 [SrsDbStore.hostsRwkv]：之后服务被摘下（换档位 / 换库重建）的间隙里 RWKV 牌组按「没准备好」排。
+/// 先交库、后装配的宿主（app：服务的 provider 依赖库的 provider）要在交库之前自己置上它。
 ///
 /// 宿主在关库 / 不再提供这份库之前 `await service.close()`（存快照、关后台 runtime）；关了的服务永远「没就绪」，
 /// 这之后的排队不出 RWKV 牌组的复习卡。
@@ -97,7 +100,9 @@ SrsRwkvService srsAttachRwkv(
     openBackend: openBackend,
     log: log,
   );
-  store.rwkv = service;
+  store
+    ..hostsRwkv = true
+    ..rwkv = service;
   return service;
 }
 

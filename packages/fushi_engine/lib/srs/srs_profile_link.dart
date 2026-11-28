@@ -60,8 +60,7 @@ import 'package:fushi_engine/srs/sync2/srs_location_store.dart'
         srsLocationDirOf;
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart' show kSrs4Root;
 import 'package:fushi_engine/sync/sync_asset_store.dart';
-import 'package:fushi_srs/fushi_srs.dart'
-    show SrsCore, SrsKernelIds, SrsProfileUnboundException;
+import 'package:fushi_srs/fushi_srs.dart' show SrsKernelIds;
 
 /// srs.db `srs_meta`：本设备改用别的 uid 之前用过的同步 v2 设备身份（JSON 数组）。换 uid 后本机在新集合里是新的
 /// v2 设备，旧集合的本机身份行也随并入删掉了——不记下来就认不出同步目录里那个旧 uid 目录是自己留下的孤儿。
@@ -137,6 +136,7 @@ class SrsRemoteProfile {
     this.mergingInto = const <String, String>{},
     this.collection,
     this.joinHints = const <SrsJoinHint>[],
+    this.retiredWriters = const <String>{},
   });
 
   /// 显示名：[names] 的第一个（最近改动过的说明文件报的名字），没有时用 uid。
@@ -153,8 +153,15 @@ class SrsRemoteProfile {
   /// 目录里的并入提示（[kSrsJoinHintPrefix]）：别的集合已经把这个集合并了进去。
   final List<SrsJoinHint> joinHints;
 
-  /// 目录里的写入者（`<deviceId>#<化身号>`）。
+  /// 目录里的写入者（`<deviceId>#<化身号>`）。含 [retiredWriters]。
   final List<String> writers;
+
+  /// 只在已退役的旧位置里出现过的写入者：目录立了新代根 `v4/`（[collection] 读自 `v4/meta.json`），而它在
+  /// `v4/devices/` 下没有设备目录、只在旧根 `v3/` / `v2/`（新代立根后都立了围栏，旧版本在握手就停下）或旧格式写入者
+  /// 目录里留着。它不会再往这个集合写东西，不是成员：[stayingWriters] 不含它，名字、有无笔记、笔记数、设备名、最新
+  /// 时刻也都不采信它的说明文件——那是它停在旧版本时的样子（BUG-5526：平板目录里一台协议 1 时代的旧设备让关联
+  /// 永远判成「已关联」，平板从此不再采用电脑的集合）。
+  final Set<String> retiredWriters;
 
   /// 各写入者说明文件里最新的修改时刻（毫秒；后端不给或没有说明文件时为 null）。让用户分辨候选用。
   final int? updatedAt;
@@ -188,9 +195,10 @@ class SrsRemoteProfile {
   /// 写入者算作这个 profile 的成员（BUG-4296）。旧版本不写这个键：空，按以前那样算。
   final Map<String, String> mergingInto;
 
-  /// 不在离开中的写入者（[writers] 去掉 [mergingInto] 里的）。
-  Iterable<String> get stayingWriters =>
-      writers.where((String w) => !mergingInto.containsKey(w));
+  /// 还算这个集合成员的写入者（[writers] 去掉离开中的 [mergingInto] 与已退役的 [retiredWriters]）。
+  Iterable<String> get stayingWriters => writers.where(
+    (String w) => !mergingInto.containsKey(w) && !retiredWriters.contains(w),
+  );
 }
 
 /// 关联决定。
@@ -242,6 +250,7 @@ String srsV2WriterName(String device) => 'v2:$device';
 /// 新代（[ownCollection] 非 null，[localUid] 是本机集合的目录名）：集合标识等于 [ownCollection] 或在 [joined]（已经并进
 /// 本机集合的）里的目录、读不出集合标识的目录（没立过根，认领不了）不算候选；本机目录里有指向别的集合的并入提示（[SrsRemoteProfile.joinHints]）、提示的集合在
 /// [remote] 里对得上且目录名比本机小时，直接交给用户再确认一次（D25），不看「已关联」。
+/// [otherLocalCollections] 已经属于本机其他 profile，同样不算候选。
 SrsProfileLinkDecision srsDecideProfileLink({
   required String localUid,
   required String localName,
@@ -253,6 +262,7 @@ SrsProfileLinkDecision srsDecideProfileLink({
   bool settled = false,
   String? ownCollection,
   Set<String> joined = const <String>{},
+  Set<String> otherLocalCollections = const <String>{},
 }) {
   bool own(String w) =>
       srsWriterOfDevice(w, deviceId) ||
@@ -263,7 +273,8 @@ SrsProfileLinkDecision srsDecideProfileLink({
         if (r.uid == localUid ||
             (r.collection != null &&
                 r.collection != ownCollection &&
-                !joined.contains(r.collection)))
+                !joined.contains(r.collection) &&
+                !otherLocalCollections.contains(r.collection)))
           r,
     ];
     final SrsRemoteProfile? self = remote
@@ -371,11 +382,14 @@ Future<List<SrsRemoteProfile>> srsListRemoteProfiles(
     // 写入者 → 当前采信的那份说明文件的（来源优先级, 修改时刻）。同一写入者可能有好几份（协议 3 时代写在旧根
     // `v3/devices/`，现在写 `v4/devices/`，旧那份没人删）：采信哪份按优先级 + 时刻定，不按目录列举顺序。
     final Map<String, (int, int?)> chosenOf = <String, (int, int?)>{};
-    bool? hasNotes;
-    int? updatedAt;
-    final List<String> devices = <String>[];
-    int? noteCount;
+    // 有无笔记、笔记数、最新时刻、设备名按写入者分开记，列完、知道谁已退役（[SrsRemoteProfile.retiredWriters]）之后再汇总。
+    final Map<String, bool> hasNotesOf = <String, bool>{};
+    final Map<String, int> atOf = <String, int>{};
+    final Map<String, int> noteCountOf = <String, int>{};
+    final List<(String, String)> deviceOf = <(String, String)>[];
     final Map<String, String> mergingInto = <String, String>{};
+    // `v4/devices/` 下有设备目录的写入者（只有 head、没发布说明文件的也算：它在新代根上同步着）。
+    final Set<String> v4Writers = <String>{};
     String? v4Collection;
     String? v3Collection;
     final List<SrsJoinHint> hints = <SrsJoinHint>[];
@@ -392,7 +406,7 @@ Future<List<SrsRemoteProfile>> srsListRemoteProfiles(
       final Map<String, Object?>? info = read.$1;
       if (info == null) return false;
       final int? at = read.$2;
-      if (at != null && (updatedAt == null || at > updatedAt!)) updatedAt = at;
+      if (at != null && at > (atOf[writer] ?? -1)) atOf[writer] = at;
       final (int, int?)? prev = chosenOf[writer];
       final bool chosen =
           prev == null ||
@@ -420,14 +434,14 @@ Future<List<SrsRemoteProfile>> srsListRemoteProfiles(
         }
       }
       final Object? notes = info['hasNotes'];
-      if (notes is bool) hasNotes = (hasNotes ?? false) || notes;
-      final Object? device = info['device'];
-      if (device is String && device.isNotEmpty && !devices.contains(device)) {
-        devices.add(device);
+      if (notes is bool) {
+        hasNotesOf[writer] = (hasNotesOf[writer] ?? false) || notes;
       }
+      final Object? device = info['device'];
+      if (device is String && device.isNotEmpty) deviceOf.add((writer, device));
       final Object? count = info['notes'];
-      if (count is int && (noteCount == null || count > noteCount!)) {
-        noteCount = count;
+      if (count is int && count > (noteCountOf[writer] ?? -1)) {
+        noteCountOf[writer] = count;
       }
       return true;
     }
@@ -448,6 +462,7 @@ Future<List<SrsRemoteProfile>> srsListRemoteProfiles(
           for (final AssetEntry dev in await store.listChildren(d.id)) {
             if (!dev.isFolder) continue;
             final String name = srsV2WriterName(dev.name);
+            v4Writers.add(name);
             if (await readInfo(name, dev.id, _kSrsInfoRankV4) &&
                 !writers.contains(name)) {
               writers.add(name);
@@ -481,6 +496,32 @@ Future<List<SrsRemoteProfile>> srsListRemoteProfiles(
       writers.add(w.name);
       await readInfo(w.name, w.id, _kSrsInfoRankLegacy);
     }
+    final Set<String> retired = v4Collection == null
+        ? const <String>{}
+        : <String>{
+            for (final String w in writers)
+              if (!v4Writers.contains(w)) w,
+          };
+    bool live(String w) => !retired.contains(w);
+    nameOf.removeWhere((String w, _) => !live(w));
+    nameAtOf.removeWhere((String w, _) => !live(w));
+    mergingInto.removeWhere((String w, _) => !live(w));
+    bool? hasNotes;
+    for (final MapEntry<String, bool> e in hasNotesOf.entries) {
+      if (live(e.key)) hasNotes = (hasNotes ?? false) || e.value;
+    }
+    int? updatedAt;
+    for (final MapEntry<String, int> e in atOf.entries) {
+      if (live(e.key) && e.value > (updatedAt ?? -1)) updatedAt = e.value;
+    }
+    int? noteCount;
+    for (final MapEntry<String, int> e in noteCountOf.entries) {
+      if (live(e.key) && e.value > (noteCount ?? -1)) noteCount = e.value;
+    }
+    final List<String> devices = <String>[];
+    for (final (String w, String device) in deviceOf) {
+      if (live(w) && !devices.contains(device)) devices.add(device);
+    }
     // 名字集合按「说明文件新的在前、同刻按写入者名（UTF-16 码元序）」排（[SrsRemoteProfile.displayName] 取第一个），
     // 不跟目录列举顺序走。
     final List<String> byRecency = nameOf.keys.toList()
@@ -505,6 +546,7 @@ Future<List<SrsRemoteProfile>> srsListRemoteProfiles(
         mergingInto: mergingInto,
         collection: v4Collection ?? v3Collection,
         joinHints: hints,
+        retiredWriters: retired,
       ),
     );
   }
@@ -972,7 +1014,10 @@ class SrsDbProfileLinker implements SrsProfileLinker {
     }
     final List<SrsRemoteProfile> remote = await srsListRemoteProfiles(backend);
     await _removeRetiredFolders(backend, store, remote);
-    final _SrsOwnCollection own = await _ownCollection(store);
+    final _SrsOwnCollection own = await _ownCollection(
+      store,
+      includeOtherCollections: true,
+    );
     // 「本机有数据」看的是全部用户数据（[SrsDbStore.hasUserData]），不只是笔记：只建了牌组 / 改了预设、还没有笔记的
     // profile 也不能被当成空的自动采用（新代认领不删数据，但空不空决定是自动认领还是交给用户选）。
     final bool localHasNotes = await store.hasUserData();
@@ -988,6 +1033,7 @@ class SrsDbProfileLinker implements SrsProfileLinker {
       settled: binding?.settledElsewhere(directoryKey) ?? false,
       ownCollection: own.collection,
       joined: own.joined,
+      otherLocalCollections: own.otherCollections,
     );
     switch (decision) {
       case SrsProfileLinkKeep(:final bool linked):
@@ -1005,15 +1051,7 @@ class SrsDbProfileLinker implements SrsProfileLinker {
             .where((SrsRemoteProfile r) => r.uid == uid)
             .firstOrNull;
         final String? collection = target?.collection;
-        // 目录里还没有集合（只有说明文件、没立过根）：认领不了，等它立了根再判。那个集合已是本机另一个 profile 的：
-        // 用户切过去就能同步，不动（内核也会拒绝把它绑给第二个 profile）。
-        if (target == null ||
-            collection == null ||
-            await _collectionTakenLocally(
-              collection,
-              store.profileUid,
-              store.core,
-            )) {
+        if (target == null || collection == null) {
           return SrsProfileLinkOutcome(store);
         }
         await _adoptCollection(backend, store, target, remote);
@@ -1091,11 +1129,11 @@ class SrsDbProfileLinker implements SrsProfileLinker {
     if (target == null || collection == null) {
       throw StateError('no collection under $uid on this location');
     }
-    if (await _collectionTakenLocally(
-      collection,
-      store.profileUid,
-      store.core,
-    )) {
+    final _SrsOwnCollection own = await _ownCollection(
+      store,
+      includeOtherCollections: true,
+    );
+    if (own.otherCollections.contains(collection)) {
       throw StateError('collection $collection is another local profile');
     }
     await _adoptCollection(backend, store, target, remote);
@@ -1104,10 +1142,15 @@ class SrsDbProfileLinker implements SrsProfileLinker {
   }
 
   /// 本机 profile 现在的集合：标识、目录名、已经并进来的集合标识（内核 `collection_info`）。
-  Future<_SrsOwnCollection> _ownCollection(SrsDbStore store) async {
-    final Map<String, Object?> info = (await store.sync2Command(
-      <String, Object?>{'op': 'collection_info'},
-    )).map;
+  Future<_SrsOwnCollection> _ownCollection(
+    SrsDbStore store, {
+    bool includeOtherCollections = false,
+  }) async {
+    final Map<String, Object?> info =
+        (await store.sync2Command(<String, Object?>{
+          'op': 'collection_info',
+          if (includeOtherCollections) 'includeOtherCollections': true,
+        })).map;
     final List<({String from, String? dir})> joins = srsTrustedJoins(
       info['joins'],
     );
@@ -1116,6 +1159,9 @@ class SrsDbProfileLinker implements SrsProfileLinker {
       dir: info['dir']! as String,
       joined: <String>{for (final j in joins) j.from},
       joins: joins,
+      otherCollections: includeOtherCollections
+          ? (info['otherCollections']! as List<Object?>).cast<String>().toSet()
+          : const <String>{},
     );
   }
 
@@ -1182,34 +1228,6 @@ class SrsDbProfileLinker implements SrsProfileLinker {
     for (final ({String from, String? dir}) j in own.joins)
       if (j.dir != null && j.dir != own.dir) j.dir!,
   }.toList()..sort();
-
-  /// 集合 [collection] 已绑在本机 [store] 之外的某个 profile 上（内核 `collections.collection` 唯一，`collection_adopt`
-  /// 会拒绝把它绑给第二个 profile）。按主库的 profile 逐个问内核（profile 不多，`collection_info` 是一次读）。
-  Future<bool> _collectionTakenLocally(
-    String collection,
-    String exceptUid,
-    SrsCore core,
-  ) async {
-    for (final QueryRow r
-        in await db
-            .customSelect(
-              "SELECT uid FROM profiles WHERE uid IS NOT NULL AND uid != '' "
-              'AND uid != ?',
-              variables: <Variable<Object>>[Variable<String>(exceptUid)],
-            )
-            .get()) {
-      try {
-        final Object? c = core.sync2(<String, Object?>{
-          'op': 'collection_info',
-          'profile': r.read<String>('uid'),
-        }).map['collection'];
-        if (c == collection) return true;
-      } on SrsProfileUnboundException {
-        // 还没绑定的 profile 没有集合。
-      }
-    }
-    return false;
-  }
 
   /// 本机 profile 认领位置上的集合 [target]（内核 `collection_adopt`，`confirmed`：调用方已按规则决定 / 用户已选定），
   /// 再在 [backend] 上收拾位置（[remote] 是这一轮列出来的目录）：
@@ -1458,4 +1476,5 @@ typedef _SrsOwnCollection = ({
   String dir,
   Set<String> joined,
   List<({String from, String? dir})> joins,
+  Set<String> otherCollections,
 });

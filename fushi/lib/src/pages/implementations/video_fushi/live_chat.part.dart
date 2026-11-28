@@ -19,7 +19,19 @@ extension _VideoLiveChat on _VideoFushiPageState {
   /// 当前视频有没有聊天回放（控制条按钮 / 竖屏页签据此出现）。
   bool get _hasLiveChat => _liveChat != null;
 
-  /// 视频就绪（首开 / 换集 / 换源）后调：当前是 YouTube 流就探测聊天回放。同一个视频、
+  /// 聊天回放探测用的 YouTube 观看地址：mpv 流（[_currentYoutubeWatchUrl]），或网页档里
+  /// 已落书、站点此刻仍在播的那一集（反馈 C7c1ck6RMU：Windows 上 YouTube 默认走网页档，
+  /// 从前只认 mpv 流，PC 上按钮永远不出）。站内点去了还没落书的视频时为 null。
+  String? get _liveChatYoutubeWatchUrl {
+    final WebVideoSession? session = _webSession;
+    return liveChatWatchUrl(
+      streamUrl: _currentYoutubeWatchUrl,
+      boundEpisodeUrl: session == null ? null : _webBoundEpisodeUrl,
+      lastHref: session?.lastState?.href,
+    );
+  }
+
+  /// 视频就绪（首开 / 换集 / 换源；网页档是开页、站内换视频、新一集落书）后调：当前是 YouTube 流就探测聊天回放。同一个视频、
   /// 同一个播放器复用已有会话；换了视频先撤掉旧的（按钮立刻消失），探测到再换上新的。
   ///
   /// 探测三种结局分开处理（BUG-5411）：有 → 换上会话；没有 → 不出按钮；探测失败（引擎已
@@ -28,7 +40,7 @@ extension _VideoLiveChat on _VideoFushiPageState {
   Future<void> _loadLiveChatForCurrentVideo() async {
     final int seq = ++_liveChatProbeSeq;
     final VideoPlayerController? controller = _controller;
-    final String? watchUrl = _currentYoutubeWatchUrl;
+    final String? watchUrl = _liveChatYoutubeWatchUrl;
     final String? videoId = watchUrl == null
         ? null
         : youtubeVideoIdOrNull(watchUrl);

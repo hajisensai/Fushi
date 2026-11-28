@@ -16,7 +16,9 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/feedback/feedback_gal_lookup_log.dart';
+import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/feedback/feedback_log_redaction.dart';
+import 'package:fushi/src/feedback/feedback_video_diag_log.dart';
 import 'package:fushi/src/floating_ball/floating_ball_channel.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi/src/utils/misc/debug_log_service.dart';
@@ -315,7 +317,7 @@ Future<Map<String, Object?>> _deviceModel() async {
 String collectFeedbackLogText({required bool includeDebugLog}) {
   final StringBuffer buf = StringBuffer()
     ..writeln('==== error log ====')
-    ..writeln(ErrorLogService.instance.getFullLog());
+    ..writeln(ErrorLogService.instance.getFullLog(includeDataLocation: false));
   if (includeDebugLog && DebugLogService.instance.enabled) {
     buf
       ..writeln()
@@ -333,6 +335,34 @@ String collectFeedbackLogText({required bool includeDebugLog}) {
       ..writeln('==== game lookup diagnostics ====')
       ..writeAll(galLines, '\n')
       ..writeln();
+  }
+  // 视频性能诊断（反馈 MReV894ote）：上屏 / 丢帧 / 帧耗时只写在 video_diag_log.txt，
+  // 不摘进来开发者在反馈里就看不到。与调试日志同一道用户开关；闪退报告不带。只在
+  // 用户开过视频诊断（文件里有内容）时才有这一节，开关状态写在节头，关着时附上的是
+  // 关之前记下的那段。
+  final List<String> videoLines = includeDebugLog
+      ? readVideoDiagFeedbackLines()
+      : const <String>[];
+  if (videoLines.isNotEmpty) {
+    buf
+      ..writeln()
+      ..writeln('==== video diagnostics ====')
+      ..writeln(
+        'video-diagnostics-enabled: ${VideoDiagLog.instance.enabled} '
+        'msg-level: ${VideoDiagLog.instance.msgLevel}',
+      )
+      ..writeAll(videoLines, '\n')
+      ..writeln();
+  }
+  // BUG-5490：数据位置取证环（书库根判定 / 重定位 / 迁移 / 词典文件缺失，跨运行保留）
+  // 放在最末尾：超出上传上限时 [buildFeedbackLogGzip] 只留尾部，它最后才被丢。闪退报告
+  // 同样带上——它就是错误日志的一部分，不受调试日志开关管。
+  final String dataLocation = ErrorLogService.instance.dataLocationLogText();
+  if (dataLocation.isNotEmpty) {
+    buf
+      ..writeln()
+      ..writeln('==== data location diagnostics ====')
+      ..write(dataLocation);
   }
   return redactFeedbackLog(buf.toString());
 }

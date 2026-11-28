@@ -26,18 +26,26 @@
 （`Pedrubik2000/kuma3-anki-app` 分支 `rwkv` @ `8294162221978823ea5b76c1cb8686c8fe55abf8`
 的 `AnkiDroid/src/main/assets/rwkv/model.bin`，git blob `af89daba…`）三者 **SHA-256 相同**。
 `fetch_model.sh` / `fetch_model.ps1` 下载到 `model/`（已 gitignore）并校验 SHA-256。权重随上游仓库
-以 AGPL-3.0-or-later 发布（上游未单列权重许可）。
+以 AGPL-3.0-or-later 发布；小模型权重另见下文「小模型权重的许可」。
 
 ## 权重镜像（运行时首选来源）
 
 | | |
 |---|---|
 | 位置 | GitHub release `hajisensai/Fushi` tag `rwkv-models`，资产 URL `https://github.com/hajisensai/Fushi/releases/download/rwkv-models/<名>` |
-| 命名 | `<SHA-256 前 16 位十六进制>-<模型>-<原文件名>`，如 `b2f335bd712b9d60-sm98-weights.int8.bin` |
+| 命名 | `<SHA-256 前 16 位十六进制>-<模型>-<原文件名>`，如 `87bce8dbb48a11dd-sm113-weights.int8.bin` |
 | 约定 | **内容寻址、永不覆盖**：已发布的资产不删、不替换；换权重 = 新增一个新名字的资产，旧版本的 app 继续命中旧名字。上游作者曾原地替换 release zip（正式版因钉了可变 zip 而下载失败），所以运行时不钉上游 release，只钉上游**提交**的 raw URL 作备用 |
-| 现有资产 | `b2f335bd712b9d60-sm98-weights.int8.bin`（436,391 字节）、`77703dd2f2a21a1b-sm101-weights.int8.bin`（409,483 字节）、`ff626af2e974346e-sm72e25-weights.int8.bin`、`479b3e2bc6a1c900-sm56-weights.int8.bin`（旧版本 app 用） |
+| 现有资产 | `87bce8dbb48a11dd-sm113-weights.int8.bin`（436,391 字节）、`24b39f61129bd9eb-sm130io-weights.int8.bin`（238,585 字节）（2026-11-27 起用）；`b2f335bd712b9d60-sm98-weights.int8.bin`、`77703dd2f2a21a1b-sm101-weights.int8.bin`、`ff626af2e974346e-sm72e25-weights.int8.bin`、`479b3e2bc6a1c900-sm56-weights.int8.bin`（旧版本 app 用） |
 | 谁用 | `packages/fushi_engine/lib/srs/srs_rwkv_models.dart`（app 与无头服务端）、`fetch_model.*`（CI / 本地测试）：镜像在前、上游提交 raw URL 在后，**只认字节数 + SHA-256**，任一来源下错都换下一个，全失败时报出每个来源的原因 |
 | 不在镜像里 | 测试用的 `weights.f32.bin`、`architecture.json`、`*-vectors.json.gz` 只从上游提交取 |
+
+## 小模型权重的许可
+
+上游 2026-11-25 起在 release 与 fork（`qt/aqt/rwkv_inference/WEIGHTS-NOTICE.md`）里写明：代码是 MIT，训练出的权重
+（`weights.*.bin` 等）**不在 MIT 下**、作者不另授许可，按训练数据 anki-revlogs-10k 的条款对待——只允许记忆研究与
+个人研究，**在应用里分发（商业与否）需要 Anki 的许可**；能否再分发在 srs-benchmark issue #353 未决。Fushi 镜像
+（上面的 `rwkv-models` release）并在用户启用 RWKV 时下发这些权重，风险与取舍登记在拍板台
+（`docs/agent/decision-board.md`「RWKV 小模型权重的分发许可」），等用户拍板。
 
 ## 搬了什么
 
@@ -46,8 +54,8 @@
 | `mod.rs`（12,748） | `src/rwkv/mod.rs`（≈4,800，其中 ≈200 行是标了 `Fushi` 的新增） | 推理核心逐字保留：权重加载（`WeightMap` / `Cursor`）、特征构造（`FeatureState`、`TorchIdRng` 与 ID 编码、全部 `scale_*` 与均值 / 方差常量、日期周期编码）、网络（`SrsModel` / `RwkvModule` / `RwkvLayer` / `TimeMixer` / `ChannelMixer` / `LoraSimple` / `Linear` / `Norm`、单步递推、AVX2+FMA / NEON / 标量 SIMD 辅助）、`ReviewInput`、`warm_up_reviews`（回放）、`warm_up_reviews_sequential`（逐条参考实现）、`predict_retrievability_many_from_warm_up`（批量 R 查询）、状态序列化 / 反序列化（`ARWKVMODSTATE1` f32 与紧凑格式）、特征簿记序列化（`ARWKVPROCSTATE2`） |
 | `bulk.rs`（1,445） | `src/rwkv/bulk.rs`（1,367） | 批量回放逐字保留 |
 | `precision.rs`（377） | `src/rwkv/precision.rs`（281） | int8 / int4 紧凑状态，删掉测试模块，其余未改 |
-| `query_kernels.rs`（330） | `src/rwkv/query_kernels.rs` | aarch64 NEON 查询内核，未改 |
-| `matmul.rs`（145） | `src/rwkv/matmul.rs` | macOS Accelerate `cblas_sgemm`，未改 |
+| `query_kernels.rs`（330） | —— | aarch64 NEON 查询内核：2026-11-26 删（见「改了什么 · 跨平台逐位一致」） |
+| `matmul.rs`（145） | —— | macOS Accelerate `cblas_sgemm`：2026-11-26 删（同上） |
 
 每个文件头保留上游版权与许可行，并加一行 `Adapted for Fushi from <repo>@<sha> <path>`。
 
@@ -81,13 +89,23 @@
 
 上游共 16,056 行（9 个文件），保留 6,917 行（5 个文件，含 Fushi 新增）。
 
-## 改了什么（全部标 `Fushi:`；除下面「量化比例因子」一条外均不涉及数值）
+## 改了什么（全部标 `Fushi:`；除下面「量化比例因子」「跨平台逐位一致」两条外均不涉及数值）
 
 - 权重从字节切片加载（`WeightMap::from_bytes` / `SrsModel::from_weight_bytes`，原来读文件路径）；
   公开 `RwkvModel`（可在多个 runtime 间共享），`RwkvInference::new(&model, precision)` 取代
   `load_with_precision(path, target_retention, max_interval_days, precision)`；为此给网络结构体
   加了 `#[derive(Clone)]`（非 f32 精度时复制一份网络，因为上游把精度存在 card / note 模块上）。
 - `bulk.rs`：去掉曲线计算与 dirty 标记后，state-only 分支的返回值改为 `drop(..)`。
+- **跨平台逐位一致**（2026-11-26，`src/rwkv/det.rs`，README「跨平台逐位一致」）：上游的点积 / axpy 在
+  x86 AVX2+FMA、aarch64 NEON、标量回退各有一套求和顺序（尾部还有的融合有的不融合），R 查询在 macOS /
+  aarch64 走批量 GEMM（Accelerate `cblas_sgemm`、NEON 查询内核、改写过的衰减公式 `exp(-e^-0.5 sigmoid(x))`
+  与 Accelerate 的向量超越函数），x86 走逐行；超越函数用各平台的 libm。同一历史在不同平台上 R 差最后几位，
+  阈值边上的卡到期判定不同。改为：点积 32 条交错 lane + 固定归约树、axpy 每个元素都 FMA（无 FMA 的 CPU 用
+  软件 FMA），`exp` / `ln` / `ln_1p` / `tanh` / `sin` / `cos` / `powf` / `sigmoid` 自写（f64 计算、一次舍入），
+  R 查询所有平台都走逐行路径（删 `matmul.rs`、`query_kernels.rs`、`review_retrievability_query_refs_batched`
+  及其批量 scratch / `apply_batch` / `Norm::apply_batch`，`bulk.rs` 的 `apply_block_approx_into` 与
+  `approximate_projections` 参数一并删）。与上游夹具的差：f32 ≤ 3.6e-7、int8 ≤ 6.5e-4（量化台阶），
+  容差不变；快照魔数升为 `FRWKVSNAP2\0` / `FRWKVSMALL2\0`，旧快照拒收、全量重放。
 - `ARWKVPROCSTATE2` 特征簿记照写，曲线表恒为 0 条；读取时跳过曲线（复用上游
   `read_runtime_feature_state`）。
 - 新增：`snapshot` / `restore_snapshot`（无损快照，见 README）、`reset`、`last_day_offset`、
@@ -122,7 +140,12 @@ INTEGRATION.md 与 `reference/small_model_recurrent.py` 实现；不含发布包
 一致）；随之加入回放预测的 show-time 查询行（INTEGRATION.md §6.10，README「sm98」），并让 RWKV-Curve 拒绝
 Instant-Only 小模型。同一提交的 Tiny Instant-Only **sm101**（`qt/aqt/rwkv_inference/sm101/` 与
 `rslib/src/rwkv/testdata/sm101-vectors.json.gz`，哈希见 `src/lib.rs` 的 `TINY_MODEL_*_SHA256`）作设置里可选的
-省内存档，同一套代码加载、测试两套都对拍。上游 kuma3 / JSchoreels 的回放预测（`warm_up_reviews_sequential` 的 `query_input`）仍用作答
+省内存档，同一套代码加载、测试两套都对拍。2026-11-27 起换成 release `rwkv-family-2026-11-28`（fork main
+`6cb164606`）的两个 Instant-Only 模型，钉提交 `6cb164606984c14432ef5e9befdedd6cc070f539`：Small **sm113**
+（`qt/aqt/rwkv_inference/sm113/`，`architecture.json` 与 sm98 逐字节相同）与**默认**的六层 Tiny **sm130io**
+（`qt/aqt/rwkv_inference/sm130io/`，"w64-c1-d2p1u1"），测试向量 `rslib/src/rwkv/testdata/{sm113,sm130io}-vectors.json.gz`；
+权重与 `architecture.json` 与 release zip（按其 `SHA256SUMS` 校验）逐字节相同。层结构按 fork
+`engine.rs::layer_plan_for` 的做法只认已知层数组合（README「sm113 / sm130io」）。上游 kuma3 / JSchoreels 的回放预测（`warm_up_reviews_sequential` 的 `query_input`）仍用作答
 间隔；Fushi 按 §6.10 改，只影响小模型。权重与测试向量不入库，Fushi 只在用户启用时按钉死 URL 下载（运行时首选上面
 的镜像）。
 

@@ -5,7 +5,7 @@ import 'package:fushi_engine/media/video/download/downloaded_collection_order.da
 import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
 import 'package:fushi_engine/media/collections/library_organize/organize_convergence.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
-import 'package:drift/drift.dart' show Value;
+import 'package:drift/drift.dart' show Table, TableInfo, Value;
 import 'package:fushi_core/fushi_core.dart';
 
 /// 合集同步引擎（多端库联合视图 §2.3 任务4）。
@@ -724,7 +724,7 @@ typedef CollectionRuleOrder =
 /// 读本地清单的同时加载，书架快照与本地清单同一时刻。
 Future<CollectionRuleOrder> loadBookSeriesRuleOrder(FushiDatabase db) async {
   final CollectionBookIdentityIndex identities =
-      await CollectionBookIdentityIndex.load(db);
+      await CollectionBookIdentityIndex.load(db, withGames: false);
   final BookSeriesOrder series = await BookSeriesOrder.load(db);
   return (CollectionManifestEntry entry) {
     final List<CollectionManifestMember> wire =
@@ -782,6 +782,70 @@ class CollectionLocalChanges {
   int get changedCollections => entries.length;
 }
 
+/// [loadLocalCollectionManifest] 读的表里，**任何写入都可能改变清单**的那些。互联
+/// host 的合集清单缓存（`host_manifest_bodies.dart`）在这些表有写入时作废。
+///
+/// loader 读的表 = 本清单 ∪ [collectionManifestProjectedTables]；loader（含
+/// [CollectionBookIdentityIndex.load]）多读一张表就要登记进其中之一，否则缓存会在
+/// 那张表变化后继续交出旧清单（`host_manifest_body_test.dart` 录 SQL 逐表钉住）。
+///
+/// `epub_books` 留在这里（评估见 BUG-5606「审查后修正」）：清单只用它的 uid /
+/// bookKey / sourceMetadata 换算书键，但它没有高频写入（阅读进度不在这张表），
+/// 而要按列收窄就得在每次写入后重读全表这三列做比对，代价与重算清单里读它的那一
+/// 步相同，省不下什么。
+List<TableInfo<Table, Object?>> collectionManifestSourceTables(
+  FushiDatabase db,
+) => <TableInfo<Table, Object?>>[
+  db.mediaCollections,
+  db.mediaCollectionItems,
+  db.collectionMemberTombstones,
+  db.epubBooks,
+  db.collectionBookAliases,
+  db.bookTags,
+  db.tagAssignments,
+];
+
+/// [loadLocalCollectionManifest] 读的表里，清单只依赖**一小块投影**的那些：下载任务
+/// 与订阅只贡献「哪些合集由下载管理」（[collectionManifestProjection]）。下载进行中
+/// 租约续期 / 阶段推进 / 进度会频繁写这两张表，但几乎从不改这块投影——缓存对它们
+/// 只在投影真变了时作废（[HostManifestBodyCache] 的 `projection`）。
+List<TableInfo<Table, Object?>> collectionManifestProjectedTables(
+  FushiDatabase db,
+) => <TableInfo<Table, Object?>>[
+  db.videoDownloadJobs,
+  db.videoDownloadSubscriptions,
+];
+
+/// [collectionManifestProjectedTables] 对清单的全部贡献，编成可比较的字符串：由下载
+/// 管理（按集序排）的合集 id，升序。loader 里只经
+/// [FushiDatabase.downloadManagedCollectionIds] 读这两张表。结果只有几十个 int，在
+/// 调用方 isolate 读也不费事。
+Future<String> collectionManifestProjection(FushiDatabase db) async {
+  final List<int> ids = (await db.downloadManagedCollectionIds()).toList()
+    ..sort();
+  return ids.join(',');
+}
+
+/// 合集清单合并的纯计算部分：读本地清单 + 卷序规则，跑 [CollectionSyncEngine.merge]。
+/// 互联 host 的 POST 在后台所有者 isolate 里调它（只把变更集与合并后清单交回），
+/// 进程内调用方直接在调用方 isolate 调；落库（[applyCollectionLocalChanges]）与基线
+/// 推进由调用方在同一把同步状态锁内完成。
+Future<CollectionSyncOutcome> mergeIncomingCollectionManifest(
+  FushiDatabase db,
+  CollectionManifest incoming, {
+  required int lastSyncedAtMs,
+}) async {
+  final CollectionManifest local = await loadLocalCollectionManifest(db);
+  return CollectionSyncEngine.merge(
+    local: local,
+    remote: incoming,
+    lastSyncedAtMs: lastSyncedAtMs,
+    // BUG-3657：书系列合集按卷号定序，与书架归组自愈同一判据；返回给
+    // client 的合并清单因此也是卷序。
+    ruleOrder: await loadBookSeriesRuleOrder(db),
+  );
+}
+
 /// 从本地 DB 构建合集全量快照清单。成员 sortIndex 用**位置序号 0..n-1**（而非
 /// 历史稀疏 sortIndex 原值）：清单只关心序列，归一化让「内容相等 ⇒ 字节相等」。
 Future<CollectionManifest> loadLocalCollectionManifest(FushiDatabase db) async {
@@ -797,7 +861,7 @@ Future<CollectionManifest> loadLocalCollectionManifest(FushiDatabase db) async {
   // 墓碑（CollectionMemberTombstones.entryKey）已拍板冻结在 bookKey 域（写墓碑
   // 时由 removeFromCollectionRaw 反查）；存量本地键墓碑也经同一索引规范化。
   final CollectionBookIdentityIndex identities =
-      await CollectionBookIdentityIndex.load(db);
+      await CollectionBookIdentityIndex.load(db, withGames: false);
   String wireEntryKey(String mediaType, String entryKey) =>
       identities.wireKey(mediaType, entryKey);
 
@@ -834,6 +898,18 @@ Future<CollectionManifest> loadLocalCollectionManifest(FushiDatabase db) async {
   )..sort((MediaCollectionRow a, MediaCollectionRow b) => a.id.compareTo(b.id));
 
   final Set<int> episodeOrderedIds = await db.downloadManagedCollectionIds();
+  // 成员与合集标签各一趟批查后按合集 id 分组（组内序与逐合集
+  // getCollectionItems / getTagsForCollection 同口径）。逐合集各查一次是 2N 次 DB
+  // 往返：用户库 3k 合集 / 85k 成员时约 6000 次，互联 host 每个 GET 都要现算一遍。
+  final Map<int, List<MediaCollectionItemRow>> itemsByCollection =
+      <int, List<MediaCollectionItemRow>>{};
+  for (final MediaCollectionItemRow item in await db.getAllCollectionItems()) {
+    (itemsByCollection[item.collectionId] ??= <MediaCollectionItemRow>[]).add(
+      item,
+    );
+  }
+  final Map<int, List<BookTagRow>> tagsByCollection = await db
+      .getTagsForAllCollections();
   final List<CollectionManifestEntry> entries = <CollectionManifestEntry>[];
   final Set<String> seen = <String>{};
   for (final MediaCollectionRow row in byId) {
@@ -842,11 +918,11 @@ Future<CollectionManifest> loadLocalCollectionManifest(FushiDatabase db) async {
     if (row.name.isEmpty || row.collectionType.isEmpty) continue;
     final String key = nk(row.name, row.collectionType);
     if (!seen.add(key)) continue; // 历史重名行：取 min id 者（同应用端对齐方向）。
-    final List<MediaCollectionItemRow> items = await db.getCollectionItems(
-      row.id,
-    );
+    final List<MediaCollectionItemRow> items =
+        itemsByCollection[row.id] ?? const <MediaCollectionItemRow>[];
     // 合集标签进清单（只增不删并集载荷；空清单键由 toJson 省略保幂等）。
-    final List<BookTagRow> rowTags = await db.getTagsForCollection(row.id);
+    final List<BookTagRow> rowTags =
+        tagsByCollection[row.id] ?? const <BookTagRow>[];
     entries.add(
       CollectionManifestEntry(
         name: row.name,
@@ -965,8 +1041,9 @@ Future<int> applyCollectionLocalChanges(
   // v83：wire 清单 epub entryKey 恒为 bookKey，成员表本地面貌是 uid——落地前经
   // bookKey→uid 换算（一趟全表 map）。查不上**必须照抄透传，绝不丢弃**：合集清单
   // 是跨端 union，本机没有这本书也要替对端转发其归属（透传行，entry_key 保持
-  // 对端 bookKey）；书下载落地后，下一轮 apply 该 bookKey 可解析 → desiredKeys
-  // 变成 uid → diff 自动删 bookKey 行、插 uid 行，归属收敛，无需专用改键。
+  // 对端 bookKey）；书下载 / 推送落地时由 `insertEpubBook`（及入口自愈
+  // `reconcileEpubCollectionMemberKeys`）立即把透传行升格为 uid 并去重，不依赖
+  // 「后续必须出现新成员变更才能触发 apply」的偶然调和。
   // 仅 epub 门控——srt/video/game 键误换算即数据损坏。事务内不增删书行，map
   // 在事务外构建一次是安全的。
   final CollectionBookIdentityIndex identities =

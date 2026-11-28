@@ -38,8 +38,11 @@ import 'package:fushi/src/floating_ball/screen_ocr_picker.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_recognition_cancellation.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_text_block.dart';
 import 'package:fushi/src/lookup/overlay_bridge_handlers.dart'
-    show OverlayMiningHandler, screenOcrOverlayMiningHandler;
-import 'package:fushi/src/lookup/global_lookup_channel.dart';
+    show
+        OverlayMiningHandler,
+        ScreenOcrFramePick,
+        screenOcrOverlayMiningHandler;
+import 'package:fushi/src/lookup/main_window_excursion.dart';
 import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_capture.dart';
 import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_clip.dart'
     show CrossAppAudioSnapshot;
@@ -281,7 +284,10 @@ bool floatingBallSystemActionAvailable(
 
 /// 桌面系统球动作落到的执行面：全局查词覆盖窗与主窗。宿主只决定「哪颗按钮走
 /// 哪条路、参数按什么单位交出去」，测试替换本类来钉住这层分发。
-class DesktopSystemBallActionTarget {
+///
+/// 收起 / 放回查词卡、记下 / 放回主窗、拉主窗到前台这几样借主窗的原生面继承自
+/// [MainWindowExcursionPort]（截屏识字框选截图经 [runMainWindowExcursion] 借主窗）。
+class DesktopSystemBallActionTarget extends MainWindowExcursionPort {
   const DesktopSystemBallActionTarget();
 
   /// 全局查词覆盖窗此刻能不能接查词（平台支持且启动过）。
@@ -300,6 +306,7 @@ class DesktopSystemBallActionTarget {
     GlobalLookupPhysicalPlacement? physicalPlacement,
     OverlayMiningHandler? miningHandler,
     Future<CrossAppAudioSnapshot?>? sentenceAudio,
+    OverlayExcursionContext? excursion,
   }) => GlobalLookupController.instance.lookupText(
     text,
     sentence: sentence,
@@ -307,10 +314,8 @@ class DesktopSystemBallActionTarget {
     physicalPlacement: physicalPlacement,
     miningHandler: miningHandler,
     sentenceAudio: sentenceAudio,
+    excursion: excursion,
   );
-
-  /// 收起覆盖窗里开着的查词卡（截屏前收起，免得它被截进图里；退出冻结层时收起）。
-  Future<void> dismissLookup() => GlobalLookupChannel.hide();
 
   /// 识别一张截图：[engine] 是宿主按截屏识字引擎设置解析出的识别器（本机模型
   /// [LocalScreenOcr] / 设备自带 / [GoogleLensScreenOcr]，见 [resolveScreenOcrEngine]）；
@@ -343,9 +348,6 @@ class DesktopSystemBallActionTarget {
     BuildContext context, {
     required GoogleLensDisclosureScene scene,
   }) => ensureGoogleLensDisclosure(context, scene: scene);
-
-  Future<void> bringMainWindowToFront() =>
-      DesktopLookupService.instance.bringMainWindowToFront();
 }
 
 /// 最近一次起球闭包（[_AppFloatingBallHostState._syncSystemBall]）的 Future。
@@ -1071,6 +1073,11 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     }
     // 开着的查词卡会被截进图里，而且它挡着的字点不到。
     await target.dismissLookup();
+    // 反馈 6RETmKY1TH：冻结层要抢一次前台（收 Esc），框选截图还要把主窗拉到前台；
+    // 趁现在记下主窗摆在哪儿、用户正在用哪个程序，框完放回去。
+    final MainWindowPresentation? presentation = await target
+        .captureMainWindowPresentation();
+    if (!mounted) return;
     // 反馈 Eemf0HOZhj（macOS 4K 屏截屏识字要一分钟以上才出行框）：分段计时记进
     // 诊断日志，下一份反馈能直接看出时间花在截图 / 传图还是识别上。
     final Stopwatch captureClock = Stopwatch()..start();
@@ -1108,6 +1115,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     final _DesktopScreenOcrSession session = _DesktopScreenOcrSession(
       screen,
       png,
+      presentation,
     );
     _desktopOcr = session;
     final int captureMs = captureClock.elapsedMilliseconds;
@@ -1426,27 +1434,49 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
           ),
           sentenceContext: lookup.sentence,
           sentenceAudio: sentenceAudio,
-          pickFrame: _pickDesktopScreenOcrCardFrame,
+          pickFrame: (ScreenOcrCardImage source) =>
+              _pickDesktopScreenOcrCardFrame(source, session.presentation),
+        ),
+        // 反馈 uEnwXmBIR0：卡上「编辑例句后制卡」借主窗前先收冻结层（它盖满屏幕、会挡住
+        // 主窗），主窗状态与用户前台用冻结层抢前台之前记下的那份。
+        excursion: OverlayExcursionContext(
+          presentation: session.presentation,
+          prepare: () async {
+            if (!identical(_desktopOcr, session)) return;
+            _desktopOcr = null;
+            await FloatingBallChannel.stopScreenOcr();
+          },
         ),
       ),
     );
   }
 
   /// 拍板 EuOLprw_dV（选 b）：桌面截屏识字「制卡时框选截图」。冻结层与查词卡都是盖在
-  /// 最上层的原生窗口，框选页在主窗里：先收起两者、把主窗拉到前台，再用导航器的
-  /// context 推框选页（宿主与 Navigator 平级）。截图字节已在 [source] 里，收起冻结层
-  /// 不丢图。返回 null = 用户放弃 / 主窗不可用，这张卡不制。
-  Future<MiningRequestOverrides?> _pickDesktopScreenOcrCardFrame(
+  /// 最上层的原生窗口，框选页在主窗里：先关冻结层、收起查词卡、把主窗拉到前台，再用
+  /// 导航器的 context 推框选页（宿主与 Navigator 平级）。截图字节已在 [source] 里，
+  /// 关冻结层不丢图。返回 null = 用户放弃 / 主窗不可用，这张卡不制。
+  ///
+  /// 反馈 6RETmKY1TH：拉前台只是框选那一会儿要用。框选页一返回（制卡、放弃都算）就把
+  /// 主窗放回 [presentation] 记下的位置（托盘 / 最小化 / 原样），前台还给截屏识字前
+  /// 用户在用的程序，查词卡放回原位、制卡结果照常在卡上说——不再让 Fushi 停在前台。
+  /// 卡收不起来时退回关卡，主窗也就留在前台说结果（[ScreenOcrFramePick.reportOutcomeOnHost]）。
+  Future<ScreenOcrFramePick?> _pickDesktopScreenOcrCardFrame(
     ScreenOcrCardImage source,
+    MainWindowPresentation? presentation,
   ) async {
-    final DesktopSystemBallActionTarget target = desktopSystemBallActionTarget;
     _desktopOcr = null;
     await FloatingBallChannel.stopScreenOcr();
-    await target.dismissLookup();
-    await target.bringMainWindowToFront();
-    final BuildContext? navigatorContext = _navigatorContext;
-    if (navigatorContext == null || !navigatorContext.mounted) return null;
-    return pickScreenOcrCardFrame(navigatorContext, source);
+    final MainWindowExcursionResult<MiningRequestOverrides> picked =
+        await runMainWindowExcursion<MiningRequestOverrides>(
+          port: desktopSystemBallActionTarget,
+          navigatorContext: () => _navigatorContext,
+          presentation: presentation,
+          body: (BuildContext context) =>
+              pickScreenOcrCardFrame(context, source),
+        );
+    final MiningRequestOverrides? frame = picked.value;
+    if (frame == null) return null;
+    return ScreenOcrFramePick(frame, reportOutcomeOnHost: !picked.cardRestored);
   }
 
   /// 冻结层被 Esc / 右键 / 关闭钮关掉（原生已关层、已恢复球）。
@@ -2174,7 +2204,11 @@ String _rectSummary(Rect rect) =>
     '${rect.right.round()},${rect.bottom.round()}]';
 
 class _DesktopScreenOcrSession {
-  _DesktopScreenOcrSession(this.screen, this.png);
+  _DesktopScreenOcrSession(this.screen, this.png, this.presentation);
+
+  /// 截屏识字开始前主窗的呈现状态与用户前台（反馈 6RETmKY1TH）：框选截图临时拉起
+  /// 主窗后据此放回。null = 平台给不出，框完不动主窗。
+  final MainWindowPresentation? presentation;
 
   /// 那块显示器的屏幕矩形（物理像素、左上原点）；截图像素 + 它的左上 = 屏幕坐标。
   final Rect screen;

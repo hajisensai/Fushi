@@ -432,6 +432,84 @@ void main() {
     expect(find.textContaining('≈'), findsNothing);
   });
 
+  testWidgets(
+    '启动竞态（BUG-5482）：库已交出、RWKV 服务还没挂上时列表显示「准备中」，不按 FSRS 到期日数；挂上就绪后自己重读',
+    (WidgetTester tester) async {
+      final (FushiDatabase db, SrsDbStore store) = (await tester.runAsync(
+        () => _storeWithReviewCards(2),
+      ))!;
+      addTearDown(() => tester.runAsync(db.close));
+      // 两张卡按存下的 FSRS-7 到期日都已到期：退回到期日排队的话列表会数出 2（重启后的 959 就是这么来的）。
+      await tester.runAsync(() async {
+        for (final SrsCardCacheRow c in await store.allCardRows()) {
+          await store.setDueDay(c.id, 0);
+        }
+      });
+      final SrsDeckSummary fsrsFallback = (await tester.runAsync(
+        () => store.deckSummaries(),
+      ))!.singleWhere((SrsDeckSummary d) => d.deck.id == store.defaultDeckId);
+      expect(
+        fsrsFallback.reviewCount,
+        2,
+        reason: '对照：没有 RWKV 运行时的宿主（离线工具）照旧按到期日排',
+      );
+
+      // app 的接线：库交出之前声明有 RWKV 运行时（srsStoreProvider），服务稍后才挂上。
+      store.hostsRwkv = true;
+      final _FakeRwkvService rwkv = _FakeRwkvService(
+        store: store,
+        dir: Directory.systemTemp.createTempSync('srs_rwkv_startup'),
+      );
+      addTearDown(() => tester.runAsync(rwkv.close));
+      final Completer<void> attach = Completer<void>();
+      final ProviderContainer container = ProviderContainer(
+        overrides: <Override>[
+          appProvider.overrideWith(
+            (Ref ref) => AppModel(testPlatformServices()),
+          ),
+          srsStoreProvider.overrideWith((Ref ref) async => store),
+          srsRwkvServiceProvider.overrideWith((Ref ref) async {
+            await attach.future;
+            store.rwkv = rwkv;
+            unawaited(rwkv.start());
+            return rwkv;
+          }),
+        ],
+      );
+      addTearDown(container.dispose);
+      // 只在 runAsync 里读：provider 的构建要真异步（库 / 内核），在假时钟的 zone 里起步会永远等不到。
+      final SrsDeckListData early = (await tester.runAsync<SrsDeckListData?>(
+        () => container.read(srsDeckListProvider.future),
+      ))!;
+      final SrsDeckSummary before = early.decks.singleWhere(
+        (SrsDeckSummary d) => d.deck.id == store.defaultDeckId,
+      );
+      expect(store.rwkv, isNull, reason: '服务还没挂上');
+      expect(before.reviewCount, 0, reason: '不按 FSRS-7 到期日数');
+      expect(before.rwkvPending, isTrue);
+
+      attach.complete();
+      final SrsDeckSummary after = (await tester.runAsync<SrsDeckSummary>(
+        () async {
+          // RWKV 就绪不是 store 的写入（不推进修订号）：列表要自己等它、重读成 RWKV 的计数。
+          for (int i = 0; i < 200; i++) {
+            final SrsDeckListData d = (await container.read(
+              srsDeckListProvider.future,
+            ))!;
+            final SrsDeckSummary root = d.decks.singleWhere(
+              (SrsDeckSummary x) => x.deck.id == store.defaultDeckId,
+            );
+            if (!root.rwkvPending) return root;
+            await Future<void>.delayed(const Duration(milliseconds: 10));
+          }
+          fail('RWKV 挂上并就绪后列表仍停在「准备中」');
+        },
+      ))!;
+      expect(after.reviewCount, 2);
+      expect(after.rwkvScheduled, isTrue);
+    },
+  );
+
   test('准备中：到期一格的文字跟「(准备中)」，到期 0 不写成「到期 0」', () {
     expect(
       srsNavPeekCountsLabel(

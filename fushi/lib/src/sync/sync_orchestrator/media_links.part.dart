@@ -35,7 +35,7 @@ extension _SyncOrchestratorMediaLinks on SyncOrchestrator {
         await backend.putRemoteMediaLinkManifest(local);
       }
     } catch (e) {
-      report.noteError('media links live sync', e);
+      _noteDimensionError(report, 'media links live sync', e);
     }
   }
 
@@ -81,7 +81,8 @@ extension _SyncOrchestratorMediaLinks on SyncOrchestrator {
             ownCanonical = m.canonicalJson();
           }
         } catch (err) {
-          report.noteError(
+          _noteDimensionError(
+            report,
             isOwn
                 ? 'own media links manifest "${e.name}" unreadable; '
                       'republishing from local'
@@ -103,7 +104,7 @@ extension _SyncOrchestratorMediaLinks on SyncOrchestrator {
         await _backend.putJsonAsset(ns, ownName, local.toJson());
       }
     } catch (e) {
-      report.noteError('media links cloud sync', e);
+      _noteDimensionError(report, 'media links cloud sync', e);
     }
   }
 }

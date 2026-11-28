@@ -154,7 +154,7 @@ class FushiMastheadSwitchHeadline extends InheritedWidget {
       oldWidget.headline != headline;
 }
 
-/// 手机 / 窄窗（与外壳底栏同一判据：真实窗口宽落在 compact 档）。
+/// 手机 / 窄窗（MD3 含横屏手机，见 [FushiPageTitleMetrics.isCompact]）。
 bool fushiMastheadCompact(BuildContext context) =>
     FushiPageTitleMetrics.isCompact(context);
 
@@ -218,6 +218,8 @@ class FushiMastheadGeometry {
     required this.leading,
     required this.title,
     required this.titleBaseline,
+    required this.titleInkCenter,
+    required this.titleLineHeight,
     required this.badge,
     required this.switcher,
     required this.switchBaseline,
@@ -256,6 +258,12 @@ class FushiMastheadGeometry {
 
   /// 页名 / 一级切换的字面基线到各自盒底的距离（p = 0）。
   final double titleBaseline;
+
+  /// 主标题（页名 / 标题形态的一级切换）按自然字号排一行时，字面中心
+  /// （[FushiPageTitleMetrics.inkCenterEm]）到行盒底边的距离与行盒高（p = 0）。
+  /// 前导 / 动作组 / 主按钮 / 徽标的中线对到这条线上。
+  final double titleInkCenter;
+  final double titleLineHeight;
   final Size badge;
   final Size switcher;
   final double switchBaseline;
@@ -304,38 +312,84 @@ class FushiMastheadGeometry {
   FushiPageTitleMetrics get _metrics =>
       FushiPageTitleMetrics.forCompact(compact);
 
-  /// 第一行里动作组 / 主按钮占的高度（主按钮按 [primaryScaleAt] 缩放后）。
-  double actionRowExtentAt(double p) =>
-      math.max(actions.height, primary.height * primaryScaleAt(p));
+  /// 这一行有主标题（页名，或窄窗下顶替页名的一级切换），前导 / 动作组 /
+  /// 主按钮 / 徽标的中线对到它的字面中心。Apple 导航栏与主标题单独一行时不在
+  /// 同一行，各自居中。
+  bool get _inkAnchored =>
+      !apple &&
+      !stacked &&
+      titleInkCenter > 0 &&
+      (title.height > 0 || _switchIsTitle);
 
-  /// 页名的下边距：展开态贴底（大字压住整行）；收起态逐步抬到与动作组垂直
-  /// 居中，小字页名不再坠在一排图标的下沿。
+  /// 主标题字面中心离它行盒底边的高度（进度 [p]）。页名放不下原行时由它自己
+  /// 等比缩字号（[FushiPageTitleMetrics.fitTitle]），盒高随之按比例变矮。
+  double _headlineInkAt(double p) {
+    final double fit = title.height > 0 && titleLineHeight > 0
+        ? math.min(1.0, title.height / titleLineHeight)
+        : 1.0;
+    return titleInkCenter * fit * titleScaleAt(p);
+  }
+
+  /// 动作行各段（前导 / 动作组 / 主按钮，主按钮按 [primaryScaleAt]）里最高
+  /// 一段的半高。手机上恒按主按钮位与一颗动作按钮中较高的那个留
+  /// （[FushiPageTitleMetrics.minFirstRowExtentAt] 同一口径）：这一页没有动作 /
+  /// 主按钮时，展开与收起各进度下页名基线都与其它模块页同一条线，切 tab 不跳。
+  double _actionHalfAt(double p) =>
+      math.max(
+        math.max(
+          math.max(leading.height, actions.height),
+          primary.height * primaryScaleAt(p),
+        ),
+        compact
+            ? math.max(
+                _metrics.primaryExtentAt(p),
+                FushiPageTitleMetrics.actionExtent,
+              )
+            : 0,
+      ) /
+      2;
+
+  /// 图标中线离第一行底边的高度。有主标题时就是主标题的字面中心——字面中心
+  /// 太低、最高一段图标会压过 [actionLiftAt] 时，改为把主标题整体抬起；没有
+  /// 主标题时最高一段贴下边距。展开 / 收起各进度都成立，滚动收缩时图标与
+  /// 页名始终同一条中线（2026-11-26 用户截图）。
+  double actionCenterLiftAt(double p) {
+    final double iconCenter = _actionHalfAt(p) + actionLiftAt(p);
+    if (!_inkAnchored) return iconCenter;
+    return math.max(iconCenter, _headlineInkAt(p));
+  }
+
+  /// 主标题行盒的下边距：字面中心落在 [actionCenterLiftAt] 上。
   double titleLiftAt(double p) {
-    if (title.height <= 0 || stacked || apple) return 0;
-    final double centered =
-        actionLiftAt(p) +
-        actionRowExtentAt(p) / 2 -
-        title.height * titleScaleAt(p) / 2;
-    return math.max(0.0, centered) * p;
+    if (!_inkAnchored) return 0;
+    return math.max(0.0, actionCenterLiftAt(p) - _headlineInkAt(p));
   }
 
   /// 面板上内边距：桌面 26 → 10；手机的状态栏由外壳让开，只留 8。Apple 导航栏
   /// 紧贴外壳让开的状态栏 / 标题栏行，不另留。
   double topPadAt(double p) => apple ? 0 : _metrics.topPadAt(p);
 
-  /// 徽标 / 一级切换（无页名时）/ 动作组与主按钮的下边距。
-  double badgeLiftAt(double p) => _metrics.badgeLiftAt(p);
+  /// 徽标 / 一级切换（无页名时）/ 动作组与主按钮的下边距。徽标跟页名同一行
+  /// 时中线对到页名字面中心（[actionCenterLiftAt]）。
+  double badgeLiftAt(double p) => _inkAnchored && badge.height > 0
+      ? math.max(
+          0.0,
+          actionCenterLiftAt(p) - badge.height * badgeScaleAt(p) / 2,
+        )
+      : _metrics.badgeLiftAt(p);
   double switchLiftAt(double p) => _metrics.switchLiftAt(p);
   double actionLiftAt(double p) => _metrics.actionLiftAt(p);
 
   /// 一级切换的底边离第一行底边的距离：有页名、或窄窗下它顶替页名当主标题
-  /// 时，字面基线落在页名基线上（各模块页同一条线，11-20 #18）；宽窗无页名时
-  /// 按设计稿下边距。
+  /// 时，字面基线落在页名基线上（各模块页同一条线，11-20 #18；页名随
+  /// [titleLiftAt] 抬起时一起抬）；宽窗无页名时按设计稿下边距。
   double switchBottomLiftAt(double p) {
     if (title.height <= 0 && !_switchIsTitle) return switchLiftAt(p);
     return math.max(
       0.0,
-      titleBaseline * titleScaleAt(p) - switchBaseline * switchScaleAt(p),
+      titleLiftAt(p) +
+          titleBaseline * titleScaleAt(p) -
+          switchBaseline * switchScaleAt(p),
     );
   }
 
@@ -361,13 +415,10 @@ class FushiMastheadGeometry {
       if (!compact) h = math.max(h, appleTitleRowExtent);
       return h;
     }
-    double h = _metrics.minFirstRowExtentAt(p);
-    if (leading.height > 0) h = math.max(h, leading.height + actionLiftAt(p));
-    if (actions.height > 0) h = math.max(h, actions.height + actionLiftAt(p));
-    if (primary.height > 0) {
-      h = math.max(h, primary.height * primaryScaleAt(p) + actionLiftAt(p));
-    }
-    return h;
+    final double h = _metrics.minFirstRowExtentAt(p);
+    final double half = _actionHalfAt(p);
+    if (half <= 0) return h;
+    return math.max(h, actionCenterLiftAt(p) + half);
   }
 
   /// Apple 标题行（大标题 / 一级分段）展开态的高度。
@@ -401,15 +452,16 @@ class FushiMastheadGeometry {
       ? _actionRowHeightAt(p) + stackGap + _titleRowHeightAt(p)
       : math.max(_actionRowHeightAt(p), _titleRowHeightAt(p));
 
-  /// 前导 / 动作组 / 主按钮的底边（相对面板顶）。
-  double actionBottomAt(double p) => apple
+  /// 前导 / 动作组 / 主按钮共同的中线（相对面板顶）：各段按自己的高度以它
+  /// 垂直居中。Apple 导航栏是动作行的中线（栏内居中，与主标题无关）；主标题
+  /// 单独一行时在动作行里；否则见 [actionCenterLiftAt]。
+  double actionCenterAt(double p) => apple
+      ? topPadAt(p) + _actionRowHeightAt(p) / 2
+      : stacked
       ? topPadAt(p) +
             _actionRowHeightAt(p) -
-            (_actionRowHeightAt(p) - math.max(actions.height, primary.height)) /
-                2
-      : stacked
-      ? topPadAt(p) + _actionRowHeightAt(p) - actionLiftAt(p)
-      : topPadAt(p) + firstRowHeightAt(p) - actionLiftAt(p);
+            (_actionHalfAt(p) + actionLiftAt(p))
+      : topPadAt(p) + firstRowHeightAt(p) - actionCenterLiftAt(p);
 
   /// 第一、二行之间：设计稿 14 → 8，减去二级页签自带的上命中带。
   ///
@@ -453,6 +505,8 @@ class FushiMastheadGeometry {
       other.leading == leading &&
       other.title == title &&
       other.titleBaseline == titleBaseline &&
+      other.titleInkCenter == titleInkCenter &&
+      other.titleLineHeight == titleLineHeight &&
       other.badge == badge &&
       other.switcher == switcher &&
       other.switchBaseline == switchBaseline &&
@@ -469,6 +523,8 @@ class FushiMastheadGeometry {
     leading,
     title,
     titleBaseline,
+    titleInkCenter,
+    titleLineHeight,
     badge,
     switcher,
     switchBaseline,
@@ -644,25 +700,48 @@ FushiMastheadTitleFit fushiMastheadTitleFit({
   return FushiMastheadTitleFit(scale: s, lines: 2, lineWidth: lineWidth);
 }
 
-/// 一行文字的基线到行盒底边的距离（让两种字号的大字按基线对齐）。
-double fushiMastheadBaselineFromBottom(
+/// 一行大字的竖向度量（都从行盒底边量起）：[baseline] 字母基线、[inkCenter]
+/// 字面中心（[FushiPageTitleMetrics.inkCenterEm]，图标中线对齐的参照）、
+/// [height] 行盒高。
+typedef FushiMastheadLineMetrics = ({
+  double baseline,
+  double inkCenter,
+  double height,
+});
+
+/// [text] 按 [style] 排一行的竖向度量（见 [FushiMastheadLineMetrics]）。
+FushiMastheadLineMetrics fushiMastheadLineMetrics(
   BuildContext context,
   String text,
   TextStyle style,
 ) {
+  final TextScaler textScaler = MediaQuery.textScalerOf(context);
   final TextPainter painter = TextPainter(
     text: TextSpan(text: text.isEmpty ? 'A' : text, style: style),
     textDirection: Directionality.of(context),
-    textScaler: MediaQuery.textScalerOf(context),
+    textScaler: textScaler,
     maxLines: 1,
   )..layout();
   final double baseline = painter.computeDistanceToActualBaseline(
     TextBaseline.alphabetic,
   );
-  final double fromBottom = painter.height - baseline;
+  final double height = painter.height;
   painter.dispose();
-  return fromBottom;
+  final double fromBottom = height - baseline;
+  final double font = textScaler.scale(style.fontSize ?? 14);
+  return (
+    baseline: fromBottom,
+    inkCenter: fromBottom + FushiPageTitleMetrics.inkCenterEm * font,
+    height: height,
+  );
 }
+
+/// 一行文字的基线到行盒底边的距离（让两种字号的大字按基线对齐）。
+double fushiMastheadBaselineFromBottom(
+  BuildContext context,
+  String text,
+  TextStyle style,
+) => fushiMastheadLineMetrics(context, text, style).baseline;
 
 /// 连体按钮组（二级页签）的文字：labelMedium 字阶、w800。
 TextStyle fushiMastheadSegmentLabelStyle(BuildContext context) =>
@@ -1597,10 +1676,13 @@ const double kFushiAppleScrollEdgeFade = 24;
 /// （用户 2026-10-12「顶部的标签页改回为 Cupertino 的分段选择器」，取代 10-04
 /// 的 iOS 文字页签 + 下划线）。
 ///
-/// 段宽一律等分（`UISegmentedControl` 形态）：[fill] 且摆得下时铺满整行，
-/// 否则按内容取宽贴左。段数多到摆不下时不横滑（横滑会把首尾段切掉一截，
-/// 2026-10-12 用户截图「视频这块没贴合」），与 MD3 页签同一套溢出：只排得下
-/// 的前几段进控件，其余收进末尾的「更多」下拉；选中段在溢出区时替换到可见
+/// 段宽首选等分（`UISegmentedControl` 形态）：[fill] 且摆得下时铺满整行，
+/// 否则按内容取宽贴左。等宽摆不下时先按内容分宽（`apportionsSegmentWidthsByContent`，
+/// 由控件内的 [fushiSegmentWidths] 逐级退让：短段让出留白、再收内边距），只要
+/// 每段文字在最小内边距下都放得下，就全部排在一行里（用户 2026-11-26：阅读
+/// 设置面板五个分区被收起两个）。连这样都摆不下才不横滑（横滑会把首尾段切掉
+/// 一截，2026-10-12 用户截图「视频这块没贴合」），与 MD3 页签同一套溢出：只排
+/// 得下的前几段进控件，其余收进末尾的「更多」下拉；选中段在溢出区时替换到可见
 /// 末位，永远看得到自己在哪。焦点契约在外层 [FushiAdjustableSegmented]（与
 /// MD3 的 TabBar 同一外壳）。
 ///
@@ -1624,8 +1706,8 @@ class FushiAppleSectionSegments<T extends Object> extends StatelessWidget {
   /// 见 [LibrarySectionTabs.selectedIsCurrent]。
   final bool selectedIsCurrent;
 
-  /// 等宽段的格宽：最宽文案 + 两侧 14（同 [FushiSegmentedButton] 的口径）。
-  double _cellWidth(BuildContext context) {
+  /// 各段文案宽（与控件同一字样：Apple 分段的选中字样）。
+  List<double> _labelWidths(BuildContext context) {
     final bool compact = fushiAppleCompact(context);
     final double macScale = fushiAppleMacScale(context);
     final TextStyle style =
@@ -1634,19 +1716,27 @@ class FushiAppleSectionSegments<T extends Object> extends StatelessWidget {
           fontWeight: FontWeight.w600,
         );
     final TextScaler scaler = MediaQuery.textScalerOf(context);
-    double widest = 0;
-    for (final LibrarySectionTab<T> tab in tabs) {
-      final TextPainter painter = TextPainter(
-        text: TextSpan(text: tab.label, style: style),
-        textDirection: TextDirection.ltr,
-        textScaler: scaler,
-        maxLines: 1,
-      )..layout();
-      widest = math.max(widest, painter.width);
-      painter.dispose();
-    }
-    return widest + 28;
+    return <double>[
+      for (final LibrarySectionTab<T> tab in tabs)
+        () {
+          final TextPainter painter = TextPainter(
+            text: TextSpan(text: tab.label, style: style),
+            textDirection: TextDirection.ltr,
+            textScaler: scaler,
+            maxLines: 1,
+          )..layout();
+          final double width = painter.width;
+          painter.dispose();
+          return width;
+        }(),
+    ];
   }
+
+  /// 首选段内边距（两侧共 28，同 [FushiSegmentedButton] 的口径）与最小段内
+  /// 边距（两侧共 12，= [FushiAppleSegmentedControl] 段内固定内边距
+  /// `_cellPadding` × 2，再收文字就要被省略）。
+  static const double _preferredCellPadding = 28;
+  static const double _minCellPadding = 12;
 
   /// [count] 段的控件宽（轨道两端各 3）。
   static double _controlWidth(double cell, int count) => count * cell + 6;
@@ -1701,8 +1791,14 @@ class FushiAppleSectionSegments<T extends Object> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final double cell = _cellWidth(context);
+    final List<double> labels = _labelWidths(context);
+    final double cell = labels.reduce(math.max) + _preferredCellPadding;
     final double natural = _controlWidth(cell, tabs.length);
+    final double labelSum = labels.fold(0, (double a, double b) => a + b);
+    // 按内容分宽：自然宽（每段首选内边距）与下限（每段最小内边距）。
+    final double contentNatural =
+        labelSum + tabs.length * _preferredCellPadding + 6;
+    final double contentMin = labelSum + tabs.length * _minCellPadding + 6;
     FushiHeaderCrampScope.maybeOf(context)?.reportTitleNaturalWidth(natural);
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
@@ -1714,6 +1810,17 @@ class FushiAppleSectionSegments<T extends Object> extends StatelessWidget {
             widthFactor: fill ? null : 1,
             child: SizedBox(
               width: fill && max.isFinite ? max : natural,
+              child: _control(all, expand: true),
+            ),
+          );
+        }
+        // 等宽摆不下、按内容分宽摆得下：全部段排一行，段宽交给控件分配。
+        if (contentMin <= max) {
+          return Align(
+            alignment: AlignmentDirectional.centerStart,
+            widthFactor: fill ? null : 1,
+            child: SizedBox(
+              width: fill ? max : math.min(contentNatural, max),
               child: _control(all, expand: true),
             ),
           );

@@ -25,14 +25,14 @@ Cloudflare Worker + D1 + R2。设计与分期见
 | Workers 请求 | 10 万次/天 | 匿名读边缘缓存 60 秒（缓存键只含白名单参数）；`READ_LIMITER` 每 IP 每分钟 120 次；未鉴权写入口先过 `AUTH_LIMITER`（每 IP 每分钟 10 次，IPv6 按 /64）；图片走边缘缓存 |
 | D1 读 | 500 万行/天 | 榜单 / 人气 / 名次读定时快照（每 30 分钟一次，只读周期汇总表的当期段）；读者数、行数、周/月计分、周/月作品读者数全部增量维护；书架 / 作品读者用游标分页（每页只读 limit+1 行）；`test/plans.test.js` 在查询计划上断言每个读接口不全表扫描、不建临时 B 树；处理台安装统计（一次 ≈ 20 条全表聚合、实测约 30 万行）只读快照，定时任务每 6 小时重算一次，手动刷新冷却 15 分钟（2026-11-10 曾因每次打开都现场算而超额） |
 | D1 写 | 10 万行/天 | 增量上报；**全局日预算 `write_rows` 8 万行**（超了 503，次日恢复）；每账户每天 2 万行；安装统计心跳另有日预算 `ping` 4000 个安装（每个约 5 行，同一安装当天第二次心跳只读不写） |
-| R2 存储 | 10 GB | 头像 ≤ 64KB、封面 ≤ 96KB；反馈截图 ≤ 1.5 MiB、日志 ≤ 2 MiB（结案 90 天清）；**反馈视频 ≤ 100 MB（十进制 1e8 字节，压在 Cloudflare Free / Pro 的 100 MB 请求体上限内），结案 7 天 / 创建 30 天（先到者）到期清理**，流式写入不进 Worker 内存；**总配额 8 GiB**（超了 507，按声明长度预占）；删除即归还。总配额分两池：**反馈视频单独 1 GiB**（`media_usage.video_bytes`，满了 507 `video_quota`，只拒视频），头像 / 封面 / 反馈截图与日志用其余 7 GiB（满了 507 `media_quota`），两池互不挤占；**视频每上传 IP 每天 ≤ 200 MB**（按声明长度计，超了 429） |
+| R2 存储 | 10 GB | 头像 ≤ 64KB、封面 ≤ 96KB；反馈截图 ≤ 1.5 MiB、日志 ≤ 2 MiB（结案 90 天清）；**反馈视频 ≤ 100 MB（十进制 1e8 字节，压在 Cloudflare Free / Pro 的 100 MB 请求体上限内），结案 7 天 / 创建 30 天（先到者）到期清理**，流式写入不进 Worker 内存；**总配额 8 GiB**（超了 507，按声明长度预占）；删除即归还。总配额分三池：**反馈视频单独 1 GiB**（`media_usage.video_bytes`，满了 507 `video_quota`，只拒视频），**SRS 复习历史捐赠单独 2 GiB**（`media_usage.donation_bytes`，永不过期，满了 507 `donation_quota`，只拒捐赠），头像 / 封面 / 反馈截图与日志用其余 5 GiB（满了 507 `media_quota`），三池互不挤占；**视频每上传 IP 每天 ≤ 200 MB**（按声明长度计，超了 429） |
 | R2 操作 | A 类 100 万/月、B 类 1000 万/月 | 全局日预算 `media` 3000 次上传；出图先查边缘缓存 |
 | 发信：Brevo SMTP（配了 `SMTP_*` 时）或 Resend | Brevo 300 封/天；Resend 100 封/天、3000 封/月 | 全局日预算 `email` 默认 90 封，`wrangler.toml` 走 Brevo 时设为 280；每 IP 每小时 5 封、每邮箱每小时 3 封 / 每天 10 封 |
 
 代价（如实）：D1 每写一行、每个受影响索引另计一行，所以超大书架（8000 部）首次同步约 4 万行，会被拆到两三天里
 续传；几百部的普通书架一次传完。榜单最多滞后 30 分钟（响应里带 `computedAt`）。
 
-预算可用 vars 覆盖：`BUDGET_WRITE_ROWS` / `BUDGET_MEDIA` / `BUDGET_REGISTER` / `BUDGET_EMAIL` / `BUDGET_FEEDBACK`（每天新反馈条数，默认 300）/ `BUDGET_PING`（每天记入统计的安装数，默认 4000）/ `MEDIA_QUOTA_BYTES` / `VIDEO_QUOTA_BYTES`（反馈视频池，默认 1 GiB，最多切走总配额一半；从总配额里切出，不另加）。反馈截图与日志和头像 / 封面共用普通池与 `media` 预算，反馈视频另占视频池（同样扣 `media` 次数），已结案 90 天的反馈附件由定时任务清掉。
+预算可用 vars 覆盖：`BUDGET_WRITE_ROWS` / `BUDGET_MEDIA` / `BUDGET_REGISTER` / `BUDGET_EMAIL` / `BUDGET_FEEDBACK`（每天新反馈条数，默认 300）/ `BUDGET_PING`（每天记入统计的安装数，默认 4000）/ `MEDIA_QUOTA_BYTES` / `VIDEO_QUOTA_BYTES`（反馈视频池，默认 1 GiB，最多切走总配额一半；从总配额里切出，不另加）/ `DONATION_QUOTA_BYTES`（SRS 捐赠池，默认 2 GiB，最多切走总配额四分之一；同样从总配额里切出）。反馈截图与日志和头像 / 封面共用普通池与 `media` 预算，反馈视频另占视频池（同样扣 `media` 次数），已结案 90 天的反馈附件由定时任务清掉。
 
 代价（如实）：视频池按「30 天保留 × 每 IP 每天 200 MB」算，五六个 IP 一天就能把视频池占满，之后到最早的视频过期前新视频一律 507 `video_quota`（App 留在待传区、24 小时补传窗口内可重试）；头像 / 封面 / 截图不受影响。
 
@@ -79,6 +79,8 @@ dashboard 的 Email Sending 里 Onboard 发件域名），否则用 Resend（`wr
 > ⚠️ **新增迁移的版本必须先迁移再部署**（Actions 部署每次都会自动先迁移再部署；本机部署则先跑上面的 `d1 migrations apply --remote`）。
 > `0007_feedback_video_mine.sql`（`feedback.has_video` + 两个索引）：没迁移就部署时视频补传、`GET /v1/feedback/mine` 与定时清理会 500。
 > `0008_media_video_pool.sql`（`media_usage.video_bytes`，反馈视频配额池）：没迁移就部署时视频补传与视频到期清理会 500。
+> `0027_srs_donations.sql`（SRS 捐赠四张新表 + `media_usage.donation_bytes` 捐赠配额池）：没迁移就部署时捐赠上传 / 撤回 / 统计会 500（其余接口不受影响）——**先迁移**。
+> `0029_srs_donation_feeds.sql`（新表 `srs_donation_feeds`；删 `srs_donation_batches` 与 `srs_donation_withdrawals.reported_batch`）：没迁移就部署时 feed 下载 / 管理与撤回会 500——**先迁移**；迁移后、部署前旧 Worker 的撤回会 500（只有一次部署的窗口）。
 > 例如 `0006_feedback_dev_notes.sql`：新代码的处理台列表显式选 `ai_summary` 列，没迁移就部署时 `/v1/dev/feedback` 与网页 `/dev` 会整页 500（反馈人接口不受影响）。迁移只加列，先迁移、旧代码照跑不受影响。
 > `0011_install_stats.sql`（`installs` / `install_days` 两张表 + `feedback.install_id`）：没迁移就部署时 `POST /v1/ping`、反馈提交、处理台详情与定时清理都会 500——**这条迁移碰了反馈提交，务必先迁移**。
 > `0014_cover_replace_guard.sql`（`cover_votes.confirmed` / `works.cover_cleared_at` 两列 + `cover_mismatches` 表 + 一个部分索引）：纯增量，旧 Worker 在线时先迁移不受影响；没迁移就部署时封面投票 / 上传 / 物化、删号与定时任务都会 500——**务必先迁移**（Actions 部署自动先迁移）。
@@ -88,6 +90,7 @@ dashboard 的 Email Sending 里 Onboard 发件域名），否则用 Resend（`wr
 > `0020_decisions.sql`（新表 `decisions` / `decision_notes`，处理台 `/dev/decisions`）：没迁移就部署时只有 `/dev/decisions` 与拍板提交会 500（其余接口不受影响）。纯新表。
 > `0021_install_stats_snapshot.sql`（新表 `install_stats_snapshot`，处理台 `/dev/stats` / `/dev/stats.json` / `/dev/project` 改读安装统计快照）：没迁移就部署时这三页与定时任务的快照一步会 500（其余接口不受影响）——**先迁移**。纯新表。
 > `0022_notices.sql`（新表 `notice_rules` / `notice_known_h` / `notice_seen`，`POST /v1/notices`、`/admin/api/notices/**`、处理台 `/dev/notices`，src/notices.js）：没迁移就部署时这几个接口与定时任务的计数清理一步会 500（定时任务后面的步骤随之不跑）——**先迁移**。纯新表。
+> `0026_feedback_api_keys.sql`（新表 `feedback_api_keys`，反馈密钥 `/v1/agent/feedback/**` 与 `/dev/keys` 的反馈密钥一节）：没迁移就部署时 `/dev/keys` 与反馈 JSON API 会 500（其余接口不受影响）——**先迁移**。纯新表，旧 Worker 不读它。
 > `0025_decision_file_shares.sql`（新表 `decision_file_shares`，拍板台附件公开分享 `/share/f/:token`）：没迁移就部署时 `/dev/decisions`（列表要读分享状态）、拍板 / 上传后的回卡、`/v1/decisions` 列表与公开分享路由会 500——**先迁移**。纯新表，旧 Worker 不读它。
 > `0009_feedback_release.sql`（修复 / 发布追踪列）同理：处理台列表显式选 `fix_*` 列，`/v1/ci/feedback/**` 也读写这些列，没迁移就部署时都会 500（反馈人接口 `SELECT *` 不受影响，`fix` 恒为 null）。
 
@@ -182,8 +185,9 @@ Run workflow），push / PR 永远不会部署。维护者不需要在自己机�
 | POST | `/v1/ci/feedback/fixed` `{sha, ids ≤ 50, scope: app\|none}` | Bearer `FEEDBACK_CI_TOKEN` | CI 标记修复 commit → `{updated, unchanged, missing}`（open / 处理中 → 已解决并记时间线；换了 sha 或 scope 会清空已发布记录，sha 与 scope 都没变的幂等跳过、进 `unchanged`）。没配 secret 时 `/v1/ci/**` 一律 404。手动兜底：`node scripts/feedback.mjs fixed <id> --sha <commit> [--no-app]` |
 | GET | `/v1/ci/feedback/pending?channel&platform` | Bearer | 180 天内、需要新 App、该通道 / 平台还没回填的修复 `{items:[{id, sha}]}`（≤ 500） |
 | POST | `/v1/ci/feedback/released` `{channel, platform, version, ids: [{id, sha}] ≤ 500}` | Bearer | 回填「哪个版本已包含修复」，只记首次 → `{updated}`；行的当前 `fix_sha` 与该条 `sha` 不同（其间被重新标记修复）的静默跳过。只写 `fixed_in`，不刷 `dev_reply_at` / `updated_at`（回填不是开发者回复，不影响红点、「新消息」与处理台排序）。反馈人 / 开发者接口的摘要带 `fix: {sha, scope, at, releases}` |
-| GET/POST | `/dev/**` | 会话 Cookie | 开发者网页处理台（邮箱验证码登录，仅 role = dev；除拍板台外无脚本、POST 验 Origin）：`/dev` 反馈（`/dev/feedback.json?status&cursor&q`、`/dev/f/:id.json` 同数据的 JSON）、`/dev/stats` 安装统计（读定时快照，每 6 小时重算，页面可「刷新」、冷却 15 分钟；`/dev/stats.json` 同一份数据的 JSON 加 `computedAt`，供维护者看板 Fushi Pulse 用同一会话取数，没会话回 401 而不是跳登录页）、`/dev/project` 项目数据（GitHub star / fork / 关注 / issue、App Release 各平台下载、官网 fushi.moe 每日页面浏览 / 访客 / 流量 / 国家；定时任务每 3 / 6 小时取一次存成每日快照画趋势，页面可「立即刷新」；细节见 `src/project_stats.js` 文件头）、`/dev/decisions` 拍板台（AI 代理经 `node scripts/decisions.mjs` 写入待拍事项，开发者点做 / 不做 / 以后 / 永远不做 / 没看懂 / 你定并留言；`POST /dev/d/:id`（带 `Accept: application/json` 回新卡片，不跳转）；页面只放行本站脚本 `/dev/decisions.js`（`src/decisions_client.js`）做无刷新提交、本地切栏、撤销、键盘快捷键，并每 20 秒按签名轮询 `/dev/decisions.json` 同步；没有脚本时退回普通表单；规则见 `docs/agent/decision-board.md`） |
+| GET/POST | `/dev/**` | 会话 Cookie | 开发者网页处理台（邮箱验证码登录，仅 role = dev，`triage` 只能进反馈只读页、批改与 `/dev/keys` 签自己的反馈密钥；除拍板台外无脚本、POST 验 Origin）：`/dev` 反馈（`/dev/feedback.json?status&cursor&q`、`/dev/f/:id.json` 同数据的 JSON）、`/dev/stats` 安装统计（读定时快照，每 6 小时重算，页面可「刷新」、冷却 15 分钟；`/dev/stats.json` 同一份数据的 JSON 加 `computedAt`，供维护者看板 Fushi Pulse 用同一会话取数，没会话回 401 而不是跳登录页）、`/dev/project` 项目数据（GitHub star / fork / 关注 / issue、App Release 各平台下载、官网 fushi.moe 每日页面浏览 / 访客 / 流量 / 国家；定时任务每 3 / 6 小时取一次存成每日快照画趋势，页面可「立即刷新」；细节见 `src/project_stats.js` 文件头）、`/dev/decisions` 拍板台（AI 代理经 `node scripts/decisions.mjs` 写入待拍事项，开发者点做 / 不做 / 以后 / 永远不做 / 没看懂 / 你定并留言；`POST /dev/d/:id`（带 `Accept: application/json` 回新卡片，不跳转）；页面只放行本站脚本 `/dev/decisions.js`（`src/decisions_client.js`）做无刷新提交、本地切栏、撤销、键盘快捷键，并每 20 秒按签名轮询 `/dev/decisions.json` 同步；没有脚本时退回普通表单；规则见 `docs/agent/decision-board.md`） |
 | GET | `/share/f/:token` | 无（链接即凭据） | 拍板台附件公开分享（迁移 0025，`src/decisions.js`）：开发者在处理台附件旁「分享」签发（`POST /dev/d/:id/f/:n/share`，撤销 `…/unshare`），或 API `POST/DELETE /v1/decisions/:id/files/:n/share`。只读一个附件，回包与处理台同一套 CSP sandbox + nosniff，另加 `frame-ancestors 'none'`、`no-store`、`X-Robots-Tag: noindex`；撤销 / 附件已删 / 签发人不再是开发者 → 404。按 IP 过 READ_LIMITER |
+| GET/POST | `/v1/agent/feedback/**` | Bearer 反馈密钥 `ffk_…` | 给 AI 代理读反馈的 JSON API（迁移 0026，`src/feedback_api.js` 文件头）：`GET /v1/agent/feedback?status&q&cursor&limit` 列表、`GET …/:id` 详情（与 `/dev/feedback.json`、`/dev/f/:id.json` 同一份数据）、`GET …/:id/a/:slot` 附件（`log` / `s0..s2` / `v0` / `f0..f2`，`?view=text`）、`POST …/:id/note {devNote, base}` 改内部批改（`base` = 改之前读到的批改，期间被改过 409 `note_changed`，不覆盖）。开发者与 `triage` 都能在 `/dev/keys` 签发（每人 ≤ 5 把未吊销，库里只存 SHA-256），开发者的反馈密钥同样只有这些权限，**不能回复反馈人、改状态**，也碰不到拍板台；与 `fdk_` 拍板台密钥互不通用；账户不再是 dev / triage 后失效。按 IP 过 READ_LIMITER |
 | GET/POST/DELETE | `/v1/decisions/**` | Bearer 开发者个人密钥 `fdk_…` | 拍板台 JSON API（`src/decisions_api.js` 文件头）：列 / 取事项、写待拍事项、Claude 留言、结单、校正决定、附件上传 / 下载 / 删除。密钥由开发者在 `/dev/keys` 自己签发（库里只存 SHA-256，明文只显示一次，每人 ≤ 5 把未吊销），账户被撤开发者后失效；`scripts/decisions.mjs` 设了 `FUSHI_DECISIONS_TOKEN` 就走这里，不需要 Cloudflare 凭据。按 IP 过 READ_LIMITER |
 
 「ticket 或同账户签名」：带了非空 `X-Fushi-Ticket` 就只认 ticket；否则验 `X-Fushi-Account` 签名，反馈须是该账户提交的。
@@ -191,6 +195,28 @@ Run workflow），push / PR 永远不会部署。维护者不需要在自己机�
 
 社交写（好友 / 屏蔽 / 举报）按账户每小时 120 次限流（`LIMITS.socialWritePerHour`）。被管理员隐藏的账户
 不出现在任何列表里，也不能被加好友或屏蔽。
+
+## SRS 复习历史捐赠（迁移 0027 / 0029，`src/srs_donations.js`）
+
+用户自愿把脱敏复习历史（Anki 兼容 `.apkg`）捐给 anki-rwkv 训练调度模型（设计 `docs/specs/2026-11-26-srs-review-donation.md`）。
+文件存 R2 `srs-donations/<donorId>.apkg`，一个捐赠者一个文件，重传覆盖。字节占捐赠专用配额池（`budget.js` 的 `donation` 池，`media_usage.donation_bytes`，
+`DONATION_QUOTA_BYTES` 默认 2 GiB，满了 507 `donation_quota`）：捐赠包永不过期，不与 30 天过期的反馈视频共池；
+上传按声明长度预占（重传只预占比旧文件多出的部分，变小归还差额），撤回整份归还。
+
+| 方法 | 路径 | 鉴权 | 作用 |
+|---|---|---|---|
+| PUT | `/v1/srs-donations/:donorId` | Bearer donorKey | body = apkg 原始字节（必须 `Content-Length`，≤ 64 MiB，zip 魔数，流式写 R2），头 `x-donation-reviews` / `x-donation-cards` / 可选 `x-donation-app-version` → `{donated: true, updatedAt}`。首次上传的 key 认领该 ID（库里只存 SHA-256），之后换 key 403 `donor_key_mismatch`；每 donorId 每小时 2 次、每 IP 每日 128 MiB（429 `upload_quota_daily`） |
+| GET | `/v1/srs-donations/:donorId` | Bearer donorKey | `{donated, reviews, cards, updatedAt}`，无记录 `{donated: false}` |
+| DELETE | `/v1/srs-donations/:donorId` | Bearer donorKey | 撤回：删文件与行、记撤回（立即出现在 feed 清单的 `withdrawn`）→ `{donated: false}`，幂等 |
+| POST | `/v1/admin/srs-donations/feeds` | Basic | body `{label}` 签发长期 feed（token 只给这一次，库里存哈希，不过期）→ `{id, label, createdAt, url, token}` |
+| DELETE | `/v1/admin/srs-donations/feeds/:id` | Basic | 吊销 feed（幂等，不存在 404）→ `{id, revokedAt}` |
+| GET | `/v1/srs-donations/stats` | 无（公开） | `{donors, reviews}`：捐赠者数与复习条数合计（无记录各为 0）；其他方法 405，走 READ_LIMITER |
+| GET | `/v1/admin/srs-donations` | Basic | 统计（含捐赠池占用 `pool: {usedBytes, quotaBytes}`、撤回数 `withdrawals`）与全部 feed |
+| GET | `/d/srs-donations/<token>/`、`…/<donorId>.apkg`、`…/withdrawn.txt` | 链接即凭据 | 实时 JSON 清单 / 文件下载（attachment）/ 撤回 ID，均带 ETag（`If-None-Match` 命中 304）；吊销后或已撤回 404 |
+
+签发一次：`ADMIN_USER=… ADMIN_PASS=… node scripts/srs_donation_feed.mjs create anki-rwkv` 打印长期链接交给作者（token 只出现这一次；
+泄露或丢了用 `revoke <id>` 吊销再签发；不带命令 = `stats` 看数字与全部 feed）。作者自行定时拉清单（ETag 304）。捐赠者数到 30 的提醒不在服务端做：所有者本地的 kaguya bot（fushi-bot）每小时轮询
+公开的 `GET /v1/srs-donations/stats`，第一次 ≥ 30 人时在群里 @所有者；服务端没有 webhook / 里程碑表。
 
 ## 测试
 
@@ -216,7 +242,7 @@ HTTP Basic Auth（`ADMIN_USER` / `ADMIN_PASS`，未配置时 503 fail-closed）�
 | POST | `/admin/api/accounts/:id/devices/clear` | 清空账户全部设备（用户设备名额满又没有一台还登录着时；之后用邮箱验证码重新登录） |
 | POST | `/admin/api/works/merge` `{from, into}` | 合并误拆的作品 |
 | POST | `/admin/api/works/split` `{ref}` | 拆出误挂的别名（`ref` 带 `kind|` 前缀） |
-| POST | `/admin/api/accounts/:id/role` `{role: 'dev'\|'user'}` | 设 / 撤开发者（反馈处理台；撤销时网页会话一并作废） |
+| POST | `/admin/api/accounts/:id/role` `{role: 'dev'\|'triage'\|'user'}` | 设 / 撤开发者或反馈协查（`triage`：只能看反馈、写内部批改、签自己的反馈密钥 `ffk_…`，不能回复反馈人 / 改状态，处理台其他页面 403；撤成 user 时网页会话一并作废） |
 
 ## APNs 推送（反馈有新回复）
 

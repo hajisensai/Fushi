@@ -44,6 +44,10 @@ class ErrorLogService extends ChangeNotifier
   static const int _maxDiagnosticEntries = 100;
   static const int _maxFileBytes = 512 * 1024;
 
+  /// 超过 [_maxFileBytes] 时裁到的字节数（BUG-5571）。正好裁到上限的话文件长满后下一条
+  /// 就又超限、每条日志都整文件读回重写；留 1/4 余量，两次裁之间至少隔 128 KB 新内容。
+  static const int _trimTargetBytes = _maxFileBytes * 3 ~/ 4;
+
   final List<ErrorLogEntry> _entries = [];
   List<ErrorLogEntry> get entries => List.unmodifiable(_entries);
 
@@ -60,6 +64,26 @@ class ErrorLogService extends ChangeNotifier
   final List<ErrorLogEntry> _diagnosticEntries = [];
   List<ErrorLogEntry> get diagnosticEntries =>
       List.unmodifiable(_diagnosticEntries);
+
+  /// BUG-5490：数据位置取证环的条数上限。书库根 / 支持根的判定与纠正、沙箱重定位、
+  /// 散书合并、数据根迁移被拒、词典文件缺失——这些一次启动只出现几条，60 条足够覆盖
+  /// 几十次「有事发生」的启动；平静的启动一条都不写（见 [logDataLocationIfChanged]）。
+  static const int maxDataLocationEntries = 60;
+
+  /// 单条正文上限（字符）。重定位摘要会带样本路径，超长截尾，免得一条吃满整个环。
+  static const int maxDataLocationEntryChars = 2000;
+
+  /// 整个环落盘的字节上限；超出从最旧的一条丢起。
+  static const int maxDataLocationFileBytes = 64 * 1024;
+
+  /// BUG-5490：数据位置取证环（[logDataLocation]）。与 [_diagnosticEntries] 分开存放：
+  /// 那一段只在内存、上限 100 条、被网络探测等普通诊断挤着滚动，丢数据那次启动做了
+  /// 什么，用户重开 app 再提反馈时早已不在了（反馈 cH-HbP8XkQ / nrMj_CBwCC）。这里
+  /// 单独落盘成固定条数的小文件，跨运行保留，随反馈日志放在最末尾一起上传。
+  final List<ErrorLogEntry> _dataLocationEntries = [];
+  List<ErrorLogEntry> get dataLocationEntries =>
+      List.unmodifiable(_dataLocationEntries);
+  File? _dataLocationFile;
 
   File? _logFile;
   String _persistedLog = '';
@@ -132,6 +156,8 @@ class ErrorLogService extends ChangeNotifier
     int maxBytes = _maxFileBytes,
   }) {
     if (maxBytes <= 0) return '';
+    // 常态下内容本来就在上限内：别逐 rune 编码一遍（BUG-5571）。
+    if (utf8.encode(content).length <= maxBytes) return content;
     int totalBytes = 0;
     final List<int> suffixRunes = <int>[];
     for (final int rune in content.runes.toList().reversed) {
@@ -144,8 +170,8 @@ class ErrorLogService extends ChangeNotifier
   }
 
   static String _trimLogBytes(List<int> bytes) {
-    if (bytes.length > _maxFileBytes) {
-      bytes = bytes.sublist(bytes.length - _maxFileBytes);
+    if (bytes.length > _trimTargetBytes) {
+      bytes = bytes.sublist(bytes.length - _trimTargetBytes);
     }
     var content = utf8.decode(bytes, allowMalformed: true);
     final String separator = '─' * 60;
@@ -228,6 +254,18 @@ class ErrorLogService extends ChangeNotifier
     _importStepFile = File('${dir.path}/import_step_breadcrumb.txt');
     _lookupBreadcrumbFile = File('${dir.path}/lookup_crash_breadcrumb.txt');
     _initStepFile = File('${dir.path}/init_step_breadcrumb.txt');
+    // BUG-5492：取证环落「撑得过书库被外部清空」的目录（Android 内部 support 根），旧版
+    // 写在外部诊断目录的那份第一次搬过来。
+    final Directory durable =
+        directoryOverride ?? await AppPaths.durableDiagnosticsDirectory();
+    final File dataLocationFile = File(
+      '${durable.path}/$dataLocationLogFileName',
+    );
+    await adoptLegacyDataLocationLog(
+      legacy: File('${dir.path}/$dataLocationLogFileName'),
+      target: dataLocationFile,
+    );
+    await _loadDataLocationLog(dataLocationFile);
     try {
       if (await _logFile!.exists()) {
         final bytes = await _logFile!.readAsBytes();
@@ -469,6 +507,156 @@ class ErrorLogService extends ChangeNotifier
     notifyListenersFrameSafe();
   }
 
+  /// BUG-5490：记一条**数据位置**取证（书库根 / 支持根判定与纠正、沙箱重定位、散书
+  /// 合并、数据根迁移、词典文件缺失）。进独立的持久环 [dataLocationEntries]：不计入
+  /// 用户可见错误、不被普通诊断挤掉、跨运行保留（固定 [maxDataLocationEntries] 条、
+  /// [maxDataLocationFileBytes] 字节），反馈日志把它放在最末尾（尾部截断时最后才丢）。
+  ///
+  /// 只在「有事发生」时调用：没有调用就没有任何 IO，平静的启动零开销。
+  /// [init] 之前记的条目先留在内存，[init] 读出旧环后接在它后面一并落盘。
+  void logDataLocation(String source, Object info) {
+    final String text = _clipDataLocation(info.toString());
+    _dataLocationEntries.add(
+      ErrorLogEntry(timestamp: DateTime.now(), source: source, error: text),
+    );
+    _trimDataLocationEntries();
+    notifyListenersFrameSafe();
+    if (_dataLocationFile != null) {
+      _pendingFileWrite = _pendingFileWrite.then((_) => _saveDataLocationLog());
+    }
+  }
+
+  /// 同 [logDataLocation]，但 [source] 最近一条的正文与 [info] 相同就不记（返回 false）。
+  /// 用于每次启动都会算一遍的快照（数据根位置、词典文件状态）：只有变了才占一条，
+  /// 环里留下的就是「哪次启动起变了样」。
+  bool logDataLocationIfChanged(String source, Object info) {
+    final String text = _clipDataLocation(info.toString());
+    if (lastDataLocation(source) == text) return false;
+    logDataLocation(source, text);
+    return true;
+  }
+
+  /// 环里 [source] 最近一条的正文；没有记过为 null。
+  String? lastDataLocation(String source) {
+    for (final ErrorLogEntry e in _dataLocationEntries.reversed) {
+      if (e.source == source) return e.error;
+    }
+    return null;
+  }
+
+  static String _clipDataLocation(String text) =>
+      text.length > maxDataLocationEntryChars
+      ? '${text.substring(0, maxDataLocationEntryChars)}…[truncated]'
+      : text;
+
+  void _trimDataLocationEntries() {
+    while (_dataLocationEntries.length > maxDataLocationEntries) {
+      _dataLocationEntries.removeAt(0);
+    }
+    while (_dataLocationEntries.length > 1 &&
+        utf8.encode(_encodeDataLocationEntries()).length >
+            maxDataLocationFileBytes) {
+      _dataLocationEntries.removeAt(0);
+    }
+  }
+
+  String _encodeDataLocationEntries() {
+    final StringBuffer buf = StringBuffer();
+    for (final ErrorLogEntry e in _dataLocationEntries) {
+      buf.writeln(
+        jsonEncode(<String, String>{
+          't': e.timestamp.toIso8601String(),
+          's': e.source,
+          'm': e.error,
+        }),
+      );
+    }
+    return buf.toString();
+  }
+
+  /// 读旧环：坏行（半截写入、手改）逐行跳过，不让一行坏掉整份取证。[init] 前记下的
+  /// 条目比文件里的都新，接在后面。
+  /// 数据位置取证环的文件名。
+  static const String dataLocationLogFileName = 'data_location_log.jsonl';
+
+  /// [target] 还不存在、[legacy] 在（且不是同一个文件）时把旧环搬过去；搬不动只记
+  /// debugPrint（取证环是尽力而为，不能拦启动）。
+  @visibleForTesting
+  static Future<void> adoptLegacyDataLocationLog({
+    required File legacy,
+    required File target,
+  }) async {
+    try {
+      if (legacy.absolute.path == target.absolute.path) return;
+      if (await target.exists() || !await legacy.exists()) return;
+      await target.parent.create(recursive: true);
+      await legacy.copy(target.path);
+      await legacy.delete();
+    } catch (e) {
+      debugPrint('[ErrorLogService] adopt legacy data-location log failed: $e');
+    }
+  }
+
+  Future<void> _loadDataLocationLog(File file) async {
+    final List<ErrorLogEntry> unsaved = _dataLocationFile == null
+        ? List<ErrorLogEntry>.of(_dataLocationEntries)
+        : const <ErrorLogEntry>[];
+    _dataLocationFile = file;
+    _dataLocationEntries.clear();
+    try {
+      if (await file.exists()) {
+        for (final String line in await file.readAsLines()) {
+          if (line.trim().isEmpty) continue;
+          try {
+            final Object? raw = jsonDecode(line);
+            if (raw is! Map<String, dynamic>) continue;
+            final DateTime? at = DateTime.tryParse('${raw['t']}');
+            final Object? source = raw['s'];
+            final Object? message = raw['m'];
+            if (at == null || source is! String || message is! String) {
+              continue;
+            }
+            _dataLocationEntries.add(
+              ErrorLogEntry(timestamp: at, source: source, error: message),
+            );
+          } on FormatException {
+            continue;
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[ErrorLogService] data location log load failed: $e');
+    }
+    _dataLocationEntries.addAll(unsaved);
+    _trimDataLocationEntries();
+    if (unsaved.isNotEmpty) {
+      _pendingFileWrite = _pendingFileWrite.then((_) => _saveDataLocationLog());
+    }
+  }
+
+  Future<void> _saveDataLocationLog() async {
+    final File? file = _dataLocationFile;
+    if (file == null) return;
+    try {
+      // 整份重写：环最多 64 KB，且只在「有事发生」时写。写临时文件再改名，进程在
+      // 写一半时被杀也不会把旧环截成半份（不 fsync，同 BUG-4943：进程死不丢页缓存）。
+      final File tmp = File('${file.path}.tmp');
+      await tmp.writeAsString(_encodeDataLocationEntries());
+      await tmp.rename(file.path);
+    } catch (e) {
+      debugPrint('[ErrorLogService] data location log save failed: $e');
+    }
+  }
+
+  /// 数据位置取证段的正文（不含段标题）；环为空时返回空串。
+  String dataLocationLogText() {
+    final StringBuffer buf = StringBuffer();
+    for (final ErrorLogEntry e in _dataLocationEntries.reversed) {
+      buf.write(e.format());
+    }
+    return buf.toString();
+  }
+
   /// TODO-607 P0-1：致命级错误（`FlutterError.onError` / `runZonedGuarded` 的
   /// UncaughtZone / `PlatformDispatcher.onError`）的**同步**落盘版本。
   ///
@@ -519,10 +707,15 @@ class ErrorLogService extends ChangeNotifier
     }
   }
 
-  String getFullLog() {
+  /// [includeDataLocation] 为 false 时不带数据位置取证段：反馈汇总
+  /// （`collectFeedbackLogText`）要把它单独放到整份日志的最末尾。
+  String getFullLog({bool includeDataLocation = true}) {
+    final bool withDataLocation =
+        includeDataLocation && _dataLocationEntries.isNotEmpty;
     if (_entries.isEmpty &&
         _persistedLog.isEmpty &&
-        _diagnosticEntries.isEmpty) {
+        _diagnosticEntries.isEmpty &&
+        !withDataLocation) {
       return t.error_log_empty;
     }
     final buf = StringBuffer();
@@ -549,9 +742,18 @@ class ErrorLogService extends ChangeNotifier
         buf.write(e.format());
       }
     }
+    // BUG-5490：数据位置取证段放最后。
+    if (withDataLocation) {
+      if (buf.isNotEmpty) buf.writeln('═' * 60);
+      buf.writeln('▼ ${t.error_log_data_location_section}');
+      buf.writeln('═' * 60);
+      buf.write(dataLocationLogText());
+    }
     return buf.toString();
   }
 
+  /// 清空错误与诊断。**不清**数据位置取证环（BUG-5490）：它固定条数自滚动，正是要
+  /// 撑过「先清日志、再重现、再提反馈」这条用户路径。
   Future<void> clear() async {
     _entries.clear();
     _diagnosticEntries.clear();
@@ -779,8 +981,12 @@ describeMineOutcome(MineOutcome outcome, {bool overwrite = false}) {
       // 失败原因（含 HTTP 码/URL）追加到成功 toast，终结用户「没音频不知为何」的盲猜。
       // audioWarning 为 null（音频本就没有或下载成功）时维持原成功文案（向后兼容）。
       final String? audioWarning = outcome.audioWarning;
-      final String deckName = outcome.deckName ?? '';
-      final String baseMessage = overwrite
+      final String deckName = outcome.deckName?.trim() ?? '';
+      // 后端认不出落点牌组（覆写来源回看 / 首选牌组为空的笔记、视频待写队列）时用不带牌组名的文案，
+      // 不出「卡片已覆盖到『』」空引号（反馈 OGj5irRpo7）。
+      final String baseMessage = deckName.isEmpty
+          ? (overwrite ? t.card_overwritten_no_deck : t.card_exported_no_deck)
+          : overwrite
           ? t.card_overwritten(deck: deckName)
           : t.card_exported(deck: deckName);
       final bool hasAudioWarning =

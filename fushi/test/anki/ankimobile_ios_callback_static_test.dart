@@ -100,8 +100,14 @@ void main() {
     final main = File('lib/main.dart').readAsStringSync();
     final vm = File('lib/src/anki/anki_view_model.dart').readAsStringSync();
 
+    final links = File(
+      'lib/src/platform/incoming_fushi_link.dart',
+    ).readAsStringSync();
+
     expect(main, contains('IosUrlEventChannel'));
-    expect(main, contains('fushiAnkiFetchCallback'));
+    // 回调 URL 的识别在共用分类器里，main.dart 按分类结果落地。
+    expect(links, contains('fushiAnkiFetchCallback'));
+    expect(main, contains('case AnkiFetchIncomingLink():'));
     // BUG-2493：入口改成带往返去重的 consumeInfoForAddingReturn（URL 回调与
     // 回到前台两条路共用），裸读取只留给测试。
     expect(main, contains('consumeInfoForAddingReturn('));
@@ -113,11 +119,15 @@ void main() {
 
   test('Dart startup 把 AnkiMobile 的加卡回跳落进账本，而不是丢掉', () {
     final main = File('lib/main.dart').readAsStringSync();
+    final links = File(
+      'lib/src/platform/incoming_fushi_link.dart',
+    ).readAsStringSync();
 
     // `fushi://ankiSuccess` 是 iOS 上唯一「这张卡真进库了」的信号（手册：x-success
     // 在 note is added 之后才回跳）。此前这条分支只有 `return true;`，于是
     // AnkiMobileMinedLedger 无从建立、isDuplicate 只能恒 false，✓ 永远画不出。
-    expect(main, contains('fushiAnkiSuccessCallback'));
+    expect(links, contains('fushiAnkiSuccessCallback'));
+    expect(main, contains('case AnkiSuccessIncomingLink('));
     expect(main, contains('_recordAnkiMobileMinedNote('));
     expect(main, contains('AnkiMobileMinedLedger.instance.record('));
   });

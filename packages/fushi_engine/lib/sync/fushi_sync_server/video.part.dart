@@ -213,6 +213,18 @@ extension _FushiSyncServerVideo on FushiSyncServer {
             videoStem: p.basenameWithoutExtension(file.path),
             defaultSubtitle: sub,
           );
+      // 这一集的外挂音轨（M9OEh1PeYH）：与本机播放器同一份发现判据，每条一个
+      // 同 token 的音轨流 URL，client 以 `audio-add … auto` 挂上。蓝光标题走 EDL 段表，
+      // 旁边没有外挂音轨，不列。
+      final List<RemoteVideoExternalAudioTrack> sidecarAudio = disc != null
+          ? const <RemoteVideoExternalAudioTrack>[]
+          : await _sidecarAudioTracksForRequest(
+              svc,
+              request,
+              streamUrlId,
+              episodeIndex,
+              streamQuery: streamQuery,
+            );
       // 源文件平均码率：client「自动」档拿它和实测链路带宽比，决定原画直传还是转码
       // （反馈 uaBRMzK_WM）。只在本机能转码时才算——转不了就没有可选的，client 也
       // 不会去比。蓝光标题的 `file` 是 `.mpls`，大小不代表视频，不报。
@@ -250,6 +262,11 @@ extension _FushiSyncServerVideo on FushiSyncServer {
         if (embeddedTracks.isNotEmpty)
           'embeddedSubtitleTracks': <Map<String, Object?>>[
             for (final RemoteVideoEmbeddedSubtitleTrack track in embeddedTracks)
+              track.toJson(),
+          ],
+        if (sidecarAudio.isNotEmpty)
+          'externalAudioTracks': <Map<String, Object?>>[
+            for (final RemoteVideoExternalAudioTrack track in sidecarAudio)
               track.toJson(),
           ],
         if (sidecarSubtitles.isNotEmpty)
@@ -341,6 +358,17 @@ extension _FushiSyncServerVideo on FushiSyncServer {
     if (clipId != null) {
       if (method != 'GET') return shelf.Response(405);
       return _handleBlurayClip(svc, request, clipId);
+    }
+
+    // GET /api/library/videos/<id>/sidecaraudio?token=&n=<i> — 这一集第 i 条外挂音轨
+    // （M9OEh1PeYH；豁免 Basic，靠 `/streamurl` 签的同一张 token，支持 Range）。
+    final String? sidecarAudioId = _extractVideoId(
+      reqPath,
+      kVideoSidecarAudioPathSuffix,
+    );
+    if (sidecarAudioId != null) {
+      if (method != 'GET') return shelf.Response(405);
+      return _handleSidecarAudio(svc, request, sidecarAudioId);
     }
 
     for (final String suffix in const <String>[
@@ -1147,6 +1175,95 @@ extension _FushiSyncServerVideo on FushiSyncServer {
               .toString(),
         ),
     ];
+  }
+
+  /// `/streamurl` 的 `externalAudioTracks[]`（M9OEh1PeYH）：host 不支持
+  /// [VideoSidecarAudioListHost] → 空表（client 行为与从前一致）。每条 URL 带
+  /// [streamQuery]（同一张流 token + 集下标）与下标 `n`。
+  Future<List<RemoteVideoExternalAudioTrack>> _sidecarAudioTracksForRequest(
+    FushiLibraryHostService service,
+    shelf.Request request,
+    String videoId,
+    int episodeIndex, {
+    required Map<String, String> streamQuery,
+  }) async {
+    if (service is! VideoSidecarAudioListHost) {
+      return const <RemoteVideoExternalAudioTrack>[];
+    }
+    final List<SidecarAudioTrackFile> tracks =
+        await (service as VideoSidecarAudioListHost)
+            .listVideoSidecarAudioTracks(videoId, episodeIndex: episodeIndex);
+    final String encodedId = Uri.encodeFull(videoId);
+    return <RemoteVideoExternalAudioTrack>[
+      for (int i = 0; i < tracks.length; i++)
+        RemoteVideoExternalAudioTrack(
+          url: request.requestedUri
+              .replace(
+                path:
+                    '/api/library/videos/$encodedId/'
+                    '$kVideoSidecarAudioPathSuffix',
+                queryParameters: <String, String>{...streamQuery, 'n': '$i'},
+              )
+              .toString(),
+          label: tracks[i].label,
+          language: tracks[i].language,
+        ),
+    ];
+  }
+
+  /// 外挂音轨流：token 绑定视频与集（与 `/stream` 同一张），`n` 只能落在 host 此刻
+  /// 为这一集枚举出的音轨表里——URL 持有者拿不到目录里别的文件。
+  Future<shelf.Response> _handleSidecarAudio(
+    FushiLibraryHostService svc,
+    shelf.Request request,
+    String videoId,
+  ) async {
+    _mediaStreams.prune();
+    final String? tokenValue = request.url.queryParameters['token'];
+    if (tokenValue == null || tokenValue.isEmpty) {
+      return shelf.Response(
+        401,
+        body: 'Missing token',
+        headers: <String, String>{'Content-Type': 'text/plain'},
+      );
+    }
+    final _VideoStreamToken? tok = _videoGrant(tokenValue);
+    if (tok == null || tok.videoId != videoId) {
+      return shelf.Response(
+        403,
+        body: 'Invalid or expired token',
+        headers: <String, String>{'Content-Type': 'text/plain'},
+      );
+    }
+    if (!await _issuerStillValid(tok.issuer)) {
+      return _revokedVideoToken(tokenValue);
+    }
+    if (svc is! VideoSidecarAudioListHost) {
+      return shelf.Response.notFound('Sidecar audio off');
+    }
+    final List<SidecarAudioTrackFile> tracks =
+        await (svc as VideoSidecarAudioListHost).listVideoSidecarAudioTracks(
+          videoId,
+          episodeIndex: tok.episodeIndex,
+        );
+    final int? index = int.tryParse(request.url.queryParameters['n'] ?? '');
+    if (index == null || index < 0 || index >= tracks.length) {
+      return shelf.Response.notFound('Audio track out of range');
+    }
+    final File file = File(tracks[index].path);
+    // 外挂音轨常与视频同在网络盘上：async stat（BUG-3756）。
+    final String etag;
+    try {
+      etag = await videoFileEtag(file);
+    } on FileSystemException {
+      return shelf.Response.notFound('Audio track missing');
+    }
+    return serveFileWithRange(
+      file,
+      request,
+      etag: etag,
+      ifRangeRequired: false,
+    );
   }
 
   /// `GET .../subtitle?sidecar=<name>` 的解析：只在 [_sidecarSubtitleFiles] 里按

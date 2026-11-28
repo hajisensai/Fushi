@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 fn model(small: bool) -> Model {
     let (filename, expected) = if small {
-        ("sm98_weights.int8.bin", SMALL_MODEL_INT8_SHA256)
+        ("sm113_weights.int8.bin", SMALL_MODEL_INT8_SHA256)
     } else {
         ("RWKV_trained_on_5000_10000.bin", MODEL_SHA256)
     };
@@ -63,16 +63,7 @@ fn round_trip(small: bool) {
     let model = model(small);
     let directory = Directory::new(if small { "small" } else { "large" });
     let path = directory.0.join("模型状态.bin");
-    let precisions: &[StatePrecision] = if small {
-        &[
-            StatePrecision::F32,
-            StatePrecision::Int8,
-            StatePrecision::Int4,
-        ]
-    } else {
-        &[StatePrecision::F32, StatePrecision::Int8]
-    };
-    for &precision in precisions {
+    for precision in [StatePrecision::F32, StatePrecision::Int8] {
         let mut original = RwkvRuntime::new(&model, precision, 1).unwrap();
         let reviews: Vec<_> = (0..2)
             .flat_map(|day| (1..=4).map(move |card| row(card, day, false)))
@@ -247,6 +238,57 @@ fn streaming_io_errors_before_commit_preserve_both_models() {
     }
 }
 
+/// Snapshots taken before the platform-independent arithmetic (magic
+/// version 1, same layout otherwise) hold states from the old per-platform
+/// kernels: they are refused so the host replays the log (`sched` logs
+/// "RWKV snapshot ignored" and rebuilds).
+#[test]
+fn version_1_snapshots_are_refused() {
+    for small in [true, false] {
+        let model = model(small);
+        let mut runtime = RwkvRuntime::new(&model, StatePrecision::Int8, 1).unwrap();
+        let reviews: Vec<_> = (1..=4).map(|card| row(card, 0, false)).collect();
+        runtime.replay(&reviews, false).unwrap();
+        let mut bytes = runtime.snapshot().unwrap();
+        let (current, old): (&[u8], &[u8]) = if small {
+            (crate::rwkv::small::SNAPSHOT_MAGIC, b"FRWKVSMALL1\0")
+        } else {
+            (crate::rwkv::SNAPSHOT_MAGIC, b"FRWKVSNAP1\0")
+        };
+        assert_eq!(&bytes[..current.len()], current);
+        let mut fresh = RwkvRuntime::new(&model, StatePrecision::Int8, 1).unwrap();
+        fresh.restore(&bytes).unwrap();
+        bytes[..old.len()].copy_from_slice(old);
+        let error = fresh.restore(&bytes).unwrap_err().to_string();
+        assert!(error.contains("version-1"), "{error}");
+    }
+}
+
+/// BUG-5594：int4 已删。int4 时代的快照（精度字节 4）读进 int8 runtime 被拒、状态不变，
+/// 排程内核据此全量重放（`sched/tests.rs` 的 production 测试）。
+#[test]
+fn int4_snapshots_are_refused() {
+    for small in [true, false] {
+        let model = model(small);
+        let mut runtime = RwkvRuntime::new(&model, StatePrecision::Int8, 1).unwrap();
+        let reviews: Vec<_> = (1..=4).map(|card| row(card, 0, false)).collect();
+        runtime.replay(&reviews, false).unwrap();
+        let mut bytes = runtime.snapshot().unwrap();
+        let at = if small {
+            crate::rwkv::small::SNAPSHOT_MAGIC.len()
+        } else {
+            crate::rwkv::SNAPSHOT_MAGIC.len()
+        };
+        assert_eq!(bytes[at], 8);
+        bytes[at] = 4;
+        let mut fresh = RwkvRuntime::new(&model, StatePrecision::Int8, 1).unwrap();
+        let before = fresh.snapshot().unwrap();
+        let error = fresh.restore(&bytes).unwrap_err().to_string();
+        assert!(error.contains("precision"), "{error}");
+        assert_eq!(fresh.snapshot().unwrap(), before);
+    }
+}
+
 #[test]
 fn small_snapshot_files_are_lossless_and_atomic() {
     round_trip(true);
@@ -260,7 +302,7 @@ fn large_snapshot_files_are_lossless_and_atomic() {
 #[test]
 fn file_c_abi_accepts_unicode_and_rejects_invalid_arguments() {
     let model = model(true);
-    let mut runtime = FrwkvRuntime(RwkvRuntime::new(&model, StatePrecision::Int4, 1).unwrap());
+    let mut runtime = FrwkvRuntime(RwkvRuntime::new(&model, StatePrecision::Int8, 1).unwrap());
     runtime.0.replay(&[row(1, 0, false)], false).unwrap();
     let expected = runtime.0.snapshot().unwrap();
     let directory = Directory::new("ffi");

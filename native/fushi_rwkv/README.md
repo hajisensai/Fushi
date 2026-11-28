@@ -5,13 +5,15 @@ Fushi 的 **RWKV 排程**原生推理库，两个网络：
 - **大模型**（2,762,884 参数）：Anki 社区 RWKV 调度（[kuma3-anki-core](https://github.com/Pedrubik2000/kuma3-anki-core)
   的 `rslib/src/rwkv`，AGPL-3.0-or-later）的推理核心原样搬过来；来源、搬了什么 / 删了什么见
   [UPSTREAM.md](UPSTREAM.md)。
-- **小模型 sm98**（331,511 参数，d_model 64；2026-11-15 起，之前依次是 SM40、SM56、sm72e25）：**Instant-Only**
-  （只训即时头，曲线头没训练过）、按**出示时刻**的间隔训练，来自 JSchoreels/anki @ `001440b0` 的
-  `qt/aqt/rwkv_inference/sm98/`（上游 release `rwkv-family-2026-11-13` 的 Small Instant-Only，作者 Anki fork 里
-  RWKV-Instant 用的模型）。
+- **小模型**（d_model 64；2026-11-27 起，之前依次是 SM40、SM56、sm72e25、sm98 / sm101）：**Instant-Only**
+  （只训即时头，曲线头没训练过）、按**出示时刻**的间隔训练，来自 JSchoreels/anki @ `6cb16460` 的
+  `qt/aqt/rwkv_inference/`（上游 release `rwkv-family-2026-11-28` 的 Small / Tiny Instant-Only）：
+  Small **sm113**（"w64"，331,511 参数）与**默认**的六层 Tiny **sm130io**（"w64-c1-d2p1u1"，185,057 参数），见
+  「sm113 / sm130io」。
   Fushi 按 SM40（`small-model-sm40-2026-10-19`，包 sm40v2）的 INTEGRATION.md 与 NumPy 参考实现**新写**
-  （`src/rwkv/small/`，网络结构按权重文件的张量目录搭）；SM56、SM72、SM92、SM98 都是同一架构重训
-  （`architecture.json` 逐字节相同，只换权重），与上游黄金向量对拍；特征构造器与大模型共用，外加**无泄漏输入
+  （`src/rwkv/small/`，网络结构按权重文件的张量目录搭，只认已知的层数组合）；SM56、SM72、SM92、SM98、SM113 都是
+  同一 "w64" 架构重训（`architecture.json` 逐字节相同，只换权重），六层 Tiny 是同一套代码的另一种层数组合，都与上游
+  黄金向量对拍；特征构造器与大模型共用，外加**无泄漏输入
   规则**（见「sm72e25」）与回放预测的 **show-time 查询行**（见「sm98」）。
 
 外面包一层输入校验 + 作答时排程 + C ABI。权重都不入库（`fetch_model.*` 下载，见「测试」）。
@@ -52,7 +54,7 @@ Fushi 的 **RWKV 排程**原生推理库，两个网络：
 | `FrwkvModel* frwkv_model_load(const uint8_t* bytes, size_t len)` | 从内存里的权重文件建模型，按内容识别大 / 小模型（`ARWKVWEIGHTS1` f32 两者皆可，`ARWKVWEIGHTS8PC1` int8 逐行仅小模型）；失败 NULL |
 | `int32_t frwkv_model_kind(const FrwkvModel*)` | 1 = 大模型，2 = 小模型；空指针 `-1` |
 | `void frwkv_model_free(FrwkvModel*)` | 释放模型；已建的 runtime 各持一份引用，不受影响 |
-| `FrwkvRuntime* frwkv_runtime_new(const FrwkvModel*, int32_t precision, uint32_t threads)` | `precision`：0 = f32、8 = int8、4 = int4（**仅小模型**，见「状态精度」）、-1 = 推荐值（大模型 int8、小模型 int4）；`threads`：0 = 全部核心，n = 专用 n 线程池（墨水屏 / 省电传 1）。失败 NULL |
+| `FrwkvRuntime* frwkv_runtime_new(const FrwkvModel*, int32_t precision, uint32_t threads)` | `precision`：0 = f32、8 = int8、-1 = 推荐值（int8）；4（曾经的 int4）自 ABI 7 起拒收（见「状态精度」）；`threads`：0 = 全部核心，n = 专用 n 线程池（墨水屏 / 省电传 1）。失败 NULL |
 | `void frwkv_runtime_free(FrwkvRuntime*)` | |
 | `int32_t frwkv_runtime_replay(FrwkvRuntime*, const FrwkvReview* reviews, size_t count, float* out_predictions)` | 按时间顺序追加一批已答复习。`out_predictions` 可空；非空则写 `count` 个 f32：每条有评分行**作答前**的 R，无评分行写 NaN。任一行不合法 → `-2`，整批不应用 |
 | `int32_t frwkv_runtime_query(FrwkvRuntime*, const FrwkvReview* queries, size_t count, float* out)` | 批量查询当前 R，写 `count` 个 f32；不合法的行写 **NaN**（见下） |
@@ -109,7 +111,7 @@ RWKV 牌组的复习卡**不看到期日**，每次排队以当前状态查每�
 自动变化。上游的「每天最少复习数」默认 0，这里不做：R 都高于目标时队列为空，即模型认为都还记得。
 
 存下的到期日（作答时由 FSRS-7 写）只在 RWKV 不可用时排队、导出给 Anki 时用；同步不需要它——
-RWKV 状态由同步来的复习日志在每台设备上回放出来（同一权重、确定性）。统计页的未来到期 / 逾期 /
+RWKV 状态由同步来的复习日志在每台设备上回放出来（同一权重 + 跨平台逐位一致的算术：各设备的状态与 R 逐位相同，到期判定一致，见「跨平台逐位一致」）。统计页的未来到期 / 逾期 /
 负担不计按 R 排队的卡，可提取度用 RWKV 的；浏览器的 `is:due` 与出卡同口径；日志的 `alg` 记 `rwkv`。
 
 **为什么用即时头而不是曲线头**（2026-10-20 用当时的两头小模型 SM40 测，int4，20 个封存用户约 136 万对
@@ -129,7 +131,7 @@ RWKV 状态由同步来的复习日志在每台设备上回放出来（同一权
 
 ### 作答时排程（RWKV-Curve，库里保留，app 不用）
 
-**只对曲线头训练过的模型（大模型）可用**：Fushi 的小模型是 Instant-Only（sm98，训练时 `curve_loss_weight 0.0`，
+**只对曲线头训练过的模型（大模型）可用**：Fushi 的小模型是 Instant-Only（sm113 / sm130io，训练时 `curve_loss_weight 0.0`，
 manifest 写明 curve head "was never trained and must not schedule"），`frwkv_runtime_next_intervals` /
 `RwkvRuntime::next_intervals` / `answer_curves` 对它返回 `-6` / `RwkvError::Unsupported`（`ModelKind::has_trained_curve_head`），
 不给垃圾间隔。app 与 `fushi_server` 没有任何调用方（Dart 绑定 `RwkvNativeRuntime.nextIntervals` /
@@ -242,18 +244,29 @@ elapsed / preset）→ `scheduler/rwkv/history.rs:67` `historical_review`（card
 
 ## 两个模型与状态精度
 
-| | 大模型 | 小模型（sm98） |
+| | 大模型 | 小模型（Small sm113；六层 Tiny sm130io 见「sm113 / sm130io」） |
 |---|---|---|
 | 参数 | 2,762,884 | 331,511 |
 | 权重 | `RWKV_trained_on_5000_10000.bin`（11 MB，AGPL） | `weights.int8.bin`（436 KB，加载时反量化）或 `weights.f32.bin`；随上游 Anki fork 以 AGPL 发布 |
-| 状态精度 | f32 / **int8**（推荐） | f32 / int8 / **int4**（推荐） |
-| card + note 状态 / 卡（一卡一笔记） | int8 25,698 B | int4 2,944 B（int8 4,480 B） |
+| 状态精度 | f32 / **int8**（推荐） | f32 / **int8**（推荐） |
+| card + note 状态 / 卡（一卡一笔记） | int8 25,698 B | int8 4,480 B（Tiny sm101 3,072 B） |
 | 回放速度（下表） | ≈16k 条/s | ≈50k 条/s |
 
-card / note 状态按精度紧凑存储（每行 16 个值一个 f32 比例 + 8 / 4 位码字，shift 存 f16）；deck /
+card / note 状态按精度紧凑存储（每行 16 个值一个 f32 比例 + 8 位码字，shift 存 f16）；deck /
 preset / user 状态恒为 f32。
 
-**int4 数值稳定性（Fushi 的修复，2026-10-20）。** 上游的量化每行按 `max/limit` 定标再四舍五入：
+**int4 已删（BUG-5594，2026-11-27）。** 下面 10-20 的最小二乘修复之后，int4 在更长的单卡历史上照样发散：
+每卡 2 万次复习时，sm101（一天里连按 Again）的笔记状态到 9.4e3、4 万次左右状态坏掉、该卡预测卡死在
+0.8577；sm113 / 六层 Tiny sm130io（每天按 Again）的笔记 / 卡状态到 4e33 / 1e4，预测与 f32 差到 0.85
+（f32 的峰值都在 2～8）。上游 JSchoreels/anki 同期因同样的现象弃用 int4（2dc21da67fed）。int8 在同样的
+模式、每卡 10 万次复习上与 f32 同量级，预测最大差 ≤ 0.052，所以 card / note 状态一律 int8：int4 的码字、
+C ABI 的 4、`ModelKind::supports` 一并删除。int4 时代的快照头里精度字节是 4，读进来被拒，排程内核全量
+重放一次（文件名 `rwkv-<profile>-small-int4.snap` 冻结不改）。钉住它的测试：`tests/long_history.rs` 的
+`every_small_model_keeps_long_card_states_bounded`（每个小模型 × 5 种作答模式 × 单卡 2 万次；把精度换回
+int4 即红），诊断工具 `examples/long_card_drift.rs`。代价：card + 笔记状态每卡 2,944 → 4,480 B（Tiny
+2,048 → 3,072 B）。
+
+**int4 数值稳定性（Fushi 的修复，2026-10-20；int4 已于 11-27 删除，见上）。** 上游的量化每行按 `max/limit` 定标再四舍五入：
 落在半个台阶到一个台阶之间的分量会被抬到一个台阶（最多 ×2），每次作答都往状态里注入能量。
 card 状态第一层的递推不阻尼这种误差：在一份 121 万条复习的真实历史上，小模型 int4 有 101 张高频卡
 的状态每次复习 ×1.06（0.25 → 7,962，往 f32 溢出走）；上游大模型的 int4 笔记状态在 350 万条历史上
@@ -365,7 +378,7 @@ show-time 输入，按条加权 LogLoss，配对用户 bootstrap 95% 区间）�
   `srsRwkvReplayPredictions` 就是用它重放全部历史）：查询行是作答行的拷贝，间隔里含这条复习自己的作答用时——
   **不符合**。修在 Rust 内核唯一构造回放行的地方（`small/mod.rs` `push_replay_rows` → `show_time_query`），
   只改小模型（大模型按上游的作答间隔训练）；没有时长的行无从知道出示时刻，保持作答间隔。
-- 钉住它的测试：`tests/small_model.rs` 从 sm98 黄金向量还原回放输入，本库构造的查询行 / 更新行与训练输入逐列一致。
+- 钉住它的测试：`tests/small_model.rs` 从黄金向量还原回放输入，本库构造的查询行 / 更新行与训练输入逐列一致。
 
 **换权重的影响**：快照带权重指纹（FNV-1a），旧快照与检查点被拒，首次启动全量重放一次（`sched/machine.rs`
 `restore_snapshot` 失败即 `rebuild_all`）；状态布局（槽长）与 sm72e25 相同。旧权重文件 `sm72e25_weights.int8.bin`
@@ -375,33 +388,91 @@ show-time 输入，按条加权 LogLoss，配对用户 bootstrap 95% 区间）�
 `examples/model_compare.rs`）上没有重跑 sm98——本机没有那份数据集；作者的数字是 int8 状态、打分器自己的特征
 编码。
 
-## sm101（Tiny，设置里可选的「省内存」档）
+## sm113 / sm130io（2026-11-27 换上，默认档位改成 Tiny）
 
-同一家族的 **Tiny Instant-Only = sm101**（"w64-c1"，同一提交 `qt/aqt/rwkv_inference/sm101/`，int8 权重 409,483
-字节，哈希见 `src/lib.rs` 的 `TINY_MODEL_*_SHA256`）：card / note 流各 1 层、deck 流 4 层（deck 的第 2、3 层去掉
-channel mixer），`layer_steps` 12 步。架构由权重张量目录推出（层数、交错调度、被去掉的 channel mixer），**与 sm98
-同一套代码加载，不需要改代码**；`tests/small_model.rs` 的每个用例两套都跑。
+作者 2026-11-25 发的模型家族 release `JSchoreels/anki-rwkv` tag `rwkv-family-2026-11-28`（对应 fork main
+`6cb164606`）里的两个 **Instant-Only** 模型，钉 JSchoreels/anki 提交 `6cb164606984c14432ef5e9befdedd6cc070f539` 的
+`qt/aqt/rwkv_inference/{sm113,sm130io}/` 与 `rslib/src/rwkv/testdata/{sm113,sm130io}-vectors.json.gz`（与 release 包
+`rwkv-small-instant-only.zip` / `rwkv-tiny-instant-only.zip` 里的权重与 `architecture.json` 逐字节相同，按
+`SHA256SUMS` 校过 zip 后核对；哈希见 `src/lib.rs`）：
 
-| | sm98（Small，默认） | sm101（Tiny） |
+- **Small = sm113**（"w64"，331,511 参数，`architecture.json` 与 sm98 逐字节相同，只换权重）。
+- **Tiny = 六层 sm130io**（"w64-c1-d2p1u1"，185,057 参数）：card / deck / note / preset / user 流 1 / 2 / 1 / 1 / 1 层，
+  `layer_steps` 6 步 `(0,0)(1,0)(2,0)(3,0)(4,0)(1,1)`；带 channel mixer 的只有 card 0 / deck 0 / note 0（deck 1、
+  preset 0、user 0 去掉）。取代 "w64-c1" 的 sm101（`[1, 4, 1, 3, 3]`，12 步）。
+
+| | sm113（Small） | sm130io（Tiny，**默认**） |
 |---|---|---|
-| 即时头 LogLoss（作者打分器，722 留出用户） | 0.276191 | 0.27672 |
-| Fushi 的每卡状态（card / note 都 int4，实测槽长） | card 1,920 B + note 1,024 B = 2,944 B | card 1,024 B + note 1,024 B = 2,048 B（**约 −30%**） |
+| 即时头 LogLoss（作者打分器，722 留出用户，int8 权重 + int8 状态，show-time 输入） | 0.275933（比 sm98 −0.094%） | 0.27749（比 sm113 **+0.56%**，作者给 Tiny 的预算是 +1%） |
+| int8 权重 | 436,391 B | 238,585 B |
+| Fushi 的每卡状态（card / note 都 int8，实测槽长） | card 2,944 B + note 1,536 B = 4,480 B | card 1,536 B + note 1,536 B = 3,072 B（**约 −30%**） |
 
-（manifest 里「约 −26%」是 card int4 + note int8 的配置：3,530 → 2,622 B；Fushi 的 note 也是 int4，所以是 −30%。）
-切换 = 不同的权重指纹，旧快照被拒、全量重放一次（`tests/small_model.rs`
-`tiny_model_has_its_own_architecture_and_smaller_card_state` 钉住两边互拒、同模型照常恢复）。
+**层结构**：网络照旧由权重张量目录搭（每流的层数、哪些层有 channel mixer、层优先的交错调度），但只认两种层数
+组合（`src/rwkv/small/model.rs` 的 `LAYER_PLANS`：`[2, 4, 1, 3, 3]` 与 `[1, 2, 1, 1, 1]`，同 fork
+`engine.rs::layer_plan_for` / `architecture.rs::SMALL_LAYER_PLANS` 按权重层数选 plan）；层数对不上、或有不属于任何
+已加载层的 `rwkv_modules.*` 张量（中间断层、多余张量）一律拒绝加载，不拿没人训练 / 对拍过的调度去跑。被去掉的
+channel mixer 与第 0 层的 v-LoRA 在导出里是占位张量，加载时一并丢弃。退役的 sm101 布局不再加载（没有任何 Fushi
+下发的权重是它）。`tests/small_model.rs` 的每个用例两个模型都跑，另有改名后的布局被拒的用例。
+
+**为什么默认 Tiny**：用户拍板（2026-11-27）。准确度只差 0.56%，每卡状态小 30%、权重小一半、回放更快。
+
+**不在本次范围**：上游 SM170 的 Tiny 双模型集成（两头 sm130th + sm130io 的 logit 加权）与 answer-time 头——Fushi
+每档只跑一个 Instant-Only 模型；上游的低秩状态（T24）与 6 / 8 位因子格式也没搬，状态精度照旧（见「状态精度」）。
+
+**换模型的影响**：快照带权重指纹（FNV-1a），旧快照与检查点被拒，首次启动全量重放一次（`sched/machine.rs`
+`restore_snapshot` 失败即重建、检查点恢复失败即删）；`tests/small_model.rs`
+`tiny_model_has_its_own_architecture_and_smaller_card_state` 钉住两边互拒、同模型照常恢复。旧权重
+`sm98_weights.int8.bin` / `sm101_weights.int8.bin` 进 Dart 的退役清单；没有权重的那一档的快照目录由
+`SrsRwkvModels.deleteOrphanedStates` 清掉（没有设置文件的老用户从 Small 换到 Tiny 后，`state/` 里 sm98 的快照不再有用）。
+
+**许可**：上游 2026-11-25 起每个包带 `WEIGHTS-NOTICE.md`：权重不在 MIT 下、作者不另授许可，在应用里分发要 Anki
+许可（srs-benchmark issue #353 未决）。Fushi 镜像并分发这些权重，风险登记在拍板台（`docs/agent/decision-board.md`）。
+
+## 跨平台逐位一致
+
+同一权重 + 同一复习历史，在 x86_64（Windows / Linux，有无 AVX2+FMA 都一样）、aarch64（Android / iOS）、
+macOS 上回放出的**状态字节与 R 逐位相同**（2026-11-26 起，`src/rwkv/det.rs`）。RWKV 牌组「今天到期」是
+「R ≤ 目标保留率」，各设备各自回放同步来的日志算 R；之前各平台的 SIMD 求和顺序、FMA 与否、批量 GEMM 和
+libm 都不同，同一张卡电脑上 R = 0.91486245、另一路径 0.9148693，R 压在阈值边上的卡两端判定不同，同步完成后
+电脑到期 73、手机 72（BUG-5488）。现在的约定：
+
+- **点积**（`det::dot`）：32 条交错 lane，元素 `j` 进 lane `j % 32`、按 `j` 升序 FMA 累加，再按一棵固定的树
+  归约（`det::reduce32`）。AVX2 用 4 个 8 宽寄存器、NEON 用 8 个 4 宽寄存器、可移植版用数组，顺序一样。
+- **axpy**（`det::axpy`、线性层的行 / 块内核）：每个元素都是一次 FMA，尾部也不例外（上游 AVX2 / NEON 的尾部
+  不融合）。没有硬件 FMA 的 CPU（2013 年前的 x86、armv7）走可移植内核 + 软件 FMA（`det::soft_fma`，
+  f64 乘积精确、TwoSum 判半点，与硬件 FMA 逐位相同，有随机 + 边界用例测试；每 32 个元素一块先走无分支快路径、
+  块内出现半点 / 次正规 / 非有限的和才整块重算）；实测 1 线程回放比向量路径慢约 4–5 倍（见「实测」），结果逐位相同。
+  armeabi-v7a 也走这条路（stable Rust 还不能运行期启用 VFPv4 的 `vfma`），登记为 BUG-5491。
+- **超越函数**：`exp` / `ln` / `ln_1p` / `tanh` / `sin` / `cos` / `powf` / `sigmoid` 不用平台 libm（MSVC、glibc、
+  bionic、Apple 的 libm 最后一位各不相同），自写：f64 里精确规约 + 多项式（误差约 1e-15 相对），一次舍入到 f32，
+  与 f64 libm 相比最多差 1 ulp、各平台完全相同。`sqrt` 与除法本就是 IEEE 精确运算，直接用。
+- **R 查询**：大模型所有平台都走逐行路径（上游在 macOS / aarch64 走批量 GEMM——Accelerate `cblas_sgemm`、
+  NEON 查询内核、改写的衰减公式与 Accelerate 的向量超越函数——已删）；小模型本来就只有一条路径。
+- 其余标量代码 Rust 不会自动融合成 FMA、也不重排，本来就确定；rayon 并行没有跨线程浮点归约，线程数不影响结果。
+  前提：FPU 是默认的 IEEE 环境（就近舍入、不把次正规数冲成 0），各系统线程默认如此。
+
+钉住它的测试：`tests/bitexact.rs`（每个模型 × 精度跑四份夹具 + 一段长历史，回放预测、查询 R 的位模式与快照字节压成
+SHA-256）——本机向量内核与子进程里强制的可移植内核（`FUSHI_RWKV_PORTABLE_KERNELS=1`）摘要必须相同（把 AVX2 的归约树
+改一处即红，已做变异实测）；摘要必须等于 x86_64 上生成的黄金值，CI 的 linux-x86_64 / linux-aarch64 / macos-arm64
+三个任务都跑（`native-rwkv-gate.yml`），即跨平台对拍。`src/rwkv/det.rs` 的单元测试逐长度（0–299，所有尾部形状）
+核对向量点积 / axpy 与参考顺序逐位相同、软件 FMA 与硬件 FMA 逐位相同。
+
+数值一改（运算序、超越函数、量化），旧快照里的状态就是旧算术算出来的：快照魔数随之升版，旧快照被拒、宿主全量
+重放一次（见「快照」）；黄金摘要也要用 `FUSHI_RWKV_PRINT_DIGESTS=1` 重新生成。
 
 ## 快照
 
-大模型：`FRWKVSNAP1\0` + precision 字节（0 / 8 / 4）+ 上游 `append_warm_up_snapshot_binary` 的布局：
+大模型：`FRWKVSNAP2\0` + precision 字节（0 / 8 / 4）+ 上游 `append_warm_up_snapshot_binary` 的布局：
 card、note、deck、preset 四张表（u32 个数，按 id 升序：i64 id + u32 长度 + 状态字节），
 global（标志 + 长度 + 状态），特征簿记（标志 + 长度 + `ARWKVPROCSTATE2`，曲线表恒为空）。
 **无损**：任意时刻导出 → 新 runtime 恢复 → 继续回放，结果与不中断逐位相同（有测试）。
 kuma3 自己的离线状态文件把 deck / preset / global 存成 f16（有损），本库不用那种格式。
 
-小模型：`FRWKVSMALL1\0` + precision 字节 + 权重指纹（u64，FNV-1a，别的权重文件的快照被拒）+ 五个流
+小模型：`FRWKVSMALL2\0` + precision 字节 + 权重指纹（u64，FNV-1a，别的权重文件的快照被拒）+ 五个流
 （card、deck、note、preset、user）各自：槽长 u32、个数 u32、按 id 升序的（i64 id + 槽字节）；最后
 u32 长度 + `ARWKVPROCSTATE2` 特征簿记。同样无损。
+
+魔数末位是数值版本：2 = 跨平台逐位一致的算术（2026-11-26）。版本 1（`FRWKVSNAP1\0` / `FRWKVSMALL1\0`，布局相同）里是旧的各平台算术算出的状态，恢复时被拒（`snapshot_tests::version_1_snapshots_are_refused`）；排程内核把它当坏快照丢掉、从复习日志全量重放（`sched` 的「RWKV snapshot ignored」），检查点同理。升级后每台设备各重放一次，之后从同一状态继续。
 
 **内存**：card / note 的紧凑状态存在定长槽位池（`src/rwkv/slots.rs`，按 1 MB 分块、原地覆盖）。上游
 每份状态一个 `Vec`，回放时与每块的 f32 解码临时数据交错分配释放，长期块钉住空洞：2026-10-20 实测
@@ -432,8 +503,26 @@ u32 长度 + `ARWKVPROCSTATE2` 特征簿记。同样无损。
 报 f32 1,247 MB / int8 395 MB（`docs/rwkv-state-precision-2026-10-10.MD`），与此一致。
 **手机上应默认 int8**（上游测得 int8 与 f32 的整体 log loss 差 −0.00005%、单条最大差 0.68 个百分点）。
 
-x86 的查询走逐条标量路径；aarch64（Android / iOS）与 macOS 走上游的批量 GEMM / NEON /
-Accelerate 路径，本表不代表移动端速度。冷启动第一次回放会多花数秒在缺页上（本机首轮 f32 9.8 s）。
+本表是跨平台逐位一致之前测的（x86 的查询当时就走逐行路径，与现在相同；aarch64 / macOS 当时走上游的批量
+GEMM 路径，2026-11-26 起也走逐行，见「跨平台逐位一致」），不代表移动端速度。冷启动第一次回放会多花数秒在缺页上
+（本机首轮 f32 9.8 s）。
+
+## 跨平台逐位一致前后（2026-11-26，同一台机器，sm98 int8 权重 + int4 状态，14,715 卡 / 167,061 条复习）
+
+`examples/bench.rs <sm98_weights.int8.bin> 14715 730 <线程> int4`，修前（`b876b0196f2`）与修后两个 release 二进制交替各跑两轮
+（这台机器本身波动约 ±15%）：
+
+| | 修前（平台 SIMD + libm） | 修后（`det.rs` 规范运算序） |
+|---|---|---|
+| 回放，1 线程 | 11.8 / 9.9 s | 11.1 / 9.9 s |
+| 查询 14,715 张卡，1 线程 | 684 / 865 ms | 780 / 658 ms |
+| 回放，16 线程 | 2.44 / 2.34 s | 2.65 / 2.26 s |
+| 查询，16 线程 | 174 / 167 ms | 181 / 162 ms |
+| 可移植内核（`FUSHI_RWKV_PORTABLE_KERNELS=1`，1 线程） | —（修前的标量路径约 15.8 s） | 回放 46.7 / 51.3 s，查询 4.4 / 4.7 s |
+
+向量路径持平（差在噪声内）。第一版自写超越函数用 `f64::round`（基线 x86_64 没有 SSE4.1，是 libm 调用）+ 12 项泰勒 `exp`，
+衰减按上游写成四个串行超越函数，1 线程回放慢到 22.8 / 24.5 s；改成移位取整、64 项查表 `exp`、衰减闭式
+`exp(-e^-0.5·sigmoid(x))`（`det::decay`）后回到上表。第一张卡的 R：修前 0.91486245，修后 0.9148428（各平台相同）。
 
 ## 小模型实测（同一台机器，同一模拟收藏：14,715 卡 / 7,358 笔记，167,061 条复习）
 
@@ -460,21 +549,22 @@ cargo test --profile quick --manifest-path native/fushi_rwkv/Cargo.toml
 ```
 
 权重缺失 / SHA-256 不符时测试**失败**并提示跑 fetch_model（不跳过）；`FUSHI_RWKV_MODEL`
-可指向别处的大模型权重，`FUSHI_RWKV_SMALL_DIR` 指向放着两个小模型各四个文件（`sm98_weights.int8.bin`、
-`sm98_weights.f32.bin`、`sm98_architecture.json`、`sm98-vectors.json.gz`，sm101 同名）的目录。
+可指向别处的大模型权重，`FUSHI_RWKV_SMALL_DIR` 指向放着两个小模型各四个文件（`sm113_weights.int8.bin`、
+`sm113_weights.f32.bin`、`sm113_architecture.json`、`sm113-vectors.json.gz`，sm130io 同名）的目录。
 
 - `tests/parity.rs`：与上游对拍（夹具由 `tools/oracle` 把上游 `rslib/src/rwkv` 原样编译后产出，
   f32 / int8 各一份），上游自己测试里写死的两个数，批量回放 vs 逐条回放的状态逐位相同，
   快照中断续跑，损坏快照拒收，线程数无关，reset。
+- `tests/bitexact.rs`：跨平台逐位一致（向量 / 可移植内核摘要相同、等于 x86 黄金值；见「跨平台逐位一致」）。
 - `tests/c_abi.rs`：只走 `extern "C"` 的往返与错误路径。
-- `tests/small_model.rs`：两个小模型（sm98 / sm101）各自与上游 NumPy 参考实现的黄金向量（`<模型>-vectors.json.gz`，两位用户
-  各 500 行，无泄漏输入、show-time 查询行，f32 / int8 权重）逐行对拍 p_imm、p_rating、标签时刻与 6 个扫描时刻的
-  p_curve（曲线头没训练过，只当网络数值对拍），容差 1e-5（实测最大 7.5e-7）；**本库回放的特征构造与向量逐列一致**：
-  从向量还原回放输入，回放时每条作答构造的查询行（406 行，全部带 show-time 间隔）与更新行（593 行）的输入
+- `tests/small_model.rs`：两个小模型（sm113 / sm130io）各自与上游 NumPy 参考实现的黄金向量（`<模型>-vectors.json.gz`，两位
+  合成用户 900001 / 900002 各 500 行，无泄漏输入、show-time 查询行，f32 / int8 权重）逐行对拍 p_imm、p_rating、标签时刻与 6 个扫描时刻的
+  p_curve（曲线头没训练过，只当网络数值对拍），容差 1e-5（实测最大 7.7e-7，2026-11-27）；**本库回放的特征构造与向量逐列一致**：
+  从向量还原回放输入，回放时每条作答构造的查询行（每个模型 459 行，全部带 show-time 间隔）与更新行（539 行）的输入
   0–21、23 与训练输入相差 ≤ 1e-4（查询行改回作答间隔即红，已做变异实测）；`show_time_query` 的取整与边界；
   缺失 ID 标志（输入 13–15）置 1 时 f32 / int4 下每个输出逐位不变（去掉清零即红，已做变异实测）；块边界不改结果
-  （三种精度逐位相同）；`layer_steps` 与 `architecture.json` 一致；RWKV-Curve 对它返回 Unsupported；sm101 与 sm98
-  架构不同、每卡状态更小、快照按权重指纹互拒。
+  （三种精度逐位相同）；`layer_steps` 与 `architecture.json` 一致；RWKV-Curve 对它返回 Unsupported；sm130io 与 sm113
+  架构不同（6 步 / 13 步）、每卡状态更小、快照按权重指纹互拒；层数组合不认识或有多余流张量的权重被拒。
 - `tests/forecast.rs`：假设作答不改状态、与真的作答一致；排程读的遗忘曲线（只测大模型）随时间不增、次日 Again
   低于 Easy，天数是曲线上「当天 R ≤ 目标、前一天 > 目标」的那天；`src/curve.rs` 的单元测试用已知
   形状的曲线钉住求解器（越线点向上取整、评分顺序、上限 / 下限）。
@@ -483,8 +573,9 @@ cargo test --profile quick --manifest-path native/fushi_rwkv/Cargo.toml
 - `examples/replay_eval.rs`、`examples/state_drift.rs`、`examples/bench.rs`：真实历史评测、状态峰值
   追踪、速度与内存。`examples/model_compare.rs`：多个小模型权重在同一份历史（单文件或每用户一个
   `.bin` 的目录）上的成对 LogLoss 差与聚类 bootstrap 区间（见「sm72e25」）。
-- 容差：f32 `1e-5`；int8 `1e-3`（来源见 `tests/common/mod.rs`：生成平台上实测 0 差；把 x86
-  的 AVX2+FMA 内核强制换成标量内核模拟别的平台，int8 最大差 3.78e-4、f32 2.98e-7）。
+- 与**上游实现**夹具的容差：f32 `1e-5`；int8 `1e-3`（`tests/common/mod.rs`）。这不是跨平台容差（本库各平台
+  逐位相同，`tests/bitexact.rs`），而是本库的确定性算术与上游的 libm / 平台 SIMD 之间的差：实测 f32 最大
+  3.58e-7、int8 最大 6.47e-4（量化台阶）。
 
 ## 构建
 

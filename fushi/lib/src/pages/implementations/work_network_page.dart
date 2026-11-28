@@ -7,6 +7,7 @@ import 'package:drift/drift.dart' show TableUpdate, TableUpdateQuery;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/links/media_link_editor_dialog.dart';
 import 'package:fushi/src/media/links/media_link_entries.dart';
+import 'package:fushi/src/media/links/media_link_removal_notice.dart';
 import 'package:fushi/src/media/links/theme_song/theme_song_plan.dart'
     show ThemeSongRole;
 import 'package:fushi/src/media/links/work_graph_store.dart';
@@ -27,6 +28,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
@@ -199,18 +201,19 @@ class _WorkNetworkPageState extends State<WorkNetworkPage> {
       title: t.media_link_network_title,
       // 两个动作常驻顶栏（不只在空态出现）：任何时候都能往关系网里加本机条目。
       actions: <Widget>[
-        FushiIconButtonControl(
+        FushiIconButton(
           key: const ValueKey<String>('work-network-action-add'),
           tooltip: t.media_link_network_add_related,
-          icon: const FushiIcon(FushiIcons.link),
-          onPressed: () => _addRelated(context),
+          icon: FushiIcons.link,
+          onTap: () => _addRelated(context),
         ),
         if (widget.onInfer != null)
-          FushiIconButtonControl(
+          FushiIconButton(
             key: const ValueKey<String>('work-network-action-infer'),
             tooltip: t.media_link_infer_action,
-            icon: const FushiIcon(FushiIcons.manageSearch),
-            onPressed: _inferring ? null : () => unawaited(_infer()),
+            icon: FushiIcons.manageSearch,
+            enabled: !_inferring,
+            onTap: _inferring ? null : () => unawaited(_infer()),
           ),
       ],
       body: Builder(
@@ -338,8 +341,11 @@ class _WorkNetworkPageState extends State<WorkNetworkPage> {
             rows: data.edgeRows[i],
             onConfirm: () =>
                 confirmMediaLinks(widget.database, data.plan.edges[i].ids),
-            onReject: () =>
-                rejectMediaLinks(widget.database, data.plan.edges[i].ids),
+            onReject: () => removeMediaLinksWithUndo(
+              context,
+              widget.database,
+              data.plan.edges[i].ids,
+            ),
           ),
         ),
     ];
@@ -605,7 +611,8 @@ class _NetworkNode extends StatelessWidget {
             const SizedBox(height: 6),
             Text(
               entry.title,
-              maxLines: 2,
+              // 三行：前編 / 後編、第 2 期这类区别常在标题末尾（布局按三行留了高）。
+              maxLines: 3,
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.bodySmall?.copyWith(
                 fontWeight: FontWeight.w600,
@@ -833,7 +840,7 @@ class _WebNode extends StatelessWidget {
                 const SizedBox(height: 6),
                 Text(
                   title,
-                  maxLines: 2,
+                  maxLines: 3,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.bodySmall?.copyWith(
                     fontWeight: FontWeight.w600,

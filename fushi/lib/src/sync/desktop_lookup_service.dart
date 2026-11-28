@@ -35,6 +35,31 @@ class DesktopLookupRequest {
   final AdvancedMiningHandoff? advancedMining;
 }
 
+/// 主窗被临时拉到前台之前摆在哪儿（[MainWindowPresentation.placement]）。
+enum MainWindowPlacement {
+  /// 在屏上（可见且未最小化；在不在前台另看 [MainWindowPresentation.foregroundApp]）。
+  onScreen,
+
+  /// 最小化在任务栏 / Dock。
+  minimized,
+
+  /// 收进托盘（窗口隐藏）。
+  hidden,
+}
+
+/// 临时把主窗拉到前台之前的呈现状态（反馈 6RETmKY1TH）：主窗摆在哪儿 + 当时用户
+/// 在用的前台窗口 / app。流程结束后据此放回，免得 Fushi 一直停在前台。
+@immutable
+class MainWindowPresentation {
+  const MainWindowPresentation({required this.placement, this.foregroundApp});
+
+  final MainWindowPlacement placement;
+
+  /// 当时的前台窗口（Windows HWND）/ app（macOS pid）；null = 前台就是 Fushi 自己
+  /// （或平台给不出），结束后不交还前台。
+  final int? foregroundApp;
+}
+
 /// 桌面显式查词排队器。单例 ChangeNotifier。
 ///
 /// 来源只有用户的显式意图：`fushi://lookup` 深链 / 浏览器扩展 / 桌面悬浮字幕点词。
@@ -152,7 +177,11 @@ class DesktopLookupService extends ChangeNotifier {
     // TODO-615：前台判据抖动时此守卫可能漏判，导致先前误触的任务栏 flash 仍残留；
     // 已前台路径 early-return 前主动 clear 一次，把残留高亮幂等熄灭（FLASHW_STOP
     // 对没有 flash 的窗口是 no-op）。
-    if (await _isFushiForeground()) {
+    // 进程级前台判据只说明「前台属于 Fushi 进程」，不说明主窗看得见：主窗「关闭到
+    // 托盘」（SW_HIDE）后，托盘菜单 / 剪贴板查词面板等同进程窗口拿着前台时判据照样
+    // 为真——此时更要 show，否则主窗永远藏着。最小化同理：IsWindowVisible 对最小化
+    // 窗口也为真，得另看最小化，否则主窗一直缩在任务栏里。
+    if (await _isFushiForeground() && await _isMainWindowOnScreen()) {
       await WindowCaptionChannel.clearTaskbarFlash();
       return;
     }
@@ -180,6 +209,59 @@ class DesktopLookupService extends ChangeNotifier {
     // TODO-615：show/focus 在某些 Windows 版本上仍可能把任务栏按钮置成请求注意态
     // （即便窗口此刻确实被唤到前台）。唤前台路径尾部统一 clear 一次。
     await WindowCaptionChannel.clearTaskbarFlash();
+  }
+
+  /// 记下主窗此刻摆在哪儿（在屏 / 最小化 / 收进托盘），连同调用方给的用户前台
+  /// [foregroundApp]，供临时把主窗拉到前台的流程结束后经
+  /// [settleMainWindowPresentation] 放回去（反馈 6RETmKY1TH：截屏识字「制卡时
+  /// 框选截图」）。非桌面 / 隐藏 runner / 插件缺席时返回 null（无从放回）。
+  Future<MainWindowPresentation?> captureMainWindowPresentation({
+    int? foregroundApp,
+  }) async {
+    if (!isDesktop) return null;
+    if (DesktopForegroundGuard.isHiddenWindowsRunner) return null;
+    try {
+      final MainWindowPlacement placement = !await windowManager.isVisible()
+          ? MainWindowPlacement.hidden
+          : await windowManager.isMinimized()
+          ? MainWindowPlacement.minimized
+          : MainWindowPlacement.onScreen;
+      return MainWindowPresentation(
+        placement: placement,
+        foregroundApp: foregroundApp,
+      );
+    } on MissingPluginException {
+      return null;
+    } on PlatformException {
+      return null;
+    } on TypeError {
+      // 同 [_isWindowFocused]：通道答 null 时隐式 bool 转换抛 TypeError。
+      return null;
+    }
+  }
+
+  /// 把主窗放回 [presentation] 记下的位置：原来收进托盘就再藏起来、原来最小化就再
+  /// 最小化、原来在屏就不动（前台交还由调用方随查词卡一起做，见
+  /// `GlobalLookupChannel.restoreAfterCapture` 的 `returnForeground`）。
+  Future<void> settleMainWindowPresentation(
+    MainWindowPresentation presentation,
+  ) async {
+    if (!isDesktop) return;
+    if (DesktopForegroundGuard.isHiddenWindowsRunner) return;
+    try {
+      switch (presentation.placement) {
+        case MainWindowPlacement.hidden:
+          await windowManager.hide();
+        case MainWindowPlacement.minimized:
+          await windowManager.minimize();
+        case MainWindowPlacement.onScreen:
+          break;
+      }
+    } on MissingPluginException {
+      return;
+    } on PlatformException {
+      return;
+    }
   }
 
   /// [bringMainWindowToFront] 的反向出口：把主窗**最小化**，让 OS 把前台交还给
@@ -215,6 +297,22 @@ class DesktopLookupService extends ChangeNotifier {
       return true;
     }
     return _isWindowFocused();
+  }
+
+  /// 主窗确实摆在屏幕上（可见且未最小化）。查不到时按「在屏上」处理，保持
+  /// 防任务栏闪烁的旧行为。
+  Future<bool> _isMainWindowOnScreen() async {
+    try {
+      return await windowManager.isVisible() &&
+          !await windowManager.isMinimized();
+    } on MissingPluginException {
+      return true;
+    } on PlatformException {
+      return true;
+    } on TypeError {
+      // 同 [_isWindowFocused]：通道答 null 时隐式 bool 转换抛 TypeError。
+      return true;
+    }
   }
 
   /// 查询主窗口是否已在前台。插件缺失（widget 测试）或平台调用失败时保守返回

@@ -19,6 +19,8 @@
 //   私密、蕴含私密——上锁的书 / 视频 / 游戏 / 合集在这里一律当作被标私密，下游
 //   （排行榜 / Bangumi）不用另判上锁。
 
+import 'dart:math' as math;
+
 import 'package:drift/drift.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -30,13 +32,13 @@ class MediaPrivacySnapshot {
     required Set<int> collections,
     required Set<String> games,
     required Map<String, Set<int>> collectionsOfEntry,
-    required Map<int, Set<String>> videoMembersOf,
+    required Set<int> collectionsWithPrivateVideo,
   }) : _books = books,
        _videos = videos,
        _collections = collections,
        _games = games,
        _collectionsOfEntry = collectionsOfEntry,
-       _videoMembersOf = videoMembersOf;
+       _collectionsWithPrivateVideo = collectionsWithPrivateVideo;
 
   /// 没有任何私密标记（测试 / 未接库的调用方用）。
   static final MediaPrivacySnapshot none = MediaPrivacySnapshot._(
@@ -45,7 +47,7 @@ class MediaPrivacySnapshot {
     collections: const <int>{},
     games: const <String>{},
     collectionsOfEntry: const <String, Set<int>>{},
-    videoMembersOf: const <int, Set<String>>{},
+    collectionsWithPrivateVideo: const <int>{},
   );
 
   static Future<MediaPrivacySnapshot> load(FushiDatabase db) async {
@@ -72,30 +74,72 @@ class MediaPrivacySnapshot {
       for (final String k in await _privateOrLocked(db, TagHostKind.collection))
         ?collectionIdOfTagEntryKey(k),
     };
+    // 只有私密 / 上锁合集的成员影响判定（[_inPrivateCollection] 只问这些合集），
+    // 只读它们的成员行，同 [MediaLockSnapshot.load]。从前每次整表读合集成员：媒体
+    // 服务器镜像的播放列表成员可达数万行，追踪补发一轮要读好几次，启动期间整段掉帧。
     final Map<String, Set<int>> collectionsOfEntry = <String, Set<int>>{};
-    final Map<int, Set<String>> videoMembersOf = <int, Set<String>>{};
-    // v83 起 EPUB 合集成员键是 `epub_books.uid`（旧行仍可能是 bookKey），而私密
-    // 判定与排行榜 / 追踪都按 bookKey 问：成员键先归一到 bookKey，否则私密合集里
-    // 的书一本都命不中（fail-open）。
-    final Map<String, String> bookKeyByUid = <String, String>{
-      for (final TypedResult r
-          in await (db.selectOnly(db.epubBooks)..addColumns(
-                <Expression<Object>>[db.epubBooks.uid, db.epubBooks.bookKey],
-              ))
-              .get())
-        if (r.read(db.epubBooks.uid) case final String uid when uid.isNotEmpty)
-          uid: r.read(db.epubBooks.bookKey)!,
-    };
-    for (final MediaCollectionItemRow item
-        in await db.getAllCollectionItems()) {
-      final String entryKey = item.mediaType == MediaKind.epub.dbValue
-          ? (bookKeyByUid[item.entryKey] ?? item.entryKey)
-          : item.entryKey;
-      (collectionsOfEntry[_memberKey(item.mediaType, entryKey)] ??= <int>{})
-          .add(item.collectionId);
-      if (item.mediaType == MediaKind.video.dbValue) {
-        (videoMembersOf[item.collectionId] ??= <String>{}).add(item.entryKey);
+    // 私密的视频文件：自身被标（含隐私来源），或在私密合集里。
+    final Set<String> privateVideoUids = <String>{...videos};
+    if (collections.isNotEmpty) {
+      final List<MediaCollectionItemRow> items = await (db.select(
+        db.mediaCollectionItems,
+      )..where((t) => t.collectionId.isIn(collections))).get();
+      // v83 起 EPUB 合集成员键是 `epub_books.uid`（旧行仍可能是 bookKey），而私密
+      // 判定与排行榜 / 追踪都按 bookKey 问：成员键先归一到 bookKey，否则私密合集里
+      // 的书一本都命不中（fail-open）。
+      final Map<String, String> bookKeyByUid =
+          items.any(
+            (MediaCollectionItemRow i) => i.mediaType == MediaKind.epub.dbValue,
+          )
+          ? <String, String>{
+              for (final TypedResult r
+                  in await (db.selectOnly(db.epubBooks)
+                        ..addColumns(<Expression<Object>>[
+                          db.epubBooks.uid,
+                          db.epubBooks.bookKey,
+                        ]))
+                      .get())
+                if (r.read(db.epubBooks.uid) case final String uid
+                    when uid.isNotEmpty)
+                  uid: r.read(db.epubBooks.bookKey)!,
+            }
+          : const <String, String>{};
+      for (final MediaCollectionItemRow item in items) {
+        final String entryKey = item.mediaType == MediaKind.epub.dbValue
+            ? (bookKeyByUid[item.entryKey] ?? item.entryKey)
+            : item.entryKey;
+        (collectionsOfEntry[_memberKey(item.mediaType, entryKey)] ??= <int>{})
+            .add(item.collectionId);
+        if (item.mediaType == MediaKind.video.dbValue) {
+          privateVideoUids.add(item.entryKey);
+        }
       }
+    }
+    // 合集级视频追踪要问「任一视频成员私密」：只取含私密视频的合集 id（隐私来源
+    // 可能带上千部视频，按块查，免得撞 SQLite 变量上限）。
+    final Set<int> collectionsWithPrivateVideo = <int>{};
+    final List<String> privateVideoList = privateVideoUids.toList();
+    for (int i = 0; i < privateVideoList.length; i += 500) {
+      final List<String> chunk = privateVideoList.sublist(
+        i,
+        math.min(i + 500, privateVideoList.length),
+      );
+      collectionsWithPrivateVideo.addAll(
+        await (db.selectOnly(db.mediaCollectionItems, distinct: true)
+              ..addColumns(<Expression<Object>>[
+                db.mediaCollectionItems.collectionId,
+              ])
+              ..where(
+                db.mediaCollectionItems.mediaType.equals(
+                      MediaKind.video.dbValue,
+                    ) &
+                    db.mediaCollectionItems.entryKey.isIn(chunk),
+              ))
+            .map(
+              (TypedResult r) => r.read(db.mediaCollectionItems.collectionId)!,
+            )
+            .get(),
+      );
     }
     return MediaPrivacySnapshot._(
       books: books,
@@ -103,7 +147,7 @@ class MediaPrivacySnapshot {
       collections: collections,
       games: await _privateOrLocked(db, TagHostKind.game),
       collectionsOfEntry: collectionsOfEntry,
-      videoMembersOf: videoMembersOf,
+      collectionsWithPrivateVideo: collectionsWithPrivateVideo,
     );
   }
 
@@ -121,11 +165,11 @@ class MediaPrivacySnapshot {
   final Set<int> _collections;
   final Set<String> _games;
 
-  /// `mediaType|entryKey` → 它所在的合集 id。
+  /// `mediaType|entryKey` → 它所在的**私密**合集 id（只登记私密合集的成员）。
   final Map<String, Set<int>> _collectionsOfEntry;
 
-  /// 合集 id → 视频成员 bookUid。
-  final Map<int, Set<String>> _videoMembersOf;
+  /// 含私密视频成员（自身被标、隐私来源或在私密合集里）的合集 id。
+  final Set<int> _collectionsWithPrivateVideo;
 
   static String _memberKey(String mediaType, String entryKey) =>
       '$mediaType|$entryKey';
@@ -157,10 +201,9 @@ class MediaPrivacySnapshot {
       memberUids.any(isVideoPrivate);
 
   /// 合集级视频追踪：合集被标，或任一视频成员是私密的。
-  bool isVideoCollectionPrivate(int collectionId) => isVideoUnitPrivate(
-    _videoMembersOf[collectionId] ?? const <String>{},
-    collectionId: collectionId,
-  );
+  bool isVideoCollectionPrivate(int collectionId) =>
+      _collections.contains(collectionId) ||
+      _collectionsWithPrivateVideo.contains(collectionId);
 
   bool isGamePrivate(String gameId) =>
       _games.contains(gameId) ||

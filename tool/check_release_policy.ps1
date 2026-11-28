@@ -198,6 +198,18 @@ Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'fushi-*-m
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'fushi-*-macos-arm64.dmg' 'desktop workflow must upload macOS (Apple Silicon) dmg assets for manual install'
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'fushi-*-ios.ipa' 'desktop workflow must upload iOS IPA assets'
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'Publish mirror update manifest (Apple assets)' 'Apple release assets must merge into the update manifest'
+# BUG-5515：Inno 安装包的签名必须走 ISCC 编译期 SignTool。只在编完后签 setup.exe 外壳时，
+# 运行时解到 %TEMP% 的 .tmp 安装程序与现生成的 unins000.exe 没有签名，开着智能应用控制的
+# Windows 11 报 4551 拒绝启动安装器。
+$innoScript = Read-RepoFile 'fushi/windows/installer/fushi.iss'
+Require-Text 'fushi/windows/installer/fushi.iss' $innoScript 'SignTool=fushisign' 'installer must be signed by ISCC SignTool so the extracted .tmp setup program is signed too (BUG-5515)'
+Require-Text 'fushi/windows/installer/fushi.iss' $innoScript 'SignedUninstaller=yes' 'generated unins000.exe must carry our signature (BUG-5515)'
+Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow '/DFushiSignTool' 'ISCC must be invoked with the SignTool define when signing credentials exist (BUG-5515)'
+Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow '/Sfushisign=' 'ISCC must receive the fushisign sign command (BUG-5515)'
+# ISCC 的 /S 签名命令里不能写字面引号：pwsh 7 把内嵌 " 转义成 \" 传给原生 exe，ISCC 不认反斜杠转义，
+# 脚本路径会多出前后两个 \。引号一律写成 Inno 的 $q。
+Forbid-Pattern '.github/workflows/release-desktop.yml' $desktopWorkflow '/Sfushisign=[^\r\n]*`"' 'ISCC /S sign-tool commands must quote with Inno $q; pwsh 7 escapes an embedded " as \" and ISCC keeps the backslashes (BUG-5515)'
+Forbid-Pattern '.github/workflows/release-desktop.yml' $desktopWorkflow "-notlike 'unins\*\.exe'" 'installed-payload verification must not exempt the uninstaller from the signature check (BUG-5515)'
 # Apple 签名链路：细粒度不变式由 fushi/test/tools/apple_signing_workflow_guard_test.dart
 # 守（每个 PR 都跑）。这里只锁发布策略层面的一条：手动 dispatch 那条门必须显式判事件。
 # develop 的 push debug 通道每次都传（2026-11-02 用户拍板，取代「发布序列 % 3 == 0 才传」），
@@ -252,8 +264,32 @@ foreach ($relativePath in $magpieBundleWorkflows.Keys) {
 #   2. the channel job refuses to run when github.repository is the app repo;
 #   3. every checkout pins repository: hajisensai/Fushi so the caller repo's
 #      own tree is never mistaken for the source.
+# 2026-11-27 暂停调试版发布：仓库变量 FUSHI_PAUSE_DEBUG_RELEASE = 'true' 时停 debug 通道的两个入口
+# （push 事件、2026-11-28 起加上 workflow_dispatch channel=debug）的构建与发布；dispatch 的 beta / formal
+# 与 release 事件一律不看它。每一处引用都必须是同一个「变量 && debug 入口」整体表达式，裸 vars.FUSHI_PAUSE_DEBUG_RELEASE 会把手动
+# beta / formal 一并停掉。release.yml 只挡 build / publish-android（tests 系 job 是 develop 唯一的
+# app 全量单测门，必须照跑）；release-desktop.yml 每个 job 都挡（publish 带 always()，不会随 needs 跳过）。
+# Dart 侧同一不变式（逐 job 核对）：fushi/test/build/release_debug_pause_guard_test.dart。
+$debugPauseExpr = "!(vars.FUSHI_PAUSE_DEBUG_RELEASE == 'true' && (github.event_name == 'push' || github.event.inputs.channel == 'debug'))"
+$debugPauseExpected = @{
+  '.github/workflows/release.yml'         = 2
+  '.github/workflows/release-desktop.yml' = 7
+}
+foreach ($relativePath in $debugPauseExpected.Keys) {
+  $content = Read-RepoFile $relativePath
+  $varRefs = [regex]::Matches($content, 'vars\.FUSHI_PAUSE_DEBUG_RELEASE').Count
+  $exprRefs = [regex]::Matches($content, [regex]::Escape($debugPauseExpr)).Count
+  if ($varRefs -ne $exprRefs) {
+    $failures.Add("${relativePath}: every vars.FUSHI_PAUSE_DEBUG_RELEASE reference must be the debug-only pause expression ($debugPauseExpr); a bare reference would also stop manual beta / formal releases")
+  }
+  if ($exprRefs -ne $debugPauseExpected[$relativePath]) {
+    $failures.Add("${relativePath}: expected the debug pause expression on $($debugPauseExpected[$relativePath]) job-level if: lines, found $exprRefs")
+  }
+}
+
 $serverWorkflow = '.github/workflows/release-server.yml'
 $serverContent = Read-RepoFile $serverWorkflow
+Require-Text $serverWorkflow $serverContent 'PAUSE_DEBUG_RELEASE: ${{ vars.FUSHI_PAUSE_DEBUG_RELEASE }}' 'automatic server debug releases must honor the same pause switch as the app workflows'
 Require-Text $serverWorkflow $serverContent 'concurrency:' 'server publisher must serialize same-tag runs'
 Require-Text $serverWorkflow $serverContent 'cancel-in-progress: false' 'a server publish must run to completion'
 Require-Text $serverWorkflow $serverContent 'fetch-depth: 0' 'release sequence uses full git history'

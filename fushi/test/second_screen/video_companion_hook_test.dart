@@ -135,6 +135,10 @@ class _FakePage implements VideoCompanionPage {
   Future<void> seekByMs(int deltaMs) async => calls.add('seekBy $deltaMs');
 
   @override
+  Future<void> seekStep({required bool forward, required bool long}) async =>
+      calls.add('seekStep forward=$forward long=$long');
+
+  @override
   Future<void> jumpToCue(int startMs, String text) async =>
       calls.add('jump $startMs $text');
 
@@ -391,6 +395,32 @@ void main() {
           subtitleSource: null,
         );
 
+    test('seek step seconds are published only when the page reports them', () {
+      final Map<String, Object?> without = buildVideoCompanionSnapshot(
+        frameWith(const <AudioCue>[], -1, 0),
+      );
+      expect(without.containsKey(VideoCompanionKeys.seekSeconds), isFalse);
+      expect(without.containsKey(VideoCompanionKeys.longSeekSeconds), isFalse);
+      final Map<String, Object?> s = buildVideoCompanionSnapshot(
+        const VideoCompanionFrame(
+          bookUid: 'b',
+          title: 't',
+          playing: false,
+          positionMs: 0,
+          durationMs: 0,
+          speed: 1,
+          cues: <AudioCue>[],
+          currentCueIndex: -1,
+          audioTracks: <VideoCompanionTrack>[],
+          subtitleSource: null,
+          seekSeconds: 3,
+          longSeekSeconds: 30,
+        ),
+      );
+      expect(s[VideoCompanionKeys.seekSeconds], 3);
+      expect(s[VideoCompanionKeys.longSeekSeconds], 30);
+    });
+
     test('the cue window is capped and keeps the current cue', () {
       final List<AudioCue> cues = <AudioCue>[
         for (int i = 0; i < 500; i++) _cue(i),
@@ -487,6 +517,18 @@ void main() {
               const <String, Object?>{VideoCompanionKeys.ms: -10000},
             ),
             (
+              VideoCompanionActions.seekStep,
+              const <String, Object?>{
+                VideoCompanionKeys.forward: true,
+                VideoCompanionKeys.long: true,
+              },
+            ),
+            // Malformed seekStep args are ignored, not a crash.
+            (
+              VideoCompanionActions.seekStep,
+              const <String, Object?>{VideoCompanionKeys.forward: 1},
+            ),
+            (
               VideoCompanionActions.jumpToCue,
               const <String, Object?>{
                 VideoCompanionKeys.start: 3000,
@@ -519,6 +561,7 @@ void main() {
         'nextCue',
         'seekTo 30000',
         'seekBy -10000',
+        'seekStep forward=true long=true',
         'jump 3000 line 3',
         'audio 2',
         'subtitle /subs/en.srt',

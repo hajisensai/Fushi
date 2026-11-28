@@ -34,6 +34,7 @@ import 'package:fushi/src/media/audiobook/tts/studio/tts_series_cast.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_service.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_text.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_voice_settings_page.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_line_editor.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_render_service.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_stores.dart';
@@ -263,12 +264,12 @@ class _MangaAudioStudioPageState extends State<MangaAudioStudioPage> {
     String? message,
     String? selected,
     bool allowInherit = true,
-  }) => showFushiChoiceDialog<String>(
+  }) => showTtsVoicePickDialog(
     context: context,
     title: title,
     message: message,
-    icon: FushiIcons.voice,
     selected: selected ?? (allowInherit ? '' : null),
+    onAdd: _addVoice,
     options: <FushiChoiceOption<String>>[
       if (allowInherit)
         FushiChoiceOption<String>(
@@ -279,6 +280,16 @@ class _MangaAudioStudioPageState extends State<MangaAudioStudioPage> {
         FushiChoiceOption<String>(value: preset.id, label: preset.name),
     ],
   );
+
+  /// 声音选择弹窗里的「添加声音」：加完重读清单，返回仍在清单里的新声音 id。
+  Future<String?> _addVoice() async {
+    final String? id = await addTtsVoiceFromPicker(context, _tts);
+    if (!mounted) return null;
+    setState(() => _presets = ttsProductionPresets(_tts, widget.appModel));
+    return id != null && _presets.any((TtsVoicePreset p) => p.id == id)
+        ? id
+        : null;
+  }
 
   Future<void> _editBase() async {
     final String? picked = await _pickVoice(

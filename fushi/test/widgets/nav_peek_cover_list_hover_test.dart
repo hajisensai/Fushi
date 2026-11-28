@@ -100,7 +100,7 @@ void main() {
   int opened = 0;
   List<AdaptiveNavPeekEntry> entries() => <AdaptiveNavPeekEntry>[
     for (int i = 0; i < 3; i++)
-      AdaptiveNavPeekEntry(
+      AdaptiveNavPeekEntry.noCover(
         title: '漫画 $i',
         subtitle: '${i + 1} · 10%',
         progress: 0.1,
@@ -111,7 +111,7 @@ void main() {
           onPressed: () => added++,
         ),
       ),
-    AdaptiveNavPeekEntry(
+    AdaptiveNavPeekEntry.noCover(
       title: '有声的那本',
       onOpen: () => opened++,
       status: t.manga_audio_workbench_has_audio,

@@ -297,9 +297,34 @@ GitHub 默认分支是 `develop`（用户 2026-11-25 拍板：开发分支才是
 - formal（手动）：通过手动 GitHub Release 或 `workflow_dispatch` 选择 `formal`。默认 tag 为 `v<version>`；Android 产物包含 debug APK 与 split ABI release APK，Windows 产物为 installer，macOS 为 app zip，iOS 为 no-codesign IPA。formal 是唯一允许成为 Latest 的通道。**`workflow_dispatch` 的 formal / beta 构建完不直接发布**，停在审批门等「发版」批准，见下「正式版预构建与审批发布」。
 - 禁止事项：不要把 push、debug tag、debug APK 或 beta/test workflow 接到 formal/Latest；不要让 push 上传正式 release APK 或发布 formal/Latest；不要把 beta/test 发布成 non-prerelease 或 Latest。
 
+### 暂停调试版自动发布（2026-11-27）
+
+用途：测试版放出去试用期间（例如「测试版测 1 天再发正式版」），让 debug 通道不再出包，免得 debug 通道的用户被新提交打断、runner 也让给 beta / formal。开关是**仓库变量** `FUSHI_PAUSE_DEBUG_RELEASE`，值为 `true`（GitHub 表达式比较不分大小写）时暂停，删掉或改成别的值即恢复，不用改代码、不用提交。
+
+- **暂停**：`gh variable set FUSHI_PAUSE_DEBUG_RELEASE --body true --repo hajisensai/Fushi`
+- **恢复**：`gh variable delete FUSHI_PAUSE_DEBUG_RELEASE --repo hajisensai/Fushi`（或 `--body false`）。恢复后不自动补发暂停期间的提交：下一次进 push 路径的提交照常出包（序号 = commit 数，跳号无害）；想立刻出一版就手动 dispatch `channel=debug`（变量删掉之后）。
+- 只作用于 **debug 通道的两个入口**：push 事件（在两条 workflow 里只会解析成 debug）与 `workflow_dispatch channel=debug`（2026-11-28 补上：此前只挡 push，有人手动 dispatch debug 就把 debug.33039 推给了 debug 通道用户）。`workflow_dispatch` 的 beta / formal、`release: published` 事件一律不看这个变量，暂停期间照常发，包括它们的 TestFlight。暂停期间确实要出一版 debug，先删变量再 dispatch。
+- `release.yml`：`build` 与 `publish-android` 两个 job 在 job 级 `if` 上跳过（Android 构建、debug pulse、滚动 debug 资产上传、更新清单全不跑，连 runner 都不占）。`web-core-linux` / `test-native-linux` / `fushidicts-linux` / `tests` 不受影响——它们是 develop 上唯一的 app 全量单测门；`publish-settings-catalog`（官网设置目录）跟着 `tests` 照跑，它不是调试版发布。
+- `release-desktop.yml`：windows / macos / flatpak-baseapp / linux / ios / testflight / publish 每个 job 都在 job 级 `if` 上跳过（含 develop push 每次的 debug TestFlight 上传）；`publish` 带 `always()`，不会随 needs 跳过，所以它自己也判。
+- 服务端 `hajisensai/fushi-server`：`release-server.yml` 的 plan step 把同名变量交给 `tool/server_release_plan.py`，暂停时 auto 不再挑「develop 新提交 → debug」，app 正式版 / beta 的服务端候选照常。注意可复用 workflow 的 `vars` 取的是**调用方**仓的变量，所以要连服务端 debug 一起停，得在 fushi-server 上另设同名变量（`--repo hajisensai/fushi-server`）；只在本仓设时服务端 debug 照发（它不进五端 app 的更新通道，不影响测试版试用）。
+- 守卫：`fushi/test/build/release_debug_pause_guard_test.dart`（每处引用必须是 `!(vars.FUSHI_PAUSE_DEBUG_RELEASE == 'true' && (github.event_name == 'push' || github.event.inputs.channel == 'debug'))` 整体表达式、哪些 job 挡哪些不挡、服务端暂停判断排在 formal / beta 之后）、`tool/check_release_policy.ps1`（同一表达式与出现次数）、`tool/server_release_plan_test.py`。
+
 ### 反馈修复的发布回填（2026-10-13）
 
 应用内反馈的状态挂在**修复 commit** 上：`.github/workflows/feedback-link.yml` 只挂 push develop/main，由 `tool/feedback_link.mjs` 逐个 commit 解析 message，并用 `GITHUB_TOKEN` 查 `GET /repos/{repo}/commits/{sha}/pulls` 取关联 PR（只认已合并、base 是本分支的）解析其描述，把 `Feedback: <id>[, <id>…]` / `Feedback-NoApp: <id>…` 行（行首、不区分大小写）登记到反馈服务 `POST /v1/ci/feedback/fixed`（幂等：sha 与 scope 不变的重登记不重置发布记录）。commit message 里的 id 归该 commit，PR 描述里的 id 归该 PR 在这次 push 里最后一个 commit，同一 id 多次出现取 push 顺序最后的那个；main 上只处理 distinct 的 commit（正式版后 develop 同步进 main 不重登记）。不用 `pull_request_target`：它要在有 secret 的上下文里处理外部 PR，而合并本身就是 push。两条发布 workflow 在「Publish mirror update manifest」之后各有回填步骤（`release.yml` = android；`release-desktop.yml` 的 publish job 按本次真实存在的产物分别回填 windows / macos / ios），跑 `tool/feedback_mark_released.sh`：GET `pending?channel&platform` → 本地 `git cat-file -e` + `git merge-base --is-ancestor <fix> <github.sha>` → POST `released`，把「这个通道 / 平台的这个版本已包含修复」记下（`manifest_channel` 的 `formal` 映射成 `stable`）。回填与登记**都不会让 workflow 变红**：步骤 `continue-on-error: true`，脚本任何失败只打 `::warning`。需要仓库 **secret `FEEDBACK_CI_TOKEN`**（与反馈 Worker 的同名 secret 一致；未配置时两个脚本 `::notice` 后直接跳过）与可选的仓库 **variable `FEEDBACK_API_BASE`**（接口根，缺省 `https://rank.fushi.moe`）。守卫 `fushi/test/build/feedback_workflow_guard_test.dart`，脚本离线测试 `fushi/test/tools/feedback_{mark_released,link}_script_test.dart`。
+
+### 仓库 BUG 同步进反馈（2026-11-27）
+
+`docs/bugs/BUG-*.md` 里「① 未修复」的条目自动出现在应用内反馈（开发者处理台 `/dev` 与 App 开发者视图，列表项带 `repoBug`），不再靠 agent 手动 `fushi_cli feedback submit`。`.github/workflows/bug-feedback-sync.yml` 在 push develop（`docs/bugs/**` 变化）时跑 `tool/bug_feedback_sync.mjs`，做的是**对账**而不是追加，跑多少次结果都一样：
+
+- 文件状态与 `tool/bug.dart statusIcons` 同一口径：有 ① 没勾 = open；勾了 `[x] ①` = fixed；没勾但「真实性」行有 ❌ = dropped；既无 ① 也无 ② = record。同号多个文件（develop 上还没 settle）的号整轮跳过。
+- `GET /v1/ci/feedback/bugs` 拿服务端已同步的 `{bug, id, hash, status}`，本地算差异后 `POST /v1/ci/feedback/bugs`（每批 ≤ 25）：open 且服务端没有 → 新建（category bug、无反馈人、`origin {"source":"repo_bug"}`，标题 `BUG-NNNN · 标题`，正文是 BUG 文件全文 + 仓库链接，截到 8000 字）；open 且 `SHA-256(标题\n正文)` 变了 → 改文字（服务端那条是「已解决」的 = 回归，拉回 open、清修复记录、时间线记一笔；开发者手动 wont_fix / duplicate / closed 的只改文字不动状态）；服务端 open / in_progress 而文件 fixed → 走与 `/v1/ci/feedback/fixed` 同一份 `MARK_FIXED_SQL`，修复 commit 记本次 push 的 `github.sha`（scope app，发布回填照常跟进）；文件 dropped / record / 已删除或改号 → `closed`。
+- 服务端：`services/leaderboard/src/feedback_repo_bugs.js` + 迁移 `0028_feedback_repo_bug.sql`（`repo_bug` 部分唯一索引保证一个号只有一条，INSERT … ON CONFLICT 原子 upsert）。不扣用户提交的 `feedback` 日预算，只扣 `write_rows`。
+- 凭据沿用 secret `FEEDBACK_CI_TOKEN` 与 variable `FEEDBACK_API_BASE`；没配 token、或 Worker 还没部署带迁移 0028 的版本（接口 404）→ `::notice` 跳过；其他接口错误让这条 workflow 变红（不重试，下一次 push 重新对账）。
+- 回填范围：仓库 variable `BUG_FEEDBACK_MIN_NUMBER`，只为号 ≥ 它的 BUG **新建**反馈（不设 = 全部未修复的都建），已建的照常更新 / 结案。首次上线：先手动部署 Worker（`leaderboard-worker-deploy.yml`，会先跑迁移 0028），再 `gh workflow run bug-feedback-sync.yml -f dry_run=true` 看 `PLAN` 行，确认后 `-f dry_run=false` 跑一次正式对账（之后每次 develop push 自动跑）。
+- 归属（所有者 2026-11-27 拍板挂上）：仓库 variable `BUG_FEEDBACK_AS` = 开发者账户 id 或昵称，服务端按 `scripts/feedback.mjs --as` 同一口径解析（只认 `role='dev'`，查不到 / 昵称重名整批 400 `bad_account`），新建 / 改写的行 `account_id` 挂到该账户，App「我的反馈」里也看得到、能追加说明 / 结案；不设 = 不挂账户、只在开发者视图出现。不带 `as` 的改写不清已有归属。
+- `bug-number-settle.yml` 用 `GITHUB_TOKEN` 推的改号提交不触发 workflow，改号由下一次 develop push 一并对账。
+- 测试：`services/leaderboard/test/feedback_repo_bugs.test.js`（真迁移 + 真 Worker 路由端到端跑脚本：两次同步只一条、勾 ① 结案、改回重开、删除结案、撞号跳过、回填下限、分批）；守卫 `fushi/test/build/feedback_workflow_guard_test.dart`。
 
 ### 设置项目录自动同步到官网（2026-11-16）
 
@@ -457,6 +482,29 @@ GitHub 默认分支是 `develop`（用户 2026-11-25 拍板：开发分支才是
   （`gh run download <run-id> -n android-dart-symbols-<序号>`），先 `readelf -n <abi>/app.so` 核对 Build ID 与报告一致，再
   `llvm-symbolizer --obj=arm64-v8a/app.so 0x05cbbc30 0x0249c48c …`（NDK 的 `toolchains/llvm/prebuilt/*/bin/` 里有）
   得到 Dart 函数名与 `文件:行`。
+
+### Windows 卡死 / 崩溃 dump 的符号（2026-11-27，BUG-5568）
+
+- Windows 上 gen_snapshot 默认 `--strip`，包里 `data/app.so` 只剩节头；app.so 由 Dart 自己的 ELF loader
+  装进私有内存（不是 LoadLibrary），dump 的模块表里没有它，cdb 里 Dart 帧全是 ``0x0000021e`f3f2966f`` 裸地址。
+- **出包另存调试信息**：`release-desktop.yml` 的 `flutter build windows --release` 带
+  `--extra-gen-snapshot-options=--save-debugging-info=…/fushi/build/windows-dart-symbols/app.windows-x64.symbols`，
+  出包后 `dart tool/windows_dump_symbolize.dart verify <app.so> <symbols>` 核对 build-id，按发布序号上传 artifact
+  `windows-dart-symbols-<序号>`（debug 通道 14 天、其余 90 天，`continue-on-error`、不进 Release 资产）。
+  包里的 app.so 与 app 内 Dart 栈格式都不变；**不用 `--split-debug-info`**（理由同 Android）。守卫
+  `fushi/test/build/windows_dart_symbols_guard_test.dart`。
+- **dump 自带基址**：runner（`fushi/windows/runner/dart_aot_image.h`）找到装载中的 app.so，把
+  `dart_aot base=0x… span=0x… build_id=…` 写进每份 minidump（user stream `0x46555348`），hang dump 时
+  `hang_watchdog.log` 也记一行。BUG-5568 之前的 dump 没有这条，基址要从活进程扫（见 BUG 文件）。
+- **引擎符号**：`flutter_windows.dll`（含 Dart VM 与 GC）的 pdb 在补丁引擎 zip 里——
+  `ci/patches/flutter-engine/<Flutter 版本>/artifacts.json` 的 `url`，解压取 `windows-x64-release/`。
+  装了补丁引擎的包签过名，md5 与 zip 里的 dll 不同，但 pdb GUID 一致，cdb 能直接匹配。
+- **还原**：装的版本号 `3.4.0-debug.<序号>`（`fushi.exe` 文件版本）→ `gh run download <run-id> -n windows-dart-symbols-<序号>`，然后
+  `dart tool/windows_dump_symbolize.dart stack --dump hang-….dmp --dart-symbols app.windows-x64.symbols --engine-symbols <引擎 pdb 目录>`
+  （`--threads main` 只看主线程；旧 dump 加 `--base 0x…`）。输出是 cdb 的栈，Dart 帧后面接
+  `[dart] 函数 (文件:行)`（经 `flutter symbolize`）。
+- **看门狗自己没跑也会记**：看门狗线程两圈之间隔了 ≥2 s（不含系统睡眠）就往 `hang_watchdog.log` 写
+  `watchdog thread did not run for … ms (wall clock … ms)`——整个进程没被调度时其它判据全都量不到。
 
 ### iOS 包体积与崩溃符号（2026-11-15）
 
@@ -660,12 +708,16 @@ gitignore，消费方（Windows CMake 的 MD5 校验、Gradle、podspec / Makefi
 - **清单** `tool/vendored_binaries.json`：每项 `path / group / size / sha256 / url`。资产名按内容寻址
   `<sha256 前 16 位>-<basename>`，同一路径的每个版本各占一个资产，旧提交照样取到自己那份字节。
   group：`windows`（mpv-dev 7z、ANGLE.7z、libplacebo DLL）、`galgame`（LunaHook/LunaHost DLL）、
-  `mihon`（jogamp 离线 Maven 的两个 jar）、`android`（ffmpeg-kit-next.aar、bluray-menu jar）、
+  `mihon`（jogamp 离线 Maven 的两个 jar）、`mihon-build` + `mihon-jdk-{linux-x64,linux-arm64,macos-arm64,windows-x64}`
+  （Mihon runtime 离线构建包：Gradle 发行包、Gradle 只读依赖缓存、JDK 归档，见下文「发版构建不现场联网」）、`android`（ffmpeg-kit-next.aar、bluray-menu jar）、
   `ios`（iOS libmpv tar.gz、FFmpegKit xcframework 里的 22 个 Mach-O）、`macos`（两个 tar.gz）。
 - **取回** `python3 tool/vendored_binaries.py fetch [--group G ...]`（纯标准库，Windows 入口
   `tool/vendored_binaries.ps1`）：已对上的文件只算一遍 sha256；缺的 / 不一致的先查本机缓存
   （`FUSHI_VENDORED_CACHE`，默认 `%LOCALAPPDATA%\fushi\vendored-binaries` / `~/.cache/fushi/vendored-binaries`，
   所有 worktree 共用），再经 `HTTPS_PROXY` 下载；大小或 sha256 不符直接失败，不落盘。只校验不写用 `check`。
+  不带 `--group` 时取 `FUSHI_VENDORED_GROUPS`（空格分隔）里的组，没设才取全部：Linux bundle 容器
+  （`tool/linux/build_bundle.sh`）设成 `mihon`，否则 bootstrap 会把它用不到的 ~150 MB iOS / Android /
+  Windows 件全拉一遍（2026-11-27 正是其中一个 iOS framework 的 HTTP 500 打红了 Linux 发版）。
   - **网络重试（外部 CDN，允许的有界例外）**：只重试传输层失败——连不上 / 超时 / body 比自己的
     `Content-Length` 短（断流）/ HTTP 5xx，共 `DOWNLOAD_ATTEMPTS = 3` 次、退避 2 s × 次数，**每次失败都打一行**
     `<path>: download attempt N/3 failed (...); retrying in Ns`，用完报错退出。HTTP 4xx 与「完整收到但 size /
@@ -682,8 +734,13 @@ gitignore，消费方（Windows CMake 的 MD5 校验、Gradle、podspec / Makefi
   `fushi/tool/dist_test/worker_prepare.sh`；CI 用 composite action `.github/actions/fetch-vendored-binaries`
   （`groups:` 输入），紧跟 checkout：`main.yml` build / unit-tests、`release.yml` build / tests、
   `build-multiplatform.yml` android / macos / ios / windows、`release-desktop.yml` windows / macos / ios、
-  `ci-config-gate.yml` guards、`native-galgame-gate.yml` guards。新 job 读这些文件就照抄这一步。
-  不挂 `actions/cache`：同机房下载几秒，按 group 缓存每版要吃约 0.5 GB 缓存配额（见上节）。
+  `ci-config-gate.yml` guards、`native-galgame-gate.yml` guards、`release-desktop.yml` linux（`mihon`）。
+  新 job 读这些文件就照抄这一步。不挂 `actions/cache`：配额约一小时换一轮（见上节）。
+  **发版 job 加 `durable: 'true'`**（`release-desktop.yml` windows / macos / ios / linux、`release.yml` build，
+  守卫钉住）：同一份字节再按内容地址 `vendored-<组>-<digest>`（`vendored_binaries.py digest`）存进原生产物
+  持久库，restore 命中就把下载缓存填满、fetch 一个字节都不下；未命中且在 develop / main 上才 save。release 资产
+  的 CDN 与 workflow artifact 是 GitHub 的两套后端，一边抖（2026-11-27 release CDN 连续 HTTP 500）另一边还在。
+  fetch 仍逐个对清单校验，库里的件喂不进清单没钉的字节。要 `actions: read`。
   native artifact store 的 Mihon / galgame 名字经 `names.sh` 的 `vendored_identity` 折入清单 sha256
   （`git ls-tree` 已看不到这些字节）。
 - **从旧分支切回来**：切到仍跟踪这些文件的旧提交再切回，git 会删掉它们，重跑 `fetch` 即可（走缓存，秒级）。
@@ -703,6 +760,22 @@ gitignore，消费方（Windows CMake 的 MD5 校验、Gradle、podspec / Makefi
    `fushi/test/build/vendored_binaries_manifest_guard_test.dart` 会把清单与各消费方钉值逐一对账、要求每条路径
    被 `.gitignore` 精确排除且不被跟踪、`third_party/` 与 `native/**/third_party/` 下不得再跟踪 >1 MiB 的文件
    （白名单只有 `m_extension_server/upstream_src` 的上游字体），并钉住上面每个 CI job 的取回步骤。
+
+### 发版构建不现场联网（2026-11-27）
+
+发版构建只依赖 GitHub（跑构建的平台本身）与 Apple（签名 / 公证 / TestFlight），其余第三方服务器不在构建路径上：
+
+- **Mihon runtime**：三端都先按输入哈希从原生产物持久库取（`names.sh` windows / macos / flatpak 分支的
+  `mihon` 键；输入含 `third_party/mihon_build`），命中连 JDK 都不碰；未命中才 `fetch-vendored-binaries`
+  `mihon-build mihon-jdk-<平台>`（durable）再由 `tool/mihon/build_desktop_runtime.{sh,ps1}` 离线构建：
+  解开 vendored Gradle 发行包直接跑（不走 `gradlew`）、vendored 依赖缓存作 `GRADLE_RO_DEP_CACHE`、全新
+  `GRADLE_USER_HOME`、`--offline`，缺坐标当场红。依赖变了按 `third_party/mihon_build/README.md` 重新打包。
+  守卫 `fushi/test/build/mihon_offline_build_guard_test.dart`。
+- **iOS pod**：trunk pod 只允许从 GitHub 取源码、且不带指向别处的子模块；`onnxruntime-*`（`third_party/onnxruntime_pods`）
+  与 `UniversalDetector2`（源码收在 `third_party/universal_detector2_pod`，原先子模块在 gitlab.freedesktop.org）
+  已本地化。新增 trunk pod 先审 podspec `source`，守卫 `fushi/test/build/apple_pods_offline_guard_test.dart`。
+  仍在路径上的第三方：CocoaPods 的 spec CDN（cdn.cocoapods.org → jsDelivr），只在 Pods 缓存未命中时解析 spec 用。
+- **vendored 二进制**：release 资产 + 持久库两个来源（见上）。
 
 ## 依赖补丁
 

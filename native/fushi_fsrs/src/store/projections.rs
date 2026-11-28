@@ -14,7 +14,7 @@ use rusqlite::Connection;
 use super::SrsCore;
 #[cfg(test)]
 use super::slim;
-use crate::history::{Kind, Log, LogCols, NONE_I64, Origin, Outcome, RType, parse_stored};
+use crate::history::{Kind, Log, NONE_I64, Origin, Outcome, RType, StoredLog, parse_stored};
 use crate::projection::{self, Alg, Day, EffLog, MemAlg, RWKV_ROW, RwkvIds};
 
 /// [SrsCore::rwkv_replay] 取哪些行（见那里）。
@@ -75,6 +75,7 @@ fn rwkv_divergence(
 struct ScanLog {
     rowid: i64,
     id: ScanId,
+    order_id: Option<ScanId>,
     revokes: Option<ScanId>,
     physical: i64,
     counter: i64,
@@ -170,6 +171,7 @@ impl ScanLog {
     fn log<'a>(&'a self, card: &'a str, writers: &'a [Box<str>]) -> Log<'a> {
         Log {
             id: self.id.text(),
+            order_id: self.order_id.as_ref().map(ScanId::text),
             card: Cow::Borrowed(card),
             writer: Cow::Borrowed(&writers[self.writer as usize]),
             physical: self.physical,
@@ -194,7 +196,7 @@ impl ScanLog {
             rtype: self.rtype,
             rating: opt_of(self.rating),
             at: self.at,
-            dur: self.dur,
+            dur: crate::history::counted_answer_ms(self.origin, self.dur),
             res: self.res.as_ref().map(ScanOutcome::outcome),
             mem_alg: self.mem_alg,
             restore: self.restore,
@@ -220,11 +222,9 @@ impl LogsByCard {
         &mut self,
         card: String,
         rowid: i64,
-        stored: &str,
-        server_time: Option<i64>,
-        cols: Option<&LogCols>,
+        stored: StoredLog<'_>,
     ) -> Result<(), String> {
-        let (log, res, extra) = parse_stored(stored, server_time, cols)?;
+        let (log, res, extra) = parse_stored(stored)?;
         let writer = match self.writer_ix.get(&*log.writer) {
             Some(&w) => w,
             None => {
@@ -238,6 +238,7 @@ impl LogsByCard {
         let scan = ScanLog {
             rowid,
             id: ScanId::of(&log.id),
+            order_id: log.order_id.as_deref().map(ScanId::of),
             revokes: log.revokes.as_deref().map(ScanId::of),
             writer,
             physical: log.physical,
@@ -261,6 +262,16 @@ impl LogsByCard {
         };
         self.by_card.entry(card).or_default().push(scan);
         Ok(())
+    }
+
+    /// 血统 [lineage] 的最后一条 RWKV 保留评分（[projection::rwkv_kept] 的最后一条，与 [rwkv_cards_of] 摘要里的同一条）：
+    /// (时刻, 评分, 复习类型代码 `RType as i64`)；没有保留评分 = None。缓存层与卡行一起物化成 `rwkv_last`
+    /// （`store/gen4/cache.rs`），RWKV 查询行直接读表，不再逐卡重放。
+    pub(crate) fn rwkv_last(&self, lineage: &[String]) -> Option<(i64, i64, i64)> {
+        let eff = self.effective(lineage, None);
+        projection::rwkv_kept(&eff)
+            .last()
+            .map(|&i| (eff[i].at, eff[i].rating.unwrap_or(0), eff[i].rtype as i64))
     }
 
     /// 一份历史（血统里各卡日志之和）的有效日志；[upto] 给了就只看 rowid 不超过它的日志。
@@ -300,7 +311,7 @@ fn fetch_logs(conn: &Connection, cards: &[&str]) -> Result<LogsByCard, String> {
             let card: String = row.get(1).map_err(|e| e.to_string())?;
             let st: Option<i64> = row.get(2).map_err(|e| e.to_string())?;
             let (stored, cols) = slim::log_row(row, 3).map_err(|e| e.to_string())?;
-            logs.push(card, rowid, &stored, st, cols.as_ref())?;
+            logs.push(card, rowid, (&stored, st, cols.as_ref(), None))?;
         }
     }
     Ok(logs)
@@ -573,7 +584,8 @@ pub(crate) fn rwkv_scan_on(
         }
         let st: Option<i64> = row.get(2).map_err(|e| e.to_string())?;
         let (stored, cols) = slim::log_row(row, 3).map_err(|e| e.to_string())?;
-        scan.logs.push(card, rowid, &stored, st, cols.as_ref())?;
+        scan.logs
+            .push(card, rowid, (&stored, st, cols.as_ref(), None))?;
     }
     Ok(scan)
 }

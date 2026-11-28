@@ -92,8 +92,11 @@ void main() {
     throw StateError('没有路由 $method $path');
   }
 
-  test('偏好：自动路径默认开', () {
-    expect(prefs.libraryCurateAuto, isTrue);
+  // 用户 2026-11-26：「不要自动开，要问了用户才开」——两条自动路径默认都关，
+  // 默认只有手动触发。
+  test('偏好：库管家自动路径与 AI 助手自动复查默认关', () {
+    expect(prefs.libraryCurateAuto, isFalse);
+    expect(prefs.libraryAgentReviewAuto, isFalse);
   });
 
   test('run → runs / status / undo / pending；没指派 AI 不要求同意', () async {
@@ -122,7 +125,7 @@ void main() {
             as Map<String, Object?>;
     expect(status['running'], isFalse);
     expect((status['last']! as Map)['id'], run['id']);
-    expect(status['auto'], isTrue);
+    expect(status['auto'], isFalse, reason: '自动路径默认关');
 
     final Map<String, Object?> undo =
         await call('POST', '$kLibraryCurateCtlRoot/runs/${run['id']}/undo')
@@ -252,7 +255,7 @@ void main() {
     expect(await revertLibraryCurateLinkWrites(db, back), 0);
   });
 
-  test('自动路径：开关开着就接管旧自动整理的触发点；没指派任何 AI 不调度', () {
+  test('自动路径：开关开着就接管旧自动整理的触发点；没指派任何 AI 不调度', () async {
     installLibraryCurateAutomatic(
       LibraryCurateAutoHost(
         settings: prefs,
@@ -261,6 +264,8 @@ void main() {
         curator: () => curator,
       ),
     );
+    expect(libraryCurateAutoOwnsTriggers(), isFalse, reason: '默认关：不接管');
+    await prefs.setLibraryCurateAuto(true);
     expect(libraryCurateAutoOwnsTriggers(), isTrue);
     scheduleAutomaticLibraryCurate();
     expect(debugLibraryCurateAutoScheduled, isFalse);

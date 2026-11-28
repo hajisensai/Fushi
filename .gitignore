@@ -224,6 +224,12 @@ fushi/tool/dist_test/workers.local.json
 /third_party/media_kit_libs_macos_video/native/libmpv-xcframeworks-bluray.tar.gz
 /third_party/media_kit_libs_windows_video/vendored/ANGLE.7z
 /third_party/media_kit_libs_windows_video/vendored/mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav2-hwcrop1-lua1-mkvlace1-mkvdts1-dovi1-ffu2-dvd1-rdisc1-cdda1.7z
+/third_party/mihon_build/gradle-9.2.1-bin.zip
+/third_party/mihon_build/gradle-ro-dep-cache.tar.gz
+/third_party/mihon_build/jdk/OpenJDK21U-jdk_x64_windows_hotspot_21.0.11_10.zip
+/third_party/mihon_build/jdk/amazon-corretto-21.0.12.8.1-linux-aarch64.tar.gz
+/third_party/mihon_build/jdk/amazon-corretto-21.0.12.8.1-linux-x64.tar.gz
+/third_party/mihon_build/jdk/amazon-corretto-21.0.12.8.1-macosx-aarch64.tar.gz
 
 # tool/vendored_binaries.py staging files left behind when a fetch is killed mid-copy.
 *.vendored-part

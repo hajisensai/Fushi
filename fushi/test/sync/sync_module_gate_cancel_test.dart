@@ -195,6 +195,10 @@ void main() {
         );
         Directory('${work.path}/$name').createSync(recursive: true);
         File('${work.path}/$name/index.json').writeAsStringSync('{}');
+        // 装载必需的三组文件齐了才算本机已装（localDictionaryFileStates），否则
+        // 这两本判 restorable、只拉不推，词典阶段一项都不开工。
+        File('${work.path}/$name/blobs.bin').writeAsBytesSync(<int>[1, 2, 3]);
+        File('${work.path}/$name/key.index').writeAsBytesSync(<int>[4, 5]);
       }
       final FakeAssetStore store = FakeAssetStore();
       final _Flag flag = _Flag();

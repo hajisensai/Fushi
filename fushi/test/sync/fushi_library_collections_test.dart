@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:drift/drift.dart' show DatabaseConnection, Value;
 import 'package:drift/native.dart';
@@ -9,6 +10,7 @@ import 'package:fushi_engine/sync/collection_sync_engine.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
+import 'package:fushi_engine/sync/host_manifest_bodies.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi/src/sync/sync_backend.dart' show syncChannelScopeOf;
 import 'package:fushi/src/sync/sync_orchestrator.dart';
@@ -665,6 +667,117 @@ void main() {
       expect(again.collectionsUpdated, 0);
       expect(await orderOf(hostDb, 'S'), <String>['v3', 'v1', 'v2']);
     });
+
+    test('手机先推自建合集、后推书到 host：主归属立即命中合集不拆散且无重复', () async {
+      Future<String> insertBook(FushiDatabase db, String title) async {
+        await db.insertEpubBook(
+          EpubBooksCompanion.insert(
+            bookKey: title,
+            title: title,
+            epubPath: '/tmp/$title.epub',
+            extractDir: '/tmp/$title',
+            chapterCount: 1,
+            chaptersJson: '[]',
+            importedAt: 1000,
+          ),
+        );
+        return (await db.resolveEpubBookUid(title))!;
+      }
+
+      final FushiDatabase clientDb = memDb();
+      final InterconnectSyncBackend backend = await buildBackend(clientDb);
+      final String clientUid1 = await insertBook(clientDb, '雪国');
+      final String clientUid2 = await insertBook(clientDb, '伊豆の踊子');
+      final int cc = await clientDb.createMediaCollection(
+        '川端康成',
+        collectionType: 'collection',
+      );
+      await clientDb.addToCollection(cc, MediaKind.epub, clientUid1);
+      await clientDb.addToCollection(cc, MediaKind.epub, clientUid2);
+      await tick();
+
+      // 第一步：合集先同步到 host（此时 host 尚未收到这两本书）。
+      await orchestrator(
+        clientDb,
+        backend,
+      ).syncCollectionsLiveForTest(SyncRunReport(), backend);
+      expect(await orderOf(hostDb, '川端康成', 'collection'), <String>[
+        '雪国',
+        '伊豆の踊子',
+      ]);
+
+      // 第二步：手机稍后把书推入 host（insertEpubBook 落库）。
+      final String hostUid1 = await insertBook(hostDb, '雪国');
+      final String hostUid2 = await insertBook(hostDb, '伊豆の踊子');
+
+      // 书一落库，host 成员表必须已立即升格为本机 uid，主归属不再掉成散书。
+      expect(await orderOf(hostDb, '川端康成', 'collection'), <String>[
+        hostUid1,
+        hostUid2,
+      ]);
+      final Map<String, int> hostPrimary = await hostDb
+          .getPrimaryCollectionIdByEntry();
+      final int hostColId = (await hostDb.getMediaCollectionByNaturalKey(
+        '川端康成',
+        'collection',
+      ))!.id;
+      expect(hostPrimary['epub|$hostUid1'], hostColId);
+      expect(hostPrimary['epub|$hostUid2'], hostColId);
+      expect(hostPrimary.containsKey('epub|雪国'), isFalse);
+      expect(hostPrimary.containsKey('epub|伊豆の踊子'), isFalse);
+
+      final List<RemoteBookInfo> listed = await buildSvc(hostDb).listBooks();
+      expect(
+        listed.map((RemoteBookInfo b) => b.collection?.collectionName).toList(),
+        <String?>['川端康成', '川端康成'],
+      );
+
+      // 第三步：下一轮同步双方零变更、不产生重复。
+      await tick();
+      final SyncRunReport steady = SyncRunReport();
+      await orchestrator(
+        clientDb,
+        backend,
+      ).syncCollectionsLiveForTest(steady, backend);
+      expect(steady.errors, isEmpty);
+      expect(steady.collectionsUpdated, 0);
+      expect(await orderOf(hostDb, '川端康成', 'collection'), <String>[
+        hostUid1,
+        hostUid2,
+      ]);
+    });
+
+    test('host 已有双行重复脏数据时，mergeCollectionManifest 入口先自愈去重', () async {
+      await hostDb.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: '吾輩は猫である',
+          title: '吾輩は猫である',
+          epubPath: '/tmp/neko.epub',
+          extractDir: '/tmp/neko',
+          chapterCount: 1,
+          chaptersJson: '[]',
+          importedAt: 1000,
+        ),
+      );
+      final String hostUid = (await hostDb.resolveEpubBookUid('吾輩は猫である'))!;
+      final int hc = await hostDb.createMediaCollection(
+        '夏目漱石',
+        collectionType: 'collection',
+      );
+      await hostDb.addToCollection(hc, MediaKind.epub, hostUid);
+      await hostDb.addToCollection(hc, MediaKind.epub, '吾輩は猫である');
+      expect(await orderOf(hostDb, '夏目漱石', 'collection'), hasLength(2));
+
+      final FushiDatabase clientDb = memDb();
+      final InterconnectSyncBackend backend = await buildBackend(clientDb);
+      await tick();
+      await orchestrator(
+        clientDb,
+        backend,
+      ).syncCollectionsLiveForTest(SyncRunReport(), backend);
+
+      expect(await orderOf(hostDb, '夏目漱石', 'collection'), <String>[hostUid]);
+    });
   });
 
   // ── 稳态不回写：host 不存 publishedAt，client 不得每轮重盖 now 再整份 POST ──
@@ -1021,5 +1134,16 @@ class _CountingCollectionsHostService extends LocalLibraryHostService {
   ) {
     mergePosts++;
     return super.mergeCollectionManifest(incoming);
+  }
+
+  /// POST 端点走后台报文体路径（BUG-5606）：合集 POST 在这里计数。
+  @override
+  Future<HostManifestMergeResult> mergeManifestBody(
+    HostManifestKind kind,
+    Uint8List body, {
+    String? encodingName,
+  }) {
+    if (kind == HostManifestKind.collections) mergePosts++;
+    return super.mergeManifestBody(kind, body, encodingName: encodingName);
   }
 }

@@ -145,7 +145,9 @@ MediaLinkEndpoint videoCollectionEndpoint(int collectionId) =>
 /// - 来源 `user`：存量合集全是 `user`（spec §8），用户随手建的阅读清单不能把不相干的
 ///   书连成一部作品，所以只在「像一个系列」时算：有整理分组键 [organizeKey]；或是带
 ///   作品身份的视频合集（[hasWorkIdentity]：绑了 AniList id / 挂着带外部 id 的刮削
-///   作品）；或书成员里同一个 [parseBookSeriesKey] 系列键的书 ≥ 2 本且**超过全部
+///   作品）；或只装一个视频的合集（[memberCount] 为 1：合集就是那一个视频的外壳，
+///   不可能把不相干的东西连起来；不认的话合集与它唯一那集会成两个互不相干的条目，
+///   关系网画成两个一模一样的节点、AI 还会给它俩补「同一作品」）；或书成员里同一个 [parseBookSeriesKey] 系列键的书 ≥ 2 本且**超过全部
 ///   成员数的一半**（[memberCount] 是换算后的去重成员数——混了视频 / 游戏的合集按
 ///   全体算过半，比只在书里算过半更严）。
 bool isWorkSeriesCollection({
@@ -171,6 +173,7 @@ bool isWorkSeriesCollection({
     case CollectionOrigin.user:
       if (organizeKey != null && organizeKey.isNotEmpty) return true;
       if (hasWorkIdentity) return true;
+      if (hasVideo && memberCount == 1) return true;
       final Map<String, int> countByKey = <String, int>{};
       for (final String title in bookTitles) {
         final String? key = parseBookSeriesKey(title)?.key;

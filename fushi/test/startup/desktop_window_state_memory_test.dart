@@ -225,12 +225,12 @@ void main() {
       // main.dart 的退出链第一步就 windowManager.hide()，此后进程最长还活约 6s，
       // 互斥量一直被它持有、隐藏窗口也照样被 FindWindowW 找得到。转交给它 = 路径
       // 整个丢掉；只前置一个看不见的窗口 = 用户双击视频「点了没反应」。
-      expect(
-        runner,
-        contains('::IsWindowVisible(exiting)'),
-        reason: '必须能把「正在退出」和「正常运行」区分开',
-      );
-      final int probeAt = runner.indexOf('::IsWindowVisible(exiting)');
+      // BUG-5483：「不可见」还可能是启动中（隐藏建窗、首帧后才显窗），判据改成
+      // startup_reveal_policy.h 的 ClassifyExistingInstance（显示过又不可见 ⇔ 退出中）。
+      const String exitingProbe =
+          'existing_state == ::fushi::ExistingInstanceState::kExiting';
+      expect(runner, contains(exitingProbe), reason: '必须能把「正在退出」和「正常运行」区分开');
+      final int probeAt = runner.indexOf(exitingProbe);
       final int waitAt = runner.indexOf('single_instance_mutex.Wait', probeAt);
       expect(
         waitAt,

@@ -21,6 +21,7 @@
 #include "ime_language_switch.h"
 #include "screen_ocr_overlay.h"
 #include "system_ocr_channel_host.h"
+#include "tray_icon.h"
 #include "win32_window.h"
 #include "window_capture_reply_queue.h"
 
@@ -261,6 +262,18 @@ class FlutterWindow : public Win32Window {
   // Owned window icons set via ApplyWindowIcon. nullptr until first applied.
   HICON icon_big_ = nullptr;
   HICON icon_small_ = nullptr;
+
+  // System tray icon + menu (app.fushi/tray). Created when Dart first
+  // configures it; menu labels / entries / close-to-tray come from Dart.
+  void RegisterTrayChannel();
+  // Hides the main window into the tray (close button / Alt+F4 while
+  // close-to-tray is on) and tells Dart. Returns false when the tray icon is
+  // not showing (then the close goes on as a normal close).
+  bool HideToTray();
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      tray_channel_;
+  std::unique_ptr<fushi::TrayIcon> tray_;
+  bool close_to_tray_ = false;
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

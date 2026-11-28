@@ -406,34 +406,22 @@ Future<List<StorageBookRef>> loadStorageBookRefs(FushiDatabase db) async {
 /// 存储页视频条目的扫描输入：`video_books` 全部行 + 所属作品（视频合集）名。
 ///
 /// 一条视频可属于多个合集：取 id 最小的那个（最早建立的，一般就是下载 / 导入时
-/// 自动建的作品合集），保证每条视频只出现在一个组里。
+/// 自动建的作品合集），保证每条视频只出现在一个组里。归组在 SQL 侧做完
+/// （[FushiDatabase.videoBookPrimaryCollectionNames]）：整表读合集成员到 UI isolate
+/// 再内存过滤，用户库是 85k 行只为用上几百行（BUG-5536）。
 Future<List<StorageVideoRef>> loadStorageVideoRefs(FushiDatabase db) async {
   // 瘦投影（同 [loadStorageBookRefs]）：只取 uid / 标题 / 路径三列。
   final List<({String bookUid, String title, String videoPath})> rows = await db
       .allVideoBookPaths();
-  final Map<int, String> collectionNames = <int, String>{
-    for (final MediaCollectionRow c in await db.getAllMediaCollections())
-      c.id: c.name,
-  };
-  final Map<String, int> collectionOf = <String, int>{};
-  for (final MediaCollectionItemRow item in await db.getAllCollectionItems()) {
-    if (item.mediaType != MediaKind.video.dbValue) continue;
-    if (!collectionNames.containsKey(item.collectionId)) continue;
-    final int? existing = collectionOf[item.entryKey];
-    if (existing == null || item.collectionId < existing) {
-      collectionOf[item.entryKey] = item.collectionId;
-    }
-  }
+  final Map<String, String> groupOf = await db
+      .videoBookPrimaryCollectionNames();
   return <StorageVideoRef>[
     for (final (:String bookUid, :String title, :String videoPath) in rows)
       StorageVideoRef(
         id: bookUid,
         title: title,
         videoPath: videoPath,
-        group: switch (collectionOf[bookUid]) {
-          final int id => collectionNames[id],
-          null => null,
-        },
+        group: groupOf[bookUid],
       ),
   ];
 }

@@ -1210,6 +1210,17 @@ final class SrsCore {
     ...ids,
   ]);
 
+  /// RWKV 末条：[cardIds] 每张卡最后一条保留评分（缓存层与卡行一起物化的 `rwkv_last`，一次表读，不重放历史）。
+  /// 输出 `[n, (时刻|NONE, 评分, 复习类型代码) × n]`（i64 小端）。[profile] 同 [historyStates]。
+  Uint8List rwkvLastRatings(List<String> cardIds, {String? profile}) =>
+      _command(
+        _b.rwkvRows,
+        _lineagePage(<List<String>>[
+          for (final String c in cardIds) <String>[c],
+        ], profile),
+        <int>[cardIds.length, 2, 0, 0, 0],
+      );
+
   /// RWKV 全量回放（[profileUid] 的日志一条语句扫出；[since] 之后的漏卡一并返回）。
   ///
   /// [rebaseSince] 给了就是局部重放（lib.rs `SrsCore::rwkv_replay`）：同一快照里算出 rowid 在它之后的日志

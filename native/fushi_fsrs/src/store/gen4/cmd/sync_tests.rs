@@ -670,8 +670,15 @@ fn a_cache_built_under_older_rules_is_rebuilt_once_on_open() {
             })
             .map_err(|e| e.to_string())
     };
-    // 没有这一项、最早的 0、上一版口径（每次 +1 时那批已打开过的库记的就是它）都要重建。
-    let previous = (CACHE_RULES - 1).to_string();
+    // 没有这一项、最早的 0、上一版口径（每次 +1 时那批已打开过的库记的就是它）都要重建——上一版正好是只差
+    // `rwkv_last` 的 `RWKV_FILL_FROM` 时它走就地升级 + 分批回填（BUG-5547，`training_tests.rs`
+    // `rwkv_last_backfills_in_batches_after_an_in_place_rules_upgrade`），这里换成再早一版。
+    use crate::store::gen4::cache::RWKV_FILL_FROM;
+    let mut previous = CACHE_RULES - 1;
+    if RWKV_FILL_FROM == Some(previous) {
+        previous -= 1;
+    }
+    let previous = previous.to_string();
     for stale in [None, Some("0"), Some(previous.as_str())] {
         let before = a.direct(|t, col| {
             assert_eq!(t.derive_cfg(col, RULES_KEY)?, Some(CACHE_RULES.to_string()));

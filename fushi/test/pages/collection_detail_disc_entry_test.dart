@@ -348,7 +348,9 @@ void main() {
             onOpenEpisode: (VideoBookRow row) => opened.add(row.bookUid),
             onChanged: () {},
             remote: CollectionRemoteContext(
-              loadRemoteVideos: () async => <RemoteVideoInfo>[info],
+              loadRemoteMembers: (List<String> ids) async => <RemoteVideoInfo>[
+                info,
+              ],
               openEpisode:
                   (
                     RemoteVideoInfo episode,

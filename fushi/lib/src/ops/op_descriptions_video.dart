@@ -6,6 +6,8 @@ import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart'
 import 'package:fushi_engine/media/video/metadata/video_work_claim_snapshot.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/media/video/subtitle/library_subtitle_fill_entry.dart'
+    show librarySubtitleFillController;
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/ops/ctl_video_support.dart'
@@ -1173,6 +1175,105 @@ List<OpDescription> _describeSubtitleOps(
       ),
     ],
     undo: _subtitleFileUndo(),
+  ),
+  OpDescription(
+    id: 'video.subtitle.fill',
+    method: 'POST',
+    pattern: '$_video/subtitle-fill',
+    summary:
+        'Fill missing subtitles in one language across the whole video library '
+        '(or one collection / listed videos). Per episode: skip if a subtitle '
+        'in that language already exists or subtitles are switched off; else '
+        'select a matching embedded text track, OCR a matching embedded '
+        'graphic (PGS) track, download one online (Blu-ray discs: retimed '
+        'line by line against an on-device ASR pass, falling back to the ASR '
+        'transcript when the download is another version), or generate one '
+        'with on-device ASR. Never calls an AI provider. Returns a job id '
+        '(video.job.get); undo deletes the written files and restores the '
+        'previous subtitle selections.',
+    risk: OpRisk.write,
+    longRunning: true,
+    taskIdOf: (Object? result) => _map(result)['videoJob']?.toString(),
+    taskStatus: (String id) => opVideoJobTaskStatus(kit, id),
+    availability: video,
+    params: const <OpParam>[
+      OpParam.string(
+        'language',
+        description: 'Target subtitle language code (ja, zh, en ...).',
+        required: true,
+      ),
+      _collectionIdParam,
+      OpParam.stringList(
+        'bookUids',
+        description: 'Video bookUids to fill (default: whole library).',
+      ),
+      OpParam.boolean(
+        'dryRun',
+        description: 'Only report what each episode needs; change nothing.',
+      ),
+      OpParam.boolean(
+        'generate',
+        description:
+            'Generate with on-device ASR when nothing else works '
+            '(default true).',
+      ),
+      OpParam.boolean(
+        'ocr',
+        description:
+            'OCR embedded graphic tracks '
+            '(default true).',
+      ),
+      OpParam.boolean(
+        'download',
+        description:
+            'Download online subtitles '
+            '(default true).',
+      ),
+      OpParam.boolean(
+        'retime',
+        description: 'Retime disc downloads against ASR (default true).',
+      ),
+      _waitParam,
+    ],
+    undo: opCustomUndo(
+      payloadOf: (CtlCall call, Map<String, Object?> before, Object? result) =>
+          <String, Object?>{'jobId': _map(result)['jobId']?.toString()},
+      describe: (Map<String, Object?> p) => 'subtitle fill ${p['jobId']}',
+      revert: (Map<String, Object?> payload) async {
+        final String? jobId = payload['jobId']?.toString();
+        if (jobId == null) return const OpUndoOutcome.done();
+        await librarySubtitleFillController(kit.context.appModel).undo(jobId);
+        return const OpUndoOutcome.done();
+      },
+    ),
+  ),
+  OpDescription(
+    id: 'video.subtitle.fill.status',
+    method: 'GET',
+    pattern: '$_video/subtitle-fill',
+    summary:
+        'Progress and per-episode report of the latest library subtitle fill.',
+    availability: video,
+  ),
+  OpDescription(
+    id: 'video.subtitle.fill.undo',
+    method: 'POST',
+    pattern: '$_video/subtitle-fill-undo',
+    summary:
+        'Undo one library subtitle fill by job id: delete the files it wrote '
+        'and restore the subtitle selections it changed (episodes whose '
+        'selection changed again since are left alone). Irreversible: the '
+        'deleted subtitles can only come back by running the fill again.',
+    // 删掉的是生成 / 下载来的字幕文件，复原只能重跑整次补齐（可能几个小时）。
+    risk: OpRisk.irreversible,
+    availability: video,
+    params: const <OpParam>[
+      OpParam.string(
+        'jobId',
+        description: 'Fill job id (fill-...).',
+        required: true,
+      ),
+    ],
   ),
   OpDescription(
     id: 'video.subtitle.search',

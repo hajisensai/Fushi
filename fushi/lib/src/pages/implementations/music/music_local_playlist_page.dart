@@ -167,8 +167,13 @@ class _MusicLocalPlaylistPageState extends ConsumerState<MusicLocalPlaylistPage>
 
   void _playAll(_PlaylistData d, {bool shuffle = false}) {
     final MusicPlaylistRow p = d.playlist ?? widget.playlist;
+    final MusicTrackPathOf trackPathOf = musicTrackPathsOf(<MusicTrackRow>[
+      for (final MusicPlaylistItem i in d.items)
+        if (i.entry case MusicLocalEntry(:final MusicTrackRow track)) track,
+    ]);
     final List<MusicPlayItem> items = <MusicPlayItem>[
-      for (final MusicPlaylistItem i in d.items) ?i.entry.playItem(d.albums),
+      for (final MusicPlaylistItem i in d.items)
+        ?i.entry.playItem(d.albums, trackPathOf: trackPathOf),
     ];
     unawaited(
       _app.musicSession.engine.playQueue(

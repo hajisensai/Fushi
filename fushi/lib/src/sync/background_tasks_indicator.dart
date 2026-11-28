@@ -7,6 +7,8 @@ import 'package:fushi/src/srs/srs_sync_progress_ui.dart';
 import 'package:fushi/src/sync/manual_sync_ui.dart';
 import 'package:fushi/src/sync/sync_activity.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
+import 'package:fushi/src/sync/sync_failure.dart';
+import 'package:fushi/src/sync/sync_failure_ui.dart';
 import 'package:fushi/src/sync/sync_progress.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
@@ -64,6 +66,12 @@ String syncActivityKindLabel(SyncActivityKind kind) => switch (kind) {
   SyncActivityKind.assetTransfer => t.sync_task_kind_asset_transfer,
 };
 
+/// 已结束的一轮的标题：这轮是谁（「全量同步」/「单本同步：书名」），不带进行时。
+String syncFinishedTaskLine(SyncActivityKind kind, String? title) =>
+    kind == SyncActivityKind.singleBook && title != null && title.isNotEmpty
+    ? t.sync_task_finished_titled(title: title)
+    : syncActivityKindLabel(kind);
+
 /// 明细第二行：通道 · 在等谁 / 结束了。都没有时为 null。
 String? syncTaskDetailLine(SyncTask task) {
   final SyncChannelScope? channel = task.channel;
@@ -99,14 +107,23 @@ BackgroundTask syncTaskToBackgroundTask(SyncTask task) {
   return BackgroundTask(
     id: 'sync-${task.id}',
     icon: syncItemKindIcon(p?.itemKind),
-    // 两级取值（BUG-1260）：在跑且有阶段 tick 用它，否则说清这轮同步是谁。
+    // 两级取值（BUG-1260）：在跑且有阶段 tick 用它，否则说清这轮同步是谁。已结束的
+    // 用种类名（「全量同步」），不用进行时的兜底行——那会让结束的一轮一直写着
+    // 「正在准备同步」。
     line: p != null
         ? syncProgressLine(p)
-        : syncActivityLine(SyncActivity(task.kind, title: task.title)),
+        : task.isActive
+        ? syncActivityLine(SyncActivity(task.kind, title: task.title))
+        : syncFinishedTaskLine(task.kind, task.title),
     fraction: p?.fraction,
     detail: syncTaskDetailLine(task),
     stageSince: task.isActive ? task.stageSince : null,
-    errors: <String>[for (final SyncTaskError e in task.errors) e.message],
+    // 失败按结构渲染（反馈 L60rttoC0U）：原因本地化、同因合并成一行；日志行原文
+    // 只进日志。条数仍按失败项计。
+    errors: syncFailureLines(<SyncFailure>[
+      for (final SyncTaskError e in task.errors) e.failure,
+    ]),
+    failureCount: task.errors.length,
     finished: !task.isActive,
   );
 }
@@ -435,7 +452,7 @@ class _BackgroundTaskRowState extends State<_BackgroundTaskRow> {
   Widget _buildErrors(BuildContext context, BackgroundTask task) {
     final ThemeData theme = Theme.of(context);
     final FushiMotionScheme motion = context.fushiMotion;
-    final String label = t.sync_task_errors_count(count: task.errors.length);
+    final String label = t.sync_task_errors_count(count: task.failureCount);
     return FushiAnimatedSize(
       duration: fushiMotionDuration(context, FushiMotion.medium),
       curve: motion.spatialDefault.curve,

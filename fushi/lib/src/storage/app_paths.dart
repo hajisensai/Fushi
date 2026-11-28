@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi_core/fushi_core.dart'
@@ -258,11 +259,12 @@ class AppPaths {
   ///
   /// - 外部 = `getExternalFilesDir(null)/data`（`Android/data/<包名>/files/data`）：
   ///   USB / 电脑能直接拿到有声书、下载、字幕与转录结果；不需要任何存储权限，卸载时随
-  ///   app 一起删除。**全新安装默认外部**。
-  /// - 内部 = `app_flutter` 下的旧布局（flat 或 nested）。**升级上来的老安装锚定内部**、
-  ///   一个字节都不自动搬：内部到外部跨挂载点，只能逐文件复制，GB 级书库在启动期悄悄搬
-  ///   会卡死启动画面。老用户由首页一次性提示（或设置「数据存储位置」）走带进度的
-  ///   `DataRootMigrator` 迁移，迁完提交本锚点。
+  ///   app 一起删除。也正因为外部可见，文件管理器、电脑、手机清理工具都能把它整树删掉，
+  ///   **不再是任何安装的默认位置**（BUG-5492），只保留给 3.4.0 已经迁过去的安装。
+  /// - 内部 = `app_flutter` 下的布局（flat 或 nested），只有 Fushi 自己读写得到。新装与
+  ///   没有锚点的安装一律落这里。已在外部的安装不自动搬（跨挂载点只能逐文件复制，GB 级
+  ///   书库在启动期悄悄搬会卡死启动画面），由首页一次性提示（或设置「数据存储位置」）
+  ///   走带进度的 `DataRootMigrator` 迁回，迁完提交本锚点。
   ///
   /// 数据库（support 根）两种情况下都留在内部 `filesDir`，不随本锚点移动。
   static const String androidDocumentsLocationPrefKey =
@@ -270,9 +272,14 @@ class AppPaths {
   static const String androidDocumentsLocationInternal = 'internal';
   static const String androidDocumentsLocationExternal = 'external';
 
-  /// 老安装「把书库移到可访问文件夹」一次性提示已处理（弹过 / 已迁移）的标记。
+  /// 3.4.0「把书库移到可访问文件夹」一次性提示已处理的标记（冻结名，只由迁移提交照写；
+  /// 那个提示已撤掉，BUG-5492）。
   static const String androidDocumentsMovePromptedPrefKey =
       'android_documents_move_prompted';
+
+  /// 书库在外部时「建议移回内部存储」一次性提示已弹过的标记（BUG-5492）。
+  static const String androidDocumentsMoveBackPromptedPrefKey =
+      'android_documents_move_back_prompted';
 
   /// 外部 app 专属目录下书库根的子目录名。不直接用 `files/` 本身：`files/logs`（诊断）、
   /// `files/video_clips`（导出剪辑）、`files/Download`（浏览器下载兜底）与书库并列，
@@ -281,6 +288,11 @@ class AppPaths {
 
   /// 本进程已判定的 Android 书库位置；[_ensureAndroidDocumentsLocationDecided] 启动期写一次。
   static String? _androidDocumentsLocation;
+
+  /// 本进程已判定的 Android 书库位置（`internal` / `external`）；非 Android 或还没判定时
+  /// 为 null。只读，供诊断记录（BUG-5490 数据位置取证环）。
+  static String? get decidedAndroidDocumentsLocation =>
+      _androidDocumentsLocation;
 
   /// 启动期解析到的 `getExternalFilesDir(null)`（null：没解析过或外部存储未挂载）。
   static Directory? _androidExternalFilesDir;
@@ -295,19 +307,18 @@ class AppPaths {
     _androidExternalFilesDir = externalFilesDir;
   }
 
-  /// 纯判定（测试钉住）：已有合法锚点就沿用；否则按「本机是否已有跑过的安装」决定——
-  /// 老安装 = 内部（不自动搬），全新安装 = 外部。
-  static String decideAndroidDocumentsLocation({
-    required String? stored,
-    required bool existingInstall,
-  }) {
+  /// 纯判定（测试钉住）：已有合法锚点就沿用（3.4.0 起已在外部的安装不被挪动，由首页
+  /// 一次性提示建议迁回）；没有锚点一律内部——新装与老安装都一样。
+  ///
+  /// BUG-5492：外部 `Android/data/<包名>/files/data` 能被文件管理器、电脑 USB、手机清理
+  /// 工具整树删掉（反馈 cH-HbP8XkQ 报告人手动删了 `Android/data/app.fushi.reader`，
+  /// MXX0xhQDgt 迁移成功后外部书库被清空），而 Fushi 拦不住，书库默认不再放那里。
+  static String decideAndroidDocumentsLocation({required String? stored}) {
     if (stored == androidDocumentsLocationInternal ||
         stored == androidDocumentsLocationExternal) {
       return stored!;
     }
-    return existingInstall
-        ? androidDocumentsLocationInternal
-        : androidDocumentsLocationExternal;
+    return androidDocumentsLocationInternal;
   }
 
   /// 外部书库根的展示串（外部存储不可用、拿不到真实路径时给逃生屏用）。
@@ -346,10 +357,7 @@ class AppPaths {
       final String? stored =
           anchor?.location ??
           (await _prefsOrNull())?.getString(androidDocumentsLocationPrefKey);
-      final String decided = decideAndroidDocumentsLocation(
-        stored: stored,
-        existingInstall: stored != null || await existingInstallHasDatabase(),
-      );
+      final String decided = decideAndroidDocumentsLocation(stored: stored);
       _androidExternalFilesDir = await getExternalStorageDirectory();
       final Directory? ext = _androidExternalFilesDir;
       final List<AndroidInternalLibraryCandidate> candidates =
@@ -645,10 +653,17 @@ class AppPaths {
     'onboarding_tutorial',
   };
 
+  /// 书库消失哨兵文件名（BUG-5492，`LibrarySentinel`）：放在书库根，内容是随机 token。
+  static const String librarySentinelFileName = '.fushi_library_sentinel';
+
   /// 不算书库证据的文件名：`.nomedia` 是排除媒体扫描的占位（0 字节），任何目录都可能被
-  /// 顺手放一个；`*.fushi-part` 是中断的跨盘复制留下的半截临时文件，不是书。
+  /// 顺手放一个；`*.fushi-part` 是中断的跨盘复制留下的半截临时文件，不是书；书库消失
+  /// 哨兵（及其写到一半的 `.tmp`）是 app 自己放的标记，不能让迁移目标核对把它当成
+  /// 「目标里有源里没有的书」挡住迁移。
   static bool isLibraryEvidenceFileName(String name) =>
-      name != '.nomedia' && !name.endsWith(kDirectoryCopyPartSuffix);
+      name != '.nomedia' &&
+      !name.endsWith(kDirectoryCopyPartSuffix) &&
+      !name.startsWith(librarySentinelFileName);
 
   /// [root] 下 Fushi 自有顶层项（[fushiOwnedDocumentsEntries]，去掉
   /// [libraryEvidenceIgnoredEntries]）里是否至少有一个书库**文件**。只认文件不认目录：
@@ -716,18 +731,31 @@ class AppPaths {
     }
   }
 
-  /// Android 书库迁移前，固定目标 [target] 里第一个「[source] 里没有同名相对路径」的
-  /// 文件（相对 [target]）；没有返回 null。
+  /// Android 书库迁移前，核实固定目标 [target] 能不能整树清掉；能清返回 null，不能清
+  /// 返回第一个拦路的文件（相对 [target]）与原因。
   ///
-  /// 目标是固定位置，上次中断的跨盘复制会留下半成品，必须先清掉引擎才肯搬。半成品一定
-  /// 是源的子集（复制阶段不删源）；目标里出现源里没有的文件，就说明它**不是**半成品
-  /// ——典型是锚点错指空根时，用户点「移回内部」，目标恰好就是真正的书库（#4366 指出）。
-  /// 这时绝不能整树删除。`.nomedia` 占位不计。
-  static Future<String?> firstAndroidMigrationTargetOnlyFile({
+  /// 目标是固定位置，上次中断的跨盘复制会留下半成品，必须先清掉引擎才肯搬。引擎复制
+  /// 阶段不删源、逐个文件直接写正式名（Android 上 `File.copy` 是 `O_TRUNC` 打开后顺序
+  /// 写），所以半成品里的每个文件都满足：源里有同一相对路径，且内容是源那份的**前缀**
+  /// ——复制完的文件与源逐字节相同，被打断的最后一个文件是源的开头一截。判据就是这条
+  /// 「目标里的每个字节都能在源里同位置找到」：清掉它不丢任何源里没有的数据。
+  ///
+  /// 拦下的两种情况，一个字节都不删：
+  ///  - [AndroidMigrationTargetBlockKind.targetOnly]：源里没有这个相对路径。典型是
+  ///    锚点错指空根时用户点「移回内部」，目标恰好就是真正的书库（#4366 指出）。
+  ///  - [AndroidMigrationTargetBlockKind.contentConflict]：源里有同名文件但内容对不上
+  ///    （比源长，或同一位置字节不同——同大小不同字节也算）。只比相对路径会把它当半成品
+  ///    整树删掉，目标里的完整正文 / 较新版本就没了（反馈 hjOW5xpIJ0）。
+  ///
+  /// 唯一放宽：前缀之后到末尾全是 0 字节，视为没写进去的空洞（预分配 / 掉电后文件长度
+  /// 先于数据落盘），这部分本来就没有数据。`.nomedia` 占位与 `*.fushi-part` 半截临时
+  /// 文件不计。先只比长度与存在性（便宜、遇到就收手），全部过关才逐字节比。
+  static Future<AndroidMigrationTargetBlocker?> androidMigrationTargetBlocker({
     required Directory target,
     required Directory source,
   }) async {
     if (!await target.exists()) return null;
+    final List<String> toCompare = <String>[];
     await for (final FileSystemEntity e in target.list(
       recursive: true,
       followLinks: false,
@@ -735,9 +763,87 @@ class AppPaths {
       if (e is! File) continue;
       if (!isLibraryEvidenceFileName(p.basename(e.path))) continue;
       final String rel = p.relative(e.path, from: target.path);
-      if (!await File(p.join(source.path, rel)).exists()) return rel;
+      final String sourcePath = p.join(source.path, rel);
+      switch (await FileSystemEntity.type(sourcePath, followLinks: false)) {
+        case FileSystemEntityType.notFound:
+          return AndroidMigrationTargetBlocker(
+            AndroidMigrationTargetBlockKind.targetOnly,
+            rel,
+          );
+        case FileSystemEntityType.file:
+          if (await e.length() > await File(sourcePath).length()) {
+            return AndroidMigrationTargetBlocker(
+              AndroidMigrationTargetBlockKind.contentConflict,
+              rel,
+            );
+          }
+          toCompare.add(rel);
+        default:
+          // 源里同名的是目录 / 链接：目标这份数据在源里找不到，不能当半成品删。
+          return AndroidMigrationTargetBlocker(
+            AndroidMigrationTargetBlockKind.contentConflict,
+            rel,
+          );
+      }
+    }
+    for (final String rel in toCompare) {
+      if (!await isInterruptedCopyOf(
+        File(p.join(target.path, rel)),
+        File(p.join(source.path, rel)),
+      )) {
+        return AndroidMigrationTargetBlocker(
+          AndroidMigrationTargetBlockKind.contentConflict,
+          rel,
+        );
+      }
     }
     return null;
+  }
+
+  /// [androidMigrationTargetBlocker] 放到后台 isolate 里跑：要逐字节读两边的副本，
+  /// 书库大时不能占 UI isolate。闭包只捕获两条路径字符串。
+  static Future<AndroidMigrationTargetBlocker?>
+  androidMigrationTargetBlockerInBackground({
+    required String target,
+    required String source,
+  }) => Isolate.run<AndroidMigrationTargetBlocker?>(
+    () => androidMigrationTargetBlocker(
+      target: Directory(target),
+      source: Directory(source),
+    ),
+  );
+
+  /// [copy] 是否可能是从 [original] 复制、复制中途被打断（或已复制完）留下的：长度不
+  /// 超过原件，且内容是原件的前缀；前缀之后允许到末尾全是 0（没写进去的空洞）。
+  /// 逐字节相同是它的特例。
+  static Future<bool> isInterruptedCopyOf(File copy, File original) async {
+    final int copyLength = await copy.length();
+    if (copyLength > await original.length()) return false;
+    final RandomAccessFile rc = await copy.open();
+    final RandomAccessFile ro = await original.open();
+    try {
+      const int chunk = 1 << 20;
+      bool inHole = false;
+      while (true) {
+        final Uint8List bc = await rc.read(chunk);
+        if (bc.isEmpty) return true;
+        final Uint8List bo = inHole ? Uint8List(0) : await ro.read(bc.length);
+        for (int i = 0; i < bc.length; i++) {
+          if (inHole) {
+            if (bc[i] != 0) return false;
+          } else if (i >= bo.length) {
+            // 原件在读的过程中变短了：对不上就按冲突处理。
+            return false;
+          } else if (bc[i] != bo[i]) {
+            if (bc[i] != 0) return false;
+            inHole = true;
+          }
+        }
+      }
+    } finally {
+      await rc.close();
+      await ro.close();
+    }
   }
 
   /// 本进程启动期对 Android 书库位置做过的纠正（AppModel 写进诊断日志）。
@@ -1498,6 +1604,22 @@ class AppPaths {
 
   static Future<Directory>? _diagnosticsDirectory;
 
+  /// 必须撑过「书库被外部清空」的诊断落点（BUG-5492）：数据位置取证环
+  /// （`ErrorLogService.logDataLocation`）就是为丢数据之后追查写的，却和外部书库一起住在
+  /// Android 的 `Android/data/<包名>/files/logs`——文件管理器 / 电脑 / 清理工具删掉
+  /// `Android/data/<包名>` 时取证一起没了（反馈 MXX0xhQDgt 的日志里迁移那天一条都不剩）。
+  /// Android 落内部 support 根下的 `logs`（`/data/user/0/<包名>/files/logs`，只有 Fushi 读得
+  /// 到）；其它平台 [diagnosticsDirectory] 本来就在 app 私有目录，原样返回。
+  static Future<Directory> durableDiagnosticsDirectory() async {
+    final Directory? test = fushiTestDirectory('app-documents');
+    if (test != null || !Platform.isAndroid) return diagnosticsDirectory();
+    final Directory dir = Directory(
+      p.join((await getApplicationSupportDirectory()).path, 'logs'),
+    );
+    await dir.create(recursive: true);
+    return dir;
+  }
+
   /// 启动期把旧诊断文件搬进 [diagnosticsDirectory] 时失败的条目（`文件名: 原因`）。
   /// 搬迁跑在错误日志就绪之前，由 `ErrorLogService.init` 读出写进错误日志，不吞。
   static List<String> get diagnosticsMigrationFailures =>
@@ -1875,3 +1997,47 @@ class AndroidLibraryReconciliation {
   /// 两个根都有书、主库作证后落选的根，交给散书合并；null = 不合并。
   final Directory? strayRoot;
 }
+
+/// [AppPaths.androidMigrationTargetBlocker] 拒绝清空固定目标的原因。
+enum AndroidMigrationTargetBlockKind {
+  /// 源里没有这个相对路径：目标可能才是真正的书库。
+  targetOnly,
+
+  /// 源里有同名文件但内容对不上（不是中断复制能留下的样子）：两份都要保留。
+  contentConflict,
+}
+
+/// 迁移前核实固定目标时拦路的第一个文件。
+@immutable
+class AndroidMigrationTargetBlocker {
+  const AndroidMigrationTargetBlocker(this.kind, this.file);
+
+  final AndroidMigrationTargetBlockKind kind;
+
+  /// 相对目标根的路径。
+  final String file;
+
+  @override
+  bool operator ==(Object other) =>
+      other is AndroidMigrationTargetBlocker &&
+      other.kind == kind &&
+      other.file == file;
+
+  @override
+  int get hashCode => Object.hash(kind, file);
+
+  @override
+  String toString() => 'AndroidMigrationTargetBlocker($kind, $file)';
+}
+
+/// BUG-5490：数据根快照的诊断文本（[ErrorLogService.logDataLocationIfChanged] 按
+/// 文本比较，同样的根必须得出逐字相同的串）。
+String dataRootsDiagnostic({
+  required String libraryRoot,
+  required String supportRoot,
+  String? androidLocation,
+}) => <String>[
+  'libraryRoot=$libraryRoot',
+  'supportRoot=$supportRoot',
+  if (androidLocation != null) 'androidLocation=$androidLocation',
+].join('\n');

@@ -277,6 +277,11 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 内容字体链优先级的第三档，兜在「资源手动指定 > 内容自带元数据」之后。
   'default_content_language',
   'design_system',
+  // bool（默认 false）：Windows 上点关闭按钮 / Alt+F4 时把主窗口收进托盘而不是退出
+  // （desktop_tray.dart）。
+  'desktop_close_to_tray',
+  // bool（默认 false）：「已收进托盘」的一次性系统通知提示过了。
+  'desktop_tray_hint_shown',
   // bool（默认 false）：启动期「词典格式可以升级」提示点过「以后再说」。设备本地（描述
   // 本机词典目录的状态），不进 Profile 快照；词典页的升级入口不受它影响。
   'dict_format_upgrade_prompt_dismissed',
@@ -1010,6 +1015,17 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 字体 / 字号 / 行距 / 配色 / 区块显隐 / 统一词典样式 / 密度。缺省 = 模板默认外观。
   // 非凭据、跨设备（随 Profile / 备份；字体文件路径在别的设备上不存在时回落默认字体）。
   'srs_card_appearance',
+  // 复习历史捐赠（srs/donation/srs_donation_eligibility.dart），跟随 Profile（捐赠身份按 profile 算）：
+  // String（JSON 字符串数组，笔记 id）：预览里排除的单词；bool（默认 true）：包含词头 + 读音；
+  // bool：「不再提示」；int（毫秒，0 = 没有）：「以后再说」到期时刻。非凭据（donorKey 每次由 profileUid
+  // 现算，不落盘）。srs_donation_last_at / srs_donation_last_reviews 已废弃（2026-11-27 起捐赠记录只认
+  // 服务端 GET，本机镜像换设备必然缺失）；旧值无人读取，key 冻结保留。
+  'srs_donation_excluded',
+  'srs_donation_include_words',
+  'srs_donation_last_at',
+  'srs_donation_last_reviews',
+  'srs_donation_never',
+  'srs_donation_snooze_until',
   // int（0 = 关）：每日复习张数目标（小组件「目标」卡；只对内置 SRS 有意义）。
   'srs_goal_daily_reviews',
   // String（JSON）：复习首页「已配对设备」的落盘缓存——每台主机上次读到的牌组摘要（远程复习线格式）、

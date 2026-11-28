@@ -24,14 +24,22 @@ void main() {
     expect(line, '2026-09-12 14:03:22.123 [clock] a⏎b⏎c');
   });
 
-  test('trimTail：保尾到上限并丢掉第一段残行', () {
-    final String s = List<String>.generate(50, (int i) => 'line-$i').join('\n');
-    final List<int> bytes = utf8.encode('$s\n');
-    final String out = StudyDiagLog.trimTail(bytes, maxBytes: 60);
-    expect(utf8.encode(out).length, lessThanOrEqualTo(60));
-    expect(out, startsWith('line-'), reason: '第一行必须是完整行');
-    expect(out, endsWith('line-49\n'));
-    expect(StudyDiagLog.trimTail(bytes, maxBytes: 1 << 20), '$s\n');
+  test('init 接住上次运行留下的超限文件：裁到 3/4 上限并对齐行首（BUG-5571）', () async {
+    final Directory dir = await Directory.systemTemp.createTemp('study-diag');
+    addTearDown(() => dir.delete(recursive: true));
+    final File file = File('${dir.path}/${StudyDiagLog.fileName}');
+    final String line = '${'x' * 99}\n';
+    file.writeAsStringSync(
+      line * (StudyDiagLog.maxFileBytes ~/ line.length + 100),
+    );
+    await StudyDiagLog.instance.init(directoryOverride: dir);
+    await StudyDiagLog.instance.flush();
+    final String text = file.readAsStringSync();
+    expect(
+      utf8.encode(text).length,
+      lessThanOrEqualTo(StudyDiagLog.maxFileBytes * 3 ~/ 4 + 200),
+    );
+    expect(text, startsWith('x' * 99), reason: '第一行必须是完整行');
   });
 
   test('add 落盘追加、readPersisted 跨实例可读、clear 清空', () async {

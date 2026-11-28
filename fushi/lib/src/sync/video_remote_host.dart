@@ -290,6 +290,7 @@ final class VideoRemotePlaybackBinding {
     this.caret,
     this.episodeCover,
     this.close,
+    this.seekStep,
   });
   final String Function() identity;
   final String Function() title;
@@ -400,6 +401,12 @@ final class VideoRemotePlaybackBinding {
   /// cannot close sits on top of it). Null: `closeVideo` is unsupported.
   final Future<void> Function()? close;
 
+  /// Seeks by this player's own short / long step (the phone's `seekStep`
+  /// command); the state should carry `seekSeconds` / `longSeekSeconds`.
+  /// Null: `seekStep` is unsupported (phones fall back to an absolute seek).
+  final Future<void> Function({required bool forward, required bool long})?
+  seekStep;
+
   /// Optional controls this player supports (snapshot `capabilities`).
   List<String> get capabilities => <String>[
     if (setVolume != null) videoRemoteCapabilityVolume,
@@ -410,6 +417,7 @@ final class VideoRemotePlaybackBinding {
     if (searchSubtitles != null && downloadSubtitle != null)
       videoRemoteCapabilitySubtitleSearch,
     if (caret != null) videoRemoteCapabilityCaret,
+    if (seekStep != null) videoRemoteCapabilitySeekStep,
     if (close != null) videoRemoteCapabilityCloseVideo,
   ];
 }
@@ -1027,6 +1035,28 @@ final class VideoRemoteHost implements VideoRemoteService {
           _publish();
           return <String, Object?>{'ok': true};
         });
+      }
+      if (action == 'seekStep') {
+        final Future<void> Function({
+          required bool forward,
+          required bool long,
+        })?
+        seekStep = binding.seekStep;
+        if (seekStep == null) {
+          throw const VideoRemoteException(409, videoRemoteActionUnsupported);
+        }
+        final Object? step = body['step'];
+        final Object? size = body['size'];
+        if (step is! String ||
+            !videoRemoteSeekSteps.contains(step) ||
+            size is! String ||
+            !videoRemoteSeekStepSizes.contains(size)) {
+          throw const VideoRemoteException(400, 'invalid_argument');
+        }
+        _lookup = null; // Explicit playback intent supersedes automatic resume.
+        await seekStep(forward: step == 'forward', long: size == 'long');
+        _publish();
+        return <String, Object?>{'ok': true};
       }
       if (action == 'caret') {
         final Future<String> Function(String)? caret = binding.caret;

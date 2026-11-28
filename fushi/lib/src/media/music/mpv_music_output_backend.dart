@@ -392,6 +392,12 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
   /// 预排的插件下一首在流地址过期前重取（[_scheduleNextRefresh]）。
   Timer? _nextRefreshTimer;
 
+  /// 已交给 mpv 排在当前曲后面的联网取流下一首（[_attachNext] / [_refreshQueuedNext]
+  /// 取到并排进去的那份源）。用户手动切到它（「下一首」= [openPair] 打开它）时 [_open]
+  /// 直接复用，不再向插件重新取流 + 探测一遍（BUG：切歌要多等一整轮插件取流）。只在
+  /// 记下它的那一代「下一首」（[_nextGen]）里有效；换下一首、停止、自然推进、原位重取都作废。
+  ({MusicPlayItem item, Media media, int nextGen})? _queuedStream;
+
   /// 自上次把文件交给 mpv 以来见过 HTTP 403 / 410（插件流地址过期）。
   bool _httpRejected = false;
 
@@ -763,6 +769,7 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
     MusicPlayItem? next, {
     required bool play,
   }) async {
+    final Media? reuse = _takeQueuedStream(current);
     final int gen = ++_openGen;
     _nextGen++;
     _cancelNextRefresh();
@@ -792,7 +799,9 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
     final bool continues = next != null && musicCddaContinues(current, next);
     final Media first;
     try {
-      first = await _mediaFor(current, playThrough: continues ? next : null);
+      first =
+          reuse ??
+          await _mediaFor(current, playThrough: continues ? next : null);
     } on MusicPluginStreamUnavailable catch (e) {
       if (gen != _openGen) return false;
       throw MusicTrackOpenException(_unavailable(e.message, current));
@@ -840,6 +849,27 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
     return gen == _openGen;
   }
 
+  /// 取走预排下一首的现成源（[_queuedStream]）：[item] 正是那一首、仍是同一代「下一首」、
+  /// 流地址没到重取余量才返回它。不论取没取到都清空——它只能用一次。
+  Media? _takeQueuedStream(MusicPlayItem item) {
+    final ({MusicPlayItem item, Media media, int nextGen})? q = _queuedStream;
+    _queuedStream = null;
+    if (q == null ||
+        q.nextGen != _nextGen ||
+        q.item.trackUid != item.trackUid ||
+        q.item.path != item.path ||
+        !identical(_next, q.item)) {
+      return null;
+    }
+    final int? expiresAt = _streamExpiresAt[item.trackUid];
+    if (expiresAt != null &&
+        expiresAt - kMusicPluginStreamRefreshMargin.inMilliseconds <=
+            _nowMs()) {
+      return null;
+    }
+    return q.media;
+  }
+
   /// 卸掉正在放的文件（不交还设备），清空出声 / 预排状态。
   Future<void> _unload() async {
     _cancelPending();
@@ -871,6 +901,7 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
     try {
       await _player.add(media);
       _mpvItems = <MusicPlayItem>[..._mpvItems, item];
+      _queuedStream = (item: item, media: media, nextGen: nextGen);
     } finally {
       _rewiring = false;
     }
@@ -921,9 +952,11 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
       }
       _lastIndex = _player.state.playlist.index;
       _mpvItems = <MusicPlayItem>[_mpvItems.first];
+      _queuedStream = null;
       if (media != null) {
         await _player.add(media);
         _mpvItems = <MusicPlayItem>[..._mpvItems, item];
+        _queuedStream = (item: item, media: media, nextGen: nextGen);
       }
     } finally {
       _rewiring = false;
@@ -1111,6 +1144,7 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
     if (pending == null) return;
     _pending = null;
     _pendingFromDuration = null;
+    _queuedStream = null;
     _audible = pending;
     _emit(MusicBackendAdvanced(pending.trackUid));
     await _applyGain(pending);
@@ -1253,6 +1287,8 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
 
   Future<void> _refetchInPlaceOnce(MusicPlayItem item) async {
     _httpRejected = false;
+    // 被拒的正是那份现成源：必须重新取流。
+    _queuedStream = null;
     if (!_refetched.add(item.trackUid)) {
       _next = null;
       await _releaseAudioDevice();

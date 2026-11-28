@@ -1,26 +1,55 @@
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/webdav_ops.dart';
+import 'package:fushi_engine/sync/pairing/discovered_pairing_probe.dart';
 
-/// Normalizes a manually-entered Fushi interconnect URL.
+/// A manually-entered Fushi interconnect address after parsing.
 ///
-/// Fushi's LAN host mode is plain HTTP unless the host explicitly enables
-/// TLS. Manual entry therefore defaults bare `host:port` input to `http://`
-/// while preserving an explicit `https://` for pinned TLS hosts.
-String normalizeFushiInterconnectManualUrl(String rawUrl) {
+/// [url] is the normalized address (bare `host:port` input gets `http://`, the
+/// default plain LAN host). [schemeExplicit] records whether the user typed the
+/// scheme: only then is it a fact about the peer. A bare address says nothing
+/// about TLS, so the add flow must probe for it (BUG-5519) instead of trusting
+/// the `http://` placeholder.
+typedef FushiInterconnectManualAddress = ({String url, bool schemeExplicit});
+
+/// Parses a manually-entered Fushi interconnect URL. Throws [SyncBackendError]
+/// for schemes other than http / https or an unparsable address.
+FushiInterconnectManualAddress parseFushiInterconnectManualAddress(
+  String rawUrl,
+) {
   final String trimmed = rawUrl.trim();
   final RegExpMatch? explicitScheme = RegExp(
     r'^([A-Za-z][A-Za-z0-9+.-]*):\/\/',
   ).firstMatch(trimmed);
-  final String withScheme;
   if (explicitScheme == null) {
-    withScheme = 'http://$trimmed';
-  } else if (explicitScheme.group(1)!.toLowerCase() == 'http' ||
-      explicitScheme.group(1)!.toLowerCase() == 'https') {
-    withScheme = trimmed;
-  } else {
+    return (
+      url: WebDavOps.normalizeUrl('http://$trimmed'),
+      schemeExplicit: false,
+    );
+  }
+  final String scheme = explicitScheme.group(1)!.toLowerCase();
+  if (scheme != 'http' && scheme != 'https') {
     throw SyncBackendError('Fushi URL must use http:// or https://');
   }
-  return WebDavOps.normalizeUrl(withScheme);
+  return (url: WebDavOps.normalizeUrl(trimmed), schemeExplicit: true);
+}
+
+/// Normalizes a manually-entered Fushi interconnect URL (see
+/// [parseFushiInterconnectManualAddress]); bare `host:port` becomes `http://`.
+String normalizeFushiInterconnectManualUrl(String rawUrl) =>
+    parseFushiInterconnectManualAddress(rawUrl).url;
+
+/// BUG-5519: the endpoints to probe when pairing with a manually-added
+/// address. A bare address tries https first, then http
+/// ([schemelessPairingCandidates]); an address with an explicit scheme returns
+/// null, because the user's scheme is authoritative and the caller keeps its
+/// scheme-specific diagnostics ("this port isn't HTTPS" and so on).
+List<FushiPairingCandidate>? fushiInterconnectManualPairingCandidates(
+  FushiInterconnectManualAddress address,
+) {
+  if (address.schemeExplicit) return null;
+  return schemelessPairingCandidates(
+    address.url.substring(address.url.indexOf('://') + 3),
+  );
 }
 
 /// BUG-1557：两条互联地址是否指向**同一个端点**（scheme + host + port 全同，

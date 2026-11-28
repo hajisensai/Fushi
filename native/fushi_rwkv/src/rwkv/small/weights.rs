@@ -131,6 +131,21 @@ impl Weights {
         self.tensors.contains_key(name)
     }
 
+    /// Drops every tensor whose name starts with `prefix` (a stripped
+    /// layer's dummies).
+    pub fn remove_prefix(&mut self, prefix: &str) {
+        self.tensors.retain(|name, _| !name.starts_with(prefix));
+    }
+
+    /// Names of the tensors not taken yet that start with `prefix`.
+    pub fn names_with_prefix(&self, prefix: &str) -> Vec<&str> {
+        self.tensors
+            .keys()
+            .filter(|name| name.starts_with(prefix))
+            .map(String::as_str)
+            .collect()
+    }
+
     pub fn shape(&self, name: &str) -> Option<&[usize]> {
         self.tensors.get(name).map(|tensor| tensor.shape.as_slice())
     }

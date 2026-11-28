@@ -1,0 +1,9 @@
+## BUG-5543 · web-video-subtitles
+- **报告**：2026-11-27（用户：应用内反馈 WNUWVgsr6Q，Windows 3.4.0-debug.32769）。PC 端 YouTube「用 Fushi 播放」时字幕面板只剩站点字幕，「导入字幕文件」和「副字幕」都没了。
+- **真实性**：✅ 真 bug（回归，对用户而言）。网页档从 5f57ac121f2（2026-10-18「play web-site stream books in the native player page」）起就只列站点轨；PR #4400 之后 Windows 上的 YouTube 默认走网页档，缺口才暴露。根因三处：
+  1. `fushi/lib/src/pages/implementations/video_fushi/subtitle.part.dart:199` `if (_webMode) return _buildWebSubtitleTrackRows(context);` 短路，而 `web_source.part.dart` 的 `_buildWebSubtitleTrackRows` 只列工作台 / 关闭 / 站点轨，注释把「导入字幕」误归为需要本地媒体——其实导入本地 srt/ass/vtt 只需解析成 cue、登记成一条轨（同文件已有 `_selectWebLocalSubtitleTrack`）。
+  2. `subtitle.part.dart` `_importExternalSubtitle` 首行 `if (_currentVideoPath == null) return;`，网页档 `_initWebSource`（`web_source.part.dart:324`）固定置空，拖放字幕到播放区静默无反应。
+  3. `fushi/lib/src/media/video/web_video_track_selection.dart` 只有单主轨状态，网页档从不调 `setSecondaryCues`，副字幕（及副字幕调轴）整条链路缺失。
+- **[x] ① 已修复** — 网页档字幕行抽成纯展示的 `VideoWebSubtitleTrackRows`（`web_source.part.dart`），补「导入字幕文件」与「副字幕」可展开区（关闭 / 导入 / 已采到的轨 / 可按需加载的站点轨）。导入走 `_importWebSubtitleFile`：拷进 `video_subtitles/`（与远端导入共用 `_copyImportedSubtitleIntoLibrary`）→ 解析 → 登记成当前站点视频的一条轨并选为主 / 副字幕；`_importExternalSubtitle`（拖放、工作台下载等按路径导入）与桌面 CLI `video sub-import` 在网页档走同一条。`WebVideoTrackSelection` 加 `secondaryKey` / `chooseSecondary` / `secondaryCues`，`reselect` 一并给出 `secondaryReload` + `secondaryCues`（按 cue 列表身份判换没换），换视频清掉；主轨自动挑选（`chooseWebVideoTrackKey` 的 `exclude`）避开选作副字幕的那条，免得为副字幕取来的整轨抢走主字幕。副字幕按需加载站点轨用 `_fetchWebLazyTrack`，不动主字幕的 pending / pinned。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/video_web_subtitle_rows_test.dart`（组件测试：网页档面板有导入 / 副字幕区、点选落到对的回调、加载中灰掉；宿主页接线守卫）；`fushi/test/media/video/web_video_secondary_track_test.dart`（副字幕选轨状态、先选后到、主轨自动挑选避开副轨、换视频清掉、`exclude` 语义）。
+- **备注**：未做——网页档导入的字幕选择不跨会话持久化（与网页档现有手机下载字幕、站点轨选择一致，均只在本次会话有效；生成字幕另有 `subtitleSource` 登记）；Netflix 这类站点播放器轨不能单独取作副字幕（取轨要切站点自己的播放器，会把主字幕一起换掉），已采到过的照样可选；手机遥控的副字幕选择仍只覆盖本机 / 远端档。

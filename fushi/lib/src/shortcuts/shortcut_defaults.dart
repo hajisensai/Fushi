@@ -219,6 +219,9 @@ class ShortcutDefaults {
     ShortcutAction.globalOpenAiAssistant: _kb([
       _key(LogicalKeyboardKey.keyJ, {ModifierKey.ctrl}),
     ]),
+    // 打开待发卡片（应用内反馈 OElRvCndxk）：用户拍板默认不绑键，用户自己在快捷键
+    // 设置里绑（键盘 / 手柄 / 鼠标侧键都行）。
+    ShortcutAction.globalOpenPendingCards: const ShortcutBindingSet(),
     // 右键菜单的默认绑定 = 鼠标右键（DOM button 2），与改造前各处硬绑
     // `onSecondaryTap*` 的行为逐字一致。键盘/手柄留空：菜单是**位置型**动作
     // （要一个 globalPosition 作锚点），键盘触发没有锚点可用。
@@ -320,6 +323,16 @@ class ShortcutDefaults {
       ],
       [_gRB, _gDpadRight],
     ),
+    // 长步进（±longSeekSeconds 秒）：Shift+←/→，与裸 ←/→ 短步进同指法、多一个修饰键
+    // 即「同一动作的加强版」。video co-active 组内 Shift+←/→ 未被占用（Ctrl+←/→ 是
+    // 跳句、Ctrl+Shift+←/→ 是字幕偏移对齐）；音乐的 Shift+←/→ 在 music 组，不同时解析。
+    // 手柄不给默认（LB/RB/dpad 已被短步进占满）。
+    ShortcutAction.videoLongSeekBackward: _kb([
+      _key(LogicalKeyboardKey.arrowLeft, {ModifierKey.shift}),
+    ]),
+    ShortcutAction.videoLongSeekForward: _kb([
+      _key(LogicalKeyboardKey.arrowRight, {ModifierKey.shift}),
+    ]),
     ShortcutAction.videoToggleShaderCompare: _kb([
       _key(LogicalKeyboardKey.keyC),
     ]),
@@ -718,6 +731,9 @@ class ShortcutDefaults {
     ShortcutAction.srsReviewZoomIn: _kb(_srsReviewZoomInKeys),
     ShortcutAction.srsReviewZoomOut: _kb(_srsReviewZoomOutKeys),
     ShortcutAction.srsReviewZoomReset: _kb(_srsReviewZoomResetKeys),
+    // 「只关词典」：默认空绑定（与 videoDismissDict 同形），给用户自绑的键 / 手柄键一个
+    // 没有副作用的落点。
+    ShortcutAction.srsReviewDismissDict: const ShortcutBindingSet(),
     // 焦点导航（scope 枚举名 gamepad 冻结）：上 / 下 / 左 / 右移焦 + 确认。默认值
     // 就是改造前的硬编码键——裸方向键（键盘，`global_navigation.dart`）、dpad 四向
     // （手柄，TODO-700 T6）、Enter / 手柄 A（确认）——所以默认安装行为不变，只是

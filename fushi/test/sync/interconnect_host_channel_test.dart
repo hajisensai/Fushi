@@ -782,6 +782,259 @@ void main() {
     });
   });
 
+  // BUG-5603 审查后修正 4：能力表不设有效期，靠 ETag 条件请求重验——host 改了设置下一次就看到，正文没变只回 304。
+  group('能力表缓存（ETag 重验）', () {
+    const Duration timeout = Duration(seconds: 5);
+    late int hits;
+    late List<String?> conditional;
+    Completer<void>? gate;
+    late String body;
+    late String? etag;
+    late http.Response Function()? override;
+
+    setUp(() {
+      hits = 0;
+      conditional = <String?>[];
+      gate = null;
+      body = '{"x":true}';
+      etag = '"e1"';
+      override = null;
+    });
+
+    MockClient capsHost() => MockClient((http.Request req) async {
+      if (req.url.path == '/api/capabilities') {
+        hits++;
+        conditional.add(req.headers['If-None-Match']);
+      }
+      final Completer<void>? g = gate;
+      if (g != null) await g.future;
+      final http.Response Function()? o = override;
+      if (o != null) return o();
+      final String? tag = etag;
+      if (tag != null && req.headers['If-None-Match'] == tag) {
+        return http.Response('', 304, headers: <String, String>{'etag': tag});
+      }
+      return http.Response(body, 200, headers: <String, String>{'etag': ?tag});
+    });
+
+    Future<InterconnectHostRef> oneHost({String token = 'tok'}) async {
+      await repo.setFushiClientUrls(<FushiClientUrl>[
+        FushiClientUrl(url: 'http://10.0.0.1:8080', hostId: 'h1', token: token),
+      ]);
+      return InterconnectHostRef.ofRow((await repo.getFushiClientUrls()).first);
+    }
+
+    test('第二次起带 If-None-Match（跨通道共用）；304 时返回缓存的正文', () async {
+      final InterconnectHostRef host = await oneHost();
+      final MockClient plain = capsHost();
+      final InterconnectHostChannel a = channel(host, plain: plain);
+      final InterconnectHostChannel b = channel(host, plain: plain);
+      expect(
+        (await a.capabilities(timeout: timeout)).jsonObject,
+        <String, Object?>{'x': true},
+      );
+      final InterconnectChannelResponse again = await b.capabilities(
+        timeout: timeout,
+      );
+      expect(again.statusCode, 200);
+      expect(again.jsonObject, <String, Object?>{'x': true});
+      expect(again.via.url, 'http://10.0.0.1:8080');
+      expect(conditional, <String?>[null, '"e1"']);
+    });
+
+    test('host 改了设置（正文与 ETag 都变）：紧接着的下一次调用就拿到新值', () async {
+      final InterconnectHostRef host = await oneHost();
+      final MockClient plain = capsHost();
+      await channel(host, plain: plain).capabilities(timeout: timeout);
+      body = '{"x":false}';
+      etag = '"e2"';
+      expect(
+        (await channel(
+          host,
+          plain: plain,
+        ).capabilities(timeout: timeout)).jsonObject,
+        <String, Object?>{'x': false},
+      );
+      expect(
+        (await channel(
+          host,
+          plain: plain,
+        ).capabilities(timeout: timeout)).jsonObject,
+        <String, Object?>{'x': false},
+      );
+      expect(conditional, <String?>[null, '"e1"', '"e2"']);
+    });
+
+    test('老 host 不带 ETag：不缓存，每次整份请求，新值立刻可见', () async {
+      etag = null;
+      final InterconnectHostRef host = await oneHost();
+      final MockClient plain = capsHost();
+      await channel(host, plain: plain).capabilities(timeout: timeout);
+      body = '{"x":false}';
+      expect(
+        (await channel(
+          host,
+          plain: plain,
+        ).capabilities(timeout: timeout)).jsonObject,
+        <String, Object?>{'x': false},
+      );
+      expect(conditional, <String?>[null, null]);
+    });
+
+    test(
+      'probeInterconnectCapability 经同一份重验：host 关掉能力，下一次探测就是 unsupported',
+      () async {
+        final InterconnectHostRef host = await oneHost();
+        final MockClient plain = capsHost();
+        Future<InterconnectCapabilityOutcome<bool>> probe() =>
+            probeInterconnectCapability<bool>(
+              channel(host, plain: plain),
+              label: 'PC',
+              parse: (Map<String, dynamic> caps, FushiClientUrl via) =>
+                  caps['x'] == true ? true : null,
+              timeout: timeout,
+            );
+        expect(await probe(), isA<InterconnectCapabilityAvailable<bool>>());
+        expect(await probe(), isA<InterconnectCapabilityAvailable<bool>>());
+        body = '{"x":false}';
+        etag = '"e2"';
+        expect(
+          await probe(),
+          isNot(isA<InterconnectCapabilityAvailable<bool>>()),
+        );
+        expect(conditional, <String?>[null, '"e1"', '"e1"']);
+      },
+    );
+
+    test('并发请求合并成一次', () async {
+      final InterconnectHostRef host = await oneHost();
+      final MockClient plain = capsHost();
+      gate = Completer<void>();
+      final List<Future<InterconnectChannelResponse>> calls =
+          <Future<InterconnectChannelResponse>>[
+            for (int i = 0; i < 4; i++)
+              channel(host, plain: plain).capabilities(timeout: timeout),
+          ];
+      await pumpEventQueue();
+      gate!.complete();
+      final List<InterconnectChannelResponse> responses = await Future.wait(
+        calls,
+      );
+      expect(hits, 1);
+      expect(
+        responses.every((InterconnectChannelResponse r) => r.statusCode == 200),
+        isTrue,
+      );
+    });
+
+    test('在途失败一起失败；失败 / 非 200 后缓存作废，下一次整份请求', () async {
+      final InterconnectHostRef host = await oneHost();
+      final _RefuseConnectClient dead = _RefuseConnectClient(<String>{
+        '10.0.0.1',
+      }, capsHost());
+      final List<Future<InterconnectChannelResponse>> calls =
+          <Future<InterconnectChannelResponse>>[
+            for (int i = 0; i < 3; i++)
+              channel(host, plain: dead).capabilities(timeout: timeout),
+          ];
+      for (final Future<InterconnectChannelResponse> c in calls) {
+        await expectLater(
+          c,
+          throwsA(channelFailure(InterconnectChannelFailure.unreachable)),
+        );
+      }
+      expect(dead.refusedHits['10.0.0.1'], 1, reason: '并发的三次只发了一次');
+
+      final MockClient plain = capsHost();
+      await channel(host, plain: plain).capabilities(timeout: timeout);
+      override = () => http.Response('busy', 503);
+      expect(
+        (await channel(
+          host,
+          plain: plain,
+        ).capabilities(timeout: timeout)).statusCode,
+        503,
+      );
+      override = null;
+      expect(
+        (await channel(
+          host,
+          plain: plain,
+        ).capabilities(timeout: timeout)).statusCode,
+        200,
+      );
+      expect(conditional, <String?>[
+        null,
+        '"e1"',
+        null,
+      ], reason: '503 之后不再拿旧缓存');
+    });
+
+    test('发起方通道被关掉时，合并进来的通道自己重发', () async {
+      final InterconnectHostRef host = await oneHost();
+      final MockClient plain = capsHost();
+      gate = Completer<void>();
+      final InterconnectHostChannel owner = channel(host, plain: plain);
+      final Future<InterconnectChannelResponse> first = owner.capabilities(
+        timeout: timeout,
+      );
+      await pumpEventQueue();
+      final Future<InterconnectChannelResponse> joined = channel(
+        host,
+        plain: plain,
+      ).capabilities(timeout: timeout);
+      await pumpEventQueue();
+      owner.close();
+      await expectLater(
+        first,
+        throwsA(channelFailure(InterconnectChannelFailure.cancelled)),
+      );
+      gate!.complete();
+      expect((await joined).statusCode, 200);
+      expect(hits, 2);
+    });
+
+    test('重新配对（凭据变）/ 改地址：不带旧 ETag；取消配对后不返回旧能力表', () async {
+      InterconnectHostRef host = await oneHost();
+      final MockClient plain = capsHost();
+      await channel(host, plain: plain).capabilities(timeout: timeout);
+
+      host = await oneHost(token: 'tok2');
+      await channel(host, plain: plain).capabilities(timeout: timeout);
+
+      await repo.setFushiClientUrls(const <FushiClientUrl>[
+        FushiClientUrl(
+          url: 'http://10.0.0.9:8080',
+          hostId: 'h1',
+          token: 'tok2',
+        ),
+      ]);
+      await channel(host, plain: plain).capabilities(timeout: timeout);
+      expect(conditional, <String?>[null, null, null]);
+
+      await repo.setFushiClientUrls(const <FushiClientUrl>[]);
+      await expectLater(
+        channel(host, plain: plain).capabilities(timeout: timeout),
+        throwsA(channelFailure(InterconnectChannelFailure.notPaired)),
+      );
+      expect(hits, 3);
+    });
+
+    test('不同会话绑定分开缓存', () async {
+      final InterconnectHostRef host = await oneHost();
+      final MockClient plain = capsHost();
+      await channel(host, plain: plain).capabilities(timeout: timeout);
+      for (int i = 0; i < 2; i++) {
+        await channel(
+          host,
+          plain: plain,
+          binding: (token: 'tok', fingerprint: null),
+        ).capabilities(timeout: timeout);
+      }
+      expect(conditional, <String?>[null, null, '"e1"']);
+    });
+  });
+
   test('ref：hostId 组按 hostId 认，老条目按持久 URL 认；标签取组内设备名', () {
     const List<FushiClientUrl> rows = <FushiClientUrl>[
       FushiClientUrl(url: 'http://a', hostId: 'h1', learned: true),

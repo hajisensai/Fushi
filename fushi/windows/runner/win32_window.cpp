@@ -1,5 +1,6 @@
 #include "win32_window.h"
 
+#include "startup_reveal_policy.h"
 #include "test_window_origin_pin.h"
 #include "window_activation_policy.h"
 
@@ -232,6 +233,20 @@ bool Win32Window::CreateAndShow(const std::wstring& title,
     return false;
   }
 
+  // BUG-5521: a hidden launch waits for Dart's reveal, but startup placement
+  // can show the window first — restoring a maximized session posts
+  // SC_MAXIMIZE, and maximizing a hidden window shows it (no WM_SHOWWINDOW is
+  // sent on that path, measured). Cloak it now, before anything can show it:
+  // a cloaked window still maximizes and is still composed, so the first
+  // frame is rasterized at the final size; RevealStartupWindow lifts the
+  // cloak. Test windows are visible from creation and never cloaked.
+  startup_cloaked_ = false;
+  if (::fushi::ShouldCloakAtCreation(hidden)) {
+    BOOL cloak = TRUE;
+    startup_cloaked_ = SUCCEEDED(
+        DwmSetWindowAttribute(window, DWMWA_CLOAK, &cloak, sizeof(cloak)));
+  }
+
   // Ask the OS to deliver WM_POWERBROADCAST when a monitor powers on so the
   // window can repaint after the display returns (TODO-689). Registered after
   // the window exists (window_handle_ is set in WM_NCCREATE). The handle is
@@ -331,6 +346,12 @@ Win32Window::MessageHandler(HWND hwnd,
                             UINT const message,
                             WPARAM const wparam,
                             LPARAM const lparam) noexcept {
+  // BUG-5521: the hang watchdog's forced startup reveal (another thread).
+  // Registered message, so it cannot be a case label below.
+  if (message == ::fushi::ForceStartupRevealMessage()) {
+    RevealStartupWindow();
+    return 0;
+  }
   switch (message) {
     case WM_DESTROY:
       window_handle_ = nullptr;
@@ -567,6 +588,22 @@ void Win32Window::EndStartupWindowPreparation() {
   }
   startup_window_preparation_ = false;
   SyncChildToClientArea();
+}
+
+void Win32Window::RevealStartupWindow() {
+  if (window_handle_ == nullptr) {
+    return;
+  }
+  // Order is irrelevant for what the user sees (a cloaked window shows
+  // nothing either way), but uncloak first so a maximized window appears in
+  // one step rather than being shown and then uncloaked.
+  if (startup_cloaked_) {
+    startup_cloaked_ = false;
+    BOOL cloak = FALSE;
+    DwmSetWindowAttribute(window_handle_, DWMWA_CLOAK, &cloak, sizeof(cloak));
+  }
+  // SW_SHOW keeps a maximized window maximized.
+  ShowWindow(window_handle_, SW_SHOW);
 }
 
 void Win32Window::ArmStuckDeferralWatchdog() {

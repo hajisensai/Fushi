@@ -41,6 +41,7 @@ extension _SyncOrchestratorCollections on SyncOrchestrator {
       // POST 的 mergeCollectionManifest 持同一把窄锁（只包本地步骤，网络都在锁外）。
       late final CollectionSyncOutcome outcome;
       await runExclusiveWithSyncStateApply(() async {
+        await _db.reconcileEpubCollectionMemberKeys();
         final CollectionManifest local = await loadLocalCollectionManifest(_db);
         // 时钟回拨钳制：持久化基线晚于 now 时钳到 now。
         int baseline = await repo.getCollectionsSyncBaselineMs(_scope);
@@ -71,7 +72,7 @@ extension _SyncOrchestratorCollections on SyncOrchestrator {
         () => convergeCollectionsAfterSync(_db, baselineMs: nextBaseline),
       );
     } catch (e) {
-      report.noteError('collections live sync', e);
+      _noteDimensionError(report, 'collections live sync', e);
     }
   }
 }

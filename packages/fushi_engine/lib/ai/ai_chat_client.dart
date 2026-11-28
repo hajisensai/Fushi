@@ -32,6 +32,56 @@ const Duration kAiChatRequestTimeout = Duration(seconds: 90);
 /// [AiChatClient] 的 OpenAI 载荷构造）。
 const String kOpenAiOfficialHost = 'api.openai.com';
 
+/// OpenAI 官方端点上**不收** `reasoning_effort` 的模型名前缀（小写比较）。
+///
+/// 收的是一个封闭的旧族（gpt-3.5 / gpt-4 / gpt-4o / gpt-4.1 / gpt-4.5、ChatGPT
+/// 快照与 `*-chat-latest`、搜索专用模型）：这些模型带上该字段一律 400
+/// `unsupported_parameter`（BUG-5468）。不反过来列「推理模型白名单」：OpenAI 新出的
+/// 对话模型都是推理模型，白名单会让每个新模型在 Fushi 更新前都调不了推理档位。
+/// `*-chat-latest` 在 5.1 之后只收 `medium`，同样按「档位不可调」处理。
+const List<String> _kOpenAiNonReasoningModelPrefixes = <String>[
+  'gpt-3.5',
+  'gpt-4',
+  'chatgpt-',
+  'gpt-5-search',
+];
+
+/// 所配端点 + 模型收不收 `reasoning_effort`：推理档位设置是否有意义的唯一判据。
+///
+/// - 只有 OpenAI 兼容协议会发这个字段，Anthropic / Gemini 载荷从不带它 → false；
+/// - OpenAI 官方 host 上按模型名判（见 [_kOpenAiNonReasoningModelPrefixes]）；
+///   微调模型 `ft:<基座>:…` 按基座判；
+/// - 其余兼容端点 Fushi 无从得知，信用户显式的选择 → true（不收时服务端的 400 会被
+///   归成 [kAiReasoningUnsupportedCode]，界面告诉用户去关掉）。
+///
+/// 配置界面据此隐藏推理档位行，载荷构造据此决定发不发——两处同一份判据。
+bool aiModelAcceptsReasoningEffort({
+  required AiWireProtocol protocol,
+  required Uri baseUrl,
+  required String model,
+}) {
+  if (protocol != AiWireProtocol.openAiCompatible) return false;
+  if (baseUrl.host.toLowerCase() != kOpenAiOfficialHost) return true;
+  String name = model.trim().toLowerCase();
+  if (name.startsWith('ft:')) name = name.substring(3);
+  if (name.contains('chat-latest')) return false;
+  return !_kOpenAiNonReasoningModelPrefixes.any(name.startsWith);
+}
+
+/// 这次请求实际生效的推理档位：所配模型不收（[aiModelAcceptsReasoningEffort]）时
+/// 是 [AiReasoningEffort.none]，与存着的档位无关。
+///
+/// 档位跟着提供商存，换模型时不清：从推理模型换到非推理模型再换回来，用户选过的
+/// 档位还在；换到不收的模型期间它只是不生效，不会让请求 400。
+AiReasoningEffort effectiveAiReasoningEffort(AiProviderConfig provider) =>
+    aiModelAcceptsReasoningEffort(
+      protocol: provider.protocol,
+      baseUrl: provider.baseUrl,
+      model: provider.model,
+    )
+    ? provider.reasoningEffort
+    : AiReasoningEffort.none;
+
 /// [AiChatClient.ping] 的输出上限：够任何模型吐出第一个 token，也给推理模型的
 /// 思考留了余量；正文被截断无所谓——测的是通路，不是回答。
 const int _kPingMaxTokens = 32;
@@ -190,6 +240,20 @@ bool isAiChatStopTruncated(String? stopReason) => switch (stopReason) {
   'length' || 'max_tokens' || 'MAX_TOKENS' => true,
   _ => false,
 };
+
+/// 输出额度用尽的失败短码：回复正文为空、停止原因却是截断——推理模型（o 系列 /
+/// gpt-5 / Gemini thinking / Claude extended thinking）把 `max_tokens` 全花在看不见
+/// 的思考上，一个字的正文都没写（BUG-5469）。不是「模型什么也没回」
+/// （`empty_response`），也不是临时性失败：原样重发只会在同一处再截一次，调用方要
+/// 缩小这次要的输出（把输入拆小），或请用户调低推理强度。
+const String kAiOutputLimitCode = 'output_limit';
+
+/// 正文为空的应答 → 失败：停止原因是截断时为 [kAiOutputLimitCode]，否则
+/// `empty_response`。三种协议与互联主机转发同一口径。
+AiChatFailure aiChatEmptyReplyFailure(String? stopReason) =>
+    isAiChatStopTruncated(stopReason)
+    ? const AiChatFailure(kAiOutputLimitCode)
+    : const AiChatFailure('empty_response');
 
 /// 一个给模型调用的工具。[parameters] 是 JSON Schema（object 类型）。
 ///
@@ -377,9 +441,36 @@ class AiChatFailure implements Exception {
       message == 'rate_limited' ||
       message.startsWith('http_5');
 
+  /// 配置类致命失败（[aiFailureStopsBatch]）：额度 / 余额用尽、鉴权被拒（换遍了 key
+  /// 还是被拒才会抛到调用方）、没配提供商、端点 / 协议 / 互联主机配置不对。下一个
+  /// 请求也必然同样失败，批量任务应立刻停掉后续所有 AI 调用，而不是逐条再问一遍。
+  bool get stopsBatch => aiFailureStopsBatch(message);
+
   @override
   String toString() => 'AiChatFailure: $message';
 }
+
+/// [AiChatFailure.stopsBatch] 的判据：哪些失败码说明「这家提供商眼下根本用不了」。
+///
+/// 与 [AiChatFailure.isTransient] 互斥：限流 / 网络 / 5xx 过一会儿就好，不在这里；
+/// 坏回复、空回复、上下文超长、输出额度用完只跟这一次请求的内容有关，下一条照样
+/// 可能成功，也不在这里。互联主机提供商的配置类短码见 `ai_relay.dart` 的 `kAiRelay*`。
+bool aiFailureStopsBatch(String code) => switch (code) {
+  'quota_exhausted' ||
+  'unauthorized' ||
+  'provider_not_configured' ||
+  kAiEndpointErrorCode ||
+  kAiReasoningUnsupportedCode ||
+  kAiTranscriptionUnsupportedProtocol ||
+  'relay_unavailable' ||
+  'relay_host_not_paired' ||
+  'relay_certificate_mismatch' ||
+  'relay_auth_rejected' ||
+  'relay_host_unsupported' ||
+  'relay_disabled' ||
+  'relay_no_provider' => true,
+  _ => false,
+};
 
 /// 随消息一起发的一张图（视觉模型用）。
 ///
@@ -492,8 +583,10 @@ class AiChatClient {
     DateTime Function()? clock,
     AiRateLimiter? rateLimiter,
     AiRelayTransport? relayTransport,
+    Duration requestTimeout = kAiChatRequestTimeout,
   }) : _client = client ?? createAppHttpIoClient(),
        _relayTransport = relayTransport,
+       _requestTimeout = requestTimeout,
        _ownsClient = client == null,
        _healthStore = healthStore,
        _clock = clock ?? DateTime.now,
@@ -501,6 +594,12 @@ class AiChatClient {
 
   final http.Client _client;
   final bool _ownsClient;
+
+  /// 这个客户端每次 chat 请求的整体时限（默认 [kAiChatRequestTimeout]）。回复本来
+  /// 就长的调用方（有声书选角一块要几千 token）在本地模型上生成要几分钟，用默认
+  /// 的 90 秒会在模型还在正常吐字时超时、再被当成网络抖动整块重试（BUG-5467），
+  /// 所以它们建客户端时给更宽的时限。
+  final Duration _requestTimeout;
 
   /// 「互联主机」提供商（[AiProviderConfig.relay]）的出口；null = 现取全局装配点
   /// [aiRelayTransport]（app 在配对表可读之后才装上，客户端可能比那更早建）。
@@ -556,6 +655,8 @@ class AiChatClient {
   ///
   /// 三种协议同一口径：回复为空或只有空白一律抛 `empty_response`——空串对每个
   /// 调用方都是「AI 什么也没给」，当成功返回只会把失败推迟成下游的解析错误。
+  /// 例外：停止原因是截断（[isAiChatStopTruncated]）时抛 [kAiOutputLimitCode]——
+  /// 推理模型把输出额度全花在了看不见的思考上，不是「模型没回」，原样重发也一样。
   ///
   /// 临时性失败（网络 / 超时、429、5xx）最多试 [kAiChatMaxAttempts] 轮，等待取指数
   /// 退避与 key 冷却到期中更晚者；退避写进限频器（[AiRateLimiter.backOff]），这家
@@ -576,7 +677,8 @@ class AiChatClient {
 
   /// 同 [complete]，另外带回这次应答报告的 token 用量（[AiChatCompletion.usage]）。
   ///
-  /// 失败语义与 [complete] 完全一致（空正文同样抛 `empty_response`）。应答里没有
+  /// 失败语义与 [complete] 完全一致（空正文同样抛 `empty_response` /
+  /// [kAiOutputLimitCode]）。应答里没有
   /// 用量字段时 `usage` 为 null——**不是 0**：费用统计要把它当「未知」单独计数。
   Future<AiChatCompletion> completeWithUsage({
     required AiProviderConfig provider,
@@ -594,7 +696,7 @@ class AiChatClient {
         maxTokens: maxTokens,
       );
       if (turn.text.trim().isEmpty) {
-        throw const AiChatFailure('empty_response');
+        throw aiChatEmptyReplyFailure(turn.stopReason);
       }
       return AiChatCompletion(
         text: turn.text,
@@ -611,13 +713,14 @@ class AiChatClient {
       AiWireProtocol.anthropicMessages => _anthropicText(body),
       AiWireProtocol.geminiGenerateContent => _geminiText(body),
     };
+    final String? stop = _stopReason(provider.protocol, body);
     if (text == null || text.trim().isEmpty) {
-      throw const AiChatFailure('empty_response');
+      throw aiChatEmptyReplyFailure(stop);
     }
     return AiChatCompletion(
       text: text,
       usage: parseAiChatUsage(provider.protocol, body),
-      stopReason: _stopReason(provider.protocol, body),
+      stopReason: stop,
     );
   }
 
@@ -629,7 +732,7 @@ class AiChatClient {
   /// 调不调工具。
   ///
   /// 只调工具、没有正文是合法的一轮；正文为空（或只有空白）**且**没有工具调用时抛
-  /// `empty_response`。是否该给这家发 [tools] 由调用方问
+  /// `empty_response`（停止原因是截断时抛 [kAiOutputLimitCode]，同 [complete]）。是否该给这家发 [tools] 由调用方问
   /// [AiProviderConfig.supportsToolCalling]，这里不拦。
   Future<AiChatTurn> chat({
     required AiProviderConfig provider,
@@ -649,7 +752,7 @@ class AiChatClient {
         maxTokens: maxTokens,
       );
       if (turn.text.trim().isEmpty && turn.toolCalls.isEmpty) {
-        throw const AiChatFailure('empty_response');
+        throw aiChatEmptyReplyFailure(turn.stopReason);
       }
       return turn;
     }
@@ -680,7 +783,7 @@ class AiChatClient {
     };
     final String content = text ?? '';
     if (content.trim().isEmpty && calls.isEmpty) {
-      throw const AiChatFailure('empty_response');
+      throw aiChatEmptyReplyFailure(stop);
     }
     return AiChatTurn(
       text: content,
@@ -1132,10 +1235,12 @@ class AiChatClient {
             ? 'max_completion_tokens'
             : 'max_tokens':
         maxTokens,
-    // 只有用户显式选了推理档位才发这个字段：大量兼容端点不认识它，
-    // 无条件发会让本来能用的服务直接 400。
-    if (provider.reasoningEffort != AiReasoningEffort.none)
-      'reasoning_effort': provider.reasoningEffort.storageKey,
+    // 档位是否生效由 [effectiveAiReasoningEffort] 统一判：用户没选不发（大量兼容
+    // 端点不认识这个字段），所配模型明确不收也不发（BUG-5468：OpenAI 官方的
+    // 非推理模型对它回 400）。
+    if (effectiveAiReasoningEffort(provider) case final AiReasoningEffort effort
+        when effort != AiReasoningEffort.none)
+      'reasoning_effort': effort.storageKey,
   };
 
   /// 判据是端点 host 而不是 presetId：presetId 只管 UI 显示（见
@@ -1703,11 +1808,11 @@ class AiChatClient {
 
   Future<http.Response> _send(
     Future<http.Response> Function() send, {
-    Duration timeout = kAiChatRequestTimeout,
+    Duration? timeout,
   }) async {
     final http.Response response;
     try {
-      response = await send().timeout(timeout);
+      response = await send().timeout(timeout ?? _requestTimeout);
     } catch (_) {
       // 原始异常可能带完整 URL（含 Gemini 的 ?key=），绝不透出。
       throw const AiChatFailure('network_error');
@@ -1819,6 +1924,16 @@ const List<String> _kContextOverflowMarkers = <String>[
   'maximum number of tokens',
 ];
 
+/// 服务端不收请求里的 `reasoning_effort` 的失败短码（BUG-5468）：自定义兼容端点
+/// 或 Fushi 认不出的模型不收推理档位时，界面据此提示去把「推理」改成关闭，而不是
+/// 只报一个看不懂的 `http_400`。不是临时性失败：原样重发还是被拒。
+const String kAiReasoningUnsupportedCode = 'reasoning_unsupported';
+
+/// 推理档位被拒的特征词（小写比较）：OpenAI 回 `param: "reasoning_effort"`，
+/// 兼容层多半回「Unrecognized request argument supplied: reasoning_effort」——
+/// 都带字段名本身。只在 400 / 422 上认：请求体只有这一个字段叫这个名字。
+const List<String> _kReasoningUnsupportedMarkers = <String>['reasoning_effort'];
+
 /// key 本身无效的特征词：Gemini 对坏 key 回的是 **400** `API_KEY_INVALID`
 /// （「API key not valid」），只看状态码认不出是鉴权问题。
 const List<String> _kInvalidKeyMarkers = <String>[
@@ -1834,6 +1949,7 @@ const List<String> _kInvalidKeyMarkers = <String>[
 /// - 402，或 400/403/429 且体里有余额特征词 → `quota_exhausted`（换 key 重试）；
 /// - 401 / 403，或 400 且体里有坏 key 特征词 → `unauthorized`（换 key 重试）；
 /// - 400/413/422/500 且体里有上下文超长特征词 → [kAiContextOverflowCode]（不重试）；
+/// - 400/422 且体里提到 `reasoning_effort` → [kAiReasoningUnsupportedCode]（不重试）；
 /// - 429 → `rate_limited`，带上 `Retry-After`（换 key 重试，这把按它冷却）；
 /// - 其余 → `http_<状态码>`（与 key 无关，不换 key）。
 ///
@@ -1870,6 +1986,10 @@ AiChatFailure classifyAiHttpFailure({
           statusCode == 500) &&
       has(_kContextOverflowMarkers)) {
     return const AiChatFailure(kAiContextOverflowCode);
+  }
+  if ((statusCode == 400 || statusCode == 422) &&
+      has(_kReasoningUnsupportedMarkers)) {
+    return const AiChatFailure(kAiReasoningUnsupportedCode);
   }
   if (statusCode == 429) {
     return AiChatFailure(

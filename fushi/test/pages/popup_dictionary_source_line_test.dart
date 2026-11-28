@@ -14,7 +14,9 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/popup_dictionary_page.dart';
 import 'package:fushi/src/utils/components/clipboard_lookup_text_panel.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
+import 'package:drift/native.dart';
 import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi_core/fushi_core.dart' show FavoriteWordRow, FushiDatabase;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -128,6 +130,16 @@ class _SourceLineAppModel extends AppModel {
     }
     return DictionarySearchResult(searchTerm: searchTerm);
   }
+}
+
+/// 带内存主库的桩：收藏真写 FavoriteWords 表（反馈 z26A3IZcKZ）。
+class _FavoriteAppModel extends _SourceLineAppModel {
+  _FavoriteAppModel(this._db);
+
+  final FushiDatabase _db;
+
+  @override
+  FushiDatabase get database => _db;
 }
 
 class _RecordingAnkiRepo extends BaseAnkiRepository {
@@ -1068,6 +1080,66 @@ void main() {
       page = tester.widget(find.byType(PopupDictionaryPage));
       expect(page.sourceBlock, isNull);
       expect(page.sourceBlockOffset, -1);
+    },
+  );
+
+  testWidgets(
+    'z26A3IZcKZ: the external popup wires the star to FavoriteWords and '
+    'stores the source line as the sentence',
+    (WidgetTester tester) async {
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
+      final _FavoriteAppModel appModel = _FavoriteAppModel(db)
+        ..wordHits['天気ですね'] = '天気';
+      await tester.pumpWidget(
+        _buildApp(
+          appModel: appModel,
+          repo: _RecordingAnkiRepo(),
+          text: '今日は良い天気ですね',
+          charIndex: 5,
+        ),
+      );
+      await _settle(tester);
+      final DictionaryPopupLayer base = _baseLayer(tester);
+      expect(
+        base.onFavoriteEntry,
+        isNotNull,
+        reason: '回调为 null 时 favoriteEntry 桥直接回 false：☆ 点了没反应、不落库。',
+      );
+      expect(base.onFavoriteCheck, isNotNull);
+
+      final Map<String, String> fields = <String, String>{
+        'expression': '天気',
+        'reading': 'てんき',
+        'glossary': 'weather',
+        'sentence': '',
+      };
+      expect(await tester.runAsync(() => base.onFavoriteEntry!(fields)), true);
+      expect(
+        await tester.runAsync(() => base.onFavoriteCheck!('天気', 'てんき')),
+        true,
+      );
+      final List<FavoriteWordRow> rows = (await tester.runAsync(
+        db.getAllFavoriteWords,
+      ))!;
+      expect(rows, hasLength(1));
+      expect(rows.single.expression, '天気');
+      expect(rows.single.glossary, 'weather');
+      expect(
+        rows.single.sentence,
+        '今日は良い天気ですね',
+        reason: '原句与基础层制卡的 `{sentence}` 同源：外部入口带来的那一行。',
+      );
+
+      // 再点一次是取消收藏。
+      expect(await tester.runAsync(() => base.onFavoriteEntry!(fields)), false);
+      expect(await tester.runAsync(db.getAllFavoriteWords), isEmpty);
+
+      // 收起 toast 的计时器，再关库。
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(db.close);
     },
   );
 }

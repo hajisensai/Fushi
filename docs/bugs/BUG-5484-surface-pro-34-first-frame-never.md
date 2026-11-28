@@ -1,0 +1,11 @@
+## BUG-5484 · Surface Pro 7+（Intel Iris Xe）上 3.4 启动卡在首帧之前：Dart 等一个永不完成的 Future（根因待新取证）
+- **报告**：2026-11-26（Discord 用户 GrimsChild；3.3 正常，升级 3.4.0 后每次启动都隐形卡住）
+- **真实性**：✅ 真 bug，根因**未定位**。已有证据：
+  - `error_log.txt`：3.3 正常到 11-25 12:36 交给安装器（`WindowsInstaller.handoff` target=3.4.0），此后 3.4 一条记录都没有（连 `runApp` 之后折入的 `previousExitUnclean` 都没写）。
+  - 进程 dump（运行 42 min）：32 个线程全部空闲等待，总 CPU < 15 s；主线程 `GetMessage` 正常泵消息；Flutter UI / raster / IO 线程与 Intel `igd10um64xe` 驱动线程都在条件变量上；内存里有 Impeller 着色器 uniform 名、ANGLE 程序缓存目录 `fushi.exe.ShaderCache\<ns>\` 已挂上。没有线程停在文件 IO 或驱动编译里，着色器缓存嫌疑因此降低。
+  - fushi.exe 无 PDB、Dart await 状态无法从 dump 还原，定位不到具体哪一步。
+  - 3.3→3.4 在这段路径上的新东西：ANGLE 程序二进制磁盘缓存（`ci/patches/flutter-engine/3.50.0/engine-program-binary-cache.patch`）、`project.set_enable_flutter_gpu(true)`（`fushi/windows/runner/main.cpp`）、`holdHeadlessLaunchUntilUi` 判据改动；`runApp` 前其余 await 与 3.3 相同。
+- **[ ] ① 未修复** — 等 BUG-5483 的取证上线后拿新日志：`hang_watchdog.log` 的 `startup: … last phase reached=<阶段>` 指出卡住的 await，同时附带一份 `hang-*.dmp`。拿到后按该 await 的真实代码路径根因修。
+- **[ ] ② 未加自动化测试** — 随 ① 一起补。
+- **备注**：可先请用户试两件事缩小范围：删除 `%LOCALAPPDATA%\Fushi\fushi.exe.ShaderCache` 后再启动；查看 `%LOCALAPPDATA%\Fushi\present_stall.log` 是否存在（存在 = 已过 `runApp`、卡在首帧上屏）。
+- **新线索（2026-11-26）**：该用户机器上「智能应用控制」处于强制模式（安装器报 4551，见 BUG-5515）。应用目录里的 exe/dll 都签了，不会被拦；要排除的是 3.4 启动路径上运行期才落盘或从别处加载的可执行文件 / 未签名 PowerShell 脚本。这一步已改成自动取证，不用用户动手：runner 的 `fushi/windows/runner/code_integrity_probe.cpp` 在每次启动后 60 s，以及启动期限强制显窗的那一刻，自己读 `Microsoft-Windows-CodeIntegrity/Operational`。它把最近 14 天里指向 Fushi 文件（安装目录内的文件，或文件名以 fushi 开头的文件）的已拦截事件（3033/3063/3068/3077/3079/3081/3086/3104/3118），连同智能应用控制的注册表状态，写进 `crashdumps\code_integrity.log`；用户名路径脱敏成 `%USERPROFILE%`，游标 `code_integrity.last_record` 保证每条只报一次。下次启动由 `CodeIntegrityLog.foldIntoErrorLog` 折成 `CodeIntegrity.blocked`，随反馈日志上传。启动卡死那次即使零命中也写一行状态（零命中即可排除系统拦截）。测试：`fushi/windows/runner/tests/code_integrity_report_test.cpp`（随 runner 构建执行），`fushi/test/utils/misc/code_integrity_log_test.dart`。

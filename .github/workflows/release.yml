@@ -130,7 +130,14 @@ jobs:
     # release（manga-panel-detector-onnx-v1、vendor-libmpv、voice-hook-helper…）被手动
     # 发布时不许整套构建、把安装包挂到它们身上。表达式没有正则，只能逐个列 v0..v9；
     # 守卫 fushi/test/build/release_event_app_tag_guard_test.dart 钉住每个 job 都带它。
-    if: ${{ (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
+    #
+    # 暂停调试版发布（2026-11-27；2026-11-28 扩到手动 debug）：仓库变量 FUSHI_PAUSE_DEBUG_RELEASE = 'true'
+    # 时，debug 通道的两个入口（push 事件、workflow_dispatch channel=debug）的 build / publish-android
+    # 在 job 级直接跳过，连 runner 都不占；dispatch 的 beta / formal 与 release 事件不看这个变量。只挡这两个 job：
+    # 下面的 web-core-linux / test-native-linux / fushidicts-linux / tests 是 develop 上唯一的
+    # app 全量单测门，与发包无关，暂停期间照跑。恢复 = 删变量或改成别的值。
+    # 守卫 fushi/test/build/release_debug_pause_guard_test.dart；说明见 docs/agent/build.md「暂停调试版自动发布」。
+    if: ${{ !(vars.FUSHI_PAUSE_DEBUG_RELEASE == 'true' && (github.event_name == 'push' || github.event.inputs.channel == 'debug')) && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
     runs-on: ubuntu-latest
     # 120：split-per-abi 逐 ABI 串行后要编三遍 kernel + AOT（ubuntu-26.04 上单 ABI
     # kernel ~170 s、AOT ~285 s），formal 在构建前的原生步骤已占 ~30 min，90 不够余量。
@@ -166,6 +173,7 @@ jobs:
       uses: ./.github/actions/fetch-vendored-binaries
       with:
         groups: android
+        durable: 'true'
     # 调试版流水线（debug pulse，docs/specs/2026-11-10-debug-pulse.md）：发布 run 一开始就刷新一次
     # update-manifest 的 debug-pulse-fushi.json——此刻本 run 在构建中、被顶掉的旧 run 已 cancelled、
     # develop 新合的 PR 显示为「还没进包」。只对 develop push（debug 通道）；不建 release / tag、不碰
@@ -1543,7 +1551,7 @@ jobs:
   # 「正式版预构建与审批发布」；守卫 fushi/test/build/release_publish_gate_guard_test.dart。
   publish-android:
     needs: build
-    if: ${{ (github.event_name == 'release' || needs.build.outputs.publish_managed_release == 'true' || needs.build.outputs.publish_manifest == 'true') && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
+    if: ${{ !(vars.FUSHI_PAUSE_DEBUG_RELEASE == 'true' && (github.event_name == 'push' || github.event.inputs.channel == 'debug')) && (github.event_name == 'release' || needs.build.outputs.publish_managed_release == 'true' || needs.build.outputs.publish_manifest == 'true') && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
     environment: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.channel == 'formal' || github.event.inputs.channel == 'beta')) && 'release-publish' || 'release-auto' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -2159,7 +2167,7 @@ jobs:
       uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: native/fushi_rwkv/model
-        key: fushi-rwkv-model-749ad1ad18d5b6ef8c4185802fa0c1e4a14e67cd7874f3efeaae355fffb1b9ec-b2f335bd712b9d602150201de41ab5a0f0a4c291644705e2aa1ed2a1bf1592c3-c7d8df407966fccd8f98227241816e114ce9ed1dfea799587e481c1d5926a453-77703dd2f2a21a1bcadaedfed1cec93ee0fd6fd6d3c840be221e72b5e1c05066-18de8ae77a1a40986dc432531116dfb009beae2385001ef425389a3ad7919a9e
+        key: fushi-rwkv-model-749ad1ad18d5b6ef8c4185802fa0c1e4a14e67cd7874f3efeaae355fffb1b9ec-87bce8dbb48a11dd599646547d241b39b6c881a8f7702aacd6284f6a9d1ecc54-d54978f43e1f89c75ef0f72dd438789d378ffddd96667eef0908c86a7813830e-24b39f61129bd9eb45156f45a32e749e1a0cf8d75e9271c2ed7038f9d6265771-19711eb2c0c4a4de84f36d66c3a829e748548be4e7b35dc8604e3ea795b7af3b
     - name: Fetch RWKV weights (pinned URL, SHA-256 checked)
       if: matrix.part == 'checks'
       run: bash native/fushi_rwkv/fetch_model.sh

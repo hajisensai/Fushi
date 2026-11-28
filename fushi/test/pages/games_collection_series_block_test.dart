@@ -247,6 +247,5 @@ void main() {
     expect(block.art, FushiCoverBlockArt.portrait);
     expect(block.overview, '科幻 / 纯爱 · ★ 8.2');
     expect(block.chip, '2020 · ${t.game_collection_work_count(n: 2)}');
-    await tester.pump(const Duration(seconds: 11));
   });
 }

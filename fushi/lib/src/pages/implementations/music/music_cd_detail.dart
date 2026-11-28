@@ -218,7 +218,7 @@ class _MusicCdDetailPanelState extends ConsumerState<MusicCdDetailPanel>
 
   void _play(
     List<MusicTrackRow> tracks, {
-    int start = 0,
+    int? start,
     bool shuffle = false,
     bool openPlayer = false,
   }) {
@@ -228,7 +228,11 @@ class _MusicCdDetailPanelState extends ConsumerState<MusicCdDetailPanel>
       engine.playQueue(
         <MusicPlayItem>[
           for (final MusicTrackRow t in tracks)
-            musicPlayItemOf(t, album: widget.album),
+            musicPlayItemOf(
+              t,
+              album: widget.album,
+              trackPathOf: musicTrackPathsOf(widget.tracks),
+            ),
         ],
         startIndex: start,
         context: MusicQueueContext.album,

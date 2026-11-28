@@ -25,7 +25,6 @@ import 'package:fushi_compute/fushi_compute.dart' show fushiComputePortWakeup;
 import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:flutter_logs/flutter_logs.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:receive_intent/receive_intent.dart' as intents;
 import 'package:stack_trace/stack_trace.dart';
@@ -47,10 +46,15 @@ import 'package:fushi/src/pages/implementations/collections_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/popup_main.dart' as popup_entrypoint;
 import 'package:fushi/second_screen_main.dart' as second_screen_entrypoint;
+import 'package:fushi/srs_write_host_main.dart' as srs_write_host_entrypoint;
+import 'package:fushi/src/srs/srs_write_relay.dart' show SrsWriteRelayHost;
+import 'package:fushi/src/srs/srs_write_relay_channel.dart'
+    show SrsWriteRelayHostChannel;
 import 'package:fushi/src/second_screen/companion/companion_context.dart'
     show companionContextRouteObserver;
 import 'package:fushi/src/second_screen/second_screen_approval_host.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/srs/srs_app_host.dart' show srsPushProfileNoteEditor;
 import 'package:fushi/src/srs/srs_app_runtime.dart'
     show SrsAppRuntime, installSrsAppRuntime, srsAppRuntimeProvider;
@@ -83,6 +87,7 @@ import 'package:fushi/src/utils/misc/flutter_error_log.dart';
 import 'package:fushi/src/utils/misc/present_watchdog.dart';
 import 'package:fushi/src/utils/misc/shortcut_icon_sync.dart';
 import 'package:fushi/src/utils/misc/smooth_wheel_scroll.dart';
+import 'package:fushi/src/utils/misc/code_integrity_log.dart';
 import 'package:fushi/src/utils/misc/hang_watchdog_log.dart';
 import 'package:fushi/src/utils/misc/wgc_capture_log.dart';
 import 'package:fushi/src/utils/rasterized_frame_size_reporter.dart';
@@ -117,6 +122,8 @@ import 'package:fushi/src/shortcuts/global_hotkey_backend.dart'
 import 'package:fushi/src/shortcuts/global_navigation.dart';
 import 'package:fushi/src/lookup/global_lookup_log.dart';
 import 'package:fushi/src/lookup/lookup_deep_link.dart';
+import 'package:fushi/src/leaderboard/leaderboard_deep_link.dart';
+import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/lookup/lookup_overlay_navigator.dart';
 import 'package:fushi/src/lookup/desktop_lookup_startup.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
@@ -162,6 +169,7 @@ import 'package:fushi/src/sync/sync_settings_schema.dart'
         dataRootMigrationRestart,
         runInterconnectLinkPairingFlow;
 import 'package:fushi/src/startup/webview_prewarm.dart';
+import 'package:fushi/src/startup/startup_stall_deadline.dart';
 import 'package:fushi/src/startup/startup_timeline.dart';
 import 'package:fushi/src/startup/headless_launch_gate.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
@@ -180,13 +188,16 @@ import 'package:fushi/src/anki/source_review_navigation.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mine_relay.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mining_anki_repository.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mines_page.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
-    show adaptivePageRoute;
+import 'package:fushi/src/shortcuts/shortcut_action.dart' show ShortcutAction;
 import 'package:fushi/src/platform/app_exit_coordinator.dart';
 import 'package:fushi/src/platform/desktop/windows_native_pre_exit.dart';
 import 'package:fushi/src/platform/platform_services.dart';
+import 'package:fushi/src/platform/incoming_fushi_link.dart';
 import 'package:fushi/src/platform/source_url_channel.dart';
 import 'package:fushi/src/platform/desktop/desktop_ctl_host.dart';
+import 'package:fushi/src/platform/desktop/desktop_tray.dart';
+import 'package:fushi/src/floating_ball/floating_ball_config.dart'
+    show isDesktopSystemBallPlatform;
 import 'package:fushi/src/media/drag_drop/desktop_drop_reinitializer.dart';
 import 'package:fushi/src/media/import/android_open_with.dart';
 import 'package:fushi/src/media/import/archive_password_prompt.dart';
@@ -285,6 +296,10 @@ final List<String> _pendingCardSourceUrls = <String>[];
 /// （docs/specs/2026-09-28-interconnect-remote-reach.md §4）。
 final List<String> _pendingPairLinks = <String>[];
 
+/// 桌面冷启动 argv 里的排行榜深链（`fushi://leaderboard/user|work/<id>`，分享页
+/// 「在 Fushi 中打开」）。根 build 就绪后交给 `_leaderboardLinks` 队列。
+LeaderboardDeepLink? _pendingArgvLeaderboardLink;
+
 /// Single source of truth for the status/navigation bar overlay style.
 ///
 /// Maps an app [brightness] to the matching system bar icon brightness while
@@ -328,6 +343,13 @@ void secondScreenMain() {
   second_screen_entrypoint.secondScreenMain();
 }
 
+/// Android 主进程里主界面不在时、替辅助进程（`:popup` / 第二块屏）执行复习写入的无界面引擎（BUG-5542，原生
+/// `SrsWriteRelay` 拉起）。同上，入口要在根库里。
+@pragma('vm:entry-point')
+void srsWriteHostMain() {
+  srs_write_host_entrypoint.srsWriteHostMain();
+}
+
 /// 冷启动恢复 Windows 窗口 / 任务栏图标的在途操作；显窗前等它落定。永不以错误结束。
 Future<void>? _startupWindowIconRestore;
 
@@ -368,6 +390,8 @@ Future<void> _restoreWindowsWindowIcon(AppIconSelection selection) async {
 /// to act on once the app has finished initialising.
 void main([List<String> args = const <String>[]]) {
   StartupTimeline.begin();
+  // 启动期限：到点主窗还没显示，把已走到的启动阶段落盘（卡在哪个 await，见该文件注释）。
+  armStartupStallDeadline();
   // 有声漫画工作台挂到环外入口（书卡菜单 / 侧栏速览经入口打开，见入口文件注释）。
   registerMangaAudioWorkbenchEntry();
   // 桌面端：从 args 里挑出外部打开的视频路径（Windows / Linux runner 传 argv）。
@@ -390,6 +414,13 @@ void main([List<String> args = const <String>[]]) {
       }
       if (FushiPairLink.tryParse(arg) != null) {
         _pendingPairLinks.add(arg);
+        break;
+      }
+      final LeaderboardDeepLink? leaderboardLink = LeaderboardDeepLink.tryParse(
+        arg,
+      );
+      if (leaderboardLink != null) {
+        _pendingArgvLeaderboardLink = leaderboardLink;
         break;
       }
       final String? word = lookupWordFromDeepLink(arg);
@@ -773,25 +804,17 @@ void main([List<String> args = const <String>[]]) {
         // BUG-2588：把上次运行主线程停泵看门狗抓 hang dump 的记录折进错误日志（仅
         // Windows），让「卡死后强杀」在日志里与 native 崩溃分开、并指向可分享的 hang-*.dmp。
         HangWatchdogLog.foldIntoErrorLog(),
+        // BUG-5484：runner 自动读出的智能应用控制 / WDAC 拦截记录（被拦的 Fushi 文件 +
+        // SAC 状态）折进错误日志，用户不用自己翻事件查看器。
+        CodeIntegrityLog.foldIntoErrorLog(),
         // 上次进程「怎么没的」：会话标记（全平台）+ Android ApplicationExitInfo /
         // onTrimMemory、Windows 崩溃摘要、macOS .ips、iOS MetricKit 的摘要折进错误
         // 日志，随反馈日志上传（Dart 接不到的原生崩溃 / 被系统杀）。
         PreviousExitLog.foldIntoErrorLog(),
-        // 本地文件日志（仅移动端）：原生侧建目录 + 清过期文件，与上面几项互不相干。
-        if (Platform.isAndroid || Platform.isIOS)
-          FlutterLogs.initLogs(
-            logLevelsEnabled: [
-              LogLevel.INFO,
-              LogLevel.WARNING,
-              LogLevel.ERROR,
-              LogLevel.SEVERE,
-            ],
-            timeStampFormat: TimeStampFormat.DATE_FORMAT_1,
-            directoryStructure: DirectoryStructure.FOR_DATE,
-            logTypesEnabled: ['device', 'network', 'errors'],
-            logFileExtension: LogFileExtension.LOG,
-            logsRetentionPeriodInDays: 7,
-          ),
+        // BUG-5576：这里曾经调 flutter_logs 插件的 initLogs。它在 Android 上把
+        // 「导出目录」解析成 getExternalFilesDir 根本身，每 3 天冷启动对它
+        // deleteRecursively，连外部书库 files/data 一起删光。已整个移除该插件，
+        // 错误日志统一走 ErrorLogService；守卫 test/build/no_flutter_logs_guard_test.dart。
       ]);
       StudyClock.trace = (String line) =>
           StudyDiagLog.instance.add('clock', line);
@@ -896,6 +919,21 @@ void main([List<String> args = const <String>[]]) {
       // 写入后同样刷新牌组列表 / 首页复习条的计数。
       appModel.srsCardsAddedNotifier = () =>
           container.read(srsRevisionProvider.notifier).state++;
+      // BUG-5542：Android 辅助进程（`:popup` 查词窗 / 第二块屏面板）只读打开复习库，它们的写入（制卡、覆写、改字段、
+      // 删卡）经原生 `SrsWriteRelayService` 转交到这里，在主界面的复习副本上执行；写完同样刷新牌组列表 / 计数。
+      if (Platform.isAndroid) {
+        final SrsWriteRelayHost srsRelayHost = SrsWriteRelayHost(
+          resolveMiner: appModel.srsRelayMiner,
+          onWritten: () => container.read(srsRevisionProvider.notifier).state++,
+        );
+        unawaited(
+          SrsWriteRelayHostChannel.install(
+            execute: srsRelayHost.handle,
+          ).catchError((Object e, StackTrace stack) {
+            ErrorLogService.instance.log('SrsWriteRelayHost.install', e, stack);
+          }),
+        );
+      }
       // BUG-5085：复习库要升级时制卡失败提示上的「打开复习」：与小组件「复习」入口同一条路（切到复习 tab、
       // 退回首页层级，编辑页的 PopScope 照常拦未保存改动）。复习 tab 本身就是升级 / 说明页。
       mineFailureOpenReview = () {
@@ -914,18 +952,17 @@ void main([List<String> args = const <String>[]]) {
       };
       // 「已加入待发队列」提示上的「查看队列」：在主导航器上推待发卡片列表（与 Anki 设置页
       // 「待发卡片」入口同一页）。
-      mineQueuedOpenPending = () {
-        final NavigatorState? navigator = appModel.navigatorKey.currentState;
-        if (navigator == null) return;
-        unawaited(
-          navigator.push<void>(
-            adaptivePageRoute<void>(
-              context: navigator.context,
-              builder: (BuildContext context) => const PendingMinesPage(),
-            ),
-          ),
-        );
-      };
+      mineQueuedOpenPending = () =>
+          openPendingMinesPage(appModel.navigatorKey.currentState);
+      // 桌面手柄按钮不是键事件、到不了 app 根的键处理器：global scope「直接做一件事」的
+      // 动作（全屏 / AI 助手 / 待发卡片）由 GamepadService 兜底交给同一个执行体。
+      appModel.gamepadService.runGlobalCommand = (ShortcutAction action) =>
+          runGlobalCommandAction(
+            action,
+            openAiAssistant: () => openAiAgentFromShortcut(appModel),
+            openPendingCards: () =>
+                openPendingMinesPage(appModel.navigatorKey.currentState),
+          );
       appModel.ankiRepositoryReader = () =>
           container.read(ankiRepositoryProvider);
       appModel.hostMiningRepositoryReader = () =>
@@ -1113,19 +1150,9 @@ void main([List<String> args = const <String>[]]) {
       };
     },
     (exception, stack) {
-      /// Print error details to the console.
-      final details = FlutterErrorDetails(exception: exception, stack: stack);
-
       /// Log the error. UncaughtZone 是致命级（zone 顶层未捕获），同步 flush 落盘
       /// （TODO-607 P0-1）——这条之后进程往往就终止了，异步 append 来不及写盘。
       ErrorLogService.instance.logFatal('UncaughtZone', exception, stack);
-      if (Platform.isAndroid || Platform.isIOS) {
-        FlutterLogs.logError(
-          'fushi_reader',
-          details.exceptionAsString(),
-          stack.toString(),
-        );
-      }
     },
   );
 }
@@ -1225,6 +1252,14 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     isActive: () => mounted,
     run: _runWidgetLink,
   );
+
+  /// 排行榜分享页「在 Fushi 中打开」的深链（`fushi://leaderboard/user|work/<id>`），
+  /// 冷启动排队同上。
+  late final LeaderboardDeepLinkQueue _leaderboardLinks =
+      LeaderboardDeepLinkQueue(
+        isActive: () => mounted,
+        run: _runLeaderboardLink,
+      );
 
   /// 桌面小组件的快照采集 / 推送（Android / iOS / macOS 同一份 JSON）；其余平台整个不工作。
   late final WidgetSnapshotSource _widgetSnapshots = WidgetSnapshotSource(
@@ -1379,6 +1414,11 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     if (_isDesktop) {
       windowManager.addListener(this);
     }
+    // Windows 托盘图标：菜单动作、「关闭到托盘」回调。菜单内容在根 build 里推。
+    DesktopTray.instance.attach(
+      onEntry: (DesktopTrayEntry entry) => unawaited(_runTrayEntry(entry)),
+      onHiddenToTray: _onHiddenToTray,
+    );
     // BUG-2259：macOS 的「退出应用」不是「关窗口」。window_manager 的
     // setPreventClose(true) 只拦 NSWindow 的 windowShouldClose:（点红叉），而
     // ⌘Q / 菜单「退出 Fushi」/ Dock 右键退出 走的是 NSApplication 的
@@ -1755,6 +1795,13 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
         await LinuxExternalOpenChannel.notifyExiting(_externalVideoChannel);
       });
     }
+    // Windows 托盘：先摘「藏在托盘」标记再隐藏主窗，二次启动才会把这个进程判成
+    // 退出中（runner startup_reveal_policy.h 的 kExiting）而不是「在托盘里运行」。
+    if (Platform.isWindows) {
+      await _guardedExitStep('tray notify exiting', () async {
+        await DesktopTray.instance.notifyExiting().timeout(_exitHideTimeout);
+      });
+    }
     final AppModel appModel = ref.read(appProvider);
     await _guardedExitStep('window placement save', () async {
       await DesktopWindowPlacement.saveCurrentBoundsNow().timeout(
@@ -1917,6 +1964,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     if (_isDesktop) {
       windowManager.removeListener(this);
     }
+    DesktopTray.instance.detach();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -1948,52 +1996,131 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     required bool isInitial,
   }) async {
     if (data == null || !mounted) return false;
-    if (SourceUrlChannel.isSourceUrl(data)) {
-      _queueCardSourceUrl(data);
-      return true;
+    // 分类与 macOS 转交白名单（SourceUrlChannel.routedHosts）同一份判据，见
+    // [FushiIncomingLink]；新增一类链接在那里加，两端一起生效。
+    switch (FushiIncomingLink.classify(data)) {
+      case null:
+        return false;
+      case CardSourceIncomingLink(:final String url):
+        _queueCardSourceUrl(url);
+      case PairIncomingLink(:final String url):
+        _queuePairLink(url);
+      case ShortcutIncomingLink(:final AppShortcut shortcut):
+        _queueAppShortcut(shortcut);
+      case WidgetIncomingLink(:final WidgetLink link):
+        _queueWidgetLink(link);
+      case LeaderboardIncomingLink(:final LeaderboardDeepLink link):
+        _queueLeaderboardLink(link);
+      // iOS：快捷指令 / 其它 app 打开的 `fushi://lookup?word=` 交给应用内查词弹窗
+      // （Android 的这条链接由 manifest 直接路由到 :popup 查词窗，到不了这里；
+      // Windows 走 argv / WM_COPYDATA，见 [lookupWordFromDeepLink]）。
+      case LookupIncomingLink(:final String word):
+        deliverExternalLookup(word);
+      case OAuthRedirectIncomingLink(:final String url):
+        await _handleOAuthRedirect(url);
+      case AnkiFetchIncomingLink():
+        await _handleAnkiMobileInfoCallback();
+      case AnkiSuccessIncomingLink(:final String url):
+        await _recordAnkiMobileMinedNote(url);
     }
-    if (FushiPairLink.tryParse(data) != null) {
-      _queuePairLink(data);
-      return true;
-    }
-    final AppShortcut? shortcut = AppShortcut.tryParse(data);
-    if (shortcut != null) {
-      _queueAppShortcut(shortcut);
-      return true;
-    }
-    final WidgetLink? widgetLink = WidgetLink.tryParse(data);
-    if (widgetLink != null) {
-      _queueWidgetLink(widgetLink);
-      return true;
-    }
-    // iOS：快捷指令 / 其它 app 打开的 `fushi://lookup?word=` 交给应用内查词弹窗
-    // （Android 的这条链接由 manifest 直接路由到 :popup 查词窗，到不了这里；
-    // Windows 走 argv / WM_COPYDATA，见 [lookupWordFromDeepLink]）。
-    final String? lookupWord = lookupWordFromDeepLink(data);
-    if (lookupWord != null) {
-      deliverExternalLookup(lookupWord);
-      return true;
-    }
-    final String normalized = data.toLowerCase();
-    if (normalized.startsWith('fushi://auth/')) {
-      await _handleOAuthRedirect(data);
-      return true;
-    }
-    if (normalized.startsWith(fushiAnkiFetchCallback.toLowerCase())) {
-      await _handleAnkiMobileInfoCallback();
-      return true;
-    }
-    if (normalized.startsWith(fushiAnkiSuccessCallback.toLowerCase())) {
-      await _recordAnkiMobileMinedNote(data);
-      return true;
-    }
-    return false;
+    return true;
   }
 
   /// The companion on the second screen asked to open a `fushi://widget/...`
   /// link on this screen (continue an item, start reviews...).
   Future<void> _openCompanionLink(String link) async {
     await handleIncomingUrl(data: link, isInitial: false);
+  }
+
+  /// 托盘菜单项的文案：导航项与底栏同名，其余复用悬浮球 / 托盘自己的文案。
+  String _trayEntryLabel(DesktopTrayEntry entry) => switch (entry) {
+    DesktopTrayEntry.show => t.desktop_tray_show_window,
+    DesktopTrayEntry.clipboardLookup => t.floating_ball_action_clipboard,
+    DesktopTrayEntry.screenOcr => t.floating_ball_action_screen_ocr,
+    DesktopTrayEntry.exit => t.desktop_tray_quit,
+    _ => homeNavItemFor(entry.homeTab!).label,
+  };
+
+  /// 托盘菜单动作。要露出主窗口的项，原生侧已经在菜单返回的同一调用栈里把窗口
+  /// 带回前台了，这里只管落地。
+  Future<void> _runTrayEntry(DesktopTrayEntry entry) async {
+    if (!mounted) return;
+    final AppModel appModel = ref.read(appProvider);
+    switch (entry) {
+      case DesktopTrayEntry.show:
+        return;
+      case DesktopTrayEntry.exit:
+        await _flushAndExitForWindowClose();
+        return;
+      case DesktopTrayEntry.screenOcr:
+        await GlobalLookupController.instance.triggerScreenOcr();
+        return;
+      case DesktopTrayEntry.clipboardLookup:
+        await _trayClipboardLookup();
+        return;
+      case DesktopTrayEntry.lookup:
+      case DesktopTrayEntry.books:
+      case DesktopTrayEntry.manga:
+      case DesktopTrayEntry.video:
+      case DesktopTrayEntry.music:
+      case DesktopTrayEntry.srs:
+      case DesktopTrayEntry.settings:
+        break;
+    }
+    if (!appModel.isInitialised) return;
+    // 菜单可能是模块关掉之前发的：落地时再判一次门。
+    final ModuleId? module = entry.module;
+    if (module != null && !appModel.moduleVisibility.isEnabled(module)) return;
+    final HomeTab tab = entry.homeTab!;
+    void selectHomeTab(HomeTab tab) => homeShellTabNotifier.value = tab;
+    // 新手引导没走完：只在引导下面切 tab，不动路由栈（与长按图标快捷方式同口径）。
+    if (!appModel.onboardingCompleted) {
+      selectHomeTab(tab);
+      return;
+    }
+    if (entry == DesktopTrayEntry.lookup) {
+      // 点「查词」就是要打字：送进搜索框（与全局「打开查词页」热键同一入口）。
+      appModel.requestHomeDictionaryTab(focusSearch: true);
+      return;
+    }
+    await landOnHomeTab(
+      tab,
+      navigator: appModel.navigatorKey.currentState,
+      selectHomeTab: selectHomeTab,
+    );
+  }
+
+  /// 托盘「剪贴板查词」：弹应用外查词窗，不把主窗口带出来；查词窗起不来时退回
+  /// 主窗口里的查词卡。
+  Future<void> _trayClipboardLookup() async {
+    final ClipboardData? data = await Clipboard.getData(Clipboard.kTextPlain);
+    final String text = data?.text?.trim() ?? '';
+    if (text.isEmpty) {
+      await DesktopTray.instance.showNotification(
+        title: 'Fushi',
+        body: t.floating_ball_clipboard_empty,
+      );
+      return;
+    }
+    if (await GlobalLookupController.instance.lookupText(text)) return;
+    await DesktopLookupService.instance.bringMainWindowToFront();
+    FloatingLyricLookupNotifier.instance.requestLookup(text, 0);
+  }
+
+  /// 原生侧已把主窗口收进托盘（关闭按钮 / Alt+F4 且开着「关闭到托盘」）。窗口隐藏
+  /// 后几何仍可读，趁此落一次盘；第一次收进托盘时弹一条通知，告诉用户它还在运行。
+  void _onHiddenToTray() {
+    unawaited(DesktopWindowPlacement.saveCurrentBoundsNow());
+    if (!mounted) return;
+    final PreferencesRepository prefs = ref.read(appProvider).prefsRepo;
+    if (prefs.desktopTrayHintShown) return;
+    unawaited(prefs.setDesktopTrayHintShown(true));
+    unawaited(
+      DesktopTray.instance.showNotification(
+        title: 'Fushi',
+        body: t.desktop_tray_hidden_hint,
+      ),
+    );
   }
 
   void _queueAppShortcut(AppShortcut shortcut) {
@@ -2013,6 +2140,25 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       selectHomeTab: (HomeTab tab) => homeShellTabNotifier.value = tab,
       // 用户点「查词」就是要打字：送进搜索框。
       openLookup: () => appModel.requestHomeDictionaryTab(focusSearch: true),
+    );
+  }
+
+  void _queueLeaderboardLink(LeaderboardDeepLink link) {
+    final bool ready = mounted && ref.read(appProvider).isInitialised;
+    _leaderboardLinks.enqueue(link, ready: ready);
+    // 未初始化：初始化完成后的根 build 会调 [LeaderboardDeepLinkQueue.schedule]。
+    if (mounted && !ready) setState(() {});
+  }
+
+  Future<void> _runLeaderboardLink(LeaderboardDeepLink link) {
+    return openLeaderboardDeepLink(
+      link,
+      navigator: ref.read(appProvider).navigatorKey.currentState,
+      isLeaderboardActive: () async {
+        final LeaderboardService service = ref.read(leaderboardServiceProvider);
+        await service.load();
+        return service.status == LeaderboardStatus.active;
+      },
     );
   }
 
@@ -2281,6 +2427,13 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     }
     if (FushiPairLink.tryParse(videoPath) != null) {
       _queuePairLink(videoPath);
+      return null;
+    }
+    final LeaderboardDeepLink? leaderboardLink = LeaderboardDeepLink.tryParse(
+      videoPath,
+    );
+    if (leaderboardLink != null) {
+      _queueLeaderboardLink(leaderboardLink);
       return null;
     }
     // BUG-1666：单实例转交的是「候选 argv 字符串」，不只视频路径——Anki 卡片上的
@@ -2738,7 +2891,16 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
   /// show + focus 抢回前台。
   Future<void> _revealStartupWindow() async {
     if (Platform.isWindows) {
-      await windowManager.show();
+      // BUG-5521：runner 的显窗点一次往返做完撤启动隐身（恢复最大化时窗口已被
+      // SC_MAXIMIZE 显出、但一直隐身到这里）+ 显示 + 前置。分两次往返实测会让
+      // 显示排在首帧后的平台线程忙碌之后、晚 3 秒。通道失败退回 window_manager
+      // 显窗；隐身没撤掉则由 runner 看门狗到期强制显窗（它按「隐身 = 不可见」判）。
+      try {
+        await WindowCaptionChannel.showStartupWindow();
+      } catch (e) {
+        debugPrint('[Fushi] startup window reveal channel failed: $e');
+        await windowManager.show();
+      }
       try {
         await windowManager.focus();
       } catch (e) {
@@ -3183,6 +3345,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
             background: _savedSplashColor,
             // TODO-1182：失败态在同一遮罩上改显「原因 + 建议 + 重启」，用户点重启回旧根。
             failure: appModel.dataRootMigrationFailure,
+            failureHint: appModel.dataRootMigrationFailureHint,
             onRestart: () => dataRootMigrationRestart(appModel),
           ),
         ),
@@ -3267,6 +3430,13 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     _schedulePairLinks();
     _appShortcuts.schedule();
     _widgetLinks.schedule();
+    final LeaderboardDeepLink? argvLeaderboardLink =
+        _pendingArgvLeaderboardLink;
+    if (argvLeaderboardLink != null) {
+      _pendingArgvLeaderboardLink = null;
+      _leaderboardLinks.enqueue(argvLeaderboardLink, ready: false);
+    }
+    _leaderboardLinks.schedule();
     // 小组件快照：初始化完成后的首帧起订阅一次（只启动一次，不在 build 里订阅）；
     // 之后界面语言 / 模块开关变化由 [onContextChanged] 去重后触发。
     if (!_widgetSnapshotsStartScheduled && _widgetSnapshots.enabled) {
@@ -3282,6 +3452,17 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       AppShortcut.available(appModel.moduleVisibility),
       labelOf: (AppShortcut shortcut) => homeNavItemFor(shortcut.homeTab).label,
       disabledMessage: t.module_disabled_hint,
+    );
+    // 托盘菜单同口径：跟着模块开关与界面语言走，按签名去重。
+    DesktopTray.instance.sync(
+      items: buildDesktopTrayMenu(
+        isModuleEnabled: appModel.moduleVisibility.isEnabled,
+        labelOf: _trayEntryLabel,
+        screenOcrAvailable: isDesktopSystemBallPlatform,
+        clipboardLookupAvailable: true,
+      ),
+      tooltip: 'Fushi',
+      closeToTray: appModel.prefsRepo.desktopCloseToTray,
     );
 
     if (!_startupFeedbackChecked) {
@@ -3509,6 +3690,11 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                             // AI 模块关着时不认领。
                             openAiAssistant: () =>
                                 openAiAgentFromShortcut(appModel),
+                            // 全局快捷键「打开待发卡片」（应用内反馈 OElRvCndxk，默认
+                            // 不绑键）：与「查看队列」同一个落点。
+                            openPendingCards: () => openPendingMinesPage(
+                              appModel.navigatorKey.currentState,
+                            ),
 
                             // BUG-1349（第二处根因）：焦点导航层（FushiFocusRoot 的
                             // fallbackNode）必须在全局导航层**之内**。键事件沿焦点树

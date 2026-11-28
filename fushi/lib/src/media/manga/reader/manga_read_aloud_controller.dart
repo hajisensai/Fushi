@@ -256,6 +256,10 @@ class MangaReadAloudController extends ChangeNotifier {
       _state != MangaReadAloudState.idle &&
       _state != MangaReadAloudState.finished;
 
+  /// 正在往下读（等字 / 合成 / 出声）：暂停、停止、读完都不算。页面按它持有长时播放的
+  /// 音频焦点（BUG-5505：`DesktopAudioPlayback.holdLongPlayback`）。
+  bool get isRunning => _running;
+
   bool get _running =>
       _state == MangaReadAloudState.preparingText ||
       _state == MangaReadAloudState.synthesizing ||
@@ -724,27 +728,39 @@ class MangaReadAloudSessionWatch {
     this.controller, {
     required VoidCallback onActiveChanged,
     required void Function(MangaReadAloudFinish? finish) onFinished,
+    void Function(bool running)? onRunningChanged,
   }) : _onActiveChanged = onActiveChanged,
        _onFinished = onFinished,
+       _onRunningChanged = onRunningChanged,
        _lastState = controller.state,
-       _lastActive = controller.isActive {
+       _lastActive = controller.isActive,
+       _lastRunning = controller.isRunning {
     controller.addListener(_onControllerChanged);
   }
 
   final MangaReadAloudController controller;
   final VoidCallback _onActiveChanged;
   final void Function(MangaReadAloudFinish? finish) _onFinished;
+
+  /// [MangaReadAloudController.isRunning] 翻转时回调（页面据此申请 / 释放长时播放的
+  /// 音频焦点，BUG-5505）。
+  final void Function(bool running)? _onRunningChanged;
   MangaReadAloudState _lastState;
   bool _lastActive;
+  bool _lastRunning;
 
   void _onControllerChanged() {
     final MangaReadAloudState state = controller.state;
     final bool active = controller.isActive;
+    final bool running = controller.isRunning;
     final bool finishedNow =
         state != _lastState && state == MangaReadAloudState.finished;
     final bool activeFlipped = active != _lastActive;
+    final bool runningFlipped = running != _lastRunning;
     _lastState = state;
     _lastActive = active;
+    _lastRunning = running;
+    if (runningFlipped) _onRunningChanged?.call(running);
     if (finishedNow) _onFinished(controller.finish);
     if (activeFlipped) _onActiveChanged();
   }

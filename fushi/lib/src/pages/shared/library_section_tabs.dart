@@ -23,6 +23,7 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
     show
+        FushiAppleSectionSegments,
         FushiMastheadRole,
         FushiMastheadSegmentedTabs,
         FushiMastheadSwitch,
@@ -257,7 +258,7 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
       child:
           masthead ??
           (isGlassDesign(context)
-              ? _AppleSectionSegments<T>(
+              ? FushiAppleSectionSegments<T>(
                   tabs: shownTabs,
                   selected: selectedValue,
                   onChanged: onSelect,
@@ -289,7 +290,7 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
     if (role != null && isGlassDesign(context)) {
       // Apple（Cupertino）导航栏：一级「媒体库 | 在线」与二级视图都是分段控件
       // （设计稿 video_topbar_cupertino_design/v5.html）；窄窗二级铺满整行。
-      return _AppleSectionSegments<T>(
+      return FushiAppleSectionSegments<T>(
         tabs: shownTabs,
         selected: selectedValue,
         onChanged: onSelect,
@@ -348,7 +349,7 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
           child:
               _mastheadBody(context, tabs, tabs[index].value, select) ??
               (isGlassDesign(context)
-                  ? _AppleSectionSegments<T>(
+                  ? FushiAppleSectionSegments<T>(
                       tabs: tabs,
                       selected: tabs[index].value,
                       onChanged: select,
@@ -475,169 +476,6 @@ class _OrderableSectionTabsState<T extends Object>
           child: row,
         ),
       ),
-    );
-  }
-}
-
-/// [LibrarySectionTabs] 在 Apple 设计系统下的呈现层：原生 Cupertino 分段控件
-/// （用户 2026-10-12「顶部的标签页改回为 Cupertino 的分段选择器」，取代 10-04
-/// 的 iOS 文字页签 + 下划线）。
-///
-/// 段宽一律等分（`UISegmentedControl` 形态）：[fill] 且摆得下时铺满整行，
-/// 否则按内容取宽贴左。段数多到摆不下时不横滑（横滑会把首尾段切掉一截，
-/// 2026-10-12 用户截图「视频这块没贴合」），与 MD3 页签同一套溢出：只排得下
-/// 的前几段进控件，其余收进末尾的「更多」下拉；选中段在溢出区时替换到可见
-/// 末位，永远看得到自己在哪。焦点契约在外层 [FushiAdjustableSegmented]（与
-/// MD3 的 TabBar 同一外壳）。
-class _AppleSectionSegments<T extends Object> extends StatelessWidget {
-  const _AppleSectionSegments({
-    required this.tabs,
-    required this.selected,
-    required this.onChanged,
-    required this.fill,
-    required this.selectedIsCurrent,
-  });
-
-  final List<LibrarySectionTab<T>> tabs;
-  final T selected;
-  final ValueChanged<T> onChanged;
-  final bool fill;
-
-  /// 见 [LibrarySectionTabs.selectedIsCurrent]。
-  final bool selectedIsCurrent;
-
-  /// 等宽段的格宽：最宽文案 + 两侧 14（同 [FushiSegmentedButton] 的口径）。
-  double _cellWidth(BuildContext context) {
-    final bool compact = fushiAppleCompact(context);
-    final double macScale = fushiAppleMacScale(context);
-    final TextStyle style =
-        (Theme.of(context).textTheme.labelLarge ?? const TextStyle()).copyWith(
-          fontSize: compact ? 13 * macScale : 15,
-          fontWeight: FontWeight.w600,
-        );
-    final TextScaler scaler = MediaQuery.textScalerOf(context);
-    double widest = 0;
-    for (final LibrarySectionTab<T> tab in tabs) {
-      final TextPainter painter = TextPainter(
-        text: TextSpan(text: tab.label, style: style),
-        textDirection: TextDirection.ltr,
-        textScaler: scaler,
-        maxLines: 1,
-      )..layout();
-      widest = math.max(widest, painter.width);
-      painter.dispose();
-    }
-    return widest + 28;
-  }
-
-  /// [count] 段的控件宽（轨道两端各 3）。
-  static double _controlWidth(double cell, int count) => count * cell + 6;
-
-  Future<void> _showOverflow(
-    BuildContext anchorContext,
-    List<int> hidden,
-  ) async {
-    final RenderBox button = anchorContext.findRenderObject()! as RenderBox;
-    final RenderBox overlay =
-        Navigator.of(anchorContext).overlay!.context.findRenderObject()!
-            as RenderBox;
-    final RelativeRect position = RelativeRect.fromRect(
-      Rect.fromPoints(
-        button.localToGlobal(Offset.zero, ancestor: overlay),
-        button.localToGlobal(
-          button.size.bottomRight(Offset.zero),
-          ancestor: overlay,
-        ),
-      ),
-      Offset.zero & overlay.size,
-    );
-    final int? picked = await showFushiMenu<int>(
-      context: anchorContext,
-      position: position,
-      items: <PopupMenuEntry<int>>[
-        for (final int i in hidden)
-          PopupMenuItem<int>(value: i, child: Text(tabs[i].label)),
-      ],
-    );
-    if (picked != null) onChanged(tabs[picked].value);
-  }
-
-  Widget _control(List<int> visible, {required bool expand}) {
-    return FushiSegmentedButton<T>(
-      segments: <ButtonSegment<T>>[
-        for (final int i in visible)
-          ButtonSegment<T>(
-            value: tabs[i].value,
-            label: Text(tabs[i].label, key: tabs[i].labelKey),
-          ),
-      ],
-      selected: <T>{selected},
-      showSelectedIcon: false,
-      onSelectionChanged: (Set<T> values) {
-        if (values.isNotEmpty) onChanged(values.first);
-      },
-      notifyReselect: !selectedIsCurrent,
-      expandedInsets: expand ? EdgeInsets.zero : null,
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final double cell = _cellWidth(context);
-    final double natural = _controlWidth(cell, tabs.length);
-    FushiHeaderCrampScope.maybeOf(context)?.reportTitleNaturalWidth(natural);
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        final double max = constraints.maxWidth;
-        final List<int> all = <int>[for (int i = 0; i < tabs.length; i++) i];
-        if (!max.isFinite || natural <= max) {
-          return Align(
-            alignment: AlignmentDirectional.centerStart,
-            widthFactor: fill ? null : 1,
-            child: SizedBox(
-              width: fill && max.isFinite ? max : natural,
-              child: _control(all, expand: true),
-            ),
-          );
-        }
-        // 溢出：留出「更多」钮的位置，算排得下几段（至少 1 段）。
-        final int count = math.max(
-          1,
-          ((max - _kSectionTabMoreWidth - 6) / cell).floor(),
-        );
-        final int selectedIndex = math.max(
-          0,
-          tabs.indexWhere((LibrarySectionTab<T> tab) => tab.value == selected),
-        );
-        final List<int> visible = <int>[
-          for (int i = 0; i < count - 1; i++) i,
-          selectedIndex >= count - 1 ? selectedIndex : count - 1,
-        ];
-        final List<int> hidden = <int>[
-          for (final int i in all)
-            if (!visible.contains(i)) i,
-        ];
-        // 铺满档溢出时同样占满整行（2026-10-30「二级菜单要做成全宽的」）：
-        // 可见段吃掉「更多」钮以外的全部宽度。
-        final Widget control = _control(visible, expand: true);
-        return Row(
-          mainAxisSize: fill ? MainAxisSize.max : MainAxisSize.min,
-          children: <Widget>[
-            if (fill)
-              Expanded(child: control)
-            else
-              SizedBox(
-                width: _controlWidth(cell, visible.length),
-                child: control,
-              ),
-            Builder(
-              builder: (BuildContext anchorContext) => _SectionTabMoreButton(
-                onTap: () => _showOverflow(anchorContext, hidden),
-              ),
-            ),
-          ],
-        );
-      },
     );
   }
 }

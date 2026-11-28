@@ -1,5 +1,5 @@
 // 折叠屏桌面姿态下视频页下半屏的播放面板：M3E 与 Apple 两套设计系统各自成套，
-// 播放 / ±10 秒按钮真的回调到播放器。
+// 播放键与短 / 长步进键真的回调到播放器，步进秒数跟配置走（不写死 10 秒）。
 import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoIcons;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -28,7 +28,7 @@ Widget _app(Widget home, {required bool apple}) {
 
 void main() {
   for (final bool apple in <bool>[false, true]) {
-    testWidgets('${apple ? 'Apple' : 'M3E'}：播放键与 ±10 秒回调到播放器', (
+    testWidgets('${apple ? 'Apple' : 'M3E'}：播放键与短 / 长步进回调到播放器', (
       WidgetTester tester,
     ) async {
       final ValueNotifier<bool> playing = ValueNotifier<bool>(false);
@@ -50,6 +50,8 @@ void main() {
             onPlayPause: () => playing.value = !playing.value,
             onSeek: (_) {},
             onSeekRelative: seeks.add,
+            seekSeconds: 3,
+            longSeekSeconds: 45,
           ),
           apple: apple,
         ),
@@ -83,15 +85,35 @@ void main() {
       expect(find.text(after), findsWidgets);
       expect(find.text(before), findsNothing);
 
-      await tester.tap(
-        find.byKey(const ValueKey<String>('video_tabletop_seek_back_button')),
-      );
-      await tester.tap(
-        find.byKey(
-          const ValueKey<String>('video_tabletop_seek_forward_button'),
-        ),
-      );
-      expect(seeks, <int>[-10, 10]);
+      for (final String key in <String>[
+        'video_tabletop_long_seek_back_button',
+        'video_tabletop_seek_back_button',
+        'video_tabletop_seek_forward_button',
+        'video_tabletop_long_seek_forward_button',
+      ]) {
+        await tester.tap(find.byKey(ValueKey<String>(key)));
+      }
+      expect(seeks, <int>[-45, -3, 3, 45]);
+      // 秒数动态显示：M3E 是圆钮下的「−Ns / +Ns」标注；Apple 是圆箭头里的数字
+      // （SF 有 45 的带数字字形，3 秒画无数字圆箭头 + 叠字）。
+      if (apple) {
+        expect(find.byIcon(CupertinoIcons.gobackward_45), findsOneWidget);
+        expect(find.byIcon(CupertinoIcons.goforward_45), findsOneWidget);
+        expect(find.text('3'), findsNWidgets(2));
+      } else {
+        for (final String label in <String>[
+          t.video_bottom_seek_back_seconds_label(seconds: 45),
+          t.video_bottom_seek_back_seconds_label(seconds: 3),
+          t.video_bottom_seek_forward_seconds_label(seconds: 3),
+          t.video_bottom_seek_forward_seconds_label(seconds: 45),
+        ]) {
+          expect(find.text(label), findsOneWidget, reason: label);
+        }
+        expect(
+          find.byTooltip(t.video_control_seek_backward_seconds(seconds: 45)),
+          findsOneWidget,
+        );
+      }
 
       // Apple 的 FushiTooltip 不是 Material Tooltip，按 key 点、按 SF 字形断言。
       await tester.tap(
@@ -107,12 +129,6 @@ void main() {
             : find.byTooltip(t.pause),
         findsOneWidget,
       );
-
-      if (apple) {
-        // Apple 面板的按钮走语义图标 + FushiIcon 分派：渲染的是 SF 字形。
-        expect(find.byIcon(CupertinoIcons.gobackward_10), findsOneWidget);
-        expect(find.byIcon(CupertinoIcons.goforward_10), findsOneWidget);
-      }
 
       // 卸载：面板必须从推送源上摘掉监听（否则通知会打到已卸载的 State）。
       await tester.pumpWidget(const SizedBox());

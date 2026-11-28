@@ -326,10 +326,11 @@ class SubtitleEmbeddedFontLoader {
       ..add(videoPath);
     // 退出码忽略（无输出文件恒非 0）；只认写出的文件。
     await _backend.run(args, _dumpTimeout);
-    return <File>[
-      for (final File f in targets)
-        if (f.existsSync() && f.lengthSync() > 0) f,
-    ];
+    final List<File> written = <File>[];
+    for (final File f in targets) {
+      if (await f.exists() && await f.length() > 0) written.add(f);
+    }
+    return written;
   }
 
   /// 读字体文件 → 解析 family 名 → 按每个 family 名注册（同字节可挂多名）。

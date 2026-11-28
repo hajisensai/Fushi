@@ -96,7 +96,7 @@ import 'package:fushi/src/media/links/media_link_entries.dart'
 import 'package:fushi/src/media/links/media_link_inference_host.dart'
     show mediaLinkInferCallback;
 import 'package:fushi/src/media/links/media_link_opener.dart'
-    show mediaLinkSearchAction, openMediaLinkEntry;
+    show mediaLinkRemoteVideoSources, mediaLinkSearchAction, openMediaLinkEntry;
 import 'package:fushi/src/media/links/media_links_section.dart'
     show MediaLinksSection;
 import 'package:fushi/src/media/tracking/book_tracking_dialog.dart';
@@ -2258,6 +2258,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       if (_bookKey case final String bookKey)
         SliverToBoxAdapter(
           child: MediaLinksSection(
+            remoteVideoSources: mediaLinkRemoteVideoSources(ref: ref),
             database: _appModel.database,
             self: (kind: MediaLinkKind.book, key: bookKey),
             onOpen: (MediaLinkEntry e) =>

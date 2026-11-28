@@ -195,4 +195,88 @@ void main() {
       );
     });
   });
+
+  // BUG-5521: restoring a maximized session calls windowManager.maximize()
+  // while the window is still hidden; SC_MAXIMIZE shows a hidden window, so
+  // the user stared at the teal fallback backdrop for seconds before the first
+  // frame. The hidden-launch window is cloaked from creation (that show sends
+  // no WM_SHOWWINDOW, so it cannot be caught later) until Dart's reveal.
+  group('BUG-5521: the startup window stays cloaked until the reveal', () {
+    late String flutterWindowCpp;
+    late String watchdogCpp;
+    late String channelDart;
+
+    setUpAll(() {
+      flutterWindowCpp = maskComments(
+        File('windows/runner/flutter_window.cpp').readAsStringSync(),
+      );
+      watchdogCpp = maskComments(
+        File('windows/runner/hang_watchdog.cpp').readAsStringSync(),
+      );
+      channelDart = maskComments(
+        File('lib/src/utils/window_caption_channel.dart').readAsStringSync(),
+      );
+    });
+
+    test('the runner cloaks the hidden-launch window right after creating '
+        'it', () {
+      final int start = cpp.indexOf('bool Win32Window::CreateAndShow(');
+      expect(start, isNonNegative);
+      final String body = cpp.substring(start, cpp.indexOf('\n}\n', start));
+      final int create = body.indexOf('CreateWindowEx(');
+      final int cloak = body.indexOf('ShouldCloakAtCreation(hidden)');
+      expect(create, isNonNegative);
+      expect(cloak, greaterThan(create));
+      expect(body.substring(cloak), contains('DWMWA_CLOAK'));
+      // Before Dart can run any startup placement (OnCreate starts the engine).
+      expect(cloak, lessThan(body.indexOf('return OnCreate();')));
+    });
+
+    test('the reveal lifts the cloak and the watchdog can force it', () {
+      final int start = cpp.indexOf('void Win32Window::RevealStartupWindow()');
+      expect(start, isNonNegative);
+      final String body = cpp.substring(start, cpp.indexOf('\n}\n', start));
+      expect(body, contains('startup_cloaked_ = false;'));
+      expect(body, contains('DWMWA_CLOAK'));
+      expect(body, contains('ShowWindow(window_handle_, SW_SHOW)'));
+      expect(cpp, contains('message == ::fushi::ForceStartupRevealMessage()'));
+      final int channel = flutterWindowCpp.indexOf('"showStartupWindow"');
+      expect(channel, isNonNegative);
+      final String handler = flutterWindowCpp.substring(
+        channel,
+        flutterWindowCpp.indexOf('result->Success();', channel),
+      );
+      expect(handler, contains('RevealStartupWindow();'));
+      expect(handler, contains('SetForegroundWindow('));
+      // A cloaked window is Win32-visible: the watchdog must not count it as
+      // shown, and its forced reveal must go through the cloak-lifting message.
+      expect(watchdogCpp, contains('DWMWA_CLOAKED'));
+      expect(watchdogCpp, contains('IsWindowUserVisible('));
+      expect(watchdogCpp, contains('ForceStartupRevealMessage()'));
+    });
+
+    test('Dart reveals through the runner in one round trip and falls back '
+        'to window_manager', () {
+      expect(channelDart, contains('!Platform.isMacOS && !Platform.isWindows'));
+      final int start = mainDart.indexOf('Future<void> _revealStartupWindow()');
+      final int end = mainDart.indexOf(
+        'Future<void> _revealStartupWindowFallback()',
+      );
+      final String body = mainDart.substring(start, end);
+      final int reveal = body.indexOf(
+        'await WindowCaptionChannel.showStartupWindow()',
+      );
+      final int fallback = body.indexOf('} catch (e) {', reveal);
+      final int show = body.indexOf('await windowManager.show()');
+      expect(reveal, isNonNegative);
+      // Measured: a second round trip before window_manager's show() landed
+      // behind the platform thread's post-first-frame work, 3 s late.
+      expect(
+        show,
+        greaterThan(fallback),
+        reason: 'windowManager.show() is only the channel-failure fallback',
+      );
+      expect(fallback, greaterThan(reveal));
+    });
+  });
 }

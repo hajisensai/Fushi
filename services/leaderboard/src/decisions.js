@@ -16,6 +16,7 @@
 
 import { HttpError, b64urlEncode } from './util.js';
 import { esc } from './pages.js';
+import { lightboxImage } from './lightbox.js';
 
 export const DECISION_KINDS = { pr: 'PR', feedback: '反馈', issue: 'Issue', review: '审查', design: '设计', other: '其他' };
 export const DECISION_RECS = { do: '建议做', skip: '建议不做', never: '建议永远不做', later: '建议以后', weigh: '看取舍' };
@@ -366,8 +367,9 @@ function filesHtml(row, back) {
     const open = `<a href="${href}" target="_blank" rel="noopener">${esc(f.name)}</a> <span class="muted">${esc(fmtSize(f.bytes))}${
       f.by === 'dev' ? ' · 开发者上传' : ''}</span>${shareHtml(row.id, n, shares.get(f.key), back)}`;
     if (view === 'image') {
-      return `<div class="dfile"><div class="dfhead">${open}</div><a href="${href}" target="_blank" rel="noopener"><img src="${href}" alt="${
-        esc(f.name)}" loading="lazy"></a></div>`;
+      return `<div class="dfile"><div class="dfhead">${open}</div>${lightboxImage({
+        id: `d-${row.id}-f${n}`, src: `/dev/d/${row.id}/f/${n}`, alt: f.name, imgAttrs: 'loading="lazy"',
+      })}</div>`;
     }
     if (view === 'html') {
       // 分享按钮放在 summary 外面：summary 里的表单按钮会和展开 / 收起抢点击。
@@ -639,8 +641,9 @@ function originalHtml(row) {
     ...originalImageUrls(row.original).map((u, i) => [u, `原文图片 ${i + 1}`]),
   ];
   if (!text && !imgs.length && !media.video) return '';
-  const shots = imgs.map(([src, alt]) => `<a href="${esc(src)}" target="_blank" rel="noopener noreferrer"><img src="${
-    esc(src)}" alt="${esc(alt)}" loading="lazy" referrerpolicy="no-referrer"></a>`).join('');
+  const shots = imgs.map(([src, alt], i) => lightboxImage({
+    id: `d-${row.id}-o${i}`, src, alt, imgAttrs: 'loading="lazy" referrerpolicy="no-referrer"',
+  })).join('');
   const links = fid ? `<p class="dorig-links"><a href="/dev/f/${esc(fid)}" target="_blank">${
     media.video ? '反馈详情（含视频）' : '反馈详情'}</a></p>` : '';
   return `<details class="dorig" open><summary>原文</summary>${text ? `<div class="body">${esc(text)}</div>` : ''}${

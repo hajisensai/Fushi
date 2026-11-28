@@ -45,12 +45,15 @@ import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show
+        FushiFloatingChromeController,
+        FushiFloatingChromeInset,
+        FushiFloatingChromeOverlay,
+        FushiFloatingChromeScope,
         FushiHeightReporter,
         FushiTopFadeScrim,
         kFushiTopFadeExtent,
         kFushiTopScrimOverlayOpacity;
 import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart';
-import 'package:fushi/src/utils/components/fushi_page_title_metrics.dart';
 import 'package:fushi/src/utils/components/fushi_static_masthead.dart'
     show FushiStaticMasthead;
 import 'package:fushi/src/utils/adaptive/shell_style.dart'
@@ -73,6 +76,8 @@ import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_toolbar.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_bar_cluster.dart'
     show FushiAppleBarCluster;
+import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart'
+    show fushiNotificationDrivesPageChrome;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/glass/fushi_native_material.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
@@ -4709,13 +4714,15 @@ const int kFushiHeaderMoreEntryOverflowPriority = -1000;
 
 /// 「⋯」菜单项 → 平铺的图标钮：文案只进 tooltip（[FushiIconButton] 由它出
 /// Semantics），沿用菜单项的 key（测试 / 焦点驱动按同一个 key 定位，无论它此刻
-/// 平铺还是在菜单里）、同一个回调、同一个禁用态。
+/// 平铺还是在菜单里）、同一个回调、同一个禁用态。[FushiHeaderMoreEntry.busy]
+/// 时这颗按钮置灰不可重入，并恒外露（进行中的状态不能藏进「⋯」）。
 FushiIconButton _headerActionOfMoreEntry(FushiHeaderMoreEntry entry) =>
     FushiIconButton(
       key: entry.key,
       icon: entry.icon,
       tooltip: entry.label,
-      enabled: entry.enabled,
+      enabled: entry.enabled && !entry.busy,
+      alwaysVisible: entry.busy,
       overflowPriority: kFushiHeaderMoreEntryOverflowPriority,
       onTap: entry.onSelected,
     );
@@ -4764,6 +4771,14 @@ FushiResolvedHeaderActions fushiResolveHeaderActions(
   bool collapsePinned = false,
   FushiHeaderOverflowFit? fit,
 }) {
+  // 页头动作只收得进「⋯」的是 [FushiIconButton]（菜单项从它的图标 + 文案派生）。
+  // [FushiIconButtonControl] 派生不出菜单项，放不下时只能横滑、右侧按钮被藏起
+  // 来（用户 2026-11-25 合集页实报）：页面顶栏动作一律用 [FushiIconButton]。
+  assert(
+    !actions.any((Widget action) => action is FushiIconButtonControl),
+    'Header actions must be FushiIconButton, not FushiIconButtonControl: '
+    'only FushiIconButton can collapse into the overflow menu.',
+  );
   // 页面自带的「⋯」：它的项展开进动作行（[flat]），记下每项在行里的位置与
   // 「⋯」该落的位置（紧跟在它的项后面，即它原来的位置）。
   final int pageMoreAt = actions.indexWhere(
@@ -5596,6 +5611,12 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
   /// 页头恒在）。
   final FushiScrollAwayController _chrome = FushiScrollAwayController();
 
+  /// [FushiPageScaffold.header] 是模块页页头大字（[FushiStaticMasthead]）时的
+  /// 库页同款工具区 controller（显隐 + 大字随滚动收缩的偏移）。`late`：只有走
+  /// 这一形态的页面才建；热重载时已存在的 State 也能建出来。
+  late final FushiFloatingChromeController _moduleMastheadChrome =
+      FushiFloatingChromeController();
+
   /// [FushiPageScaffold.extendBodyBehindHeader] 下页头的实测高度（不含状态栏）。
   double _headerHeight = 0;
 
@@ -5681,6 +5702,7 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
     PageScrollRegistry.pop(_scrollController);
     _scrollController.dispose();
     _chrome.dispose();
+    _moduleMastheadChrome.dispose();
     _scrolledUnder.dispose();
     _titleRevealed.dispose();
     _appleScrolledUnder.dispose();
@@ -5698,6 +5720,9 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
     if (masthead && shellRedesignActive(context)) {
       return _buildMasthead(context);
     }
+    if (widget.header is FushiStaticMasthead && shellRedesignActive(context)) {
+      return _buildModuleMasthead(context);
+    }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Widget? effectiveLeading =
         widget.leading ??
@@ -5707,12 +5732,6 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
     Widget buildHeader(bool? titleRevealed) => FushiScrollAwayChrome(
       controller: _chrome,
       enabled: floatingChrome,
-      // 页头大字不是胶囊行：手机上不整行缩，模块页大标题才与库页同一尺寸
-      // （设计稿 11-20 #18，规格 [FushiPageTitleMetrics]）。平板 / 桌面这次不在
-      // 范围内（用户 11-20：只核对、不改），仍按原样缩。
-      capsuleScale:
-          !(widget.header is FushiStaticMasthead &&
-              FushiPageTitleMetrics.isCompact(context)),
       child: widget.header != null
           ? Semantics(
               label: widget.title,
@@ -5860,6 +5879,71 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
                   ],
                 ),
               ),
+      ),
+    );
+  }
+
+  /// [FushiPageScaffold.header] 是模块页页头大字（[FushiStaticMasthead]，复习页
+  /// 等）：与首页 / 库页同一套页头大字工具区（`FushiFloatingChromeOverlay(
+  /// masthead: true)`）——大字随滚动收缩、往下滚收起往回滚弹出、内容从页头底下
+  /// 穿过、底板（90% 页面底色 + 模糊）随滚动渐入，MD3 与 Apple 同一口径。原来
+  /// 它走下面的「收起外壳 + 正文」：大字钉死不收、正文在页头下沿被硬切，与其它
+  /// 模块不一致。正文照 [FushiPageScaffold.extendBodyBehindHeader] 的约定从
+  /// `MediaQuery.paddingOf(context).top` 拿让位（= 工具区下沿）。
+  Widget _buildModuleMasthead(BuildContext context) {
+    return PrimaryScrollController(
+      controller: _scrollController,
+      automaticallyInheritForPlatforms: TargetPlatform.values.toSet(),
+      child: Scaffold(
+        backgroundColor: fushiPageBackgroundColor(context),
+        floatingActionButton: widget.floatingActionButton,
+        floatingActionButtonLocation: widget.floatingActionButtonLocation,
+        bottomNavigationBar: widget.bottomNavigationBar,
+        body: SafeArea(
+          // 底部安全区交给正文（同 [build] 里竖排形态的说明，BUG-2440）。
+          bottom: false,
+          child: FushiFloatingChromeScope(
+            controller: _moduleMastheadChrome,
+            child: FushiFloatingChromeOverlay(
+              masthead: true,
+              chrome: Semantics(
+                label: widget.title,
+                container: true,
+                explicitChildNodes: true,
+                child: widget.header,
+              ),
+              child: NotificationListener<ScrollNotification>(
+                onNotification: (ScrollNotification notification) {
+                  if (fushiNotificationDrivesPageChrome(notification)) {
+                    _moduleMastheadChrome.handleScrollNotification(
+                      notification,
+                    );
+                  }
+                  return false;
+                },
+                child: Builder(
+                  builder: (BuildContext context) {
+                    // 工具区让位改由 MediaQuery 顶部 padding 下发（正文按
+                    // [FushiPageScaffold.extendBodyBehindHeader] 的约定消费），
+                    // 子树里的 inset 归零，不重复让。
+                    final double inset = FushiFloatingChromeInset.of(context);
+                    final MediaQueryData media = MediaQuery.of(context);
+                    return MediaQuery(
+                      data: media.copyWith(
+                        padding: media.padding.copyWith(top: inset),
+                        viewPadding: media.viewPadding.copyWith(top: inset),
+                      ),
+                      child: FushiFloatingChromeInset(
+                        top: 0,
+                        child: widget.body,
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -7627,14 +7711,19 @@ class FushiPopupSurface extends StatelessWidget {
   }
 
   /// Apple 查词面板的材质底色：调用方传主题页面底（`colorScheme.surface` =
-  /// systemGroupedBackground，深色是纯黑）或不传时，取浮层惯用的
-  /// secondarySystemGroupedBackground（浅白 / 深 #1C1C1E，iOS 26 popover 的
-  /// 材质色）；用户手动指定的词典底色（overrideDictionaryColor）原样尊重。
+  /// systemGroupedBackground，深色是纯黑）或不传时，深色取浮层惯用的
+  /// secondarySystemGroupedBackground（#1C1C1E，iOS 26 popover 的材质色），浅色取
+  /// systemGroupedBackground（#F2F2F7）——词典卡是压在面板上的半透明白填充
+  /// （popup.css `--fa-cell`，用户 2026-11-27「白卡也上材质」），面板若也是白，卡就
+  /// 读不出来。用户手动指定的词典底色（overrideDictionaryColor）原样尊重。
   Color _applePanelColor(BuildContext context) {
     final Color? requested = color;
     if (requested == null ||
         requested == Theme.of(context).colorScheme.surface) {
-      return appleColorsOf(context).secondaryGroupedBackground;
+      final FushiAppleColors apple = appleColorsOf(context);
+      return Theme.of(context).colorScheme.brightness == Brightness.dark
+          ? apple.secondaryGroupedBackground
+          : apple.groupedBackground;
     }
     return requested;
   }
@@ -7683,11 +7772,35 @@ class _ApplePopupGlassBackdrop extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Apple 面板的光感（用户 2026-11-27「浅色和深色都要带着这点光感」，参照 Hoshi
+    // Reader）：左侧压暗 → 右上柔光，加一圈左上亮、右下微亮的镜面描边。画在材质之上、
+    // WebView 之下（同 [_PopupOuterShadowPainter] 的位置规则：原生背衬仍是第一个绘制的
+    // 东西）。MD3 没有这套光照语言；墨水屏 / 高对比度不画。槽位恒在（空盒占位），
+    // 切换时 WebView 不会被拆出重挂。
+    final bool sheen =
+        enabled &&
+        !md3 &&
+        !isEinkTheme(context) &&
+        !(MediaQuery.maybeHighContrastOf(context) ?? false);
     return Stack(
       fit: StackFit.passthrough,
       children: <Widget>[
         Positioned.fill(
           child: enabled ? _buildGlass(context) : const SizedBox.shrink(),
+        ),
+        Positioned.fill(
+          child: sheen
+              ? IgnorePointer(
+                  child: CustomPaint(
+                    painter: _ApplePanelSheenPainter(
+                      borderRadius: borderRadius,
+                      dark:
+                          Theme.of(context).colorScheme.brightness ==
+                          Brightness.dark,
+                    ),
+                  ),
+                )
+              : const SizedBox.shrink(),
         ),
         child,
       ],
@@ -7886,6 +7999,92 @@ class _PopupOuterShadowPainter extends CustomPainter {
       oldDelegate.borderRadius != borderRadius ||
       oldDelegate.continuousCorners != continuousCorners ||
       oldDelegate.color != color;
+}
+
+/// Apple 查词面板的光感层（见 [_ApplePopupGlassBackdrop.build]）：
+/// - 斜向明暗：左侧压暗、右侧提亮，像光从右上斜照在玻璃上；
+/// - 右上一团柔光；
+/// - 镜面描边：外缘 1px 的发丝描边（Material side，separator 色）以内再画 1.5px 亮环，
+///   左上最亮、中段淡出、右下微亮回来——边缘因此清楚，不再糊进背后画面。
+/// 浅色与深色同一套方向，只换强度。全部裁在面板形状内（连续曲率圆角）。
+class _ApplePanelSheenPainter extends CustomPainter {
+  const _ApplePanelSheenPainter({
+    required this.borderRadius,
+    required this.dark,
+  });
+
+  final BorderRadius borderRadius;
+  final bool dark;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) return;
+    final Rect rect = Offset.zero & size;
+    final Path panel = Path()
+      ..addRSuperellipse(borderRadius.toRSuperellipse(rect));
+    canvas.save();
+    canvas.clipPath(panel);
+    final Color shade = dark
+        ? Colors.black.withValues(alpha: 0.22)
+        : const Color(0xFF50556E).withValues(alpha: 0.06);
+    final Color light = Colors.white.withValues(alpha: dark ? 0.1 : 0.3);
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..shader = LinearGradient(
+          begin: const Alignment(-1, -0.35),
+          end: const Alignment(1, 0.35),
+          colors: <Color>[shade, shade.withValues(alpha: 0), light],
+          stops: const <double>[0, 0.55, 1],
+        ).createShader(rect),
+    );
+    final double glowRadius = size.shortestSide * 0.9;
+    final Offset glowCenter = Offset(size.width, size.height * 0.2);
+    canvas.drawCircle(
+      glowCenter,
+      glowRadius,
+      Paint()
+        ..shader = RadialGradient(
+          colors: <Color>[
+            Colors.white.withValues(alpha: dark ? 0.06 : 0.35),
+            Colors.white.withValues(alpha: 0),
+          ],
+        ).createShader(Rect.fromCircle(center: glowCenter, radius: glowRadius)),
+    );
+    canvas.restore();
+    // 镜面亮环：落在 1px 发丝描边以内（描边占 [0, 1]，WebView 也从 1px 内缩处开始）。
+    const double inset = 1.75;
+    final Rect ringRect = rect.deflate(inset);
+    BorderRadius inner(BorderRadius r) => BorderRadius.only(
+      topLeft: Radius.circular(math.max(0, r.topLeft.x - inset)),
+      topRight: Radius.circular(math.max(0, r.topRight.x - inset)),
+      bottomLeft: Radius.circular(math.max(0, r.bottomLeft.x - inset)),
+      bottomRight: Radius.circular(math.max(0, r.bottomRight.x - inset)),
+    );
+    final Color spec = Colors.white.withValues(alpha: dark ? 0.4 : 0.9);
+    final Color specLow = Colors.white.withValues(alpha: dark ? 0.15 : 0.5);
+    canvas.drawPath(
+      Path()..addRSuperellipse(inner(borderRadius).toRSuperellipse(ringRect)),
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5
+        ..shader = LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: <Color>[
+            spec,
+            spec.withValues(alpha: 0),
+            specLow.withValues(alpha: 0),
+            specLow,
+          ],
+          stops: const <double>[0, 0.28, 0.72, 1],
+        ).createShader(rect),
+    );
+  }
+
+  @override
+  bool shouldRepaint(_ApplePanelSheenPainter oldDelegate) =>
+      oldDelegate.borderRadius != borderRadius || oldDelegate.dark != dark;
 }
 
 class FushiCompactSearchRow extends StatelessWidget {

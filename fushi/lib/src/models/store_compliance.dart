@@ -183,3 +183,16 @@ bool dvdCssDecryptionAvailableOn({required bool isIOS}) => true;
 /// 真实平台上的 [dvdCssDecryptionAvailableOn]。
 bool get dvdCssDecryptionAvailable =>
     dvdCssDecryptionAvailableOn(isIOS: hostPlatform.isIOS);
+
+/// 复习历史捐赠（把复习记录捐给 anki-rwkv 训练调度模型，设计
+/// `docs/specs/2026-11-26-srs-review-donation.md`）在目标平台上是否存在：iOS 不加（所有者
+/// 2026-11-26 拍板）。
+///
+/// 判据收在这里与其余几条同理：消费端（复习首页横幅、复习页「⋯」里的捐赠入口）只问这里，
+/// 不写 `Platform.isIOS`；将来要在 iOS 放开，只改这一行。守卫
+/// `test/build/ios_store_compliance_guard_test.dart` 钉住它。
+bool srsDonationAvailableOn({required bool isIOS}) => !isIOS;
+
+/// 真实平台上的 [srsDonationAvailableOn]。
+bool get srsDonationAvailable =>
+    srsDonationAvailableOn(isIOS: hostPlatform.isIOS);

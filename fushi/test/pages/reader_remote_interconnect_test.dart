@@ -577,9 +577,6 @@ void main() {
 
     expect(remoteClient.downloadedTitles, <String>['Remote Book']);
     expect(importedFiles.single.existsSync(), isTrue);
-    // 色块按封面取色（进程级 coverColorSchemeCache → 图片加载挂 10 秒超时）；
-    // 测试封面在 fakeAsync 里加载不完，走完超时（落 null）再结束。
-    await tester.pump(const Duration(seconds: 11));
   });
 
   testWidgets('remote book download uses stable bookKey for special titles', (

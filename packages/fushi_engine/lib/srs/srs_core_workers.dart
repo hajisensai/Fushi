@@ -80,6 +80,18 @@ final class SrsCoreWorkers {
   static SrsCoreWorkers of(String? libraryPath) =>
       _pools.putIfAbsent(libraryPath, () => SrsCoreWorkers._(libraryPath));
 
+  /// 本 isolate 的内核命令一律就地同步执行、不起 worker（静态量按 isolate 各一份，只影响调用它的这个 isolate）。
+  ///
+  /// 给一次性的专用后台 isolate 用（srs_store_background.dart：导出 .apkg / 捐赠包）：那里本来就不是 UI isolate，
+  /// 再起一池 worker 不但多付起 isolate + 解析符号的开销，`Isolate.run` 结束时这些 worker 还不会跟着退出（子 isolate
+  /// 与父 isolate 互相独立），每导出一次漏几个常驻 isolate。只能在这种 isolate 一开头调，调了不能撤销。
+  static void runInlineInThisIsolate() => _inline = true;
+
+  static bool _inline = false;
+
+  /// [runInlineInThisIsolate] 之后为各句柄包的 [SrsCore]（不拥有，isolate 结束即丢）。
+  static final Map<int, SrsCore> _inlineCores = <int, SrsCore>{};
+
   /// [SrsCoreLane.bulk] 同时在途的命令数上限（超过排队）。
   static const int maxWorkers = 4;
 
@@ -127,6 +139,16 @@ final class SrsCoreWorkers {
     SrsCoreJob<T> job, {
     SrsCoreLane lane = SrsCoreLane.bulk,
   }) {
+    if (_inline) {
+      return Future<T>.sync(
+        () => job(
+          _inlineCores[address] ??= SrsCore.fromAddress(
+            address,
+            libraryPath: libraryPath,
+          ),
+        ),
+      );
+    }
     final Completer<T> done = Completer<T>();
     _lanes[lane]!.submit(
       _Job<Object?>(
@@ -141,6 +163,7 @@ final class SrsCoreWorkers {
 
   /// 句柄 [address] 已关闭：各道全部 worker 丢掉为它包的 [SrsCore]（在途的命令跑完后处理，按发送顺序）。
   void forget(int address) {
+    _inlineCores.remove(address);
     for (final _Lane l in _lanes.values) {
       l.forget(address);
     }

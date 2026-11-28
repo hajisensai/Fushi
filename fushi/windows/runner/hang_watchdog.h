@@ -28,6 +28,11 @@
 //    `HangWatchdogLog` 折进错误日志）；恢复时再补一行实际时长。每进程最多抓
 //    kMaxHangDumpsPerProcess 份，目录里 hang-*.dmp 最多留 kMaxHangDumpsKept 份。
 //
+//  - 启动期限（startup_reveal_policy.h）：主窗建好后 kStartupRevealDeadlineMs 仍从没
+//    显示过（Dart 卡在某个 await / 首帧光栅化不出来）→ 抓一份 dump、记一行
+//    hang_watchdog.log、ShowWindowAsync 强制显窗；主窗第一次可见时挂上
+//    kMainWindowShownProp，供第二个进程区分「启动中」与「退出中」。
+//
 // 不会误报：原生模态对话框 / 拖窗循环自己泵消息，心跳照常被应答；调试器附着时
 // 不记不抓；窗口关闭 / 消息循环退出后先 `StopHangWatchdog()` 再拆窗口。
 
@@ -57,6 +62,16 @@ namespace fushi
 
   // 每进程最多因 Dart 失联抓几份 dump（与主线程停泵的份数分开计）。
   constexpr int kMaxDartSilenceDumpsPerProcess = 2;
+
+  // 看门狗线程两圈循环之间隔了这么久（不含系统睡眠），就记一行「看门狗没被调度」
+  // （毫秒）。它本该每 kPollIntervalMs（100 ms）醒一次；隔 2 s 以上说明整个进程都没
+  // 在跑（被挂起、严重换页），这段时间里其它判据全都量不到（BUG-5568）。
+  constexpr ULONGLONG kWatchdogStarvedLogThresholdMs = 2000;
+
+  inline bool IsWatchdogLoopStarved(ULONGLONG unbiased_gap_ms)
+  {
+    return unbiased_gap_ms >= kWatchdogStarvedLogThresholdMs;
+  }
 
   // Dart 侧心跳到达（平台线程的 channel 处理器调用）。
   void NoteDartHeartbeat();

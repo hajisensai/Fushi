@@ -241,9 +241,6 @@ void main() {
       findsOneWidget,
       reason: 'coverPath 指向的文件存在时必须经降采样封面加载器渲染封面图',
     );
-    // 默认拼贴布局的封面色块按封面取色（[CoverColorSchemeCache] 带 10 s 超时
-    // 计时器）：推过超时再收尾，免得计时器挂到 widget 树卸载之后。
-    await tester.pump(const Duration(seconds: 11));
   });
 }
 

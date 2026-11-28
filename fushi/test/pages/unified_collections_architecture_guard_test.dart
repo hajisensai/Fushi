@@ -108,8 +108,9 @@ void main() {
       isTrue,
       reason: '书架主网格必须按合集折叠',
     );
-    // 折叠归属来自 getPrimaryCollectionIdByEntry（最小 collectionId），不再靠 seriesId。
-    expect(homeSrc.contains('getPrimaryCollectionIdByEntry'), isTrue);
+    // 折叠归属来自主合集映射（最小 collectionId），不再靠 seriesId。视频页经
+    // loadVideoLibraryMembership（getPrimaryCollectionMembershipOfKind，BUG-5595）。
+    expect(homeSrc.contains('loadVideoLibraryMembership('), isTrue);
     expect(historySrc.contains('getPrimaryCollectionIdByEntry'), isTrue);
   });
 
@@ -668,8 +669,20 @@ void main() {
       isTrue,
       reason: '云视频目录/下载必须经 CloudRemoteVideoClient',
     );
+    // 来源规则（互联 / 云盘回退 + Jellyfin 混入，反馈 k5Ey2AglAf）收在共享解析器里，
+    // 视频库页与「同一作品」卡片的远端海报共用；页面只经 resolveRemoteVideoSources
+    // 取来源。
     expect(
-      homeSrc.contains('_resolveCloudRemoteVideoClient'),
+      homeSrc.contains('resolveRemoteVideoSources('),
+      isTrue,
+      reason: '页面经共享解析器取远端视频来源（链顺序只写一处）',
+    );
+    final String resolverSrc = File(
+      'lib/src/media/video/remote_video_source_resolver.dart',
+    ).readAsStringSync();
+    expect(
+      resolverSrc.contains('resolveSyncBackend(') &&
+          resolverSrc.contains('CloudRemoteVideoClient(backend:'),
       isTrue,
       reason: '云后端分支：resolveSyncBackend 产物包进 CloudRemoteVideoClient',
     );
@@ -718,10 +731,22 @@ void main() {
       isFalse,
       reason: '不得恢复「互联 client + 云 client」两个互斥字段（TODO-2119 回归）',
     );
+    // 远端来源可以多个并存（反馈 k5Ey2AglAf）：来源列表是单一真相字段，每条远端视频
+    // 的归属只经 _remoteSourceOf 查（不得退回「页面当前只有一个来源」的单值字段）。
+    expect(
+      homeSrc.contains('List<RemoteVideoSource> _remoteVideoSources'),
+      isTrue,
+      reason: '当前远端视频来源必须是单一真相字段（来源列表）',
+    );
+    expect(
+      homeSrc.contains('RemoteVideoSource? _remoteSourceOf(String id)'),
+      isTrue,
+      reason: '远端视频按条目找回自己的来源',
+    );
     expect(
       homeSrc.contains('RemoteVideoSource? _remoteVideoSource;'),
-      isTrue,
-      reason: '当前远端视频来源必须是单一真相字段',
+      isFalse,
+      reason: '不得退回单一来源字段（三选一会让开了 Jellyfin 混排的云盘视频消失）',
     );
   });
 

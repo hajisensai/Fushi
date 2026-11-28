@@ -1,4 +1,4 @@
-// 牌组设置 › RWKV 的模型档位（Small sm98 / Tiny sm101）：读 `<support>/srs_rwkv/model_size` 显示当前档位与
+// 牌组设置 › RWKV 的模型档位（Small sm113 / 六层 Tiny sm130io，默认 Tiny）：读 `<support>/srs_rwkv/model_size` 显示当前档位与
 // 对应说明；选另一档立即写回同一个设置文件（无头服务端读的也是它），权重库 provider 跟着换成新档位的权重。
 import 'dart:io';
 
@@ -83,7 +83,7 @@ void main() {
     return ProviderScope.containerOf(tester.element(find.byType(SrsRwkvPanel)));
   }
 
-  testWidgets('设置文件是 Tiny：显示 Tiny 的说明；选 Small 写回设置文件、权重库换成 sm98', (
+  testWidgets('设置文件是 Tiny：显示 Tiny 的说明；选 Small 写回设置文件、权重库换成 sm113', (
     WidgetTester tester,
   ) async {
     srsRwkvModelSizeFile(support)
@@ -123,10 +123,12 @@ void main() {
     expect(smallModels.model.fileName, kSrsRwkvSmallWeightsName);
   });
 
-  testWidgets('没有设置文件：默认 Small', (WidgetTester tester) async {
-    await pumpPanel(tester);
-    expect(row(tester).selected, SrsRwkvModelSize.small);
-    expect(row(tester).subtitle, t.srs_settings_rwkv_model_size_small_hint);
+  testWidgets('没有设置文件：默认 Tiny', (WidgetTester tester) async {
+    final ProviderContainer container = await pumpPanel(tester);
+    expect(row(tester).selected, SrsRwkvModelSize.tiny);
+    expect(row(tester).subtitle, t.srs_settings_rwkv_model_size_tiny_hint);
     expect(srsRwkvModelSizeFile(support).existsSync(), isFalse);
+    final SrsRwkvModels defaults = await models(tester, container);
+    expect(defaults.model.fileName, kSrsRwkvTinyWeightsName);
   });
 }

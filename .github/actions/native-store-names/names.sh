@@ -83,19 +83,25 @@ P2P=(native/fushi_p2p)
 # iOS umbrella staticlib (fushi_p2p + fushi_fsrs + fushi_compute + fushi_web_core + fushi_rwkv + fushi_music + fushi_corpus in one
 # crate, one Rust std).
 IOS_NATIVE=(native/fushi_ios_umbrella native/fushi_p2p native/fushi_fsrs native/fushi_compute native/fushi_web_core native/fushi_rwkv native/fushi_music native/fushi_corpus)
-MIHON=(third_party/m_extension_server third_party/jogamp tool/mihon)
+# Mihon runtime inputs: server source + overlay, jogamp repo, the offline build kit
+# (Gradle distribution, Gradle dependency cache, JDK archives; vendored, see
+# third_party/mihon_build/README.md) and the build scripts. Same list on every OS.
+MIHON=(third_party/m_extension_server third_party/jogamp third_party/mihon_build tool/mihon)
 GALGAME=(native/galgame_hook)
 ANKI_SYNC=(native/fushi_anki_sync .github/actions/setup-fushi-anki-sync)
 
 names=()
+# Mihon runtime (windows / macos / flatpak): JDK and server commit are pinned inside tool/mihon
+# and third_party/mihon_build (their bytes via vendored_identity); the build runs offline from
+# that kit, so the runner image is not an input.
+case "$platform" in windows|macos|flatpak) mihon_vendored="$(vendored_identity "${MIHON[@]}")" ;; esac
+
 case "$platform" in
   windows)
-    mihon_vendored="$(vendored_identity "${MIHON[@]}")"
     galgame_vendored="$(vendored_identity "${GALGAME[@]}")"
     names+=(
       "torrent=win-x64-fushi-torrent-dll-v2-$image-$(tree_hash "$toolchain_env" "${TORRENT[@]}")"
       "p2p=win-x64-fushi-p2p-dll-v2-rust$P2P_RUST-$image-$(tree_hash "$toolchain_env rust=$P2P_RUST" "${P2P[@]}")"
-      # Mihon runtime: JDK and server commit are pinned inside tool/mihon; no image input.
       "mihon=win-x64-mihon-runtime-v2-$(tree_hash "vendored=$mihon_vendored" "${MIHON[@]}")"
       "galgame=win-galgame-helper-dist-v2-$image-$(tree_hash "$toolchain_env vendored=$galgame_vendored" "${GALGAME[@]}")"
       "anki_sync_release=win-x64-fushi-anki-sync-release-v2-$image-$(tree_hash "$toolchain_env" "${ANKI_SYNC[@]}")"
@@ -111,6 +117,8 @@ case "$platform" in
       # arm64 static libtorrent bridge (build_macos_dylib.sh); same sharing rule as p2p.
       # The runner's vcpkg checkout is part of the image identity.
       "torrent=macos-arm64-fushi-torrent-dylib-v1-$image_os-$image-$(tree_hash "$toolchain_env" "${TORRENT[@]}")"
+      # Mihon runtime-macos-arm64 (tool/mihon/build_desktop_runtime.sh).
+      "mihon=macos-arm64-mihon-runtime-v1-$(tree_hash "vendored=$mihon_vendored" "${MIHON[@]}")"
       "anki_sync_release=macos-arm64-fushi-anki-sync-release-v1-$image_os-$image-$(tree_hash "$toolchain_env" "${ANKI_SYNC[@]}")"
       # The PR gate's debug build targets the runner's own arch only.
       "anki_sync_debug=macos-$arch-fushi-anki-sync-debug-v1-$image_os-$image-$(tree_hash "$toolchain_env" "${ANKI_SYNC[@]}")"
@@ -136,6 +144,10 @@ case "$platform" in
     # so the runner image is not an input; the container image and the manifest are.
     names+=(
       "baseapp=flatpak-x86_64-fushi-baseapp-v1-$(tree_hash "" tool/linux/flatpak/baseapp tool/linux/flatpak/Dockerfile)"
+      # Mihon runtime for the Linux bundle (release-desktop.yml linux job; built inside the
+      # tool/linux container by tool/linux/build_bundle.sh from the vendored JDK; the
+      # container is not an input because nothing of it ends up in the jlink image).
+      "mihon=linux-x64-mihon-runtime-v1-$(tree_hash "vendored=$mihon_vendored" "${MIHON[@]}")"
     )
     ;;
   android)

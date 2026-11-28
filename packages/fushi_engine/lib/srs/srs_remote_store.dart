@@ -604,6 +604,7 @@ abstract final class SrsRemoteWire {
     'sum': summary(s.summary),
     'next': s.next,
     'after': s.after,
+    'wake': ?s.wakeIn?.inMilliseconds,
     if (s.custom != null)
       'custom': <String, Object?>{
         'left': s.custom!.left,
@@ -625,6 +626,10 @@ abstract final class SrsRemoteWire {
       summary: sum,
       next: _J.optStr(m['next'], '$at.next'),
       after: _J.optStr(m['after'], '$at.after'),
+      wakeIn: switch (_J.optInt(m['wake'], '$at.wake')) {
+        final int ms => Duration(milliseconds: ms),
+        null => null,
+      },
       custom: custom == null
           ? null
           : SrsCustomStudyProgress(
@@ -1634,9 +1639,9 @@ class SrsRemoteStoreService {
     'answerAndStudy': _Op(write: true, (SrsDbStore s, _Args a) async {
       final String card = a.str('card');
       final int rating = a.integer('rating');
-      final int durationMs = a
-          .integer('durationMs')
-          .clamp(0, kSrsMaxAnswerDurationMs);
+      // 日志存真实用时（不封 60 秒，封顶在统计聚合处做：kSrsMaxAnswerDurationMs），只去掉负数。
+      final int rawDurationMs = a.integer('durationMs');
+      final int durationMs = rawDurationMs < 0 ? 0 : rawDurationMs;
       final String? deck = a.optStr('deck');
       final SrsCustomStudy? custom = SrsRemoteWire.customStudyFrom(
         a.raw('custom'),

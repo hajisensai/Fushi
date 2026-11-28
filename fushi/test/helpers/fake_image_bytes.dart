@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 /// 封面写侧唯一入口只收「可解码」字节（BUG-2496，`isDecodableImageBytes`）：JPEG 要
@@ -26,3 +27,11 @@ Uint8List fakePngBytes({int length = 64, int fill = 7}) {
     ...iend,
   ]);
 }
+
+/// 1×1 透明 PNG：**真能解码**的最小图片。字节既要过写侧校验、又会被界面真的解码显示时
+/// 用它——[fakeJpegBytes] / [fakePngBytes] 只有合法外形，引擎解码会抛
+/// `Invalid image data`，解码完成若落在 `runAsync` 的真实时间里，这个异常就记到用例头上。
+Uint8List decodableTinyPngBytes() => base64Decode(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA'
+  '60e6kgAAAABJRU5ErkJggg==',
+);

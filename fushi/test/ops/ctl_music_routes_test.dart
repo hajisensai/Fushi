@@ -464,6 +464,15 @@ void main() {
       expect(asMap(playing)['index'], 1);
       expect(player.lastContext, MusicQueueContext.mixed);
       expect(player.lastShuffle, isTrue);
+      expect(player.lastStartIndex, 1);
+      // BUG-5591：随机且不给 index = 不指定起点，交给引擎整队随机（不再默认 0）。
+      await call(
+        'POST',
+        '$kMusicCtlRoot/player/play',
+        body: <String, Object?>{'album': 'al-1', 'shuffle': true},
+      );
+      expect(player.lastShuffle, isTrue);
+      expect(player.lastStartIndex, isNull);
       expect(
         () => call(
           'POST',

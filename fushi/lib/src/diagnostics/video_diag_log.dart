@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/storage/app_paths.dart';
+import 'package:fushi/src/utils/misc/capped_log_file.dart';
 import 'package:fushi/src/utils/net/app_native_proxy.dart'
     show redactAppNativeProxySecrets;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -94,6 +95,9 @@ class VideoDiagLog {
   final Stopwatch _uptime = Stopwatch()..start();
 
   File? _file;
+
+  /// [_file] 的追加 / 保尾（BUG-5571：超限只裁到 3/4，裁剪全在字节层）。
+  CappedLogFile? _log;
   Directory? _dir;
   Future<void> _chain = Future<void>.value();
 
@@ -115,6 +119,10 @@ class VideoDiagLog {
 
   /// 进程启动以来的毫秒数（各探针用同一把尺，保证时间轴可对齐）。
   int get uptimeMs => _uptime.elapsedMilliseconds;
+
+  /// Dart 侧时间轴文件（[fileName]）；[init] 之前或目录解析失败时为 null。反馈日志
+  /// 汇总（`readVideoDiagFeedbackLines`）从这里读末尾一段。
+  File? get timelineFile => _file;
 
   /// libmpv `log-file` 应当写到的绝对路径；日志目录还没解析出来时返回 null
   /// （此时不给 libmpv 下发 `log-file`，而不是瞎猜一个路径）。
@@ -145,8 +153,11 @@ class VideoDiagLog {
       final Directory dir =
           directoryOverride ?? await AppPaths.diagnosticsDirectory();
       _dir = dir;
-      _file = File('${dir.path}/$fileName');
-      await _trimFile();
+      final File file = File('${dir.path}/$fileName');
+      _file = file;
+      final CappedLogFile log = CappedLogFile(file, maxBytes: maxFileBytes);
+      _log = log;
+      await log.trimIfOver();
     } catch (e) {
       debugPrint('[VideoDiagLog] init failed: $e');
     }
@@ -230,9 +241,9 @@ class VideoDiagLog {
     );
     _lines.add(line);
     if (_lines.length > maxEntries) _lines.removeAt(0);
-    final File? file = _file;
-    if (file == null) return;
-    _chain = _chain.then((_) => _append(file, line)).catchError((Object e) {
+    final CappedLogFile? log = _log;
+    if (log == null) return;
+    _chain = _chain.then((_) => log.append('$line\n')).catchError((Object e) {
       debugPrint('[VideoDiagLog] append failed: $e');
     });
   }
@@ -308,20 +319,8 @@ class VideoDiagLog {
     return level.index <= threshold.index;
   }
 
-  Future<void> _append(File file, String line) async {
-    await file.writeAsString('$line\n', mode: FileMode.append);
-    if (await file.length() > maxFileBytes) await _trimFile();
-  }
-
-  Future<void> _trimFile() async {
-    final File? file = _file;
-    if (file == null || !await file.exists()) return;
-    if (await file.length() <= maxFileBytes) return;
-    final List<int> bytes = await file.readAsBytes();
-    await file.writeAsString(trimTail(bytes, maxBytes: maxFileBytes));
-  }
-
-  /// 纯函数：保尾到 [maxBytes] 并对齐行首（第一段残行丢弃）。
+  /// 纯函数：保尾到 [maxBytes] 并对齐行首（第一段残行丢弃）。只给导出读 mpv 日志尾部
+  /// 用；自家时间轴的落盘保尾走 [CappedLogFile]（BUG-5571）。
   static String trimTail(List<int> bytes, {int maxBytes = maxFileBytes}) {
     if (bytes.length <= maxBytes) {
       return utf8.decode(bytes, allowMalformed: true);
@@ -380,6 +379,7 @@ class VideoDiagLog {
     await flush();
     try {
       await _file?.writeAsString('');
+      _log?.forgetSize();
       final String? mpvPath = mpvLogFilePath;
       if (mpvPath != null) {
         final File mpv = File(mpvPath);
@@ -394,6 +394,7 @@ class VideoDiagLog {
   void resetForTesting() {
     _lines.clear();
     _file = null;
+    _log = null;
     _dir = null;
     _enabled = false;
     _chain = Future<void>.value();

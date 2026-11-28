@@ -160,9 +160,11 @@ Future<List<int>> extractImageSeedCandidates(
 /// Celebi 量化，且透明 / 全灰阶图会落到 [Score] 的谷歌蓝兜底（无封面占位是透明
 /// 1×1 图，整张卡会被染成蓝色）。这里透明像素不参与、灰阶图得到灰种子，没有可用
 /// 像素返回 null（调用方退回中性色）。图片加载失败抛出错误。
+///
+/// [loadTimeout] 为 null 时不设超时：加载不完的请求一直挂着，不起定时器。
 Future<int?> extractImageProviderSeedArgb(
   ImageProvider provider, {
-  Duration loadTimeout = const Duration(seconds: 10),
+  Duration? loadTimeout = const Duration(seconds: 10),
 }) async {
   final ImageStream stream = provider.resolve(ImageConfiguration.empty);
   final Completer<ImageInfo> loaded = Completer<ImageInfo>();
@@ -180,7 +182,9 @@ Future<int?> extractImageProviderSeedArgb(
   stream.addListener(listener);
   final ImageInfo info;
   try {
-    info = await loaded.future.timeout(loadTimeout);
+    info = loadTimeout == null
+        ? await loaded.future
+        : await loaded.future.timeout(loadTimeout);
   } on TimeoutException {
     stream.removeListener(listener);
     rethrow;

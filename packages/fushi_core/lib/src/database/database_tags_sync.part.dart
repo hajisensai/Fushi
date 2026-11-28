@@ -140,6 +140,12 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
   /// 返回其 id（幂等，绝不建重复行——[BookTags].name 有 UNIQUE 约束）；否则以默认
   /// 颜色新建并返回新 id。与 [BackupMergeEngine] 的 name-based UNION 合并同语义。
   Future<int> getOrCreateTagByName(String name) async {
+    // 先纯读：命中既有同名标签直接返回，不发任何写语句。drift 的 insert（含
+    // INSERT OR IGNORE 撞唯一约束整条无操作时）一律发 book_tags 表变更通知，合集
+    // 观察者（sync_auto_trigger 的 installCollectionsSyncWatcher）每收到一次就排
+    // 一轮合集同步；互联 client 下载 / 整理每次按名归一标签都会白白触发一轮。
+    final BookTagRow? hit = await _tagByName(name);
+    if (hit != null) return hit.id;
     // 原子 get-or-create：INSERT OR IGNORE 撞 [BookTags].name UNIQUE 时静默忽略，
     // 随后 select 必命中——消除 select-then-insert 的竞态（两并发下载流带同一尚不
     // 存在的 tag 名时，旧实现会一个插入成功、另一个撞 UNIQUE 抛异常丢标签）。命中
@@ -158,13 +164,14 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
       ),
       mode: InsertMode.insertOrIgnore,
     );
-    final BookTagRow row =
-        await (select(bookTags)
-              ..where((t) => t.name.equals(name))
-              ..limit(1))
-            .getSingle();
-    return row.id;
+    return (await _tagByName(name))!.id;
   }
+
+  Future<BookTagRow?> _tagByName(String name) =>
+      (select(bookTags)
+            ..where((t) => t.name.equals(name))
+            ..limit(1))
+          .getSingleOrNull();
 
   /// 改标签名 / 颜色。
   ///
@@ -369,6 +376,36 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
   /// 合集当前挂的标签（按 createdAt 升序，与 getTagsForBook 一致）。
   Future<List<BookTagRow>> getTagsForCollection(int collectionId) =>
       _tagsForHost(TagHostKind.collection, collectionTagEntryKey(collectionId));
+
+  /// 全部合集当前挂的标签：合集 id → 标签（组内按 createdAt、id 升序，与
+  /// [getTagsForCollection] 同口径）。一次连表查询，替代逐合集
+  /// [getTagsForCollection] 的 N+1（合集清单 `loadLocalCollectionManifest`）。
+  /// entryKey 解不出合集 id 的映射行（脏数据）不出现。
+  Future<Map<int, List<BookTagRow>>> getTagsForAllCollections() async {
+    final query =
+        select(bookTags).join([
+            innerJoin(
+              tagAssignments,
+              tagAssignments.tagId.equalsExp(bookTags.id),
+            ),
+          ])
+          ..where(
+            tagAssignments.mediaKind.equals(TagHostKind.collection.dbValue),
+          )
+          ..orderBy([
+            OrderingTerm.asc(bookTags.createdAt),
+            OrderingTerm.asc(bookTags.id),
+          ]);
+    final Map<int, List<BookTagRow>> out = <int, List<BookTagRow>>{};
+    for (final TypedResult row in await query.get()) {
+      final int? id = collectionIdOfTagEntryKey(
+        row.readTable(tagAssignments).entryKey,
+      );
+      if (id == null) continue;
+      (out[id] ??= <BookTagRow>[]).add(row.readTable(bookTags));
+    }
+    return out;
+  }
 
   /// 给合集加标签（幂等；清同名移除墓碑）。
   Future<void> addTagToCollection(int collectionId, int tagId) =>
@@ -793,21 +830,31 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
   /// 判断与写入是同一条 upsert（`ON CONFLICT … DO UPDATE … WHERE`），中间插不进别的
   /// 写：先读后写会让「读完之后落库的取消」被这次更晚的 nsfwAt 按 LWW 盖回去
   /// （HBK-AUDIT-216）。
+  ///
+  /// 已决定过（任一只时钟非空）时纯读返回、不发写语句：drift 的 insert 不论
+  /// `DO UPDATE … WHERE` 是否命中都发 media_nsfw_flags 表变更通知，每次重取
+  /// DLsite 资料都会让合集观察者白跑一轮同步。这道预读只用来跳过注定无操作的
+  /// 写——时钟只进不退（没有把戳写回 null 的路径），读到「已决定」之后不会再变回
+  /// 「未决定」；读到未决定时仍走上面那条原子 upsert，竞态保护不变。
   Future<void> markMediaNsfwIfUndecided(
     TagHostKind kind,
     String entryKey, {
     required int at,
-  }) => into(mediaNsfwFlags).insert(
-    MediaNsfwFlagsCompanion.insert(
-      mediaKind: kind.dbValue,
-      entryKey: entryKey,
-      nsfwAt: Value(at),
-    ),
-    onConflict: DoUpdate(
-      (old) => MediaNsfwFlagsCompanion(nsfwAt: Value(at)),
-      where: (old) => old.nsfwAt.isNull() & old.clearedAt.isNull(),
-    ),
-  );
+  }) async {
+    final MediaNsfwClock clock = await mediaNsfwClock(kind, entryKey);
+    if (clock.nsfwAt != null || clock.clearedAt != null) return;
+    await into(mediaNsfwFlags).insert(
+      MediaNsfwFlagsCompanion.insert(
+        mediaKind: kind.dbValue,
+        entryKey: entryKey,
+        nsfwAt: Value(at),
+      ),
+      onConflict: DoUpdate(
+        (old) => MediaNsfwFlagsCompanion(nsfwAt: Value(at)),
+        where: (old) => old.nsfwAt.isNull() & old.clearedAt.isNull(),
+      ),
+    );
+  }
 
   /// 宿主当前的 NSFW 时钟（没有行 = 两只戳都为 null）。
   Future<MediaNsfwClock> mediaNsfwClock(

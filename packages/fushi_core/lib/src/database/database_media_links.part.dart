@@ -865,4 +865,170 @@ mixin _FushiDbMediaLinks on _$FushiDatabase {
     await into(mediaLinks).insertOnConflictUpdate(incoming.toCompanion(false));
     return true;
   });
+
+  Expression<bool> _mediaLinkTouches(
+    $MediaLinksTable t,
+    MediaLinkEndpoint endpoint,
+  ) =>
+      (t.fromKind.equals(endpoint.kind.dbValue) &
+          t.fromKey.equals(endpoint.key)) |
+      (t.toKind.equals(endpoint.kind.dbValue) & t.toKey.equals(endpoint.key));
+
+  /// 端点本身被删（合集 / 游戏行没了）时，物理删掉它的全部连接（含墓碑）。
+  ///
+  /// 只用于键是**本机自增 / 本机生成 id** 的端点（[MediaLinkKind.videoCollection] =
+  /// `media_collections.id`、[MediaLinkKind.game] = `galgames.id`）：这种 id 删了就永不
+  /// 再出现（合集 AUTOINCREMENT 不复用；同一游戏重新入库拿新 id），留下的连接只会在
+  /// 「同一作品」里显示成标题是一串 id 的「未入库」死卡。书 / 视频 / 音乐的键跨端稳定、
+  /// 条目回来时自然对上，不走这里。
+  ///
+  /// 物理删除而不写墓碑：墓碑是「否决过这一对」，端点没了谈不上否决；同步 / 备份合并
+  /// 落合集 / 游戏端点前都先换算成本机 id、本机没有就跳过（`media_link_sync.dart`、
+  /// `backup_merge_engine.dart`），删掉的行不会被拉回来（BUG-5457）。
+  Future<int> purgeMediaLinksForEndpoint(MediaLinkEndpoint endpoint) =>
+      (delete(mediaLinks)..where((t) => _mediaLinkTouches(t, endpoint))).go();
+
+  /// 端点被并进另一个端点（合集合并、刮削把整部合集原样搬进新合集）时，把它的全部
+  /// 连接（含建议与墓碑）改挂到 [to] 上：
+  /// - 改挂后两端相同（原本就连着 [to]）的行直接删；
+  /// - [to] 上已有同一身份的行时按跨端 LWW 内核（[mergeRemoteMediaLink]）取胜者；
+  /// - 认不出种类 / 关系的行（对端未来新增）无从换算身份，删掉（端点已不存在）。
+  /// 返回改挂成功的行数。
+  Future<int> retargetMediaLinks({
+    required MediaLinkEndpoint from,
+    required MediaLinkEndpoint to,
+  }) => transaction(() async {
+    if (from.kind == to.kind && from.key == to.key) return 0;
+    int moved = 0;
+    for (final MediaLinkRow row in await _mediaLinksTouching(from)) {
+      await (delete(
+        mediaLinks,
+      )..where((t) => _mediaLinkIdIs(t, mediaLinkIdOf(row)))).go();
+      final MediaLinkId? id = _retargetedMediaLinkId(row, from, to);
+      if (id == null) continue;
+      await mergeRemoteMediaLink(
+        row.copyWith(
+          fromKind: id.fromKind,
+          fromKey: id.fromKey,
+          toKind: id.toKind,
+          toKey: id.toKey,
+        ),
+      );
+      moved++;
+    }
+    return moved;
+  });
+
+  /// [retargetMediaLinks] 会写到 [to] 上的每个身份**改挂前**的样子（撤销用）：
+  /// `{'id': 五元组, 'row': 行 JSON 或 null}`（null = 那时 [to] 上没有这一行）。
+  ///
+  /// 改挂对 [to] 的影响不止「多出几行」：撞同一身份时按 LWW 会改写 [to] 原有的行。
+  /// 只把 [from] 自己的连接插回去还原不了这些——同一对端会同时连着 [from] 和 [to]，
+  /// 被改写的内容也回不来。可直接 `jsonEncode`，交 [restoreMediaLinkRetargetPreimage]。
+  Future<List<Map<String, Object?>>> captureMediaLinkRetargetPreimage({
+    required MediaLinkEndpoint from,
+    required MediaLinkEndpoint to,
+  }) => transaction(() async {
+    if (from.kind == to.kind && from.key == to.key) {
+      return const <Map<String, Object?>>[];
+    }
+    final Set<MediaLinkId> seen = <MediaLinkId>{};
+    final List<Map<String, Object?>> out = <Map<String, Object?>>[];
+    for (final MediaLinkRow row in await _mediaLinksTouching(from)) {
+      final MediaLinkId? id = _retargetedMediaLinkId(row, from, to);
+      if (id == null || !seen.add(id)) continue;
+      final MediaLinkRow? before = await mediaLinkById(id);
+      out.add(<String, Object?>{
+        'id': <String, Object?>{
+          'fromKind': id.fromKind,
+          'fromKey': id.fromKey,
+          'relation': id.relation,
+          'toKind': id.toKind,
+          'toKey': id.toKey,
+        },
+        'row': before?.toJson(),
+      });
+    }
+    return out;
+  });
+
+  /// 按 [captureMediaLinkRetargetPreimage] 的记录把改挂目标上的连接还原：记录里有
+  /// 原行的写回原行（覆盖改挂 / LWW 改写后的内容），没有的删掉（那是改挂新插的）。
+  /// 读不懂的条目跳过。
+  Future<void> restoreMediaLinkRetargetPreimage(List<Object?> preimage) =>
+      transaction(() async {
+        for (final Object? raw in preimage) {
+          if (raw is! Map || raw['id'] is! Map) continue;
+          final Map<Object?, Object?> rawId = raw['id'] as Map;
+          final Object? fromKind = rawId['fromKind'];
+          final Object? fromKey = rawId['fromKey'];
+          final Object? relation = rawId['relation'];
+          final Object? toKind = rawId['toKind'];
+          final Object? toKey = rawId['toKey'];
+          if (fromKind is! String ||
+              fromKey is! String ||
+              relation is! String ||
+              toKind is! String ||
+              toKey is! String) {
+            continue;
+          }
+          final MediaLinkId id = (
+            fromKind: fromKind,
+            fromKey: fromKey,
+            relation: relation,
+            toKind: toKind,
+            toKey: toKey,
+          );
+          await (delete(mediaLinks)..where((t) => _mediaLinkIdIs(t, id))).go();
+          final Object? before = raw['row'];
+          if (before is Map) {
+            await into(mediaLinks).insert(
+              MediaLinkRow.fromJson(
+                Map<String, dynamic>.from(before),
+              ).toCompanion(false),
+            );
+          }
+        }
+      });
+
+  Future<List<MediaLinkRow>> _mediaLinksTouching(MediaLinkEndpoint endpoint) =>
+      (select(mediaLinks)..where((t) => _mediaLinkTouches(t, endpoint))).get();
+
+  /// [row] 把端点 [from] 换成 [to] 之后的身份；认不出种类 / 关系（无从换算）或换完
+  /// 两端相同（自环）返回 null——[retargetMediaLinks] 直接删掉这种行。
+  static MediaLinkId? _retargetedMediaLinkId(
+    MediaLinkRow row,
+    MediaLinkEndpoint from,
+    MediaLinkEndpoint to,
+  ) {
+    final MediaLinkRelation? relation = MediaLinkRelation.tryParse(
+      row.relation,
+    );
+    final MediaLinkKind? fromKind = MediaLinkKind.tryParse(row.fromKind);
+    final MediaLinkKind? toKind = MediaLinkKind.tryParse(row.toKind);
+    if (relation == null || fromKind == null || toKind == null) return null;
+    MediaLinkEndpoint swap(MediaLinkEndpoint e) =>
+        e.kind == from.kind && e.key == from.key ? to : e;
+    final MediaLinkEndpoint a = swap((kind: fromKind, key: row.fromKey));
+    final MediaLinkEndpoint b = swap((kind: toKind, key: row.toKey));
+    if (a.kind == b.kind && a.key == b.key) return null;
+    return mediaLinkIdFor(relation, a, b);
+  }
+
+  /// 清掉端点已不存在的合集 / 游戏连接（[purgeMediaLinksForEndpoint] 之前删合集 /
+  /// 游戏不清连接，存量库里留着死行；schema v181 迁移跑一次）。幂等，返回删除行数。
+  Future<int> purgeDanglingMediaLinks() {
+    final String collection = MediaLinkKind.videoCollection.dbValue;
+    final String game = MediaLinkKind.game.dbValue;
+    String dead(String side) =>
+        "(${side}_kind = '$collection' AND NOT EXISTS (SELECT 1 FROM media_collections "
+        'AS c WHERE CAST(c.id AS TEXT) = media_links.${side}_key)) OR '
+        "(${side}_kind = '$game' AND NOT EXISTS (SELECT 1 FROM galgames AS g "
+        'WHERE g.id = media_links.${side}_key))';
+    return customUpdate(
+      'DELETE FROM media_links WHERE ${dead('from')} OR ${dead('to')}',
+      updates: <TableInfo<Table, Object?>>{mediaLinks},
+      updateKind: UpdateKind.delete,
+    );
+  }
 }

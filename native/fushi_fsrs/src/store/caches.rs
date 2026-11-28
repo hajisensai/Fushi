@@ -169,8 +169,21 @@ impl Written {
     }
 }
 
-/// 丢掉本 profile 的全部缓存行，由事件重建（Dart `rebuildCaches`）。
+/// 丢掉本 profile 的全部缓存行，由事件重建（Dart `rebuildCaches`）。生产上只有迁移对拍调（带探针的 [rebuild_probed]），
+/// 这个不带探针的入口留给测试造协议 3 的现成缓存。
+#[cfg(test)]
 pub(crate) fn rebuild(c: &Connection, profile: &str, cfg: &CacheConfig) -> Result<Written, String> {
+    rebuild_probed(c, profile, cfg, None)
+}
+
+/// [rebuild]，[probe] 非空时记下统计投影里 Anki 副本去重的落选者（诊断用，`store/gen4/dryrun.rs` 的 `statsTrace`；
+/// 不改任何结果）。
+pub(crate) fn rebuild_probed(
+    c: &Connection,
+    profile: &str,
+    cfg: &CacheConfig,
+    probe: Option<&mut StatsProbe>,
+) -> Result<Written, String> {
     // 全量重建覆盖收段会话记下的待刷新实体。
     for t in [
         "srs_cards_cache",
@@ -184,7 +197,7 @@ pub(crate) fn rebuild(c: &Connection, profile: &str, cfg: &CacheConfig) -> Resul
         )
         .map_err(sql)?;
     }
-    refresh(
+    refresh_probed(
         c,
         profile,
         cfg,
@@ -193,6 +206,7 @@ pub(crate) fn rebuild(c: &Connection, profile: &str, cfg: &CacheConfig) -> Resul
             all_stats: true,
             ..Dirty::default()
         },
+        probe,
     )
 }
 
@@ -202,6 +216,16 @@ pub(crate) fn refresh(
     profile: &str,
     cfg: &CacheConfig,
     dirty: Dirty,
+) -> Result<Written, String> {
+    refresh_probed(c, profile, cfg, dirty, None)
+}
+
+fn refresh_probed(
+    c: &Connection,
+    profile: &str,
+    cfg: &CacheConfig,
+    dirty: Dirty,
+    probe: Option<&mut StatsProbe>,
 ) -> Result<Written, String> {
     let mut out = Written::default();
     if dirty.is_empty() {
@@ -272,7 +296,15 @@ pub(crate) fn refresh(
         stat_seeds.extend(strings(c, "SELECT DISTINCT srs_idt(card_id) AS card_id FROM srs_review_logs WHERE profile_uid = srs_id(?1)", &[profile])?);
     }
     if !stat_seeds.is_empty() {
-        refresh_stats(c, profile, cfg, &mut links, &stat_seeds, !dirty.all_stats)?;
+        refresh_stats(
+            c,
+            profile,
+            cfg,
+            &mut links,
+            &stat_seeds,
+            !dirty.all_stats,
+            probe,
+        )?;
     }
     Ok(out)
 }
@@ -948,8 +980,8 @@ fn card_materials(
     for ((card, _), (lineage, flags)) in want.iter().zip(lineages) {
         let mut stored: Vec<crate::history::StoredLog<'_>> = Vec::new();
         for id in &lineage {
-            for (j, s, cols) in logs.get(id).unwrap_or(&empty) {
-                stored.push((j, *s, cols.as_ref()));
+            for (j, s, cols, order_id) in logs.get(id).unwrap_or(&empty) {
+                stored.push((j, *s, cols.as_ref(), order_id.as_deref()));
             }
         }
         out.insert(card.clone(), Material::of(flags, &stored)?);
@@ -1453,6 +1485,7 @@ fn refresh_stats(
     links: &mut Links,
     seeds: &BTreeSet<String>,
     expand: bool,
+    probe: Option<&mut StatsProbe>,
 ) -> Result<(), String> {
     let p_family = super::prof::span("cache.stats.family");
     // 连通分量：沿链接双向扩（链接表是超集；真正的血统下面按修改记录的生效值算）。
@@ -1541,8 +1574,8 @@ fn refresh_stats(
         for (k, (o, g)) in owners.iter().zip(&batch).enumerate() {
             let mut stored: Vec<crate::history::StoredLog<'_>> = Vec::new();
             for id in g {
-                for (j, s, cols) in logs.get(id).unwrap_or(&empty) {
-                    stored.push((j, *s, cols.as_ref()));
+                for (j, s, cols, order_id) in logs.get(id).unwrap_or(&empty) {
+                    stored.push((j, *s, cols.as_ref(), order_id.as_deref()));
                 }
             }
             for r in history::stats_from_stored(&stored)? {
@@ -1564,12 +1597,20 @@ fn refresh_stats(
                         event,
                         owner: base + k,
                         log_id: r.log_id,
+                        order_id: r.order_id,
                     });
                 }
             }
         }
     }
-    let losers = anki_duplicate_log_ids(&anki_keys, &order, &visible, &note_of);
+    let pairs = anki_duplicate_pairs(&anki_keys, &order, &visible, &note_of);
+    if let Some(probe) = probe {
+        probe.record(&anki_keys, &order, &pairs);
+    }
+    let losers: Vec<String> = pairs
+        .iter()
+        .map(|&(lose, _)| anki_keys[lose].log_id.clone())
+        .collect();
     for chunk in losers.chunks(500) {
         let q = format!(
             "DELETE FROM srs_stat_reviews WHERE log_id IN ({})",
@@ -1652,6 +1693,7 @@ pub(crate) struct AnkiStatKey {
     pub(crate) event: history::AnkiEvent,
     pub(crate) owner: usize,
     pub(crate) log_id: String,
+    pub(crate) order_id: Option<String>,
 }
 
 /// [cards] 上 Anki 导入日志的时刻（导入日志的发生时刻 = revlog id）在本 profile 里出现过的全部卡（含 [cards] 自己）。
@@ -1700,7 +1742,7 @@ fn anki_partners(
 ///
 /// 按笔记收紧：组里认得出笔记的行（归属卡有缓存行）若分属不止一条笔记，只在同一笔记内合并，认不出笔记的行原样
 /// 保留（不同集合撞同一毫秒、同评分同用时的复习不误并）；只有一条或没有可认的笔记时整组是一次复习。留哪一份：
-/// 归属卡可见的优先，再取日志 ID（UTF-16 序）最小的——只由参与的日志与可见性决定，与刷新顺序无关。
+/// 归属卡可见的优先，再取原始日志 ID（UTF-16 序）最小的——只由参与的日志与可见性决定，与刷新顺序无关。
 ///
 /// 返回落选副本的日志 ID（由调用方从投影里删掉）。
 pub(crate) fn anki_duplicate_log_ids(
@@ -1709,6 +1751,19 @@ pub(crate) fn anki_duplicate_log_ids(
     visible: &HashSet<String>,
     note_of: &HashMap<String, String>,
 ) -> Vec<String> {
+    anki_duplicate_pairs(keys, owners, visible, note_of)
+        .into_iter()
+        .map(|(lose, _)| keys[lose].log_id.clone())
+        .collect()
+}
+
+/// [anki_duplicate_log_ids]，给出 (落选副本, 留下的那份) 在 [keys] 里的下标。
+fn anki_duplicate_pairs(
+    keys: &[AnkiStatKey],
+    owners: &[String],
+    visible: &HashSet<String>,
+    note_of: &HashMap<String, String>,
+) -> Vec<(usize, usize)> {
     let mut by_event: HashMap<history::AnkiEvent, Vec<usize>> = HashMap::new();
     for (i, k) in keys.iter().enumerate() {
         by_event.entry(k.event).or_default().push(i);
@@ -1719,9 +1774,10 @@ pub(crate) fn anki_duplicate_log_ids(
         if va != vb {
             return va;
         }
-        cmp_utf16(&keys[a].log_id, &keys[b].log_id) == std::cmp::Ordering::Less
+        let order_id = |i: usize| keys[i].order_id.as_deref().unwrap_or(&keys[i].log_id);
+        cmp_utf16(order_id(a), order_id(b)) == std::cmp::Ordering::Less
     };
-    let mut drop: Vec<String> = Vec::new();
+    let mut drop: Vec<(usize, usize)> = Vec::new();
     for members in by_event.values() {
         if members.len() < 2 {
             continue;
@@ -1756,11 +1812,123 @@ pub(crate) fn anki_duplicate_log_ids(
                 cluster
                     .into_iter()
                     .filter(|&i| i != keep)
-                    .map(|i| keys[i].log_id.clone()),
+                    .map(|i| (i, keep)),
             );
         }
     }
     drop
+}
+
+/// 全量重建时统计投影里 Anki 副本去重的落选者（[rebuild_probed]；诊断用，迁移报告的 `statsTrace`）。只记落选的那几条
+/// （通常很少），不记全部投影行：大库的峰值内存不因诊断上涨。
+#[derive(Debug, Default)]
+pub(crate) struct StatsProbe {
+    /// 落选副本的日志 ID → (它的归属卡, 留下的那份的日志 ID, 那份的归属卡)。
+    pub(crate) losers: HashMap<String, (String, String, String)>,
+}
+
+impl StatsProbe {
+    fn record(&mut self, keys: &[AnkiStatKey], owners: &[String], pairs: &[(usize, usize)]) {
+        for &(lose, keep) in pairs {
+            self.losers.insert(
+                keys[lose].log_id.clone(),
+                (
+                    owners[keys[lose].owner].clone(),
+                    keys[keep].log_id.clone(),
+                    owners[keys[keep].owner].clone(),
+                ),
+            );
+        }
+    }
+}
+
+/// 诊断（迁移报告的 `statsTrace`）：[cards] 所在的「前身 ↔ 后继」连通分量按 [refresh_stats] 的规则分归属组，给出含
+/// [cards] 的每个组：组里的卡（可见与否、认得出的笔记）、链接，与组里每条日志的去向（[history::log_fates]）。
+/// [visible] / [note_of] 是重建后的卡缓存行给的（与 [refresh_stats] 看到的同一份）。只读。
+pub(crate) fn explain_stat_groups(
+    c: &Connection,
+    cfg: &CacheConfig,
+    cards: &BTreeSet<String>,
+    visible: &HashSet<String>,
+    note_of: &HashMap<String, String>,
+) -> Result<Value, String> {
+    let mut links = Links::default();
+    let family = link_family(c, &mut links, cards)?;
+    let ids = sorted_ids(&family);
+    let linked: Vec<String> = ids
+        .iter()
+        .filter(|c| !links.successors(c).is_empty() || !links.predecessors(c).is_empty())
+        .cloned()
+        .collect();
+    let mut descendants: HashMap<String, BTreeSet<String>> = HashMap::new();
+    let mut lineage_of: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for chunk in linked.chunks(CHUNK) {
+        let want: Vec<(String, Option<String>)> =
+            chunk.iter().map(|id| (id.clone(), None)).collect();
+        for (k, (lineage, _)) in lineages(c, cfg, &want)?.into_iter().enumerate() {
+            lineage_of.insert(chunk[k].clone(), lineage.clone());
+            add_descendants(&chunk[k], lineage, &mut descendants);
+        }
+    }
+    let (order, groups) = stat_groups(&ids, visible, &descendants);
+    let mut out: Vec<Value> = Vec::new();
+    for o in &order {
+        let g = &groups[o];
+        if !g.iter().any(|x| cards.contains(x)) {
+            continue;
+        }
+        let logs = logs_of(c, std::slice::from_ref(g))?;
+        let empty: Vec<LogRow> = Vec::new();
+        let mut stored: Vec<history::StoredLog<'_>> = Vec::new();
+        for id in g {
+            for (j, s, cols, order_id) in logs.get(id).unwrap_or(&empty) {
+                stored.push((j, *s, cols.as_ref(), order_id.as_deref()));
+            }
+        }
+        let fates: Vec<Value> = match history::log_fates(&stored) {
+            Ok(f) => f.iter().map(fate_json).collect(),
+            Err(e) => vec![serde_json::json!({ "error": e })],
+        };
+        let members: Vec<Value> = g
+            .iter()
+            .map(|x| {
+                serde_json::json!({
+                    "card": x,
+                    "visible": visible.contains(x),
+                    "note": note_of.get(x),
+                    "successors": links.successors(x),
+                    "predecessors": links.predecessors(x),
+                    "lineage": lineage_of.get(x),
+                })
+            })
+            .collect();
+        out.push(serde_json::json!({ "owner": o, "cards": members, "logs": fates }));
+    }
+    Ok(serde_json::json!({ "familySize": family.len(), "groups": out }))
+}
+
+/// 一条 [history::LogFate] 的报告形（只有 ID、时刻与规则字段）。
+pub(crate) fn fate_json(f: &history::LogFate) -> Value {
+    serde_json::json!({
+        "id": f.id,
+        "card": f.card,
+        "writer": f.writer,
+        "hlc": format!("{}:{}", f.physical, f.counter),
+        "kind": format!("{:?}", f.kind),
+        "origin": format!("{:?}", f.origin),
+        "ratingType": f.rating_type,
+        "rating": f.rating,
+        "ankiId": f.anki_id,
+        "at": f.occurred_at,
+        "revokes": f.revokes,
+        "hasResult": f.has_result,
+        "status": f.status.map(history::status_names),
+        "produced": f.produced,
+        "ankiEvent": f.anki_event.map(|e| serde_json::json!({
+            "ankiId": e.anki_id, "hlc": format!("{}:{}", e.physical, e.counter), "kind": e.kind,
+            "ratingType": e.rating_type, "rating": e.rating, "dur": e.dur,
+        })),
+    })
 }
 
 // ---------------------------------------------------------------- 读
@@ -2235,7 +2403,11 @@ mod link_tests {
 mod tests {
     use serde_json::{Value, json};
 
-    use super::{CacheConfig, Dirty, refresh};
+    use std::collections::{BTreeSet, HashMap, HashSet};
+
+    use super::{
+        CacheConfig, Dirty, StatsProbe, explain_stat_groups, rebuild, rebuild_probed, refresh,
+    };
     use crate::store::sync2::in_savepoint;
     use crate::store::sync2::tests::{Device, P, deck_entity, edit, review};
 
@@ -2328,6 +2500,66 @@ mod tests {
             },
         );
         assert_eq!(stat_count(&d), 4);
+    }
+
+    /// 诊断（反馈 QW3kL_jEQF）：全量重建带探针时记下 Anki 副本去重的每个落选者（它的归属卡、留下的那份与那份的归属卡），
+    /// 结果与不带探针的重建逐行相同；[explain_stat_groups] 给出落选那张卡的归属组与组里每条日志的去向（落选是跨组去重，
+    /// 组内照样投影出了统计行）。
+    #[test]
+    fn a_probed_rebuild_names_the_anki_copies_it_dropped() {
+        let d = Device::new("anki-copies-probe");
+        let deck = crate::store::sync2::config::default_deck_id(P);
+        let cfg = CacheConfig::parse(&json!({"defaultDeck": deck, "builtins": {}})).unwrap();
+        d.apply(
+            T0,
+            vec![
+                deck_entity(&deck),
+                anki_review("old-1", "card-old", 1_000, 3, 5_000),
+                anki_review("new-1", "card-new", 1_000, 3, 5_000),
+                anki_review("new-2", "card-new", 2_000, 4, 3_000),
+            ],
+        );
+        let w = d.core.writer().unwrap();
+        in_savepoint(&w, |c| rebuild(c, P, &cfg)).unwrap();
+        let plain = d
+            .rows("SELECT srs_idt(log_id), srs_idt(card_id) FROM srs_stat_reviews ORDER BY log_id");
+        let mut probe = StatsProbe::default();
+        in_savepoint(&w, |c| rebuild_probed(c, P, &cfg, Some(&mut probe))).unwrap();
+        assert_eq!(
+            d.rows(
+                "SELECT srs_idt(log_id), srs_idt(card_id) FROM srs_stat_reviews ORDER BY log_id"
+            ),
+            plain
+        );
+        // 两张卡都没有缓存行（不可见）：留日志 ID 最小的那份（new-1），old-1 落选。
+        assert_eq!(
+            probe.losers,
+            HashMap::from([(
+                "old-1".to_owned(),
+                (
+                    "card-old".to_owned(),
+                    "new-1".to_owned(),
+                    "card-new".to_owned()
+                )
+            )])
+        );
+        let got = explain_stat_groups(
+            &w,
+            &cfg,
+            &BTreeSet::from(["card-old".to_owned()]),
+            &HashSet::new(),
+            &HashMap::new(),
+        )
+        .unwrap();
+        let groups = got["groups"].as_array().unwrap();
+        assert_eq!(groups.len(), 1, "{got:#}");
+        assert_eq!(groups[0]["owner"], "card-old", "{got:#}");
+        let logs = groups[0]["logs"].as_array().unwrap();
+        assert_eq!(logs.len(), 1, "{got:#}");
+        assert_eq!(logs[0]["id"], "old-1", "{got:#}");
+        assert_eq!(logs[0]["produced"], true, "{got:#}");
+        assert_eq!(logs[0]["status"], json!(["effective"]), "{got:#}");
+        assert_eq!(logs[0]["ankiEvent"]["ankiId"], 1_000, "{got:#}");
     }
 
     fn tags(xs: &[&str]) -> Vec<String> {

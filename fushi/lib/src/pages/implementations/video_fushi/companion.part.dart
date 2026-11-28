@@ -58,6 +58,8 @@ class _VideoCompanionPageAdapter implements VideoCompanionPage {
       loopRemaining: controller.loopRepeatsRemaining,
       abAMs: controller.abLoopA?.inMilliseconds,
       abBMs: controller.abLoopB?.inMilliseconds,
+      seekSeconds: _state._asbConfig.seekSeconds,
+      longSeekSeconds: _state._asbConfig.longSeekSeconds,
     );
   }
 
@@ -127,6 +129,14 @@ class _VideoCompanionPageAdapter implements VideoCompanionPage {
   @override
   Future<void> seekByMs(int deltaMs) =>
       _remoteAction('seekBy', () => _remote.seekByMs(deltaMs));
+
+  /// The page's keyboard short / long seek step (one asbplayer config, the
+  /// same values the snapshot reports).
+  @override
+  Future<void> seekStep({required bool forward, required bool long}) {
+    final int ms = long ? _state._asbLongSeekMs : _state._asbSeekMs;
+    return seekByMs(forward ? ms : -ms);
+  }
 
   /// The page's subtitle-list tap ([_VideoSubtitle._handleSubtitleJumpTap])
   /// minus waking the controls (the user's hands are on the panel).

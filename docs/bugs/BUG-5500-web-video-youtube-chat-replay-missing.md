@@ -1,0 +1,6 @@
+## BUG-5500 · PC 上 YouTube 直播回放不出「聊天回放」按钮（网页档从不探测）
+- **报告**：2026-11-25（用户：应用内反馈 C7c1ck6RMU，手机端聊天回放已正常，PC 端按钮不出现）
+- **真实性**：✅ 真 bug（沿真实代码路径确认，未在 Windows 真机点 UI）。Windows 上 YouTube 走网页档（`web_video_bridge.dart` `shouldOpenInWebVideoPlayer`）；#4400 起两档都在原生播放器页的网页分支里播（反馈 AI 总结指向的 `WebVideoFushiPage` 现在只当制卡重放宿主，已过时）。聊天回放探测 `fushi/lib/src/pages/implementations/video_fushi/live_chat.part.dart` `_loadLiveChatForCurrentVideo` 取观看地址只认 `_currentYoutubeWatchUrl`（`video_fushi/quality.part.dart:72`，只有 mpv 流 `UrlStreamVideoClient` 才非空），且只在 mpv 加载收尾 `video_fushi_page.dart` `_applyLoad` 里调一次；网页分支（`web_source.part.dart` `_initWebSource` / `_onWebState` / `_bindWebEpisode`）从不调用，地址也永远是 null。
+- **[x] ① 已修复** — 新增 `_liveChatYoutubeWatchUrl`：mpv 流地址优先，否则取网页档已落书、站点此刻仍在播的那一集（`web_video_resume.dart` `webVideoYoutubeWatchUrl`，只认 YouTube）。网页分支在站点换视频（`_onWebState` 的 `videoChanged`，首个视频快照也算）和新一集落书（`_bindWebEpisode`）时调 `_loadLiveChatForCurrentVideo`：站内点去还没落书的视频先撤掉旧会话，落书后再探测。会话的位置源是控制器的 `positionMsListenable`，网页档由站点快照注入，侧栏 / 竖屏页签 / 控制条按钮本来就不按网页档屏蔽。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/web_video_resume_test.dart`：`webVideoYoutubeWatchUrl` 判据（YouTube / Netflix / 非观看页 / 未落书）；网页分支接线的源码守卫（探测地址走 `_liveChatYoutubeWatchUrl`、换视频与落书两处探测）。
+- **备注**：没在 Windows 真机上看按钮出现与聊天随播放头滚动（需要 WebView2 Windows 包 + 真实 YouTube 直播回放）。

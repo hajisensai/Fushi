@@ -213,6 +213,37 @@ void main() {
     }
   });
 
+  test('排队结果线格式往返保留「多久后又排得出」（wake，应用内反馈 LAk5vHGWUe）', () async {
+    final SrsDbStore store = await openTestStore(
+      profileUid: _uid,
+      deviceId: 'wire',
+      now: () => DateTime.utc(2026, 11, 1, 12).millisecondsSinceEpoch,
+    );
+    final SrsDeckTree tree = await store.deckTree();
+    final SrsDeckSummary sum = (await store.deckSummary(store.defaultDeckId))!;
+    for (final Duration? wake in <Duration?>[
+      const Duration(seconds: 18),
+      null,
+    ]) {
+      final SrsStudyState back = SrsRemoteWire.studyFrom(
+        jsonDecode(
+          jsonEncode(
+            SrsRemoteWire.study(
+              SrsStudyState(
+                summary: sum,
+                next: null,
+                after: null,
+                wakeIn: wake,
+              ),
+            ),
+          ),
+        ),
+        tree,
+      )!;
+      expect(back.wakeIn, wake);
+    }
+  });
+
   test('握手回包带主机的修订号、牌组树标签、时钟与排程能力', () async {
     final (SrsDbStore store, SrsRemoteStoreService service, _) = await _setUp();
     final (int status, Map<String, Object?> body) = await _route(
@@ -420,7 +451,13 @@ void main() {
     expect(after.all.length, before + 1);
     final SrsReviewLog log = SrsRemoteWire.logFrom((again! as Map)['log']);
     expect(log.id, after.lastEffective!.id);
-    expect(log.durationMs, kSrsMaxAnswerDurationMs);
+    // 日志存真实用时（不封 60 秒）；今日用时按单次封顶聚合。
+    expect(log.durationMs, 999999);
+    expect(after.lastEffective!.durationMs, 999999);
+    expect(
+      (await store.todayReviewSummary()).durationMs,
+      kSrsMaxAnswerDurationMs,
+    );
     expect(writes, 1);
 
     // 写操作不带请求 id 不执行。

@@ -98,6 +98,194 @@ List<settings_dest.VideoGroup> videoWebBackendSettingsGroups(
 /// 经 [WebVideoPlatformPlayer] 变成页面 JS。
 ///
 /// 字段（[_webSession] 等）留在主壳——extension 不能带字段。
+/// 网页档字幕面板里一条已有 cue 的轨（站点整轨 / live 轨 / 本机导入或下载的 / 这一集生成的）。
+typedef VideoWebSubtitleTrackRow = ({String key, String label});
+
+/// 网页档字幕面板里一条还没采到整轨的站点轨（点选去取）。
+typedef VideoWebSiteSubtitleRow = ({
+  String id,
+  String label,
+  String status,
+  bool selected,
+});
+
+/// 网页档设置面板「字幕」分类顶部的轨列表（反馈 WNUWVgsr6Q：网页档曾只列站点轨，「导入字幕
+/// 文件」和「副字幕」区都没有）：字幕工作台 + 导入字幕文件 + 关闭 + 每条轨，再加「副字幕」可展开
+/// 区（关闭 + 导入字幕文件 + 已采到的轨 + 可按需加载的站点轨）。纯展示，数据与回调由宿主页
+/// [_VideoWebSource._buildWebSubtitleTrackRows] 给；widget 测试直接构建它。
+@visibleForTesting
+class VideoWebSubtitleTrackRows extends StatelessWidget {
+  const VideoWebSubtitleTrackRows({
+    super.key,
+    required this.tracks,
+    required this.siteTracks,
+    required this.secondarySiteTracks,
+    required this.activeKey,
+    required this.secondaryKey,
+    required this.importEnabled,
+    required this.onImport,
+    required this.onSelect,
+    required this.onSelectSite,
+    required this.onSelectSecondary,
+    required this.onSelectSecondarySite,
+    this.onOpenStudio,
+  });
+
+  /// 当前视频已有 cue 的轨（主 / 副字幕区同一份）。
+  final List<VideoWebSubtitleTrackRow> tracks;
+
+  /// 主字幕区里还没采到的站点轨。
+  final List<VideoWebSiteSubtitleRow> siteTracks;
+
+  /// 副字幕区里可按需取来的站点轨（只有按需加载的轨：站点播放器轨要切站点自己的播放器，
+  /// 会连主字幕一起换掉，不能单作副字幕）。
+  final List<VideoWebSiteSubtitleRow> secondarySiteTracks;
+
+  /// 当前主字幕轨；null = 主字幕关。
+  final String? activeKey;
+
+  /// 当前副字幕轨；null = 副字幕关。
+  final String? secondaryKey;
+
+  /// 导入入口可不可点（字幕正在加载时灰掉）。
+  final bool importEnabled;
+
+  /// 「导入字幕文件」：参数 = 是否导入成副字幕。
+  final ValueChanged<bool> onImport;
+
+  /// 选主字幕轨；null = 关。
+  final ValueChanged<String?> onSelect;
+
+  /// 取一条还没采到的站点轨作主字幕（参数 = 站点轨 id）。
+  final ValueChanged<String> onSelectSite;
+
+  /// 选副字幕轨；null = 关。
+  final ValueChanged<String?> onSelectSecondary;
+
+  /// 取一条按需加载的站点轨作副字幕（参数 = 站点轨 id）。
+  final ValueChanged<String> onSelectSecondarySite;
+
+  /// 字幕工作台入口；null = 不显示（这一集用不了工作台）。
+  final VoidCallback? onOpenStudio;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color? selectedFg = videoPanelSelectedForeground(context);
+    final VoidCallback? studio = onOpenStudio;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        // 字幕工作台：与本机 / 远端字幕菜单同一个入口（生成字幕是工作台里的一项工具，
+        // 内嵌生成面板先从页面取媒体地址拉整集音频，见 [_webSubtitleStudioPanel]）。
+        if (studio != null) ...<Widget>[
+          FushiListTileControl(
+            key: const ValueKey<String>('video-web-subtitle-studio'),
+            leading: const FushiIcon(FushiIcons.transcribe),
+            title: Text(t.video_subtitle_studio_title),
+            subtitle: Text(t.video_subtitle_studio_entry_hint),
+            onTap: studio,
+          ),
+          const FushiDividerControl(height: 1),
+        ],
+        FushiListTileControl(
+          key: const ValueKey<String>('video-web-subtitle-import'),
+          leading: const FushiIcon(FushiIcons.importFile),
+          title: Text(t.video_subtitle_import_file),
+          enabled: importEnabled,
+          onTap: importEnabled ? () => onImport(false) : null,
+        ),
+        FushiListTileControl(
+          key: const ValueKey<String>('video-web-subtitle-off'),
+          leading: const FushiIcon(FushiIcons.subtitlesOff),
+          title: Text(t.video_subtitle_off),
+          selected: activeKey == null,
+          selectedColor: selectedFg,
+          onTap: () => onSelect(null),
+        ),
+        if (tracks.isEmpty && siteTracks.isEmpty)
+          FushiListTileControl(
+            dense: true,
+            leading: const FushiIcon(FushiIcons.subtitles),
+            title: Text(t.web_video_no_tracks),
+            enabled: false,
+          ),
+        for (final VideoWebSubtitleTrackRow track in tracks)
+          FushiListTileControl(
+            key: ValueKey<String>('video-web-subtitle-${track.key}'),
+            leading: const FushiIcon(FushiIcons.subtitles),
+            title: Text(track.label),
+            selected: track.key == activeKey,
+            selectedColor: selectedFg,
+            onTap: () => onSelect(track.key),
+          ),
+        for (final VideoWebSiteSubtitleRow track in siteTracks)
+          FushiListTileControl(
+            key: ValueKey<String>('video-web-site-subtitle-${track.id}'),
+            leading: const FushiIcon(FushiIcons.subtitles),
+            title: Text(track.label),
+            subtitle: Text(track.status),
+            selected: track.selected,
+            selectedColor: selectedFg,
+            onTap: () => onSelectSite(track.id),
+          ),
+        // 副字幕（对照层，同样可逐字符查词）：与本机 / 远端字幕面板同款内联可展开区。
+        const FushiDividerControl(height: 1),
+        FushiExpansionTile(
+          key: const ValueKey<String>('video-web-secondary-subtitles'),
+          leading: const FushiIcon(FushiIcons.subtitles),
+          title: Text(t.video_secondary_subtitle_sources),
+          childrenPadding: EdgeInsets.zero,
+          shape: const Border(),
+          collapsedShape: const Border(),
+          children: <Widget>[
+            FushiListTileControl(
+              key: const ValueKey<String>('video-web-secondary-subtitle-off'),
+              leading: const FushiIcon(FushiIcons.captionsOff),
+              title: Text(t.video_subtitle_off),
+              selected: secondaryKey == null,
+              selectedColor: selectedFg,
+              onTap: () => onSelectSecondary(null),
+            ),
+            const FushiDividerControl(height: 1),
+            FushiListTileControl(
+              key: const ValueKey<String>(
+                'video-web-secondary-subtitle-import',
+              ),
+              leading: const FushiIcon(FushiIcons.importFile),
+              title: Text(t.video_subtitle_import_file),
+              enabled: importEnabled,
+              onTap: importEnabled ? () => onImport(true) : null,
+            ),
+            for (final VideoWebSubtitleTrackRow track in tracks)
+              FushiListTileControl(
+                key: ValueKey<String>(
+                  'video-web-secondary-subtitle-${track.key}',
+                ),
+                leading: const FushiIcon(FushiIcons.subtitles),
+                title: Text(track.label),
+                selected: track.key == secondaryKey,
+                selectedColor: selectedFg,
+                onTap: () => onSelectSecondary(track.key),
+              ),
+            for (final VideoWebSiteSubtitleRow track in secondarySiteTracks)
+              FushiListTileControl(
+                key: ValueKey<String>(
+                  'video-web-secondary-site-subtitle-${track.id}',
+                ),
+                leading: const FushiIcon(FushiIcons.subtitles),
+                title: Text(track.label),
+                subtitle: Text(track.status),
+                selected: track.selected,
+                selectedColor: selectedFg,
+                onTap: () => onSelectSecondarySite(track.id),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
 extension _VideoWebSource on _VideoFushiPageState {
   /// 网页站流媒体书的入口（[_initVideo] 分流到这里）。两档都在本页播、同一套播放器外观与控件，
   /// 差别只在渲染管线（拍板 cbKi3PN0G7-r2）：
@@ -344,6 +532,17 @@ extension _VideoWebSource on _VideoFushiPageState {
       _webSubtitleUserChosen = true;
       _webAudioUserChosen = true;
       _webPendingRestore = WebMineRestoreTracker(restore, now: DateTime.now());
+    } else {
+      // 打开的就是某一集的书：续播到 Fushi 记下的进度（不靠站点账号书签，2ajU2PuEDA）。
+      final String? bound = _webBoundEpisodeUrl;
+      if (bound != null) {
+        _webResumeSeek = WebVideoResumeSeek.forBook(
+          episodeUrl: bound,
+          lastPositionMs: row.lastPositionMs,
+          intent: EpisodeStartIntent.initialOpen,
+          mode: appModel.videoResumeMode,
+        );
+      }
     }
     // 站点入口还没有书：进度 / 观看统计等播起某一集落库后再接（[_bindWebEpisode]）。
     if (_webBoundEpisodeUrl == null) {
@@ -391,6 +590,9 @@ extension _VideoWebSource on _VideoFushiPageState {
       if (webVideoEpisodeUrl(state.href) == _webBoundEpisodeUrl) {
         _installWebGeneratedTrack(select: generatedWasActive);
       }
+      // YouTube 直播回放的聊天回放跟着视频走（C7c1ck6RMU，与 mpv 流同一个探测）：是已落书的
+      // 这一集就探测；站内点去了别的视频先撤掉，那一集落书后（[_bindWebEpisode]）再探测。
+      unawaited(_loadLiveChatForCurrentVideo());
     }
     if (!listEquals(state.siteTracks, _webSiteTracks) ||
         state.siteTrackCurrent != _webSiteTrackCurrent) {
@@ -401,6 +603,7 @@ extension _VideoWebSource on _VideoFushiPageState {
     }
     _checkWebPendingTrackCapture();
     _applyWebPendingRestore(state);
+    _applyWebResumeSeek(state);
     _maybeRequestDefaultSiteTrack();
     _syncWebAudioTracks(state);
     _syncWebNetflixMetadata(state);
@@ -539,6 +742,16 @@ extension _VideoWebSource on _VideoFushiPageState {
         : _webNetflixMeta[boundWatchId];
     if (boundMeta != null) unawaited(_linkWebSeries(boundMeta));
     unawaited(_restoreWebGeneratedSubtitle());
+    // 换到的这一集以前看过：与开页同一口径续播（2ajU2PuEDA）；制卡重放的恢复在途时让它。
+    _webResumeSeek = _webPendingRestore == null
+        ? WebVideoResumeSeek.forBook(
+            episodeUrl: url,
+            lastPositionMs: bound.lastPositionMs,
+            intent: EpisodeStartIntent.listSelect,
+            mode: appModel.videoResumeMode,
+          )
+        : null;
+    unawaited(_loadLiveChatForCurrentVideo());
   }
 
   /// 把库里这部剧已落书的各集收进它的 playlist 合集（GBDddvjDsj / BUG-4024：继续观看 /
@@ -692,6 +905,8 @@ extension _VideoWebSource on _VideoFushiPageState {
       updatedKey: updatedKey,
       preferredLanguage: _webPreferredSubtitleLanguage,
     );
+    // 副字幕层（对照轨）：与主轨同一次重选得出，换了才重灌（选 / 关 / 换视频 / 那条采到）。
+    if (r.secondaryReload) controller.setSecondaryCues(r.secondaryCues);
     if (!r.reload) return;
     controller.setCues(r.cues);
     final int? pos = controller.positionMs;
@@ -762,6 +977,20 @@ extension _VideoWebSource on _VideoFushiPageState {
     final String key = track.storeKey(_webTrackSel.videoKey);
     _markWebTrackRequested(key);
     if (_webTrackSel.pendingKey != key) return; // 早已采到
+    _fetchWebLazyTrack(
+      session,
+      key,
+      wanted: () => _webTrackSel.pendingKey == key,
+    );
+  }
+
+  /// 让站点桥取按需加载的整轨 [key]（主字幕请求与副字幕请求共用）。页面答「不可请求」时，
+  /// 这条仍被 [wanted] 等着、也没采到就落成失败（[_onWebTrackFailed]）。
+  void _fetchWebLazyTrack(
+    WebVideoSession session,
+    String key, {
+    required bool Function() wanted,
+  }) {
     unawaited(
       session
           .evaluate(
@@ -769,7 +998,7 @@ extension _VideoWebSource on _VideoFushiPageState {
           )
           .then((Object? result) {
             if (!mounted || result == 'requested') return;
-            if (_webTrackSel.pendingKey == key &&
+            if (wanted() &&
                 !(_webTrackSel.tracks[key]?.cues.isNotEmpty ?? false)) {
               ErrorLogService.instance.log(
                 'VideoFushi.web',
@@ -1044,11 +1273,18 @@ extension _VideoWebSource on _VideoFushiPageState {
     return track.lang;
   }
 
-  String _webSiteTrackStatus(WebVideoSiteTrack track) {
+  /// 还没采到的站点轨在面板里的状态行；[secondary] = 副字幕区那一行（在途看副字幕的选择）。
+  String _webSiteTrackStatus(
+    WebVideoSiteTrack track, {
+    bool secondary = false,
+  }) {
     if (track.imageBased) return t.web_video_track_image;
     final String key = track.storeKey(_webTrackSel.videoKey);
     if (_webFailedTrackKeys.contains(key)) return t.web_video_track_failed;
-    if (_webTrackSel.pendingKey == key) return t.web_video_track_loading;
+    final String? requested = secondary
+        ? _webTrackSel.secondaryKey
+        : _webTrackSel.pendingKey;
+    if (requested == key) return t.web_video_track_loading;
     return t.web_video_track_site;
   }
 
@@ -1063,71 +1299,98 @@ extension _VideoWebSource on _VideoFushiPageState {
     _rebuild(() {});
   }
 
-  /// 设置面板「字幕」分类顶部的轨列表（网页档）：字幕工作台（生成字幕、对照表、跳转、拆分）
-  /// + 关闭 + 每条轨（站点轨、下载 / 拆分出的本机轨、这一集生成的字幕）。导入文件 / 自动获取 /
-  /// 转录 / 对轴这些行都要本地媒体，网页档不列。
+  /// 设置面板「字幕」分类顶部的轨列表（网页档，[VideoWebSubtitleTrackRows]）：字幕工作台（生成
+  /// 字幕、对照表、跳转、拆分）+ 导入字幕文件 + 关闭 + 每条轨（站点轨、下载 / 导入 / 拆分出的
+  /// 本机轨、这一集生成的字幕）+ 副字幕区。导入本地字幕只需解析成 cue、登记成一条轨
+  /// （[_importWebSubtitleFile]），不需要本地媒体；自动获取 / 转录 / 对轴这些行才要，网页档不列。
   Widget _buildWebSubtitleTrackRows(BuildContext context) {
-    final Color? selectedFg = videoPanelSelectedForeground(context);
     final List<WebVideoTrack> tracks = _currentWebTracks();
     final List<WebVideoSiteTrack> siteTracks = _unloadedWebSiteTracks();
     final VideoPlayerController? controller = _controller;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        // 字幕工作台：与本机 / 远端字幕菜单同一个入口（生成字幕是工作台里的一项工具，
-        // 内嵌生成面板先从页面取媒体地址拉整集音频，见 [_webSubtitleStudioPanel]）。
-        if (controller != null &&
-            _subtitleStudioAvailable(controller)) ...<Widget>[
-          FushiListTileControl(
-            key: const ValueKey<String>('video-web-subtitle-studio'),
-            leading: const FushiIcon(FushiIcons.transcribe),
-            title: Text(t.video_subtitle_studio_title),
-            subtitle: Text(t.video_subtitle_studio_entry_hint),
-            onTap: () => unawaited(_openSubtitleStudio(controller)),
-          ),
-          const FushiDividerControl(height: 1),
-        ],
-        FushiListTileControl(
-          key: const ValueKey<String>('video-web-subtitle-off'),
-          leading: const FushiIcon(FushiIcons.subtitlesOff),
-          title: Text(t.video_subtitle_off),
-          selected: _webTrackSel.activeKey == null,
-          selectedColor: selectedFg,
-          onTap: () => _selectWebTrack(null),
-        ),
-        if (tracks.isEmpty && siteTracks.isEmpty)
-          FushiListTileControl(
-            dense: true,
-            leading: const FushiIcon(FushiIcons.subtitles),
-            title: Text(t.web_video_no_tracks),
-            enabled: false,
-          ),
+    final String? secondaryKey = _webTrackSel.secondaryKey;
+    return VideoWebSubtitleTrackRows(
+      tracks: <VideoWebSubtitleTrackRow>[
         for (final WebVideoTrack track in tracks)
-          FushiListTileControl(
-            key: ValueKey<String>('video-web-subtitle-${track.key}'),
-            leading: const FushiIcon(FushiIcons.subtitles),
-            title: Text(_webTrackLabel(track)),
-            selected: track.key == _webTrackSel.activeKey,
-            selectedColor: selectedFg,
-            onTap: () => _selectWebTrack(track.key),
-          ),
+          (key: track.key, label: _webTrackLabel(track)),
+      ],
+      siteTracks: <VideoWebSiteSubtitleRow>[
         for (final WebVideoSiteTrack track in siteTracks)
-          FushiListTileControl(
-            key: ValueKey<String>('video-web-site-subtitle-${track.id}'),
-            leading: const FushiIcon(FushiIcons.subtitles),
-            title: Text(track.name.isEmpty ? track.lang : track.name),
-            subtitle: Text(_webSiteTrackStatus(track)),
+          (
+            id: track.id,
+            label: track.name.isEmpty ? track.lang : track.name,
+            status: _webSiteTrackStatus(track),
             selected: track.imageBased && track.id == _webSiteTrackCurrent,
-            selectedColor: selectedFg,
-            onTap: () => _requestWebSiteTrack(track, byUser: true),
           ),
       ],
+      secondarySiteTracks: <VideoWebSiteSubtitleRow>[
+        for (final WebVideoSiteTrack track in siteTracks)
+          if (track.isLazy && !track.imageBased)
+            (
+              id: track.id,
+              label: track.name.isEmpty ? track.lang : track.name,
+              status: _webSiteTrackStatus(track, secondary: true),
+              selected: secondaryKey == track.storeKey(_webTrackSel.videoKey),
+            ),
+      ],
+      activeKey: _webTrackSel.activeKey,
+      secondaryKey: secondaryKey,
+      importEnabled: !_subtitleLoadingShown,
+      onImport: (bool secondary) =>
+          unawaited(_pickAndImportWebSubtitle(secondary: secondary)),
+      onSelect: _selectWebTrack,
+      onSelectSite: (String id) {
+        final WebVideoSiteTrack? track = _webSiteTrackById(id);
+        if (track != null) _requestWebSiteTrack(track, byUser: true);
+      },
+      onSelectSecondary: _selectWebSecondaryTrack,
+      onSelectSecondarySite: (String id) {
+        final WebVideoSiteTrack? track = _webSiteTrackById(id);
+        if (track != null) _requestWebSecondarySiteTrack(track);
+      },
+      onOpenStudio: controller != null && _subtitleStudioAvailable(controller)
+          ? () => unawaited(_openSubtitleStudio(controller))
+          : null,
     );
   }
 
-  /// 把本机字幕文件 [path]（手机下载的在线字幕、工作台拆分出的日语字幕）作为一条轨并进
-  /// 当前视频的站点轨并选中。网页轨的显示名取 lang（[_webTrackLabel]）：本机档用文件名。
-  void _selectWebLocalSubtitleTrack(String path, List<AudioCue> cues) {
+  WebVideoSiteTrack? _webSiteTrackById(String id) {
+    for (final WebVideoSiteTrack track in _webSiteTracks) {
+      if (track.id == id) return track;
+    }
+    return null;
+  }
+
+  /// 选副字幕轨（null = 关）：与主轨同一次重选灌进副层（[_reselectWebTrack]）。
+  void _selectWebSecondaryTrack(String? key) {
+    _webTrackSel.chooseSecondary(key);
+    _reselectWebTrack();
+    _rebuild(() {});
+  }
+
+  /// 把一条按需加载的站点轨取来作副字幕：先选上（采到时由 [_reselectWebTrack] 灌进副层），
+  /// 不动主字幕的请求 / 钉住状态。早已采到就直接显示。
+  void _requestWebSecondarySiteTrack(WebVideoSiteTrack track) {
+    final WebVideoSession? session = _webSession;
+    if (session == null || !track.isLazy || track.imageBased) return;
+    final String key = track.storeKey(_webTrackSel.videoKey);
+    _webFailedTrackKeys.remove(key);
+    _selectWebSecondaryTrack(key);
+    if (_webTrackSel.tracks[key]?.cues.isNotEmpty ?? false) return;
+    _fetchWebLazyTrack(
+      session,
+      key,
+      wanted: () => _webTrackSel.secondaryKey == key,
+    );
+  }
+
+  /// 把本机字幕文件 [path]（手动导入 / 拖放的、手机下载的在线字幕、工作台拆分出的日语字幕）
+  /// 作为一条轨并进当前视频的站点轨并选中（[secondary] = 选成副字幕）。网页轨的显示名取 lang
+  /// （[_webTrackLabel]）：本机档用文件名。
+  void _selectWebLocalSubtitleTrack(
+    String path,
+    List<AudioCue> cues, {
+    bool secondary = false,
+  }) {
     final String name = p.basename(path);
     final String key = '${_webTrackSel.videoKey}|download:$name';
     _webTrackSel.tracks[key] = WebVideoTrack(
@@ -1136,7 +1399,73 @@ extension _VideoWebSource on _VideoFushiPageState {
       lang: name,
       cues: cues,
     );
+    if (secondary) {
+      _selectWebSecondaryTrack(key);
+      return;
+    }
     _selectWebTrack(key);
+  }
+
+  /// 网页档「导入字幕文件」（主字幕行与副字幕区同一入口）：弹文件选择器挑 srt / vtt / ass / ssa
+  /// → [_importWebSubtitleFile]。
+  Future<void> _pickAndImportWebSubtitle({required bool secondary}) async {
+    final String? path = await pickSystemFilePath(
+      context: context,
+      allowedExtensions: const <String>{'srt', 'vtt', 'ass', 'ssa'},
+    );
+    _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
+    if (path == null) return;
+    await _importWebSubtitleFile(path, secondary: secondary);
+  }
+
+  /// 网页档按路径导入字幕（面板导入、拖放到播放区、桌面 CLI `video sub-import` 共用）：拷进
+  /// 字幕目录（[_copyImportedSubtitleIntoLibrary]）→ 解析成 cue → 作为当前站点视频的一条轨
+  /// 登记并选为主 / 副字幕。返回登记的本机路径；格式不支持、解析不出 cue、站点还没报上视频、
+  /// 期间换了视频时为 null。
+  Future<String?> _importWebSubtitleFile(
+    String path, {
+    required bool secondary,
+  }) async {
+    if (subtitleFormatForPath(path) == null) {
+      _showOsd(
+        t.video_subtitle_import_unsupported,
+        severity: ToastSeverity.error,
+      );
+      return null;
+    }
+    final VideoPlayerController? controller = _controller;
+    final String videoKey = _webTrackSel.videoKey;
+    if (controller == null || videoKey.isEmpty) {
+      // 站点还没报上视频（登录 / 选人页）：轨无处可挂。
+      _showOsd(
+        t.video_subtitle_load_failed(label: p.basename(path)),
+        severity: ToastSeverity.error,
+      );
+      return null;
+    }
+    final String applyPath = await _copyImportedSubtitleIntoLibrary(path);
+    final List<AudioCue> cues;
+    _showSubtitleLoadingOverlay(origin: VideoSubtitlePickOrigin.player);
+    try {
+      cues = await _loadExternalSubtitleCues(applyPath, _activeBookUid);
+    } finally {
+      _hideSubtitleLoadingOverlay();
+    }
+    if (!mounted ||
+        !identical(_controller, controller) ||
+        _webTrackSel.videoKey != videoKey) {
+      return null;
+    }
+    if (cues.isEmpty) {
+      _showOsd(
+        t.video_subtitle_load_failed(label: p.basename(applyPath)),
+        severity: ToastSeverity.error,
+      );
+      return null;
+    }
+    _selectWebLocalSubtitleTrack(applyPath, cues, secondary: secondary);
+    _showOsd(t.video_subtitle_switched(label: p.basename(applyPath)));
+    return applyPath;
   }
 
   // ── 字幕生成（完整管线）────────────────────────────────────────────────────
@@ -1853,6 +2182,17 @@ extension _VideoWebSource on _VideoFushiPageState {
         ),
       ),
     );
+  }
+
+  /// 每拍站点状态过一次续播判定（[WebVideoResumeSeek]，一次性）。制卡重放的恢复
+  /// （[_webPendingRestore]）在途时先让它：那份状态本身就带着位置。
+  void _applyWebResumeSeek(WebVideoPlaybackState state) {
+    final WebVideoResumeSeek? resume = _webResumeSeek;
+    if (resume == null || _webPendingRestore != null) return;
+    final int? seek = resume.step(state);
+    if (resume.done) _webResumeSeek = null;
+    final VideoPlayerController? controller = _controller;
+    if (seek != null && controller != null) unawaited(controller.seekMs(seek));
   }
 
   /// 每拍站点状态到来时把 [_webPendingRestore] 对齐一次；每项动作最多首发 + 一次补发

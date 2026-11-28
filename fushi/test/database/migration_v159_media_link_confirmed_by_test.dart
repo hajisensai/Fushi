@@ -16,23 +16,32 @@ void main() {
     kind: MediaLinkKind.videoCollection,
     key: '7',
   );
-  const MediaLinkEndpoint game = (kind: MediaLinkKind.game, key: 'g1');
 
   test('v158 → v159：已确认回填 user、建议留 NULL；成员 pinned 存量 0；重跑幂等', () async {
     final Directory dir = Directory.systemTemp.createTempSync('curator_v159');
     addTearDown(() => dir.deleteSync(recursive: true));
     final String path = '${dir.path}/test.db';
     final FushiDatabase db = FushiDatabase.atFile(path, isMainProcess: false);
+    // 合集端点必须真实存在：v181 起迁移会清掉指向不存在合集 / 游戏的连接
+    // （BUG-5457）。游戏端点换成键跨端稳定的单集视频。
+    final MediaLinkEndpoint liveAnime = (
+      kind: MediaLinkKind.videoCollection,
+      key: '${await db.createMediaCollection('A')}',
+    );
+    const MediaLinkEndpoint episode = (
+      kind: MediaLinkKind.videoEpisode,
+      key: 'ep1',
+    );
     await db.upsertManualMediaLink(
       relation: MediaLinkRelation.adaptation,
       from: book,
-      to: anime,
+      to: liveAnime,
       at: 10,
     );
     await db.proposeMediaLink(
       relation: MediaLinkRelation.sameWork,
-      from: game,
-      to: anime,
+      from: episode,
+      to: liveAnime,
       source: MediaLinkSource.mal,
       at: 11,
     );

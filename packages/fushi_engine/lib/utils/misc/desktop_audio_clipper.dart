@@ -6,8 +6,10 @@ import 'package:fushi_engine/media/cover_file_writer.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/ffmpeg_hdr_tone_map.dart';
 import 'package:fushi_engine/media/video/ffmpeg_watched_run.dart';
+import 'package:fushi_engine/media/video/media_path_probe.dart'
+    show awaitMediaPathExists;
 import 'package:fushi_engine/media/video/video_member_file.dart'
-    show videoMemberExistsSync;
+    show awaitVideoMemberExists;
 import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
     show kYoutubeStreamReplayUserAgent;
 import 'package:fushi_engine/media/video/video_clip_exporter.dart'
@@ -57,6 +59,15 @@ bool debugIsRemoteFfmpegInput(String inputPath) =>
 /// 但那是「部分节点宽松」，不是「B 站不需要」——同一个 playurl 重新解析一次就可能
 /// 落到严格节点上（实测正是这样：同一接口两次解析，一次 mcdn 一次 cn-hbyc）。
 const String kBilibiliCdnReferer = 'https://www.bilibili.com/';
+
+/// 抽取器入口的本地输入判存在（BUG-5605）：远端 URL 直接放行；本地路径走必达的无时限
+/// 异步检查（[awaitMediaPathExists]），不在调用方 isolate 上同步 stat。这些抽取器都在
+/// 导入 / 扫描 / 回填 / 用户主动操作上：网络盘冷挂载首个 stat 慢就等它答复，不静默返回
+/// null（有界探测只给缩略图这类推测性路径，见 `media_path_probe.dart`）。
+Future<bool> _ffmpegInputExists(String inputPath) async {
+  if (_isRemoteFfmpegInput(inputPath)) return true;
+  return awaitMediaPathExists(inputPath);
+}
 
 /// [host] 是否是 B 站的媒体 CDN 节点（决定要不要给 ffmpeg 加防盗链 Referer）。纯函数。
 bool isBilibiliCdnHost(String host) {
@@ -1227,7 +1238,8 @@ Future<String?> extractEmbeddedCoverViaFfmpeg({
   required String audioPath,
   required String outputPath,
 }) async {
-  if (!File(audioPath).existsSync()) return null;
+  // 导入 / 扫描路径（BUG-5605 审查后修正）：必达检查，卷慢就等，不静默没封面。
+  if (!await awaitMediaPathExists(audioPath)) return null;
   final File output = File(outputPath);
   try {
     output.parent.createSync(recursive: true);
@@ -1337,7 +1349,8 @@ AudioMetadata parseAudioMetadataFromFfprobeJson(String probeStdout) {
 Future<AudioMetadata?> extractAudioMetadataViaFfprobe({
   required String inputPath,
 }) async {
-  if (!File(inputPath).existsSync()) return null;
+  // 导入 / 扫描路径（BUG-5605 审查后修正）：必达检查，卷慢就等，不静默没元数据。
+  if (!await awaitMediaPathExists(inputPath)) return null;
   try {
     final FfmpegRunResult result = await resolveFfmpegBackend().runProbe(
       buildFfprobeFormatTagsArgs(inputPath: inputPath),
@@ -1447,10 +1460,21 @@ Future<String?> extractVideoFrameViaFfmpeg({
   int? scaleWidth,
   // BUG-2192：先裁再缩的 crop 滤镜段（`crop=…`），null = 不裁（既有调用方逐字不变）。
   String? cropFilter,
+  // BUG-5605：调用方已自己确认输入在（缩略图取帧器用有界探测 `probeVideoMember` 自管
+  // 可达性状态），这里不再重复判存在。默认 false：本函数自己做必达检查。
+  bool inputPresenceChecked = false,
+  // BUG-5605：ffmpeg 跑满时限被杀（无退出码）时回调。缩略图取帧器据此判断「源读不动」
+  // 并停止重试，而不是从失败摘要里猜。
+  void Function()? onTimedOut,
 }) async {
   // 原盘成员（蓝光分集 `00001.p03.mpls` 是虚拟路径）按背后的真实文件判在不在；
   // ffmpeg 后端会把它改写成 concat 输入（BUG-5312）。
-  if (!_isRemoteFfmpegInput(inputPath) && !videoMemberExistsSync(inputPath)) {
+  // BUG-5605：异步判存在——同步 stat 在网络盘上曾把 UI 冻住 7～23 s（缩略图预取）。
+  // 调用方大多在导入 / 换封面 / 制卡截取这类必达路径上，所以是无时限的必达检查（卷
+  // 慢就等）；推测性的缩略图取帧器自己做有界探测，经 [inputPresenceChecked] 跳过这里。
+  if (!inputPresenceChecked &&
+      !_isRemoteFfmpegInput(inputPath) &&
+      !await awaitVideoMemberExists(inputPath)) {
     return null;
   }
   // BUG-2496：ffmpeg 不直写 outputPath。书架/更新中心在它写到一半时重建就会读到
@@ -1482,6 +1506,7 @@ Future<String?> extractVideoFrameViaFfmpeg({
       const Duration(seconds: 30),
     );
     final int? code = result.returnCode;
+    if (code == null) onTimedOut?.call();
     if (code == 0 && staged.existsSync() && staged.lengthSync() > 0) {
       try {
         await publishStagedCoverFile(staged: staged, destPath: outputPath);
@@ -1780,9 +1805,7 @@ Future<String?> extractClipGifViaFfmpeg({
   bool? playOnce,
 }) async {
   if (endMs <= startMs) return null;
-  if (!_isRemoteFfmpegInput(inputPath) && !File(inputPath).existsSync()) {
-    return null;
-  }
+  if (!await _ffmpegInputExists(inputPath)) return null;
 
   final File output = File(outputPath);
   try {
@@ -1884,7 +1907,7 @@ Future<String?> extractEmbeddedSubtitleViaFfmpeg({
   required int streamIndex,
   required String outputPath,
 }) async {
-  if (!File(inputPath).existsSync()) return null;
+  if (!await awaitMediaPathExists(inputPath)) return null;
 
   final File output = File(outputPath);
   try {
@@ -2104,8 +2127,10 @@ Future<EmbeddedSubtitleExtractResult> extractEmbeddedSubtitlesViaFfmpeg({
   }
   // 输入是用户库里的视频（常在网络盘上）：async 判存在，互联 host 的内封字幕端点在
   // app 主 isolate 上走到这里，同步 stat 会冻结全部端点与 UI（BUG-3756）。输出落在
-  // 系统临时目录的缓存里（本地盘），沿用同步写法。
-  if (!await File(inputPath).exists()) {
+  // 系统临时目录的缓存里（本地盘），沿用同步写法。BUG-5605 审查后修正：字幕抽取是必达
+  // 路径——卷慢（rclone / WinFsp 冷挂载）就等它答复（[awaitMediaPathExists]），不因首个
+  // stat 慢就判这一集没内封字幕。
+  if (!await awaitMediaPathExists(inputPath)) {
     return const EmbeddedSubtitleExtractResult(
       written: <int, String>{},
       failure: EmbeddedSubtitleExtractFailure.inputMissing,
@@ -2269,7 +2294,9 @@ Future<String?> extractAudioSegmentViaFfmpeg({
     return null;
   }
   // 输入常是网络盘上的视频：async 判存在（BUG-3756，互联 host 的 clipaudio 端点走这里）。
-  if (!_isRemoteFfmpegInput(inputPath) && !await File(inputPath).exists()) {
+  // BUG-5605 审查后修正：制卡截音是用户主动操作，必达检查——卷慢就等，不报假的「暂不
+  // 可用」、也不把慢当成不存在。
+  if (!await _ffmpegInputExists(inputPath)) {
     _reportFfmpegEarlyReturn(
       'extractAudioSegmentViaFfmpeg',
       'input audio file does not exist: $inputPath '

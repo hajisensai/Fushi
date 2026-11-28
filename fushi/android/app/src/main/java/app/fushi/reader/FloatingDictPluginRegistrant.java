@@ -49,6 +49,13 @@ final class FloatingDictPluginRegistrant {
         } catch (Exception e) {
             Log.e(TAG, "Error registering cross-app audio channel", e);
         }
+        // BUG-5542：这些引擎（:popup / :second_screen）只读打开复习库，制卡等写入经
+        // SrsWriteRelayService 转交主进程执行（拍板 D10）。
+        try {
+            SrsWriteRelayClient.registerWith(flutterEngine, context);
+        } catch (Exception e) {
+            Log.e(TAG, "Error registering srs write relay channel", e);
+        }
         try {
             flutterEngine.getPlugins().add(
                 new dev.fluttercommunity.plus.device_info.DeviceInfoPlusPlugin());

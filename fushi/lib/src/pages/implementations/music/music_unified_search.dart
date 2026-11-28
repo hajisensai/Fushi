@@ -305,6 +305,10 @@ void _playSongs(
   final int? serverBitrate = musicServerBitrateLimit(
     app.isPreferencesReady ? app.prefsRepo.musicServerMaxBitrate : 0,
   );
+  final MusicTrackPathOf trackPathOf = musicTrackPathsOf(<MusicTrackRow>[
+    for (final _Song s in songs)
+      if (s.track case final MusicTrackRow r) r,
+  ]);
   final List<MusicPlayItem> items = <MusicPlayItem>[];
   int startIndex = 0;
   for (int i = 0; i < songs.length; i++) {
@@ -315,6 +319,7 @@ void _playSongs(
       MusicTrackRow r => musicPlayItemOf(
         r,
         album: r.albumUid == null ? null : albums[r.albumUid!],
+        trackPathOf: trackPathOf,
       ),
       MusicPluginTrack p when p.playable && s.plugin != null =>
         musicPluginPlayItem(s.plugin!.id, p),

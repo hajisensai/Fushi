@@ -108,6 +108,15 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="fushi" android:host="pair" />
             </intent-filter>
+            <!-- 排行榜公开分享页（rank.fushi.moe /u/<id>、/w/<id>）的「在 Fushi 中打开」：
+                 fushi://leaderboard/user/<id>、fushi://leaderboard/work/<id>
+                 （services/leaderboard/src/pages.js；Dart 解析 leaderboard_deep_link.dart）。 -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="fushi" android:host="leaderboard" />
+            </intent-filter>
             <intent-filter>
                 <action android:name="android.nfc.action.NDEF_DISCOVERED" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -330,6 +339,10 @@
             android:hardwareAccelerated="true"
             android:configChanges="orientation|keyboardHidden|keyboard|navigation|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"/>
         <service android:name=".SecondScreenRelayService"
+            android:exported="false"/>
+        <!-- 复习写入转交（BUG-5542，拍板 D10）：:popup / :second_screen 只读打开复习库，
+             制卡等写入经这个绑定服务交给主进程执行；主进程不在时绑定会把它拉起来。不导出。 -->
+        <service android:name=".SrsWriteRelayService"
             android:exported="false"/>
         <service android:name=".DownloadKeepAliveService"
             android:exported="false"

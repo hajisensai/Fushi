@@ -1,6 +1,8 @@
 // 笔记编辑 / 模板编辑的纯函数：富文本扩展子集（高亮）、结构化字段逐段改文字、可视化块的
 // 斜体 / 自定义颜色、字段 AI 回复的本地校验。全部不起 widget。
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_engine/ai/ai_chat_client.dart';
+import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi/src/ai/ai_srs_field_assistant.dart';
 import 'package:fushi/src/ai/ai_srs_template_assistant.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_rich_text_controller.dart';
@@ -235,5 +237,126 @@ void main() {
       expect(p, contains('translate the example sentence into zh-CN'));
       expect(p, isNot(contains('User instruction')));
     });
+
+    test('每个任务都带输出语言（改写 / 自定义的任务行本身不写语言）', () {
+      for (final AiSrsFieldTask task in AiSrsFieldTask.values) {
+        final String p = buildAiSrsFieldUserPrompt(
+          noteTypeName: 'Lapis',
+          fields: const <AiSrsFieldBrief>[],
+          targetFieldId: 'b',
+          task: task,
+          instruction: 'x',
+          outputLanguage: 'en',
+        );
+        expect(p, contains('Output language: en'), reason: task.name);
+      }
+    });
+
+    test('系统提示写明加粗 = 目标词、新例句用笔记的语言', () {
+      final String flat = kAiSrsFieldSystemPrompt.replaceAll('\n', ' ');
+      expect(flat, contains('<b>…</b> in them marks the target word'));
+      expect(
+        flat,
+        contains(
+          'New example sentences, and any text that belongs to the language '
+          "being learned, are written in the language of the note's sentence",
+        ),
+      );
+    });
   });
+
+  group('交给 AI 的字段内容（BUG：目标词标记丢失、标签处多出空格、振假名混入正文）', () {
+    test('保留目标词加粗，去掉其余标签时不补空格', () {
+      expect(
+        aiSrsFieldSample('それに<b>気づいた</b>時 完全に嫌いになった'),
+        'それに<b>気づいた</b>時 完全に嫌いになった',
+      );
+      expect(
+        aiSrsFieldSample(
+          '<span class="x">毎日</span><strong style="c">通う</strong>',
+        ),
+        '毎日<b>通う</b>',
+      );
+    });
+
+    test('振假名读音整段去掉，挖空记成加粗', () {
+      expect(
+        aiSrsFieldSample('<ruby>漢字<rp>(</rp><rt>かんじ</rt><rp>)</rp></ruby>を書く'),
+        '漢字を書く',
+      );
+      expect(aiSrsFieldSample('{{c1::うっかり::hint}}かあ'), '<b>うっかり</b>かあ');
+    });
+
+    test('换行标签变换行；脚本 / 注释丢掉；实体只解不会伪造标签的那几个', () {
+      expect(
+        aiSrsFieldSample(
+          '一行目<br>二行目<div>三</div><!-- c --><script>x</script>'
+          'A&nbsp;&amp;&nbsp;B &lt;b&gt;',
+        ),
+        '一行目\n二行目\n三\nA & B &lt;b&gt;',
+      );
+    });
+
+    test('截断不留半个标签、不留没闭合的加粗', () {
+      final String s = aiSrsFieldSample('${'あ' * 8}<b>${'い' * 8}</b>', max: 12);
+      expect(s, '${'あ' * 8}<b>い</b>');
+      expect(aiSrsFieldSample('${'あ' * 10}<b>い</b>', max: 12), 'あ' * 10);
+    });
+
+    test('requestAiSrsField 发出去的就是整理后的内容', () async {
+      final _CapturingClient client = _CapturingClient();
+      addTearDown(client.close);
+      await requestAiSrsField(
+        client: client,
+        provider: AiProviderConfig(
+          id: 'p',
+          presetId: kAiCustomPresetId,
+          name: 'p',
+          baseUrl: Uri.parse('https://example.com/v1'),
+          apiKey: 'k',
+          model: 'm',
+          protocol: AiWireProtocol.openAiCompatible,
+        ),
+        noteType: _noteType(<String>['Sentence', 'SentenceTranslation']),
+        valuesById: const <String, String>{'f0': 'それに<b>気づいた</b>時'},
+        targetFieldId: 'f1',
+        task: AiSrsFieldTask.translate,
+        outputLanguage: 'en',
+      );
+      final String user = client.sent.last.content;
+      expect(user, contains(r'それに<b>気づいた</b>時'));
+      expect(user, isNot(contains('それに 気づいた 時')));
+    });
+  });
+}
+
+SrsNoteTypeView _noteType(List<String> fieldNames) => SrsNoteTypeView(
+  id: 'nt',
+  ankiNum: 1,
+  kind: SrsNoteTypeKind.standard,
+  name: 'T',
+  termFieldId: null,
+  deletedAt: null,
+  edits: SrsEntityEdits(<String, SrsRegister>{}),
+  builtinKey: null,
+  fields: <SrsFieldDef>[
+    for (int i = 0; i < fieldNames.length; i++)
+      SrsFieldDef(id: 'f$i', name: fieldNames[i], ord: i),
+  ],
+  templates: const <SrsTemplateDef>[],
+  css: '',
+);
+
+class _CapturingClient extends AiChatClient {
+  final List<AiChatMessage> sent = <AiChatMessage>[];
+
+  @override
+  Future<String> complete({
+    required AiProviderConfig provider,
+    required List<AiChatMessage> messages,
+    int maxTokens = 2048,
+  }) async {
+    sent.addAll(messages);
+    return '{"value": "When I <b>noticed</b> that", "explanation": "ok"}';
+  }
 }

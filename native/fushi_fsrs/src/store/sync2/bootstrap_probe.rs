@@ -763,6 +763,7 @@ fn probe_finish_floor() {
             .iter()
             .map(|(_, s, _, json, code, arg)| Row {
                 seed_card: None,
+                order_id: None,
                 json,
                 server_time: *s,
                 intent: match code {
@@ -788,7 +789,7 @@ fn probe_finish_floor() {
     for rows in logs.values() {
         let stored: Vec<crate::history::StoredLog<'_>> = rows
             .iter()
-            .map(|(j, s, c, ..)| (j.as_str(), *s, c.as_ref()))
+            .map(|(j, s, c, ..)| (j.as_str(), *s, c.as_ref(), None))
             .collect();
         let _ = crate::history::state_from_stored(&stored).unwrap();
         stat_rows += crate::history::stats_from_stored(&stored).unwrap().len();

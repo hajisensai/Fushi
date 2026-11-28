@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/utils/misc/safe_file_name.dart';
@@ -31,34 +34,54 @@ String videoScreenshotBaseName({
   return '${source}_${_playbackTimeToken(positionMs)}.$extension';
 }
 
-/// Returns [desiredName] or appends ` (n)` before the extension until it is new.
-String uniqueVideoScreenshotBaseName(
+/// Returns [desiredName] or appends ` (n)` before the extension until a name
+/// can be claimed.
+///
+/// [claim] 原子地「占下」一个名字：占到返回 true（名字从此归本次调用），已被占返回
+/// false。真实实现是 `File.create(exclusive: true)`（[claimVideoScreenshotFile]）。
+/// 不用「先判存在、再写」：判存在是异步的（BUG-5605：截图目录可以在网络盘上，同步
+/// stat 会冻住 UI），连按两次截图时两次判定会在 await 之间交错，拿到同一个名字、
+/// 后写的覆盖先写的。原子占名让两次调用各得一个名字。
+Future<String> uniqueVideoScreenshotBaseName(
   String desiredName, {
-  required bool Function(String name) exists,
-}) {
-  if (!exists(desiredName)) return desiredName;
+  required FutureOr<bool> Function(String name) claim,
+}) async {
+  if (await claim(desiredName)) return desiredName;
   final String stem = p.basenameWithoutExtension(desiredName);
   final String ext = p.extension(desiredName);
   for (int counter = 2; counter < 10000; counter++) {
     final String candidate = '$stem ($counter)$ext';
-    if (!exists(candidate)) return candidate;
+    if (await claim(candidate)) return candidate;
   }
   final int fallback = DateTime.now().millisecondsSinceEpoch;
   return '${stem}_$fallback$ext';
 }
 
-/// Returns [desiredPath] or a sibling path with a count suffix when occupied.
-String uniqueVideoScreenshotPath(
+/// Returns [desiredPath] or a sibling path with a count suffix, claimed via
+/// [claim]（语义见 [uniqueVideoScreenshotBaseName]）.
+Future<String> uniqueVideoScreenshotPath(
   String desiredPath, {
-  required bool Function(String path) exists,
-}) {
+  required FutureOr<bool> Function(String path) claim,
+}) async {
   final String dir = p.dirname(desiredPath);
   final String desiredName = p.basename(desiredPath);
-  final String uniqueName = uniqueVideoScreenshotBaseName(
+  final String uniqueName = await uniqueVideoScreenshotBaseName(
     desiredName,
-    exists: (String name) => exists(p.join(dir, name)),
+    claim: (String name) => claim(p.join(dir, name)),
   );
   return p.join(dir, uniqueName);
+}
+
+/// [uniqueVideoScreenshotBaseName] 的真实占名：以独占方式新建空文件 [path]。建成返回
+/// true（调用方随后往里写字节）；同名已存在返回 false；其它错误（目录不可写等）照常
+/// 抛出，由调用方报截图失败。异步，不在 UI isolate 上同步碰文件系统。
+Future<bool> claimVideoScreenshotFile(String path) async {
+  try {
+    await File(path).create(exclusive: true);
+    return true;
+  } on PathExistsException {
+    return false;
+  }
 }
 
 String _safeScreenshotSourceStem(String? sourcePathOrTitle) {

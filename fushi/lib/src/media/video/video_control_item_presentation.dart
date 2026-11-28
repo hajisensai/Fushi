@@ -86,6 +86,11 @@ IconData videoControlItemIcon(
       return FushiIcons.fastRewind;
     case VideoControlItem.seekForward:
       return FushiIcons.fastForward;
+    // 长步进：双箭头（同有声书音画同步的粗调步进），与短步进的快退 / 快进字形区分。
+    case VideoControlItem.longSeekBackward:
+      return FushiIcons.doubleChevronLeft;
+    case VideoControlItem.longSeekForward:
+      return FushiIcons.doubleChevronRight;
     case VideoControlItem.frameBackward:
       return FushiIcons.stepBackward;
     case VideoControlItem.frameForward:
@@ -175,10 +180,16 @@ String videoControlItemLabel(
       return MaterialLocalizations.of(context).backButtonTooltip;
     case VideoControlItem.immersiveLock:
       return t.video_menu_lock;
+    // 编辑器里不读播放配置，短 / 长步进都用动作名；播放器上的 tooltip 带当前秒数
+    // （页面侧 `_videoControlItemTooltip` 覆盖）。
     case VideoControlItem.seekBackward:
-      return t.video_control_seek_backward;
+      return t.shortcut_action_video_seek_backward;
     case VideoControlItem.seekForward:
-      return t.video_control_seek_forward;
+      return t.shortcut_action_video_seek_forward;
+    case VideoControlItem.longSeekBackward:
+      return t.shortcut_action_video_long_seek_backward;
+    case VideoControlItem.longSeekForward:
+      return t.shortcut_action_video_long_seek_forward;
     case VideoControlItem.frameBackward:
       return t.shortcut_action_video_previous_frame;
     case VideoControlItem.frameForward:

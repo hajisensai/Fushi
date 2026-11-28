@@ -93,23 +93,27 @@ void main() {
     );
   });
 
-  test('seek 按钮带可见标注（±10s），不只有 tooltip', () {
-    // ±10s 经 _seekLabelButton 带可见 label。
+  test('seek 按钮带可见标注（±N 秒，N 跟设置走），不只有 tooltip', () {
+    // 短 / 长步进经 _seekLabelButton 带可见 label，秒数取 asbplayer 配置。
     expect(
       helper.contains('VideoControlSlot.bottomCenter'),
       isTrue,
       reason: '居中 transport 应从 bottomCenter slot 渲染',
     );
-    expect(
-      slotButtonBuilder.contains('label: t.video_bottom_seek_back_label'),
-      isTrue,
-      reason: '−10s 按钮应带可见标注',
-    );
-    expect(
-      slotButtonBuilder.contains('label: t.video_bottom_seek_forward_label'),
-      isTrue,
-      reason: '+10s 按钮应带可见标注',
-    );
+    final String flat = slotButtonBuilder.replaceAll(RegExp(r'\s+'), '');
+    for (final String expected in <String>[
+      // 短 / 长四键共用一个分支：秒数与毫秒步长按 long 取对应配置。
+      'finalintseconds=long?_asbConfig.longSeekSeconds:_asbConfig.seekSeconds;',
+      'finalintstepMs=long?_asbLongSeekMs:_asbSeekMs;',
+      't.video_bottom_seek_forward_seconds_label(seconds:seconds)',
+      't.video_bottom_seek_back_seconds_label(seconds:seconds)',
+      'onPressed:()=>_seekRelative(forward?stepMs:-stepMs)',
+    ]) {
+      expect(flat.contains(expected), isTrue, reason: 'missing $expected');
+    }
+    // 控制条短步进不再写死 ±10 秒。
+    expect(slotButtonBuilder.contains('_seekRelative(-10000)'), isFalse);
+    expect(slotButtonBuilder.contains('_seekRelative(10000)'), isFalse);
     expect(
       src.contains('Widget _seekLabelButton('),
       isTrue,
@@ -117,8 +121,14 @@ void main() {
     );
     // i18n label key 已存在于生成文件。
     final String gen = File('lib/i18n/strings.g.dart').readAsStringSync();
-    expect(gen.contains('String get video_bottom_seek_back_label'), isTrue);
-    expect(gen.contains('String get video_bottom_seek_forward_label'), isTrue);
+    expect(
+      gen.contains('String video_bottom_seek_back_seconds_label('),
+      isTrue,
+    );
+    expect(
+      gen.contains('String video_bottom_seek_forward_seconds_label('),
+      isTrue,
+    );
   });
 
   test('上/下一句走动态 cue 导航（_asbConfig.seekSeconds），不写死 ±3s', () {
@@ -143,6 +153,56 @@ void main() {
       helper.contains('seekSeconds: 3'),
       isFalse,
       reason: '上/下一句不应写死 ±3s，必须跟随 _asbConfig.seekSeconds',
+    );
+  });
+
+  test('「⋯」溢出菜单收短 / 长步进，文案与执行都跟设置走', () {
+    final int start = src.indexOf('_kVideoBottomFoldedItems =');
+    expect(start, greaterThanOrEqualTo(0));
+    final String folded = src.substring(start, src.indexOf('};', start));
+    for (final String item in <String>[
+      'VideoControlItem.seekBackward',
+      'VideoControlItem.seekForward',
+      'VideoControlItem.longSeekBackward',
+      'VideoControlItem.longSeekForward',
+    ]) {
+      expect(folded.contains(item), isTrue, reason: '右下「⋯」应收 $item');
+    }
+    final int fStart = src.indexOf('List<VideoBarEntry> _foldedBarEntries(');
+    final String foldedEntries = src.substring(
+      fStart,
+      src.indexOf('Widget _bottomPositionIndicator(', fStart),
+    );
+    expect(
+      foldedEntries.contains('VideoControlItem.longSeek'),
+      isFalse,
+      reason: '长步进不再被排除在「⋯」之外',
+    );
+    // 菜单项文案取 _videoControlItemTooltip：短步进 seekSeconds、长步进 longSeekSeconds。
+    final String flat = src.replaceAll(RegExp(r'\s+'), '');
+    expect(
+      flat.contains(
+        'caseVideoControlItem.seekBackward:returnt.video_control_seek_backward_seconds(seconds:_asbConfig.seekSeconds',
+      ),
+      isTrue,
+    );
+    expect(
+      flat.contains(
+        'caseVideoControlItem.longSeekForward:returnt.video_control_seek_forward_seconds(seconds:_asbConfig.longSeekSeconds',
+      ),
+      isTrue,
+    );
+    expect(
+      flat.contains(
+        'caseVideoControlItem.seekBackward:unawaited(_seekRelative(-_asbSeekMs))',
+      ),
+      isTrue,
+    );
+    expect(
+      flat.contains(
+        'caseVideoControlItem.longSeekBackward:unawaited(_seekRelative(-_asbLongSeekMs))',
+      ),
+      isTrue,
     );
   });
 }

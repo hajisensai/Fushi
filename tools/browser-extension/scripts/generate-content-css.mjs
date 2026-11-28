@@ -80,9 +80,17 @@ function splitSelectorList(sel) {
 function transformSelector(raw) {
   const p = raw.trim().replace(/\s+/g, ' ');
   if (p === '') return null;
+  // Apple 设计系统视觉层（用户 2026-11-26：扩展风格改成 Material / Cupertino 两套，Cupertino
+  // 与 app 内 Apple 弹窗同一套）：html.fushi-glass-host.fushi-apple 重根到弹窗容器——
+  // theme.js applyPopupStyle 在 Cupertino 风格下给 #entries-container 挂
+  // fushi-glass-host + fushi-apple。前缀 :where(#entries-container) 零特异性，后面两个 class
+  // 保留，特异性 (0,2,0) 与 app 内 html.fushi-glass-host.fushi-apple 的 (0,2,1) 同级，级联不倒置。
+  if (p.startsWith('html.fushi-glass-host.fushi-apple')) {
+    return ':where(#entries-container).fushi-glass-host' + p.slice('html.fushi-glass-host'.length);
+  }
   // App-external-window-only modes: the extension host #entries-container never
   // carries these classes, so drop them entirely (dead weight otherwise).
-  // html.fushi-glass-host 同理：app 内 Apple 设计系统的透明文档宿主（Flutter 画玻璃卡面），
+  // html.fushi-glass-host 同理（Apple 层除外，见上）：app 内 Apple 设计系统的透明文档宿主（Flutter 画玻璃卡面），
   // 扩展的玻璃走 content-css-overlay.css 的 :host([data-fushi-glass]) / .fushi-glass。
   if (p.startsWith('html.global-lookup') || p.startsWith('html.mobile-external') ||
       p.startsWith('html.fushi-glass-host')) {

@@ -73,6 +73,7 @@ test('BUG-1895: mine button reuses clickable action layout', () => {
   assert.match(popupJs, /className:\s*'inline-action-button mine-button'/);
 });
 
-test('BUG-1923: 静息态 textContent 仍是 + 文本标记', () => {
-  assert.match(popupJs, /mineButton\.textContent\s*=\s*isMined\s*\?/);
+test('BUG-1923: 静息态 textContent 仍是 + 文本标记（Material；Apple 设计系统走 SF 字形）', () => {
+  assert.match(popupJs, /mineButton\.dataset\.mineGlyph\s*=\s*isMined\s*\?/);
+  assert.match(popupJs, /button\.textContent = glyph === 'latest' \? '✓↩︎' : \(glyph === 'mined' \? '✓' : '\+'\);/);
 });

@@ -35,6 +35,22 @@ enum MangaPageSource {
   disposable,
 }
 
+/// BUG-5569：「就地重建」的目标——一本**已入库**漫画卷的主键与书目录。
+///
+/// 来源扫描发现一卷的书目录丢了（原件还在）时，把它交给导入入口（[MangaImporter]
+/// 的 `rebuildInto`）：导入器照常校验 / 解压 / 备页，但不定书名、不插新行，而是把
+/// 暂存目录原子换到 [extractDir] 上、只回写这一行的页数（封面指针失效时一并回写）。
+/// bookKey / uid / 阅读进度 / 合集 / 标签全挂在原行上，原样保留。
+class MangaRebuildTarget {
+  const MangaRebuildTarget({required this.bookKey, required this.extractDir});
+
+  /// 原行主键。
+  final String bookKey;
+
+  /// 原行的书目录（`extract_dir` 列，绝对路径），重建后不变。
+  final String extractDir;
+}
+
 /// 已知漫画页图扩展名（mokuro 惯例）＝漫画页图共享表（基集 + `.avif`）。
 ///
 /// 与整卷 OCR 的白名单 `kMangaOcrImageExtensions`（manga_ocr_folder_job.dart）
@@ -128,6 +144,7 @@ class MangaImporter {
     int? sourceId,
     String? sourceMetadata,
     MangaPageSource pageSource = MangaPageSource.borrowed,
+    MangaRebuildTarget? rebuildInto,
   }) async {
     final Directory root = Directory(imageDirPath);
     final String proposedTitle = title?.trim().isNotEmpty == true
@@ -135,7 +152,8 @@ class MangaImporter {
         : (p.basename(root.path).isEmpty ? 'manga' : p.basename(root.path));
     // 跳过策略在逐页读尺寸之前判重（manga-10）：重导一个大半已入库的文件夹时，
     // 已有的卷不再把每页读一遍才被跳过。目录不在时照旧报「not found」。
-    if (root.existsSync()) {
+    // 就地重建（[rebuildInto]）不判重：标题本来就是库里那一行的。
+    if (rebuildInto == null && root.existsSync()) {
       await precheckSkippedDuplicate(
         db: db,
         proposedTitle: proposedTitle,
@@ -153,6 +171,7 @@ class MangaImporter {
       sourceId: sourceId,
       sourceMetadata: sourceMetadata,
       pageSource: pageSource,
+      rebuildInto: rebuildInto,
     );
   }
 
@@ -454,6 +473,7 @@ class MangaImporter {
     void Function(int done, int total)? onProgress,
     int? sourceId,
     MangaPageSource pageSource = MangaPageSource.borrowed,
+    MangaRebuildTarget? rebuildInto,
   }) async {
     final File mokuroFile = File(mokuroPath);
     if (!mokuroFile.existsSync()) {
@@ -472,6 +492,7 @@ class MangaImporter {
       onProgress: onProgress,
       sourceId: sourceId,
       pageSource: pageSource,
+      rebuildInto: rebuildInto,
     );
   }
 
@@ -490,6 +511,7 @@ class MangaImporter {
     void Function(int done, int total)? onProgress,
     int? sourceId,
     MangaPageSource pageSource = MangaPageSource.borrowed,
+    MangaRebuildTarget? rebuildInto,
   }) async {
     final MokuroPayload payload = document.payload;
     if (payload.images.isEmpty) {
@@ -541,6 +563,7 @@ class MangaImporter {
       onProgress: onProgress,
       sourceId: sourceId,
       pageSource: pageSource,
+      rebuildInto: rebuildInto,
     );
   }
 
@@ -628,6 +651,7 @@ class MangaImporter {
     int? sourceId,
     String? sourceMetadata,
     MangaPageSource pageSource = MangaPageSource.borrowed,
+    MangaRebuildTarget? rebuildInto,
   }) async {
     // 第一遍：规划每页 destRel（sanitize + 保留子目录 + 去重）并校验源图存在 + 防路径穿越。
     // 全部在任何落盘/落库之前完成——校验失败零副作用，无需回滚。
@@ -635,6 +659,17 @@ class MangaImporter {
       srcDir: srcDir,
       payload: payload,
     );
+    if (rebuildInto != null) {
+      return _rebuildInPlace(
+        db: db,
+        srcDir: srcDir,
+        payload: payload,
+        destRels: destRels,
+        target: rebuildInto,
+        onProgress: onProgress,
+        pageSource: pageSource,
+      );
+    }
 
     String? stagedDir;
     ({int pageCount, String coverRel})? artifacts;
@@ -735,6 +770,71 @@ class MangaImporter {
         } catch (cleanupError, stack) {
           engineLog.log('MangaImporter.rollbackDir', cleanupError, stack);
         }
+      }
+      rethrow;
+    }
+  }
+
+  /// [_copyAndInsert] 的就地重建分支（BUG-5569）：页图 + `manga.json` 照常备进本次
+  /// 独占的 `.tmp-*`，持落位锁经 [EpubStorage.moveDirIntoPlace] 原子换到
+  /// [MangaRebuildTarget.extractDir] 上（目标就是这本书自己的目录，`liveExtractDirs`
+  /// 传空 = 允许覆盖它；中途失败 `.bak` 回滚），再回写原行的页数。封面列只在它为空、
+  /// 或指着的文件在新目录里已不存在时才换成新的第一页——用户换过的封面不被覆盖。
+  /// 不插行、不写「added」活动事件。
+  static Future<String> _rebuildInPlace({
+    required FushiDatabase db,
+    required Directory srcDir,
+    required MokuroPayload payload,
+    required List<String> destRels,
+    required MangaRebuildTarget target,
+    void Function(int done, int total)? onProgress,
+    MangaPageSource pageSource = MangaPageSource.borrowed,
+  }) async {
+    final EpubBookRow? row = await db.getEpubBook(target.bookKey);
+    if (row == null) {
+      throw MangaImportException('Book to rebuild is gone: ${target.bookKey}');
+    }
+    final String staged = await EpubImporter.createStagingDir(db);
+    try {
+      final ({int pageCount, String coverRel}) artifacts =
+          await copyMangaArtifacts(
+            srcDir: srcDir,
+            payload: payload,
+            destRels: destRels,
+            bookDir: staged,
+            onProgress: onProgress,
+            pageSource: pageSource,
+          );
+      await EpubStorage.withBookPlacementLock(() async {
+        EpubStorage.moveDirIntoPlace(
+          srcDir: Directory(staged),
+          targetDir: target.extractDir,
+          liveExtractDirs: const <String>[],
+        );
+      });
+      final String? cover = row.coverPath;
+      final bool coverGone =
+          cover == null ||
+          (!p.isAbsolute(cover) &&
+              !File(p.join(target.extractDir, cover)).existsSync());
+      await db.updateEpubBookChapters(
+        target.bookKey,
+        chapterCount: artifacts.pageCount,
+        chaptersJson: row.chaptersJson,
+      );
+      if (coverGone) {
+        await db.updateEpubBookContentPaths(
+          target.bookKey,
+          coverPath: artifacts.coverRel,
+        );
+      }
+      return target.bookKey;
+    } catch (_) {
+      try {
+        final Directory dir = Directory(staged);
+        if (dir.existsSync()) dir.deleteSync(recursive: true);
+      } catch (cleanupError, stack) {
+        engineLog.log('MangaImporter.rebuildInPlace', cleanupError, stack);
       }
       rethrow;
     }

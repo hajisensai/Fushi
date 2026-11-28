@@ -412,7 +412,7 @@ jobs:
       uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: native/fushi_rwkv/model
-        key: fushi-rwkv-model-749ad1ad18d5b6ef8c4185802fa0c1e4a14e67cd7874f3efeaae355fffb1b9ec-b2f335bd712b9d602150201de41ab5a0f0a4c291644705e2aa1ed2a1bf1592c3-c7d8df407966fccd8f98227241816e114ce9ed1dfea799587e481c1d5926a453-77703dd2f2a21a1bcadaedfed1cec93ee0fd6fd6d3c840be221e72b5e1c05066-18de8ae77a1a40986dc432531116dfb009beae2385001ef425389a3ad7919a9e
+        key: fushi-rwkv-model-749ad1ad18d5b6ef8c4185802fa0c1e4a14e67cd7874f3efeaae355fffb1b9ec-87bce8dbb48a11dd599646547d241b39b6c881a8f7702aacd6284f6a9d1ecc54-d54978f43e1f89c75ef0f72dd438789d378ffddd96667eef0908c86a7813830e-24b39f61129bd9eb45156f45a32e749e1a0cf8d75e9271c2ed7038f9d6265771-19711eb2c0c4a4de84f36d66c3a829e748548be4e7b35dc8604e3ea795b7af3b
     - name: Fetch RWKV weights (pinned URL, SHA-256 checked)
       if: needs.plan.outputs.packages == 'true'
       run: bash native/fushi_rwkv/fetch_model.sh

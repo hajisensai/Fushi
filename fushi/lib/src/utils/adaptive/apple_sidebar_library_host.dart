@@ -64,6 +64,12 @@ class AppleSidebarLibraryRow {
 /// - [sidebarMode] 由侧栏外壳报告：侧栏收成顶部标签栏（或根本不是侧栏布局）时
 ///   为 false，库页据此把分区画回内容区的胶囊行。
 ///
+/// 两路通知分开（BUG-5548）：分区行 / 标签节的登记只通知宿主自己的监听者——
+/// 只有侧栏外壳要画这些行；库页经 [AppleSidebarLibraryScope] 依赖的只有
+/// [sidebarModeListenable]。合成一路时，每次切 tab（新库页登记、旧库页撤回）
+/// 帧末那一次通知会让**所有访问过的保活库页**（包括藏起来的）各自整页重建，
+/// 切换后紧跟一个十几毫秒的重帧。
+///
 /// 登记与报告都推迟到帧末通知（布局 / 构建期间不能让监听者重建）。
 class AppleSidebarLibraryHost extends ChangeNotifier {
   final Map<Object, List<AppleSidebarLibraryRow>> _entries =
@@ -73,10 +79,16 @@ class AppleSidebarLibraryHost extends ChangeNotifier {
   Object? _visibleOwner;
   bool _sidebarMode = false;
   bool _notifyScheduled = false;
+  bool _modeNotifyScheduled = false;
   bool _disposed = false;
+  final _SidebarModeNotifier _modeNotifier = _SidebarModeNotifier();
 
   /// 侧栏此刻是否以侧栏形态展示（能承载分区子项）。
   bool get sidebarMode => _sidebarMode;
+
+  /// 只在 [sidebarMode] 变化时通知（帧末）；[AppleSidebarLibraryScope] 的依赖者
+  /// 只随它重建，不随分区行 / 标签节的登记重建。
+  Listenable get sidebarModeListenable => _modeNotifier;
 
   /// 看得见的库页登记的标签节（[publishTags]），按 owner 存。
   final Map<Object, List<AppleSidebarLibraryRow>> _tagEntries =
@@ -120,6 +132,7 @@ class AppleSidebarLibraryHost extends ChangeNotifier {
     if (_sidebarMode == value) return;
     _sidebarMode = value;
     _scheduleNotify();
+    _scheduleModeNotify();
   }
 
   /// [owner] 登记 / 更新自己的分区行；[rows] 为 null = 撤回。
@@ -160,30 +173,51 @@ class AppleSidebarLibraryHost extends ChangeNotifier {
       ..ensureVisualUpdate();
   }
 
+  void _scheduleModeNotify() {
+    if (_modeNotifyScheduled || _disposed) return;
+    _modeNotifyScheduled = true;
+    SchedulerBinding.instance
+      ..addPostFrameCallback((_) {
+        _modeNotifyScheduled = false;
+        if (!_disposed) _modeNotifier.notify();
+      })
+      ..ensureVisualUpdate();
+  }
+
   @override
   void dispose() {
     _disposed = true;
+    _modeNotifier.dispose();
     super.dispose();
   }
 }
 
+/// [AppleSidebarLibraryHost.sidebarModeListenable] 的实体：只由宿主触发。
+class _SidebarModeNotifier extends ChangeNotifier {
+  void notify() => notifyListeners();
+}
+
 /// 向首页各 tab 下发 [AppleSidebarLibraryHost]（只在 Apple 宽窗侧栏外壳里有）。
 /// 纯数据通道，与设计系统分派无关。
-class AppleSidebarLibraryScope
-    extends InheritedNotifier<AppleSidebarLibraryHost> {
-  const AppleSidebarLibraryScope({
-    required AppleSidebarLibraryHost host,
+///
+/// 依赖者只随 [AppleSidebarLibraryHost.sidebarMode] 变化重建（BUG-5548）；分区
+/// 行 / 标签节的登记不经这里通知（侧栏外壳直接监听宿主）。
+class AppleSidebarLibraryScope extends InheritedNotifier<Listenable> {
+  AppleSidebarLibraryScope({
+    required this.host,
     required super.child,
     super.key,
-  }) : super(notifier: host);
+  }) : super(notifier: host.sidebarModeListenable);
+
+  /// 下发的宿主。
+  final AppleSidebarLibraryHost host;
 
   /// 最近的宿主并建立依赖（侧栏形态变化时重建）；不在侧栏外壳里为 null。
   static AppleSidebarLibraryHost? maybeOf(BuildContext context) => context
       .dependOnInheritedWidgetOfExactType<AppleSidebarLibraryScope>()
-      ?.notifier;
+      ?.host;
 
   /// 同 [maybeOf]，不建立依赖（登记用）。
-  static AppleSidebarLibraryHost? peek(BuildContext context) => context
-      .getInheritedWidgetOfExactType<AppleSidebarLibraryScope>()
-      ?.notifier;
+  static AppleSidebarLibraryHost? peek(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<AppleSidebarLibraryScope>()?.host;
 }

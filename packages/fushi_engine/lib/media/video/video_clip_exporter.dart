@@ -6,6 +6,8 @@ import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
 import 'package:fushi_engine/media/video/video_clip_subtitle.dart';
 import 'package:fushi_engine/media/video/video_clip_subtitle_burn.dart';
+import 'package:fushi_engine/media/video/media_path_probe.dart'
+    show awaitMediaPathExists;
 import 'package:path/path.dart' as p;
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:meta/meta.dart';
@@ -875,7 +877,10 @@ Future<VideoClipExportResult> exportVideoClipViaFfmpeg({
       VideoClipExportFailure.invalidRange,
     );
   }
-  if (!File(inputPath).existsSync()) {
+  // BUG-5605：导出由播放页在 UI isolate 上发起，输入常在网络盘上——异步判存在，不同步
+  // stat。导出是用户主动操作（审查后修正）：无时限必达检查，卷慢就等它答复，不报假的
+  // 「暂不可用」。
+  if (!await awaitMediaPathExists(inputPath)) {
     _deleteIfPresent(output);
     return const VideoClipExportResult.failure(
       VideoClipExportFailure.inputMissing,

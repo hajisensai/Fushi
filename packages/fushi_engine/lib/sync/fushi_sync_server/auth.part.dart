@@ -261,6 +261,8 @@ const List<String> _kVideoStreamSuffixes = <String>[
   '/hls.m3u8',
   '/$kTranscodeSegmentPathSuffix',
   '/$kBlurayClipPathSuffix',
+  // 外挂音轨流（M9OEh1PeYH）：播放器 `audio-add` 是裸 GET；handler 校验同一张流 token。
+  '/$kVideoSidecarAudioPathSuffix',
 ];
 
 bool _isLookupAudioFilePath(String path) => path == '/api/lookup/audio/file';

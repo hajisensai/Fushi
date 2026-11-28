@@ -154,6 +154,11 @@ enum VideoControlItem implements ControlItemSpec<VideoControlSlot> {
   playPause('playPause', isSpecialRender: true, pinnedRequired: true),
   seekBackward('seekBackward'),
   seekForward('seekForward'),
+  // 长步进（±longSeekSeconds 秒，默认 30，与快捷键 videoLongSeekBackward/Forward 同一
+  // 实现）。**默认不在播放器上**，与短步进一样收在右下「⋯」里；用户可在控件布局
+  // 编辑器里拖进槽位。
+  longSeekBackward('longSeekBackward'),
+  longSeekForward('longSeekForward'),
   // 逐帧后退 / 前进（libmpv frame-back-step / frame-step，桌面专属）。渲染层用
   // [_isDesktopVideoControls] 门控（移动端 libmpv 逐帧不可用，不显示），但模型层
   // 保持跨平台一致，不在此加平台字段。
@@ -481,6 +486,9 @@ class VideoControlLayout {
       VideoControlItem.danmaku: VideoControlSlot.hidden,
       // 识别当前画面：同弹幕开关，默认不在播放器上，用户自行加。
       VideoControlItem.ocrFrame: VideoControlSlot.hidden,
+      // 长步进：默认不在播放器上（进「⋯」），用户自行加。
+      VideoControlItem.longSeekBackward: VideoControlSlot.hidden,
+      VideoControlItem.longSeekForward: VideoControlSlot.hidden,
       // 观看统计 / 计时开关：低频，默认进「⋯」。
       VideoControlItem.statistics: VideoControlSlot.hidden,
       VideoControlItem.studyTimer: VideoControlSlot.hidden,
@@ -542,7 +550,7 @@ class VideoControlLayout {
   /// - **左上**：返回（M3E 下与标题合成一颗胶囊）；**右上**：选集 / 章节（只在合集 /
   ///   有章节时出现）/ 截图 / 设置。音轨、片段导出、上下集、上下章进右上「⋯」。
   /// - **左下**：播放 / 暂停 + 时间（一颗紧凑胶囊）。
-  /// - **右下**：音量 / 字幕轨 / 倍速 / 全屏（一颗紧凑胶囊）。±10s、上下句、重播本句、
+  /// - **右下**：音量 / 字幕轨 / 倍速 / 全屏（一颗紧凑胶囊）。±Ns、上下句、重播本句、
   ///   逐帧、收藏句子、自定义快捷键进右下「⋯」。
   /// - **右侧栏**：字幕列表（学习侧栏）；**左侧**：沉浸锁。
   ///
@@ -592,6 +600,9 @@ class VideoControlLayout {
           VideoControlItem.danmaku: VideoControlSlot.hidden,
           // 识别当前画面：同弹幕开关（默认移出、不进「⋯」）。
           VideoControlItem.ocrFrame: VideoControlSlot.hidden,
+          // 长步进：默认移出播放器、进右下「⋯」（同短步进）。
+          VideoControlItem.longSeekBackward: VideoControlSlot.hidden,
+          VideoControlItem.longSeekForward: VideoControlSlot.hidden,
           // 观看统计侧栏 / 计时开关：默认移出播放器、进右上「⋯」（同片段导出）。
           VideoControlItem.statistics: VideoControlSlot.hidden,
           VideoControlItem.studyTimer: VideoControlSlot.hidden,
@@ -835,6 +846,9 @@ class VideoControlLayout {
         // 新增的弹幕开关：老布局解码时同样落 removed，升级后不会凭空冒出来。
         VideoControlItem.danmaku: VideoControlSlot.hidden,
         VideoControlItem.ocrFrame: VideoControlSlot.hidden,
+        // 新增的长步进：老布局同样落 removed（只进「⋯」），不挤已定制的栏。
+        VideoControlItem.longSeekBackward: VideoControlSlot.hidden,
+        VideoControlItem.longSeekForward: VideoControlSlot.hidden,
         // 新增的观看统计 / 计时开关：老布局同样落 removed（进「⋯」），不挤已定制的栏。
         VideoControlItem.statistics: VideoControlSlot.hidden,
         VideoControlItem.studyTimer: VideoControlSlot.hidden,

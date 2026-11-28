@@ -48,6 +48,9 @@ class BookSeriesGrouper {
     final List<int> updated = <int>[];
     // 存量书补读 OPF 系列声明（每本只读一次）；之后导入的书由导入器直接写。
     await backfillEpubSeries(_database);
+    // 书架折叠与系列归组前，先收口滞留的 EPUB 透传 bookKey / 同书双行成员，避免
+    // 误判为散书而拆散合集或重复插行。
+    await _database.reconcileEpubCollectionMemberKeys();
     // 存量已脱离的配对有声书补齐继承原书所属合集（一条集合查询，稳态空集），确保
     // 下面加载成员与卷序自愈能一次看到完整成员。
     final List<int> pairedSrtBackfilled = await _database

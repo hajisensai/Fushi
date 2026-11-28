@@ -66,7 +66,9 @@ enum VideoImmersiveItem implements ControlItemSpec<VideoImmersiveSlot> {
   favoriteSentence(VideoControlItem.favoriteSentence),
   playPause(VideoControlItem.playPause),
   seekBackward(VideoControlItem.seekBackward),
-  seekForward(VideoControlItem.seekForward);
+  seekForward(VideoControlItem.seekForward),
+  longSeekBackward(VideoControlItem.longSeekBackward),
+  longSeekForward(VideoControlItem.longSeekForward);
 
   const VideoImmersiveItem(this.controlItem);
 

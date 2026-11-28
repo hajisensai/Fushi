@@ -18,7 +18,7 @@
     "native/fushi_p2p/Cargo.lock": "e50e51d44154f56bc3771a7278dbae39ba260f5d884fa68f9e98d0dd501be4e4",
     "native/fushi_p2p/Cargo.toml": "4c1cd272cf7d1ebbaa774a8cf9f17ae771bd6f36d2607fb3a4590447178d68a2",
     "native/fushi_rwkv/Cargo.lock": "ce1a9dad3dbd707abb5adaeb9ca69dbc0cc6825cc4af7e881ca95f973fd2eccf",
-    "native/fushi_rwkv/Cargo.toml": "2f4eb7dc01e229ed72a89b78c754135a524da33726e04e6ef6d1767df5d1f46d",
+    "native/fushi_rwkv/Cargo.toml": "388876641dcaee1d98cc5bb12bd1388becbcede4c738d1184a0fd9baa5405102",
     "native/fushi_shell_thumbs/Cargo.lock": "8ad693ab716b9423318e8770e1cf757eb734e67b52f8f81681d77520142df231",
     "native/fushi_shell_thumbs/Cargo.toml": "5eacbca565465ebc55c4e186f52f0d23a44ccb6350f3cbe196c307df25189315",
     "native/fushi_web_core/Cargo.lock": "e30d43026fc6eb9659c25154abe52a012c4123a61a03263c1ba43c66d0d46064",

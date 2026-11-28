@@ -4417,6 +4417,7 @@ class VideoSourceScrapeCoordinator
     };
     for (final VideoMetadataLookup lookup in persisted) {
       if (lookup.provider == VideoMetadataProviderKind.local ||
+          lookup.provider == VideoMetadataProviderKind.mediaserver ||
           lookup.provider == VideoMetadataProviderKind.anidb ||
           lookup.provider == VideoMetadataProviderKind.mal ||
           lookup.provider == VideoMetadataProviderKind.tmdb) {

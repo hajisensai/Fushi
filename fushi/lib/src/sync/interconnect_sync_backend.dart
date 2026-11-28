@@ -415,6 +415,106 @@ class InterconnectSyncBackend extends SyncBackend
   String? _token;
   bool _sessionResolved = false;
 
+  // ── 选路失败退避 ────────────────────────────────────────────────────────────
+  //
+  // 已选地址一掉线（[_sessionOps] 的 `onConnectivityError`）或重试前 [clearCache]，
+  // 会话就被打回未选路；此前下一次请求（同步的每本书、复习长轮询、各页的 live 读）
+  // 都无条件重跑 [_resolveSession]：对端整台离线时，每个请求都把全部候选地址重探
+  // 一遍（https 候选各一次钉扎 TLS 握手），频率只取决于调用方发请求有多勤——
+  // client 侧「一直在同步」，host 刚恢复时还被这些探测持续拖慢。
+  //
+  // 现在全部候选都探不到（[SyncPeerUnreachableError]）记一次失败，按
+  // [resolveBackoffInitial] 起翻倍、[resolveBackoffMax] 封顶退避；退避期内
+  // [_ensureResolved] 直接抛同一种 [SyncPeerUnreachableError]（调用方的处理不变），
+  // 不发任何探测。出现「对端可能回来了」的证据就清零（[resetResolveBackoff]）：选路
+  // 成功、配置身份变了、登出 / 显式认证、别的互联请求经这台 host 的地址拿到了应答
+  // （[addInterconnectReachabilityObserver]）、系统网络变化 / 回到前台、用户手动同步。
+
+  /// 第一次选路失败后的退避时长。
+  static const Duration resolveBackoffInitial = Duration(seconds: 2);
+
+  /// 退避时长上限。
+  static const Duration resolveBackoffMax = Duration(minutes: 2);
+
+  /// 连续选路失败（全部候选都探不到）的次数；0 = 不在退避。
+  int _resolveFailures = 0;
+
+  /// 退避到期的单调时刻（[monotonicNow] 的读数）；null = 不在退避。
+  Duration? _resolveRetryAt;
+
+  /// 每次 [resetResolveBackoff] 加一：在途那轮选路若跨过了一次清零（配置变了 /
+  /// 网络变了），它的失败不再记进新一轮的退避。
+  int _resolveBackoffEpoch = 0;
+
+  /// 是否已挂上可达性观察者（只在退避期间挂，清零即撤，一次性会话不泄漏）。
+  bool _observingReachability = false;
+
+  static final Stopwatch _monotonicClock = Stopwatch()..start();
+
+  /// 退避计时用的单调时钟（不受系统改时间影响）。实例可变仅供测试注入。
+  @visibleForTesting
+  Duration Function() monotonicNow = () => _monotonicClock.elapsed;
+
+  /// 当前退避剩余时长；不在退避（或已到期）返回 null。
+  @visibleForTesting
+  Duration? get resolveBackoffRemaining {
+    final Duration? retryAt = _resolveRetryAt;
+    if (retryAt == null) return null;
+    final Duration remaining = retryAt - monotonicNow();
+    return remaining > Duration.zero ? remaining : null;
+  }
+
+  /// 此刻在选路失败退避期内：下一次请求不会探测、直接按对端离线失败。复习进 tab 据此不去补经 host 那一路的缺口
+  /// （`srsSyncOnTabEntry`，BUG-5603）：host 离线是常态，补也补不上，只是白跑一轮。
+  bool get resolveBackedOff => resolveBackoffRemaining != null;
+
+  /// 第 [failures] 次连续失败后的退避时长：[resolveBackoffInitial] × 2^(n-1)，
+  /// 封顶 [resolveBackoffMax]。
+  @visibleForTesting
+  static Duration resolveBackoffFor(int failures) {
+    if (failures <= 0) return Duration.zero;
+    Duration delay = resolveBackoffInitial;
+    for (int i = 1; i < failures && delay < resolveBackoffMax; i++) {
+      delay *= 2;
+    }
+    return delay > resolveBackoffMax ? resolveBackoffMax : delay;
+  }
+
+  /// 清零选路退避：下一次请求立即重新探测候选地址。手动「立即同步」、网络变化等
+  /// 「对端可能已经回来了」的入口调它。
+  void resetResolveBackoff() {
+    _resolveBackoffEpoch++;
+    _resolveFailures = 0;
+    _resolveRetryAt = null;
+    if (_observingReachability) {
+      _observingReachability = false;
+      removeInterconnectReachabilityObserver(_onPeerReachability);
+    }
+  }
+
+  void _noteResolveFailure() {
+    _resolveFailures++;
+    _resolveRetryAt = monotonicNow() + resolveBackoffFor(_resolveFailures);
+    if (!_observingReachability) {
+      _observingReachability = true;
+      addInterconnectReachabilityObserver(_onPeerReachability);
+    }
+  }
+
+  /// 别的互联请求（能力探测、远程复习、代下载…）经本会话某条候选地址拿到了应答：
+  /// 对端活着，退避作废。
+  void _onPeerReachability(FushiClientUrl candidate, bool reached) {
+    if (!reached || _resolveRetryAt == null) return;
+    final String? hostId = candidate.hostId;
+    final String persisted = interconnectPersistedUrl(candidate.url);
+    final bool ours = _candidates.any(
+      (FushiClientUrl u) =>
+          (hostId != null && hostId.isNotEmpty && u.hostId == hostId) ||
+          interconnectPersistedUrl(u.url) == persisted,
+    );
+    if (ours) resetResolveBackoff();
+  }
+
   /// 上一次 [_loadConfig] 读到的配置身份（见 [_sessionSignature]）。BUG-1183：用它
   /// 判断 `restoreAuth` 是否真需要作废已解析的地址。null = 还没读过配置。
   String? _configSignature;
@@ -708,6 +808,8 @@ class InterconnectSyncBackend extends SyncBackend
       _configSignature = signature;
       _sessionResolved = false;
       _resolveFlight = null;
+      // 换了配置（重新配对 / 改地址）：旧配置的失败说明不了新配置。
+      resetResolveBackoff();
       // BUG-1180：身份变了 = 远端清单缓存里的东西属于**上一个**对端，必须作废。
       // 监听者同步收到通知，所以本次 restoreAuth 返回时缓存已经是空的，紧随其后的
       // 那次 read() 必然重新向新对端取数。
@@ -813,10 +915,16 @@ class InterconnectSyncBackend extends SyncBackend
   /// 若不同（组内排序随谁先答而变），后完成的那轮会 `_ops?.close()` 掉前一轮刚交给
   /// 调用方的连接句柄，在途请求被拒连、`onConnectivityError` 再把会话置脏。
   /// 一轮结束（成功或失败）就清掉，下一次调用按 [_sessionResolved] 重新判断。
+  ///
+  /// 选路退避期内（见 [resolveBackoffInitial]）不探测，直接抛
+  /// [SyncPeerUnreachableError]。
   Future<void> _ensureResolved() {
     if (_sessionResolved) return Future<void>.value();
     final Future<void>? inFlight = _resolveFlight;
     if (inFlight != null) return inFlight;
+    if (resolveBackoffRemaining != null) {
+      return Future<void>.error(SyncPeerUnreachableError());
+    }
     late final Future<void> flight;
     flight = _resolveSession().whenComplete(() {
       if (identical(_resolveFlight, flight)) _resolveFlight = null;
@@ -839,14 +947,22 @@ class InterconnectSyncBackend extends SyncBackend
     }
     // 同一台 host 的多条地址先组内并发选路，把可达者排到组首；老条目（无 hostId）
     // 原样不探测（docs/specs/2026-09-28-interconnect-remote-reach.md §2）。
+    final int epoch = _resolveBackoffEpoch;
     final List<FushiClientUrl> ranked = await rankInterconnectCandidates(
       _candidates,
     );
-    final FushiClientUrl chosen = await resolveReachableFushiCandidate(
-      ranked,
-      _token ?? '',
-      _probe,
-    );
+    final FushiClientUrl chosen;
+    try {
+      chosen = await resolveReachableFushiCandidate(
+        ranked,
+        _token ?? '',
+        _probe,
+      );
+    } on SyncPeerUnreachableError {
+      if (epoch == _resolveBackoffEpoch) _noteResolveFailure();
+      rethrow;
+    }
+    resetResolveBackoff();
     // BUG-1550：连接用的是**选中那台**的凭据（自带优先），不再是唯一全局 token。
     // resolveReachableFushiCandidate 已保证选中的候选必有可用凭据。
     final String token = interconnectTokenFor(chosen, _token)!;
@@ -917,6 +1033,8 @@ class InterconnectSyncBackend extends SyncBackend
 
   @override
   Future<void> authenticate({required SyncRepository repo}) async {
+    // 用户显式登录 / 测试连接：当场探测，不受选路退避约束。
+    resetResolveBackoff();
     await _loadConfig(repo);
     if (_candidates.isEmpty || !_hasAnyCredential) {
       throw SyncAuthError(
@@ -938,6 +1056,7 @@ class InterconnectSyncBackend extends SyncBackend
     _sessionResolved = false;
     _resolveFlight = null;
     _activeCandidate = null;
+    resetResolveBackoff();
     // 登出后配置身份归零，下次 restoreAuth 必然重探测（BUG-1183）。
     _configSignature = null;
     await repo.updateFushiClientUrls(
@@ -989,6 +1108,8 @@ class InterconnectSyncBackend extends SyncBackend
     _sessionResolved = false;
     _resolveFlight = null;
     _activeCandidate = null;
+    // 撤掉退避期间挂的可达性观察者：一次性实例用完即弃，不能留在全局表里。
+    resetResolveBackoff();
   }
 
   // ── Folder operations ─────────────────────────────────────────────
@@ -1833,7 +1954,7 @@ class InterconnectSyncBackend extends SyncBackend
     T Function(Map<String, Object?> json) parse, {
     bool degradeOn404 = false,
   }) async {
-    await _ensureResolved();
+    await _resolvedForLive();
     final HttpClientRequest req = await _ops!.buildRequest(
       'GET',
       '$_apiBase$path',
@@ -1922,6 +2043,12 @@ class InterconnectSyncBackend extends SyncBackend
   RemoteBookSourceKind get remoteSourceKind =>
       RemoteBookSourceKind.interconnect;
 
+  /// Keep the book catalogue and any recovery download on the same peer.
+  Future<T> withLiveBookSourcePin<T>(
+    InterconnectHostPin pin,
+    Future<T> Function() body,
+  ) => _pinned(pin, body);
+
   /// 列出对端 host 当前书库清单（直打 `/api/library/books`）。
   @override
   Future<List<RemoteBookInfo>> listRemoteBooks() =>
@@ -1935,7 +2062,7 @@ class InterconnectSyncBackend extends SyncBackend
     File destination, {
     void Function(double progress)? onProgress,
   }) async {
-    await _ensureResolved();
+    await _resolvedForLive();
     await downloadContentFile(
       fileId: '$_apiBase/api/library/books/${Uri.encodeComponent(title)}',
       destination: destination,
@@ -2303,24 +2430,114 @@ class InterconnectSyncBackend extends SyncBackend
   // 不经 WebDAV 文件箱伪装的 __collections__ 资产（互联资产层是 live 端点适配，语义
   // 不同）。读-合并-写：GET host 清单 → 引擎合并 → 应用本地 → POST 合并后清单。
 
-  /// GET 对端 host 当前合集清单（读）。老 host 无该端点返回 404 时优雅降级返回 null
-  /// （调用方跳过整个合集同步步骤，绝不因老 server 缺端点崩溃，与 [getRemoteAggregateBody]
-  /// 的 404 降级同纪律）。返回的清单已按 [CollectionManifest.fromJson] 解码。
-  Future<CollectionManifest?> getRemoteCollectionManifest() async {
+  /// 三条清单 GET（合集 / 标签 / 作品图谱）的条件请求缓存，键是路由（BUG-5606 审查
+  /// 第 8 条）。只在内存里，与本实例同寿。
+  final Map<String, _ManifestEtagSlot> _manifestSlots =
+      <String, _ManifestEtagSlot>{};
+
+  /// 当前会话的配对身份：配置签名（地址集 / 启用 / 指纹 / 令牌，见
+  /// [_sessionSignature]）+ 选中的 host 身份与凭据。任一变了（取消配对、重新配对、
+  /// 换了一台 host），旧 ETag 不再带出去。同一台 host 的地址之间切换不算变。
+  String get _manifestScope =>
+      '${_configSignature ?? ''}\n${_activeHostIdentity ?? ''}\n'
+      '${_activeToken ?? ''}\n${_activeFingerprint ?? ''}';
+
+  /// GET 一条清单 [route]，经 ETag 条件请求复用上一次的解析结果。
+  ///
+  /// - 上一次拿到的是同一配对身份下带 ETag 的 200：带 `If-None-Match` 去问，host
+  ///   回 304 就原样返回缓存的那份对象（不下载、不解析）。清单类型的集合字段在
+  ///   `fromJson` 里就是不可变的，调用方改不动它，下一次 304 拿到的仍是原样。
+  /// - 老 host（200 不带 ETag）：不缓存，每次整份下载解析（同改动前）。
+  /// - 404（老 host 无端点）→ null；连不上 / 超时 / 非 200·304 / 解析失败：清掉这条
+  ///   缓存再抛，下一次整份重来。
+  /// - 同一路由已有请求在飞（同一配对身份）时共用它的结局，不另发。
+  Future<T?> _getManifestConditional<T extends Object>(
+    String route,
+    T Function(Object? json) decode,
+  ) async {
     await _ensureResolved();
+    final String scope = _manifestScope;
+    final _ManifestEtagSlot? existing = _manifestSlots[route];
+    final _ManifestEtagSlot? slot = existing != null && existing.scope == scope
+        ? existing
+        : null;
+    final Future<Object?>? inFlight = slot?.flight;
+    if (inFlight != null) return await inFlight as T?;
+    final _ManifestEtagSlot mine = _ManifestEtagSlot(scope);
+    if (slot != null && slot.value is T && slot.etag != null) {
+      mine
+        ..etag = slot.etag
+        ..value = slot.value;
+    }
+    _manifestSlots[route] = mine;
+    final Future<T?> flight = _revalidateManifest<T>(route, mine, decode);
+    mine.flight = flight;
+    try {
+      return await flight;
+    } finally {
+      mine.flight = null;
+      if (mine.value == null && identical(_manifestSlots[route], mine)) {
+        _manifestSlots.remove(route);
+      }
+    }
+  }
+
+  Future<T?> _revalidateManifest<T extends Object>(
+    String route,
+    _ManifestEtagSlot slot,
+    T Function(Object? json) decode,
+  ) async {
+    final String? cachedEtag = slot.etag;
+    final Object? cached = slot.value;
+    slot
+      ..etag = null
+      ..value = null;
     final HttpClientRequest req = await _ops!.buildRequest(
       'GET',
-      '$_apiBase/api/library/collections',
+      '$_apiBase$route',
     );
+    if (cachedEtag != null && cached != null) {
+      req.headers.set(HttpHeaders.ifNoneMatchHeader, cachedEtag);
+    }
     final HttpClientResponse res = await _sendBounded(req);
+    if (res.statusCode == HttpStatus.notModified &&
+        cachedEtag != null &&
+        cached is T) {
+      await res.drain<void>();
+      slot
+        ..etag = res.headers.value(HttpHeaders.etagHeader) ?? cachedEtag
+        ..value = cached;
+      return cached;
+    }
     if (res.statusCode == 404) {
       await res.drain<void>();
-      return null; // 老 host 无合集端点：降级跳过，不崩。
+      return null; // 老 host 无该端点：降级跳过，不崩。
     }
-    _ops!.checkStatus(res.statusCode, 'GET /api/library/collections');
-    final String body = await _readBodyBounded(res);
-    return CollectionManifest.fromJson(jsonDecode(body));
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      // 含没带条件却回来的 304（host 契约外）：没有可复用的东西，按失败处理。
+      await res.drain<void>();
+      _ops!.checkStatus(res.statusCode, 'GET $route');
+      throw SyncBackendError('GET $route: unexpected HTTP ${res.statusCode}');
+    }
+    final String? etag = res.headers.value(HttpHeaders.etagHeader);
+    final T value = decode(jsonDecode(await _readBodyBounded(res)));
+    if (etag != null && etag.isNotEmpty) {
+      slot
+        ..etag = etag
+        ..value = value;
+    }
+    return value;
   }
+
+  /// GET 对端 host 当前合集清单（读）。老 host 无该端点返回 404 时优雅降级返回 null
+  /// （调用方跳过整个合集同步步骤，绝不因老 server 缺端点崩溃，与 [getRemoteAggregateBody]
+  /// 的 404 降级同纪律）。返回的清单已按 [CollectionManifest.fromJson] 解码；host 带
+  /// ETag 时经条件请求复用上一次的结果（[_getManifestConditional]）。
+  Future<CollectionManifest?> getRemoteCollectionManifest() =>
+      _getManifestConditional<CollectionManifest>(
+        '/api/library/collections',
+        CollectionManifest.fromJson,
+      );
 
   /// POST 本端合并后清单到对端 host（写），host 并入自己 DB（成员并集 + 墓碑防复活 +
   /// 手动序 LWW）并返回其合并结果。返回体供调用方核对/调试；互联读-合并-写的收敛
@@ -2345,21 +2562,12 @@ class InterconnectSyncBackend extends SyncBackend
   // 互联标签同步（`tag_sync.dart`）：直打 /api/library/tags，同合集清单的读-合并-写。
 
   /// GET 对端 host 标签清单。老 host 无端点（404）返回 null，调用方跳过标签维度。
-  Future<TagManifest?> getRemoteTagManifest() async {
-    await _ensureResolved();
-    final HttpClientRequest req = await _ops!.buildRequest(
-      'GET',
-      '$_apiBase/api/library/tags',
-    );
-    final HttpClientResponse res = await _sendBounded(req);
-    if (res.statusCode == 404) {
-      await res.drain<void>();
-      return null;
-    }
-    _ops!.checkStatus(res.statusCode, 'GET /api/library/tags');
-    final String body = await _readBodyBounded(res);
-    return TagManifest.fromJson(jsonDecode(body));
-  }
+  /// 经条件请求复用上一次的结果（[_getManifestConditional]）。
+  Future<TagManifest?> getRemoteTagManifest() =>
+      _getManifestConditional<TagManifest>(
+        '/api/library/tags',
+        TagManifest.fromJson,
+      );
 
   /// POST 本机标签清单到 host，host 按 LWW 并入自己 DB 并回并入后的清单。
   Future<TagManifest> putRemoteTagManifest(TagManifest manifest) async {
@@ -2380,21 +2588,12 @@ class InterconnectSyncBackend extends SyncBackend
   // 互联作品图谱同步（`media_link_sync.dart`）：直打 /api/library/media-links。
 
   /// GET 对端 host 作品图谱清单。老 host 无端点（404）返回 null，调用方跳过。
-  Future<MediaLinkManifest?> getRemoteMediaLinkManifest() async {
-    await _ensureResolved();
-    final HttpClientRequest req = await _ops!.buildRequest(
-      'GET',
-      '$_apiBase/api/library/media-links',
-    );
-    final HttpClientResponse res = await _sendBounded(req);
-    if (res.statusCode == 404) {
-      await res.drain<void>();
-      return null;
-    }
-    _ops!.checkStatus(res.statusCode, 'GET /api/library/media-links');
-    final String body = await _readBodyBounded(res);
-    return MediaLinkManifest.fromJson(jsonDecode(body));
-  }
+  /// 经条件请求复用上一次的结果（[_getManifestConditional]）。
+  Future<MediaLinkManifest?> getRemoteMediaLinkManifest() =>
+      _getManifestConditional<MediaLinkManifest>(
+        '/api/library/media-links',
+        MediaLinkManifest.fromJson,
+      );
 
   /// POST 本机作品图谱清单到 host，host 按整行 LWW 并入并回并入后的清单。
   Future<MediaLinkManifest> putRemoteMediaLinkManifest(
@@ -4982,4 +5181,15 @@ class HostUpdateOtherHost implements Exception {
   @override
   String toString() =>
       'HostUpdateOtherHost(expected: $expected, actual: $actual)';
+}
+
+/// [InterconnectSyncBackend] 一条清单 GET 的条件请求缓存槽：[scope] 是写入时的配对
+/// 身份，[etag] / [value] 是上一次带 ETag 的 200 与它解析出的清单（null = 还在飞 /
+/// 没有可复用的结果），[flight] 是在途那一次请求。
+final class _ManifestEtagSlot {
+  _ManifestEtagSlot(this.scope);
+  final String scope;
+  String? etag;
+  Object? value;
+  Future<Object?>? flight;
 }

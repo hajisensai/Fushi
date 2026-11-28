@@ -1,16 +1,18 @@
 // Copyright: Fushi contributors
 // License: GNU AGPL, version 3 or later; http://www.gnu.org/licenses/agpl.html
 //
-//! Fushi: the small RWKV network ("w64" and its one-card-layer "w64-c1";
-//! default weights the Instant-Only sm98, same architecture as sm40v2, sm56
-//! and sm72e25) and its batched replay / query engine.
+//! Fushi: the small RWKV network ("w64", Small, weights the Instant-Only
+//! sm113, same architecture as sm40v2 ... sm98; and the six-layer Tiny
+//! "w64-c1-d2p1u1", weights the Instant-Only sm130io) and its batched
+//! replay / query engine.
 //!
 //! The executable spec is the package's NumPy reference
 //! (`reference/small_model_recurrent.py`, `RecurrentModel.step`) and
 //! INTEGRATION.md §7–§9; comments below name the reference's variables.
 //!
-//! Engine: rows are processed a chunk at a time, one step of the 13-step
-//! interleaved layer schedule after the other over every row of the chunk.
+//! Engine: rows are processed a chunk at a time, one step of the interleaved
+//! layer schedule (13 steps for "w64", 6 for "w64-c1-d2p1u1") after the
+//! other over every row of the chunk.
 //! Within a step all per-row maths (norms, lerps, projections) is
 //! independent across rows; only the WKV recurrence is sequential, and only
 //! per entity (card, deck, note, preset, user), so entities run in parallel.
@@ -26,7 +28,7 @@ use half::f16;
 use rayon::prelude::*;
 
 use super::super::slots::SlotStore;
-use super::super::{CARD_FEATURES, StatePrecision, add_scaled_in_place, dot_product, sigmoid};
+use super::super::{CARD_FEATURES, StatePrecision, add_scaled_in_place, det, dot_product, sigmoid};
 use super::weights::Weights;
 
 pub(super) const D: usize = 64;
@@ -37,7 +39,7 @@ const FC: usize = 128;
 pub(super) const STREAMS: usize = 5;
 /// `zero_features`: the card-state input (scaled revlog type) is ignored.
 const ZERO_FEATURE: usize = 22;
-/// Leak-free input rule of the SM72 and later releases (sm98, sm101): the
+/// Leak-free input rule of the SM72 and later releases (sm113, sm130io): the
 /// missing note / deck / preset flags are always 0. In the
 /// training export they marked cards deleted before the export, i.e. future
 /// information live Anki never has, and SM72 was trained and scored with them
@@ -48,7 +50,6 @@ const GROUP_NORM_EPS: f32 = 6.4e-4;
 const NORMALIZE_EPS: f32 = 1e-12;
 const MAX_LORA_RANK: usize = 16;
 const MAX_CHANNEL_HIDDEN: usize = 256;
-const SOFTPLUS_THRESHOLD: f32 = 20.0;
 pub(super) const PROB_CLAMP: f32 = 1e-5;
 /// Card and note streams: the ones kept at the runtime's state precision
 /// (deck, preset and user states are few and stay f32).
@@ -60,6 +61,22 @@ type HeadV = [f32; K];
 /// Rows per block of the per-row maths: each weight column is streamed once
 /// per block (`Linear::apply_rows`), and a block's scratch stays in L1/L2.
 const BLOCK: usize = 32;
+
+/// The layer layouts the small engine loads, as layers per stream (card,
+/// deck, note, preset, user), told apart by the weight file's
+/// `rwkv_modules.<stream>.blocks.<layer>.` tensors, as the fork's
+/// `engine.rs::layer_plan_for` / `architecture.rs::SMALL_LAYER_PLANS` do. A
+/// file whose layer counts match none of them is refused rather than run
+/// with a schedule nobody trained or checked. Each plan's schedule is the
+/// layer-major interleave of its counts (`architecture.json` `layer_steps`).
+/// The one-card-layer "w64-c1" (`[1, 4, 1, 3, 3]`, the retired Tiny sm101)
+/// is not among them: no weights Fushi ships have it.
+const LAYER_PLANS: [(&str, [usize; STREAMS]); 2] = [
+    // Small (sm113; the earlier sm40v2 ... sm98 share it).
+    ("w64", [2, 4, 1, 3, 3]),
+    // The six-layer Tiny (sm130io), 185,057 parameters.
+    ("w64-c1-d2p1u1", [1, 2, 1, 1, 1]),
+];
 
 /// Per-task scratch of the block maths, on the heap: rayon threads run
 /// stolen tasks on top of a waiting one, so big stack frames nest and
@@ -307,6 +324,9 @@ impl TimeMixer {
             k_scale: Linear::load(w, &format!("{p}.k_scale_linear"), HEADS, D, true)?,
             v_scale: Linear::load(w, &format!("{p}.v_scale_linear"), HEADS, D, true)?,
             v_lora: if layer == 0 {
+                // `value_lora_stripped_layer0`: the export keeps unused
+                // tensors for it; drop them with the layer.
+                w.remove_prefix(&format!("{p}.v_lora_simple."));
                 None
             } else {
                 Some(lora(w, "v_lora_simple.A", "v_lora_simple.B_and_lamb")?)
@@ -413,8 +433,7 @@ impl TimeMixer {
             p.g.copy_from_slice(&g[at..at + D]);
             for c in 0..D {
                 p.a[c] = sigmoid(a[at + c]);
-                let dd = -0.5 - softplus(-tmp[at + c]);
-                p.w[c] = (-dd.exp()).exp();
+                p.w[c] = det::decay(tmp[at + c]);
             }
             for h in 0..HEADS {
                 let range = h * K..(h + 1) * K;
@@ -478,7 +497,7 @@ fn lora_rows(
     match between {
         Activation::None => {}
         Activation::Sigmoid => hidden.iter_mut().for_each(|h| *h = sigmoid(*h)),
-        Activation::Tanh => hidden.iter_mut().for_each(|h| *h = h.tanh()),
+        Activation::Tanh => hidden.iter_mut().for_each(|h| *h = det::tanh(*h)),
     }
     second.apply_rows(hidden, out);
 }
@@ -490,15 +509,6 @@ fn torch_lerp(start: f32, end: f32, weight: f32) -> f32 {
         start + weight * (end - start)
     } else {
         end - (end - start) * (1.0 - weight)
-    }
-}
-
-#[inline]
-fn softplus(x: f32) -> f32 {
-    if x > SOFTPLUS_THRESHOLD {
-        x
-    } else {
-        x.exp().ln_1p()
     }
 }
 
@@ -530,6 +540,7 @@ impl ChannelMixer {
             .ok_or_else(|| invalid(format!("missing weight: {p}.W_k.weight")))?
             .to_vec();
         if shape == [1, 1] {
+            w.remove_prefix(&format!("{p}."));
             return Ok(None);
         }
         let hidden = shape[0];
@@ -596,18 +607,22 @@ impl SmallHeads {
     pub fn curve_retrievability(&self, seconds: f32) -> f32 {
         let w = &self.curve[0..3];
         let max = w.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-        let e = [(w[0] - max).exp(), (w[1] - max).exp(), (w[2] - max).exp()];
+        let e = [
+            det::exp(w[0] - max),
+            det::exp(w[1] - max),
+            det::exp(w[2] - max),
+        ];
         let sum = e[0] + e[1] + e[2];
         let t = seconds.max(1.0);
         let mut r = 0.0f32;
         for (i, weight) in e.iter().enumerate() {
-            let s = self.curve[3 + i].clamp(-25.0, 25.0).exp();
-            let d = self.curve[6 + i].clamp(-25.0, 25.0).exp();
-            r += weight / sum * (-d * (t / (1e-7 + s)).ln_1p()).exp();
+            let s = det::exp(self.curve[3 + i].clamp(-25.0, 25.0));
+            let d = det::exp(self.curve[6 + i].clamp(-25.0, 25.0));
+            r += weight / sum * det::exp(-d * det::ln_1p(t / (1e-7 + s)));
         }
         let raw = 1e-5 + (1.0 - 2e-5) * r;
-        let logit = (raw / (1.0 - raw)).ln() + 1e-5;
-        1.0 / (1.0 + (-logit).exp())
+        let logit = det::ln(raw / (1.0 - raw)) + 1e-5;
+        1.0 / (1.0 + det::exp(-logit))
     }
 
     /// `p_imm`: 1 - P(Again), clamped to [1e-5, 1 - 1e-5].
@@ -623,7 +638,7 @@ impl SmallHeads {
 
 fn softmax4(x: &[f32; 4]) -> [f32; 4] {
     let max = x.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-    let e = x.map(|v| (v - max).exp());
+    let e = x.map(|v| det::exp(v - max));
     let sum: f32 = e.iter().sum();
     e.map(|v| v / sum)
 }
@@ -672,12 +687,24 @@ impl SmallNet {
                     channel: ChannelMixer::load(w, &format!("{p}.channel_mixer"))?,
                 });
             }
-            if layers.is_empty() {
-                return Err(invalid(format!(
-                    "small model stream {stream} has no layers"
-                )));
-            }
             streams.push(layers);
+        }
+        // Every stream tensor must belong to a layer loaded above: a gap
+        // (`blocks.0`, `blocks.2`) or a stray tensor would otherwise be
+        // silently ignored.
+        let mut stray = w.names_with_prefix("rwkv_modules.");
+        if !stray.is_empty() {
+            stray.sort_unstable();
+            return Err(invalid(format!(
+                "small model has stream tensors outside its layers: {}",
+                stray.join(", ")
+            )));
+        }
+        let counts: Vec<usize> = streams.iter().map(Vec::len).collect();
+        if !LAYER_PLANS.iter().any(|(_, plan)| plan[..] == counts[..]) {
+            return Err(invalid(format!(
+                "small model has layers per stream {counts:?}, a layout the engine does not load (known: {LAYER_PLANS:?})"
+            )));
         }
         // The "interleaved" schedule is layer-major: every stream's layer 0,
         // then every stream's layer 1, ... (architecture.json `layer_steps`).
@@ -810,9 +837,10 @@ fn silu(values: &mut [f32]) {
 /// Where each layer's parts sit in an entity's state bytes. Per layer:
 /// time shift (64 values), WKV matrix (4 x 16 x 16), channel shift (64,
 /// only for a layer with a channel mixer). f32: raw little-endian floats.
-/// int8 / int4: shifts as float16, the matrix by rows of 16 as a float32
-/// scale + 16 codes (8 or 4 bits, two's complement), as the fork's
-/// `precision.rs` stores card and note states.
+/// int8: shifts as float16, the matrix by rows of 16 as a float32 scale +
+/// 16 int8 codes, as the fork's `precision.rs` stores card and note states.
+/// (Fushi removed int4: its rows let long histories' states grow without
+/// bound, BUG-5594.)
 #[derive(Clone)]
 pub(super) struct Layout {
     pub precision: StatePrecision,
@@ -838,7 +866,6 @@ fn row_bytes(precision: StatePrecision) -> usize {
     match precision {
         StatePrecision::F32 => K * 4,
         StatePrecision::Int8 => 4 + K,
-        StatePrecision::Int4 => 4 + K / 2,
     }
 }
 
@@ -849,7 +876,6 @@ fn matrix_bytes(precision: StatePrecision) -> usize {
 fn limit(precision: StatePrecision) -> f32 {
     match precision {
         StatePrecision::Int8 => 127.0,
-        StatePrecision::Int4 => 7.0,
         StatePrecision::F32 => unreachable!(),
     }
 }
@@ -916,13 +942,6 @@ impl Layout {
                         *o = code as i8 as f32 * scale;
                     }
                 }
-                StatePrecision::Int4 => {
-                    let scale = f32::from_le_bytes(encoded[..4].try_into().unwrap());
-                    for (column, o) in values.iter_mut().enumerate() {
-                        let nibble = (encoded[4 + column / 2] >> (4 * (column % 2))) & 15;
-                        *o = (((nibble as i8) << 4) >> 4) as f32 * scale;
-                    }
-                }
             }
         }
     }
@@ -957,7 +976,9 @@ impl Layout {
             // to a full step (up to 2x) at every committed answer; the card
             // stream's first layer does not damp that, and on a 1.2M-review
             // history 101 heavily reviewed cards grew x1.06 per review under
-            // int4 (0.25 -> 7,962 in 175 reviews, on the way to f32 overflow).
+            // the since removed int4 (0.25 -> 7,962 in 175 reviews). The refit
+            // was not enough for int4: its error alone still diverged on long
+            // cards (BUG-5594).
             let (dot, norm) = codes
                 .iter()
                 .zip(values.iter())
@@ -973,14 +994,8 @@ impl Layout {
             for (code, v) in codes.iter().zip(values.iter_mut()) {
                 *v = *code as f32 * scale;
             }
-            if self.precision == StatePrecision::Int8 {
-                for (b, code) in encoded[4..].iter_mut().zip(codes) {
-                    *b = code as u8;
-                }
-            } else {
-                for (index, b) in encoded[4..].iter_mut().enumerate() {
-                    *b = (codes[2 * index] as u8 & 15) | ((codes[2 * index + 1] as u8 & 15) << 4);
-                }
+            for (b, code) in encoded[4..].iter_mut().zip(codes) {
+                *b = code as u8;
             }
         }
     }
@@ -1005,11 +1020,7 @@ impl Layout {
             for encoded in encoded.chunks_exact(row) {
                 if self.precision != StatePrecision::F32 {
                     let scale = f32::from_le_bytes(encoded[..4].try_into().unwrap());
-                    let bad_code = match self.precision {
-                        StatePrecision::Int8 => encoded[4..].contains(&128),
-                        _ => encoded[4..].iter().any(|b| b & 15 == 8 || b >> 4 == 8),
-                    };
-                    if !scale.is_finite() || scale <= 0.0 || bad_code {
+                    if !scale.is_finite() || scale <= 0.0 || encoded[4..].contains(&128) {
                         return Err(damaged());
                     }
                 }
@@ -1024,14 +1035,21 @@ impl Layout {
     }
 
     /// Largest absolute WKV matrix value of each layer (diagnostics and the
-    /// long-history stability tests).
+    /// long-history stability tests); infinite when any value is not finite
+    /// (`f32::max` alone would drop a NaN).
     pub(super) fn matrix_peaks(&self, bytes: &[u8]) -> Vec<f32> {
         let mut matrix = [0.0; MATRIX];
         self.layers
             .iter()
             .map(|layer| {
                 self.read_rows(&bytes[layer.matrix..], &mut matrix);
-                matrix.iter().fold(0.0f32, |m, v| m.max(v.abs()))
+                matrix.iter().fold(0.0f32, |m, v| {
+                    if v.is_finite() {
+                        m.max(v.abs())
+                    } else {
+                        f32::INFINITY
+                    }
+                })
             })
             .collect()
     }
@@ -1437,7 +1455,7 @@ mod tests {
             seed ^= seed << 17;
             (seed >> 11) as f32 / (1u64 << 53) as f32
         };
-        for precision in [StatePrecision::Int8, StatePrecision::Int4] {
+        for precision in [StatePrecision::Int8] {
             let layout = layout(precision);
             let mut bytes = vec![0u8; layout.rows_bytes(1)];
             for case in 0..20_000 {

@@ -55,13 +55,14 @@ import 'package:fushi/src/pages/implementations/stat_shared.dart'
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/media/links/media_link_entries.dart'
     show MediaLinkEntry;
 import 'package:fushi/src/media/links/media_link_inference_host.dart'
     show mediaLinkInferCallback;
 import 'package:fushi/src/media/links/media_link_opener.dart'
-    show mediaLinkSearchAction, openMediaLinkEntry;
+    show mediaLinkRemoteVideoSources, mediaLinkSearchAction, openMediaLinkEntry;
 import 'package:fushi/src/media/links/media_links_section.dart'
     show MediaLinksSection;
 import 'package:fushi/src/media/people/person_entry_sections.dart'
@@ -375,11 +376,13 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
   /// 「加入合集」页头动作：与库页卡片菜单同一入口语义（mediaType='game'，
   /// entryKey=galgames.id），落库同走 addToCollection DAO；库页返回后 _reload
   /// 刷新分组。两种版式（浮动顶栏 / 海报面板裸图标页头）共用。
-  Widget _addToCollectionAction(GalgameEntry game) => FushiIconButtonControl(
+  ///
+  /// 页头动作用 [FushiIconButton]：放不下时才收得进「⋯」（BUG-5471）。
+  Widget _addToCollectionAction(GalgameEntry game) => FushiIconButton(
     key: const ValueKey<String>('galgame_detail_add_to_collection'),
     tooltip: t.add_to_collection,
-    icon: const FushiIcon(FushiIcons.collection),
-    onPressed: () => unawaited(_addToCollection(game)),
+    icon: FushiIcons.collection,
+    onTap: () => unawaited(_addToCollection(game)),
   );
 
   /// 加载中 / 找不到条目的页面外壳：重设计外壳下与加载完成后同一个裸图标页头
@@ -1546,6 +1549,7 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
       ),
       // 跨模块「同一作品」（作品图谱 media_links）：改编动画 / 原作小说…
       MediaLinksSection(
+        remoteVideoSources: mediaLinkRemoteVideoSources(ref: ref),
         database: _appModel.database,
         self: (kind: MediaLinkKind.game, key: game.id),
         onOpen: (MediaLinkEntry e) =>

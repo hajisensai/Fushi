@@ -154,6 +154,104 @@ void main() {
     });
   });
 
+  group('冷却 / 退避在登记任务之前判（互联 client 同步过频）', () {
+    Future<(FushiDatabase, Directory)> setUpChannel() async {
+      final FushiDatabase db = _memDb();
+      final Directory work = await Directory.systemTemp.createTemp(
+        'sweep_precheck_',
+      );
+      addTearDown(() async {
+        await db.close();
+        if (work.existsSync()) await work.delete(recursive: true);
+      });
+      final SyncRepository repo = SyncRepository(db);
+      await repo.setAutoSyncEnabled(true);
+      await repo.setBackendType(SyncBackendType.fushiServer);
+      final ServerSocket dead = await ServerSocket.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
+      final int deadPort = dead.port;
+      await dead.close();
+      await repo.setFushiClientUrls(<FushiClientUrl>[
+        FushiClientUrl(url: 'http://127.0.0.1:$deadPort'),
+      ]);
+      await repo.setFushiClientToken('tok');
+      return (db, work);
+    }
+
+    test('每条通道都在成功冷却窗里：不登记任务、只公布 cooledDown', () async {
+      final (FushiDatabase db, Directory work) = await setUpChannel();
+      final SyncRepository repo = SyncRepository(db);
+      final List<SyncChannel> channels = await autoSyncChannels(repo);
+      expect(channels, isNotEmpty);
+      final int now = DateTime.now().millisecondsSinceEpoch;
+      for (final SyncChannel c in channels) {
+        await repo.setLastSyncMs(c.scope, now);
+      }
+      int taskEvents = 0;
+      void onTasks() {
+        if (syncTasks.value.isNotEmpty) taskEvents++;
+      }
+
+      syncTasks.addListener(onTasks);
+      addTearDown(() => syncTasks.removeListener(onTasks));
+      for (int i = 0; i < 3; i++) {
+        lastSyncOutcome.value = null;
+        await runAutoSyncAllForTest(
+          db: db,
+          dictionaryResourceRoot: work,
+          audioDatabaseRoot: work,
+          tempDir: work,
+        );
+        expect(lastSyncOutcome.value?.reason, SyncOutcomeReason.cooledDown);
+      }
+      expect(taskEvents, 0, reason: '冷却中的 tick 不得在任务表里开项（以前每分钟闪一项）');
+    });
+
+    test('失败退避窗内：不登记任务', () async {
+      final (FushiDatabase db, Directory work) = await setUpChannel();
+      noteAutoSweepOutcomeForBackoff(
+        SyncOutcomeReason.peerOffline,
+        nowMs: DateTime.now().millisecondsSinceEpoch,
+      );
+      int taskEvents = 0;
+      void onTasks() {
+        if (syncTasks.value.isNotEmpty) taskEvents++;
+      }
+
+      syncTasks.addListener(onTasks);
+      addTearDown(() => syncTasks.removeListener(onTasks));
+      lastSyncOutcome.value = null;
+      await runAutoSyncAllForTest(
+        db: db,
+        dictionaryResourceRoot: work,
+        audioDatabaseRoot: work,
+        tempDir: work,
+      );
+      expect(lastSyncOutcome.value?.reason, SyncOutcomeReason.cooledDown);
+      expect(taskEvents, 0);
+    });
+
+    test('有一条通道过了冷却窗：照常登记任务开跑', () async {
+      final (FushiDatabase db, Directory work) = await setUpChannel();
+      int taskEvents = 0;
+      void onTasks() {
+        if (syncTasks.value.isNotEmpty) taskEvents++;
+      }
+
+      syncTasks.addListener(onTasks);
+      addTearDown(() => syncTasks.removeListener(onTasks));
+      await runAutoSyncAllForTest(
+        db: db,
+        dictionaryResourceRoot: work,
+        audioDatabaseRoot: work,
+        tempDir: work,
+      );
+      expect(taskEvents, greaterThan(0));
+    });
+  });
+
   group('BUG-1569② 合集观察者生命周期', () {
     test('uninstall 取消未决防抖 Timer：不再对（已关）库跑轻量同步', () async {
       final FushiDatabase db = _memDb();

@@ -39,12 +39,14 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart'
 import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
     show
         FushiMastheadActionGroup,
+        FushiMastheadLineMetrics,
         FushiMastheadPanel,
         FushiMastheadRole,
         FushiMastheadScope,
         FushiMastheadTitle,
         FushiMastheadTitleFit,
         fushiMastheadCompact,
+        fushiMastheadLineMetrics,
         fushiMastheadProgressOf,
         fushiMastheadTitleFit,
         fushiMastheadTitleStyle,
@@ -62,6 +64,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart'
         FushiAppleNavBar,
         FushiAppleSoftScrollEdge,
         FushiRouteBackButton,
+        fushiAppleInlineSubtitleStyle,
         fushiAppleInlineTitleOpacity,
         fushiAppleLargeTitleBand,
         fushiAppleLargeTitleOpacity,
@@ -98,6 +101,55 @@ typedef FushiMastheadBackdropBuilder =
 // 页头一行
 // =============================================================================
 
+/// 页名首行字面中心离页名盒顶边的距离（满字号、未缩放）：返回键与动作图标
+/// 的中线对到这里（[FushiPageTitleMetrics.inkCenterEm]）。单条缓存——页头在
+/// 滚动收缩的每一帧都会重建，同一页名同一字样只排一次。
+double _titleInkFromTop(BuildContext context, String title, TextStyle style) {
+  final TextScaler textScaler = MediaQuery.textScalerOf(context);
+  final TextDirection direction = Directionality.of(context);
+  final ({
+    String title,
+    TextStyle style,
+    TextScaler textScaler,
+    TextDirection direction,
+  })
+  key = (
+    title: title,
+    style: style,
+    textScaler: textScaler,
+    direction: direction,
+  );
+  final _InkMemo? memo = _inkMemo;
+  if (memo != null && memo.key == key) return memo.value;
+  final FushiMastheadLineMetrics line = fushiMastheadLineMetrics(
+    context,
+    title,
+    style,
+  );
+  final double value = line.height - line.inkCenter;
+  _inkMemo = (key: key, value: value);
+  return value;
+}
+
+typedef _InkMemo = ({
+  ({
+    String title,
+    TextStyle style,
+    TextScaler textScaler,
+    TextDirection direction,
+  })
+  key,
+  double value,
+});
+_InkMemo? _inkMemo;
+
+/// 把 [child] 竖向居中在离顶边 [center] 的线上（盒高 2 × [center]，宽度跟
+/// [child]）：返回键 / 动作组与页名字面中心对齐用。
+Widget _centerOnLine(double center, Widget child) => SizedBox(
+  height: center * 2,
+  child: Align(widthFactor: 1, child: child),
+);
+
 /// 页名排法的缓存键：同一组输入只排一次（[fushiMastheadTitleFit] 要做多次
 /// 文字排版，页头在滚动收缩的每一帧都会重建）。
 typedef _TitleFitKey = ({
@@ -121,10 +173,16 @@ class _MastheadTitleBox extends StatefulWidget {
     required this.scale,
     required this.singleLine,
     required this.tier,
+    required this.anchor,
   });
 
   final String title;
   final bool compact;
+
+  /// 页名首行字面中心要落在离盒顶多远（与返回键 / 动作图标的中线同一条线）：
+  /// 盒顶按缩放后的字面中心补上内边距。调用方保证它不小于满字号下的字面
+  /// 中心（[_titleInkFromTop] × [scale]），缩小只会往下补。
+  final double anchor;
 
   /// 页名字阶档位。
   final FushiPageTitleTier tier;
@@ -193,9 +251,14 @@ class _MastheadTitleBoxState extends State<_MastheadTitleBox> {
           constraints.maxWidth,
           fit.lineWidth * fitScale,
         );
-        return SizedBox(
+        final double inkTop =
+            _titleInkFromTop(context, widget.title, style) * fitScale;
+        return Container(
           width: width,
           height: lineHeight * fit.lines * fitScale,
+          margin: EdgeInsetsDirectional.only(
+            top: math.max(0.0, widget.anchor - inkTop),
+          ),
           child: OverflowBox(
             alignment: AlignmentDirectional.bottomStart,
             minWidth: 0,
@@ -295,6 +358,25 @@ class FushiMastheadHeader extends StatelessWidget {
     final double collapsed = titleScale.collapsedFontSize / titleScale.fontSize;
     final double p = progress.clamp(0.0, 1.0);
     final double scale = titleInBody ? collapsed : lerpDouble(1, collapsed, p)!;
+    // 返回键、动作图标、页名首行字面中心同一条中线（2026-11-26 用户截图：原来
+    // 按行底边对齐，页名缩小后返回键高出一截）。图标半高不够时以图标为准、
+    // 页名往下补；裸图标行行高固定，中线就是行中线。
+    const double iconHalf = kFushiMastheadActionExtent / 2;
+    final double anchor = titleInBody
+        ? kFushiMastheadBareRowExtent / 2
+        : math.max(
+            iconHalf,
+            _titleInkFromTop(
+                  context,
+                  title,
+                  fushiMastheadTitleStyle(
+                    context,
+                    compact: compact,
+                    tier: titleTier,
+                  ),
+                ) *
+                scale,
+          );
     final Widget titleBox = _MastheadTitleBox(
       title: title,
       compact: compact,
@@ -303,6 +385,7 @@ class FushiMastheadHeader extends StatelessWidget {
       // 只是滚过正文大标题后的定位提示，按收起态字号一行、放不下省略。
       singleLine: titleInBody,
       tier: titleTier,
+      anchor: anchor,
     );
     final Widget? lead =
         leading ??
@@ -323,6 +406,12 @@ class FushiMastheadHeader extends StatelessWidget {
                 onTap: onBack,
               ));
     if (titleInBody) return _buildBare(context, tokens, titleBox, lead);
+    final Widget? centeredLead = lead == null
+        ? null
+        : _centerOnLine(
+            anchor,
+            FushiMastheadActionGroup(items: <Widget>[lead]),
+          );
     final FushiMastheadBadgeBuilder? badge = this.badge;
     final Widget? subtitle = this.subtitle;
     final Widget? bottom = this.bottom;
@@ -359,10 +448,10 @@ class FushiMastheadHeader extends StatelessWidget {
               fushiHeaderTitleFloor(context, constraints.maxWidth),
         );
         return Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            if (lead != null) ...<Widget>[
-              FushiMastheadActionGroup(items: <Widget>[lead]),
+            if (centeredLead != null) ...<Widget>[
+              centeredLead,
               const SizedBox(width: 14),
             ],
             Expanded(child: titleColumn),
@@ -370,7 +459,10 @@ class FushiMastheadHeader extends StatelessWidget {
               const SizedBox(width: 14),
               ConstrainedBox(
                 constraints: BoxConstraints(maxWidth: budget),
-                child: _MastheadActions(actions: actions),
+                child: _centerOnLine(
+                  anchor,
+                  _MastheadActions(actions: actions),
+                ),
               ),
             ],
           ],
@@ -438,7 +530,9 @@ class FushiMastheadHeader extends StatelessWidget {
                 // 拖窗区）。
                 child: IgnorePointer(
                   child: Align(
-                    alignment: AlignmentDirectional.centerStart,
+                    // 页名盒顶自带补白，首行字面中心落在行中线上（与返回键 /
+                    // 动作图标同一条线）。
+                    alignment: AlignmentDirectional.topStart,
                     child: Opacity(opacity: opacity, child: titleBox),
                   ),
                 ),
@@ -500,7 +594,8 @@ class _MastheadActions extends StatelessWidget {
 /// `FushiPageScaffold` 非页头大字路径同一套——最上面一行 [FushiAppleNavBar]
 /// （透明栏、玻璃返回圆钮、动作进共享玻璃胶囊、放不下收横向「⋯」；桌面在窗口
 /// 标题栏行下面），下面是靠前的 34pt 大标题（[FushiAppleLargeTitle]），再下面是
-/// [subtitle] / [bottom]（吸顶）。正文往下滚时大标题随内容上移、淡出，栏里淡入
+/// 紧贴大标题、靠前的 [subtitle]（iOS 26 `navigationSubtitle`，随大标题一起上移
+/// 淡出），再下面是吸顶的 [bottom]。正文往下滚时大标题随内容上移、淡出，栏里淡入
 /// 居中 17pt 小标题；内容压到栏下时下沿是库的 soft scroll edge
 /// （[FushiAppleSoftScrollEdge]）。[titleInBody] 时没有大标题，正文铺到透明栏
 /// 底下，小标题按 [titleRevealOffset] 淡入。[badge] 在 Apple 下不画（Apple
@@ -728,7 +823,7 @@ class _FushiMastheadFrameState extends State<FushiMastheadFrame> {
         );
       },
     );
-    final Widget bar = FushiAppleNavBar(
+    final FushiAppleNavBar bar = FushiAppleNavBar(
       // 下面自己让位状态栏 / 窗口标题栏（桌面工具栏排在标题栏行下面）。
       primary: false,
       automaticallyImplyLeading: false,
@@ -799,14 +894,25 @@ class _FushiMastheadFrameState extends State<FushiMastheadFrame> {
     );
   }
 
-  /// 大标题形态：栏一行 + 大标题 + 吸顶的 [subtitle] / [bottom]。
+  /// 大标题形态：栏一行 + 大标题 + 副标题（随大标题滚走）+ 吸顶的 [bottom]。
+  ///
+  /// 副标题曾与 [bottom] 同排在吸顶列里（`CrossAxisAlignment.stretch`）：按钮型
+  /// 副标题被拉满宽、文字居中漂在大标题与分段之间，收起后还整行钉在栏下，
+  /// scroll edge 的实底跟着高出一截空白（词典管理「配置 · Default」）。
+  ///
+  /// 正文、scroll edge 底、大标题都从**窗口顶**（含状态栏 / 桌面窗口按钮行）起排，
+  /// 栏行叠在最上面：iOS 27 导航栏的 scroll edge 是从窗口顶到吸顶行下沿的一整块
+  /// 模糊 + 压暗底（[FushiAppleScrollEdgeBackdrop]）。曾经把栏行排在 Column 里、
+  /// 正文与底只排在栏下面，状态栏 + 栏行那一段是没有内容、没有底的纯页面底色，
+  /// 下面一段才是模糊的内容——两种底在栏下沿接成一条分界线。
   Widget _buildAppleLargeTitle(
     BuildContext context,
     MediaQueryData media,
-    Widget bar,
+    FushiAppleNavBar bar,
     Widget body,
     double band,
   ) {
+    final double statusTop = media.padding.top;
     final bool extend = widget.extendBodyBehindHeader;
     final double side = fushiAppleCompact(context)
         ? 20 * fushiAppleMacScale(context)
@@ -840,28 +946,51 @@ class _FushiMastheadFrameState extends State<FushiMastheadFrame> {
         );
       },
     );
-    final Widget? below = subtitle == null && bottom == null
+    final Widget? subtitleRow = subtitle == null
+        ? null
+        : ListenableBuilder(
+            listenable: _offset,
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(side, 0, side, 8),
+              child: Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: DefaultTextStyle.merge(
+                  style: fushiAppleInlineSubtitleStyle(context),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  child: subtitle,
+                ),
+              ),
+            ),
+            builder: (BuildContext context, Widget? child) {
+              // 与大标题同一段淡出；淡尽后不再接点按（它此时正滑到透明栏底下）。
+              final double o = fushiAppleLargeTitleOpacity(
+                _appleProgress(band),
+              );
+              return IgnorePointer(
+                ignoring: o == 0,
+                child: ExcludeSemantics(
+                  excluding: o == 0,
+                  child: Opacity(opacity: o, child: child),
+                ),
+              );
+            },
+          );
+    final Widget? below = bottom == null
         ? null
         : Padding(
             padding: EdgeInsets.fromLTRB(side, 0, side, 8),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                if (subtitle != null) subtitle,
-                if (bottom != null)
-                  Align(
-                    alignment: AlignmentDirectional.centerStart,
-                    child: FushiMastheadScope(
-                      role: FushiMastheadRole.secondary,
-                      child: bottom,
-                    ),
-                  ),
-              ],
+            child: Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: FushiMastheadScope(
+                role: FushiMastheadRole.secondary,
+                child: bottom,
+              ),
             ),
           );
     final Widget content = CustomMultiChildLayout(
       delegate: _AppleMastheadDelegate(
+        top: statusTop + bar.preferredSize.height,
         band: band,
         extendBody: extend,
         offset: _offset,
@@ -907,22 +1036,20 @@ class _FushiMastheadFrameState extends State<FushiMastheadFrame> {
           ),
         ),
         LayoutId(id: _AppleMastheadSlot.largeTitle, child: largeTitle),
+        if (subtitleRow != null)
+          LayoutId(id: _AppleMastheadSlot.subtitle, child: subtitleRow),
         if (below != null)
           LayoutId(id: _AppleMastheadSlot.bottom, child: below),
       ],
     );
-    return Padding(
-      padding: EdgeInsets.only(top: media.padding.top),
-      child: MediaQuery.removePadding(
-        context: context,
-        removeTop: true,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            bar,
-            Expanded(child: content),
-          ],
-        ),
+    return MediaQuery.removePadding(
+      context: context,
+      removeTop: true,
+      child: Stack(
+        children: <Widget>[
+          Positioned.fill(child: content),
+          Positioned(top: statusTop, left: 0, right: 0, child: bar),
+        ],
       ),
     );
   }
@@ -1052,20 +1179,23 @@ class _FushiMastheadFrameState extends State<FushiMastheadFrame> {
 
 enum _MastheadSlot { body, backdrop, header }
 
-enum _AppleMastheadSlot { body, edge, largeTitle, bottom }
+enum _AppleMastheadSlot { body, edge, largeTitle, subtitle, bottom }
 
-/// Apple 大标题导航栏的正文区版面（栏下面那一块）：先量吸顶行（subtitle /
-/// bottom）的高，正文让位 = 大标题行 + 吸顶行；大标题与吸顶行随主滚动偏移
-/// 上移（最多一个大标题行），之后吸顶行停在栏下沿。正文不铺到页头底下时整体
+/// Apple 大标题导航栏的正文区版面（栏下面那一块）：先量副标题行与吸顶行
+/// （bottom）的高，正文让位 = 大标题行 + 副标题行 + 吸顶行；三者随主滚动偏移
+/// 上移（最多大标题行 + 副标题行），之后吸顶行停在栏下沿。正文不铺到页头底下时整体
 /// 排在让位以下，大标题与吸顶行不动。soft scroll edge 盖住吸顶行背后再往下
 /// 渐隐 [kFushiAppleScrollEdgeTail]。
 class _AppleMastheadDelegate extends MultiChildLayoutDelegate {
   _AppleMastheadDelegate({
+    required this.top,
     required this.band,
     required this.extendBody,
     required this.offset,
   }) : super(relayout: offset);
 
+  /// 栏行下沿（状态栏 / 窗口按钮行 + 栏行）：大标题与吸顶行从这里往下排。
+  final double top;
   final double band;
   final bool extendBody;
   final ValueListenable<double> offset;
@@ -1078,8 +1208,16 @@ class _AppleMastheadDelegate extends MultiChildLayoutDelegate {
             BoxConstraints.tightFor(width: size.width),
           ).height
         : 0;
-    final double slide = extendBody ? offset.value.clamp(0.0, band) : 0;
-    final double inset = band + below;
+    final double sub = hasChild(_AppleMastheadSlot.subtitle)
+        ? layoutChild(
+            _AppleMastheadSlot.subtitle,
+            BoxConstraints.tightFor(width: size.width),
+          ).height
+        : 0;
+    // 副标题随大标题一起滚走：收起后栏下只剩吸顶行，不留副标题那一截。
+    final double head = band + sub;
+    final double slide = extendBody ? offset.value.clamp(0.0, head) : 0;
+    final double inset = top + head + below;
     if (extendBody) {
       layoutChild(
         _AppleMastheadSlot.body,
@@ -1096,9 +1234,9 @@ class _AppleMastheadDelegate extends MultiChildLayoutDelegate {
       );
       positionChild(_AppleMastheadSlot.body, Offset(0, inset));
     }
-    // 正文铺到页头底下：实底 = 栏下沿到吸顶行下沿；正文排在下面：实底 0，
-    // 渐隐从正文顶边往下画。
-    final double solid = extendBody ? band - slide + below : 0;
+    // 正文铺到页头底下：实底 = 窗口顶到吸顶行下沿（一整块，含状态栏与栏行）；
+    // 正文排在下面：实底 0，渐隐从正文顶边往下画。
+    final double solid = extendBody ? top + head - slide + below : 0;
     layoutChild(
       _AppleMastheadSlot.edge,
       BoxConstraints.tight(Size(size.width, solid + kFushiAppleScrollEdgeTail)),
@@ -1108,14 +1246,18 @@ class _AppleMastheadDelegate extends MultiChildLayoutDelegate {
       _AppleMastheadSlot.largeTitle,
       BoxConstraints.tight(Size(size.width, band)),
     );
-    positionChild(_AppleMastheadSlot.largeTitle, Offset(0, -slide));
+    positionChild(_AppleMastheadSlot.largeTitle, Offset(0, top - slide));
+    if (hasChild(_AppleMastheadSlot.subtitle)) {
+      positionChild(_AppleMastheadSlot.subtitle, Offset(0, top + band - slide));
+    }
     if (hasChild(_AppleMastheadSlot.bottom)) {
-      positionChild(_AppleMastheadSlot.bottom, Offset(0, band - slide));
+      positionChild(_AppleMastheadSlot.bottom, Offset(0, top + head - slide));
     }
   }
 
   @override
   bool shouldRelayout(_AppleMastheadDelegate oldDelegate) =>
+      top != oldDelegate.top ||
       band != oldDelegate.band ||
       extendBody != oldDelegate.extendBody ||
       offset != oldDelegate.offset;

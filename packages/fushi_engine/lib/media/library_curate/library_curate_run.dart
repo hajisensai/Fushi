@@ -222,6 +222,7 @@ class LibraryCurateRun {
     this.undoneAt,
     this.full = false,
     this.target,
+    this.aiStopped,
   }) : stages = stages ?? <LibraryCurateStageResult>[],
        pendingItems = pendingItems ?? <LibraryCuratePendingItem>[];
 
@@ -240,6 +241,11 @@ class LibraryCurateRun {
 
   /// 单条重试（待确认队列「AI 重试」）的目标条目键；正常一趟为 null。
   final String? target;
+
+  /// 这一趟因为配置类致命失败（`AiChatFailure.stopsBatch`：额度用尽、鉴权被拒、
+  /// 没配提供商……）停掉了全部后续 AI 请求时的失败短码；null = AI 没被停。自动路径
+  /// 在上一趟停过之后（[LibraryCurateState.aiBlocked]）一开始就带着它、整趟不发 AI。
+  String? aiStopped;
 
   /// 写操作的记账会话（`ai_agent_actions.session_id`）。
   String get sessionId => libraryCurateSessionId(id);
@@ -267,6 +273,7 @@ class LibraryCurateRun {
     'status': status.name,
     if (full) 'full': true,
     if (target != null) 'target': target,
+    if (aiStopped != null) 'aiStopped': aiStopped,
     'changes': changes,
     'pending': pending,
     'requests': requests,
@@ -298,6 +305,7 @@ class LibraryCurateRun {
       ),
       full: raw['full'] == true,
       target: raw['target'] as String?,
+      aiStopped: raw['aiStopped'] as String?,
       stages: <LibraryCurateStageResult>[
         for (final Object? s in (raw['stages'] as List?) ?? const <Object?>[])
           ?LibraryCurateStageResult.fromJson(s),
@@ -336,6 +344,21 @@ const int kLibraryCurateRunHistoryLimit = 30;
 /// `scrape.books:<单元>`、`scrape.games:<游戏 id>`）——没有新证据不再每趟重问；手动
 /// 触发照样重看。另记已经写回过的书（`scrape.books.done:book:<bookKey>`）：书的
 /// override 封面不改 `epub_books.cover_path`，不记的话全量跑会把它当缺封面再查一遍。
+///
+/// [deferred]：这一单元上次没做成（资料源查不到 / 出错、AI 请求失败、AI 被停）——
+/// 键与 [seen] 同形（另有 `structure.ai:<作品 id>`、`links:<端点>`）。自动路径在退避
+/// 期内不碰它（不再每次触发都把同一批失败单元重问一遍，用户 2026-11-26「不要一直
+/// 跑」），到期后随下一趟自动跑重试一次，再失败退避翻倍；手动触发不看退避、照样
+/// 重试。做成 / 留进待确认时清掉。
+///
+/// [aiBlocked]：某一趟碰到配置类致命 AI 失败（额度用尽、鉴权被拒…）时记下的失败
+/// 短码。之后的自动路径整趟不发 AI 请求、只跑规则部分，直到用户手动跑一趟（重新
+/// 尝试；还失败再记上）或重新打开自动开关（[resume]）。
+///
+/// [autoStamp] / [autoResume]：上一趟自动跑开始时的库变化戳（[LibraryCurateFacts.
+/// changeStamp] + AI 指派），以及那一趟是否留了「下一趟接着做」的活（单趟请求 /
+/// 条目上限、取消）。戳没变、又没留活 = 没有新内容，自动路径这次什么都不做
+/// （[LibraryCurator.runAuto]）。
 class LibraryCurateState {
   LibraryCurateState({
     List<LibraryCurateRun>? runs,
@@ -343,11 +366,16 @@ class LibraryCurateState {
     Map<String, Set<String>>? progress,
     Set<String>? suppressed,
     Set<String>? seen,
+    Map<String, LibraryCurateDeferral>? deferred,
+    this.aiBlocked,
+    this.autoStamp,
+    this.autoResume = false,
   }) : runs = runs ?? <LibraryCurateRun>[],
        watermarks = watermarks ?? <String, int>{},
        progress = progress ?? <String, Set<String>>{},
        suppressed = suppressed ?? <String>{},
-       seen = seen ?? <String>{};
+       seen = seen ?? <String>{},
+       deferred = deferred ?? <String, LibraryCurateDeferral>{};
 
   /// 新的在前。
   final List<LibraryCurateRun> runs;
@@ -355,6 +383,38 @@ class LibraryCurateState {
   final Map<String, Set<String>> progress;
   final Set<String> suppressed;
   final Set<String> seen;
+  final Map<String, LibraryCurateDeferral> deferred;
+  String? aiBlocked;
+  String? autoStamp;
+  bool autoResume;
+
+  /// [key] 此刻是否还在退避期（自动路径据此跳过；手动不看）。
+  bool isDeferred(String key, int nowMs) =>
+      (deferred[key]?.untilMs ?? 0) > nowMs;
+
+  /// 记下 [key] 这一次没做成：连续失败次数 +1，退避 = [kLibraryCurateDeferBase] ×
+  /// 2^(次数-1)，封顶 [kLibraryCurateDeferMax]。
+  void defer(String key, int nowMs) {
+    final int failures = (deferred[key]?.failures ?? 0) + 1;
+    final int doublings = (failures - 1).clamp(0, 20);
+    final int backoff =
+        (kLibraryCurateDeferBase.inMilliseconds * (1 << doublings)).clamp(
+          0,
+          kLibraryCurateDeferMax.inMilliseconds,
+        );
+    deferred[key] = LibraryCurateDeferral(
+      failures: failures,
+      untilMs: nowMs + backoff,
+    );
+  }
+
+  /// 用户明确要自动路径继续（重新打开自动开关）：解除 AI 停用、清掉退避，下一次
+  /// 触发照常跑一趟。
+  void resume() {
+    aiBlocked = null;
+    deferred.clear();
+    autoStamp = null;
+  }
 
   LibraryCurateRun? runById(int id) {
     for (final LibraryCurateRun r in runs) {
@@ -385,6 +445,14 @@ class LibraryCurateState {
     },
     'suppressed': suppressed.toList()..sort(),
     'seen': seen.toList()..sort(),
+    if (deferred.isNotEmpty)
+      'deferred': <String, Object?>{
+        for (final String k in deferred.keys.toList()..sort())
+          k: deferred[k]!.toJson(),
+      },
+    if (aiBlocked != null) 'aiBlocked': aiBlocked,
+    if (autoStamp != null) 'autoStamp': autoStamp,
+    if (autoResume) 'autoResume': true,
   });
 
   /// 坏值当空（设备本地偏好，丢了只是下一趟当首趟全量跑）。
@@ -421,6 +489,17 @@ class LibraryCurateState {
       },
       suppressed: strings(data['suppressed']),
       seen: strings(data['seen']),
+      deferred: <String, LibraryCurateDeferral>{
+        if (data['deferred'] is Map)
+          for (final MapEntry<Object?, Object?> e
+              in (data['deferred'] as Map).entries)
+            if (LibraryCurateDeferral.fromJson(e.value)
+                case final LibraryCurateDeferral d)
+              '${e.key}': d,
+      },
+      aiBlocked: data['aiBlocked'] as String?,
+      autoStamp: data['autoStamp'] as String?,
+      autoResume: data['autoResume'] == true,
     );
     final int version = (data['v'] as num?)?.toInt() ?? 1;
     if (version < 3) state._resetBookScrapeVerdicts();
@@ -451,6 +530,36 @@ class LibraryCurateState {
     }
   }
 }
+
+/// 一个单元的失败退避（[LibraryCurateState.deferred]）。
+class LibraryCurateDeferral {
+  const LibraryCurateDeferral({required this.failures, required this.untilMs});
+
+  /// 连续失败次数。
+  final int failures;
+
+  /// 自动路径在这一刻之前不重试（毫秒）。
+  final int untilMs;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'n': failures,
+    'until': untilMs,
+  };
+
+  static LibraryCurateDeferral? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final Object? n = raw['n'];
+    final Object? until = raw['until'];
+    if (n is! num || until is! num) return null;
+    return LibraryCurateDeferral(failures: n.toInt(), untilMs: until.toInt());
+  }
+}
+
+/// 失败单元第一次退避多久（之后每失败一次翻倍）。
+const Duration kLibraryCurateDeferBase = Duration(hours: 6);
+
+/// 退避封顶。
+const Duration kLibraryCurateDeferMax = Duration(days: 7);
 
 /// [LibraryCurateState.encode] 写的格式版本。升版 = 某阶段换了判据、旧结论要作废，
 /// 迁移写在 [LibraryCurateState.decode] 里。

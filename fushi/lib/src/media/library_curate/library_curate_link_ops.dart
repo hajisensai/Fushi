@@ -43,6 +43,10 @@ class _CountingJudge implements MediaLinkJudge {
   final MediaLinkJudge inner;
   int calls = 0;
 
+  /// 裁决中碰到的 AI 失败（第一批就失败时的抛出，或后面批次的
+  /// [AiMediaLinkJudge.partialFailure]）；null = 没失败。
+  AiChatFailure? failure;
+
   /// 真正发出的请求数：[AiMediaLinkJudge] 一次裁决会按批拆成多次请求，取它自己的
   /// 计数；别的实现（测试桩）按调用次数算。
   int get requests => switch (inner) {
@@ -51,9 +55,20 @@ class _CountingJudge implements MediaLinkJudge {
   };
 
   @override
-  Future<List<MediaLinkVerdict?>> judge(List<MediaLinkCandidate> candidates) {
+  Future<List<MediaLinkVerdict?>> judge(
+    List<MediaLinkCandidate> candidates,
+  ) async {
     calls++;
-    return inner.judge(candidates);
+    try {
+      final List<MediaLinkVerdict?> out = await inner.judge(candidates);
+      if (inner case final AiMediaLinkJudge ai) {
+        failure ??= ai.partialFailure;
+      }
+      return out;
+    } on AiChatFailure catch (e) {
+      failure ??= e;
+      rethrow;
+    }
   }
 }
 
@@ -145,6 +160,10 @@ class LibraryCurateLinkResult {
   final List<String> failed = <String>[];
   int requests = 0;
 
+  /// AI 裁决失败的短码（`AiChatFailure.message`；操作照常退回只落确定性证据）。
+  /// 库管家据此判断要不要停掉后续 AI 请求（额度用尽 / 鉴权被拒）。null = 没失败。
+  String? aiError;
+
   int get applied =>
       writes.where((LibraryCurateLinkWrite w) => w.applied).length;
   int get suggested => writes.length - applied;
@@ -154,6 +173,7 @@ class LibraryCurateLinkResult {
     'suggested': suggested,
     'requests': requests,
     'failed': failed,
+    if (aiError != null) 'aiError': aiError,
     'writes': <Object?>[
       for (final LibraryCurateLinkWrite w in writes)
         libraryCurateLinkWriteJson(w),
@@ -226,6 +246,7 @@ Future<LibraryCurateLinkResult> runLibraryCurateLinkInference({
     out.writes.add((id: id, applied: false, previous: null));
   }
   out.requests = judge?.requests ?? 0;
+  out.aiError = judge?.failure?.message;
   return out;
 }
 
@@ -247,7 +268,8 @@ Future<LibraryCurateLinkResult> runLibraryCurateMusicInference({
     batch = await runMusicMediaLinkBatchInference(db: db, trigger: trigger);
   }
   final LibraryCurateLinkResult out = LibraryCurateLinkResult()
-    ..requests = counting?.requests ?? 0;
+    ..requests = counting?.requests ?? 0
+    ..aiError = counting?.failure?.message;
   for (final MusicLinkBatchWrite w in batch.writes) {
     switch (w.disposition) {
       case MediaLinkDisposition.apply:

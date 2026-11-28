@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_onnxruntime/flutter_onnxruntime.dart';
 
 import 'flutter_onnxruntime_platform_interface.dart';
+import 'native_tensor_memory.dart';
 
 /// An implementation of [FlutterOnnxruntimePlatform] that uses method channels.
 class MethodChannelFlutterOnnxruntime extends FlutterOnnxruntimePlatform {
@@ -196,6 +197,31 @@ class MethodChannelFlutterOnnxruntime extends FlutterOnnxruntimePlatform {
   @override
   Future<void> releaseOrtValue(String valueId) async {
     await methodChannel.invokeMethod<void>('releaseOrtValue', {'valueId': valueId});
+  }
+
+  @override
+  bool get supportsNativeTensorMemory => hostSupportsNativeTensorMemory();
+
+  @override
+  Future<Map<String, dynamic>> createOrtValueFromAddress(
+    String sourceType,
+    int address,
+    int byteLength,
+    List<int> shape,
+  ) async {
+    final result = await methodChannel.invokeMethod<Map<Object?, Object?>>('createOrtValueFromAddress', {
+      'sourceType': sourceType,
+      'address': address,
+      'byteLength': byteLength,
+      'shape': shape,
+    });
+    return _convertMapToStringDynamic(result ?? {});
+  }
+
+  @override
+  Future<Map<String, dynamic>?> getOrtValueAddress(String valueId) async {
+    final result = await methodChannel.invokeMethod<Map<Object?, Object?>>('getOrtValueAddress', {'valueId': valueId});
+    return result == null ? null : _convertMapToStringDynamic(result);
   }
 
   Map<String, dynamic> _convertMapToStringDynamic(Map<Object?, Object?> map) {

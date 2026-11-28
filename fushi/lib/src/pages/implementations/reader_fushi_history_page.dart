@@ -144,6 +144,7 @@ import 'package:fushi/src/media/collections/collection_one_key_sort.dart'
     show sortNewCollectionMembersNaturally;
 import 'package:fushi_engine/media/collections/shelf_sort.dart';
 import 'package:fushi/src/media/collections/book_read_progress.dart';
+import 'package:fushi/src/media/collections/remote_collection_member_info.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/collections/collection_drag.dart';
 import 'package:fushi/src/media/collections/collection_shelf_row.dart'
@@ -235,7 +236,7 @@ import 'package:fushi/src/media/links/media_link_entries.dart'
 import 'package:fushi/src/media/links/media_link_inference_host.dart'
     show mediaLinkInferCallback;
 import 'package:fushi/src/media/links/media_link_opener.dart'
-    show mediaLinkSearchAction, openMediaLinkEntry;
+    show mediaLinkRemoteVideoSources, mediaLinkSearchAction, openMediaLinkEntry;
 import 'package:fushi/src/media/links/media_links_section.dart'
     show showMediaLinksDialog;
 import 'package:fushi/src/media/links/work_kinds_badge.dart';
@@ -1813,8 +1814,14 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     );
     final List<MediaCollectionRow> collections = await appModel.database
         .getAllMediaCollections();
+    // 书架只按书 / 字幕书键问归属：只取这两种成员，不读视频等别的成员（媒体服务器
+    // 镜像的播放列表成员可达数万行，从前首次进书架整表读两遍）。
+    const Set<MediaKind> shelfKinds = <MediaKind>{
+      MediaKind.epub,
+      MediaKind.srt,
+    };
     final Map<String, int> primaryMap = await appModel.database
-        .getPrimaryCollectionIdByEntry();
+        .getPrimaryCollectionIdByEntry(kinds: shelfKinds);
     // 层次 C：条目在其主折叠合集里的 sortIndex（只记归属合集的行，与 primaryMap
     // 同口径；详情页拖完 onChanged 重载本映射，库页行立即同序）。
     // BUG-959: 一次 getAllCollectionItems 查全部成员内存分组，替代逐合集
@@ -1824,7 +1831,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     // 有书 / 字幕书成员的合集：只给它们探系列色块的背景图 / 艺术字文件。
     final Set<int> shelfCollectionIds = <int>{};
     for (final MediaCollectionItemRow m
-        in await appModel.database.getAllCollectionItems()) {
+        in await appModel.database.getCollectionItemsOfKinds(shelfKinds)) {
       final String key = '${m.mediaType}|${m.entryKey}';
       if (primaryMap[key] == m.collectionId) memberSortIndex[key] = m.sortIndex;
       if (m.mediaType == MediaKind.epub.dbValue ||
@@ -3342,6 +3349,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   void _showWorkLinks(MediaLinkEndpoint self) {
     unawaited(
       showMediaLinksDialog(
+        remoteVideoSources: mediaLinkRemoteVideoSources(ref: ref),
         context: context,
         database: ref.read(appProvider).database,
         self: self,
@@ -3740,8 +3748,13 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   }
 
   /// 书架合集卡挑封面用的成员进度（不建封面 / 标题，口径同
-  /// [_collectionMemberInfo]）。远端占位没有本地进度，返回 null。
+  /// [_collectionMemberInfo]）。远端占位没有本地进度，用 host 清单带来的进度
+  /// （[remoteBookMemberInfo]，反馈 vHa0VKme1R：没下载的那卷读过也要算）。
   CollectionMemberInfo? _slotContinueInfo(_ShelfBookSlot slot) {
+    final RemoteBookInfo? remote = slot.remote;
+    if (remote != null) return remoteBookMemberInfo(remote);
+    final RemoteAudiobookInfo? remoteSrt = slot.remoteSrt;
+    if (remoteSrt != null) return remoteAudiobookMemberInfo(remoteSrt);
     final MediaItem? epub = slot.epub;
     final SrtBook? srt = slot.srt;
     final String? bookKey =
@@ -3765,12 +3778,19 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   }
 
   /// 合集阅读进度（格子封面底边进度条）：成员进度的平均值，标了读完的成员按满格
-  /// 算；远端占位与纯字幕书（没有进度真值）不计入分母。没有可计的成员返回 null。
+  /// 算；远端书占位按 host 清单的进度计（[remoteBookProgressFraction]）；纯字幕书
+  /// （本地 / 远端，没有进度真值）不计入分母。没有可计的成员返回 null。
   double? _collectionReadFraction(CollectionGroup<_ShelfBookSlot> group) {
     double sum = 0;
     int counted = 0;
     for (final CollectionOrderingItem<_ShelfBookSlot> it in group.items) {
       final _ShelfBookSlot slot = it.payload;
+      final RemoteBookInfo? remote = slot.remote;
+      if (remote != null) {
+        counted++;
+        sum += remoteBookProgressFraction(remote) ?? 0;
+        continue;
+      }
       final MediaItem? epub = slot.epub;
       final String? bookKey =
           slot.srt?.bookKey ??
@@ -4023,7 +4043,6 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           completed: bookKey.isNotEmpty && _completedBookKeys.contains(bookKey),
         );
       }
-      return null;
     }
     if (kind == MediaKind.epub) {
       // v83：uid / bookKey 双判据匹配（与 [_buildCollectionMemberCard] 同口径）。
@@ -4044,6 +4063,25 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           completed: _completedBookKeys.contains(bookKey),
         );
       }
+    }
+    // 远端占位成员（本地还没下载）：标题 / 进度取 host 清单。此前返回 null，详情页
+    // 拿不到标题只能按成员行 entryKey（对端 bookKey）排卷号，卷序乱成 2、1、3
+    // （反馈 ky0eLY4LHa），读过的远端卷也不算进度（反馈 vHa0VKme1R）。判据与
+    // [_resolveCollectionMember] 同源：本地有就走上面，本地没有才认远端。
+    final _ShelfBookSlot? slot = _resolveCollectionMember(mediaType, entryKey);
+    final RemoteBookInfo? remote = slot?.remote;
+    if (remote != null) {
+      return remoteBookMemberInfo(
+        remote,
+        cover: _slotCover(slot!, _epubCoverUrisByBookKey),
+      );
+    }
+    final RemoteAudiobookInfo? remoteSrt = slot?.remoteSrt;
+    if (remoteSrt != null) {
+      return remoteAudiobookMemberInfo(
+        remoteSrt,
+        cover: _slotCover(slot!, _epubCoverUrisByBookKey),
+      );
     }
     return null;
   }
@@ -5550,7 +5588,7 @@ String _slotDisplayTitle(_ShelfBookSlot s) {
   if (epub != null) {
     return displayTitleForBook(item: epub, rawTitle: epub.title);
   }
-  return s.remote?.title ?? s.remoteSrt?.title ?? '';
+  return s.remote?.displayName ?? s.remoteSrt?.title ?? '';
 }
 
 class _ShelfBookSlot {

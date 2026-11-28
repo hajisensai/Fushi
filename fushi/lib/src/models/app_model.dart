@@ -17,7 +17,7 @@ import 'package:fushi/src/media/library_finish_marks.dart';
 import 'package:fushi/src/media/import/import_inbox.dart';
 import 'package:fushi/src/media/source_library/source_folder_access.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart'
-    show applyBlurayDiscCollectionArtwork;
+    show SourceLibraryScanner, applyBlurayDiscCollectionArtwork;
 import 'package:fushi/src/models/asset_licenses.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
@@ -43,6 +43,8 @@ import 'package:fushi_engine/media/video/media_server/media_server_client_identi
 import 'package:fushi_engine/media/video/disc/legacy_disc_stream_rows.dart';
 import 'package:fushi_engine/media/video/video_member_file.dart';
 import 'package:fushi/src/media/video/video_resume.dart';
+import 'package:fushi/src/media/video/airing_calendar_loader.dart'
+    show AiringCalendarHost;
 import 'package:fushi_engine/media/video/video_local_files.dart'
     show videoBookDiscTitlePath, videoBookEpisodePath;
 import 'package:fushi_engine/media/video/video_storage.dart' show VideoStorage;
@@ -192,11 +194,16 @@ import 'package:fushi/src/srs/srs_mining.dart';
 import 'package:fushi_engine/srs/srs_mining_target.dart';
 import 'package:fushi/src/srs/srs_profile_stores.dart';
 import 'package:fushi/src/srs/srs_storage_host.dart';
+import 'package:fushi/src/srs/srs_write_relay.dart';
+import 'package:fushi/src/srs/srs_write_relay_channel.dart';
+import 'package:path_provider/path_provider.dart' show getTemporaryDirectory;
 import 'package:fushi/src/srs/srs_review_gestures.dart';
 import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/models/home_dashboard_panel.dart';
 import 'package:fushi/src/models/home_widget_layout.dart';
 import 'package:fushi/src/storage/android_stray_library_merge.dart';
+import 'package:fushi/src/storage/library_content_audit.dart';
+import 'package:fushi/src/storage/library_sentinel.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/storage/books_directory.dart';
 import 'package:fushi/src/storage/download_layout.dart';
@@ -238,6 +245,7 @@ import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi/src/pdf/pdf_importer.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/dictionary/dict_resource_materializer.dart';
+import 'package:fushi/src/dictionary/dictionary_file_health.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/dictionary/transform_description_locale.dart';
 import 'package:fushi/src/reader/dictionary_style_css.dart';
@@ -500,6 +508,7 @@ import 'package:fushi/src/models/audio_controller.dart';
 import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_stage_plan.dart'
     show MusicAssRenderPreference;
 import 'package:fushi/src/media/music/lyrics/lrclib_client.dart';
+import 'package:fushi/src/media/music/download_release_audio_intake.dart';
 import 'package:fushi/src/media/music/music_view_style.dart'
     show MusicViewStyleStore;
 import 'package:fushi/src/media/music/lyrics/lyrics_provider_list.dart';
@@ -1077,7 +1086,8 @@ class AppModel
         ExternalStorageAccess,
         LookupMatchSearchHost,
         StudyGoalHost,
-        TrackingSeriesCardHost {
+        TrackingSeriesCardHost,
+        AiringCalendarHost {
   /// Platform-specific service implementations, injected at construction.
   final PlatformServices platformServices;
 
@@ -1509,7 +1519,10 @@ class AppModel
           throw FormatException(e.toString());
         }
       },
-      videoSubtitleLangCode: JapaneseLanguage.instance.languageCode,
+      // 每个视频挑 sidecar 的目标语言由 host 按视频逐个解析（合集系列字幕语言 >
+      // 字幕工作台默认语言 > 视频语言 > 刮削原语言 > 默认内容语言），不再全库固定日语。
+      videoSubtitleExplicitLanguage: () => jimakuDefaultLanguage,
+      videoDefaultContentLanguage: () => defaultContentLanguage,
       // client→host 视频上传（syncVideoFiles 开关驱动）：落 <documents>/remote_videos
       // （与 client 下载远端视频落点一致，AppPaths.remoteVideosDirectory 同目录）。
       uploadedVideoRoot: Directory('${appDirectory.path}/remote_videos'),
@@ -1784,6 +1797,7 @@ class AppModel
     }
 
     if (report.booksImported > 0 ||
+        report.booksRecovered > 0 ||
         report.audiobooksImported > 0 ||
         report.localBookProgressPulled > 0 ||
         report.collectionsUpdated > 0) {
@@ -1854,14 +1868,114 @@ class AppModel
   SrsStorageHost? _srsStorageHost;
 
   /// 换一份 SRS 存储持有者（旧的先关）。[isMainProcess] 为 false 时不搬迁旧库（见 [SrsStorageHost]）。
-  Future<void> _resetSrsStorageHost({required bool isMainProcess}) async {
+  /// [beforePrimaryOpen] 见 [SrsStorageHost]（主界面的引擎开主库前让无界面执行引擎交出主库，BUG-5542）。
+  Future<void> _resetSrsStorageHost({
+    required bool isMainProcess,
+    Future<void> Function()? beforePrimaryOpen,
+  }) async {
     await _closeSrsStorage();
     await useSrsTempDirectory();
     _srsStorageHost = SrsStorageHost(
       dbDirectory: _databaseDirectory.path,
       isMainProcess: isMainProcess,
       legacyDatabase: () => _database,
+      beforePrimaryOpen: beforePrimaryOpen,
     );
+  }
+
+  /// 本进程复习笔记写入的执行方（BUG-5542，见 [SrsNoteWriter]）：只读打开复习库的 Android 辅助进程（`:popup` 查词窗 /
+  /// 第二块屏面板）转交主进程执行，其余进程本地写。每次写入现选：装饰链可能先于本进程的初始化建好。
+  late final SrsNoteWriter srsNoteWriter = SelectingSrsNoteWriter(
+    _selectSrsNoteWriter,
+  );
+
+  SrsNoteWriter? _relaySrsNoteWriter;
+
+  SrsNoteWriter _selectSrsNoteWriter() {
+    final SrsStorageHost? host = _srsStorageHost;
+    if (!Platform.isAndroid || host == null || host.isMainProcess) {
+      return const LocalSrsNoteWriter();
+    }
+    return _relaySrsNoteWriter ??= RelaySrsNoteWriter(
+      transport: srsWriteRelayForward,
+      // 两个进程共用 app 的 cache 目录。
+      spoolDirectory: () async => Directory(
+        path.join((await getTemporaryDirectory()).path, 'srs_write_relay'),
+      ),
+    );
+  }
+
+  /// 主进程执行辅助进程转交来的写入时用的制卡器（BUG-5542，`SrsWriteRelayHost`）：[profileUid] 那份配置的复习副本 +
+  /// 辅助进程取定的 [destination]（它按自己的作品会话 / 激活配置算好，主进程照写，不另叠自己的作品会话）。等本实例
+  /// 初始化完再取；复习不可用时 null；库在换代途中原样抛出代际异常。
+  Future<SrsMiner?> srsRelayMiner(
+    String profileUid,
+    SrsMiningDestination destination,
+  ) async {
+    await _awaitInitialisedForSrsRelay();
+    final SrsProfileStores Function()? reader = srsProfileStoresReader;
+    if (reader == null || !moduleVisibility.isEnabled(ModuleId.srs)) {
+      return null;
+    }
+    return reader().minerFor(
+      profileUid: profileUid,
+      destination: destination,
+      fallbackRolloverHour: () => statDayResetHour,
+    );
+  }
+
+  /// 等 [initialise] / [initialiseForSrsWriteHost] 走完（主界面冷启动时转交的写入可能先到）；初始化失败时抛。
+  Future<void> _awaitInitialisedForSrsRelay() async {
+    if (_isInitialised) return;
+    final Completer<void> done = Completer<void>();
+    void check() {
+      if (done.isCompleted) return;
+      if (_isInitialised) {
+        done.complete();
+      } else if (_initError != null) {
+        done.completeError(
+          StateError('app initialisation failed: $_initError'),
+        );
+      }
+    }
+
+    addListener(check);
+    check();
+    try {
+      await done.future;
+    } finally {
+      removeListener(check);
+    }
+  }
+
+  /// 无界面的复习写入执行引擎（Android 主进程里主界面不在时，由 `SrsWriteRelayService` 拉起，BUG-5542）的初始化：
+  /// 只装执行转交写入要的几样——数据目录、主库（不接手主进程的恢复职责）、复习库（Primary：此刻进程里唯一的写者，
+  /// 主界面的引擎开库之前会先让本引擎交出，见 [closeForSrsWriteHost]）、偏好。不装词典 / 主题 / 媒体源：载荷里的媒体
+  /// 已由辅助进程冻结成字节。
+  Future<void> initialiseForSrsWriteHost() async {
+    if (_isInitialised) return;
+    try {
+      await _prepareRuntimeDirectories();
+      _database = FushiDatabase(_databaseDirectory.path, isMainProcess: false);
+      _databaseOpened = true;
+      await _resetSrsStorageHost(isMainProcess: true);
+      _prefsRepo = PreferencesRepository(_database);
+      await prefsRepo.loadFromDb();
+      _applyStatDayResetHour();
+      _isInitialised = true;
+      notifyListeners();
+    } catch (e, stack) {
+      ErrorLogService.instance.log('AppModel.srsWriteHostInit', e, stack);
+      _initError = '$e';
+      notifyListeners();
+    }
+  }
+
+  /// 无界面执行引擎交出主库（[initialiseForSrsWriteHost] 的反向）：先关复习库、再关主库。
+  Future<void> closeForSrsWriteHost() async {
+    _isInitialised = false;
+    await _closeSrsStorage();
+    if (_databaseOpened) await _database.close();
   }
 
   /// 关 SRS 存储（幂等）。必须在关主库之前：主进程打开时的搬迁读的是主库连接。
@@ -3537,12 +3651,18 @@ class AppModel
   String? _dataRootMigrationFailure;
   String? get dataRootMigrationFailure => _dataRootMigrationFailure;
 
+  /// 失败态原因下面的建议（null = 不显示）。只有对这次失败真有用时才给：迁移已成功只是
+  /// 重启失败、Android 固定目标、撞名这几种，通用的「换个空文件夹」建议是错的。
+  String? _dataRootMigrationFailureHint;
+  String? get dataRootMigrationFailureHint => _dataRootMigrationFailureHint;
+
   /// 进入迁移态：先于 [closeDatabase] 调用，确保「遮罩已上屏 → 关库 → 搬文件」的顺序，
   /// 这样根 widget 在 DB 关闭引发的 rebuild 里看到的是迁移遮罩而非裸 loading。
   void beginDataRootMigration() {
     _dataRootMigrationActive = true;
     _dataRootMigrationProgress = null;
     _dataRootMigrationFailure = null;
+    _dataRootMigrationFailureHint = null;
     notifyListeners();
   }
 
@@ -3554,10 +3674,11 @@ class AppModel
 
   /// TODO-1182：迁移失败 → 切到失败态。**保持**遮罩激活（DB 已关，撤遮罩会落到裸 loading），
   /// 让根 widget 在同一遮罩上渲染「失败原因 + 建议 + 重启按钮」，确保用户醒目看到失败。
-  void failDataRootMigration(String message) {
+  void failDataRootMigration(String message, {String? hint}) {
     _dataRootMigrationActive = true;
     _dataRootMigrationProgress = null;
     _dataRootMigrationFailure = message;
+    _dataRootMigrationFailureHint = hint;
     notifyListeners();
   }
 
@@ -3567,6 +3688,7 @@ class AppModel
     _dataRootMigrationActive = false;
     _dataRootMigrationProgress = null;
     _dataRootMigrationFailure = null;
+    _dataRootMigrationFailureHint = null;
     notifyListeners();
   }
 
@@ -3817,6 +3939,12 @@ class AppModel
   @override
   Directory get databaseDirectory => _databaseDirectory;
   late Directory _databaseDirectory;
+
+  /// BUG-5570：本次冷启动的书库内容对账（[LibraryContentAudit.run]，后台 isolate、不挡启动）。
+  /// 首页的「书库文件不见了」提示读现场前先等它（带超时）；启动还没走到对账时为 null。
+  Future<LibraryContentAuditResult>? get libraryContentAudit =>
+      _libraryContentAudit;
+  Future<LibraryContentAuditResult>? _libraryContentAudit;
 
   /// Directory where database data is persisted.
   /// 磁盘上是否真装着名为 [name] 的词典（`dictionaryResourceDirectory/<name>/`）。
@@ -4238,6 +4366,7 @@ class AppModel
         ),
       );
     }
+    _recheckDictionaryFileHealthSync(dictList, states);
     // 排期而不是就地重建：这个回调挂在**每一次**词典元数据写入上（导入每本、
     // 类型自愈每本、隐藏/折叠/语言开关），就地重建会把总代价推成 O(N²)。真正的
     // 装载推迟到下次要用引擎时，批量写入期间的 N 次排期塌成 1 次装载。
@@ -4681,6 +4810,13 @@ class AppModel
       );
     }
     final states = _engineLoadStates(dictList);
+    await _assessDictionaryFileHealth(
+      dictList: dictList,
+      states: states,
+      paths: paths,
+      exists: existsResults,
+      probeFailed: materialized.failed,
+    );
     final List<DictPathEntry> entries = <DictPathEntry>[
       for (var i = 0; i < dictList.length; i++)
         dictPathEntryOf(
@@ -4712,6 +4848,112 @@ class AppModel
     _lastScheduledDictBuckets = b;
     _lastScheduledTermLanguages = termLanguages;
     return true;
+  }
+
+  /// BUG-5489：已登记词典的文件状态判定（异步装载路径，每次排期都重判一遍）。
+  ///
+  /// 装载链路对「目录不在 / 读不到」的词典只是不进引擎，界面上什么都看不出来——这里把
+  /// 同一份 exists 结果与物化探测的失败，加上资源根可读性与必需文件齐全性，判成
+  /// [DictionaryFileIssue]，发布到 [DictionaryFileHealthMonitor]。**只判定、不删除**：
+  /// 资源根列不出来（外部存储未挂载 / 没权限）时一律判「暂时读不到」，不当成删除。
+  Future<void> _assessDictionaryFileHealth({
+    required List<Dictionary> dictList,
+    required List<({bool hidden, Map<String, String> metadata})> states,
+    required List<String> paths,
+    required List<bool> exists,
+    required Map<String, String> probeFailed,
+  }) async {
+    final bool rootReadable = await dictionaryResourceRootReadable(
+      dictionaryResourceDirectory,
+    );
+    final List<bool> complete = await Future.wait(<Future<bool>>[
+      for (var i = 0; i < paths.length; i++)
+        exists[i] && !probeFailed.containsKey(paths[i])
+            ? dictionaryFilesComplete(paths[i])
+            : Future<bool>.value(false),
+    ]);
+    final Map<String, DictionaryFileIssue> issues =
+        <String, DictionaryFileIssue>{};
+    for (var i = 0; i < dictList.length; i++) {
+      final DictionaryFileIssue? issue = classifyDictionaryFiles(
+        rootReadable: rootReadable,
+        dirExists: exists[i],
+        filesComplete: complete[i],
+        probeError: probeFailed[paths[i]],
+      );
+      if (issue != null) issues[dictList[i].name] = issue;
+    }
+    _publishDictionaryFileHealth(dictList, states, issues);
+  }
+
+  /// 同步重建路径（每次词典元数据写入都会走）上的复查：**只撤销、不新增**——重新导入 /
+  /// 删除之后，已标出问题的那几本若文件回来了（或词典已不在列表里）就撤掉标记；新问题
+  /// 只由异步路径判（它有资源根可读性与物化探测的结论）。没有问题时零 IO。
+  void _recheckDictionaryFileHealthSync(
+    List<Dictionary> dictList,
+    List<({bool hidden, Map<String, String> metadata})> states,
+  ) {
+    final DictionaryFileHealth current =
+        DictionaryFileHealthMonitor.instance.value;
+    if (current.isHealthy) return;
+    final Map<String, DictionaryFileIssue> issues =
+        <String, DictionaryFileIssue>{};
+    for (final Dictionary d in dictList) {
+      final DictionaryFileIssue? issue = current.issueOf(d.name);
+      if (issue == null) continue;
+      final String p = path.join(dictionaryResourceDirectory.path, d.name);
+      final bool recovered =
+          Directory(p).existsSync() &&
+          _dictResources.isLoadable(p) &&
+          dictionaryFilesCompleteSync(p);
+      if (!recovered) issues[d.name] = issue;
+    }
+    _publishDictionaryFileHealth(dictList, states, issues);
+  }
+
+  void _publishDictionaryFileHealth(
+    List<Dictionary> dictList,
+    List<({bool hidden, Map<String, String> metadata})> states,
+    Map<String, DictionaryFileIssue> issues,
+  ) {
+    int total = 0;
+    int missing = 0;
+    int unreadable = 0;
+    for (var i = 0; i < dictList.length; i++) {
+      final Dictionary d = dictList[i];
+      if (states[i].hidden || d.type != DictionaryType.term) continue;
+      total++;
+      switch (issues[d.name]) {
+        case DictionaryFileIssue.missing:
+          missing++;
+        case DictionaryFileIssue.unreadable:
+          unreadable++;
+        case null:
+          break;
+      }
+    }
+    final DictionaryFileHealth health = DictionaryFileHealth(
+      issues: Map<String, DictionaryFileIssue>.unmodifiable(issues),
+      lookupTermTotal: total,
+      lookupTermMissing: missing,
+      lookupTermUnreadable: unreadable,
+    );
+    final DictionaryFileHealthMonitor monitor =
+        DictionaryFileHealthMonitor.instance;
+    if (monitor.value == health) return;
+    monitor.value = health;
+    // 进数据位置取证环（BUG-5490）：有问题、或环里记过问题而现在恢复了才记（文本没变
+    // 不占条目）；一直正常的设备一条都不写。`:popup` 进程不记：同一份环文件只由主进程
+    // 写，免得两个进程整份重写互相覆盖。
+    const String source = 'AppModel.dictionaryFiles';
+    if (!_isDictionaryPopupProcess &&
+        (!health.isHealthy ||
+            ErrorLogService.instance.lastDataLocation(source) != null)) {
+      ErrorLogService.instance.logDataLocationIfChanged(
+        source,
+        health.describe(resourceRoot: dictionaryResourceDirectory.path),
+      );
+    }
   }
 
   List<DictionarySearchResult> get dictionaryHistory =>
@@ -5622,7 +5864,13 @@ class AppModel
       MediaServerRouteFailover.install(
         mediaServerRouteFailoverForRepository(() => SyncRepository(_database)),
       );
-      await _resetSrsStorageHost(isMainProcess: true);
+      // Android 主进程里替辅助进程执行写入的无界面引擎（BUG-5542）在主界面开主库之前交出主库。
+      await _resetSrsStorageHost(
+        isMainProcess: true,
+        beforePrimaryOpen: Platform.isAndroid
+            ? SrsWriteRelayHostChannel.claimPrimary
+            : null,
+      );
       // 服务器曲目的离线副本（v175）：进程内索引跟着表走，播放项据此换成本地文件。
       MusicServerDownloadIndex.instance.attach(_database);
       // 服务器曲目离线 / 配置删了时没送达的播放与收藏（v176 补发队列）：「连不上」的判据补上
@@ -5686,7 +5934,7 @@ class AppModel
       // 改写了全库路径、或被磁盘反证拒绝的，都要能从反馈日志里看见（反馈
       // RCv76PPoiJ 时这一步做了什么完全无迹可查）。
       for (final String note in AppPaths.androidLocationCorrections) {
-        ErrorLogService.instance.logDiagnostic(
+        ErrorLogService.instance.logDataLocation(
           'AppPaths.androidLocation',
           note,
         );
@@ -5704,7 +5952,7 @@ class AppModel
               strayRoot: strayLibraryRoot,
               supportRoot: _databaseDirectory.path,
             );
-        ErrorLogService.instance.logDiagnostic(
+        ErrorLogService.instance.logDataLocation(
           'AppPaths.androidStrayLibrary',
           '${strayLibraryRoot.path} → ${_appDirectory.path}：${merge.describe()}',
         );
@@ -5718,11 +5966,88 @@ class AppModel
                 .log('AppModel.sandboxRelocation', e, stack),
           );
       if (relocation.isNoteworthy) {
-        ErrorLogService.instance.logDiagnostic(
+        ErrorLogService.instance.logDataLocation(
           'AppModel.sandboxRelocation',
           relocation.toString(),
         );
       }
+      // BUG-5490：本次启动用的数据根。只在和环里上一次记的不一样时占一条——平静的启动
+      // 不写盘；书库根换了位置（迁移、Android 内外部判定翻转、iOS 容器换代）的那次启动
+      // 则留下「从哪次起变了」的证据，丢数据后重开再提反馈也还在。
+      ErrorLogService.instance.logDataLocationIfChanged(
+        'AppModel.dataRoots',
+        dataRootsDiagnostic(
+          libraryRoot: _appDirectory.path,
+          supportRoot: _databaseDirectory.path,
+          androidLocation: AppPaths.decidedAndroidDocumentsLocation,
+        ),
+      );
+      // BUG-5492：书库消失哨兵（只 Android：外部 `Android/data` 书库能被文件管理器 / 电脑 /
+      // 清理工具整树删掉）。必须在书库根判定、散书合并、沙箱重定位之后：此刻的
+      // `_appDirectory` 才是本次真正用的书库根。只判定、只写哨兵与记录，不动书库文件；
+      // 发现被清空就把现场留在记录里，首页提示用户上传日志。
+      if (Platform.isAndroid) {
+        final LibrarySentinelResult sentinel = await LibrarySentinel.check(
+          libraryRoot: _appDirectory,
+          supportRoot: _databaseDirectory,
+        );
+        final LibraryVanishIncident? incident = sentinel.incident;
+        if (incident != null) {
+          ErrorLogService.instance.logDataLocation(
+            'LibrarySentinel',
+            incident.describe(),
+          );
+        } else if (sentinel.status == LibrarySentinelStatus.error) {
+          ErrorLogService.instance.logDataLocation(
+            'LibrarySentinel',
+            '检查失败（未改动任何文件）：${sentinel.error}',
+          );
+        } else if (sentinel.status != LibrarySentinelStatus.intact) {
+          ErrorLogService.instance.logDataLocation(
+            'LibrarySentinel',
+            '${sentinel.status.name}：${_appDirectory.path}',
+          );
+        }
+      }
+      // BUG-5570：哨兵只看书库根里那一个文件，哨兵还在时书库内容部分丢失（整树被清后部分
+      // 恢复、外部工具删掉大部分书目录）它看不出来。拿数据库当账本对一遍受管文件在不在：
+      // 后台 isolate 只读另开连接、逐条 stat，不挡冷启动；书库根不可读（卷未挂载、权限被
+      // 收回）不判。只判定、只写现场文件，不动任何行与文件。五端都跑：部分丢失哪端都会有。
+      _libraryContentAudit = LibraryContentAudit.run(
+        libraryRoot: _appDirectory,
+        supportRoot: _databaseDirectory,
+      );
+      unawaited(
+        _libraryContentAudit!.then((LibraryContentAuditResult audit) {
+          final LibraryContentLoss? loss = audit.loss;
+          switch (audit.status) {
+            case LibraryContentAuditStatus.clean:
+              return;
+            case LibraryContentAuditStatus.incident:
+              ErrorLogService.instance.logDataLocation(
+                'LibraryContentAudit',
+                loss!.describe(),
+              );
+            case LibraryContentAuditStatus.minor:
+            case LibraryContentAuditStatus.alreadyReported:
+              // 同一批缺失每次启动只在内容变了时占一条，平静的启动不写盘。
+              ErrorLogService.instance.logDataLocationIfChanged(
+                'LibraryContentAudit',
+                '${audit.status.name}：${loss!.summary()}',
+              );
+            case LibraryContentAuditStatus.rootUnreadable:
+              ErrorLogService.instance.logDataLocationIfChanged(
+                'LibraryContentAudit',
+                '书库根不可读，未对账：${_appDirectory.path}',
+              );
+            case LibraryContentAuditStatus.error:
+              ErrorLogService.instance.logDataLocationIfChanged(
+                'LibraryContentAudit',
+                '对账失败（未改动任何文件）：${audit.error}',
+              );
+          }
+        }),
+      );
       //    cloud backup backend can now coexist);
       // 4) BUG-1576: drop the pre-decoupling GLOBAL folder cache. Two channels
       //    took turns writing that single pair of keys, so its value can no
@@ -5767,9 +6092,9 @@ class AppModel
           nameLanguage: () => appLocale.toLanguageTag(),
         ),
       );
-      // AI 库管家自动路径（spec 2026-11-18 §9，默认开）：开着时接管上面那套自动
-      // 整理的触发点（scheduleAutomaticLibraryOrganize 内部转交）。编排器经进程级
-      // 操作上下文拿操作目录，根组件登记前那几次触发什么都不做。
+      // AI 库管家自动路径（spec 2026-11-18 §9，默认关，用户自己打开后才跑）：开着时
+      // 接管上面那套自动整理的触发点（scheduleAutomaticLibraryOrganize 内部转交）。
+      // 编排器经进程级操作上下文拿操作目录，根组件登记前那几次触发什么都不做。
       installLibraryCurateAutomatic(
         LibraryCurateAutoHost(
           settings: _prefsRepo!,
@@ -6157,6 +6482,12 @@ class AppModel
       // 上次离线时没送达服务器的播放 / 收藏：偏好（Subsonic 配置）已就绪，补发一轮（连不上
       // 的条目留着，打开服务器页 / 下一次请求成功时再发）。
       unawaited(MusicServerOfflineQueue.instance.flushAll());
+      // 音乐后台补算（响度 / 本地 MV 匹配）的待办就在库里（缺 r128_scanned_at / 缺
+      // match_check 的配对），两者按数据幂等：启动消费一轮，不只靠偶发的来源扫描事件——
+      // 上一轮被更新交接 / 退出杀掉时，没有下一次扫描就永远不会补上（MV 匹配因此停在
+      // 几首整片音轨上、CD 曲目一首没对过）。
+      unawaited(musicLoudness.schedule());
+      unawaited(musicVideoAutoMatch.schedule());
 
       StartupTimeline.mark('post-init-kicks');
       debugPrint('[Fushi] init: DONE');
@@ -6418,6 +6749,9 @@ class AppModel
       await refreshForWarmDictionaryPopup();
       return;
     }
+    // 一进来就标记：下面的词典装载（BUG-5489 文件状态判定）要知道自己在 `:popup` 进程里，
+    // 不去写主进程那份数据位置取证环。
+    _isDictionaryPopupProcess = true;
     try {
       debugPrint('[Fushi-popup] init: PackageInfo + DeviceInfo');
       _packageInfo = await PackageInfo.fromPlatform();
@@ -6562,7 +6896,6 @@ class AppModel
 
       // 反馈 kEFPY4cuKZ：主进程正打开一部带作品级配置的作品时，本进程的查词 / 制卡 / 主题
       // 按同一份作品配置生效（镜像进本 isolate 的 [WorkProfileScope]）。
-      _isDictionaryPopupProcess = true;
       WorkProfileScope.instance.addListener(_onWorkProfileScopeChanged);
       await mirrorMainProcessWorkSession();
 
@@ -7976,6 +8309,7 @@ class AppModel
   ///
   /// 仍返回 `Future` 是为了不动十几个 `await` 调用点和测试替身的签名；构造本身
   /// 是同步的。
+  @override
   Future<http.Client> createDownloadHttpClient() async =>
       createAppHttpIoClient(connectionTimeout: kDownloadConnectionTimeout);
 
@@ -8004,6 +8338,7 @@ class AppModel
   AnimeDownloadService? get animeDownloadService => _animeDownloadService;
 
   AnimeDownloadSubscriptionStore? _animeDownloadSubscriptionStore;
+  @override
   AnimeDownloadSubscriptionStore? get animeDownloadSubscriptionStore =>
       _animeDownloadSubscriptionStore;
 
@@ -9555,8 +9890,29 @@ class AppModel
             collectionId,
             discRootPath,
           ),
+      // 发布里随附的 CD / OST 交给音乐库（下载入库不走来源扫描，否则视频来源没开
+      // 自动扫描时这些音频永远进不了音乐库）。
+      onReleaseAudioImported: (MediaSourceRow source, List<String> audio) =>
+          adoptDownloadedReleaseAudio(
+            db: database,
+            intake: MusicAudioIntake(database),
+            source: source,
+            audioPaths: audio,
+          ),
+      // 补搬走的外挂件里，早先被误收成「歌」的整片外挂音轨：重扫所在音乐来源对账掉。
+      onReleaseCompanionsRelocated: (List<String> movedFrom) =>
+          rescanMusicSourcesOfMovedFiles(
+            db: database,
+            movedFromPaths: movedFrom,
+            rescan: (MediaSourceRow source) => SourceLibraryScanner(
+              database,
+              transcribeAudiobook: null,
+            ).scan(source),
+          ),
     )..start();
     _videoDownloadPipelineService = pipeline;
+    // 钩子之前入库的任务里的 CD 从没交过：启动补交一遍（幂等，已覆盖的目录不再登记）。
+    unawaited(_replayReleaseAudioHandOff(pipeline));
     // 上次没跑完的「转录后入库」任务从断点续跑（转录进度落在 ASR 服务自己的
     // 任务目录里）。没有 ASR 的平台不建队列。
     if (isAsrSupported) unawaited(audiobookTranscribeImportQueue.load());
@@ -9580,6 +9936,20 @@ class AppModel
     // still starting. Publish the new service identity so its cached resource
     // dependencies are rebuilt instead of remaining permanently unavailable.
     notifyListeners();
+  }
+
+  Future<void> _replayReleaseAudioHandOff(
+    VideoDownloadPipelineService pipeline,
+  ) async {
+    try {
+      await pipeline.replayReleaseAudioHandOff();
+    } catch (e, stack) {
+      ErrorLogService.instance.log(
+        'AppModel.replayReleaseAudioHandOff',
+        e,
+        stack,
+      );
+    }
   }
 
   /// 每系列字幕语言记忆（`jimaku_pref_langs`）按键查；空串 / 没记过 → null。

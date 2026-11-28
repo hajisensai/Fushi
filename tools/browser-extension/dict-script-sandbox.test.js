@@ -153,6 +153,17 @@ test('dict-frame：内层消息按白名单逐字段重建后转给 port', () =>
     rect: { x: 0, y: 0, width: 0, height: 0 } });
 });
 
+test('dict-frame：页内跳转的 scroll 消息只转纵坐标并封顶', () => {
+  const w = connectedRelay();
+  const src = w.inner.contentWindow;
+  w.message({ __fushiDictSandbox: 1, type: 'scroll', y: 480, extra: 'leak' }, src, 'null');
+  w.message({ __fushiDictSandbox: 1, type: 'scroll', y: 1e9 }, src, 'null');
+  w.message({ __fushiDictSandbox: 1, type: 'scroll', y: 'top' }, src, 'null');
+  assert.equal(w.sent.length, 2);
+  eq(w.sent[0], { __fushiDictSandbox: 1, type: 'scroll', y: 480 });
+  eq(w.sent[1], { __fushiDictSandbox: 1, type: 'scroll', y: 20000 });
+});
+
 test('dict-frame：渲染后超过两次 load（被导航走）就拆掉内层', () => {
   const w = connectedRelay();
   w.inner.listeners.load(); // dict-sandbox.html

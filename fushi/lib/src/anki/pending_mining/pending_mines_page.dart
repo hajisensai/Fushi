@@ -109,14 +109,37 @@ class PendingMinesEntryRow extends ConsumerWidget {
       title: t.anki_pending_mines_title,
       subtitle: t.anki_pending_mines_hint,
       trailing: SettingsCountBadge(count: pendingMineCountOf(ref)),
-      onTap: () => Navigator.of(context).push<void>(
-        adaptivePageRoute<void>(
-          context: context,
-          builder: (BuildContext context) => const PendingMinesPage(),
-        ),
-      ),
+      onTap: () => openPendingMinesPage(Navigator.of(context)),
     );
   }
+}
+
+/// 待发卡片列表页的路由名：[openPendingMinesPage] 据此认出它已在栈顶。
+const String kPendingMinesRouteName = 'pending_mines';
+
+/// 在 [navigator] 上推待发卡片列表。三个入口共用这一处：Anki 设置页的「待发卡片」行、
+/// 「已加入待发队列」提示上的「查看队列」、全局快捷键「打开待发卡片」
+/// （`ShortcutAction.globalOpenPendingCards`，应用内反馈 OElRvCndxk）。列表已在栈顶时
+/// 不再叠一份（连按快捷键不会越推越深）。返回是否认领：[navigator] 为 null（导航还没
+/// 起来）时 false。
+bool openPendingMinesPage(NavigatorState? navigator) {
+  if (navigator == null) return false;
+  String? top;
+  navigator.popUntil((Route<dynamic> route) {
+    top = route.settings.name;
+    return true;
+  });
+  if (top == kPendingMinesRouteName) return true;
+  unawaited(
+    navigator.push<void>(
+      adaptivePageRoute<void>(
+        context: navigator.context,
+        settings: const RouteSettings(name: kPendingMinesRouteName),
+        builder: (BuildContext context) => const PendingMinesPage(),
+      ),
+    ),
+  );
+  return true;
 }
 
 /// 「接收其他设备的卡片」开关（跨设备中转的落地设备，见

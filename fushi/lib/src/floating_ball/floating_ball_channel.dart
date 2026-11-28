@@ -13,6 +13,8 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart' show AxisDirection;
 import 'package:flutter/services.dart';
+import 'package:fushi/src/floating_ball/screen_ocr_text_block.dart'
+    show screenOcrTextBlockOf;
 import 'package:fushi/src/ocr/system_ocr_channel.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
@@ -224,6 +226,13 @@ class FloatingBallChannel {
 
   /// 关冻结层、恢复球（Dart 主动关，原生不回调 `screenOcrDismissed`）。
   static Future<void> stopScreenOcr() => _invoke<void>('stopScreenOcr');
+
+  /// 此刻用户正在用的前台窗口 / app（Windows HWND、macOS pid）；前台就是 Fushi 自己
+  /// 或平台没有这条方法时为 null。截屏识字开始时记下，框选截图临时拉起主窗后经
+  /// `GlobalLookupChannel.restoreAfterCapture` 的 `returnForeground` 把前台还给它
+  /// （反馈 6RETmKY1TH）。
+  static Future<int?> foregroundAppToken() =>
+      _invoke<int>('foregroundAppToken');
 
   // ── iOS ─────────────────────────────────────────────────────────────
 
@@ -442,10 +451,16 @@ class FloatingBallChannel {
 
 /// Android 截屏 OCR：Dart 侧识别出的行 → 原生选取层要的形状（决定 4BBSaB12zj）。
 ///
-/// 每行 `{text, rect: [l, t, r, b], vertical, segments: [[start, length, l, t, r, b]…]}`，
-/// 坐标是定格帧的像素（与屏幕物理像素 1:1，见 `ScreenOcrService`），取整交出去；
-/// `segments` 是行内逐字 / 逐词框（[SystemOcrTextLine.segments]），原生据此建字框，
-/// 空表时原生按行框等分。无面积的行与词框丢掉。
+/// 每行 `{text, rect: [l, t, r, b], vertical, segments: [[start, length, l, t, r, b]…],
+/// blockText, blockOffset, blockRect: [l, t, r, b]}`，坐标是定格帧的像素（与屏幕物理
+/// 像素 1:1，见 `ScreenOcrService`），取整交出去；`segments` 是行内逐字 / 逐词框
+/// （[SystemOcrTextLine.segments]），原生据此建字框，空表时原生按行框等分。无面积的行
+/// 与词框丢掉。
+///
+/// `blockText` / `blockOffset` / `blockRect`：这行所在文本块（[screenOcrTextBlockOf]，
+/// 与桌面冻结层、iOS 选取页同一条聚合规则）的全文、本行在其中的偏移、块包围盒
+/// （BUG-5494）。本机模型 / Google Lens 只给行框，不带块时查词窗没有续文，词在 OCR
+/// 折行处被截断；块只在留下的行里聚合。
 List<Map<String, Object?>> screenOcrLinesToNative(
   List<SystemOcrTextLine> lines,
 ) {
@@ -455,15 +470,23 @@ List<Map<String, Object?>> screenOcrLinesToNative(
     r.right.round(),
     r.bottom.round(),
   ];
+  final List<SystemOcrTextLine> kept = <SystemOcrTextLine>[
+    for (final SystemOcrTextLine line in lines)
+      if (line.text.isNotEmpty &&
+          line.rect.right.round() > line.rect.left.round() &&
+          line.rect.bottom.round() > line.rect.top.round())
+        line,
+  ];
   final List<Map<String, Object?>> out = <Map<String, Object?>>[];
-  for (final SystemOcrTextLine line in lines) {
-    final List<int> rect = box(line.rect);
-    if (line.text.isEmpty || rect[2] <= rect[0] || rect[3] <= rect[1]) {
-      continue;
-    }
+  for (int i = 0; i < kept.length; i++) {
+    final SystemOcrTextLine line = kept[i];
+    final ({String text, int offset, Rect rect}) block = screenOcrTextBlockOf(
+      lines: kept,
+      hitIndex: i,
+    );
     out.add(<String, Object?>{
       'text': line.text,
-      'rect': rect,
+      'rect': box(line.rect),
       'vertical': line.isVertical,
       'segments': <List<int>>[
         for (final SystemOcrTextSegment s in line.segments)
@@ -473,6 +496,9 @@ List<Map<String, Object?>> screenOcrLinesToNative(
               s.rect.height >= 1)
             <int>[s.start, s.length, ...box(s.rect)],
       ],
+      'blockText': block.text,
+      'blockOffset': block.offset,
+      'blockRect': box(block.rect),
     });
   }
   return out;

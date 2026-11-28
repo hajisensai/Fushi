@@ -5,6 +5,7 @@ import 'package:fushi/src/media/video/video_horizontal_seek_gesture.dart';
 class VideoAsbplayerConfig {
   const VideoAsbplayerConfig({
     required this.seekSeconds,
+    required this.longSeekSeconds,
     required this.speedStep,
     required this.doubleTapSeekSeconds,
     required this.longPressSpeed,
@@ -31,8 +32,13 @@ class VideoAsbplayerConfig {
     10,
   ];
 
+  /// 长步进秒数的合法区间（[longSeekSeconds]）。decode 与设置页 stepper 共用。
+  static const int longSeekSecondsMin = 5;
+  static const int longSeekSecondsMax = 300;
+
   static const VideoAsbplayerConfig defaults = VideoAsbplayerConfig(
     seekSeconds: 3,
+    longSeekSeconds: 30,
     speedStep: 0.1,
     doubleTapSeekSeconds: 0,
     longPressSpeed: 2.0,
@@ -44,6 +50,11 @@ class VideoAsbplayerConfig {
   );
 
   final int seekSeconds;
+
+  /// 第二档「长步进」秒数（快捷键 `videoLongSeekBackward/Forward`、控制条
+  /// `VideoControlItem.longSeekBackward/Forward`）。默认 30，合法区间
+  /// [longSeekSecondsMin]..[longSeekSecondsMax]；旧档无此键时取默认。
+  final int longSeekSeconds;
   final double speedStep;
   final double longPressSpeed;
 
@@ -82,6 +93,7 @@ class VideoAsbplayerConfig {
 
   VideoAsbplayerConfig copyWith({
     int? seekSeconds,
+    int? longSeekSeconds,
     double? speedStep,
     int? doubleTapSeekSeconds,
     double? longPressSpeed,
@@ -93,6 +105,7 @@ class VideoAsbplayerConfig {
   }) {
     return VideoAsbplayerConfig(
       seekSeconds: seekSeconds ?? this.seekSeconds,
+      longSeekSeconds: longSeekSeconds ?? this.longSeekSeconds,
       speedStep: speedStep ?? this.speedStep,
       doubleTapSeekSeconds: doubleTapSeekSeconds ?? this.doubleTapSeekSeconds,
       longPressSpeed: longPressSpeed ?? this.longPressSpeed,
@@ -108,6 +121,7 @@ class VideoAsbplayerConfig {
 
   Map<String, Object> toJson() => <String, Object>{
     'seekSeconds': seekSeconds,
+    'longSeekSeconds': longSeekSeconds,
     'speedStep': speedStep,
     'doubleTapSeekSeconds': doubleTapSeekSeconds,
     'longPressSpeed': longPressSpeed,
@@ -131,6 +145,11 @@ class VideoAsbplayerConfig {
           raw['seekSeconds'],
           defaults.seekSeconds,
         ).clamp(1, 30),
+        // 旧档无此键 → 默认 30；越界值夹回合法区间。
+        longSeekSeconds: _readInt(
+          raw['longSeekSeconds'],
+          defaults.longSeekSeconds,
+        ).clamp(longSeekSecondsMin, longSeekSecondsMax),
         speedStep: _readDouble(
           raw['speedStep'],
           defaults.speedStep,

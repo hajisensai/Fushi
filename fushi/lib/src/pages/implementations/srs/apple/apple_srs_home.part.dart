@@ -340,6 +340,7 @@ extension _AppleSrsHome on _SrsDeckListPageState {
       deleting: deleter.deleting,
       banners: <Widget>[
         SrsScrubErrorNotice(gapBelow: _appleSrsBlockGap(context)),
+        ?_donationBanner(),
         ..._appleSrsDeckBanners(
           context,
           data: list,

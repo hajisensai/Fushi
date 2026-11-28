@@ -143,7 +143,7 @@ class SettingsSecretFieldState extends State<SettingsSecretField> {
         FushiIconButton(
           tooltip: t.reset,
           size: 18,
-          icon: Icons.undo_outlined,
+          icon: FushiIcons.restoreBackup,
           onTap: _reset,
         ),
     ];
@@ -261,7 +261,7 @@ class SettingsNumberFieldState extends State<SettingsNumberField> {
             ? FushiIconButton(
                 tooltip: t.reset,
                 size: 18,
-                icon: Icons.undo_outlined,
+                icon: FushiIcons.restoreBackup,
                 onTap: () {
                   _controller.text = widget.resetValue!;
                   widget.onReset!();

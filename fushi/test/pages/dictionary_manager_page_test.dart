@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/dictionary/dictionary_file_health.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/dictionary_repository.dart'
     show RemoteDictionary;
@@ -350,6 +351,111 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  group('BUG-5489: registered dictionaries whose files are gone', () {
+    tearDown(() {
+      DictionaryFileHealthMonitor.instance.value = DictionaryFileHealth.healthy;
+    });
+
+    testWidgets(
+      'missing files: banner, row tag, and re-import / delete in the detail',
+      (WidgetTester tester) async {
+        DictionaryFileHealthMonitor.instance.value = const DictionaryFileHealth(
+          issues: <String, DictionaryFileIssue>{
+            'JMdict': DictionaryFileIssue.missing,
+          },
+          lookupTermTotal: 3,
+          lookupTermMissing: 1,
+        );
+        await _pumpPage(tester, size: const Size(1280, 800));
+        expect(tester.takeException(), isNull);
+        expect(
+          find.byKey(const ValueKey<String>('dict-file-health-banner')),
+          findsOneWidget,
+        );
+        expect(
+          find.text(t.dictionary_files_list_banner_missing(n: 1)),
+          findsOneWidget,
+        );
+        expect(find.byType(DictionaryFileIssueTag), findsOneWidget);
+
+        await tester.tap(find.text('JMdict'));
+        await _settle(tester);
+        expect(
+          find.byKey(const ValueKey<String>('dict-detail-file-issue-JMdict')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey<String>('dict-file-issue-reimport')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey<String>('dict-file-issue-delete')),
+          findsOneWidget,
+        );
+        // 行标签 + 详情标题下的标签。
+        expect(find.byType(DictionaryFileIssueTag), findsNWidgets(2));
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets('files back: banner and tags disappear without a reload', (
+      WidgetTester tester,
+    ) async {
+      DictionaryFileHealthMonitor.instance.value = const DictionaryFileHealth(
+        issues: <String, DictionaryFileIssue>{
+          'JMdict': DictionaryFileIssue.missing,
+        },
+      );
+      await _pumpPage(tester, size: const Size(1280, 800));
+      expect(find.byType(DictionaryFileIssueTag), findsOneWidget);
+      DictionaryFileHealthMonitor.instance.value = DictionaryFileHealth.healthy;
+      await _settle(tester);
+      expect(find.byType(DictionaryFileIssueTag), findsNothing);
+      expect(
+        find.byKey(const ValueKey<String>('dict-file-health-banner')),
+        findsNothing,
+      );
+    });
+
+    testWidgets(
+      'unreadable (storage unavailable): explained, no delete offered in the '
+      'notice — Apple design too',
+      (WidgetTester tester) async {
+        DictionaryFileHealthMonitor.instance.value = const DictionaryFileHealth(
+          issues: <String, DictionaryFileIssue>{
+            'JMdict': DictionaryFileIssue.unreadable,
+          },
+        );
+        await _pumpPage(
+          tester,
+          size: const Size(400, 860),
+          platform: TargetPlatform.iOS,
+        );
+        expect(tester.takeException(), isNull);
+        expect(
+          find.text(t.dictionary_files_list_banner_unreadable(n: 1)),
+          findsOneWidget,
+        );
+        await tester.tap(find.text('JMdict'));
+        await _settle(tester);
+        expect(
+          find.byKey(const ValueKey<String>('dict-detail-file-issue-JMdict')),
+          findsOneWidget,
+        );
+        expect(find.text(t.dictionary_files_unreadable_detail), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey<String>('dict-file-issue-delete')),
+          findsNothing,
+        );
+        expect(
+          find.byKey(const ValueKey<String>('dict-file-issue-reimport')),
+          findsNothing,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+  });
 
   testWidgets('narrow window: card list opens a bottom sheet', (
     WidgetTester tester,

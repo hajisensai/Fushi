@@ -1,0 +1,17 @@
+## BUG-5551 · srs-import-media-pseudo-conflict
+- **报告**：2026-11-27（用户：应用内反馈 mvf7Wfz8Q-「复习15000条同步冲突」，同一用户 lBw85dTVq2「同一数据 anki 导入 iOS 和 Windows 端卡片数量不一样」）
+- **真实性**：✅ 真 bug，伪冲突。截图里冲突字段 VocabAudio 两个候选是 `[sound:1946c744…f8cfb64.mp3]` 与 `[sound:無用_ムヨー_0_NHK-2016-260118.mp3]`，其余字段（释义等）没有冲突标记。
+  - **为什么会不一样（大白话）**：用户在两台设备上各导入了一次同一份 Anki 数据。笔记 ID 由 Anki 来源决定，所以两边是「同一条笔记」。导入时，Fushi 会把字段里引用的音频 / 图片存进自己的媒体库，并把引用改成按文件内容算出的名字（sha1 + 扩展名，`packages/fushi_engine/lib/srs/srs_media_store.dart` `contentName`）；**但只有在包里真的读到了这个文件时才改**，读不到就保留原文件名、记一笔「媒体缺失」（`packages/fushi_engine/lib/srs/apkg/srs_apkg_import.dart` `_storeMedia`：`bytes == null` → `report.mediaMissing.add(name); return name;`，改写在 `_withMedia` → `srsRewriteMediaRefs`，只改 `_mediaRenames` 里有的名字）。其中一台导入时读到了音频（字段变成哈希名），另一台没读到（字段留着原名，指向一个本机根本没有的文件）。两边都没人「改」过内容，但字段文字不同；同步时字段寄存器内核（`native/fushi_fsrs/src/registers.rs` `resolve`）看到同一字段两个互不知情的写入、值不同 → 判成并发冲突 → 每条带音频的笔记都进了「等你决定的笔记」，于是一下子 1.5 万条。
+  - 哪一台没读到媒体，日志里没有导入记录、定不了（常见原因：一端用的 .apkg / 集合导出没带媒体，或从 Anki 集合目录迁移时 `collection.media` 还没从 AnkiWeb 下载全）。这不影响修法：判据不依赖是哪一台。
+  - 次要问题：冲突中心的「批量处理」不覆盖「等你决定的笔记」（`fushi/lib/src/pages/implementations/srs/srs_conflicts_page.dart` 文件头与 `_bulkResolve` 写明逐条处理），1.5 万条实际处理不完。
+- **[x] ① 已修复** —
+  - 伪冲突从根上消解：新增 `packages/fushi_engine/lib/srs/srs_note_conflict_resolve.dart`。判据 `srsMediaRefsSubsume`：两个候选值除了媒体引用的文件名之外一字不差（`srsMediaRefSkeleton`，`srs_apkg_common.dart`），且每处不同的引用都是「原名、本机媒体库里没有这个文件」对「这个原名存进来后应有的内容寻址名（`SrsMediaStore.isContentNameFor`：40 位 sha1 + 同一扩展名）、本机有这个文件」，同一原名只对应一个内容寻址名。满足时有文件的一边严格包含另一边的全部信息，写一条采用它的新记录（因果上覆盖两边），冲突消失；两台设备各自消解写下的是同一个值，同步后不再冲突。文字不同、或两边都是内容寻址名（两个不同文件）的真冲突一律不动。
+  - 运行时接线（`fushi/lib/src/srs/srs_app_runtime.dart` `reconcileMediaRefConflicts`）：复习运行时装上时跑一次（升级前已攒下的伪冲突自动消掉），之后每次同步拉进别的设备的修改 / 媒体再跑一次；单飞、期间再来的请求合并补跑；写下了消解记录就当本机写入（界面重读、推给别的设备）。
+  - 批量处理（用户拍板）：冲突中心「批量处理」加「等你决定的笔记：冲突字段都用 X 的版本」，按参与冲突的设备列出（`srsNoteConflictWriters`），选中后再确认一次，`srsAdoptNoteConflictSide` 每批 500 条一次物化、一次批量写。
+- **[x] ② 已加自动化测试** —
+  - `packages/fushi_engine/test/srs/srs_note_conflict_resolve_test.dart`：判据正反例（文字不同 / 原名文件本机就有 / 内容寻址文件本机没有 / 扩展名不符 / 两边都是内容寻址名 / 同一原名对应两个哈希名）；两台真实 v2 副本复现「一边原名、一边哈希名」→ 待裁决，没文件的设备不动、有文件的设备消解，同步后两边都不再待裁决；真冲突不自动消解、整批采用一台设备的版本后两边都清空。
+  - `fushi/test/srs/srs_conflicts_pending_adopt_test.dart`：冲突中心「批量处理」整批采用本机版本（MD3 / Apple 各一次）。
+- **备注**：
+  - 未在真机上复现原始失败路径（没有用户的两份导入源）；修法不依赖是哪一台缺媒体。
+  - 同一台设备上「先带媒体导入、后又用不带媒体的包『较新时更新』重导」理论上也会把可用的哈希引用改回断掉的原名（非并发，不进冲突）。同一份包的来源修改时间不会比本机更新，默认选项下走不到；导入器手里只有媒体落盘回调、没有媒体库，判据接不上，留待以后导入器改拿 `SrsMediaStore` 时一并处理。
+  - 服务端（`packages/fushi_server`）当 host 时没接这一步；任何一台 app 设备消解后同步过去即可，不影响收敛。

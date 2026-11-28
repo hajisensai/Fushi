@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi_engine/media/video/disc/disc_format.dart'
@@ -11,13 +12,17 @@ import 'package:fushi_engine/media/video/video_library_import.dart'
     show parseSubtitleCues;
 import 'package:fushi_engine/media/video/video_sidecar.dart'
     show
+        SidecarAudioTrackFile,
         defaultSidecarSubtitleSuffix,
+        discoverSidecarAudioTrackFiles,
         findSidecarSubtitle,
         isSidecarSubtitleSuffix,
         listSidecarSubtitles,
         ownedSidecarSuffix,
         pickSidecar,
-        sidecarSuffixesDisplacedBy;
+        sidecarNamesDisplacedBy;
+import 'package:fushi_engine/media/video/subtitle/video_subtitle_language_resolver.dart'
+    show VideoSubtitleLanguageEvidence;
 import 'package:fushi_audio/fushi_audio_core.dart'
     show AudioCue, AudiobookStorage, readTextWithEncoding;
 import 'package:fushi_engine/media/audiobook/standalone_subtitle_book.dart'
@@ -72,16 +77,15 @@ import 'package:fushi_engine/sync/ttu_filename.dart' show sanitizeTtuFilename;
 import 'package:fushi_engine/sync/online_manga_host_reader.dart';
 import 'package:fushi_engine/sync/manga_chapter_progress_sync.dart';
 import 'package:fushi_engine/sync/manga_sync_package.dart'
-    show
-        hasExportableMangaContent,
-        kMangaPackageMarker,
-        readExportableMangaPayload,
-        repackageMangaBook;
+    show hasExportableMangaContent, kMangaPackageMarker, repackageMangaBook;
 import 'package:fushi_engine/sync/pdf_sync_package.dart'
-    show hasExportablePdfContent, isPdfFile, pdfBookFilePath;
+    show hasExportablePdfContentAsync, isPdfFile, pdfBookFilePath;
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi_engine/sync/override_title_lookup.dart';
+import 'package:fushi_engine/sync/aggregate_sync_owner.dart';
 import 'package:fushi_engine/sync/aggregate_sync_service.dart';
+import 'package:fushi_engine/sync/host_background_io.dart';
+import 'package:fushi_engine/sync/host_manifest_bodies.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
 import 'package:fushi_engine/sync/collection_sync_engine.dart';
 import 'package:fushi_engine/sync/media_link_sync.dart';
@@ -111,7 +115,6 @@ import 'package:fushi_engine/dictionary/dictionary_engine_hooks.dart';
 import 'package:fushi_engine/sync/override_title_db.dart';
 import 'package:fushi_engine/media/manga/manga_chapter_storage.dart'
     show
-        hasAnyChapterDirSync,
         isMangaChapterDigest,
         mangaChapterDigest,
         mangaChapterDirectoryByDigest,
@@ -124,7 +127,7 @@ import 'package:fushi_engine/media/manga/manga_chapter_storage.dart'
         MangaChapterSourcePage;
 import 'package:fushi_engine/media/manga/manga_storage.dart' show MangaStorage;
 import 'package:fushi_engine/media/manga/mokuro_payload.dart'
-    show MokuroImage, MokuroPayload, parseMangaJson;
+    show MokuroImage, MokuroPayload;
 
 part 'local_library_host_service/dictionaries.part.dart';
 part 'local_library_host_service/books.part.dart';
@@ -134,6 +137,9 @@ part 'local_library_host_service/audiobooks.part.dart';
 part 'local_library_host_service/videos.part.dart';
 part 'local_library_host_service/video_metadata.part.dart';
 part 'local_library_host_service/sync_state.part.dart';
+
+/// 没接全局语言时的读数（空串 = 没设）。
+String _noVideoSubtitleLanguage() => '';
 
 // ── 跨域共享的顶层 helper（原 LocalLibraryHostService 的 private static；mixin 体内看不到宿主类
 //    的 static，故提到库顶层——对包外零可见性变化）。
@@ -187,12 +193,14 @@ abstract class _LocalLibraryHostBase
         VideoSubtitleDefaultHost,
         VideoSubtitleClearHost,
         VideoSidecarSubtitleListHost,
+        VideoSidecarAudioListHost,
         InterconnectServiceConfigHost,
         InterconnectProfileHost,
         VideoMetadataHost,
         VideoMetadataOrderingHost,
         TagSyncHost,
         MediaLinkSyncHost,
+        HostManifestBodyHost,
         StreamVideoSyncHost,
         OnlineLibrarySyncHost {
   FushiDatabase get _db;
@@ -221,7 +229,8 @@ abstract class _LocalLibraryHostBase
   Future<void> Function(LocalAudioPackageContents)? get _onLocalAudioImported;
   Directory? get _audioDatabaseRoot;
   Future<void> Function(String contentId)? get _removeLocalAudioEntry;
-  String get _videoSubtitleLangCode;
+  String Function() get _videoSubtitleExplicitLanguage;
+  String Function() get _videoDefaultContentLanguage;
   Directory? get _uploadedVideoRoot;
   Directory? get _videoCoversDirectory;
   Future<String?> Function({
@@ -251,7 +260,8 @@ abstract class _LocalLibraryHostBase
 /// | [localAudioStagingDir] | importLocalAudio 解包用临时目录（T3.1）| `Directory.systemTemp` 或应用 temp |
 /// | [onLocalAudioImported] | 注册已解包的本地音频包（T3.1）| `AppModel.importSyncedLocalAudioDb` |
 /// | [audioDatabaseRoot] | importAudiobook 音频文件落盘根目录（T3.1）| AppModel 的 audiobook root |
-/// | [videoSubtitleLangCode] | 视频 sidecar 字幕匹配语言代码（P4-1）| AppModel 目标学习语言 |
+/// | [videoSubtitleExplicitLanguage] | 全局显式字幕语言（挑 sidecar 时排在合集系列字幕语言之后，见 `resolveVideoSubtitleLanguageTarget`）| app：字幕工作台默认语言；服务端：配置 `subtitleLanguage` |
+/// | [videoDefaultContentLanguage] | 全局默认内容语言（同一条链的末档）| app：默认内容语言；服务端不接 |
 ///
 /// T2/T3 后续接线任务会在 AppModel 初始化时传入真实值。
 class LocalLibraryHostService extends _LocalLibraryHostBase
@@ -291,7 +301,8 @@ class LocalLibraryHostService extends _LocalLibraryHostBase
       required int updatedAt,
     })?
     adoptOverrideTitle,
-    String videoSubtitleLangCode = 'ja',
+    String Function()? videoSubtitleExplicitLanguage,
+    String Function()? videoDefaultContentLanguage,
     Directory? uploadedVideoRoot,
     Directory? videoCoversDirectory,
     Future<String?> Function({
@@ -321,7 +332,10 @@ class LocalLibraryHostService extends _LocalLibraryHostBase
        _exportActiveProfileJson = exportActiveProfileJson,
        _importProfileJson = importProfileJson,
        _adoptOverrideTitle = adoptOverrideTitle,
-       _videoSubtitleLangCode = videoSubtitleLangCode,
+       _videoSubtitleExplicitLanguage =
+           videoSubtitleExplicitLanguage ?? _noVideoSubtitleLanguage,
+       _videoDefaultContentLanguage =
+           videoDefaultContentLanguage ?? _noVideoSubtitleLanguage,
        _uploadedVideoRoot = uploadedVideoRoot,
        _videoCoversDirectory = videoCoversDirectory,
        _extractVideoCover = extractVideoCover,
@@ -441,10 +455,15 @@ class LocalLibraryHostService extends _LocalLibraryHostBase
 
   // ── 视频（P4-1）──────────────────────────────────────────────────────────────
 
-  /// 视频 sidecar 字幕匹配的目标语言代码（默认 'ja'）。
-  /// 生产传 JapaneseLanguage.instance.languageCode（P4 接线任务完成后注入真实值）。
+  /// 全局显式字幕语言（现读，空串 = 没设）。每个视频挑 sidecar 的目标语言按
+  /// `resolveVideoSubtitleLanguageTarget` 逐个解析（合集系列字幕语言 > 本项 > 本视频
+  /// 语言 > 刮削原语言 > [_videoDefaultContentLanguage]），不再是一个全库固定的码。
   @override
-  final String _videoSubtitleLangCode;
+  final String Function() _videoSubtitleExplicitLanguage;
+
+  /// 全局默认内容语言（现读，空串 = 没设）。
+  @override
+  final String Function() _videoDefaultContentLanguage;
 
   /// client→host 上传视频的落盘根目录（可选；null 时 [importVideo] 抛 [UnsupportedError]）。
   /// 生产传 `<documents>/remote_videos`（[AppPaths.remoteVideosDirectory] 同目录，与

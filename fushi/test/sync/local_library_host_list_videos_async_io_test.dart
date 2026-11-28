@@ -139,7 +139,7 @@ void main() {
     packages: SyncAssetPackageService(db: db),
     refreshDictionaryCache: () async {},
     runExclusive: (Future<void> Function() body) => body(),
-    videoSubtitleLangCode: 'ja',
+    videoSubtitleExplicitLanguage: () => 'ja',
   );
 
   test('网络盘上的视频：listVideos 零同步文件调用，等 stat 时 isolate 照常跑别的事', () async {

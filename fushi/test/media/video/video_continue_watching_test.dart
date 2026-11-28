@@ -5,6 +5,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/video/video_continue_watching.dart';
+import 'package:fushi/src/sync/remote_video_client.dart' show RemoteVideoSource;
 import 'package:fushi/src/pages/implementations/home_nav_peek.dart'
     show VideoNavPeekItem, planVideoNavPeek;
 import 'package:fushi_core/fushi_core.dart'
@@ -257,7 +258,9 @@ void main() {
     final VideoContinueShare share = VideoContinueShare();
     final Object pageA = Object();
     final Object pageB = Object();
-    share.publishRemote(pageA, <RemoteVideoInfo>[_remote('x')], null);
+    share.publishRemote(pageA, <RemoteVideoInfo>[
+      _remote('x'),
+    ], const <String, RemoteVideoSource>{});
     // 别的页面 dispose 不清 A 发布的清单。
     share.clearOwner(pageB);
     expect(share.remoteVideos, isNotNull);

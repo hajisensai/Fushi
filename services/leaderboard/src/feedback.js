@@ -44,6 +44,8 @@
 //                                             只记最早包含修复的版本（已有记录不覆盖）；当前 fix_sha ≠ 该条 sha
 //                                             （其间被重新标记修复）的静默跳过；只写 fixed_in，
 //                                             不刷 dev_reply_at / updated_at（回填不是开发者回复）
+//   GET  /v1/ci/feedback/bugs                 → {items:[{bug, id, hash, status}]}：已同步进来的仓库 BUG 行
+//   POST /v1/ci/feedback/bugs                 {sha?, upsert, close}：按 BUG 号幂等建 / 改 / 结案（feedback_repo_bugs.js）
 // 反馈人 / 开发者接口的摘要都带 `fix`（null 或 {sha, scope, at, releases}，见 fixView）。
 //
 // ticket 是提交时服务端生成、只返回这一次的随机串；库里只存 SHA-256。ticket 泄露 = 那一条反馈
@@ -92,6 +94,7 @@ import {
   stripHiddenChars,
   textFlags,
 } from './feedback_guard.js';
+import { REPO_BUG_LIMITS, ciRepoBugList, ciRepoBugSync } from './feedback_repo_bugs.js';
 
 export const CATEGORIES = ['bug', 'suggestion', 'other'];
 export const STATUSES = ['open', 'in_progress', 'resolved', 'wont_fix', 'duplicate', 'closed'];
@@ -373,7 +376,8 @@ function summary(row) {
 
 /** 开发者侧摘要：多带风险标记（反馈人侧不给，别教投毒者绕过）。 */
 function devSummary(row) {
-  return { ...summary(row), flags: parseFlags(row) };
+  // repoBug：由 CI 从 docs/bugs 同步进来的条目的 BUG 号（feedback_repo_bugs.js），普通反馈 null。
+  return { ...summary(row), flags: parseFlags(row), repoBug: row.repo_bug ?? null };
 }
 
 /** 开发者私有批注（AI 总结 / 开发者批改）：只进开发者出口，反馈人接口永远不带。 */
@@ -1082,7 +1086,7 @@ export async function devList(env, { status, cursor, limit, q }) {
   const n = clampInt(limit, 1, 100, 30);
   const after = parseCursor(cursor);
   const cols = 'id, category, title, status, created_at, updated_at, dev_reply_at, user_reply_at, account_id, attachments, flags, parent_id, '
-    + 'fix_sha, fix_scope, fix_at, fixed_in, '
+    + 'fix_sha, fix_scope, fix_at, fixed_in, repo_bug, '
     // 列表只露一行预览：截 200 字，全文看详情（devView），省得一页 50 条整段下发。
     + 'substr(ai_summary, 1, 200) AS ai_summary, dev_note IS NOT NULL AS has_dev_note';
   const page = after
@@ -1287,8 +1291,33 @@ export async function reporterAttachmentResponse(env, row, slot, now) {
   return res;
 }
 
+/**
+ * 账户角色（accounts.role）：
+ *   dev    开发者：处理台全部能力（回复反馈人、改状态、标记修复、拍板台、统计等）。
+ *   triage 反馈协查：只能看反馈（列表 / 详情 / 附件）并写内部批注（开发者批改 / AI 总结）；
+ *          反馈人看得到或会推送给对方的动作（回复、改状态）一律没有，处理台其他页面也进不去。
+ *   user   普通用户。
+ */
+export const ACCOUNT_ROLES = Object.freeze(['dev', 'triage', 'user']);
+
+/**
+ * 能看反馈、写内部批注的角色（dev 与 triage）。
+ * @param {string | null | undefined} role
+ * @returns {boolean}
+ */
+export function canViewFeedback(role) {
+  return role === 'dev' || role === 'triage';
+}
+
+/** 回复 / 改状态等对外动作与处理台其余功能：只认 dev。 */
 export function requireDev(account) {
   if (!account || account.role !== 'dev') throw new HttpError(403, 'not_developer');
+  return account;
+}
+
+/** 只读反馈与写内部批注：dev 或 triage。 */
+export function requireFeedbackViewer(account) {
+  if (!account || !canViewFeedback(account.role)) throw new HttpError(403, 'not_developer');
   return account;
 }
 
@@ -1500,6 +1529,7 @@ const RE = {
   ciFixed: /^\/v1\/ci\/feedback\/fixed$/,
   ciPending: /^\/v1\/ci\/feedback\/pending$/,
   ciReleased: /^\/v1\/ci\/feedback\/released$/,
+  ciBugs: /^\/v1\/ci\/feedback\/bugs$/,
 };
 
 export function isFeedbackPath(path) {
@@ -1538,6 +1568,12 @@ export async function routeFeedback(request, env, url, now, io) {
     }
     if (method === 'POST' && RE.ciReleased.test(path)) {
       return json(await ciMarkReleased(env, io.parse(await io.readBody(64 * 1024)), now), 200, noStore);
+    }
+    if (method === 'GET' && RE.ciBugs.test(path)) {
+      return json(await ciRepoBugList(env), 200, noStore);
+    }
+    if (method === 'POST' && RE.ciBugs.test(path)) {
+      return json(await ciRepoBugSync(env, io.parse(await io.readBody(REPO_BUG_LIMITS.bodyMaxBytes)), now), 200, noStore);
     }
     return null;
   }
@@ -1608,19 +1644,20 @@ export async function routeFeedback(request, env, url, now, io) {
     return json(out, 200, noStore);
   }
 
+  // GET 三个与 POST …/notes 只读 / 内部批注：dev 与 triage 都可；POST …/:id（回复、改状态，反馈人可见）只认 dev。
   if (method === 'GET' && RE.devList.test(path)) {
-    requireDev(await io.auth(new Uint8Array(), {}));
+    requireFeedbackViewer(await io.auth(new Uint8Array(), {}));
     const q = url.searchParams;
     return json(await devList(env, {
       status: q.get('status'), cursor: q.get('cursor'), limit: q.get('limit'), q: q.get('q'),
     }), 200, noStore);
   }
   if (method === 'GET' && (m = RE.devOne.exec(path))) {
-    requireDev(await io.auth(new Uint8Array(), {}));
+    requireFeedbackViewer(await io.auth(new Uint8Array(), {}));
     return json(await devView(env, await feedbackById(env, m[1])), 200, noStore);
   }
   if (method === 'GET' && (m = RE.devAttach.exec(path))) {
-    requireDev(await io.auth(new Uint8Array(), {}));
+    requireFeedbackViewer(await io.auth(new Uint8Array(), {}));
     return attachmentResponse(env, await feedbackById(env, m[1]), m[2], url.searchParams.get('view') === 'text', {
       range: request.headers.get('Range'),
       download: url.searchParams.get('download') === '1',
@@ -1635,7 +1672,7 @@ export async function routeFeedback(request, env, url, now, io) {
   }
   if (method === 'POST' && (m = RE.devNotes.exec(path))) {
     const bytes = await io.readBody(64 * 1024);
-    requireDev(await io.auth(bytes, { mutating: true }));
+    requireFeedbackViewer(await io.auth(bytes, { mutating: true }));
     const row = await feedbackById(env, m[1]);
     await devSaveNotes(env, row, io.parse(bytes), now);
     return json(await devView(env, await feedbackById(env, row.id)), 200, noStore);

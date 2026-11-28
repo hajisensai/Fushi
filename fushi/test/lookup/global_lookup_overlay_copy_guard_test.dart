@@ -158,10 +158,7 @@ void main() {
     expect(track, greaterThan(armed));
     expect(disarmed, greaterThan(track));
     expect(show, contains('deferral->Complete();'));
-    expect(
-      show,
-      contains('context_menu_return_foreground_ = previous_foreground'),
-    );
+    expect(show, contains('expected_foreground_return_ = previous_foreground'));
 
     final String click = functionBody(
       cpp,
@@ -173,7 +170,7 @@ void main() {
       cpp,
       'void CALLBACK GlobalLookupWindow::ForegroundHookProc(',
     );
-    final int skip = hook.indexOf('context_menu_return_foreground_');
+    final int skip = hook.indexOf('expected_foreground_return_');
     final int hideCall = hook.indexOf('self->Hide();');
     expect(skip, greaterThanOrEqualTo(0));
     expect(hideCall, greaterThan(skip), reason: '交还前台的那一次必须在关卡判断之前被放过');

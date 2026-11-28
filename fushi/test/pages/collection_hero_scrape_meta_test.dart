@@ -166,13 +166,6 @@ void main() {
     ),
   );
 
-  /// 海报面板按封面取色（[MediaPosterDetailTheme] → 进程级 `coverColorSchemeCache`
-  /// → `extractImageProviderSeedArgb` 给图片加载挂 10 秒超时）。远程封面在
-  /// fakeAsync 里永远加载不完，这条取色请求属于进程级缓存、按设计不随页面销毁，
-  /// 测试结束时把 10 秒走完（超时落 null），免得定时器挂到 widget 树销毁之后。
-  Future<void> drainCoverTint(WidgetTester tester) =>
-      tester.pump(const Duration(seconds: 11));
-
   /// 限定在 hero 卡里找：页头（[MediaPosterDetailChrome]）常驻一份作品名（滚过
   /// hero 后才淡入），全页找同名文本会命中两处。
   Finder inHero(Finder matching) => find.descendant(
@@ -485,9 +478,9 @@ void main() {
       reason: '安全目录判定阻止作品根图落盘时，详情页不能退回分集截图',
     );
     // settleCoverProbes 给真实 IO 的 runAsync 窗口里远程封面的磁盘缓存也真的起来了，
-    // 它排了一个 10 秒的清理定时器；海报面板取色也给远程封面挂了 10 秒加载超时。
-    // 走完它们，免得测试结束时还有定时器挂着。
-    await drainCoverTint(tester);
+    // 它排了一个 10 秒的清理定时器（flutter_cache_manager 自己的，与封面取色无关）；
+    // 走完它，免得测试结束时还有定时器挂着。
+    await tester.pump(const Duration(seconds: 11));
   });
 
   // BUG：剧集目录从 `D:\smb\<剧名>` 挪进 `D:\smb\动漫\<剧名>` 后，合集
@@ -539,7 +532,6 @@ void main() {
       (remote as CachedNetworkImageProvider).url,
       'https://image.example/moved-poster.jpg',
     );
-    await drainCoverTint(tester);
   });
 
   testWidgets('无横版 backdrop → 封面模糊垫底 + 封面卡清晰显示', (WidgetTester tester) async {
@@ -627,7 +619,6 @@ void main() {
       (remote as CachedNetworkImageProvider).url,
       'https://image.example/net-poster.jpg',
     );
-    await drainCoverTint(tester);
   });
 }
 

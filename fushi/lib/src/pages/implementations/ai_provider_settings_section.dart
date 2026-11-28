@@ -703,27 +703,35 @@ class _AiProviderSettingsSectionState
                       ),
               ),
             ),
-            KeyedSubtree(
-              key: ValueKey<String>('ai-provider-$index-reasoning'),
-              child: AdaptiveSettingsRow(
-                title: t.ai_provider_reasoning,
-                trailing: _AiChoiceButton(
-                  semanticLabel: t.ai_provider_reasoning,
-                  labels: <String>[
-                    for (final AiReasoningEffort effort
-                        in AiReasoningEffort.values)
-                      _reasoningLabel(effort),
-                  ],
-                  selectedIndex: draft.reasoningEffort.index,
-                  onChanged: (int value) => _update(
-                    index,
-                    draft.copyWith(
-                      reasoningEffort: AiReasoningEffort.values[value],
+            // 所配模型不收推理档位（Anthropic / Gemini 协议、OpenAI 官方的非推理
+            // 模型）时不显示这一行：显示「低」却不生效，或者生效了让请求 400
+            // （BUG-5468）。存着的档位不清，换回推理模型时原样回来。
+            if (aiModelAcceptsReasoningEffort(
+              protocol: draft.protocol,
+              baseUrl: Uri.tryParse(draft.baseUrl.trim()) ?? Uri(),
+              model: draft.model,
+            ))
+              KeyedSubtree(
+                key: ValueKey<String>('ai-provider-$index-reasoning'),
+                child: AdaptiveSettingsRow(
+                  title: t.ai_provider_reasoning,
+                  trailing: _AiChoiceButton(
+                    semanticLabel: t.ai_provider_reasoning,
+                    labels: <String>[
+                      for (final AiReasoningEffort effort
+                          in AiReasoningEffort.values)
+                        _reasoningLabel(effort),
+                    ],
+                    selectedIndex: draft.reasoningEffort.index,
+                    onChanged: (int value) => _update(
+                      index,
+                      draft.copyWith(
+                        reasoningEffort: AiReasoningEffort.values[value],
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
             KeyedSubtree(
               key: ValueKey<String>('ai-provider-$index-tool-calling'),
               child: AdaptiveSettingsRow(

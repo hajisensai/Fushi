@@ -200,6 +200,22 @@ enum TexthookerLineAudioStatus {
 const String kGalLineNoVoiceReason = 'line_has_no_voice';
 const String kGalOverlongSliceSuspectReason = 'slice_overlong_suspect';
 
+/// 系统 loopback 切片已锁到这一行、**人声检测还没出结论**（BUG-5550）。
+///
+/// loopback 切片只证明「这段时间电脑在出声」，不证明「这句有配音」：旁白句截到的是
+/// BGM / 环境音。所以锁定切片后先标这个，检测落定后换成下面三者之一：
+/// [kGalLoopbackVoiceDetectedReason]（切片里有人声）/ [kGalLineNoVoiceReason]（没有）/
+/// [kGalLoopbackVoiceUnverifiedReason]（判不出）。朗读裁决据此分 pending / voiced /
+/// unvoiced，见 `galLineVoiceEvidenceOf`。
+const String kGalLoopbackVoiceCheckingReason = 'loopback_voice_checking';
+
+/// loopback 切片里检测到了本句的人声：这句有配音（只是来自整机混音兜底）。
+const String kGalLoopbackVoiceDetectedReason = 'loopback_voice_detected';
+
+/// loopback 切片的人声检测判不出（ONNX 不可用 / 模型下不来 / 位深不认识）。没有任何
+/// 「这句有配音」的证据——切片本身不算证据，别替游戏宣布有配音。
+const String kGalLoopbackVoiceUnverifiedReason = 'loopback_voice_unverified';
+
 /// 干净源策略把整机混音挡掉、且**没有任何证据**能判断这句到底有没有配音时用它。
 ///
 /// 与 [kGalLineNoVoiceReason] 的区别是硬性的：那个是有证据的结论（候选轨在该句时刻

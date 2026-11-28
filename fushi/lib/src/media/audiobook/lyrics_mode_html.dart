@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform;
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
+import 'package:fushi/src/focus/webview_key_bridge.dart'
+    show webViewMouseHoldRepeatScript;
 import 'package:fushi/src/media/audiobook/lyrics_cue_text.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.dart';
 import 'package:fushi/src/models/cjk_font_families.dart' show CjkFontStyle;
@@ -1859,6 +1861,14 @@ document.addEventListener('mousemove', function(e) {
 // 「seek 到点击句」要知道点在哪行：带上行号，行外为 -1。其余动作（关词典……）
 // 与行无关，行外按下也要回传（HBK-AUDIT-221，与正文 onPointerSeek 同口径）。
 // preventDefault 压掉中键自动滚动。
+// 按住连发（与正文同一份 window.__fushiMouseHold）：连发走 onReaderMouseHoldRepeat
+// （与正文同一个 Dart 回调），Dart 回 false 即停。
+$webViewMouseHoldRepeatScript
+function _lyMouseHoldStart(b) {
+  window.__fushiMouseHold.start(b, function() {
+    return window.flutter_inappwebview.callHandler('onReaderMouseHoldRepeat', b);
+  });
+}
 _lc.addEventListener('mousedown', function(e) {
   if (e.button === 0) return;
   e.preventDefault();
@@ -1866,6 +1876,7 @@ _lc.addEventListener('mousedown', function(e) {
   var idx = el ? parseInt(el.getAttribute('data-cue-index'), 10) : -1;
   if (isNaN(idx)) idx = -1;
   window.flutter_inappwebview.callHandler('onLyricsPointerSeek', e.button, idx);
+  _lyMouseHoldStart(e.button);
 });
 
 // ── 歌词模式：覆写 selection 回调，附加 cue 元数据 ──

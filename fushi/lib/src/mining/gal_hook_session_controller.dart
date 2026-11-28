@@ -18,6 +18,7 @@ import 'package:fushi/src/mining/galgame_hook_code_profile.dart';
 import 'package:fushi/src/mining/galgame_hook_runtime_stage.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/galgame_line_voice_window.dart';
+import 'package:fushi/src/mining/gal_loopback_voice_detector.dart';
 import 'package:fushi/src/mining/galgame_play_tracker.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/mining/gal_hook_tick_clock.dart';
@@ -879,6 +880,9 @@ class GalHookSessionController extends ChangeNotifier {
     TexthookerService? textService,
     GalEngineSourceFactory? engineSourceFactory,
     GalLoopbackSourceFactory? loopbackSourceFactory,
+    // BUG-5550：loopback 切片的人声检测。null = 不检测，锁定的切片一律标「未核实」
+    // （单测默认走这条，不碰 ONNX / 模型下载）；会话单例接 silero-vad。
+    GalLoopbackVoiceDetector? loopbackVoiceDetector,
     GalOcrLineSourceFactory? ocrSourceFactory,
     GalTargetWow64Probe? targetWow64Probe,
     GalTargetImagePathProbe? targetImagePathProbe,
@@ -969,6 +973,7 @@ class GalHookSessionController extends ChangeNotifier {
        _engineSourceFactory = engineSourceFactory ?? _defaultEngineFactory,
        _loopbackSourceFactory =
            loopbackSourceFactory ?? LoopbackGalAudioSource.new,
+       _loopbackVoiceDetector = loopbackVoiceDetector,
        _ocrSourceFactory = ocrSourceFactory ?? _defaultOcrSourceFactory,
        _targetWow64Probe =
            targetWow64Probe ?? EngineHookGalAudioSource.targetIsWow64,
@@ -1013,7 +1018,9 @@ class GalHookSessionController extends ChangeNotifier {
     _endpointListenable.addListener(_onEndpointStatusChanged);
   }
 
-  static final GalHookSessionController instance = GalHookSessionController();
+  static final GalHookSessionController instance = GalHookSessionController(
+    loopbackVoiceDetector: kSileroGalLoopbackVoiceDetector,
+  );
   static const int _voiceCacheMax = 200;
 
   /// Loopback 环形缓冲的**真实**容量：native `kRingSeconds = 60`
@@ -1072,6 +1079,7 @@ class GalHookSessionController extends ChangeNotifier {
       LinkedHashSet<String>();
   Future<void> _tyranoDomVoiceQueue = Future<void>.value();
   final GalLoopbackSourceFactory _loopbackSourceFactory;
+  final GalLoopbackVoiceDetector? _loopbackVoiceDetector;
   final GalOcrLineSourceFactory _ocrSourceFactory;
 
   /// OCR 游戏模式的泵（[startOcrCapture]）；生命周期挂在会话上，[_stopSourcesInternal] 收。
@@ -1370,6 +1378,11 @@ class GalHookSessionController extends ChangeNotifier {
   /// 一次自动选择（记忆恢复或引擎精确接管）正在等 native 确认。两条自动路径共用：
   /// 恢复的 select 还没回来时引擎接管又发一次，晚回来的那次会把选择改回去。
   bool _textThreadAutoSelectInFlight = false;
+
+  /// 本会话 native 拒绝过的引擎精确线程，及被拒时它已出的行数。它再出新行之前不再
+  /// 重试接管：否则它每轮都抢在记忆恢复之前发起选择、每轮又被拒，记忆恢复永远轮
+  /// 不到，两条自动路径一起卡死。出了新行就再试一次（冷启动的一次性拒绝能自愈）。
+  ({String key, int lines})? _engineExactRejected;
 
   /// 记忆恢复文本线程所需的最小行数：native 线程 id 混了 processId，跨会话不稳定，
   /// 同一 hook 往往有多条并行线程共用同一指纹，只能靠「真的在出台词」来消歧。
@@ -4701,12 +4714,21 @@ class GalHookSessionController extends ChangeNotifier {
     if (best == null) return;
     _textThreadMemoryApplied = true;
     _textThreadAutoSelectInFlight = true;
+    final EngineHookGalAudioSource? engine = _engineSource;
     unawaited(
       selectTextThread(best.nativeThreadId, threadKey: best.key).then((
         bool selected,
       ) {
         _textThreadAutoSelectInFlight = false;
-        if (!selected) return;
+        if (!selected) {
+          // 引擎已换（停止 / 降级 / 重新附着）：这次失败属于旧引擎，不动恢复状态。
+          if (!identical(engine, _engineSource)) return;
+          // native 没接受这次选择（冷启动时 JIT hook 线程刚登记、helper 侧还没就绪
+          // 等）：恢复并没有发生，必须让下一次目录 / 行数变动重试，否则本会话再也
+          // 不恢复记忆（7vGmtj4A1t）。用户在飞期间亲选过就尊重用户。
+          if (!_textThreadUserSelected) _textThreadMemoryApplied = false;
+          return;
+        }
         _record(
           GalHookEventSeverity.info,
           'text',
@@ -4749,21 +4771,42 @@ class GalHookSessionController extends ChangeNotifier {
       if (thread.nativeThreadId == null || thread.nativeThreadId == 0) continue;
       if (thread.observedLineCount < _textThreadRestoreMinLines) continue;
       if (thread.isArtifactDominated) continue; // BUG-2112，同记忆恢复
+      final ({String key, int lines})? rejected = _engineExactRejected;
+      if (rejected != null &&
+          rejected.key == thread.key &&
+          thread.observedLineCount <= rejected.lines) {
+        continue;
+      }
       if (best == null || thread.observedLineCount > best.observedLineCount) {
         best = thread;
       }
     }
     if (best == null) return false;
     final TexthookerTextThread chosen = best;
+    final int chosenLines = chosen.observedLineCount;
     final String? replaced = current?.key ?? _selectedTextThreadKey;
+    // 接管前是否已有选择：接管失败时据此判断记忆恢复是否还没发生过。
+    final bool hadSelection = _selectedTextThreadKey != null;
+    final bool memoryAppliedBefore = _textThreadMemoryApplied;
     _textThreadMemoryApplied = true;
     _textThreadAutoSelectInFlight = true;
+    final EngineHookGalAudioSource? engine = _engineSource;
     unawaited(
       selectTextThread(chosen.nativeThreadId, threadKey: chosen.key).then((
         bool selected,
       ) {
         _textThreadAutoSelectInFlight = false;
-        if (!selected) return;
+        if (!selected) {
+          if (!identical(engine, _engineSource)) return;
+          // 接管没成：恢复到发起前的状态，别让一次失败的自动选择堵死记忆恢复；
+          // 该线程出新行前不再重试，并立即按当前目录重评一次，让记忆恢复接上。
+          _engineExactRejected = (key: chosen.key, lines: chosenLines);
+          if (_textThreadUserSelected) return;
+          if (!hadSelection) _textThreadMemoryApplied = memoryAppliedBefore;
+          _maybeRestoreTextThread();
+          return;
+        }
+        _engineExactRejected = null;
         _record(
           GalHookEventSeverity.info,
           'text',
@@ -4898,6 +4941,7 @@ class GalHookSessionController extends ChangeNotifier {
     _textThreadMemoryApplied = false;
     _textThreadUserSelected = false;
     _textThreadAutoSelectInFlight = false;
+    _engineExactRejected = null;
     _captureMemoryLoaded = false;
     _captureMemoryGameKey = null;
     _captureMemory = const GalCaptureMemory();
@@ -8137,12 +8181,14 @@ class GalHookSessionController extends ChangeNotifier {
         }
       }
       if (!_cacheLineVoiceIfLonger(entry.id, slice)) return;
+      // BUG-5550：切片只证明「电脑在出声」，不证明「这句有配音」。先标检测中，人声
+      // 检测落定后再改成有 / 无人声（[_classifyLoopbackLineVoice]）。
       _textService.updateLineAudio(
         _liveLineId(entry.id),
         status: TexthookerLineAudioStatus.fallback,
         backend: 'system_loopback',
         durationMs: (slice.pcm.length * 1000) ~/ slice.format.byteRate,
-        fallbackReason: 'engine_utterance_unavailable',
+        fallbackReason: kGalLoopbackVoiceCheckingReason,
       );
       _record(
         GalHookEventSeverity.info,
@@ -8151,10 +8197,64 @@ class GalHookSessionController extends ChangeNotifier {
         'System loopback audio was locked to the captured line',
         details: <String, Object?>{'lineId': entry.id, 'backMs': backMs},
       );
+      // 检测放在串行音频队列之外：它要几百毫秒，排在队列里会堵住后面几句的回取。
+      unawaited(_classifyLoopbackLineVoice(entry.id, slice));
     } finally {
       _loopbackCacheInFlight.remove(entry.id);
       _loopbackFreezeStartedAt.remove(entry.id);
     }
+  }
+
+  /// 给刚锁定的 loopback 切片 [slice] 做人声检测，把结论写回该行（BUG-5550）。
+  ///
+  /// 只为「仍挂着这份切片、仍在检测中」的行落结论：检测期间被更长的切片（续张）、
+  /// 资源原件、用户补录 / 选轨换掉的，结论作废——新切片自有它自己的那次检测。
+  Future<void> _classifyLoopbackLineVoice(
+    String lineId,
+    GalAudioSlice slice,
+  ) async {
+    final GalLoopbackVoiceDetector? detector = _loopbackVoiceDetector;
+    bool? speech;
+    if (detector != null) {
+      try {
+        speech = await detector.hasSpeech(slice, leadInMs: _loopbackPreRollMs);
+      } on Object catch (error) {
+        _record(
+          GalHookEventSeverity.warning,
+          'match',
+          'audio.loopback_voice_detect_failed',
+          'Voice detection on the loopback slice failed',
+          details: <String, Object?>{'lineId': lineId, 'error': '$error'},
+        );
+      }
+    }
+    final String liveId = _liveLineId(lineId);
+    final TexthookerLineEntry? line = _textService.entryById(liveId);
+    if (line == null ||
+        !identical(_lineVoiceCache[liveId], slice) ||
+        line.audioStatus != TexthookerLineAudioStatus.fallback ||
+        line.fallbackReason != kGalLoopbackVoiceCheckingReason) {
+      return;
+    }
+    final String reason = switch (speech) {
+      true => kGalLoopbackVoiceDetectedReason,
+      false => kGalLineNoVoiceReason,
+      null => kGalLoopbackVoiceUnverifiedReason,
+    };
+    _textService.updateLineAudio(
+      liveId,
+      status: TexthookerLineAudioStatus.fallback,
+      backend: line.audioBackend,
+      durationMs: line.audioDurationMs,
+      fallbackReason: reason,
+    );
+    _record(
+      GalHookEventSeverity.info,
+      'match',
+      'audio.loopback_voice_classified',
+      'Voice detection classified the loopback slice',
+      details: <String, Object?>{'lineId': liveId, 'reason': reason},
+    );
   }
 
   void _markLineAudioMissing(String lineId, String reason) {

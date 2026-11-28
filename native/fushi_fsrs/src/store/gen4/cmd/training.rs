@@ -43,13 +43,13 @@
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 
-use rusqlite::params;
+use rusqlite::{OptionalExtension, params};
 
 use super::lineage::lineages;
 use super::{ref_of, snapshot};
 use crate::gen4::op::Body4;
 use crate::projection::{Alg, Day};
-use crate::store::gen4::cache::LogIn;
+use crate::store::gen4::cache::{LogIn, RWKV_FILL_KEY};
 use crate::store::gen4::derive::{Index, Ref, body_of};
 use crate::store::gen4::schema::sql;
 use crate::store::gen4::truth::Truth;
@@ -143,6 +143,152 @@ pub fn rwkv_cards(
     })
 }
 
+/// `rwkv_rows` 末条模式：[cards]（任意 ID，按类归一）各自最后一条 RWKV 保留评分，读缓存层与卡行一起物化的
+/// `rwkv_last`（与 [rwkv_cards] 摘要里的 `last` 同一条，`store/gen4/derive.rs` 的 `assert_rwkv_last_matches_replay`（挂在 `assert_rebuild_is_identity` 上，逐卡对拍整层重建与重放） 钉住）。
+/// 输出 `[n, (时刻|NONE, 评分, 复习类型代码) × n]`，没有保留评分（或没有卡行）的卡是 `NONE, 0, 0`。
+///
+/// RWKV 打分的查询行只要这一条（`srs_rwkv_service.dart` `_queryRows`）：冷启动分数表是空的、统计又整表重查，
+/// 逐卡模式要重放每张卡的全部历史（实测 1.5 万张卡 26～36 秒，BUG-5525），这里是一次按主键的表读。
+///
+/// 表还在分批回填（`derive_cfg` 有 [RWKV_FILL_KEY]，BUG-5547）时，游标之后、有卡行的卡还没填：这些卡逐卡重放取同一条
+/// （[replayed_last]，与物化同一份规则），结果与填完之后逐卡相同，只是慢。
+pub fn rwkv_last(t: &Truth<'_>, col: i64, cards: &[String]) -> Result<Vec<u8>, String> {
+    snapshot(t, |t| {
+        let mut ix = Index::new(t, col);
+        let canon: Vec<Ref> = cards
+            .iter()
+            .map(|c| ix.canonical(&ref_of(c)))
+            .collect::<Result<_, _>>()?;
+        let mut rows: Vec<Option<(i64, i64, i64)>> = Vec::with_capacity(canon.len());
+        {
+            let mut stmt = t
+                .conn()
+                .prepare_cached(
+                    "SELECT at, rating, rtype FROM rwkv_last WHERE col = ?1 AND card = ?2",
+                )
+                .map_err(sql)?;
+            for card in &canon {
+                rows.push(
+                    stmt.query_row(params![col, card], |r| {
+                        Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+                    })
+                    .optional()
+                    .map_err(sql)?,
+                );
+            }
+        }
+        if let Some(cursor) = t.derive_cfg(col, RWKV_FILL_KEY)? {
+            let pending = unfilled(t, col, &cursor, &canon)?;
+            if !pending.is_empty() {
+                let texts: Vec<String> = pending.iter().map(|&i| canon[i].text()).collect();
+                for (&i, last) in pending.iter().zip(replayed_last(t, col, &mut ix, &texts)?) {
+                    rows[i] = last;
+                }
+            }
+        }
+        let mut out = Vec::with_capacity(8 + cards.len() * 24);
+        out.extend_from_slice(&(cards.len() as i64).to_le_bytes());
+        for row in rows {
+            let (at, rating, rtype) = row.unwrap_or((crate::history::NONE_I64, 0, 0));
+            for v in [at, rating, rtype] {
+                out.extend_from_slice(&v.to_le_bytes());
+            }
+        }
+        Ok(out)
+    })
+}
+
+/// [canon] 里还没回填的（下标）：有卡行、且排在回填游标之后（`cards` 主键序，比较交给 SQLite，与回填取下一批的
+/// `ORDER BY id` 同一套序）。没有卡行的卡在表里本来就没有行（`NONE`），不重放。
+fn unfilled(t: &Truth<'_>, col: i64, cursor: &str, canon: &[Ref]) -> Result<Vec<usize>, String> {
+    let after: Option<Ref> = (!cursor.is_empty()).then(|| ref_of(cursor));
+    let mut stmt = t
+        .conn()
+        .prepare_cached(
+            "SELECT EXISTS (SELECT 1 FROM cards WHERE col = ?1 AND id = ?2 AND (?3 IS NULL OR id > ?3))",
+        )
+        .map_err(sql)?;
+    let mut out = Vec::new();
+    for (i, card) in canon.iter().enumerate() {
+        let pending: bool = stmt
+            .query_row(params![col, card, after], |r| r.get(0))
+            .map_err(sql)?;
+        if pending {
+            out.push(i);
+        }
+    }
+    Ok(out)
+}
+
+/// [cards]（规范 ID 文本）各自按血统重放出的最后一条 RWKV 保留评分（与缓存层物化 `rwkv_last` 的同一条：
+/// `LogsByCard::rwkv_last`；`derive.rs` 的 `assert_rwkv_last_matches_replay` 逐卡对拍两者）。
+fn replayed_last(
+    t: &Truth<'_>,
+    col: i64,
+    ix: &mut Index<'_, '_>,
+    cards: &[String],
+) -> Result<Vec<Option<(i64, i64, i64)>>, String> {
+    let groups: Vec<Vec<String>> = cards.iter().map(|c| vec![c.clone()]).collect();
+    let groups = expand(t, col, ix, &groups)?;
+    let logs = logs_by_card(ix, &projections::wanted_cards(&groups))?;
+    Ok(groups.iter().map(|g| logs.rwkv_last(g)).collect())
+}
+
+/// `rwkv_last_fill`（写，BUG-5547）：`rwkv_last` 分批回填的一步。从游标（`derive_cfg` 的 [RWKV_FILL_KEY]）之后按
+/// `cards` 主键序取至多 [limit] 张卡，逐卡重放写下（或删掉）各自的末条，游标推进到这批最后一张；取到的不满一批 = 填完，
+/// 删掉游标。在调用方的写事务里：一批一笔提交，中途被杀只丢这一批，下次从游标接着做。
+///
+/// 回填期间的写入照常由增量收尾（`cache.rs` 的卡行物化）维护碰到的卡；回填到它时重算出的是同一条，覆盖不改值。
+/// 没有游标（表是完整的）回 `{done: true, filled: 0}`。回包 `{done, filled}`。
+pub fn rwkv_last_fill(t: &Truth<'_>, col: i64, limit: usize) -> Result<serde_json::Value, String> {
+    let Some(cursor) = t.derive_cfg(col, RWKV_FILL_KEY)? else {
+        return Ok(serde_json::json!({"done": true, "filled": 0}));
+    };
+    let limit = limit.max(1);
+    let after: Option<Ref> = (!cursor.is_empty()).then(|| ref_of(&cursor));
+    let batch: Vec<Ref> = {
+        let mut stmt = t
+            .conn()
+            .prepare_cached(
+                "SELECT id FROM cards WHERE col = ?1 AND (?2 IS NULL OR id > ?2) ORDER BY id LIMIT ?3",
+            )
+            .map_err(sql)?;
+        let rows = stmt
+            .query_map(params![col, after, limit as i64], |r| r.get::<_, Ref>(0))
+            .map_err(sql)?;
+        rows.collect::<Result<_, _>>().map_err(sql)?
+    };
+    let texts: Vec<String> = batch.iter().map(Ref::text).collect();
+    let mut ix = Index::new(t, col);
+    let lasts = replayed_last(t, col, &mut ix, &texts)?;
+    for (card, last) in batch.iter().zip(lasts) {
+        match last {
+            Some((at, rating, rtype)) => t
+                .conn()
+                .prepare_cached(
+                    "INSERT OR REPLACE INTO rwkv_last (col, card, at, rating, rtype) VALUES (?1, ?2, ?3, ?4, ?5)",
+                )
+                .map_err(sql)?
+                .execute(params![col, card, at, rating, rtype])
+                .map_err(sql)?,
+            None => t
+                .conn()
+                .prepare_cached("DELETE FROM rwkv_last WHERE col = ?1 AND card = ?2")
+                .map_err(sql)?
+                .execute(params![col, card])
+                .map_err(sql)?,
+        };
+    }
+    let done = batch.len() < limit;
+    let next = batch.last().map(Ref::text);
+    t.set_derive_cfg(
+        col,
+        RWKV_FILL_KEY,
+        if done { None } else { next.as_deref() },
+    )?;
+    Ok(serde_json::json!({"done": done, "filled": batch.len()}))
+}
+
 /// `rwkv_rows` 回放模式：这个集合的全部日志按本机落库序扫一遍（指纹与行出自同一个快照），选行与输出同协议 3
 /// `SrsCore::rwkv_replay`（`projections::ReplayScan`）。`since` / `range` 里的序号是落库序（模块文件头「rowid」）。
 #[allow(clippy::too_many_arguments)]
@@ -200,7 +346,7 @@ pub fn rwkv_replay(
             // 去重、按排序键排序，分歧判断只看序号过滤），保留它只为让两代往同一份计算里灌的输入同序。
             ranked.sort_by_key(|(n, _)| *n);
             for (n, l) in ranked {
-                logs.push(card.to_owned(), n, &l.json, l.server_time, None)?;
+                logs.push(card.to_owned(), n, l.stored())?;
             }
             Ok(())
         })?;
@@ -306,7 +452,7 @@ pub fn rwkv_log_tail(
 /// `card_logs` 同一份「按类取代表」）。同一个原值日志 ID 的别的份（`win = 0`）不是代表。
 fn is_rep(ix: &Index<'_, '_>, canon: &Ref, k: i64) -> Result<bool, String> {
     Ok(ix
-        .log_class_rep(&ix.class_of(canon)?)?
+        .log_class_rep(&ix.canonical(canon)?)?
         .is_some_and(|(x, _, _)| x == k))
 }
 
@@ -375,7 +521,7 @@ fn logs_by_card(ix: &mut Index<'_, '_>, cards: &[&str]) -> Result<LogsByCard, St
     let mut logs = LogsByCard::default();
     each_replayed(ix, &cards, &mut |card, ls| {
         for l in ls {
-            logs.push(card.to_owned(), l.k, &l.json, l.server_time, None)?;
+            logs.push(card.to_owned(), l.k, l.stored())?;
         }
         Ok(())
     })?;
@@ -396,7 +542,7 @@ fn log_rows(
         out.insert(
             card.to_owned(),
             ls.into_iter()
-                .map(|l| (l.json, l.server_time, None))
+                .map(|l| (l.json, l.server_time, None, l.order_id))
                 .collect(),
         );
         Ok(())

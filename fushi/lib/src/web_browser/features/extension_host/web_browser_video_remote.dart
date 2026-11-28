@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' show max;
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/media/video/video_remote_binding_support.dart';
@@ -110,6 +111,7 @@ class WebBrowserVideoRemotePorts {
     required this.mineImmersion,
     required this.miningPads,
     this.closeTab,
+    this.seekSteps,
   });
 
   /// app → 页面（扩展 `runtime.onMessage` 契约）。
@@ -141,6 +143,11 @@ class WebBrowserVideoRemotePorts {
   /// 关掉标签页（与标签栏关闭同一入口；最后一个标签页关掉时浏览页随之退出）。
   /// null = 手机的「关闭视频」不可用。
   final void Function(WebBrowserTab tab)? closeTab;
+
+  /// 手机短 / 长步进键的秒数（用的时候现读）：短步进 = 扩展自己的「快退 / 快进秒数」
+  /// （`videoSeekSeconds`，与网页里 Shift+←/→ 同一个值），长步进 = app 的 asbplayer
+  /// `longSeekSeconds`（扩展没有长步进设置）。null = 不声明 `seekStep`，手机按旧电脑回退。
+  final ({int seekSeconds, int longSeekSeconds}) Function()? seekSteps;
 }
 
 /// app 内浏览器「前台标签页的正片」作为手机视频遥控的播放器。
@@ -434,6 +441,15 @@ class WebBrowserVideoRemote extends ChangeNotifier {
           'volume': session.playback.volume,
           'episodeIndex': 0,
           'episodeCount': 0,
+          if (ports.seekSteps != null)
+            ...() {
+              final ({int seekSeconds, int longSeekSeconds}) steps =
+                  ports.seekSteps!();
+              return <String, Object?>{
+                'seekSeconds': steps.seekSeconds,
+                'longSeekSeconds': steps.longSeekSeconds,
+              };
+            }(),
         },
         command: (String action, Map<String, dynamic> body) async {
           switch (action) {
@@ -496,11 +512,42 @@ class WebBrowserVideoRemote extends ChangeNotifier {
         searchSubtitles: (String? query, int? episode) =>
             _searchSubtitles(session, query, episode),
         downloadSubtitle: (String id) => _downloadSubtitle(session, id),
+        // 手机短 / 长步进：按本宿主的步长（[WebBrowserVideoRemotePorts.seekSteps]）算出
+        // 目标时刻，再走页面早就认得的绝对 `seek`——不给扩展加新动作，任何版本的扩展
+        // 整栈都能执行。
+        seekStep: ports.seekSteps == null
+            ? null
+            : ({required bool forward, required bool long}) =>
+                  _seekStep(session, forward: forward, long: long),
         // 手机「关闭视频」= 关掉这个标签页（与标签栏关闭同一入口）。
         close: ports.closeTab == null
             ? null
             : () async => ports.closeTab!(_live(session).tab),
       );
+
+  /// 一次短 / 长步进：先向页面要一次当下的位置（轮询值最多旧一个轮询周期），要不到就
+  /// 用会话里最近一次的回报；目标夹在 [0, 时长]。
+  Future<void> _seekStep(
+    _WebVideoRemoteSession session, {
+    required bool forward,
+    required bool long,
+  }) async {
+    final ({int seekSeconds, int longSeekSeconds}) steps = ports.seekSteps!();
+    final int stepMs =
+        (long ? steps.longSeekSeconds : steps.seekSeconds) * 1000;
+    final WebBrowserVideoRemoteState? fresh = parseWebBrowserVideoRemoteState(
+      await ports.request(_live(session).tab, <String, Object?>{
+        'type': 'fushiRemoteState',
+        'includeCues': false,
+      }, requestTimeout),
+    );
+    final WebBrowserVideoRemotePlayback playback =
+        fresh?.playback ?? session.playback;
+    final int duration = playback.durationMs;
+    final int raw = playback.positionMs + (forward ? stepMs : -stepMs);
+    final int target = duration > 0 ? raw.clamp(0, duration) : max(0, raw);
+    await _intent(session, <String, Object?>{'action': 'seek', 'ms': target});
+  }
 
   // ── 字幕轨 ─────────────────────────────────────────────────────────
 

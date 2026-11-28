@@ -5,15 +5,19 @@
 // 工具箱是假的（每个写操作照真工具箱的形状记进内存库的 ai_agent_actions，撤销按记录
 // 回放），库内容是一个内存模型——这里只验编排器自己负责的逻辑；各操作的落库与撤销
 // 由它们各自的路由测试覆盖。
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/agent/agent_tool.dart';
+import 'package:fushi_engine/ai/ai_chat_client.dart' show AiChatFailure;
 import 'package:fushi_engine/ai/ai_media_identity_assistant.dart';
 import 'package:fushi_engine/media/identity/pending_identity.dart';
 import 'package:fushi_engine/media/library_curate/library_curator.dart';
+import 'package:fushi_engine/media/video/metadata/video_collection_relation_sync.dart'
+    show CollectionRelationBackfillResult;
 import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart';
 import 'package:fushi_engine/media/video/organize/video_placement_ai.dart';
 import 'package:fushi_engine/media/video/organize/video_placement_audit.dart'
@@ -159,6 +163,17 @@ class _FakeFacts implements LibraryCurateFacts {
   @override
   Future<bool> musicChangedSince(int? sinceMs) async => true;
 
+  bool worksChanged = false;
+
+  @override
+  Future<bool> videoWorksChangedSince(int? sinceMs) async =>
+      sinceMs == null || worksChanged;
+
+  String stamp = 's1';
+
+  @override
+  Future<String> changeStamp() async => stamp;
+
   List<LibraryCurateBookUnit> bookUnits = <LibraryCurateBookUnit>[];
   List<LibraryCurateGameUnit> gameUnits = <LibraryCurateGameUnit>[];
 
@@ -200,7 +215,9 @@ void main() {
 
   LibraryCurator curator({
     LibraryCurateLimits limits = const LibraryCurateLimits(),
+    Future<CollectionRelationBackfillResult> Function()? backfill,
   }) => LibraryCurator(
+    seriesRelationBackfill: backfill,
     db: db,
     toolbox: toolbox,
     store: store,
@@ -1776,6 +1793,143 @@ void main() {
       expect(gameWrites, <String, String>{'g1': 'bgm:1'});
     });
 
+    // BUG-5546：额度用尽 / 鉴权被拒这类配置类失败——本趟立刻停掉后续全部 AI 调用
+    // （规则照跑），结论里给出原因；之后的自动路径整趟不发 AI，手动跑一趟才重试。
+    test('配置类 AI 失败：本趟停掉后续 AI，结论带原因，自动路径不再问，手动重试', () async {
+      facts.bookUnits = <LibraryCurateBookUnit>[
+        single(vol('k1', 'Eta')),
+        single(vol('k2', 'Theta')),
+        single(vol('k3', 'Iota')),
+        single(vol('k4', 'Alpha Book')),
+      ];
+      for (final String q in <String>['Eta', 'Theta', 'Iota', 'Kappa']) {
+        bookFound[q] = <Map<String, Object?>>[
+          book('$q-1', '$q (novel)'),
+          book('$q-2', '$q (manga)'),
+        ];
+      }
+      bookFound['Alpha Book'] = <Map<String, Object?>>[book('9', 'Alpha Book')];
+      facts.gameUnits = const <LibraryCurateGameUnit>[
+        LibraryCurateGameUnit(id: 'g1', title: 'Some Game'),
+      ];
+      gameFound['g1'] = <Map<String, Object?>>[
+        game('vndb:v1', 'Some Game Remake'),
+        game('vndb:v2', 'Some Game Plus'),
+      ];
+      mediaAnswer = (AiMediaIdentityQuery q) =>
+          throw const AiChatFailure('quota_exhausted');
+
+      final LibraryCurateRun run = await curator().run(
+        trigger: LibraryCurateTrigger.manual,
+      );
+      expect(mediaAsked, hasLength(1), reason: '第一次失败后不再逐个单元问');
+      expect(run.aiStopped, 'quota_exhausted');
+      expect(run.toJson()['aiStopped'], 'quota_exhausted');
+      expect(bookWrites.keys, <String>['book:k4'], reason: '规则能认的照常写回');
+      expect(
+        stageOf(run, LibraryCurateStage.scrapeBooks).error,
+        'quota_exhausted',
+      );
+      expect(
+        run.pendingItems.where(
+          (LibraryCuratePendingItem p) => p.kind.endsWith('_scrape_pending'),
+        ),
+        isEmpty,
+        reason: '停在 AI 上的单元不当「认不出」留待确认',
+      );
+      expect((await store.load()).aiBlocked, 'quota_exhausted');
+
+      // 自动路径：带着停用跑，新进来的要 AI 的单元也不问。
+      facts.bookUnits = <LibraryCurateBookUnit>[
+        ...facts.bookUnits,
+        single(vol('k5', 'Kappa')),
+      ];
+      final LibraryCurateRun? auto = await curator().runAuto();
+      expect(auto, isNotNull);
+      expect(auto!.aiStopped, 'quota_exhausted');
+      expect(mediaAsked, hasLength(1));
+
+      // 手动：解除、重新尝试（这次成功），停用清掉。
+      mediaAnswer = (AiMediaIdentityQuery q) => AiVideoIdentityDecision(
+        key: q.candidates.first.key,
+        confidence: 0.95,
+      );
+      final LibraryCurateRun retried = await curator().run(
+        trigger: LibraryCurateTrigger.manual,
+      );
+      expect(retried.aiStopped, isNull);
+      expect(mediaAsked.length, greaterThan(1));
+      expect(bookWrites.keys, containsAll(<String>['book:k1', 'book:k5']));
+      final LibraryCurateState state = await store.load();
+      expect(state.aiBlocked, isNull);
+      expect(state.deferred.keys, isNot(contains('scrape.books:book:k1')));
+    });
+
+    test('非致命 AI 失败：单元退避，自动路径下次触发不重问，手动照样重试', () async {
+      facts.bookUnits = <LibraryCurateBookUnit>[single(vol('k1', 'Eta'))];
+      bookFound['Eta'] = <Map<String, Object?>>[
+        book('1', 'Eta (novel)'),
+        book('2', 'Eta (manga)'),
+      ];
+      mediaAnswer = (AiMediaIdentityQuery q) =>
+          throw const AiChatFailure('network_error');
+
+      final LibraryCurateRun first = (await curator().runAuto())!;
+      expect(mediaAsked, hasLength(1));
+      expect(
+        stageOf(first, LibraryCurateStage.scrapeBooks).status,
+        LibraryCurateStageStatus.partial,
+      );
+      expect(first.aiStopped, isNull, reason: '网络失败不停整趟的 AI');
+      expect(
+        (await store.load()).deferred.keys,
+        contains('scrape.books:book:k1'),
+      );
+
+      // 库变了（别的东西入库），自动路径照常跑一趟，但不把退避中的单元再问一遍。
+      facts.stamp = 's2';
+      expect(await curator().runAuto(), isNotNull);
+      expect(mediaAsked, hasLength(1));
+
+      // 手动：不看退避，重试成功后清掉。
+      mediaAnswer = (AiMediaIdentityQuery q) =>
+          const AiVideoIdentityDecision(key: 'bangumi:1', confidence: 0.95);
+      await curator().run(trigger: LibraryCurateTrigger.manual);
+      expect(mediaAsked, hasLength(2));
+      expect(bookWrites.keys, <String>['book:k1']);
+      expect((await store.load()).deferred, isEmpty);
+    });
+
+    test('退避到期后自动路径重试一次；水位越过它之后也还捞得回来', () async {
+      facts.bookUnits = <LibraryCurateBookUnit>[single(vol('k1', 'Eta'))];
+      bookFound['Eta'] = <Map<String, Object?>>[
+        book('1', 'Eta (novel)'),
+        book('2', 'Eta (manga)'),
+      ];
+      mediaAnswer = (AiMediaIdentityQuery q) =>
+          throw const AiChatFailure('network_error');
+      await curator().runAuto();
+      expect(mediaAsked, hasLength(1));
+      // 下一趟（k1 退避中被跳过）这一阶段做完、水位前移：k1 不再是「新」单元。
+      facts.stamp = 's2';
+      final LibraryCurateRun second = (await curator().runAuto())!;
+      expect(
+        stageOf(second, LibraryCurateStage.scrapeBooks).status,
+        LibraryCurateStageStatus.done,
+      );
+      // 退避到期、库又有变化：从水位之外把它捞回来重试。
+      final _SinceFacts sinceFacts = _SinceFacts(facts);
+      facts = sinceFacts;
+      now += kLibraryCurateDeferBase.inMilliseconds + 1;
+      facts.stamp = 's3';
+      mediaAnswer = (AiMediaIdentityQuery q) =>
+          const AiVideoIdentityDecision(key: 'bangumi:1', confidence: 0.95);
+      await curator().runAuto();
+      expect(mediaAsked, hasLength(2));
+      expect(sinceFacts.bookSince, contains(null), reason: '按全库再取一次退避单元');
+      expect(bookWrites.keys, <String>['book:k1']);
+    });
+
     test('targetBookUnits：单元 id 命中整个单元，卷键只留那一卷，找不到为空', () {
       final LibraryCurateBookUnit series = LibraryCurateBookUnit(
         id: 'collection:7',
@@ -1803,6 +1957,204 @@ void main() {
     });
   });
 
+  // BUG-5546：书架每次重载都来一次信号；没有新内容时自动路径一趟应几乎零成本。
+  group('自动路径「没有新内容」不跑', () {
+    test('库变化戳没变、上一趟没留活：什么都不做、不记运行', () async {
+      expect(await curator().runAuto(), isNotNull);
+      final int calls = toolbox.calls.length;
+      final int runs = (await store.load()).runs.length;
+      expect(await curator().runAuto(), isNull);
+      expect(toolbox.calls, hasLength(calls), reason: '不调任何操作');
+      expect((await store.load()).runs, hasLength(runs), reason: '不记运行');
+      facts.stamp = 's2';
+      expect(await curator().runAuto(), isNotNull, reason: '库变了照常跑');
+      ai = (organize: true, videoIdentify: false, mediaLinks: true);
+      expect(await curator().runAuto(), isNotNull, reason: 'AI 指派变了也算变化');
+    });
+
+    test('上一趟碰到单趟请求上限：戳没变也接着跑', () async {
+      final LibraryCurator c = curator(
+        limits: const LibraryCurateLimits(autoMaxRequests: 1),
+      );
+      final LibraryCurateRun first = (await c.runAuto())!;
+      expect(first.status, LibraryCurateRunStatus.partial);
+      expect((await store.load()).autoResume, isTrue);
+      expect(await c.runAuto(), isNotNull, reason: '留了活：接着做');
+    });
+
+    test('库变化戳算上字幕书 / 有声书：只新入库一本 srt 书也算有新内容', () async {
+      final DatabaseLibraryCurateFacts real = DatabaseLibraryCurateFacts(db);
+      final String before = await real.changeStamp();
+      await db.upsertSrtBook(
+        SrtBooksCompanion.insert(
+          uid: 'srt-new',
+          title: 'New',
+          srtPath: '/tmp/new.srt',
+          importedAt: 1,
+          localAddedAt: const Value<int>(1234),
+        ),
+      );
+      expect(await real.changeStamp(), isNot(before));
+    });
+
+    test('阶段失败：戳没变时等退避到期再自动重跑这一阶段，做完后门又关上', () async {
+      final _Op books = toolbox.ops[LibraryCurateOps.organizeRun]!;
+      bool fail = true;
+      toolbox.op(
+        LibraryCurateOps.organizeRun,
+        (Map<String, Object?> a) async {
+          if (fail && a['domain'] == 'books') throw const _Fail('network');
+          return books.handler(a);
+        },
+        payload: books.payload,
+        undo: books.undo,
+      );
+      final LibraryCurateRun first = (await curator().runAuto())!;
+      expect(first.stages.first.status, LibraryCurateStageStatus.failed);
+      expect(
+        (await store.load()).deferred.containsKey('stage:organize.books'),
+        isTrue,
+      );
+      expect(await curator().runAuto(), isNull, reason: '退避期内、库没变：不跑');
+      now += kLibraryCurateDeferBase.inMilliseconds + 1;
+      fail = false;
+      final LibraryCurateRun? again = await curator().runAuto();
+      expect(again, isNotNull, reason: '失败阶段的退避到期：门重开');
+      expect(again!.stages.first.status, LibraryCurateStageStatus.done);
+      expect(
+        (await store.load()).deferred.containsKey('stage:organize.books'),
+        isFalse,
+      );
+      expect(await curator().runAuto(), isNull, reason: '做完了：门又关上');
+    });
+
+    test('到期后跑过一趟仍留着的陈旧退避，不让门从此常开', () async {
+      expect(await curator().runAuto(), isNotNull);
+      final LibraryCurateState s = await store.load();
+      s.deferred['scrape:gone'] = LibraryCurateDeferral(
+        failures: 1,
+        untilMs: now + 5000,
+      );
+      await store.save(s);
+      expect(await curator().runAuto(), isNull, reason: '还没到期');
+      now += 10000;
+      expect(await curator().runAuto(), isNotNull, reason: '到期：重开一次');
+      expect(await curator().runAuto(), isNull, reason: '跑过一趟了：不再因为它常开');
+    });
+
+    test('跑的过程中重新打开自动开关：解除由这一趟收尾合进去，不被整份写回盖掉', () async {
+      final LibraryCurateState s0 = await store.load()
+        ..aiBlocked = 'quota';
+      await store.save(s0);
+      final Completer<void> entered = Completer<void>();
+      final Completer<void> gate = Completer<void>();
+      final _Op books = toolbox.ops[LibraryCurateOps.organizeRun]!;
+      toolbox.op(
+        LibraryCurateOps.organizeRun,
+        (Map<String, Object?> a) async {
+          if (!entered.isCompleted) entered.complete();
+          await gate.future;
+          return books.handler(a);
+        },
+        payload: books.payload,
+        undo: books.undo,
+      );
+      final LibraryCurator c = curator();
+      final Future<LibraryCurateRun?> running = c.runAuto();
+      await entered.future;
+      await c.resumeAuto();
+      gate.complete();
+      await running;
+      final LibraryCurateState after = await store.load();
+      expect(after.aiBlocked, isNull);
+      expect(after.autoStamp, isNull, reason: '下一次触发照常跑');
+    });
+  });
+
+  group('⑤ 系列关系补填只在作品资料变过时跑', () {
+    late int backfills;
+    Future<CollectionRelationBackfillResult> backfill() async {
+      backfills++;
+      return (works: 0, worksWithRelations: 0, rows: 0, bound: 0);
+    }
+
+    setUp(() {
+      backfills = 0;
+      // 只看 ⑤：其余阶段的操作一律不可用（跳过、没有改动）。
+      toolbox.ops.clear();
+    });
+
+    test('自动路径：首趟补；之后作品没变不补，变了才补；手动每趟都补', () async {
+      final LibraryCurator c = curator(backfill: backfill);
+      await c.runAuto();
+      expect(backfills, 1, reason: '首趟（没有水位）补一次');
+      facts.stamp = 's2';
+      await c.runAuto();
+      expect(backfills, 1, reason: '作品资料没变：不读全库、不联网');
+      facts
+        ..stamp = 's3'
+        ..worksChanged = true;
+      await c.runAuto();
+      expect(backfills, 2);
+      facts.worksChanged = false;
+      await c.run(trigger: LibraryCurateTrigger.manual);
+      expect(backfills, 3, reason: '手动是用户明确要整理');
+    });
+  });
+
+  test('关系推断的 AI 碰到鉴权被拒：停掉后续 AI（音乐只跑规则），这批端点不记进度', () async {
+    toolbox.op(
+      LibraryCurateOps.linksInfer,
+      (Map<String, Object?> a) async => <String, Object?>{
+        'applied': 0,
+        'suggested': 0,
+        'requests': 1,
+        'failed': <Object?>[],
+        'aiError': 'unauthorized',
+        'writes': <Object?>[],
+      },
+    );
+    final LibraryCurateRun run = await curator().run(
+      trigger: LibraryCurateTrigger.manual,
+    );
+    expect(run.aiStopped, 'unauthorized');
+    final LibraryCurateStageResult links = run.stages.firstWhere(
+      (LibraryCurateStageResult s) => s.stage == LibraryCurateStage.links,
+    );
+    expect(links.status, LibraryCurateStageStatus.partial);
+    expect(links.error, 'unauthorized');
+    final int music = toolbox.calls.indexOf(LibraryCurateOps.linksMusic);
+    expect(toolbox.args[music]['useAi'], isFalse);
+    expect((await store.load()).progress['links'] ?? const <String>{}, isEmpty);
+  });
+
+  test('失败退避：6 小时起、每次翻倍、封顶 7 天；状态 JSON 往返', () {
+    final LibraryCurateState state = LibraryCurateState();
+    const int h = 3600 * 1000;
+    state.defer('scrape:w1', 0);
+    expect(state.isDeferred('scrape:w1', 6 * h - 1), isTrue);
+    expect(state.isDeferred('scrape:w1', 6 * h), isFalse);
+    state.defer('scrape:w1', 0);
+    expect(state.deferred['scrape:w1']!.untilMs, 12 * h);
+    for (int i = 0; i < 10; i++) {
+      state.defer('scrape:w1', 0);
+    }
+    expect(state.deferred['scrape:w1']!.untilMs, 7 * 24 * h);
+    state
+      ..aiBlocked = 'quota_exhausted'
+      ..autoStamp = 'x'
+      ..autoResume = true;
+    final LibraryCurateState back = LibraryCurateState.decode(state.encode());
+    expect(back.deferred['scrape:w1']!.failures, 12);
+    expect(back.aiBlocked, 'quota_exhausted');
+    expect(back.autoStamp, 'x');
+    expect(back.autoResume, isTrue);
+    back.resume();
+    expect(back.aiBlocked, isNull);
+    expect(back.deferred, isEmpty);
+    expect(back.autoStamp, isNull);
+  });
+
   test('书名是文件名的判据', () {
     expect(looksLikeFileNameTitle('Some Book.epub'), isTrue);
     expect(looksLikeFileNameTitle('[作者] 書名 01'), isTrue);
@@ -1821,4 +2173,24 @@ void main() {
     );
     expect(pick, isNull);
   });
+}
+
+/// 把 [bookUnits] 当成水位之前入库的旧单元：按水位取（`sinceMs` 非 null）时没有，
+/// 按全库取才有；并记下每次按什么水位取。
+class _SinceFacts extends _FakeFacts {
+  _SinceFacts(_FakeFacts inner) {
+    bookUnits = inner.bookUnits;
+    gameUnits = inner.gameUnits;
+    freshEntries = inner.freshEntries;
+    endpoints = inner.endpoints;
+    stamp = inner.stamp;
+  }
+
+  final List<int?> bookSince = <int?>[];
+
+  @override
+  Future<List<LibraryCurateBookUnit>> bookScrapeUnits(int? sinceMs) async {
+    bookSince.add(sinceMs);
+    return sinceMs == null ? bookUnits : const <LibraryCurateBookUnit>[];
+  }
 }

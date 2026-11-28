@@ -1,14 +1,19 @@
 #include "hang_watchdog.h"
 
 #include <windows.h>
+#include <dwmapi.h>
 
 #include <atomic>
 #include <cstdint>
 #include <cwchar>
 #include <string>
 
+#include "code_integrity_probe.h"
+#include "code_integrity_report.h"
 #include "crash_dump.h"
+#include "dart_aot_image.h"
 #include "native_glog.h"
+#include "startup_reveal_policy.h"
 
 namespace fushi
 {
@@ -118,6 +123,15 @@ namespace fushi
       // Dart 失联量测。
       bool dart_dumped_this_silence = false;
       int dart_dumps_taken = 0;
+      // 启动期限（startup_reveal_policy.h）：看门狗起跑 = 主窗刚建好（隐藏）。
+      ULONGLONG started_ms = 0;
+      bool main_window_shown = false;
+      bool startup_reveal_forced = false;
+      // 本次启动的代码完整性拦截记录查过没有（code_integrity_probe.h，BUG-5484）。
+      bool code_integrity_probed = false;
+      // 上一圈循环的两只钟（[CheckWatchdogStarvation]）。
+      ULONGLONG last_loop_unbiased_ms = 0;
+      ULONGLONG last_loop_wall_ms = 0;
     };
 
     // 抓一份 hang dump 并记录：dump 与 hang_watchdog.log 这两样证据只用栈缓冲和
@@ -134,6 +148,16 @@ namespace fushi
       swprintf_s(text, log_format, ms,
         dump_path[0] ? dump_path : L"(write failed)");
       AppendHangLogLine(text);
+      // dump 里也有同一行（user stream）；日志里再记一份，只拿到日志的人也能对上
+      // 符号文件（tool/windows_dump_symbolize.dart，BUG-5568）。
+      DartAotImageInfo aot;
+      char aot_line[160];
+      if (FindDartAotImage(&aot) &&
+          FormatDartAotImageLine(aot, aot_line, sizeof(aot_line)) > 0) {
+        wchar_t aot_text[160];
+        swprintf_s(aot_text, L"%hs", aot_line);
+        AppendHangLogLine(aot_text);
+      }
       NativeGlog(std::string(glog_prefix) + std::to_string(ms) + " dump=" +
         (dump_path[0] ? DumpFileName(dump_path) : "(write failed)"));
       PruneOldHangDumps();
@@ -209,16 +233,107 @@ namespace fushi
         pending_ms, "main-thread stall: ongoing ms=");
     }
 
+    // 主窗第一次可见：挂上「显示过」属性（第二个进程据此区分启动中 / 退出中）。
+    // 一直没显示：过了启动期限就抓 dump、记日志、PostMessageW 请主窗线程撤隐身并
+    // 显窗——投递式，主线程若真卡住看门狗线程也不会跟着阻塞。
+    void CheckStartupReveal(WatchdogState& s)
+    {
+      if (s.main_window_shown) return;
+      // BUG-5521: a startup maximize shows the window cloaked until Dart's
+      // reveal — Win32-visible, but nothing on screen yet.
+      // Only the app's own cloak counts: DWM_CLOAKED_SHELL (another virtual
+      // desktop) is not "never revealed".
+      DWORD cloaked = 0;
+      if (FAILED(DwmGetWindowAttribute(g_main_window, DWMWA_CLOAKED, &cloaked,
+            sizeof(cloaked)))) {
+        cloaked = 0;
+      }
+      if (IsWindowUserVisible(IsWindowVisible(g_main_window) != FALSE,
+            IsStartupCloaked(cloaked))) {
+        s.main_window_shown = true;
+        SetPropW(g_main_window, kMainWindowShownProp,
+          reinterpret_cast<HANDLE>(static_cast<INT_PTR>(1)));
+        return;
+      }
+      const ULONGLONG now_ms = UnbiasedNowMs();
+      const ULONGLONG elapsed_ms =
+        now_ms > s.started_ms ? now_ms - s.started_ms : 0;
+      if (!ShouldForceStartupReveal(elapsed_ms, false,
+            s.startup_reveal_forced)) {
+        return;
+      }
+      s.startup_reveal_forced = true;
+      // 调试器断在 Dart 里当然出不了首帧：照常显窗，但不抓 dump。
+      if (IsDebuggerPresent()) {
+        AppendHangLogLine(L"startup: main window still hidden at the deadline "
+                          L"(debugger attached, no dump); force-showing it");
+      } else {
+        CaptureHangDump(
+          L"startup: main window still hidden %llu ms after creation (Dart "
+          L"never revealed it); force-showing it; hang dump=%s",
+          elapsed_ms, "startup-hidden: ms=");
+      }
+      // Posted, like ShowWindowAsync, so a stuck main thread never blocks the
+      // watchdog; the handler lifts the startup cloak and shows the window
+      // (Win32Window::MessageHandler).
+      PostMessageW(g_main_window, ForceStartupRevealMessage(), 0, 0);
+      // 智能应用控制 / WDAC 拦下的文件只记在 CodeIntegrity 事件日志里，用户不会去翻：
+      // 卡住这一刻自动读出来，和 dump 一起落盘（BUG-5484）。
+      s.code_integrity_probed = true;
+      StartCodeIntegrityProbe(true);
+    }
+
+    // 每次启动查一次（不管卡没卡）：被拦的 DLL 可能只让某个功能静默失效。
+    void CheckCodeIntegrityProbe(WatchdogState& s)
+    {
+      if (s.code_integrity_probed) return;
+      const ULONGLONG now_ms = UnbiasedNowMs();
+      if (now_ms < s.started_ms + kCodeIntegrityLaunchProbeDelayMs) return;
+      s.code_integrity_probed = true;
+      StartCodeIntegrityProbe(false);
+    }
+
+    // 看门狗线程自己隔了多久才又跑一圈（BUG-5568）。它每 100 ms 醒一次，所有判据都
+    // 靠它醒着：整个进程被挂起 / 换页换到饿死时它一样不跑，量出的就是「什么都没发生」
+    // （2026-11-27 视频冻结 130 s，期间 hang_watchdog.log 一行没有）。两只钟一起记：
+    // 不含睡眠的那只也跳了 = 进程没被调度；只有含睡眠的那只跳了 = 系统睡眠，不是卡。
+    void CheckWatchdogStarvation(WatchdogState& s)
+    {
+      const ULONGLONG unbiased_ms = UnbiasedNowMs();
+      const ULONGLONG wall_ms = GetTickCount64();
+      const ULONGLONG unbiased_gap =
+        unbiased_ms > s.last_loop_unbiased_ms
+          ? unbiased_ms - s.last_loop_unbiased_ms : 0;
+      const ULONGLONG wall_gap =
+        wall_ms > s.last_loop_wall_ms ? wall_ms - s.last_loop_wall_ms : 0;
+      s.last_loop_unbiased_ms = unbiased_ms;
+      s.last_loop_wall_ms = wall_ms;
+      if (!IsWatchdogLoopStarved(unbiased_gap) || IsDebuggerPresent()) return;
+      wchar_t text[160];
+      swprintf_s(text,
+        L"watchdog thread did not run for %llu ms (wall clock %llu ms): the "
+        L"process was not scheduled (suspended or starved)", unbiased_gap, wall_gap);
+      AppendHangLogLine(text);
+      NativeGlog("watchdog-starved: ms=" + std::to_string(unbiased_gap) +
+        " wall_ms=" + std::to_string(wall_gap));
+    }
+
     DWORD WINAPI WatchdogMain(LPVOID)
     {
       const UINT heartbeat = g_heartbeat_message.load();
       WatchdogState s;
+      s.started_ms = UnbiasedNowMs();
+      s.last_loop_unbiased_ms = s.started_ms;
+      s.last_loop_wall_ms = GetTickCount64();
 
       for (;;) {
         if (WaitForSingleObject(g_stop_event, kPollIntervalMs) == WAIT_OBJECT_0 ||
             !IsWindow(g_main_window)) {
           return 0;
         }
+        CheckWatchdogStarvation(s);
+        CheckStartupReveal(s);
+        CheckCodeIntegrityProbe(s);
         CheckDartSilence(s);
         SettleAckedHeartbeat(s);
         if (s.in_flight) {

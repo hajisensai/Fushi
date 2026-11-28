@@ -909,7 +909,8 @@ Future<Object?> _srsSetDeck(AdminDispatch dispatch, String uid, String deck) =>
       params: const <OpParam>[
         OpParam.string(
           'subtitleLanguage',
-          description: 'Preferred subtitle language code, e.g. ja, en, zh.',
+          description:
+              'Preferred subtitle language code, e.g. ja, en, zh-Hant. Empty string = auto (follow the language of each video).',
         ),
         OpParam.string(
           'metadataLocale',

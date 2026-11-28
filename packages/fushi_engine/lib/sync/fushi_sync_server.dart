@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -31,7 +32,10 @@ import 'package:fushi_engine/media/video/video_subtitle_source.dart'
         subtitleExtensionForCodec,
         subtitleFormatForCodec;
 import 'package:fushi_engine/media/video/video_sidecar.dart'
-    show isSidecarSubtitleSuffix, sidecarSubtitleLanguageTag;
+    show
+        SidecarAudioTrackFile,
+        isSidecarSubtitleSuffix,
+        sidecarSubtitleLanguageTag;
 import 'package:fushi_engine/utils/net/bounded_read.dart'
     show readBoundedRequestBody;
 import 'package:fushi_engine/sync/collection_manifest.dart';
@@ -47,6 +51,9 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart'
 import 'package:fushi_engine/media/video/metadata/video_metadata_wire.dart';
 import 'package:fushi_engine/sync/video_metadata_manifest.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/sync/host_manifest_bodies.dart';
+import 'package:fushi_engine/sync/http_etag.dart';
+import 'package:fushi_engine/sync/host_request_observer.dart';
 import 'package:fushi_engine/sync/pdf_sync_package.dart'
     show kLiveLibraryPdfBooksCapability;
 import 'package:fushi_engine/media/video/dandanplay_file_key.dart'
@@ -138,6 +145,14 @@ part 'fushi_sync_server/media_streams.part.dart';
 ///
 /// SECURITY 历史（HBK-AUDIT-011）：本类最初是纯明文 HTTP + Basic，只靠「默认只听
 /// 回环、局域网显式开启」限制暴露面；上面的 TLS / 指纹钉扎即是当时列出的加固方向。
+
+/// gzip 报文体达到这个大小就放到一次性 isolate 里压（见 `_gzipTextMiddleware`）。
+const int _kGzipOffloadMinBytes = 256 * 1024;
+
+/// 在一次性 isolate 里 gzip [plain]。必须是顶层函数：闭包只捕获 [plain]，不把
+/// 中间件作用域里的请求 / 响应（含不可发送的流）带进 `Isolate.run`。
+Future<List<int>> _gzipInIsolate(Uint8List plain) =>
+    Isolate.run(() => gzip.encode(plain), debugName: 'gzip-response');
 
 /// 请求上下文里标记信任区的键：P2P 隧道监听口进来的请求为 `'p2p'`。
 const String kFushiRequestZone = 'fushi.zone';
@@ -1082,7 +1097,15 @@ class FushiSyncServer {
     }
   }
 
+  /// 慢请求 / 请求频率进诊断日志（app 当 host 时本 isolate 就是 UI isolate，
+  /// 慢请求就是用户看到的卡顿）。
+  final HostRequestObserver _requestObserver = HostRequestObserver(
+    log: (String line) =>
+        engineLog.logDiagnostic('FushiSyncServer.requests', line),
+  );
+
   shelf.Handler _buildHandler() => const shelf.Pipeline()
+      .addMiddleware(_requestObserver.middleware())
       .addMiddleware(_gzipTextMiddleware())
       .addMiddleware(bodyLimitMiddleware())
       .addMiddleware(_authMiddleware())
@@ -1247,7 +1270,7 @@ class FushiSyncServer {
     await main?.close(force: true);
     await _blurayClipRelays.closeAll();
     _discShares.clear();
-    _exportCache.dispose();
+    await _exportCache.dispose();
     for (final String stream in _transcodePrefetches.keys.toList()) {
       _cancelTranscodePrefetches(stream, (_TranscodePrefetch _) => true);
     }
@@ -1270,21 +1293,32 @@ class FushiSyncServer {
   shelf.Middleware _gzipTextMiddleware() {
     return (shelf.Handler innerHandler) {
       return (shelf.Request request) async {
-        final shelf.Response response = await innerHandler(request);
+        final shelf.Response innerResponse = await innerHandler(request);
+        final String type = (innerResponse.headers['content-type'] ?? '')
+            .toLowerCase();
+        final bool compressible =
+            (type.contains('application/json') || type.contains('xml')) &&
+            innerResponse.headers['content-encoding'] == null;
+        if (!compressible) return innerResponse;
+        // 表示随 Accept-Encoding 变（RFC 9110 §12.5.5）：发不发 gzip 都声明，缓存
+        // 才不会把 gzip 体交给不认 gzip 的请求。清单端点的 ETag 因此是弱的
+        // （[weakContentEtag]）：两种表示共用一个验证器。
+        final shelf.Response response = innerResponse.change(
+          headers: <String, String>{'Vary': 'Accept-Encoding'},
+        );
         final String accept = (request.headers['accept-encoding'] ?? '')
             .toLowerCase();
         if (!accept.contains('gzip')) return response;
-        final String type = (response.headers['content-type'] ?? '')
-            .toLowerCase();
-        final bool compressible =
-            type.contains('application/json') || type.contains('xml');
-        if (!compressible) return response;
-        if (response.headers['content-encoding'] != null) return response;
         // 按块攒进 BytesBuilder：展开成 List<int> 会把每字节装箱成 8 字节槽，几百 KB
         // 的清单要多拷一份、多占 8 倍内存（同 game_stream.part.dart 的上传体）。
         final BytesBuilder body = BytesBuilder(copy: false);
         await response.read().forEach(body.add);
-        final List<int> gzipped = gzip.encode(body.takeBytes());
+        final Uint8List plain = body.takeBytes();
+        // 大报文体（合集清单 7 MB → 压缩约 70 ms）放到一次性 isolate 里压：本
+        // isolate 在 app 里就是 UI isolate。小报文体起 isolate 不划算，原地压。
+        final List<int> gzipped = plain.length >= _kGzipOffloadMinBytes
+            ? await _gzipInIsolate(plain)
+            : gzip.encode(plain);
         return response.change(
           headers: <String, String>{
             'Content-Encoding': 'gzip',
@@ -1436,32 +1470,7 @@ class FushiSyncServer {
     }
     if (reqPath == '/api/capabilities') {
       if (method != 'GET') return shelf.Response(405);
-      final shelf.Response response = await _handleCapabilities();
-      final bool srsRemoteStore = srsRemoteStoreProvider?.call() != null;
-      final bool screenOcr = await _screenOcr?.isAvailable() ?? false;
-      final bool aiRelay = _aiRelayAdvertised;
-      if (_videoRemoteService == null &&
-          !_leaderboardLinkAvailable &&
-          !srsRemoteStore &&
-          !screenOcr &&
-          !aiRelay) {
-        return response;
-      }
-      final Map<String, dynamic> capabilities =
-          jsonDecode(await response.readAsString()) as Map<String, dynamic>;
-      if (_videoRemoteService != null) {
-        capabilities['videoRemoteControlV1'] = true;
-      }
-      if (_leaderboardLinkAvailable) {
-        capabilities[kInterconnectLeaderboardLinkCapability] = true;
-      }
-      if (srsRemoteStore) {
-        capabilities[kSrsRemoteStoreCapabilityV2] = true;
-        capabilities[kSrsRemoteStoreCapability] = true;
-      }
-      if (screenOcr) capabilities[kScreenOcrCapability] = true;
-      if (aiRelay) capabilities[kAiRelayCapability] = true;
-      return jsonResponse(capabilities);
+      return _capabilitiesRoute(request);
     }
     if (reqPath == '/api/host/addresses') {
       if (method != 'GET') return shelf.Response(405);
@@ -2060,8 +2069,16 @@ class ExportPackageCache {
   /// （哈希失败）时 null，响应就不带该头，client 退回只做长度校验。
   String? reprDigestFor(File file) => _reprDigests[file.path];
 
-  Directory get _dir =>
-      _root ??= Directory.systemTemp.createTempSync('fushi_export_cache');
+  Future<Directory>? _rootCreating;
+
+  /// 缓存目录（首次用时异步建：导出端点在 host 所在 isolate 上跑，不做同步 IO）。
+  Future<Directory> _dir() async {
+    final Directory? root = _root;
+    if (root != null) return root;
+    final Directory created = await (_rootCreating ??= Directory.systemTemp
+        .createTemp('fushi_export_cache'));
+    return _root ??= created;
+  }
 
   /// 取 (kind,id) 的缓存导出文件；TTL 内直接命中，否则经 [export] 重新打包。
   /// [export] 返回的临时文件（连同其父临时目录）所有权移交本缓存。
@@ -2153,7 +2170,7 @@ class ExportPackageCache {
     // 保留原始文件名（扩展名决定 Content-Type，如 .epub → application/epub+zip），
     // 前缀序号防同名不同 key 撞车。
     final File target = File(
-      p.join(_dir.path, 'e${_seq++}_${p.basename(exported.path)}'),
+      p.join((await _dir()).path, 'e${_seq++}_${p.basename(exported.path)}'),
     );
     try {
       await exported.rename(target.path);
@@ -2200,7 +2217,7 @@ class ExportPackageCache {
   }
 
   /// 清空缓存目录（服务器 stop 时调用；best-effort）。
-  void dispose() {
+  Future<void> dispose() async {
     _latest.clear();
     _inFlight.clear();
     _lastUsed.clear();
@@ -2209,9 +2226,10 @@ class ExportPackageCache {
     _reprDigests.clear();
     final Directory? root = _root;
     _root = null;
+    _rootCreating = null;
     if (root == null) return;
     try {
-      root.deleteSync(recursive: true);
+      await root.delete(recursive: true);
     } catch (_) {
       // best-effort：仍被占用的文件随 OS 临时目录策略清理。
     }

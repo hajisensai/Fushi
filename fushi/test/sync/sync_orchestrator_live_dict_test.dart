@@ -54,7 +54,10 @@ Future<void> _seedDictionary(
   );
   final Directory dir = Directory(p.join(dictRoot.path, name))
     ..createSync(recursive: true);
+  // 装载必需的三组文件都在（kDictionaryRequiredFileGroups）：同步按文件判「本机有没有这本」。
+  File(p.join(dir.path, 'index.json')).writeAsStringSync('{}');
   File(p.join(dir.path, 'blobs.bin')).writeAsBytesSync(<int>[1, 2, 3]);
+  File(p.join(dir.path, 'key.index')).writeAsBytesSync(<int>[4, 5]);
 }
 
 /// 构造并认证一个 [InterconnectSyncBackend]，fake probe 总返回 true。
@@ -366,6 +369,65 @@ void main() {
           );
       expect(pulled.order, 7, reason: '接替目录行的位置，不照搬 host 的 0');
       expect(pulled.hiddenLanguagesJson, '["ja"]', reason: '接替目录行的开关');
+    });
+
+    // 反馈 ujt4V8GdT8：本机登记着「明镜」但文件丢了（元数据在、目录没了）。整轮同步以前按
+    // 元数据判两边都有，既不拉也不推；现在照拉回来恢复（保住本机的顺序 / 开关），而文件丢了的
+    // 本机独有词典不再被打成空包推给 host。
+    test('pull：文件丢了的本机词典从 host 恢复；只剩元数据的本机独有词典不推', () async {
+      final FushiDatabase localDb = _memDb();
+      addTearDown(localDb.close);
+      final Directory localDictRoot = Directory(
+        p.join(work.path, 'local_dicts_restore'),
+      )..createSync();
+      await _seedDictionary(localDb, localDictRoot, '明镜');
+      await _seedDictionary(localDb, localDictRoot, 'Ghost');
+      await localDb.applyDictionaryMetaProfileColumns(
+        name: '明镜',
+        order: 9,
+        hiddenLanguagesJson: '["ja"]',
+        collapsedLanguagesJson: '[]',
+        expandedLanguagesJson: '[]',
+        languageOverride: null,
+      );
+      Directory(p.join(localDictRoot.path, '明镜')).deleteSync(recursive: true);
+      Directory(
+        p.join(localDictRoot.path, 'Ghost'),
+      ).deleteSync(recursive: true);
+      final Directory tmp = Directory(p.join(work.path, 'tmp_restore'))
+        ..createSync();
+      final InterconnectSyncBackend backend = await _buildClientBackend(
+        base: serverBase,
+        token: token,
+      );
+
+      final SyncRunReport report = SyncRunReport();
+      await _orchestrator(
+        localDb,
+        backend,
+        localDictRoot,
+        tmp,
+      ).syncDictionaries(report, direction: SyncAssetDirection.both);
+
+      expect(report.errors, isEmpty, reason: '${report.errors}');
+      expect(report.dictionariesImported, 1, reason: '「明镜」应从 host 拉回');
+      expect(report.dictionariesExported, 0, reason: 'Ghost 只剩元数据，不推');
+      expect(
+        File(p.join(localDictRoot.path, '明镜', 'key.index')).existsSync(),
+        isTrue,
+      );
+      final DictionaryMetaRow restored =
+          (await localDb.getAllDictionaryMetadata()).firstWhere(
+            (DictionaryMetaRow d) => d.name == '明镜',
+          );
+      expect(restored.order, 9, reason: '恢复保住本机顺序，不照搬 host 的 0');
+      expect(restored.hiddenLanguagesJson, '["ja"]', reason: '本机开关照旧');
+      expect(
+        (await hostDb.getAllDictionaryMetadata()).map(
+          (DictionaryMetaRow d) => d.name,
+        ),
+        isNot(contains('Ghost')),
+      );
     });
 
     test('push：host 无 JMdict，运行后 host DB 含 JMdict', () async {

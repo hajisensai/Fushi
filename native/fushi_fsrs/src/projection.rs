@@ -13,7 +13,7 @@
 
 use serde_json::value::RawValue;
 
-use crate::history::{Extra, Kind, Log, NONE_I64, Outcome, Parsed, RType};
+use crate::history::{Extra, Kind, Log, NONE_I64, Outcome, Parsed, RType, counted_answer_ms};
 
 pub const DAY_MS: i64 = 86_400_000;
 
@@ -107,6 +107,8 @@ pub struct EffLog {
     pub rtype: RType,
     pub rating: Option<i64>,
     pub at: i64,
+    /// RWKV 输入行的作答用时：计入口径（`history::counted_answer_ms`，Fushi 记的封顶 60 秒），与日志里存真实用时之前
+    /// 喂给模型的值一样。
     pub dur: i64,
     pub res: Option<Outcome>,
     pub mem_alg: MemAlg,
@@ -126,7 +128,7 @@ impl EffLog {
             rtype: extra.rtype,
             rating: log.rating,
             at: log.occurred_at,
-            dur: extra.dur,
+            dur: counted_answer_ms(log.origin, extra.dur),
             res: res.clone(),
             mem_alg: MemAlg::of(extra.mem_alg),
             restore: extra.restore,

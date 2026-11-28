@@ -73,14 +73,14 @@ class TagManifest implements CanonicalJsonManifest {
     final Object? rawTags = map['tags'];
     return TagManifest(
       version: version,
-      tags: <TagManifestTag>[
+      tags: List<TagManifestTag>.unmodifiable(<TagManifestTag>[
         if (rawTags is List)
           for (final Object? t in rawTags) TagManifestTag.fromJson(t),
-      ],
-      entries: <TagManifestEntry>[
+      ]),
+      entries: List<TagManifestEntry>.unmodifiable(<TagManifestEntry>[
         for (final Object? e in requireManifestList(map, 'entries', _label))
           TagManifestEntry.fromJson(e),
-      ],
+      ]),
       lockCredential: _lockCredential(map['lockCredential']),
     );
   }
@@ -175,11 +175,11 @@ class TagManifestEntry {
     return TagManifestEntry(
       kind: kind,
       key: key,
-      aliases: <String>[
+      aliases: List<String>.unmodifiable(<String>[
         if (aliases is List)
           for (final Object? a in aliases)
             if (a is String && a.isNotEmpty) a,
-      ],
+      ]),
       addedAt: _clockMap(map['added']),
       tombstones: _clockMap(map['removed']),
       privacy: _privacyClock(map['privacy']),
@@ -268,14 +268,14 @@ class TagManifestEntry {
 
   static Map<String, int> _clockMap(Object? raw) {
     if (raw is! Map) return const <String, int>{};
-    return <String, int>{
+    return Map<String, int>.unmodifiable(<String, int>{
       for (final MapEntry<Object?, Object?> e in raw.entries)
         if (e.key is String &&
             (e.key as String).isNotEmpty &&
             e.value is int &&
             (e.value as int) >= 0)
           e.key as String: e.value as int,
-    };
+    });
   }
 
   static Map<String, int> _sortedClock(Map<String, int> m) {

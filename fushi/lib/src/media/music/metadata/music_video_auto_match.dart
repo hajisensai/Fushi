@@ -1,5 +1,7 @@
 /// 本地 MV 后台自动匹配：音乐来源扫完后，把曲库里还没有 MV 的本机曲目和它们附近的视频
-/// （同目录 / MV 目录 / 附近蓝光盘的流）做声纹对齐，过门的自动绑定，歌词页就能直接放。
+/// （同目录 / MV 目录 / 附近蓝光盘的流），以及同一个下载发布里的特典 / 原盘流（整理后
+/// 与 CD 不在一棵目录树里，见 `music_release_videos.dart`）做声纹对齐，过门的自动绑定，
+/// 歌词页就能直接放。
 ///
 /// 省的是重复劳动，不是判据：
 /// - **按目录收一次候选**：同目录的歌共用一份候选清单（后台 isolate 里列目录 + stat）；
@@ -23,19 +25,25 @@ import 'package:fushi/src/media/music/music_local_video.dart'
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/media_extensions.dart' show isVideoMediaPath;
+import 'package:fushi_engine/media/music/metadata/music_release_videos.dart';
 import 'package:fushi_engine/media/music/metadata/music_video_match.dart'
     show MusicVideoKind;
 import 'package:path/path.dart' as p;
 
 /// 按目录收候选（真 app 在后台 isolate 里跑 [collectMusicVideoFilesNear]；测试注入替身）。
+/// 键是曲目目录，值是这个目录所属下载发布里的候选（[musicReleaseVideosForDir]，可空）。
 typedef MusicVideoNearbyCollector =
-    Future<Map<String, MusicVideoNearbyFiles>> Function(List<String> dirs);
+    Future<Map<String, MusicVideoNearbyFiles>> Function(
+      Map<String, List<MusicReleaseVideoCandidate>> dirs,
+    );
 
 Future<Map<String, MusicVideoNearbyFiles>> _collectInBackground(
-  List<String> dirs,
+  Map<String, List<MusicReleaseVideoCandidate>> dirs,
 ) => Isolate.run(
   () => <String, MusicVideoNearbyFiles>{
-    for (final String d in dirs) d: collectMusicVideoFilesNear(d),
+    for (final MapEntry<String, List<MusicReleaseVideoCandidate>> d
+        in dirs.entries)
+      d.key: collectMusicVideoFilesNear(d.key, release: d.value),
   },
 );
 
@@ -105,9 +113,23 @@ class MusicVideoAutoMatcher extends ChangeNotifier {
     }
   }
 
+  /// 一轮绑定在**开轮时的那一个库**上（与响度扫描同一做法，BUG-5387）：换库 / 关库时
+  /// 被取消，对到一半的那对不再等，旧库读出的曲目不会写进换上来的新库。
   Future<void> _runOnce() async {
     final FushiDatabase? db = _database();
     if (db == null) return;
+    try {
+      await db.runBackgroundWork<void>(
+        'music.videoAutoMatch',
+        (DatabaseWorkToken work) => _runOnceOn(db, work),
+      );
+    } on DatabaseWorkCancelledException {
+      // 库要关了：没对的配对仍缺 match_check，下次开库启动那一轮再对。
+      _again = false;
+    }
+  }
+
+  Future<void> _runOnceOn(FushiDatabase db, DatabaseWorkToken work) async {
     final Map<String, List<MusicTrackRow>> byDir =
         <String, List<MusicTrackRow>>{};
     for (final MusicTrackRow t in await db.listMusicTracks()) {
@@ -115,8 +137,12 @@ class MusicVideoAutoMatcher extends ChangeNotifier {
       (byDir[p.dirname(t.path)] ??= <MusicTrackRow>[]).add(t);
     }
     if (byDir.isEmpty) return;
+    final List<MusicRelease> releases = await loadMusicReleases(db);
     final Map<String, MusicVideoNearbyFiles> near = await _collect(
-      byDir.keys.toList(),
+      <String, List<MusicReleaseVideoCandidate>>{
+        for (final String dir in byDir.keys)
+          dir: musicReleaseVideosForDir(dir, releases),
+      },
     );
     final Set<String> withVideos = await db.musicTrackUidsWithVideos();
     final Map<(String, String), MusicVideoMatchCheckRow> checks = await db
@@ -138,13 +164,52 @@ class MusicVideoAutoMatcher extends ChangeNotifier {
           track: track,
           checks: checks,
         )) {
-          if ((await service.alignLocal(track, video)).bound) {
+          if (!_enabled()) return;
+          work.throwIfCancelled();
+          if (await _alignPair(service, track, video, work)) {
             _boundThisRun++;
             notifyListeners();
             break;
           }
         }
       }
+    }
+  }
+
+  /// 对一对（歌, 视频）。一对出错只影响这一对：记日志、不记「已对过」（下一轮再试），
+  /// 本轮接着对后面的——不能让一个读不了的文件把整轮、以及之后每一轮都挡在同一处。
+  /// 起止各记一条诊断（带耗时），卡住时能从诊断环看出卡在哪一对。
+  Future<bool> _alignPair(
+    MusicVideoService service,
+    MusicTrackRow track,
+    MusicVideoFileStamp video,
+    DatabaseWorkToken work,
+  ) async {
+    final Stopwatch watch = Stopwatch()..start();
+    ErrorLogService.instance.logDiagnostic(
+      'MusicVideoAutoMatcher',
+      'align start: ${track.path} <-> ${video.path}',
+    );
+    try {
+      final bool bound = (await work.guard(
+        service.alignLocal(track, video),
+      )).bound;
+      ErrorLogService.instance.logDiagnostic(
+        'MusicVideoAutoMatcher',
+        'align done in ${watch.elapsedMilliseconds} ms (bound=$bound): '
+            '${track.path} <-> ${video.path}',
+      );
+      return bound;
+    } on DatabaseWorkCancelledException {
+      rethrow;
+    } on Object catch (e, st) {
+      ErrorLogService.instance.log(
+        'MusicVideoAutoMatcher.align',
+        'Failed after ${watch.elapsedMilliseconds} ms: '
+            '${track.path} <-> ${video.path}: $e',
+        st,
+      );
+      return false;
     }
   }
 }

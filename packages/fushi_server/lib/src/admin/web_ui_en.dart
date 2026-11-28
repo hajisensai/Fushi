@@ -390,9 +390,9 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '算法是 RWKV 的牌组用哪个模型排程（整台设备一个设置，各份配置文件共用）。换了当场生效：需要时先下载新权重，没有这一档的快照时按全部复习历史重放一次，期间这些牌组不出复习卡。':
       'Which model schedules decks that use the RWKV algorithm (one setting for the whole device, shared by all profiles). A change applies at once: the new weights download if needed, and without a saved state for that size the whole review history is replayed once; those decks show no review cards meanwhile.',
   '使用的模型': 'Model',
-  'Small（默认，准确度最好）': 'Small (default, most accurate)',
-  'Tiny（每张卡省约 30% 内存，准确度略差）':
-      'Tiny (about 30% less memory per card, slightly less accurate)',
+  'Tiny（默认，每张卡省约 30% 内存，准确度只差约 0.6%）':
+      'Tiny (default, about 30% less memory per card, only about 0.6% less accurate)',
+  'Small（准确度最好）': 'Small (most accurate)',
   '已切换 RWKV 模型': 'RWKV model switched',
   'RWKV 下载权重中': 'RWKV downloading weights',
   'RWKV 准备中': 'RWKV preparing',
@@ -496,6 +496,7 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '绑定地址': 'Bind address',
   '局域网配对必须 PIN': 'Require a PIN for LAN pairing',
   '字幕语言': 'Subtitle language',
+  '自动（跟随每个视频的语言）': "Auto (follow each video's language)",
   '刮削资料语言（BCP-47，如 ja / zh-CN）':
       'Metadata language (BCP-47, e.g. ja / en / zh-CN)',
   '扫描后自动补刮视频资料': 'Fetch video metadata after scans',

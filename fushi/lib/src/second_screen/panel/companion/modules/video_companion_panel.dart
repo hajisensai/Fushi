@@ -24,9 +24,6 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:material_ui/material_ui.dart';
 
-/// Step of the "back / forward 10 seconds" buttons.
-const int kVideoCompanionSeekStepMs = 10000;
-
 /// One subtitle line of the snapshot window.
 class _Cue {
   const _Cue({required this.start, required this.text});
@@ -106,7 +103,15 @@ class _VideoView {
       autoPause = s.flag(VideoCompanionKeys.autoPause),
       loop = s.mapOrNull(VideoCompanionKeys.loop) ?? const <String, Object?>{},
       abA = s.intOrNull(VideoCompanionKeys.abA),
-      abB = s.intOrNull(VideoCompanionKeys.abB);
+      abB = s.intOrNull(VideoCompanionKeys.abB),
+      shortBack = videoCompanionSeekStepCommand(s, forward: false, long: false),
+      shortForward = videoCompanionSeekStepCommand(
+        s,
+        forward: true,
+        long: false,
+      ),
+      longBack = videoCompanionSeekStepCommand(s, forward: false, long: true),
+      longForward = videoCompanionSeekStepCommand(s, forward: true, long: true);
 
   final String title;
   final String? series;
@@ -129,6 +134,13 @@ class _VideoView {
   final Map<String, Object?> loop;
   final int? abA;
   final int? abB;
+
+  /// The short / long seek-step buttons: the page's own step when it reports
+  /// one, else the legacy fixed step ([videoCompanionSeekStepCommand]).
+  final VideoCompanionSeekStepCommand shortBack;
+  final VideoCompanionSeekStepCommand shortForward;
+  final VideoCompanionSeekStepCommand longBack;
+  final VideoCompanionSeekStepCommand longForward;
 
   bool get loopOn => loop.flag(VideoCompanionKeys.on);
 
@@ -290,12 +302,18 @@ class _VideoBody extends ConsumerWidget {
       CompanionActionRow(
         children: <Widget>[
           CompanionActionButton(
-            icon: FushiIcons.replay10,
-            tooltip: t.second_screen_video_back_10,
-            onPressed: () =>
-                _send(VideoCompanionActions.seekBy, <String, Object?>{
-                  VideoCompanionKeys.ms: -kVideoCompanionSeekStepMs,
-                }),
+            icon: FushiIcons.doubleChevronLeft,
+            tooltip: t.video_control_seek_backward_seconds(
+              seconds: view.longBack.seconds,
+            ),
+            onPressed: () => _send(view.longBack.action, view.longBack.args),
+          ),
+          CompanionActionButton(
+            icon: FushiIcons.fastRewind,
+            tooltip: t.video_control_seek_backward_seconds(
+              seconds: view.shortBack.seconds,
+            ),
+            onPressed: () => _send(view.shortBack.action, view.shortBack.args),
           ),
           CompanionActionButton(
             icon: FushiIcons.skipPrevious,
@@ -314,12 +332,20 @@ class _VideoBody extends ConsumerWidget {
             onPressed: () => _send(VideoCompanionActions.nextCue),
           ),
           CompanionActionButton(
-            icon: FushiIcons.forward10,
-            tooltip: t.second_screen_video_forward_10,
+            icon: FushiIcons.fastForward,
+            tooltip: t.video_control_seek_forward_seconds(
+              seconds: view.shortForward.seconds,
+            ),
             onPressed: () =>
-                _send(VideoCompanionActions.seekBy, <String, Object?>{
-                  VideoCompanionKeys.ms: kVideoCompanionSeekStepMs,
-                }),
+                _send(view.shortForward.action, view.shortForward.args),
+          ),
+          CompanionActionButton(
+            icon: FushiIcons.doubleChevronRight,
+            tooltip: t.video_control_seek_forward_seconds(
+              seconds: view.longForward.seconds,
+            ),
+            onPressed: () =>
+                _send(view.longForward.action, view.longForward.args),
           ),
         ],
       ),

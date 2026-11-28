@@ -1,0 +1,13 @@
+## BUG-5466 · tts-cast-unclosed-json-array
+- **报告**：2026-11-23（用户：有声书制作台「用 AI 标注说话人」对中文书《化物語（上）》报「无法理解 AI 的回复」；提供商 Unsloth Studio + Qwen3.5 9B）
+- **真实性**：✅ 真 bug。用同样的提示词与请求体直接重放第一章四块：第四块重放三次，一次回了三条完整操作但**漏掉数组末尾的 `]`**（`finish_reason=stop`，95 token，没被截断）。
+  - 根因 `fushi/lib/src/media/audiobook/tts/studio/tts_cast_prompt.dart` `_firstJsonArray`：逐个 `[` 试解码，外层数组没闭合就退到**第一个嵌套的别名表** `["黑儀","戰原","傲嬌女"]`，元素全是字符串 → `no usable entries` → 整块（整本）`bad_output`。第二遍逐句归属共用同一解析，同样受影响。
+  - 诊断缺口：`TtsCastAnnotateFailure` 的 detail（哪一遍、哪章、原因）界面不显示也不记日志，模型原始回复直接丢掉，错误日志里一行都没有。
+  - 加重因素：两遍提示词的示例全是日文（名字、对白标记、`tone` 明写 Japanese、`desc` 示例是英文），小模型对中文书照抄示例语言（desc 写英文 / tone 写日文），还会把已在表里的别名重新 `add` 成新角色。
+- **[x] ① 已修复** —
+  - 解析只认「`[` 后紧跟 `{` 或 `]`」的顶层对象数组，不退到嵌套数组；数组没闭合 / 末元素写坏时收下其中已完整的 `{…}` 元素；顺带去掉推理模型夹在正文里的 `<think>…</think>`。
+  - `TtsCastAnnotateFailure` 带模型原始回复；`annotateTtsCast` 对非取消的失败写错误日志（原因 + 章 + 原始回复，制作台与系列批量两条入口都覆盖）；界面文案带上原因（新 key `audiobook_studio_cast_failure_bad_output_reason`）。
+  - 提示词示例按正文文字选日文 / 中文 / 中性三套（`detectTtsCastScript`，看假名比例，不读可能出错的语言元数据）；`desc` / `tone` 要求用书的语言；明令「已在表里的名字 / 别名用 update，不再 add」；要求总是闭合数组。
+  - 不加自动重试：重试只会掩盖解析缺陷。
+- **[x] ② 已加自动化测试** — `fushi/test/media/audiobook/tts/studio/tts_cast_annotator_test.dart`（真实未闭合回复、截断末元素、坏元素、说明文字 / 思考段里的方括号、只有嵌套字符串数组、第二遍未闭合、文字检测、中 / 日提示词）；`tts_cast_passes_test.dart`（中文书两遍用中文提示词且未闭合回复照常并入、`bad_output` 带原始回复）；`tts_studio_page_test.dart`（文案带原因）。
+- **备注**：Unsloth Studio 的 llama-server 日志里反复出现的 `failed to find free space in the KV cache, retrying with smaller batch size` 是服务端自行重试，请求全部 200，与本 bug 无关。

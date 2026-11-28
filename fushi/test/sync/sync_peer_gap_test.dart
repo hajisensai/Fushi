@@ -21,6 +21,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
+import 'package:fushi/src/sync/sync_peer_gap_ui.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -122,10 +123,11 @@ void main() {
   group('SyncRunReport.notePeerGap', () {
     test('每维度至多一条；日志行与类型并存；mergeFrom 不重复类型', () {
       final List<String> observed = <String>[];
-      final SyncRunReport r = SyncRunReport(onError: observed.add)
-        ..notePeerGap(SyncPeerGapDimension.tags, outdated: true)
-        ..notePeerGap(SyncPeerGapDimension.tags, outdated: true)
-        ..notePeerGap(SyncPeerGapDimension.pdfBooks, outdated: false);
+      final SyncRunReport r =
+          SyncRunReport(onError: (SyncFailure f) => observed.add(f.message))
+            ..notePeerGap(SyncPeerGapDimension.tags, outdated: true)
+            ..notePeerGap(SyncPeerGapDimension.tags, outdated: true)
+            ..notePeerGap(SyncPeerGapDimension.pdfBooks, outdated: false);
       expect(r.peerGaps.map((SyncPeerGap g) => g.dimension), <Object>[
         SyncPeerGapDimension.tags,
         SyncPeerGapDimension.pdfBooks,
@@ -392,5 +394,26 @@ void main() {
       reason: '${report.errors}',
     );
     expect(report.errors, <String>[report.peerGaps.single.message]);
+  });
+
+  test('报告原句可精确还原成维度，面板据此换成本地化说明；别的行不误认', () {
+    final Set<String> lines = <String>{};
+    for (final SyncPeerGapDimension d in SyncPeerGapDimension.values) {
+      for (final bool outdated in const <bool>[true, false]) {
+        final SyncPeerGap gap = SyncPeerGap(dimension: d, outdated: outdated);
+        final SyncPeerGap? back = SyncPeerGap.fromMessage(gap.message);
+        expect(back?.dimension, d);
+        expect(back?.outdated, outdated);
+        final String line = localizedSyncTaskError(gap.message);
+        expect(line, isNot(gap.message), reason: '$d/$outdated 没换成本地化文案');
+        lines.add(line);
+      }
+    }
+    expect(lines, hasLength(SyncPeerGapDimension.values.length * 2));
+    expect(SyncPeerGap.fromMessage('online library live sync: boom'), isNull);
+    expect(
+      localizedSyncTaskError('online library live sync: boom'),
+      'online library live sync: boom',
+    );
   });
 }

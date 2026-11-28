@@ -39,6 +39,15 @@ import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/srs/srs_card_autoplay.dart';
 import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show
+        FushiFloatingChromeController,
+        FushiFloatingChromeOverlay,
+        FushiFloatingChromeScope;
+import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart'
+    show FushiScrollAwayChrome;
+import 'package:fushi/src/utils/components/fushi_static_masthead.dart'
+    show FushiStaticMasthead;
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_poster_block.dart'
     show fushiPosterColors, fushiPosterHue;
@@ -67,7 +76,11 @@ import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
 import 'srs_test_support.dart'
-    show SrsTestAppModel, openSrsTestStorage, srsSettle;
+    show
+        SrsTestAppModel,
+        openSrsTestStorage,
+        srsSettle,
+        srsTestDonationOverrides;
 import 'support/srs_write_settle.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/srs/srs_rwkv_scheduling.dart';
@@ -316,6 +329,7 @@ Future<void> _pumpPage(
     ProviderScope(
       overrides: <Override>[
         appProvider.overrideWith((Ref ref) => appModel),
+        ...srsTestDonationOverrides,
         srsStoreProvider.overrideWith((Ref ref) async => store),
         // 复习页先等 RWKV 服务装配到 store 上：测试不起真服务（会去下载权重），要用 RWKV 的用例自己给
         // `store.rwkv` 装替身。
@@ -481,6 +495,64 @@ void main() {
         await _unmount(tester);
       },
     );
+
+    testWidgets('[$ds] 首页页头大字与库页同一套：随滚动收缩、正文从页头底下穿过', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      await _addLapis(tester, store, '食べる');
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        size: const Size(420, 800),
+        page: const SrsDeckListPage(),
+      );
+      final Finder masthead = find.byType(FushiStaticMasthead);
+      expect(masthead, findsOneWidget);
+      // 与首页 / 库页同一套页头大字工具区，不再是「收起外壳 + 正文」竖排（大字
+      // 钉死不收、正文在页头下沿硬切）。
+      expect(
+        find.ancestor(
+          of: masthead,
+          matching: find.byType(FushiFloatingChromeOverlay),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.ancestor(
+          of: masthead,
+          matching: find.byType(FushiScrollAwayChrome),
+        ),
+        findsNothing,
+      );
+      // 正文铺到页头底下：主滚动区的顶边不低于页头顶边。
+      final Finder body = find
+          .descendant(
+            of: find.byType(SrsDeckListPage),
+            matching: find.byWidgetPredicate(
+              (Widget w) =>
+                  w is Scrollable &&
+                  axisDirectionToAxis(w.axisDirection) == Axis.vertical,
+            ),
+          )
+          .first;
+      expect(
+        tester.getTopLeft(body).dy,
+        lessThanOrEqualTo(tester.getTopLeft(masthead).dy),
+      );
+      final FushiFloatingChromeController chrome =
+          FushiFloatingChromeScope.maybeOf(tester.element(masthead))!;
+      expect(chrome.mastheadScrollOffset.value, 0);
+      await tester.drag(body, const Offset(0, -200));
+      await _settle(tester);
+      expect(
+        chrome.mastheadScrollOffset.value,
+        greaterThan(0),
+        reason: '滚动驱动页头大字收缩',
+      );
+      await _unmount(tester);
+    });
 
     testWidgets('[$ds] 牌组列表：空库给出「添加第一张卡」，加卡后显示新卡计数', (
       WidgetTester tester,
@@ -3227,6 +3299,96 @@ void main() {
       }
       expect(button, findsNothing, reason: '没有单独设置的后代了，按钮收起');
       await _unmount(tester);
+    });
+
+    // 拍板 design-subdeck-steps-inherit（用户报：Anki 导入的子牌组带着重学步长 10 分钟，父牌组改成 RWKV 后
+    // 按 Again 仍进重学）：步长随参数继承，继承上级的子牌组用上级的步长，设置页显示的也是这个生效值。
+    testWidgets('牌组设置页：继承上级的子牌组用上级的步长（自己写过的不生效），只读显示上级的生效值', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      final String kid = (await tester.runAsync(() async {
+        final String kid = await store.createDeck(
+          'Kid',
+          parentId: store.defaultDeckId,
+        );
+        await store.editFields(SrsEntityKind.deck, kid, <String, Object?>{
+          SrsFieldKeys.deckSteps: <String, Object?>{
+            'learn': <double>[1, 10],
+            'relearn': <double>[10],
+          },
+        });
+        return kid;
+      }))!;
+      SrsDeckTree tree = (await tester.runAsync(store.deckTree))!;
+      expect(tree[kid]!.ownParams, isFalse);
+      expect(tree[store.defaultDeckId]!.localAlgorithm, SrsAlgorithm.rwkv);
+      expect(tree[kid]!.relearnStepsSet, isTrue);
+      SrsSchedulingConfig c = tree.schedulingConfig(kid);
+      expect(c.learnStepsMinutes, isEmpty, reason: '上级 RWKV、没写过步长：不用步长');
+      expect(c.relearnStepsMinutes, isEmpty);
+
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: false,
+        page: SrsDeckSettingsPage(deckId: kid),
+      );
+      Finder byKey(String key) =>
+          find.byKey(ValueKey<String>(key), skipOffstage: false);
+      expect(byKey('srs-settings-steps-inherited'), findsOneWidget);
+      expect(byKey('srs-settings-learn-steps'), findsNothing);
+      expect(byKey('srs-settings-relearn-steps'), findsNothing);
+      expect(
+        find.descendant(
+          of: byKey('srs-settings-relearn-steps-inherited'),
+          matching: find.text(t.srs_settings_steps_none, skipOffstage: false),
+        ),
+        findsOneWidget,
+        reason: '显示的是生效值（上级的「不用步长」），不是子牌组库里的 10',
+      );
+      expect(
+        byKey('srs-settings-rwkv-steps-set'),
+        findsNothing,
+        reason: '步长不归这个牌组管：不提示清空',
+      );
+      await _unmount(tester);
+
+      // 上级改成 FSRS、写上步长：继承的子牌组跟着变。
+      await tester.runAsync(
+        () => store.editFields(
+          SrsEntityKind.deck,
+          store.defaultDeckId,
+          <String, Object?>{
+            SrsFieldKeys.deckAlgorithm: <String, Object?>{
+              'alg': SrsAlgorithm.fsrs7.wire,
+              'auto': false,
+            },
+            SrsFieldKeys.deckSteps: <String, Object?>{
+              'learn': <double>[3],
+              'relearn': <double>[5],
+            },
+          },
+        ),
+      );
+      tree = (await tester.runAsync(store.deckTree))!;
+      c = tree.schedulingConfig(kid);
+      expect(c.learnStepsMinutes, <double>[3]);
+      expect(c.relearnStepsMinutes, <double>[5]);
+
+      // 改成「单独设置」后才用自己写过的步长。
+      await tester.runAsync(
+        () => store.editField(
+          SrsEntityKind.deck,
+          kid,
+          SrsFieldKeys.deckParamsMode,
+          'own',
+        ),
+      );
+      tree = (await tester.runAsync(store.deckTree))!;
+      c = tree.schedulingConfig(kid);
+      expect(c.learnStepsMinutes, <double>[1, 10]);
+      expect(c.relearnStepsMinutes, <double>[10]);
     });
 
     testWidgets('牌组设置页：没保存的编辑在「让子牌组都继承这里」重读之后还在，按返回照样问', (

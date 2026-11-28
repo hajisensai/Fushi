@@ -1,0 +1,17 @@
+## BUG-5568 · windows-hang-dump-dart-frames-unsymbolizable
+- **报告**：2026-11-27（用户：视频画面冻结后未响应；排查时发现 hang dump 里的 Dart 帧还原不了）
+- **真实性**：✅ 真 bug（诊断能力缺口）。
+  - Windows 发布包 `data/app.so` 被 gen_snapshot `--strip`（flutter_tools `base/build.dart`：非 Apple / Android 默认 strip），只剩节头；`release-desktop.yml` 的 `flutter build windows --release` 不留任何 Dart 调试信息。
+  - app.so 由 Dart 自己的 ELF loader 装进私有内存（`MEM_PRIVATE`，非 LoadLibrary），minidump 模块表里没有它；`WriteProcessMinidump`（`fushi/windows/runner/crash_dump.cpp`）也不记它装在哪——cdb 里 30 多帧 Dart 全是 ``0x0000021e`f3f2966f`` 裸地址。
+  - 引擎帧（Dart VM / GC 都在 `flutter_windows.dll` 里）其实能还原：补丁引擎 zip（`ci/patches/flutter-engine/3.50.0/artifacts.json`）自带 pdb，只是没写进文档。
+  - 同一次冻结的 130 s（10:23:48 → 10:25:55）看门狗一行没记：主线程停泵与 Dart 失联两条判据都靠看门狗线程每 100 ms 醒一次，它自己没被调度时什么都量不到，也不留痕迹。
+- **[x] ① 已修复** —
+  - CI：`release-desktop.yml` 出包加 `--extra-gen-snapshot-options=--save-debugging-info=…/windows-dart-symbols/app.windows-x64.symbols`（不用 `--split-debug-info`，app 内栈格式不变），出包后 `dart tool/windows_dump_symbolize.dart verify` 核对 build-id，上传 artifact `windows-dart-symbols-<序号>`（不挡发版）。
+  - runner：`fushi/windows/runner/dart_aot_image.{h,cpp}` 扫地址空间找到装载中的 app.so（ELF 魔数 + 整块分配覆盖 PT_LOAD 跨度，排除 loader 留下的一页头部副本），每份 minidump 写一条 user stream `dart_aot base=… span=… build_id=…`；hang dump 时 `hang_watchdog.log` 也记一行。
+  - 看门狗：两圈循环间隔（不含睡眠）≥ 2 s 记 `watchdog thread did not run for … ms (wall clock … ms)`（`hang_watchdog.cpp` `CheckWatchdogStarvation`）。
+  - 工具：`fushi/tool/windows_dump_symbolize.dart stack` 读 dump 的 stream、跑 cdb、经 `flutter symbolize` 把 Dart 帧标成 `[dart] 函数 (文件:行)`；步骤写进 `docs/agent/build.md`「Windows 卡死 / 崩溃 dump 的符号」。
+- **[x] ② 已加自动化测试** — `fushi/windows/runner/tests/dart_aot_image_test.cpp`（构建时执行：ELF 解析、build-id、头部副本排除、行格式、饿死阈值）；`fushi/test/build/windows_dump_symbolize_test.dart`（minidump stream、build-id 核对、cdb 帧识别 / trace 生成 / 回填）；`fushi/test/build/windows_dart_symbols_guard_test.dart`（CI 步骤、stream 类型两侧一致、SDK strip 契约）。
+- **备注**：
+  - 本机实测：同提交重编 + `--save-debugging-info` 产出 51 MB 符号文件，本机 app.so 与它 build-id 一致（verify 通过），大小与安装包逐字节相同（123257816）——参数不改包里的 app.so 结构。
+  - 本机重编与 CI 包 build-id 不同、.text 约 80% 字节不同（函数代码相同、布局 / 对象池偏移不同），所以旧包不能按偏移直接套本机符号；本次是用 dump 返回地址前 48 字节代码在本机 app.so 里唯一匹配、再查符号还原的（见 BUG-5571）。CI 产的符号与包同一次构建，没有这个问题。
+  - 本机 `flutter build windows --release` 最终在 CMake INSTALL 步失败（与快照无关，app.so / 符号已在之前产出），未查。

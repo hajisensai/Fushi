@@ -217,6 +217,67 @@ void main() {
   );
 
   test(
+    '手动切到预排好的插件下一首：复用已取到的流，不再向插件取一遍；快过期的不复用',
+    () async {
+      final Map<String, int> calls = <String, int>{};
+      const int now = 1000000;
+      final MpvMusicOutputBackend b = backend((String path) async {
+        final String id = parseMusicPluginTrackPath(path)!.trackId;
+        final int n = calls[id] = (calls[id] ?? 0) + 1;
+        return MusicPluginStream(
+          url: '$base/ok/${id == 'c' ? 'a' : id}.flac?v=$n',
+          // c 的地址已在重取余量之内：切到它时必须重新取流。
+          expiresAt: id == 'c'
+              ? now + kMusicPluginStreamRefreshMargin.inMilliseconds - 1
+              : null,
+        );
+      }, nowMs: () => now);
+      final _Recorder rec = _Recorder(b);
+      final MusicPlayItem a = _plugin('a');
+      final MusicPlayItem bItem = _plugin('b');
+      final MusicPlayItem c = _plugin('c');
+      try {
+        await b.applySettings(settings);
+        await b.openPair(a, bItem, play: true);
+        await rec.waitFor(
+          () => b.debugPlayer.state.playlist.medias.length == 2,
+        );
+        expect(calls['b'], 1);
+        // 「下一首」= 引擎拿队列里同一个播放项 openPair。
+        await b.openPair(bItem, c, play: true);
+        await rec.waitFor(
+          () => rec.positionPast(const Duration(milliseconds: 300)),
+        );
+        expect(calls['b'], 1, reason: '预排时取到的流直接复用');
+        expect(
+          b.debugPlayer.state.playlist.medias.first.uri,
+          '$base/ok/b.flac?v=1',
+        );
+        await rec.waitFor(
+          () => b.debugPlayer.state.playlist.medias.length == 2,
+        );
+        expect(calls['c'], 1);
+        await b.openPair(c, null, play: true);
+        expect(calls['c'], 2, reason: '地址快过期：重新取流');
+        await rec.waitFor(
+          () =>
+              b.debugPlayer.state.playlist.medias.isNotEmpty &&
+              b.debugPlayer.state.playlist.medias.first.uri ==
+                  '$base/ok/a.flac?v=2',
+        );
+        // 不是预排的那首（回到 a）照常取流。
+        await b.openPair(a, null, play: true);
+        expect(calls['a'], 2);
+      } finally {
+        await rec.cancel();
+        await b.dispose();
+      }
+    },
+    skip: skip,
+    timeout: const Timeout(Duration(seconds: 60)),
+  );
+
+  test(
     '流地址 403：原位重取一次接着放，不报失败；再被拒才按拿不到流报',
     () async {
       int calls = 0;

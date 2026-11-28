@@ -381,6 +381,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'system/Auto-add new episodes to the video library':
       'test/updates/update_check_scheduler_test.dart（番剧新集域只看 '
       'video_library_auto_update，不看提醒开关）',
+  // 「关闭时最小化到托盘」：只在 Windows 显示（visible: hostPlatform.isWindows），Linux CI
+  // 的 harness 看不到它，Windows 本机才会枚举到。写 prefsRepo 后推给原生托盘通道，
+  // 生效点在原生侧拦 SC_CLOSE；由托盘通道用例与原生关闭契约守卫咬住。
+  'system/Minimize to tray when closing':
+      'test/platform/desktop/desktop_tray_test.dart（开关变化立即重推 closeToTray；'
+      '原生只拦 SC_CLOSE 且受 close_to_tray_ 门控）',
   'system/Notify about app releases':
       'test/updates/update_feed_service_test.dart（关掉的域整批丢弃）',
   'system/System notifications':
@@ -1383,6 +1389,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/media/video/video_asbplayer_config_test.dart + test/pages/video_settings_schema_guard_test.dart',
   'video/Seek seconds':
       'test/media/video/video_asbplayer_config_test.dart + test/media/video/video_seek_relative_test.dart',
+  // 第二档「长步进」秒数：消费点是视频页 Shift+←/→ 快捷键、控制条长步进按钮与
+  // 手机遥控 seekStep，harness 设置页里没有播放页。
+  'video/Long seek step':
+      'test/media/video/video_asbplayer_config_test.dart（longSeekSeconds 默认 / 旧档 / 夹值）+ '
+      'test/shortcuts/video_shortcut_registry_test.dart（Shift+←/→ 派发长步进回调）+ '
+      'test/sync/video_remote_host_seek_step_test.dart（快照 longSeekSeconds / seekStep 命令）',
   'video/Subtitle pause playback mode':
       'test/media/video/video_asbplayer_config_test.dart',
   'video/Quality enhancement':

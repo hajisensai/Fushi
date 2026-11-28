@@ -73,10 +73,12 @@ class CollectionManifest implements CanonicalJsonManifest {
       lastWrittenAt: (lastWrittenAt is int && lastWrittenAt >= 0)
           ? lastWrittenAt
           : 0,
-      collections: <CollectionManifestEntry>[
-        for (final Object? c in rawCollections)
-          CollectionManifestEntry.fromJson(c),
-      ],
+      collections: List<CollectionManifestEntry>.unmodifiable(
+        <CollectionManifestEntry>[
+          for (final Object? c in rawCollections)
+            CollectionManifestEntry.fromJson(c),
+        ],
+      ),
     );
   }
 
@@ -220,21 +222,25 @@ class CollectionManifestEntry {
       orderUpdatedAt: orderUpdatedAt is int ? orderUpdatedAt : 0,
       deletedAt: deletedAt is int ? deletedAt : null,
       deletedPublishedAt: deletedPublishedAt is int ? deletedPublishedAt : null,
-      members: <CollectionManifestMember>[
-        for (final Object? m in rawMembers)
-          CollectionManifestMember.fromJson(m),
-      ],
-      memberTombstones: <CollectionMemberTombstone>[
-        for (final Object? t in rawTombstones)
-          CollectionMemberTombstone.fromJson(t),
-      ],
+      members: List<CollectionManifestMember>.unmodifiable(
+        <CollectionManifestMember>[
+          for (final Object? m in rawMembers)
+            CollectionManifestMember.fromJson(m),
+        ],
+      ),
+      memberTombstones: List<CollectionMemberTombstone>.unmodifiable(
+        <CollectionMemberTombstone>[
+          for (final Object? t in rawTombstones)
+            CollectionMemberTombstone.fromJson(t),
+        ],
+      ),
       // tagNames 是 additive 字段（collection-tags §5.2）：旧清单缺它 / 非法 /
       // 元素非字符串一律降级空列表，绝不因缺字段拒绝解析——读老写新向后兼容。
       tagNames: json['tagNames'] is List
-          ? <String>[
+          ? List<String>.unmodifiable(<String>[
               for (final Object? t in (json['tagNames'] as List))
                 if (t is String && t.isNotEmpty) t,
-            ]
+            ])
           : const <String>[],
       // additive 字段：旧清单缺它即 false。
       episodeOrdered: json['episodeOrdered'] == true,
@@ -242,10 +248,10 @@ class CollectionManifestEntry {
       origin: _nonEmptyString(json['origin']),
       organizeKey: _nonEmptyString(json['organizeKey']),
       organizeAliases: json['organizeAliases'] is List
-          ? <String>[
+          ? List<String>.unmodifiable(<String>[
               for (final Object? a in (json['organizeAliases'] as List))
                 if (a is String && a.isNotEmpty) a,
-            ]
+            ])
           : const <String>[],
       organizeMerged: json['organizeMerged'] == true,
     );

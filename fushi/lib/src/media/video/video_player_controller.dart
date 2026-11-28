@@ -20,6 +20,7 @@ import 'package:fushi/src/media/video/disc/remote_disc_menu_source.dart';
 import 'package:fushi/src/media/video/video_episode_start_policy.dart';
 import 'package:fushi/src/media/video/video_resume.dart';
 import 'package:fushi/src/media/video/video_external_audio_tracks.dart';
+import 'package:fushi/src/media/video/video_local_sidecar_audio.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteVideoExternalAudioTrack;
 import 'package:fushi/src/startup/media_handle_registry.dart';
@@ -1318,7 +1319,25 @@ class VideoPlayerController extends ChangeNotifier
     // 用户 seek 也是显式播放控制意图（见 [remoteControlRevision]）；句尾自动停下的
     // 落点 seek 不是（见 [_automaticSubtitleEndHold]）。
     if (!_automaticSubtitleEndHold) _remoteControlRevision++;
+    _voidSubtitleEndHoldOfDepartedCue();
     return _setPendingSeekLanding(targetMs);
+  }
+
+  /// 显式 seek 作废「当前句」的句尾暂停（mKqIAxIvZA）：把它记成已停过
+  /// （[_lastSubtitleEndPauseCueIndex]）。
+  ///
+  /// 根因：句尾暂停按「[_currentCueIndex] 还是旧句、位置已越过它的 endMs」判定
+  /// （[_shouldHoldAtSubtitleEnd]），而 [_currentCueIndex] 要等下一拍 tick 才跟上新位置。
+  /// 用户句中按「下一句」/ ±秒 / 点字幕列表往后跳时，第一拍看到的正是「旧句 + 已越过句尾」，
+  /// 于是被当成自然播完、暂停并 seek 回旧句句尾——跳句失灵。用户主动离开这一句，它的
+  /// 句尾暂停就不该再触发；落点若仍在这句句尾之前（往回跳 / 句内小步 seek），
+  /// [_rearmSubtitleEndPauseIfNeeded] 会照常重新武装，到句尾照停。
+  ///
+  /// 句尾暂停自己的落点 seek 也经过这里：那时本句已记成停过，这里是幂等的。
+  void _voidSubtitleEndHoldOfDepartedCue() {
+    final int current = _currentCueIndex;
+    if (current < 0 || current >= _cues.length) return;
+    _lastSubtitleEndPauseCueIndex = current;
   }
 
   /// 换在途目标（或清掉）的唯一入口：连同「已结束」判据的累积状态与下发确认一起复位，
@@ -1951,26 +1970,22 @@ class VideoPlayerController extends ChangeNotifier
       final MpvCacheDumpPlan? plan = decision.plan;
       if (plan != null) {
         try {
-          final File out = File(outputPath);
-          if (out.existsSync()) out.deleteSync();
+          await _deleteSnapshotFile(outputPath);
           await (player.platform as dynamic).command(
             mpvDumpCacheCommand(plan, outputPath),
           );
         } catch (_) {
           // dump 中途失败可能留下半截文件：调用方拿到 null 不会再管这个路径。
-          _deleteSnapshotFile(outputPath);
+          await _deleteSnapshotFile(outputPath);
           return null;
         }
         // 落盘成功但等待期间换了集 / 空文件：这份副本不会交给任何人，就地删掉，
-        // 不在临时目录里越攒越多。
-        if (!_isCurrentLoad(player, loadToken)) {
-          _deleteSnapshotFile(outputPath);
-          return null;
-        }
+        // 不在临时目录里越攒越多。判存在 / 长度是异步的（BUG-5605），换集检查放在
+        // 它们**之后**：否则检查完、await 期间换了集，照样把上一集的副本交出去。
         final File out = File(outputPath);
-        if (!out.existsSync()) return null;
-        if (out.lengthSync() == 0) {
-          _deleteSnapshotFile(outputPath);
+        final bool written = await out.exists() && await out.length() > 0;
+        if (!written || !_isCurrentLoad(player, loadToken)) {
+          await _deleteSnapshotFile(outputPath);
           return null;
         }
         return CachedMediaSnapshot(path: outputPath, zeroMs: plan.zeroMs);
@@ -1983,10 +1998,10 @@ class VideoPlayerController extends ChangeNotifier
 
   /// 删掉一份不再交出去的缓冲副本。删不掉（被占用 / 已不在）不影响制卡：调用方
   /// 已经拿到 null、会回到远端抽取；这里只是不留垃圾。
-  static void _deleteSnapshotFile(String path) {
+  static Future<void> _deleteSnapshotFile(String path) async {
     try {
       final File file = File(path);
-      if (file.existsSync()) file.deleteSync();
+      if (await file.exists()) await file.delete();
     } on FileSystemException catch (e) {
       debugPrint('[video] cached snapshot cleanup failed: $path: $e');
     }
@@ -3419,7 +3434,7 @@ class VideoPlayerController extends ChangeNotifier
     final Directory dir = Directory(
       p.join(Directory.systemTemp.path, 'fushi_lua_subtitle_mirror'),
     );
-    if (!dir.existsSync()) await dir.create(recursive: true);
+    if (!await dir.exists()) await dir.create(recursive: true);
     final File file = File(
       p.join(
         dir.path,
@@ -3583,8 +3598,12 @@ class VideoPlayerController extends ChangeNotifier
     void Function(DefaultEmbeddedSubtitleLoadResult result)?
     onEmbeddedSubtitleAutoLoad,
     // 主字幕默认语言偏好（反馈 Fz9HXThdSW，见 parseSubtitleLanguagePreferences）：
-    // 自动抽内封文本轨时按它挑轨，空 = 第一条文本轨（旧行为）。
+    // 自动抽内封文本轨时先按它挑轨。
     List<String> preferredSubtitleLanguages = const <String>[],
+    // 本视频的目标语言标签（`ja` / `zh-Hant` …，见 subtitle_language_target.dart）：
+    // 偏好都没命中时按它挑最匹配的文本轨（中文先挑繁 / 简对上的）；空串 = 语言未知，
+    // 退用音轨语言，再不行才取第一条文本轨（旧行为）。
+    String subtitleLanguageTag = '',
   }) async {
     assert(
       (videoFile == null) != (mediaUri == null),
@@ -3673,6 +3692,18 @@ class VideoPlayerController extends ChangeNotifier
     final String? dvdTitleUri = !openBlurayMenu && videoFile != null
         ? dvdPlaybackUriForTitlePath(videoFile.path)
         : null;
+    // 本地视频旁的外挂音轨（`ep01.jpn.mka`、`Audio 5.1/…mka`）：与 open 并行列目录，
+    // 下面和在线源的可选外挂音轨走同一条 `audio-add … auto`，不抢原声。原盘 / DVD
+    // 标题 / 播放列表不是一个文件旁的外挂件，不找。
+    final Future<List<RemoteVideoExternalAudioTrack>> localSidecarAudio =
+        videoFile != null &&
+            !openBlurayMenu &&
+            bluray == null &&
+            dvdTitleUri == null
+        ? discoverLocalSidecarAudioTracks(videoFile.path)
+        : Future<List<RemoteVideoExternalAudioTrack>>.value(
+            const <RemoteVideoExternalAudioTrack>[],
+          );
     final String? localPlaybackSource;
     try {
       localPlaybackSource = videoFile == null
@@ -4140,11 +4171,17 @@ class VideoPlayerController extends ChangeNotifier
       await player.setAudioTrack(AudioTrack.uri(audioNativeUri));
       if (!_isCurrentLoad(player, loadToken)) return; // 外挂音轨后换片/销毁。
     }
-    if (externalAudioTracks.isNotEmpty) {
+    final List<RemoteVideoExternalAudioTrack> optionalAudioTracks =
+        <RemoteVideoExternalAudioTrack>[
+          ...externalAudioTracks,
+          ...await localSidecarAudio,
+        ];
+    if (!_isCurrentLoad(player, loadToken)) return; // 列目录后换片/销毁。
+    if (optionalAudioTracks.isNotEmpty) {
       final dynamic native = player.platform;
       if (native != null) {
         final List<VideoExternalAudioAdd> adds = buildExternalAudioAddCommands(
-          externalAudioTracks,
+          optionalAudioTracks,
           nativeUri: nativePlaybackUri,
         );
         for (final VideoExternalAudioAdd add in adds) {
@@ -4285,6 +4322,7 @@ class VideoPlayerController extends ChangeNotifier
       externalSubtitlePath: externalSubtitlePath,
       onEmbeddedSubtitleAutoLoad: onEmbeddedSubtitleAutoLoad,
       preferredSubtitleLanguages: preferredSubtitleLanguages,
+      subtitleLanguageTag: subtitleLanguageTag,
     );
   }
 
@@ -4365,6 +4403,7 @@ class VideoPlayerController extends ChangeNotifier
     required void Function(DefaultEmbeddedSubtitleLoadResult result)?
     onEmbeddedSubtitleAutoLoad,
     required List<String> preferredSubtitleLanguages,
+    required String subtitleLanguageTag,
   }) async {
     // 恢复「图形内封字幕」选择（BUG-122）：上次选的是 PGS 等位图轨，没有文本 cue，
     // 交给 libmpv 当画面字幕渲染。不阻塞首帧（轨列表 open 后才就绪，方法内等待）。
@@ -4386,6 +4425,7 @@ class VideoPlayerController extends ChangeNotifier
           bookUid: bookUid,
           onResult: onEmbeddedSubtitleAutoLoad,
           preferredLanguages: preferredSubtitleLanguages,
+          languageTag: subtitleLanguageTag,
         ),
       );
     }
@@ -4670,8 +4710,8 @@ class VideoPlayerController extends ChangeNotifier
   /// [loadCuesForSource]），不再硬编码 `.ass` / [AssParser] / streamIndex 0——
   /// 否则同一个 mp4（`mov_text`）菜单能出字幕、自动加载却静默失败（BUG-071 同源
   /// 不一致）。优先选能转文本 cue 的内嵌轨（跳过 pgs 等图形轨），都不行则不自动
-  /// 加载。[listAllSubtitleSources] 的 langCode 只影响外挂字幕排序，这里只取内嵌
-  /// 轨故传固定值。
+  /// 加载。挑哪一条：[preferredLanguages] > 本视频目标语言 [languageTag] > 音轨语言 >
+  /// 第一条文本轨（见 `loadDefaultTextEmbeddedSubtitleCues`）。
   ///
   /// 抽字幕较慢（ffmpeg 跑几秒），故 [load] 用 `unawaited` 后台触发不阻塞播放；
   /// 抽完才 [setCues]，overlay 此时才出现。期间若发生重新 [load]（player /
@@ -4694,6 +4734,7 @@ class VideoPlayerController extends ChangeNotifier
     required String bookUid,
     void Function(DefaultEmbeddedSubtitleLoadResult result)? onResult,
     List<String> preferredLanguages = const <String>[],
+    String languageTag = '',
   }) async {
     // 桌面走系统 ffmpeg、移动端走捆绑 ffmpeg-kit（见 resolveFfmpegBackend），两端都能
     // 抽内封字幕，故不再按平台门控（早先「移动端无 ffmpeg」的限制已随捆绑解除）。
@@ -4719,6 +4760,7 @@ class VideoPlayerController extends ChangeNotifier
             bookUid: bookUid,
             waitForReady: () => _waitUntilSubtitleTracksReady(player),
             isStillCurrent: () => _isCurrentLoad(player, loadToken),
+            langCode: languageTag,
             preferredLanguages: preferredLanguages,
             cancel: _embeddedTextExtractCancel?.future,
             onExtractionStarted: (SubtitleSource chosen) {
@@ -5013,6 +5055,7 @@ class VideoPlayerController extends ChangeNotifier
   bool _subtitleEndHoldPendingAt(int effectiveMs) {
     final int current = _currentCueIndex;
     if (current < 0 || current >= _cues.length) return false;
+    if (_subtitleEndHoldSupersededByJump(current)) return false;
     if (effectiveMs <= _cues[current].endMs) return false;
     if (_lastSubtitleEndPauseCueIndex == current) return false;
     return _holdEnabledForCue(current);
@@ -6483,7 +6526,7 @@ class VideoPlayerController extends ChangeNotifier
   void _pauseForSubtitleEnd() {
     final int endedCueIndex = _currentCueIndex;
     if (!_holdEnabledForCue(endedCueIndex)) return;
-    // 这句刚被相邻路径停过（[_pauseAndSeekForSubtitleEnd] 落点 = 句尾，续播再落进 gap）：
+    // 这句刚被相邻路径停过（[_pauseAndSeekForSubtitleEnd] 落点在句尾前，续播再落进 gap）：
     // 常开的自动暂停不能对同一句停第二次。一次性 hold 停过即消耗，本判定对它是空操作。
     if (_lastSubtitleEndPauseCueIndex == endedCueIndex) return;
     _lastSubtitleEndPauseCueIndex = endedCueIndex;
@@ -6681,11 +6724,42 @@ class VideoPlayerController extends ChangeNotifier
     }
     if (!_holdEnabledForCue(_currentCueIndex)) return false;
     if (nextCueIndex == _currentCueIndex) return false;
+    if (_subtitleEndHoldSupersededByJump(_currentCueIndex)) return false;
     final AudioCue cue = _cues[_currentCueIndex];
     if (effectiveMs <= cue.endMs) return false;
     if (_lastSubtitleEndPauseCueIndex == _currentCueIndex) return false;
     return _isPlayingForSubtitleEnd();
   }
+
+  /// 主动跳句（[skipToCue]）在途、目标是**别的句**时，[cueIndex] 的句尾暂停让位
+  /// （mKqIAxIvZA）：位置越过它的句尾是跳句造成的，不是这句自然播完。与
+  /// [_voidSubtitleEndHoldOfDepartedCue] 互补——后者在 seek 下发时记一次，可被 seek
+  /// 在途读到的旧位置（仍在旧句句尾之前）重新武装；本判定只要快照还在就一直生效。
+  bool _subtitleEndHoldSupersededByJump(int cueIndex) {
+    final int? target = _seekTargetCueIndex;
+    return target != null && target != cueIndex;
+  }
+
+  /// 句尾暂停落回的位置（cue 时间轴）：句尾**之前** [kSubtitleEndHoldLeadMs]，不早于句首。
+  ///
+  /// mKqIAxIvZA：旧落点是 `endMs` 整点。相邻字幕首尾相接时这一点就是下一句的起点
+  /// （[JsonAlignmentParser.findCueIndex] 精确命中 startMs 返回下一句），停下来屏幕上
+  /// 已经是下一句；hr-seek 落到的帧 pts 还会再往后偏不到一帧。提前一点停，画面与字幕都还
+  /// 在本句里。
+  @visibleForTesting
+  static int subtitleEndHoldLandingMs(AudioCue cue) {
+    final int landing = cue.endMs - kSubtitleEndHoldLeadMs;
+    return landing < cue.startMs ? cue.startMs : landing;
+  }
+
+  /// 见 [subtitleEndHoldLandingMs]：大于低帧率片源的一帧（24fps ≈ 42ms），
+  /// 落点帧的时间戳不会越过句尾。
+  static const int kSubtitleEndHoldLeadMs = 100;
+
+  /// 位置低于句尾落点多少才算「回到这句里面了」、重新武装句尾暂停
+  /// （[_rearmSubtitleEndPauseIfNeeded]）。吸收落点回报的毫秒取整误差：停在落点上
+  /// 读到早 1ms 的位置不能被当成往回跳，否则续播又在同一句尾停一次。
+  static const int _subtitleEndHoldRearmSlackMs = 20;
 
   bool _isPlayingForSubtitleEnd() {
     final bool Function()? override = _subtitleEndHoldIsPlayingOverride;
@@ -6704,7 +6778,10 @@ class VideoPlayerController extends ChangeNotifier
           _subtitleEndHoldSeekOverride ?? seekMs;
       await _runSubtitleEndHold(
         () => seekToEnd(
-          cueSeekTargetMs(cueStartMs: cue.endMs, delayMs: _delayMs),
+          cueSeekTargetMs(
+            cueStartMs: subtitleEndHoldLandingMs(cue),
+            delayMs: _delayMs,
+          ),
         ),
       );
     }());
@@ -6717,7 +6794,11 @@ class VideoPlayerController extends ChangeNotifier
       _lastSubtitleEndPauseCueIndex = null;
       return;
     }
-    if (effectiveMs < _cues[pausedCueIndex].endMs) {
+    // 门槛对齐句尾暂停的落点（[subtitleEndHoldLandingMs]）：停在落点上不能自己把自己
+    // 重新武装，否则续播又在同一句尾停一次。
+    if (effectiveMs <
+        subtitleEndHoldLandingMs(_cues[pausedCueIndex]) -
+            _subtitleEndHoldRearmSlackMs) {
       _lastSubtitleEndPauseCueIndex = null;
     }
   }
@@ -7043,7 +7124,7 @@ class VideoPlayerController extends ChangeNotifier
   ///
   /// [preRollMs]：句子跳转的前导余量（>=0），在 cue 时间轴上把目标点往**前**移，吸收
   /// media_kit 关键帧吸附把落点推到句首之后的偏差（BUG-259）。默认 0 —— 字幕结束暂停
-  /// （[_pauseAndSeekForSubtitleEnd] 用 `cueStartMs: cue.endMs`）等精确 seek 不能加余量，
+  /// （[_pauseAndSeekForSubtitleEnd] 用 [subtitleEndHoldLandingMs]）等精确 seek 不能加余量，
   /// 否则会把暂停点拉回句中，故只有 [skipToCue] 传非零余量。
   ///
   /// [prevCueStartMs]：上一句起点（cue 时间轴，可空）。前导余量减完后下界钳到它，

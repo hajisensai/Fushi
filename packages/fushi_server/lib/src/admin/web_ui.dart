@@ -1085,7 +1085,7 @@ async function loadSrs(){
     toast(T('已保存')); srsFormKey=null; loadSrs();
   });
 
-  $('#srs-rwkv').innerHTML = `<div class="form-grid"><label class="field">${esc(T('使用的模型'))}<select id="srs-rwkv-model">${[['small',T('Small（默认，准确度最好）')],['tiny',T('Tiny（每张卡省约 30% 内存，准确度略差）')]].map(([v,l])=>`<option value="${v}" ${(cfg.rwkvModel||'small')===v?'selected':''}>${esc(l)}</option>`).join('')}</select></label></div>`;
+  $('#srs-rwkv').innerHTML = `<div class="form-grid"><label class="field">${esc(T('使用的模型'))}<select id="srs-rwkv-model">${[['tiny',T('Tiny（默认，每张卡省约 30% 内存，准确度只差约 0.6%）')],['small',T('Small（准确度最好）')]].map(([v,l])=>`<option value="${v}" ${(cfg.rwkvModel||'tiny')===v?'selected':''}>${esc(l)}</option>`).join('')}</select></label></div>`;
   $('#srs-rwkv-model').onchange = guard(async()=>{ try { await put('srs', {rwkvModel: $('#srs-rwkv-model').value}); toast(T('已切换 RWKV 模型')); } finally { srsFormKey=null; loadSrs(); } });
 
   const setNote = (isSet) => isSet ? ` <span class="muted">${esc(T('(已设置，留空不改)'))}</span>` : '';
@@ -1133,7 +1133,7 @@ const splitLabel = (l) => { const m = LABEL_SPLIT.exec(l); return m ? [m[1], m[2
 const BIND_CHOICES = () => [['0.0.0.0',T('所有网络（0.0.0.0）')],['127.0.0.1',T('仅本机（127.0.0.1）')]];
 const CHOICES = {
   bind: BIND_CHOICES,
-  subtitleLanguage: (s) => (s.subtitleLanguageOptions||[]).map(o=>[o.code, `${o.name} (${o.code})`]),
+  subtitleLanguage: (s) => [['', T('自动（跟随每个视频的语言）')], ...(s.subtitleLanguageOptions||[]).map(o=>[o.code, `${o.name} (${o.code})`])],
   metadataLocale: (s) => (s.metadataLocaleOptions||[]).map(o=>[o.code, `${o.name} (${o.code})`]),
 };
 const OTHER = '__other';
@@ -1207,11 +1207,13 @@ async function loadSettings(){
   settingsBaseline = FIELDS.map(([k,,type])=>fieldValue(k,type));
   updateDirty();
 }
+// 空串本身是有效取值的下拉（字幕语言：空 = 自动），不能像别的字段那样把空当「没填」。
+const EMPTY_IS_VALUE = new Set(['subtitleLanguage']);
 // 表单里一项的当前值（与保存请求体同一套换算）。
 function fieldValue(k, type){
   const id='f-'+k.replace('.','-');
   if(type.startsWith('seg:')) return (document.querySelector(`input[name="${id}"]:checked`)||{}).value;
-  if(type.startsWith('choice:')) return choiceValue(id);
+  if(type.startsWith('choice:')) return choiceValue(id) ?? (EMPTY_IS_VALUE.has(k) ? '' : null);
   if(type==='bytes') return bytesValue(id);
   const el=$('#'+id); let v=el.value;
   if(type==='bool') v=el.checked; else if(type==='number') v=Number(v);

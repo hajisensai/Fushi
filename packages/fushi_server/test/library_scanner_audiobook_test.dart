@@ -157,6 +157,30 @@ void main() {
     expect(await db.getAllEpubBooks(), hasLength(1));
   });
 
+  test('配置字幕语言留空（自动）：有声书仍按学习语言挑 .ja 字幕，不按字典序拿 .en（BUG-5465）', () async {
+    scanner = LibraryScanner(
+      db: db,
+      subtitleLanguage: '',
+      extractCovers: false,
+    );
+    _write(p.join(root.path, 'Neko', 'neko.mp3'));
+    _writeText(
+      p.join(root.path, 'Neko', 'neko.en.srt'),
+      '1\n00:00:00,000 --> 00:00:02,000\nI am a cat.\n',
+    );
+    _writeText(p.join(root.path, 'Neko', 'neko.ja.srt'), _kSrt);
+
+    final ScanSummary summary = await scan();
+
+    expect(summary.errors, isEmpty);
+    expect(summary.audiobooksAdded, 1);
+    final List<EpubBookRow> books = await db.getAllEpubBooks();
+    expect(books, hasLength(1));
+    final SrtBookRow? srt = await db.getSrtBookByBookKey(books.single.bookKey);
+    expect(srt, isNotNull);
+    expect(File(srt!.srtPath).readAsStringSync(), contains('吾輩は猫である'));
+  });
+
   test('EPUB + 字幕 + 音频走对齐落库：有声书行引用库根里的音频', () async {
     final File txt = File(p.join(tmp.path, 'neko.txt'))
       ..writeAsStringSync('吾輩は猫である。\n\n名前はまだ無い。\n');

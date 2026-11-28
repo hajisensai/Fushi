@@ -104,6 +104,10 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/subtitle_collection_panel.dart'
     show SubtitleCollectionPanel;
 import 'package:fushi/src/pages/implementations/subtitle_workbench_page.dart';
+import 'package:fushi/src/media/video/subtitle/library_subtitle_fill_entry.dart'
+    show librarySubtitleFillController;
+import 'package:fushi/src/media/video/subtitle/library_subtitle_fill_sheet.dart'
+    show showLibrarySubtitleFillSheet;
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
@@ -116,6 +120,7 @@ import 'package:fushi/src/sync/remote_download_progress_badge.dart';
 import 'package:fushi/src/utils/components/fushi_adaptive_action_strip.dart';
 import 'package:fushi/src/utils/components/fushi_reorderable_grid.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart'
     show currentRevealHost, revealFirstOf;
@@ -139,6 +144,8 @@ import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/media/selection/media_selection_controller.dart';
 import 'package:fushi/src/media/selection/selection_gestures.dart';
+import 'package:fushi/src/media/video/remote_video_sources.dart'
+    show RoutedRemoteVideoPlayedMark;
 import 'package:fushi/src/media/video/video_watched_marks.dart';
 import 'package:fushi/src/sync/remote_video_client.dart'
     show RemoteVideoPlayedMark;
@@ -150,8 +157,9 @@ import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart'
     show
         AppVideoSubtitleService,
         AppVideoSubtitleTarget,
-        AppVideoSubtitleTargetNotFound,
-        appVideoSubtitleService;
+        AppVideoSubtitleTargetNotFound;
+import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service_entry.dart'
+    show appVideoSubtitleService;
 import 'package:fushi/src/media/video/subtitle/video_subtitle_generate_sheet.dart'
     show PrefsRepoVideoSubtitleGeneratePrefs, showVideoSubtitleGenerateSheet;
 import 'package:fushi/src/pages/implementations/ai_settings_route.dart'
@@ -169,7 +177,7 @@ import 'package:fushi/src/media/links/media_link_entries.dart'
 import 'package:fushi/src/media/links/media_link_inference_host.dart'
     show mediaLinkInferCallback;
 import 'package:fushi/src/media/links/media_link_opener.dart'
-    show mediaLinkSearchAction, openMediaLinkEntry;
+    show mediaLinkRemoteVideoSources, mediaLinkSearchAction, openMediaLinkEntry;
 import 'package:fushi/src/media/links/media_links_section.dart'
     show MediaLinksSection;
 
@@ -469,9 +477,9 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   Set<String> _peerCopyKeys = const <String>{};
 
   /// 重算 [_peerCopyKeys]。在 [_reload] 画完之后后台跑、不挡首帧：
-  /// [loadCollectionEpisodeSlots] 在全员本地时刻意不问远端清单，这里只在库页
-  /// 注入了「删除本机副本」时才问一次（共享远端库缓存，TTL 内不打网络）；拉不到
-  /// 清单就当没有副本——宁可不给入口，也不把本机原件当副本删。
+  /// [loadCollectionEpisodeSlots] 在全员本地时刻意不问远端，这里只在库页注入了
+  /// 「删除本机副本」时才问一次、且只问这些成员的 id（共享远端库缓存，TTL 内不打
+  /// 网络）；问不到就当没有副本——宁可不给入口，也不把本机原件当副本删。
   Future<void> _refreshPeerCopyKeys(List<VideoBookRow> members) async {
     final CollectionRemoteContext? remote = widget.remote;
     Set<String> keys = const <String>{};
@@ -479,9 +487,11 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         remote.deleteLocalCopy != null &&
         members.isNotEmpty) {
       try {
+        final List<RemoteVideoInfo> onPeer = await remote.loadRemoteMembers(
+          <String>[for (final VideoBookRow member in members) member.bookUid],
+        );
         final Set<String> remoteIds = <String>{
-          for (final RemoteVideoInfo info in await remote.loadRemoteVideos())
-            info.id,
+          for (final RemoteVideoInfo info in onPeer) info.id,
         };
         keys = <String>{
           for (final VideoBookRow member in members)
@@ -1665,7 +1675,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     // 「已有字幕跳过」按面板里选的语言算（[RemoteVideoSubtitleTarget.forLanguage]）。
     await showRemoteVideoSubtitleSheet(
       context: context,
-      service: appRemoteVideoSubtitleService(appModel),
+      service: appRemoteVideoSubtitleService(appModel.database),
       target: RemoteVideoSubtitleTarget.season(
         title: _workDisplayTitle,
         originalLanguage: _canonicalWork?.originalLanguage,
@@ -1765,7 +1775,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           loadEpisodes: () => loadCollectionEpisodeSlots(
             repository: repo,
             collectionId: target.id,
-            loadRemoteVideos: widget.remote?.loadRemoteVideos,
+            loadRemoteMembers: widget.remote?.loadRemoteMembers,
           ),
           // 远端上下文原样传下去：相关作品也可能是「只在对端」的那一部。
           remote: widget.remote,
@@ -2258,7 +2268,9 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         break;
     }
     final String? url = remote.coverUrl;
-    final RemoteCoverFetcher? fetcher = widget.remote?.coverFetcher;
+    final RemoteCoverFetcher? fetcher = widget.remote?.coverFetcherFor?.call(
+      remote,
+    );
     if (url != null && url.isNotEmpty && fetcher != null) {
       return RemoteCoverImage(url, fetcher, cacheKey: remote.id);
     }
@@ -3260,7 +3272,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                     onPressed: () => pick(_EpisodeMenuAction.openFileLocation),
                   ),
                 // 标记已看 / 未看：本地集写库，媒体服务器的远端集同步到服务器；其它远端
-                // 源没有这个协议（[CollectionRemoteContext.playedMark] 为 null）就不出。
+                // 源没有这个协议（[CollectionRemoteContext.playedMarkFor] 给 null）就不出。
                 if (_canMarkWatched(episode)) ...<DialogListAction>[
                   DialogListAction(
                     label: episode.completed
@@ -3418,7 +3430,13 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 
   /// 这一集能不能手动标记：本地行总是可以；纯远端集要来源支持（媒体服务器）。
   bool _canMarkWatched(CollectionEpisodeSlot episode) =>
-      episode.local != null || widget.remote?.playedMark != null;
+      episode.local != null ||
+      (episode.remote != null &&
+          _remotePlayedMarkOf(episode.remote!.id) != null);
+
+  /// 远端集 [id] 所在来源的「已播放」协议；来源不支持时 null。
+  RemoteVideoPlayedMark? _remotePlayedMarkOf(String id) =>
+      widget.remote?.playedMarkFor?.call(id);
 
   /// 批量标记已看 / 未看，一次 [setVideosWatched]：本地行（含本地入库的媒体服务器
   /// 条目，顺带回写服务器）写库并盖同步戳；纯远端集与本地集在当前来源上的镜像经
@@ -3429,17 +3447,20 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     required bool watched,
   }) async {
     if (episodes.isEmpty) return;
-    final RemoteVideoPlayedMark? marker = widget.remote?.playedMark;
+    // 远端来源可以多个并存（反馈 k5Ey2AglAf）：每一集按它自己的来源标，来源不支持
+    // 「已播放」的远端集不进服务器回写。
+    final RoutedRemoteVideoPlayedMark marker = RoutedRemoteVideoPlayedMark(
+      _remotePlayedMarkOf,
+    );
     final List<String> localUids = <String>[
       for (final CollectionEpisodeSlot e in episodes)
         if (e.local != null) e.local!.bookUid,
     ];
     final List<String> remoteIds = <String>[
       for (final CollectionEpisodeSlot e in episodes)
-        if (e.local == null && e.remote != null)
-          e.remote!.id
-        else if (marker != null && e.remoteMirror != null)
-          e.remoteMirror!.id,
+        if ((e.local == null ? e.remote : e.remoteMirror)?.id
+            case final String id when marker.supports(id))
+          id,
     ];
     // No container only in widget tests (see [_downloadsAvailable]): nobody
     // listens to the marks there.
@@ -3759,6 +3780,15 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       case _CollectionManageAction.subtitles:
         await _fetchCollectionSubtitles();
         return;
+      case _CollectionManageAction.fillSubtitles:
+        await showLibrarySubtitleFillSheet(
+          context: context,
+          controller: librarySubtitleFillController(
+            ProviderScope.containerOf(context, listen: false).read(appProvider),
+          ),
+          bookUids: <String>[for (final VideoBookRow m in _members) m.bookUid],
+        );
+        return;
       case _CollectionManageAction.generateJaSubtitles:
         await _generateSeasonJaSubtitles();
         return;
@@ -3869,15 +3899,13 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
             context,
             MediaQuery.sizeOf(context).width,
           ))
-        FushiIconButtonControl(
+        FushiIconButton(
           key: const ValueKey<String>('collection-detail-layout-toggle'),
           tooltip: _posterLayout
               ? t.video_detail_layout_two_pane
               : t.video_detail_layout_poster,
-          icon: FushiIcon(
-            _posterLayout ? FushiIcons.viewColumn : FushiIcons.viewAgenda,
-          ),
-          onPressed: () => unawaited(_togglePosterLayout()),
+          icon: _posterLayout ? FushiIcons.viewColumn : FushiIcons.viewAgenda,
+          onTap: () => unawaited(_togglePosterLayout()),
         ),
       _buildSortMenu(),
       // 管理动作默认全部平铺，页头放不下才从最低优先级起收进「⋯」
@@ -3950,6 +3978,14 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         _CollectionManageAction.subtitles,
         FushiIcons.subtitles,
         t.video_jimaku_batch_title,
+        enabled: _members.isNotEmpty,
+      ),
+      // 补齐字幕：逐集按语言判缺 → 内封 → OCR → 下载（原盘重定时）→ 本机生成，
+      // 只动缺字幕的集（与 `fushi_cli video sub-fill` 同一个编排）。
+      action(
+        _CollectionManageAction.fillSubtitles,
+        FushiIcons.subtitles,
+        t.video_subtitle_fill_title,
         enabled: _members.isNotEmpty,
       ),
       // 整季生成日语字幕（ASR + 可选 AI 校对）：要本机视频文件与本机 ONNX 运行时；
@@ -4083,6 +4119,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
             key: collectionTagEntryKey(widget.collection.id),
           );
           return MediaLinksSection(
+            remoteVideoSources: mediaLinkRemoteVideoSources(ref: ref),
             database: widget.database,
             self: self,
             onOpen: (MediaLinkEntry e) =>
@@ -4474,6 +4511,7 @@ enum _CollectionManageAction {
   tmdbOrderingOnHost,
   sortBySeason,
   subtitles,
+  fillSubtitles,
   generateJaSubtitles,
   renameEpisodes,
   downloadRemote,

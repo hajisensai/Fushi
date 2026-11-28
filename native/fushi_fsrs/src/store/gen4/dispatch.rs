@@ -53,7 +53,7 @@
 use rusqlite::OptionalExtension;
 use serde_json::{Value, json};
 
-use super::cache::{CACHE_RULES, CFG_KEY, RULES_KEY};
+use super::cache::{CACHE_RULES, CFG_KEY, RULES_KEY, RWKV_FILL_FROM, RWKV_FILL_KEY};
 use super::cmd::{self, snapshot};
 use super::derive::{Index, Ref, Settled};
 use super::files::OpenMode;
@@ -113,7 +113,7 @@ pub fn wiring(op: &str) -> Option<Wiring> {
         | "digest_heal" => Wired,
         // 其余写
         "device_info" | "device_hint" | "local_state_ensure" | "local_anchor"
-        | "cache_config_set" | "refresh_caches" | "rebuild_caches" => Wired,
+        | "cache_config_set" | "refresh_caches" | "rebuild_caches" | "rwkv_last_fill" => Wired,
         // 纯加解密（不碰库）
         "seal" | "open" | "seal_file" | "open_file" | "derive_key" => Wired,
         // 媒体回收（`cmd/media_gc.rs`）：待回收集合存在本机状态行里，存活引用读缓存层。
@@ -532,7 +532,7 @@ fn run(
             })?
         }
         "entity_views" => read_col(c, profile, |t, col| {
-            cmd::views::entity_views_cmd(t, col, req)
+            cmd::views::entity_views_cmd(t, col, req, files)
         })?,
         "conflicts" => read_col(c, profile, cmd::center::conflicts)?,
         "checkpoints" => read_col(c, profile, cmd::center::checkpoints)?,
@@ -590,7 +590,9 @@ fn run(
                 Ok(json!({"due": due, "error": error}))
             })
         })?,
-        "collection_info" => read_col(c, profile, cmd::identity::collection_info)?,
+        "collection_info" => read_col(c, profile, |t, col| {
+            cmd::identity::collection_info(t, col, req)
+        })?,
         "canonical_ids" => read_col(c, profile, |t, col| {
             cmd::identity::canonical_ids(t, col, req)
         })?,
@@ -927,6 +929,15 @@ fn run(
             c.refresh_note(profile, tally, false);
             v
         }
+        "rwkv_last_fill" => {
+            // 分批回填 `rwkv_last` 的一步（BUG-5547，`cmd/training.rs`）：只写缓存层的这张表与回填游标，别的缓存行与
+            // 刷新键都不动（`rwkv_last` 只有 RWKV 末条读它，回填出的值与填完之后读到的相同），不作废宿主缓存。
+            let limit = req
+                .get("limit")
+                .and_then(Value::as_u64)
+                .ok_or("rwkv_last_fill: missing limit")? as usize;
+            c.write(|t| cmd::training::rwkv_last_fill(t, col_of(t, profile)?, limit))?
+        }
         "refresh_caches" | "rebuild_caches" => {
             let mode = if op == "rebuild_caches" {
                 Settle::Rebuild
@@ -951,20 +962,37 @@ fn run(
 /// `cache_config_set`：缓存配置（内置笔记类型的代码默认值、默认牌组：只有 Dart 知道）是派生层的输入，存在
 /// `derive_cfg`（与迁移写下的是同一个键）。值与库里的相同（按 JSON 值比，键序无关）就什么都不做；变了就写下并按
 /// `Settle::Rebuild` 整个重建派生层（缓存行按新配置重算），同一个事务。配置没变、但缓存层不是按当前推导口径物化的
-/// （`derive_cfg` 的 [RULES_KEY] 不等于 [CACHE_RULES]，`cache.rs`）也整层重建一次。回包 `{changed, settled?}`：
-/// `changed` = 派生层重建过（宿主据它作废按刷新键记的缓存）。请求要带 `now`：分发处在同一个事务里接着做默认牌组
+/// （`derive_cfg` 的 [RULES_KEY] 不等于 [CACHE_RULES]，`cache.rs`）也整层重建一次——例外是 [RWKV_FILL_FROM]
+/// （与当前口径只差 `rwkv_last`，BUG-5547）：只记下当前修订号与回填游标 [RWKV_FILL_KEY]，表由宿主分批回填
+/// （`rwkv_last_fill`），不在这一个写事务里整层重建。回包 `{changed, settled?, rwkvLastFill?}`：
+/// `changed` = 派生层重建过（宿主据它作废按刷新键记的缓存）；`rwkvLastFill: true` = 回填还没做完（刚就地升级，或上次
+/// 没填完），宿主接着填。请求要带 `now`：分发处在同一个事务里接着做默认牌组
 /// 不变式的自愈（[cmd::writes_intent::revive_default_deck]），写了时回包另带 `revive`（那笔写的统一回包 + 本机状态行的
 /// `localRevision` / `localEpoch`，宿主照本机写命令接）。
 ///
 /// 协议 3 回 `{from, to, current, cache}`（缓存推导口径的版本升级与 Dart 缓存镜像的写入清单）：新代的推导口径版本只有
 /// 「当前 / 不是当前」两态（落后了就整层重建，派生层是真相的纯函数），回包改了形状，G7-5 对应改。
-fn cache_config_set(t: &Truth<'_>, col: i64, caches: &Value) -> Result<Value, String> {
+pub(crate) fn cache_config_set(t: &Truth<'_>, col: i64, caches: &Value) -> Result<Value, String> {
     let old: Option<Value> = t
         .derive_cfg(col, CFG_KEY)?
         .and_then(|text| serde_json::from_str(&text).ok());
-    let current_rules = t.derive_cfg(col, RULES_KEY)? == Some(CACHE_RULES.to_string());
-    if old.as_ref() == Some(caches) && current_rules {
-        return Ok(json!({"changed": false}));
+    let rules = t.derive_cfg(col, RULES_KEY)?;
+    if old.as_ref() == Some(caches) {
+        if rules == Some(CACHE_RULES.to_string()) {
+            // 上次就地升级留下的回填没做完（被杀 / 关库）：回包照样带上，宿主接着填。
+            return Ok(if t.derive_cfg(col, RWKV_FILL_KEY)?.is_some() {
+                json!({"changed": false, "rwkvLastFill": true})
+            } else {
+                json!({"changed": false})
+            });
+        }
+        if RWKV_FILL_FROM.is_some_and(|from| rules == Some(from.to_string())) {
+            // 与当前口径只差 `rwkv_last`（BUG-5547）：不整层重建，记下当前修订号与回填游标，表由宿主分批填。别的缓存行
+            // 一行没变，`changed` 仍是 false（宿主不必作废按刷新键记的缓存）。
+            t.set_derive_cfg(col, RULES_KEY, Some(&CACHE_RULES.to_string()))?;
+            t.set_derive_cfg(col, RWKV_FILL_KEY, Some(""))?;
+            return Ok(json!({"changed": false, "rwkvLastFill": true}));
+        }
     }
     t.set_derive_cfg(col, CFG_KEY, Some(&crate::store::sync2::canonical(caches)))?;
     let st = ingest_settle(t, &mut Index::new(t, col), col, Settle::Rebuild)?;
@@ -1191,6 +1219,21 @@ pub fn rwkv_cards(
 ) -> Result<Vec<u8>, String> {
     direct(c, profile, groups, |t, col| {
         cmd::training::rwkv_cards(t, col, groups, ids, day)
+    })
+}
+
+/// `ffsrs_store_rwkv_rows` 模式 2（末条：每张卡最后一条保留评分，读缓存层的 `rwkv_last`）。
+pub fn rwkv_last(
+    c: &G4Core,
+    profile: Option<&str>,
+    groups: &[Vec<String>],
+) -> Result<Vec<u8>, String> {
+    let cards: Vec<String> = groups.iter().filter_map(|g| g.first().cloned()).collect();
+    if cards.len() != groups.len() {
+        return Err("rwkv: empty card group".into());
+    }
+    direct(c, profile, groups, |t, col| {
+        cmd::training::rwkv_last(t, col, &cards)
     })
 }
 

@@ -5,12 +5,17 @@ import 'package:drift/drift.dart' show TableUpdate, TableUpdateQuery;
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/media/links/adaptation_progress_section.dart';
 import 'package:fushi/src/media/links/media_link_editor_dialog.dart';
+import 'package:fushi/src/media/links/media_link_removal_notice.dart';
 import 'package:fushi/src/media/links/media_link_entries.dart';
 import 'package:fushi/src/media/links/work_graph_store.dart';
 import 'package:fushi/src/media/links/work_plans.dart';
 import 'package:fushi/src/media/media_cover_source.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/pages/implementations/work_network_page.dart';
+import 'package:fushi/src/sync/remote_cover_image.dart';
+import 'package:fushi/src/sync/remote_video_client.dart';
+import 'package:fushi/src/utils/cover_image.dart'
+    show kLocalCoverDecodePixelWidth;
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
@@ -30,6 +35,8 @@ import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart'
+    show RemoteVideoInfo;
 import 'package:material_ui/material_ui.dart';
 
 /// 打开作品图谱另一端在本机的条目（各详情页注入；导航上下文在调用方）。
@@ -44,6 +51,7 @@ Future<void> showMediaLinksDialog({
   required MediaLinkOpenCallback onOpen,
   Future<int> Function()? onInfer,
   ValueChanged<String>? Function(MediaLinkKind kind)? searchActionFor,
+  Future<List<RemoteVideoSource>> Function()? remoteVideoSources,
 }) => showAppDialog<void>(
   context: context,
   builder: (BuildContext dialogContext) => FushiDialogFrame(
@@ -56,6 +64,7 @@ Future<void> showMediaLinksDialog({
         self: self,
         onInfer: onInfer,
         searchActionFor: searchActionFor,
+        remoteVideoSources: remoteVideoSources,
         onOpen: (MediaLinkEntry e) {
           // 从关系网页里打开时弹窗已不在栈顶：只移除弹窗这一条路由，不误关关系网页。
           final ModalRoute<Object?>? route = ModalRoute.of(dialogContext);
@@ -95,6 +104,7 @@ class MediaLinksSection extends StatefulWidget {
     required this.onOpen,
     this.onInfer,
     this.searchActionFor,
+    this.remoteVideoSources,
     super.key,
   });
 
@@ -110,6 +120,13 @@ class MediaLinksSection extends StatefulWidget {
 
   /// 「未入库」灰卡的去搜入口（按端点种类给出；返回 null = 该种类没有入口）。
   final ValueChanged<String>? Function(MediaLinkKind kind)? searchActionFor;
+
+  /// 当前的远端视频来源（`resolveVisibleRemoteVideoSources`，按优先级排好、可多个
+  /// 并存）。视频合集卡没有本地封面、成员又只在远端（[MediaLinkEntry.hasRemoteMembers]）
+  /// 时，用它们按成员 id 问远端要剧海报，与视频库合集卡同一张图、同一份磁盘缓存。
+  /// null = 不取远端海报（占位图）。每个区块实例至多调用一次；没有远端成员的卡不会
+  /// 触发它。
+  final Future<List<RemoteVideoSource>> Function()? remoteVideoSources;
 
   @override
   State<MediaLinksSection> createState() => _MediaLinksSectionState();
@@ -127,6 +144,19 @@ ShelfCoverMaterial mediaLinkCoverMaterial(MediaLinkKind kind) => switch (kind) {
   MediaLinkKind.musicAlbum ||
   MediaLinkKind.musicTrack => ShelfCoverMaterial.glossyAlbum,
 };
+
+/// 「未入库」灰卡的去饱和滤镜：RGB 按 Rec.709 亮度换成灰度，alpha 原样不动。
+///
+/// 不用 `ColorFilter.mode(Colors.grey, BlendMode.saturation)`：混合模式滤镜对完全
+/// 透明的像素也生效（结果 = 滤镜色本身），封面材质烘焙纹理四周给投影留的透明外扩区
+/// （`kShelfMaterialShadowExtent`）会被整块涂成灰板，压在组名与副行上（BUG-5457）。
+/// 颜色矩阵的 alpha 行只取原 alpha、无平移项，透明像素仍是透明。
+const ColorFilter mediaLinkMissingCoverFilter = ColorFilter.matrix(<double>[
+  0.2126, 0.7152, 0.0722, 0, 0, //
+  0.2126, 0.7152, 0.0722, 0, 0, //
+  0.2126, 0.7152, 0.0722, 0, 0, //
+  0, 0, 0, 1, 0, //
+]);
 
 /// 区块一次加载的结果。
 class _SectionData {
@@ -168,6 +198,17 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
   late WorkGraphStore _store;
   bool _inferring = false;
 
+  /// 远端来源，首次需要远端海报时解析一次（[MediaLinksSection.remoteVideoSources]）。
+  Future<List<RemoteVideoSource>>? _remoteSources;
+
+  /// 合集卡的远端海报（只放查到了的）；区块重载（表变更 / 作品图重建）时沿用，
+  /// 不重复问远端。
+  final Map<MediaLinkEndpoint, ImageProvider> _remotePosters =
+      <MediaLinkEndpoint, ImageProvider>{};
+
+  /// 已发起过远端海报查询的卡（含没查到的），重载时不再查。
+  final Set<MediaLinkEndpoint> _remotePosterRequested = <MediaLinkEndpoint>{};
+
   @override
   void initState() {
     super.initState();
@@ -201,6 +242,9 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
       _store.addListener(_reload);
       unawaited(_tableSub?.cancel());
       _subscribe();
+      _remoteSources = null;
+      _remotePosters.clear();
+      _remotePosterRequested.clear();
     }
     if (oldWidget.self != widget.self ||
         oldWidget.database != widget.database) {
@@ -235,8 +279,109 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
     ]) {
       entries[card.key] = await _resolveCard(db, card);
     }
+    unawaited(
+      _loadRemotePosters(<MediaLinkEntry>[
+        ...entries.values,
+        for (final MediaLinkView v in views) v.other,
+      ]),
+    );
     return _SectionData(views: views, plan: plan, entries: entries);
   }
+
+  /// 没有本地封面、但有远端成员的视频合集卡：按成员 id 问远端要海报。
+  ///
+  /// 一次区块加载对每个来源只发一次查询（所有待查卡的成员 id 合进一发
+  /// [RemoteVideoLookup.remoteVideosByIds]），来源整段生命周期只解析一次；没有
+  /// 待查卡时既不解析来源也不发网络。取图选择与视频库合集卡一致：成员序里第一个
+  /// 带剧海报的取剧海报（缓存键 = 不含令牌的 URL 路径，与库页共用磁盘缓存），都没有
+  /// 才取第一个成员自己的封面（缓存键 = 视频 id，同库页单集卡）。来源不具备按 id
+  /// 查询或取封面的能力（互联 / 云盘）、或查询失败时，卡片保持占位图。
+  Future<void> _loadRemotePosters(List<MediaLinkEntry> entries) async {
+    final Future<List<RemoteVideoSource>> Function()? loader =
+        widget.remoteVideoSources;
+    if (loader == null) return;
+    final List<MediaLinkEntry> wanted = <MediaLinkEntry>[];
+    for (final MediaLinkEntry e in entries) {
+      if (!e.hasRemoteMembers || e.coverPath != null) continue;
+      if (!_remotePosterRequested.add(e.endpoint)) continue;
+      wanted.add(e);
+    }
+    if (wanted.isEmpty) return;
+    final List<String> ids = <String>[
+      for (final MediaLinkEntry e in wanted) ...e.remoteMemberKeys,
+    ];
+    // 多个来源并存（反馈 k5Ey2AglAf）：每个能按 id 查、能取封面的来源各问一次，
+    // 同一 id 按来源优先级只认第一个查到的；每条成员配着查到它的那个来源的取图器。
+    final Map<String, ({RemoteVideoInfo video, RemoteCoverFetcher fetcher})>
+    byId = <String, ({RemoteVideoInfo video, RemoteCoverFetcher fetcher})>{};
+    final List<RemoteVideoSource> sources;
+    try {
+      sources = await (_remoteSources ??= loader());
+    } on Object catch (e) {
+      debugPrint('[media_links] remote source resolve failed: $e');
+      return;
+    }
+    for (final RemoteVideoSource source in sources) {
+      if (source is! RemoteVideoLookup || source is! RemoteCoverFetcher) {
+        continue;
+      }
+      final RemoteCoverFetcher fetcher = source as RemoteCoverFetcher;
+      final List<RemoteVideoInfo> found;
+      try {
+        found = await (source as RemoteVideoLookup).remoteVideosByIds(ids);
+      } on Object catch (e) {
+        // 远端不可达 / 鉴权失效：海报只是装饰，卡片保持占位图，不打扰用户。
+        debugPrint('[media_links] remote poster lookup failed: $e');
+        continue;
+      }
+      for (final RemoteVideoInfo v in found) {
+        byId.putIfAbsent(v.id, () => (video: v, fetcher: fetcher));
+      }
+    }
+    bool changed = false;
+    for (final MediaLinkEntry e in wanted) {
+      final ImageProvider? poster = _remotePosterFor(
+        <({RemoteVideoInfo video, RemoteCoverFetcher fetcher})>[
+          for (final String key in e.remoteMemberKeys) ?byId[key],
+        ],
+      );
+      if (poster == null) continue;
+      _remotePosters[e.endpoint] = poster;
+      changed = true;
+    }
+    if (changed && mounted) setState(() {});
+  }
+
+  /// 成员（按成员序）里第一个剧海报，没有则第一个成员封面；都没有返回 null。
+  static ImageProvider? _remotePosterFor(
+    List<({RemoteVideoInfo video, RemoteCoverFetcher fetcher})> members,
+  ) {
+    for (final (:RemoteVideoInfo video, :RemoteCoverFetcher fetcher)
+        in members) {
+      final String? url = video.seriesCoverUrl;
+      if (url == null || url.isEmpty) continue;
+      return _resizedRemoteCover(
+        RemoteCoverImage(url, fetcher, cacheKey: Uri.parse(url).path),
+      );
+    }
+    for (final (:RemoteVideoInfo video, :RemoteCoverFetcher fetcher)
+        in members) {
+      final String? url = video.coverUrl;
+      if (url == null || url.isEmpty) continue;
+      return _resizedRemoteCover(
+        RemoteCoverImage(url, fetcher, cacheKey: video.id),
+      );
+    }
+    return null;
+  }
+
+  /// 与视频库远端封面同一解码上限（BUG-959 口径：服务器原尺寸海报不整帧解码）。
+  static ImageProvider _resizedRemoteCover(RemoteCoverImage image) =>
+      ResizeImage(
+        image,
+        width: kLocalCoverDecodePixelWidth,
+        allowUpscaling: false,
+      );
 
   /// 卡片展示信息：直接相连的端点复用已解析的对端；折叠合集取合集名。
   Future<MediaLinkEntry> _resolveCard(
@@ -256,6 +401,7 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
       title: series.name,
       inLibrary: entry.inLibrary,
       coverPath: entry.coverPath,
+      remoteMemberKeys: entry.remoteMemberKeys,
     );
   }
 
@@ -331,32 +477,33 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
       ],
     );
     if (remove != true || !mounted) return;
-    await rejectMediaLinks(widget.database, <MediaLinkId>[
+    await removeMediaLinksWithUndo(context, widget.database, <MediaLinkId>[
       for (final MediaLinkView v in direct) v.id,
     ]);
-    FushiToast.show(msg: t.media_link_removed, severity: ToastSeverity.info);
   }
 
-  Future<void> _removeAiLinks(List<MediaLinkView> ai) async {
-    await rejectMediaLinks(widget.database, <MediaLinkId>[
-      for (final MediaLinkView v in ai) v.id,
-    ]);
-    FushiToast.show(msg: t.media_link_removed, severity: ToastSeverity.info);
-  }
+  /// 卡片角上的一键「移除 AI 关联」：一点就把这张卡上的 AI 连接全写成否决墓碑，
+  /// 所以提示条必须带撤销（反馈 bkrkQrYhnX，[removeMediaLinksWithUndo]）。
+  Future<void> _removeAiLinks(List<MediaLinkView> ai) =>
+      removeMediaLinksWithUndo(context, widget.database, <MediaLinkId>[
+        for (final MediaLinkView v in ai) v.id,
+      ]);
 
   Widget _cover(BuildContext context, MediaLinkEntry entry, double width) {
     final MediaKind? kind = mediaKindOfLinkKind(entry.endpoint.kind);
     final ImageProvider? local = kind == null
         ? null
         : resolveMediaCoverImage(kind: kind, localPath: entry.coverPath);
+    // 没有本地封面的远端合集：取 [_loadRemotePosters] 查到的服务器海报。
+    final ImageProvider? image = local ?? _remotePosters[entry.endpoint];
     final Widget placeholder = ShelfCoverPlaceholder(
       icon: mediaLinkKindIcon(entry.endpoint.kind),
       iconSize: width / 4,
       backgroundColor: FushiDesignTokens.of(context).surfaces.overlay,
     );
-    if (local == null) return placeholder;
+    if (image == null) return placeholder;
     return PortraitCoverImage(
-      image: local,
+      image: image,
       errorBuilder: (BuildContext _) => placeholder,
     );
   }
@@ -457,10 +604,7 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
                 ? Opacity(
                     opacity: 0.45,
                     child: ColorFiltered(
-                      colorFilter: const ColorFilter.mode(
-                        Colors.grey,
-                        BlendMode.saturation,
-                      ),
+                      colorFilter: mediaLinkMissingCoverFilter,
                       child: cover,
                     ),
                   )
@@ -471,6 +615,8 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
             child: ShelfCardMeta(
               title: other.title,
               subtitle: <String>[_cardRelationLabel(spec), ?status].join(' · '),
+              // 与视频库合集卡同一提示：有只在 Jellyfin / 互联上的集。
+              leadingIcon: other.hasRemoteMembers ? FushiIcons.cloud : null,
             ),
           ),
         ],
@@ -577,7 +723,8 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
                           key: const ValueKey<String>(
                             'media-link-suggestion-reject',
                           ),
-                          onPressed: () => rejectMediaLinks(
+                          onPressed: () => removeMediaLinksWithUndo(
+                            context,
                             widget.database,
                             <MediaLinkId>[view.id],
                           ),

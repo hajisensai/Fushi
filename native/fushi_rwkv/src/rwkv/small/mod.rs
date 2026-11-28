@@ -1,14 +1,15 @@
 // Copyright: Fushi contributors
 // License: GNU AGPL, version 3 or later; http://www.gnu.org/licenses/agpl.html
 //
-//! Fushi: runtime for the small RWKV models (d_model 64; the default weights
-//! are the Instant-Only `sm98`, 331,511 parameters, from JSchoreels/anki
-//! `qt/aqt/rwkv_inference/sm98/`). Not upstream code: written for Fushi from
+//! Fushi: runtime for the small RWKV models (d_model 64; the Instant-Only
+//! Small `sm113`, 331,511 parameters, and six-layer Tiny `sm130io`, 185,057,
+//! from JSchoreels/anki `qt/aqt/rwkv_inference/`). Not upstream code: written for Fushi from
 //! the INTEGRATION.md and NumPy reference of package sm40v2. The network is
 //! built from the weight file's tensor directory (layers per stream, which
 //! layers have a channel mixer, the layer-major `layer_steps`), so the
-//! same-architecture retrains (SM56, SM72, SM92, SM98) and the one-card-layer
-//! "w64-c1" (Tiny, sm101) load alike.
+//! same-architecture retrains (SM56 ... SM98, SM113) and the six-layer Tiny
+//! "w64-c1-d2p1u1" (sm130io) load alike; layer counts outside the known
+//! plans are refused (`model.rs` `LAYER_PLANS`).
 //!
 //! It shares the input side with the big model unchanged (the 92 features of
 //! [FeatureState], ID codes and all; the model ignores feature 22 and, by the
@@ -38,7 +39,11 @@ use weights::Weights;
 /// stay under 20 MB, and the states touched are encoded back once per call.
 const CHUNK_REVIEWS: usize = 4096;
 
-const SNAPSHOT_MAGIC: &[u8] = b"FRWKVSMALL1\0";
+/// Version 2 (2026-11-26): states computed with the platform-independent
+/// arithmetic of `det`. Version 1 snapshots hold states from the old
+/// per-platform kernels and libm; they are refused, so the host replays the
+/// review log once and every device continues from identical states.
+pub(crate) const SNAPSHOT_MAGIC: &[u8] = b"FRWKVSMALL2\0";
 
 /// The parsed small network, shareable between runtimes.
 #[derive(Clone)]
@@ -70,7 +75,8 @@ impl SmallModel {
         })
     }
 
-    /// The 13-step interleaved layer schedule, (stream, layer) in order.
+    /// The interleaved layer schedule, (stream, layer) in order (13 steps for
+    /// "w64", 6 for the six-layer Tiny).
     #[doc(hidden)]
     pub fn layer_steps(&self) -> Vec<(usize, usize)> {
         self.net.steps().to_vec()
@@ -341,7 +347,7 @@ impl SmallInference {
     }
 
     // No `answer_curves` (RWKV-Curve) here: the small models Fushi runs are
-    // Instant-Only (sm98 / sm101, trained with curve_loss_weight 0.0), whose
+    // Instant-Only (sm113 / sm130io, trained with curve_loss_weight 0.0), whose
     // curve head was never trained. `ModelKind::has_trained_curve_head`.
 
     fn query_heads(&mut self, inputs: &[ReviewInput], curve: bool) -> io::Result<Vec<SmallHeads>> {
@@ -448,7 +454,7 @@ impl SmallInference {
         Some(self.features.first_day_offset? + self.features.previous_day_offset?)
     }
 
-    /// `FRWKVSMALL1\0`, precision byte (0 / 8 / 4), weight fingerprint (u64),
+    /// `FRWKVSMALL2\0`, precision byte (0 / 8 / 4), weight fingerprint (u64),
     /// then per stream (card, deck, note, preset, user): slot length (u32),
     /// count (u32), states by ascending id (i64 id + slot bytes); then u32
     /// length + the `ARWKVPROCSTATE2` feature cache. Lossless.
@@ -522,7 +528,10 @@ impl SmallInference {
             |message: &str| io::Error::new(io::ErrorKind::InvalidData, message.to_owned());
         let mut cursor = SnapshotReader::new(input, len);
         cursor.expect_magic(SNAPSHOT_MAGIC).map_err(|_| {
-            invalid("not a small-model RWKV snapshot (a big-model snapshot or damaged bytes)")
+            invalid(
+                "not a current small-model RWKV snapshot (a big-model snapshot, a version-1 \
+                 snapshot from before the platform-independent arithmetic, or damaged bytes)",
+            )
         })?;
         if cursor.u8()? != super::precision_code(self.precision) {
             return Err(invalid(

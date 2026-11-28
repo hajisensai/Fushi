@@ -135,6 +135,7 @@ use crate::store::caches::{
     self, AnkiStatKey, CacheConfig, Material, NoteInfo, TypeInfo, add_descendants,
     anki_duplicate_log_ids, card_row, note_row, sorted_ids, stat_groups,
 };
+use crate::store::projections::LogsByCard;
 use crate::store::schema::anki_numeric_id;
 use crate::store::sync2::{
     canonical, config, group_lineage, log_json, note_type_key_affects_caches, tails_with,
@@ -224,6 +225,20 @@ CREATE INDEX IF NOT EXISTS cards_review_due ON cards
   (col, deck_id, COALESCE(due_day, 0), buried_until_day, last_reviewed_at, stability, id, due_at, due_day,
    queue, hidden, suspended, scheduler)
   WHERE queue = 'review' AND hidden = 0 AND suspended = 0 AND scheduler = 'fushi';
+-- RWKV 查询行要的「最后一条保留评分」（`projection::rwkv_kept` 的最后一条，按卡行的血统算），与卡行同一次物化；
+-- 没有保留评分的卡没有行。卡行删掉时由触发器一起删（`INSERT OR REPLACE` 换卡行不触发，物化随即重写这一行）。
+-- 冷启动 RWKV 打分只读这张表（`cmd/training.rs` `rwkv_last`），不再逐卡重放全部历史（BUG-5525）。
+CREATE TABLE IF NOT EXISTS rwkv_last (
+  col INTEGER NOT NULL,
+  card NOT NULL,
+  at INTEGER NOT NULL,
+  rating INTEGER NOT NULL,
+  rtype INTEGER NOT NULL,
+  PRIMARY KEY (col, card)
+) WITHOUT ROWID;
+CREATE TRIGGER IF NOT EXISTS cards_gone_rwkv_last AFTER DELETE ON cards BEGIN
+  DELETE FROM rwkv_last WHERE col = OLD.col AND card = OLD.id;
+END;
 CREATE INDEX IF NOT EXISTS cards_tally ON cards
   (col, deck_id, queue, due_day, due_at, suspended, scheduler, buried_until_day)
   WHERE hidden = 0;
@@ -370,11 +385,40 @@ pub const RULES_KEY: &str = "cacheRules";
 /// - 5（BUG-5190 / HBK-AUDIT-203）：卡片标志按血统继承时，同一层几张前身都有记录的取生效写入最新的那张
 ///   （`registers::cards_group` 的 `registers::later`）。之前取卡 ID 序在前的：按 4 物化过的库里这类后继卡的
 ///   `flag` / `new_position` / 牌组……是按 ID 序继承的，原地重开与重建不同，要重建一次才换成新口径。
-pub const CACHE_RULES: i64 = 5;
+/// - 6（BUG-5476）：日志重放、卡片状态和统计以原始日志 ID 排序和选副本。规范 ID 只用于身份和引用。
+/// - 7（BUG-5525）：新增 `rwkv_last`（每张卡最后一条 RWKV 保留评分，与卡行一起物化）。按 6 物化的库这张表是空的，
+///   要重建一次才填上。
+pub const CACHE_RULES: i64 = 7;
+
+/// 能就地升到 [CACHE_RULES]、不必整层重建的旧修订号（BUG-5547）：7 相对 6 只多了 `rwkv_last` 这张表，别的缓存行与
+/// 派生层逐行相同。按 6 物化的库开库时（`dispatch.rs` `cache_config_set`）只把修订号记成当前值、置上
+/// [RWKV_FILL_KEY]，宿主随后分批回填（`cmd/training.rs` `rwkv_last_fill`），不在开库那一个写事务里整层重建——手机上
+/// 那一次重建要几分钟，中途切后台被系统回收就整笔回滚、下次从头再来，复习页永远停在加载（反馈 gPPVTfHm1b）。
+///
+/// 下次升 [CACHE_RULES] 时，6 的库也要整层重建（新口径改的不只是 `rwkv_last`）：这里改成 None 或新的就地升级规则，
+/// `rwkv_fill_from_is_one_revision_below_cache_rules` 守着不让它跟丢。
+pub const RWKV_FILL_FROM: Option<i64> = Some(6);
+
+/// `derive_cfg` 里「`rwkv_last` 还没回填完」的键（BUG-5547）。值 = 已回填到的卡（`cards` 主键序最后一张的规范 ID
+/// 文本；空串 = 还没开始）；没有这一行 = 表是完整的。整份物化（[Index::materialize_caches]）填满了整张表，同时删掉它。
+pub const RWKV_FILL_KEY: &str = "rwkvLastFill";
 
 /// [Index::log_class_rep] 每个成员一次的点查（走 `log_id (col, id, k)`；查询计划测试用同一份）。
-pub(crate) const LOG_REP_SQL: &str =
-    "SELECT k, at, card FROM log_ix WHERE col = ?1 AND id = ?2 AND win = 1";
+/// 一张原值卡（`?2`）的 `win = 1` 日志行，按 (发生时刻, 操作主键)：(操作主键, 发生时刻, 规范日志 ID, 这个规范日志 ID 的别名类
+/// 里有没有别的成员)。规范 ID 与成员的口径同 [Index::canonical] / [Index::members]（`alias_ix`；不是 UUID 的引用不在表里，
+/// 就是它自己）。[Index::card_logs] 用；查询计划测试在 `cmd/training_tests.rs` 的 `fingerprint_tail_and_scan_statements_use_the_arrival_order`。
+pub(crate) const CARD_LOGS_SQL: &str = "SELECT l.k, l.at, COALESCE(a.canon, l.id), \
+     EXISTS(SELECT 1 FROM alias_ix x WHERE x.col = l.col AND x.canon = COALESCE(a.canon, l.id) \
+     AND x.canon != x.id) \
+     FROM log_ix l LEFT JOIN alias_ix a ON a.col = l.col AND a.id = l.id \
+     WHERE l.col = ?1 AND l.card = ?2 AND l.win = 1 ORDER BY l.at, l.k";
+
+/// 规范日志 ID `?2` 的别名类里每个成员的 `win = 1` 行：(操作主键, 发生时刻, 卡)。成员的口径同 [Index::members]
+/// （`alias_ix` 里 `canon = ?2 AND canon != id` 的，加上它自己）。[Index::log_class_rep] 用。
+pub(crate) const LOG_REP_SQL: &str = "SELECT k, at, card FROM log_ix WHERE col = ?1 AND id = ?2 AND win = 1 \
+     UNION ALL SELECT l.k, l.at, l.card FROM alias_ix a \
+     JOIN log_ix l ON l.col = a.col AND l.id = a.id AND l.win = 1 \
+     WHERE a.col = ?1 AND a.canon = ?2 AND a.canon != a.id";
 
 /// 一批碰到的东西里缓存层要重看的（[Index::settle] 边判边记，收尾时 [Index::refresh_caches] 用掉）。
 #[derive(Default, Debug)]
@@ -447,11 +491,25 @@ pub(super) struct LogIn {
     pub(super) note: Option<Ref>,
     /// 日志上记的卡（原值，未归一）：重放的 fuzz 种子（`sync2/replay.rs` [Row::seed_card]）。[json] 里的 `card` 已归一成
     /// 规范卡；种子跟着换的话，带盐的存量日志迁移后到期日会变。
-    pub(super) seed_card: String,
+    seed_card: String,
+    pub(super) order_id: Option<String>,
 }
 
-/// 归属组的一行重放输入（[Index::group_rows]）：(投影行 JSON, server_time, 意图, fuzz 种子用的原值卡)。
-pub(super) type GroupRow = (String, Option<i64>, Intent, String);
+impl LogIn {
+    pub(super) fn replay_row(&self) -> Row<'_> {
+        Row {
+            json: &self.json,
+            server_time: self.server_time,
+            intent: self.intent.clone(),
+            seed_card: Some(&self.seed_card),
+            order_id: self.order_id.as_deref(),
+        }
+    }
+
+    pub(super) fn stored(&self) -> StoredLog<'_> {
+        (&self.json, self.server_time, None, self.order_id.as_deref())
+    }
+}
 
 /// 统计去重要跨批看的东西（全量重建时一批一个或几个连通分量）。
 #[derive(Default)]
@@ -655,6 +713,8 @@ impl<'t, 'c> Index<'t, 'c> {
         // 整份物化完：这一层是按当前推导口径建的（[CACHE_RULES]）。
         self.t
             .set_derive_cfg(self.col, RULES_KEY, Some(&CACHE_RULES.to_string()))?;
+        // `rwkv_last` 随卡行整份填满了：分批回填（BUG-5547）没做完的也不用再做。
+        self.t.set_derive_cfg(self.col, RWKV_FILL_KEY, None)?;
         Ok(())
     }
 
@@ -943,31 +1003,26 @@ impl<'t, 'c> Index<'t, 'c> {
         let mut reps: BTreeMap<Ref, (i64, i64)> = BTreeMap::new();
         let class = self.class_of(card)?;
         for m in &class {
-            let rows: Vec<(i64, Ref, i64)> = {
-                let mut stmt = self
-                    .t
-                    .conn()
-                    .prepare_cached(
-                        "SELECT k, id, at FROM log_ix WHERE col = ?1 AND card = ?2 AND win = 1 ORDER BY at, k",
-                    )
-                    .map_err(sql)?;
+            // 每条日志的规范日志 ID（[Index::canonical] 的同一张表：表里没有 = 它自己）与它的别名类里有没有别的成员
+            // （[Index::members] 的同一个条件 `canon != id`，走 `alias_canon`），与日志行同一条语句带出来：不再每条日志
+            // 各查三四次别名表（一张复习过几十次的卡就是上百次点查，BUG-5572）。
+            let rows: Vec<(i64, i64, Ref, bool)> = {
+                let mut stmt = self.t.conn().prepare_cached(CARD_LOGS_SQL).map_err(sql)?;
                 let rows = stmt
                     .query_map(params![self.col, m], |r| {
-                        Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+                        Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
                     })
                     .map_err(sql)?;
                 rows.collect::<Result<_, _>>().map_err(sql)?
             };
-            for (k, id, at) in rows {
-                let canon = self.canon(&id)?;
+            for (k, at, canon, aliased) in rows {
                 if reps.contains_key(&canon) {
                     continue;
                 }
-                let log_class = self.class_of(&canon)?;
-                let pick = if log_class.len() == 1 {
-                    Some((at, k))
+                let pick = if aliased {
+                    self.log_rep(&canon, &class)?
                 } else {
-                    self.log_rep(&log_class, &class)?
+                    Some((at, k))
                 };
                 if let Some(p) = pick {
                     reps.insert(canon, p);
@@ -979,36 +1034,33 @@ impl<'t, 'c> Index<'t, 'c> {
         order.into_iter().map(|(_, k)| self.log_at(k)).collect()
     }
 
-    /// 一个规范日志 ID（类 [log_class]）的代表：全部份里操作号最小的；它落在 [cards] 里才返回 (发生时刻, 操作主键)。
-    fn log_rep(&self, log_class: &[Ref], cards: &[Ref]) -> Result<Option<(i64, i64)>, String> {
+    /// 规范日志 ID [canon] 的代表：全部份里操作号最小的；它落在 [cards] 里才返回 (发生时刻, 操作主键)。
+    fn log_rep(&self, canon: &Ref, cards: &[Ref]) -> Result<Option<(i64, i64)>, String> {
         Ok(self
-            .log_class_rep(log_class)?
+            .log_class_rep(canon)?
             .filter(|(_, _, card)| cards.contains(card))
             .map(|(k, at, _)| (at, k)))
     }
 
-    /// 一个规范日志 ID（类 [log_class]：规范 ID 与出现过的成员）的代表：类里每个成员的 `win = 1` 行（每个原值日志 ID
-    /// 操作号最小的那份）中操作号最小的那条，(操作主键, 发生时刻, 落在哪张卡上（原值）)；类里一条日志都没有 = None。
+    /// 规范日志 ID [canon]（必须已是规范 ID）的别名类（它自己与出现过的成员，[Index::class_of]）的代表：类里每个成员的
+    /// `win = 1` 行（每个原值日志 ID 操作号最小的那份）中操作号最小的那条，(操作主键, 发生时刻, 落在哪张卡上（原值）)；
+    /// 类里一条日志都没有 = None。全类的行一条语句取齐（[LOG_REP_SQL]），不先列成员再逐个查（迁移来的库里每条日志都
+    /// 带一条旧 ID 的别名，逐个查是每条日志四五次点查，BUG-5572）。
     /// 「按类取代表」只有这一份：缓存层的 [Index::card_logs]、`cmd/training.rs` 的 RWKV 尾巴都调它。
-    pub(crate) fn log_class_rep(
-        &self,
-        log_class: &[Ref],
-    ) -> Result<Option<(i64, i64, Ref)>, String> {
+    pub(crate) fn log_class_rep(&self, canon: &Ref) -> Result<Option<(i64, i64, Ref)>, String> {
         let mut best: Option<(crate::sync2::vv::OpId, i64, i64, Ref)> = None;
-        for id in log_class {
-            let mut stmt = self.t.conn().prepare_cached(LOG_REP_SQL).map_err(sql)?;
-            let rows: Vec<(i64, i64, Ref)> = stmt
-                .query_map(params![self.col, id], |r| {
-                    Ok((r.get(0)?, r.get(1)?, r.get(2)?))
-                })
-                .map_err(sql)?
-                .collect::<Result<_, _>>()
-                .map_err(sql)?;
-            for (k, at, card) in rows {
-                let op = self.t.id_of_key(k)?;
-                if best.as_ref().is_none_or(|b| op < b.0) {
-                    best = Some((op, k, at, card));
-                }
+        let mut stmt = self.t.conn().prepare_cached(LOG_REP_SQL).map_err(sql)?;
+        let rows: Vec<(i64, i64, Ref)> = stmt
+            .query_map(params![self.col, canon], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+            })
+            .map_err(sql)?
+            .collect::<Result<_, _>>()
+            .map_err(sql)?;
+        for (k, at, card) in rows {
+            let op = self.t.id_of_key(k)?;
+            if best.as_ref().is_none_or(|b| op < b.0) {
+                best = Some((op, k, at, card));
             }
         }
         Ok(best.map(|(_, k, at, card)| (k, at, card)))
@@ -1040,14 +1092,20 @@ impl<'t, 'c> Index<'t, 'c> {
             format!("{wall}:{logical}:{}", device.text())
         });
         // 日志 ID、卡、笔记、`revokes` 归一（文件头「别名」第 3 条）：重放与统计读的是规范 ID。
-        let row = self.canonical_json(&row)?;
+        let canonical_row = self.canonical_json(&row)?;
+        let original_id = &row["id"];
+        let order_id = original_id
+            .as_str()
+            .filter(|_| original_id != &canonical_row["id"])
+            .map(str::to_owned);
         Ok(LogIn {
-            json: canonical(&row),
+            json: canonical(&canonical_row),
             server_time,
             intent,
             k,
             note,
             seed_card,
+            order_id,
         })
     }
 
@@ -1732,16 +1790,16 @@ impl<'t, 'c> Index<'t, 'c> {
     }
 
     /// 卡 [tail] 当链尾的归属组（链尾 + 广度优先的全部前身，`group_lineage`）的日志，按组里卡的顺序、各卡按
-    /// (发生时刻, 操作主键)：(投影行 JSON, server_time, 意图, fuzz 种子用的原值卡)，未经重放写回（重放的输入）。写命令 `sched`（G7-3b，
+    /// (发生时刻, 操作主键)，未经重放写回。写命令 `sched`（G7-3b，
     /// `cmd/writes_intent.rs`）据它算这张卡此刻的头状态——协议 3 `store/sync2/mod.rs` `group_of` 的新代版。
-    pub(super) fn group_rows(&mut self, tail: &Ref) -> Result<Vec<GroupRow>, String> {
+    pub(super) fn group_rows(&mut self, tail: &Ref) -> Result<Vec<LogIn>, String> {
         Ok(self.group(tail)?.0)
     }
 
     /// [group_rows] 连同归属组的笔记（规范 ID）：取链尾自己日志上记的（链尾的日志里最后一条记了笔记的），链尾没有就取
     /// 前身里第一条记了笔记的——协议 3 `group_of` 的同一条规则（换笔记类型不换笔记）。评分预览（`cmd/preview.rs`）用。
     #[allow(clippy::type_complexity)]
-    pub(super) fn group(&mut self, tail: &Ref) -> Result<(Vec<GroupRow>, Option<String>), String> {
+    pub(super) fn group(&mut self, tail: &Ref) -> Result<(Vec<LogIn>, Option<String>), String> {
         let tail = self.canon(tail)?;
         let lineage = {
             let mut preds = |c: &str| -> Result<Vec<String>, String> {
@@ -1758,7 +1816,7 @@ impl<'t, 'c> Index<'t, 'c> {
                 if l.note.is_some() && (note.is_none() || *c == tail_text) {
                     note = l.note.clone();
                 }
-                out.push((l.json, l.server_time, l.intent, l.seed_card));
+                out.push(l);
             }
         }
         let note = note.map(|n| self.canon(&n).map(|c| c.text())).transpose()?;
@@ -1808,12 +1866,7 @@ impl<'t, 'c> Index<'t, 'c> {
             for c in &lineage {
                 for (i, l) in logs.get(c).into_iter().flatten().enumerate() {
                     at.push((c.clone(), i));
-                    rows.push(Row {
-                        json: &l.json,
-                        server_time: l.server_time,
-                        intent: l.intent.clone(),
-                        seed_card: Some(&l.seed_card),
-                    });
+                    rows.push(l.replay_row());
                 }
             }
             if rows.is_empty() {
@@ -1860,7 +1913,7 @@ impl<'t, 'c> Index<'t, 'c> {
             let mut s: Vec<StoredLog<'_>> = Vec::new();
             for c in lineage {
                 for l in logs.get(c).into_iter().flatten() {
-                    s.push((l.json.as_str(), l.server_time, None));
+                    s.push(l.stored());
                 }
             }
             s
@@ -2011,6 +2064,30 @@ impl<'t, 'c> Index<'t, 'c> {
                 ])
                 .map_err(sql)?;
             out.cache_cards += 1;
+            let mut by_card = LogsByCard::default();
+            for c in &lineage {
+                for l in logs.get(c).into_iter().flatten() {
+                    by_card.push(c.clone(), l.k, l.stored())?;
+                }
+            }
+            match by_card.rwkv_last(&lineage) {
+                Some((at, rating, rtype)) => self
+                    .t
+                    .conn()
+                    .prepare_cached(
+                        "INSERT OR REPLACE INTO rwkv_last (col, card, at, rating, rtype) VALUES (?1, ?2, ?3, ?4, ?5)",
+                    )
+                    .map_err(sql)?
+                    .execute(params![self.col, t.card, at, rating, rtype])
+                    .map_err(sql)?,
+                None => self
+                    .t
+                    .conn()
+                    .prepare_cached("DELETE FROM rwkv_last WHERE col = ?1 AND card = ?2")
+                    .map_err(sql)?
+                    .execute(params![self.col, t.card])
+                    .map_err(sql)?,
+            };
             if !all {
                 self.cache_touched.insert(t.note.clone());
             }
@@ -2082,6 +2159,7 @@ impl<'t, 'c> Index<'t, 'c> {
                         event,
                         owner: base + k,
                         log_id: log,
+                        order_id: r.order_id,
                     });
                 }
             }
@@ -3350,7 +3428,7 @@ mod tests {
             );
         }
         // 不在日志排序键上的修订（各自由对应模块的测试钉口径）：(说明, 修订号)。
-        const ELSEWHERE: [(&str, i64); 2] = [
+        const ELSEWHERE: [(&str, i64); 4] = [
             (
                 "改名写入者的旧上下文只换到归回上界（class.rs 的 bounded_writer_rename_* 测试）",
                 4,
@@ -3358,6 +3436,14 @@ mod tests {
             (
                 "卡片标志同一层前身取最新写入（registers.rs 的 card_lineage_vectors_* 测试、sync_tests 的 a_cache_with_card_flags_inherited_by_the_old_layer_rule_is_rebuilt_on_open）",
                 5,
+            ),
+            (
+                "带盐日志按原始 ID 选副本（anki_copies_with_different_schedules_migrate_cleanly）",
+                6,
+            ),
+            (
+                "rwkv_last 与卡行一起物化（derive.rs 的 assert_rwkv_last_matches_replay 守）",
+                7,
             ),
         ];
         let latest = table
@@ -3371,6 +3457,19 @@ mod tests {
             latest,
             "CACHE_RULES 与派生口径对表的最新修订号不一致"
         );
+    }
+
+    /// [super::RWKV_FILL_FROM] 只能是 [super::CACHE_RULES] 的前一版（BUG-5547）：那一版与当前只差 `rwkv_last`。
+    /// 升了 `CACHE_RULES` 而没改它，按旧版物化的库会跳过新口径的整层重建——这里红，逼升号的人重看就地升级规则。
+    #[test]
+    fn rwkv_fill_from_is_one_revision_below_cache_rules() {
+        if let Some(from) = super::RWKV_FILL_FROM {
+            assert_eq!(
+                from + 1,
+                super::CACHE_RULES,
+                "升了 CACHE_RULES：RWKV_FILL_FROM 的库不再只差 rwkv_last，改成 None 或新的就地升级规则"
+            );
+        }
     }
 
     // ------------------------------------------------------------ 缓存配置记忆（CfgMemo）

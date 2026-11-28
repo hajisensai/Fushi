@@ -36,7 +36,7 @@ extension _SyncOrchestratorOnlineLibrary on SyncOrchestrator {
     } on SyncCancelledException {
       rethrow;
     } catch (e) {
-      report.noteError('online library live sync', e);
+      _noteDimensionError(report, 'online library live sync', e);
     }
   }
 
@@ -80,7 +80,8 @@ extension _SyncOrchestratorOnlineLibrary on SyncOrchestrator {
         } on SyncCancelledException {
           rethrow;
         } catch (err) {
-          report.noteError(
+          _noteDimensionError(
+            report,
             isOwn
                 ? 'own online library manifest "${e.name}" unreadable; '
                       'republishing from local'
@@ -102,7 +103,7 @@ extension _SyncOrchestratorOnlineLibrary on SyncOrchestrator {
     } on SyncCancelledException {
       rethrow;
     } catch (e) {
-      report.noteError('online library cloud sync', e);
+      _noteDimensionError(report, 'online library cloud sync', e);
     }
   }
 

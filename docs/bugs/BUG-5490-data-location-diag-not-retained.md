@@ -1,0 +1,6 @@
+## BUG-5490 · 数据位置诊断只在内存且被普通诊断挤掉
+- **报告**：2026-11-26（反馈 cH-HbP8XkQ / nrMj_CBwCC 追查中确认：事后无法追查丢数据那次启动做了什么）
+- **真实性**：✅ 真 bug。书库根判定纠正（`AppPaths.androidLocation`，`fushi/lib/src/models/app_model.dart:5691`）、沙箱重定位（`AppModel.sandboxRelocation`，`app_model.dart:5723`）、散书合并、数据根迁移被拒（`DataRootMigration.androidClearStaleTarget`）都走 `logDiagnostic`，而诊断段契约是「不写进持久化文件、只在本次运行内」（`fushi/lib/src/utils/misc/error_log_service.dart:56`），且与网络探测等普通诊断共用 100 条内存环（`error_log_service.dart:44` / `:467`）。用户发现数据丢了、重开 app 再提反馈时，那次启动的记录早已不在。另外平静启动时用的是哪个数据根从不记录，书库根换了位置的那次启动无迹可查。
+- **[x] ① 已修复** — `ErrorLogService` 新增独立的持久「数据位置取证环」（`data_location_log.jsonl`，诊断目录下；固定 60 条、单条 2000 字符、整份 64 KB 上限，临时文件 + 改名整份重写，坏行逐行跳过；`init` 前记的条目接在旧环之后落盘；不随「清空日志」消失）。`logDataLocation` / `logDataLocationIfChanged`（同来源正文没变不占条目）。上述四个来源改写进它；新增 `AppModel.dataRoots`（本次启动的书库根 / 支持根 / Android 位置，只在变了时记）与 `AppModel.dictionaryFiles`（BUG-5489 的词典文件状态，有问题或从问题恢复时记；`:popup` 进程不写）。只在有事发生时才有 IO，平静的启动零开销。错误日志页 `getFullLog` 末尾带「数据位置记录」段；反馈 / 闪退报告汇总 `collectFeedbackLogText` 把它单独放在整份日志**最末尾**（超出上传上限只留尾部时它最后才被丢），经同一道脱敏。
+- **[x] ② 已加自动化测试** — `fushi/test/utils/misc/error_log_data_location_ring_test.dart`（跨 init 保留、普通诊断刷屏与清空都挤不掉、条数 / 字节上限、IfChanged 去重、坏行跳过、反馈日志里排在最末且只出现一次、四个来源 + 两个新来源走 `logDataLocation` 的源码守卫）。
+- **备注**：主进程与 `:popup` 进程共用同一诊断目录；目前只有主进程写本环的来源（数据根相关步骤只在主进程 `initialise()` 跑，词典文件状态显式跳过 `:popup`）。

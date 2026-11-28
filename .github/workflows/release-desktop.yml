@@ -154,7 +154,14 @@ jobs:
     # release（manga-panel-detector-onnx-v1、vendor-libmpv、voice-hook-helper…）被手动
     # 发布时不许整套构建、把安装包挂到它们身上。表达式没有正则，只能逐个列 v0..v9；
     # 守卫 fushi/test/build/release_event_app_tag_guard_test.dart 钉住每个 job 都带它。
-    if: ${{ github.event.inputs.testflight_only != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
+    #
+    # 暂停调试版发布（2026-11-27；2026-11-28 扩到手动 debug）：仓库变量 FUSHI_PAUSE_DEBUG_RELEASE = 'true'
+    # 时，debug 通道的两个入口（push 事件、workflow_dispatch channel=debug）在**每个** job 的 job 级 if 上跳过（windows / macos /
+    # flatpak-baseapp / linux / ios / testflight / publish；publish 带 always()，不能靠
+    # needs 传染，必须自己挡）。本 workflow 不承担 app 单测门（那在 release.yml 的 tests），push 上整条都是发包，全停无副作用；
+    # dispatch 的 beta / formal 与 release 事件不看这个变量。恢复 = 删变量或改成别的值。
+    # 守卫 fushi/test/build/release_debug_pause_guard_test.dart；说明见 docs/agent/build.md「暂停调试版自动发布」。
+    if: ${{ !(vars.FUSHI_PAUSE_DEBUG_RELEASE == 'true' && (github.event_name == 'push' || github.event.inputs.channel == 'debug')) && github.event.inputs.testflight_only != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
     runs-on: windows-2022
     timeout-minutes: 150
     permissions:
@@ -173,6 +180,7 @@ jobs:
         uses: ./.github/actions/fetch-vendored-binaries
         with:
           groups: windows galgame mihon
+          durable: 'true'
       # 调试版流水线（debug pulse，docs/specs/2026-11-10-debug-pulse.md）：发布 run 一开始就刷新一次
       # update-manifest 的 debug-pulse-fushi.json——此刻本 run 在构建中、被顶掉的旧 run 已 cancelled、
       # develop 新合的 PR 显示为「还没进包」。只对 develop push（debug 通道）；不建 release / tag、不碰
@@ -667,6 +675,13 @@ jobs:
       # 所以它绿不代表这条 release 路径绿——「CI 全绿」从来没覆盖过发布构建。
       #
       # -v 的日志量（本机实测约 2500 行）远小于「红了但不知道为什么」的代价。
+      # BUG-5568：Windows 上 gen_snapshot 默认 --strip，包里的 app.so 没有符号，hang / 崩溃
+      # dump 里的 Dart 帧全是裸地址、对不上源码。--save-debugging-info 另存一份带 .symtab +
+      # DWARF 的 ELF（build-id 与包里一致），包里的 app.so 与 app 内的 Dart 栈格式都不变——
+      # 不用 --split-debug-info（它连带 --dwarf-stack-traces，诊断归因会退化，同 Android 口径）。
+      - name: Prepare Windows Dart symbols directory
+        shell: pwsh
+        run: New-Item -ItemType Directory -Force -Path fushi/build/windows-dart-symbols | Out-Null
       - name: Build Windows release
         working-directory: fushi
         run: >-
@@ -674,6 +689,23 @@ jobs:
           --build-name "${{ steps.channel.outputs.build_version_name }}"
           --build-number "${{ steps.channel.outputs.release_sequence }}"
           --dart-define="FUSHI_BUILD_VERSION=${{ steps.channel.outputs.build_version_name }}"
+          --extra-gen-snapshot-options=--save-debugging-info=${{ github.workspace }}/fushi/build/windows-dart-symbols/app.windows-x64.symbols
+      # 符号文件必须属于包里这份 app.so（build-id 一致）且真带符号 / 行号表，否则留了也白留。
+      # 只是诊断件，不挡发版（continue-on-error，同 Android）。
+      - name: Verify Windows Dart symbols
+        continue-on-error: true
+        working-directory: fushi
+        run: dart tool/windows_dump_symbolize.dart verify build/windows/x64/runner/Release/data/app.so build/windows-dart-symbols/app.windows-x64.symbols
+      # 还原：docs/agent/build.md「Windows 卡死 / 崩溃 dump 的符号」。不进 Release 资产、不挡发版。
+      - name: Upload Windows Dart symbols
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-dart-symbols-${{ steps.channel.outputs.release_sequence }}
+          path: fushi/build/windows-dart-symbols/
+          if-no-files-found: warn
+          # debug 通道每次 push 都出一份，留 14 天；正式 / 测试版与 Android / iOS 符号同为 90 天。
+          retention-days: ${{ steps.channel.outputs.channel == 'debug' && 14 || 90 }}
       # 失败时把 CMake 自己的日志捞出来：-v 打的是 flutter 侧，CMake 配置期的
       # 报错只在这两个文件里。artifact 而不是 echo，避免再被日志截断吃掉。
       - name: Upload Windows build logs on failure
@@ -757,14 +789,20 @@ jobs:
           mode: restore
           name: ${{ steps.native_store.outputs.mihon }}
           path: ${{ runner.temp }}\mihon-runtime
+      # 未命中才构建：离线构建包（third_party/mihon_build/README.md）从 vendored 取，Gradle
+      # --offline，构建期不连 Maven Central / Gradle / JDK 下载站。
+      - name: Fetch Mihon offline build kit
+        if: steps.mihon_runtime_store.outputs.hit != 'true'
+        uses: ./.github/actions/fetch-vendored-binaries
+        with:
+          groups: mihon-build mihon-jdk-windows-x64
+          durable: 'true'
       - name: Bundle pinned Mihon desktop runtime
         shell: pwsh
         run: |
           $built = "$env:RUNNER_TEMP\mihon-runtime"
           if ('${{ steps.mihon_runtime_store.outputs.hit }}' -ne 'true') {
-            .\tool\mihon\build_desktop_runtime.ps1 `
-              -OutputDirectory $built `
-              -DownloadCache "$env:RUNNER_TEMP\fushi-mihon-downloads"
+            .\tool\mihon\build_desktop_runtime.ps1 -OutputDirectory $built
             if ($LASTEXITCODE -ne 0) { throw "Mihon desktop runtime build failed ($LASTEXITCODE)" }
           }
           $runtime = "fushi\build\windows\x64\runner\Release\mihon_bridge"
@@ -1170,6 +1208,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "bundle 签名失败，退出码 $LASTEXITCODE" }
       - name: Compile installer (Inno Setup)
         shell: pwsh
+        env:
+          CERTUM_CERT_THUMBPRINT: ${{ secrets.CERTUM_CERT_THUMBPRINT }}
         run: |
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           function Test-Md3Capable([string]$compiler) {
@@ -1217,21 +1257,26 @@ jobs:
             }
           }
           Write-Host "ISCC accepts the MD3 wizard directives"
+          # 安装器签名交给 ISCC 的 SignTool 在编译期做（BUG-5515），不再编完后只签外壳：
+          # Inno 运行时解到 %TEMP% 的 .tmp 安装程序和现生成的 unins000.exe 只有走 SignTool
+          # 才会被签；外壳签了、它们没签，开着智能应用控制的 Windows 11 直接报 4551 拒绝启动。
+          # ISCC 把 $f 换成带引号的待签文件路径；脚本失败非零退出，ISCC 随即报错停编。
+          # 脚本路径的引号只能写成 Inno 的 $q：pwsh 7 把传给原生 exe 的内嵌 " 转义成 \"，
+          # 而 ISCC 的命令行解析不认反斜杠转义，-File 会收到前后各多一个 \ 的坏路径。
+          [string[]] $signArgs = @()
+          if ('${{ steps.signcheck.outputs.have }}' -eq 'true') {
+            $signScript = "$PWD\tool\sign_windows_release.ps1"
+            $signArgs = @(
+              '/DFushiSignTool',
+              "/Sfushisign=pwsh.exe -NoProfile -NonInteractive -File `$q$signScript`$q -Path `$f -Description Fushi"
+            )
+          }
           & "$iscc" "/DAppVersion=${{ steps.channel.outputs.build_version_name }}" `
             "/DSourceDir=$PWD\fushi\build\windows\x64\runner\Release" `
             "/DOutputDir=$PWD\fushi\build\installer" `
+            @signArgs `
             "fushi\windows\installer\fushi.iss"
           if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE" }
-      - name: Sign Windows installer
-        if: steps.signcheck.outputs.have == 'true'
-        shell: pwsh
-        env:
-          CERTUM_CERT_THUMBPRINT: ${{ secrets.CERTUM_CERT_THUMBPRINT }}
-        run: |
-          & "$PWD\tool\sign_windows_release.ps1" `
-            -Path "$PWD\fushi\build\installer\fushi-${{ steps.channel.outputs.build_version_name }}-windows-setup.exe" `
-            -Description 'Fushi'
-          if ($LASTEXITCODE -ne 0) { throw "签名失败，退出码 $LASTEXITCODE" }
       # 打包后回验：把刚签好的安装器真的装进 runner 的临时目录，检查**装出来的**
       # 每个 exe/dll 都带签名。
       # 「Sign Windows bundle binaries」验的是打包**前**的文件，证明不了 Inno 把它们
@@ -1279,10 +1324,20 @@ jobs:
             throw "安装包里混入了 $($shippedTests.Count) 个测试 exe。"
           }
 
+          # 安装器外壳本身：ISCC 的 SignTool 签的，事后不再单独补签（BUG-5515）。
+          $outer = Get-AuthenticodeSignature -LiteralPath $setup
+          Write-Host "setup.exe -> $($outer.Status) / $($outer.SignerCertificate.Subject)"
+          if ($outer.Status -ne 'Valid' -or $outer.SignerCertificate.Thumbprint -ne $thumb -or
+              $null -eq $outer.TimeStamperCertificate) {
+            throw "安装器外壳未被本证书签名或缺时间戳。"
+          }
+          # unins*.exe 不再排除（BUG-5515）：它是 Inno 安装时用编译期签好的 uninst.e32 现生成的，
+          # 和运行时解到 %TEMP% 的 .tmp 安装程序走同一条 SignTool 通路——卸载器带了我们的签名，
+          # 就证明 SignTool 生效、.tmp 也签上了；无签名的 .tmp 在智能应用控制下报 4551 拒绝启动。
+          [string[]] $uninstallers = @(Get-ChildItem -LiteralPath $dst -File -Filter 'unins*.exe').Name
+          if ($uninstallers.Count -eq 0) { throw "装出来的目录里没有 unins*.exe，无法回验 SignTool 是否生效。" }
           $files = Get-ChildItem -LiteralPath $dst -Recurse -File |
-            Where-Object { $_.Extension -in '.exe', '.dll' } |
-            # unins*.exe 是 Inno 在**安装时**现生成的卸载器，我们签不到它。
-            Where-Object { $_.Name -notlike 'unins*.exe' }
+            Where-Object { $_.Extension -in '.exe', '.dll' }
 
           Write-Host "[verify] 待校验 exe/dll $($files.Count) 个，开始逐个读签名…"
           $ours = 0; $others = 0; [string[]] $unsigned = @()
@@ -1363,7 +1418,7 @@ jobs:
     # release（manga-panel-detector-onnx-v1、vendor-libmpv、voice-hook-helper…）被手动
     # 发布时不许整套构建、把安装包挂到它们身上。表达式没有正则，只能逐个列 v0..v9；
     # 守卫 fushi/test/build/release_event_app_tag_guard_test.dart 钉住每个 job 都带它。
-    if: ${{ github.event.inputs.testflight_only != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
+    if: ${{ !(vars.FUSHI_PAUSE_DEBUG_RELEASE == 'true' && (github.event_name == 'push' || github.event.inputs.channel == 'debug')) && github.event.inputs.testflight_only != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
     runs-on: macos-latest
     # 120：内置 torrent 引擎 bridge 冷编（boost + openssl + libtorrent）要几十分钟，
     # 只在 native/fushi_torrent 改动或 runner 镜像更新后的首跑发生，其余命中持久库。
@@ -1381,6 +1436,7 @@ jobs:
         uses: ./.github/actions/fetch-vendored-binaries
         with:
           groups: macos mihon
+          durable: 'true'
       # 原生产物持久库名字（唯一算法 .github/actions/native-store-names/names.sh）。p2p
       # arm64 dylib 与 build-multiplatform.yml macos job 同名：这里（develop push）存的件
       # 就是 PR 门首跑命中的那一份。
@@ -2003,22 +2059,31 @@ jobs:
           mode: save
           name: ${{ steps.native_store.outputs.torrent }}
           path: native/fushi_torrent/prebuilt/macos
-      # 缓存理由与 key 契约见 build-multiplatform.yml macos job 同名步骤（key 逐字一致）。
-      # 缓存里是未签名原始输出；ad-hoc / Developer ID 签名都只作用于拷进 .app 的副本。
+      # 持久库理由与名字契约见 build-multiplatform.yml macos job 同名步骤（名字逐字一致）。
+      # 库里是未签名原始输出；ad-hoc / Developer ID 签名都只作用于拷进 .app 的副本。
       - name: Restore pinned Mihon desktop runtimes
-        id: mihon_runtime_cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        id: mihon_runtime_store
+        uses: ./.github/actions/native-artifact-store
         with:
+          mode: restore
+          name: ${{ steps.native_store.outputs.mihon }}
           path: ${{ runner.temp }}/mihon-runtime
-          key: ${{ runner.os }}-${{ runner.arch }}-mihon-runtime-v1-${{ hashFiles('third_party/m_extension_server/**', 'third_party/jogamp/**', 'tool/mihon/**') }}
+      # 未命中才构建：离线构建包（third_party/mihon_build/README.md）从 vendored 取，Gradle
+      # --offline，构建期不连 Maven Central / Gradle / JDK 下载站。
+      - name: Fetch Mihon offline build kit
+        if: steps.mihon_runtime_store.outputs.hit != 'true'
+        uses: ./.github/actions/fetch-vendored-binaries
+        with:
+          groups: mihon-build mihon-jdk-macos-arm64
+          durable: 'true'
       - name: Bundle and sign pinned Mihon desktop runtimes
         shell: bash
         run: |
           set -euo pipefail
           built="$RUNNER_TEMP/mihon-runtime"
-          if [[ "${{ steps.mihon_runtime_cache.outputs.cache-hit }}" != "true" ]]; then
+          if [[ "${{ steps.mihon_runtime_store.outputs.hit }}" != "true" ]]; then
             chmod +x tool/mihon/build_desktop_runtime.sh
-            tool/mihon/build_desktop_runtime.sh "$built" "$RUNNER_TEMP/fushi-mihon-downloads"
+            tool/mihon/build_desktop_runtime.sh "$built"
           fi
           app_dir="fushi/build/macos/Build/Products/Release/fushi.app"
           runtime_dir="$app_dir/Contents/Resources/mihon_bridge"
@@ -2033,6 +2098,14 @@ jobs:
           tool/mihon/verify_desktop_runtime.sh "$runtime_dir" "$app_dir/Contents/MacOS/fushi"
           codesign --force --deep --sign - --timestamp=none "$app_dir"
           codesign --verify --deep --strict --verbose=2 "$app_dir"
+      - name: Save Mihon desktop runtime to native artifact store
+        if: steps.mihon_runtime_store.outputs.hit != 'true'
+        continue-on-error: true
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: save
+          name: ${{ steps.native_store.outputs.mihon }}
+          path: ${{ runner.temp }}/mihon-runtime
       # BUG-1421: the macOS bundle never shipped ffmpeg at all. Only the Windows
       # job had an install step, so fushi.app/Contents/MacOS/ held just the main
       # executable and _bundledExecutablePath() (ffmpeg_backend.dart) always
@@ -2533,7 +2606,7 @@ jobs:
   # artifact expiry) rebuilds it. Built without debug info (-g0): with -g WebCore
   # needs ~4 GB per compiler and a ~50 GB ccache, neither of which a runner has.
   flatpak-baseapp:
-    if: ${{ github.event.inputs.testflight_only != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
+    if: ${{ !(vars.FUSHI_PAUSE_DEBUG_RELEASE == 'true' && (github.event_name == 'push' || github.event.inputs.channel == 'debug')) && github.event.inputs.testflight_only != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 350
     permissions:
@@ -2590,7 +2663,7 @@ jobs:
   # without it the bundle is built unsigned and publish ships neither repo nor asset.
   linux:
     needs: flatpak-baseapp
-    if: ${{ github.event.inputs.testflight_only != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
+    if: ${{ !(vars.FUSHI_PAUSE_DEBUG_RELEASE == 'true' && (github.event_name == 'push' || github.event.inputs.channel == 'debug')) && github.event.inputs.testflight_only != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     permissions:
@@ -2600,6 +2673,14 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
+      # Prebuilt third-party binaries are not in git (tool/vendored_binaries.json). The bundle
+      # container reads only the jogamp jars (`mihon`); tool/linux/build_bundle.sh passes the same
+      # group to bootstrap, which then finds them in place and downloads nothing.
+      - name: Fetch vendored binaries
+        uses: ./.github/actions/fetch-vendored-binaries
+        with:
+          groups: mihon
+          durable: 'true'
       - name: Resolve desktop release channel
         id: channel
         shell: bash
@@ -2819,6 +2900,24 @@ jobs:
         run: |
           echo "::error title=Flatpak BaseApp missing::the flatpak-baseapp job saved $BASEAPP but it cannot be restored here."
           exit 1
+      # Mihon runtime：与 Windows / macOS 一样按输入哈希存进原生产物持久库（名字在 names.sh 的
+      # flatpak 分支）。
+      # 原先每次都在容器里现编，Gradle 现场去 Maven Central 解析依赖，2026-11-27 被 429 打红。
+      - name: Restore Mihon desktop runtime
+        id: mihon_runtime_store
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: restore
+          name: ${{ steps.native_store.outputs.mihon }}
+          path: build/mihon-runtime
+      # 未命中才构建：离线构建包（third_party/mihon_build/README.md）从 vendored 取，Gradle
+      # --offline，构建期不连 Maven Central / Gradle / JDK 下载站。
+      - name: Fetch Mihon offline build kit
+        if: steps.mihon_runtime_store.outputs.hit != 'true'
+        uses: ./.github/actions/fetch-vendored-binaries
+        with:
+          groups: mihon-build mihon-jdk-linux-x64
+          durable: 'true'
       - name: Free disk space for the Linux build
         shell: bash
         run: |
@@ -2837,10 +2936,19 @@ jobs:
           # unlike build_in_docker.sh), so the baked secret stubs above are included.
           docker run --rm -v "$PWD:/src" -v "$PWD/build/linux-dist:/out" \
             -e FUSHI_SOURCE_COMMIT="$GITHUB_SHA" -e FUSHI_BUILD_NAME -e FUSHI_BUILD_NUMBER \
+            -e FUSHI_MIHON_RUNTIME_DIR=/src/build/mihon-runtime \
             -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0='*' \
             fushi-linux-build bash /src/tool/linux/build_bundle.sh
           sudo chown -R "$(id -u):$(id -g)" .
           ls -lh build/linux-dist
+      - name: Save Mihon desktop runtime to native artifact store
+        if: steps.mihon_runtime_store.outputs.hit != 'true'
+        continue-on-error: true
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: save
+          name: ${{ steps.native_store.outputs.mihon }}
+          path: build/mihon-runtime
       - name: Resolve Flatpak branch and signing
         id: flatpak
         shell: bash
@@ -2935,7 +3043,7 @@ jobs:
     # release（manga-panel-detector-onnx-v1、vendor-libmpv、voice-hook-helper…）被手动
     # 发布时不许整套构建、把安装包挂到它们身上。表达式没有正则，只能逐个列 v0..v9；
     # 守卫 fushi/test/build/release_event_app_tag_guard_test.dart 钉住每个 job 都带它。
-    if: ${{ (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
+    if: ${{ !(vars.FUSHI_PAUSE_DEBUG_RELEASE == 'true' && (github.event_name == 'push' || github.event.inputs.channel == 'debug')) && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
     runs-on: macos-latest
     timeout-minutes: 90
     permissions:
@@ -2954,6 +3062,7 @@ jobs:
         uses: ./.github/actions/fetch-vendored-binaries
         with:
           groups: ios
+          durable: 'true'
       # 原生产物持久库名字（唯一算法 .github/actions/native-store-names/names.sh）。与
       # build-multiplatform.yml ios job 同名：同一个 device staticlib。
       - name: Resolve native artifact store names
@@ -3761,7 +3870,7 @@ jobs:
   # 门本身（传不传）仍是 ios job「Resolve Apple signing mode」那一处判定，这里只认它的输出。
   testflight:
     needs: ios
-    if: ${{ needs.ios.outputs.testflight == 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
+    if: ${{ !(vars.FUSHI_PAUSE_DEBUG_RELEASE == 'true' && (github.event_name == 'push' || github.event.inputs.channel == 'debug')) && needs.ios.outputs.testflight == 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
     environment: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.channel == 'formal' || github.event.inputs.channel == 'beta')) && 'release-publish' || 'release-auto' }}
     runs-on: macos-latest
     timeout-minutes: 45
@@ -3820,7 +3929,7 @@ jobs:
     # hajisensai），三个平台构建完后停在这里等「发版」批准；push / `release` 事件走无
     # 保护规则的 `release-auto`。build_only 什么都不发，整个 job 跳过、不弹审批。理由与
     # 流程见 release.yml publish-android job 头注释与 docs/agent/build.md「正式版预构建与审批发布」。
-    if: ${{ always() && github.event.inputs.testflight_only != 'true' && github.event.inputs.build_only != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
+    if: ${{ always() && !(vars.FUSHI_PAUSE_DEBUG_RELEASE == 'true' && (github.event_name == 'push' || github.event.inputs.channel == 'debug')) && github.event.inputs.testflight_only != 'true' && github.event.inputs.build_only != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
     environment: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.channel == 'formal' || github.event.inputs.channel == 'beta')) && 'release-publish' || 'release-auto' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30

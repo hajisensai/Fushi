@@ -5,12 +5,14 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart'
-    show ValueListenable, immutable, listEquals, visibleForTesting;
+    show ValueListenable, immutable, visibleForTesting;
 import 'package:flutter/scheduler.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_cover.dart'
     show lyricVisualizerCoverProvider;
+import 'package:fushi/src/pages/implementations/music/music_cover.dart'
+    show MusicEmbeddedCoverImage;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 
@@ -650,9 +652,19 @@ Size musicBackdropRenderSize(Size logical) {
 }
 
 /// 封面地址 → ImageProvider（委托歌词动画框架的共享封面工具 [lyricVisualizerCoverProvider]）：
-/// `http(s)://` 走全应用代理，本地文件存在才用 [FileImage]，其余 null（背景改用主题色 mesh）。
-ImageProvider? musicLyricsBackdropCoverProvider(String? coverPath) =>
-    lyricVisualizerCoverProvider(coverPath);
+/// `http(s)://` 走全应用代理，本地文件存在才用 [FileImage]；没有封面文件时用
+/// [embeddedFromPath] 的内嵌封面（[MusicEmbeddedCoverImage]），都没有为 null（背景改用主题色 mesh）。
+ImageProvider? musicLyricsBackdropCoverProvider(
+  String? coverPath, {
+  String? embeddedFromPath,
+}) {
+  final ImageProvider? file = lyricVisualizerCoverProvider(coverPath);
+  if (file != null) return file;
+  final String? embedded = embeddedFromPath;
+  return embedded == null || embedded.isEmpty
+      ? null
+      : MusicEmbeddedCoverImage(embedded);
+}
 
 // ---------------------------------------------------------------------------
 // 组件
@@ -664,6 +676,7 @@ class MusicLyricsBackdrop extends StatefulWidget {
   const MusicLyricsBackdrop({
     super.key,
     required this.coverPath,
+    this.embeddedFromPath,
     this.style = MusicLyricsBackdropStyle.defaultStyle,
     this.animate = true,
     this.saturation = kMusicLyricsBackdropSaturationDefault,
@@ -671,6 +684,9 @@ class MusicLyricsBackdrop extends StatefulWidget {
 
   /// 封面：本地文件路径或 `http(s)://` 地址；null = 用主题色。
   final String? coverPath;
+
+  /// 没有 [coverPath] 时从这个音频文件读内嵌封面；null = 没有。
+  final String? embeddedFromPath;
   final MusicLyricsBackdropStyle style;
 
   /// false = 静态（只渲染一次）。
@@ -761,13 +777,17 @@ ui.Image _shrinkCover(ui.Image cover, int side) {
 
 Future<ui.FragmentProgram?>? _pixiProgramLoad;
 
+/// 已加载好的 pixi 着色器程序：之后新建的场景同步取用，第一帧就走着色器，不先画一帧
+/// 离屏回退。
+ui.FragmentProgram? _pixiProgramReady;
+
 /// pixi 着色器（`shaders/music_backdrop_pixi.frag`）。加载失败（如 widget 测试
 /// 没打包着色器）记日志并返回 null，pixi 退回离屏图画法。
 Future<ui.FragmentProgram?> _pixiProgram() => _pixiProgramLoad ??=
     ui.FragmentProgram.fromAsset(
       'shaders/music_backdrop_pixi.frag',
     ).then<ui.FragmentProgram?>(
-      (ui.FragmentProgram p) => p,
+      (ui.FragmentProgram p) => _pixiProgramReady = p,
       onError: (Object e) {
         debugPrint('[music-backdrop] pixi shader unavailable: $e');
         return null;
@@ -786,15 +806,16 @@ class _MusicLyricsBackdropState extends State<MusicLyricsBackdrop> {
     super.didChangeDependencies();
     if (!_loadedOnce) {
       _loadedOnce = true;
-      _load(widget.coverPath, rebuild: false);
+      _load(widget.coverPath, widget.embeddedFromPath, rebuild: false);
     }
   }
 
   @override
   void didUpdateWidget(covariant MusicLyricsBackdrop oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.coverPath != widget.coverPath) {
-      _load(widget.coverPath, rebuild: true);
+    if (oldWidget.coverPath != widget.coverPath ||
+        oldWidget.embeddedFromPath != widget.embeddedFromPath) {
+      _load(widget.coverPath, widget.embeddedFromPath, rebuild: true);
     }
   }
 
@@ -822,10 +843,17 @@ class _MusicLyricsBackdropState extends State<MusicLyricsBackdrop> {
     rebuild ? setState(swap) : swap();
   }
 
-  void _load(String? coverPath, {required bool rebuild}) {
+  void _load(
+    String? coverPath,
+    String? embeddedFromPath, {
+    required bool rebuild,
+  }) {
     _cancelPending();
     final int token = ++_loadToken;
-    final ImageProvider? provider = musicLyricsBackdropCoverProvider(coverPath);
+    final ImageProvider? provider = musicLyricsBackdropCoverProvider(
+      coverPath,
+      embeddedFromPath: embeddedFromPath,
+    );
     if (provider == null) {
       _replaceSource(
         _BackdropSource(id: token, palette: MusicBackdropPalette.empty),
@@ -898,22 +926,14 @@ class _MusicLyricsBackdropState extends State<MusicLyricsBackdrop> {
       children: <Widget>[
         // 交叉淡化中途两层都半透明，垫一层底色不透出页面后面的东西。
         ColoredBox(color: dark ? Colors.black : cs.surface),
+        // 换歌 / 换样式的交叉淡化在场景内部做（同一个场景、同一个驱动；pixi 两首都走
+        // 着色器时一次全屏 pass 内混合），不再叠两个各自全屏渲染的场景。
         if (source != null)
-          AnimatedSwitcher(
-            duration: fushiMotionDuration(context, FushiMotion.long),
-            switchInCurve: FushiMotion.standard,
-            switchOutCurve: FushiMotion.standard,
-            layoutBuilder: (Widget? current, List<Widget> previous) => Stack(
-              fit: StackFit.expand,
-              children: <Widget>[...previous, if (current != null) current],
-            ),
-            child: _BackdropScene(
-              key: ValueKey<String>('${source.id}-${widget.style.name}'),
-              source: source,
-              style: widget.style,
-              animate: widget.animate,
-              saturation: widget.saturation,
-            ),
+          _BackdropScene(
+            source: source,
+            style: widget.style,
+            animate: widget.animate,
+            saturation: widget.saturation,
           ),
       ],
     );
@@ -960,7 +980,6 @@ Future<(MusicBackdropPalette, ui.Image?)> _analyse(ui.Image image) async {
 
 class _BackdropScene extends StatefulWidget {
   const _BackdropScene({
-    super.key,
     required this.source,
     required this.style,
     required this.animate,
@@ -976,23 +995,44 @@ class _BackdropScene extends StatefulWidget {
   State<_BackdropScene> createState() => _BackdropSceneState();
 }
 
-class _BackdropSceneState extends State<_BackdropScene> {
+/// 歌词背景的唯一场景：一个流动时钟、一个 ≈30fps 驱动、一层 [RepaintBoundary]。换歌 /
+/// 换样式时新旧两层（[_BackdropLayer]）在同一个画家里交叉淡化，淡完释放旧层。
+///
+/// 以前每首歌一个场景、靠 `AnimatedSwitcher` 叠两层淡化：淡化期间两个全屏着色器各跑
+/// 各的驱动，外加两层不透明度合成；新场景还要异步等着色器实例，第一帧先走离屏回退。
+class _BackdropSceneState extends State<_BackdropScene>
+    with SingleTickerProviderStateMixin {
   late final _BackdropFrameDriver _driver = _BackdropFrameDriver(
     onFrame: _onFrame,
   );
   final ValueNotifier<double> _phase = ValueNotifier<double>(0);
-  final _LowResCache _cache = _LowResCache();
+  late final AnimationController _fade = AnimationController(
+    vsync: this,
+    value: 1,
+  )..addStatusListener(_onFadeStatus);
+  late final CurvedAnimation _fadeCurve = CurvedAnimation(
+    parent: _fade,
+    curve: FushiMotion.standard,
+  );
+  late _BackdropLayer _to = _BackdropLayer(widget.source, widget.style);
+
+  /// 正在淡出的上一层（淡化中才有）。
+  _BackdropLayer? _from;
   int? _lastFrameMicros;
   ui.FragmentShader? _pixiShader;
 
   @override
   void initState() {
     super.initState();
-    widget.source.retain();
-    _pixiProgram().then((ui.FragmentProgram? program) {
-      if (program == null || !mounted) return;
-      setState(() => _pixiShader = program.fragmentShader());
-    });
+    final ui.FragmentProgram? ready = _pixiProgramReady;
+    if (ready != null) {
+      _pixiShader = ready.fragmentShader();
+    } else {
+      _pixiProgram().then((ui.FragmentProgram? program) {
+        if (program == null || !mounted || _pixiShader != null) return;
+        setState(() => _pixiShader = program.fragmentShader());
+      });
+    }
   }
 
   @override
@@ -1004,21 +1044,51 @@ class _BackdropSceneState extends State<_BackdropScene> {
   @override
   void didUpdateWidget(covariant _BackdropScene oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!identical(oldWidget.source, widget.source)) {
-      widget.source.retain();
-      oldWidget.source.release();
-      _cache.invalidate();
+    if (!identical(oldWidget.source, widget.source) ||
+        oldWidget.style != widget.style) {
+      _crossfadeTo(_BackdropLayer(widget.source, widget.style));
     }
     _syncDriver();
+  }
+
+  /// 换成 [next]：当前层转为淡出层，新层从 0 淡入。淡化途中又换（连切）时丢掉更早的
+  /// 那层，只在最近两层之间淡；动效关闭时直接换。
+  void _crossfadeTo(_BackdropLayer next) {
+    _from?.dispose();
+    _from = null;
+    final Duration duration = fushiMotionDuration(context, FushiMotion.long);
+    if (duration == Duration.zero) {
+      _to.dispose();
+      _to = next;
+      _fade.value = 1;
+      return;
+    }
+    _from = _to;
+    _to = next;
+    _fade
+      ..duration = duration
+      ..forward(from: 0);
+  }
+
+  void _onFadeStatus(AnimationStatus status) {
+    if (status != AnimationStatus.completed || _from == null || !mounted) {
+      return;
+    }
+    setState(() {
+      _from?.dispose();
+      _from = null;
+    });
   }
 
   @override
   void dispose() {
     _driver.stop();
     _phase.dispose();
-    _cache.dispose();
+    _fadeCurve.dispose();
+    _fade.dispose();
+    _from?.dispose();
+    _to.dispose();
     _pixiShader?.dispose();
-    widget.source.release();
     super.dispose();
   }
 
@@ -1050,8 +1120,56 @@ class _BackdropSceneState extends State<_BackdropScene> {
   @override
   Widget build(BuildContext context) {
     final ColorScheme cs = Theme.of(context).colorScheme;
-    final MusicBackdropPalette palette = widget.source.palette;
-    final List<int> grid = palette.isEmpty
+    _to.updateTheme(cs);
+    _from?.updateTheme(cs);
+    return RepaintBoundary(
+      child: CustomPaint(
+        size: Size.infinite,
+        isComplex: true,
+        painter: _BackdropPainter(
+          phase: _phase,
+          fade: _fadeCurve,
+          to: _to,
+          from: _from,
+          pixiShader: _pixiShader,
+          saturation: widget.saturation,
+          scheme: cs,
+        ),
+      ),
+    );
+  }
+}
+
+/// 一层背景（一首歌 × 一种样式）：素材引用 + 自己的低分辨率离屏图缓存 + 回退画法。
+class _BackdropLayer {
+  _BackdropLayer(this.source, this.style) {
+    source.retain();
+  }
+
+  final _BackdropSource source;
+  final MusicLyricsBackdropStyle style;
+  final _LowResCache cache = _LowResCache();
+
+  /// 无封面回退网格的控制点颜色与底色（随主题算，见 [updateTheme]）。
+  List<int> grid = const <int>[];
+  Color base = const Color(0xFF000000);
+  ColorScheme? _scheme;
+
+  ui.Image? get image => source.image;
+  ui.Image? get meshTexture => source.meshTexture;
+  MusicHermiteMesh get mesh => source.mesh;
+  ({List<double> angles, double bend}) get pixiPose => source.pixiPose;
+
+  /// pixi 着色器取样的极小封面；不是 pixi 样式或没有封面时 null（走离屏回退）。
+  ui.Image? get pixiTexture =>
+      style == MusicLyricsBackdropStyle.pixi ? source.pixiTexture : null;
+
+  /// 主题变了才重算回退网格 / 底色，并作废离屏图（离屏图内容取决于它们）。
+  void updateTheme(ColorScheme cs) {
+    if (_scheme == cs) return;
+    _scheme = cs;
+    final MusicBackdropPalette palette = source.palette;
+    grid = palette.isEmpty
         ? musicMeshGridFromColors(<Color>[
             cs.primaryContainer,
             cs.tertiaryContainer,
@@ -1059,125 +1177,13 @@ class _BackdropSceneState extends State<_BackdropScene> {
             cs.surfaceContainer,
           ], kMusicMeshGridSize)
         : palette.grid;
-    final Color base = palette.isEmpty
-        ? cs.surface
-        : Color(palette.dominant.first);
-    return RepaintBoundary(
-      child: CustomPaint(
-        size: Size.infinite,
-        isComplex: true,
-        painter: _BackdropPainter(
-          phase: _phase,
-          cache: _cache,
-          style: widget.style,
-          image: widget.source.image,
-          meshTexture: widget.source.meshTexture,
-          pixiShader: widget.style == MusicLyricsBackdropStyle.pixi
-              ? _pixiShader
-              : null,
-          pixiTexture: widget.style == MusicLyricsBackdropStyle.pixi
-              ? widget.source.pixiTexture
-              : null,
-          pixiPose: widget.source.pixiPose,
-          mesh: widget.source.mesh,
-          grid: grid,
-          base: base,
-          matrix: musicBackdropColorMatrix(
-            saturation: widget.saturation,
-            brightness: cs.brightness,
-            // 封面 mesh 的贴图已压过亮度、还有暗角，再按默认比例压会发闷；pixi
-            // 着色器的调色里已经压暗并封顶亮度，不再叠主题压暗。
-            darkKeep:
-                _pixiShader != null &&
-                    widget.style == MusicLyricsBackdropStyle.pixi &&
-                    widget.source.pixiTexture != null
-                ? 1.0
-                : widget.style == MusicLyricsBackdropStyle.meshGradient &&
-                      widget.source.meshTexture != null
-                ? 0.85
-                : null,
-          ),
-        ),
-      ),
-    );
+    base = palette.isEmpty ? cs.surface : Color(palette.dominant.first);
+    cache.invalidate();
   }
-}
 
-class _BackdropPainter extends CustomPainter {
-  _BackdropPainter({
-    required this.phase,
-    required this.cache,
-    required this.style,
-    required this.image,
-    required this.meshTexture,
-    required this.pixiShader,
-    required this.pixiTexture,
-    required this.pixiPose,
-    required this.mesh,
-    required this.grid,
-    required this.base,
-    required this.matrix,
-  }) : super(repaint: phase);
-
-  /// pixi 的全分辨率着色器与它取样的极小封面；任一为 null 时走离屏图画法。
-  final ui.FragmentShader? pixiShader;
-  final ui.Image? pixiTexture;
-
-  /// pixi 四层初始角度与弯曲方向（[musicPixiPose]）。
-  final ({List<double> angles, double bend}) pixiPose;
-
-  /// 流动时钟（秒）。
-  final ValueListenable<double> phase;
-  final _LowResCache cache;
-  final MusicLyricsBackdropStyle style;
-  final ui.Image? image;
-  final ui.Image? meshTexture;
-  final MusicHermiteMesh mesh;
-  final List<int> grid;
-  final Color base;
-  final List<double> matrix;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final ui.FragmentShader? shader = pixiShader;
-    final ui.Image? texture = pixiTexture;
-    if (shader != null && texture != null && !size.isEmpty) {
-      shader
-        ..setFloat(0, size.width)
-        ..setFloat(1, size.height)
-        ..setFloat(2, phase.value)
-        ..setFloat(3, texture.width.toDouble())
-        ..setFloat(4, texture.height.toDouble())
-        ..setFloat(5, pixiPose.angles[0])
-        ..setFloat(6, pixiPose.angles[1])
-        ..setFloat(7, pixiPose.angles[2])
-        ..setFloat(8, pixiPose.angles[3])
-        ..setFloat(9, pixiPose.bend)
-        ..setImageSampler(0, texture, filterQuality: FilterQuality.low);
-      canvas.drawRect(
-        Offset.zero & size,
-        Paint()
-          ..shader = shader
-          ..colorFilter = ColorFilter.matrix(matrix),
-      );
-      MusicLyricsBackdrop.debugOnFrameRendered?.call(style);
-      return;
-    }
-    final Size low = musicBackdropRenderSize(size);
-    if (low.isEmpty) return;
-    final double p = phase.value;
-    final ui.Image frame = cache.resolve(low, p, (Canvas c, Size s) {
-      _paintScene(c, s, p);
-      MusicLyricsBackdrop.debugOnFrameRendered?.call(style);
-    });
-    canvas.drawImageRect(
-      frame,
-      Rect.fromLTWH(0, 0, frame.width.toDouble(), frame.height.toDouble()),
-      Offset.zero & size,
-      Paint()
-        ..filterQuality = FilterQuality.high
-        ..colorFilter = ColorFilter.matrix(matrix),
-    );
+  void dispose() {
+    cache.dispose();
+    source.release();
   }
 
   void _paintScene(Canvas canvas, Size size, double p) {
@@ -1409,26 +1415,156 @@ class _BackdropPainter extends CustomPainter {
     );
     canvas.restore();
   }
+}
+
+/// 背景画家：pixi 层且着色器 + 小贴图就绪时整屏跑着色器（调色矩阵也在着色器里做，不再
+/// 另叠一遍 [ColorFilter]）；其余样式贴低分辨率离屏图。交叉淡化：两层都走着色器时在
+/// 一次 pass 内按 [fade] 混合；否则先画旧层、再按 [fade] 的不透明度叠新层。
+class _BackdropPainter extends CustomPainter {
+  _BackdropPainter({
+    required this.phase,
+    required this.fade,
+    required this.to,
+    required this.from,
+    required this.pixiShader,
+    required this.saturation,
+    required this.scheme,
+  }) : super(repaint: Listenable.merge(<Listenable>[phase, fade]));
+
+  /// 流动时钟（秒）。
+  final ValueListenable<double> phase;
+
+  /// 新层 [to] 的权重（0 → 1）。
+  final Animation<double> fade;
+  final _BackdropLayer to;
+
+  /// 正在淡出的旧层（没有淡化时 null）。
+  final _BackdropLayer? from;
+  final ui.FragmentShader? pixiShader;
+  final double saturation;
+  final ColorScheme scheme;
+
+  bool _shaderReady(_BackdropLayer l) =>
+      pixiShader != null && l.pixiTexture != null;
+
+  List<double> _matrixFor(_BackdropLayer l, {required bool shader}) =>
+      musicBackdropColorMatrix(
+        saturation: saturation,
+        brightness: scheme.brightness,
+        // 封面 mesh 的贴图已压过亮度、还有暗角，再按默认比例压会发闷；pixi
+        // 着色器的调色里已经压暗并封顶亮度，不再叠主题压暗。
+        darkKeep: shader
+            ? 1.0
+            : l.style == MusicLyricsBackdropStyle.meshGradient &&
+                  l.meshTexture != null
+            ? 0.85
+            : null,
+      );
 
   @override
-  bool shouldRepaint(covariant _BackdropPainter old) {
-    // 离屏图只由回退画法（[_paintScene]）产出，内容只取决于下面这些；pixi 着色器
-    // 与它的小贴图只决定走不走着色器直绘、不进离屏图，变了只重绘、不作废缓存。
-    // 否则着色器异步加载完的那次 setState 会让静态模式（无封面 / 贴图未就绪时
-    // 走回退）把同一帧再离屏渲染一遍（pixi 成默认后暴露，BUG-5167）。
-    final bool content =
-        old.style != style ||
-        !identical(old.image, image) ||
-        !identical(old.meshTexture, meshTexture) ||
-        old.base != base ||
-        !listEquals(old.grid, grid);
-    if (content) cache.invalidate();
-    return content ||
-        !identical(old.pixiShader, pixiShader) ||
-        !identical(old.pixiTexture, pixiTexture) ||
-        old.phase != phase ||
-        !listEquals(old.matrix, matrix);
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) return;
+    final _BackdropLayer? under = from;
+    final double t = under == null ? 1 : fade.value.clamp(0.0, 1.0);
+    if (under == null || t >= 1) {
+      _drawLayer(canvas, size, to, alpha: 1);
+      return;
+    }
+    if (_shaderReady(under) && _shaderReady(to)) {
+      _drawShader(canvas, size, a: under, b: to, mix: t, alpha: 1);
+      return;
+    }
+    _drawLayer(canvas, size, under, alpha: 1);
+    if (t > 0) _drawLayer(canvas, size, to, alpha: t);
   }
+
+  void _drawLayer(
+    Canvas canvas,
+    Size size,
+    _BackdropLayer l, {
+    required double alpha,
+  }) {
+    if (_shaderReady(l)) {
+      _drawShader(canvas, size, a: l, b: l, mix: 0, alpha: alpha);
+      return;
+    }
+    final Size low = musicBackdropRenderSize(size);
+    if (low.isEmpty) return;
+    final double p = phase.value;
+    final ui.Image frame = l.cache.resolve(low, p, (Canvas c, Size s) {
+      l._paintScene(c, s, p);
+      MusicLyricsBackdrop.debugOnFrameRendered?.call(l.style);
+    });
+    canvas.drawImageRect(
+      frame,
+      Rect.fromLTWH(0, 0, frame.width.toDouble(), frame.height.toDouble()),
+      Offset.zero & size,
+      Paint()
+        ..color = Color.fromRGBO(0, 0, 0, alpha)
+        ..filterQuality = FilterQuality.high
+        ..colorFilter = ColorFilter.matrix(_matrixFor(l, shader: false)),
+    );
+  }
+
+  /// 整屏一次着色器：[a] 与 [b] 两层按 [mix] 混合（只画一层时 a == b、mix = 0），调色
+  /// 矩阵与不透明度 [alpha] 都在着色器里做。uniform 布局见 `music_backdrop_pixi.frag`。
+  void _drawShader(
+    Canvas canvas,
+    Size size, {
+    required _BackdropLayer a,
+    required _BackdropLayer b,
+    required double mix,
+    required double alpha,
+  }) {
+    final ui.FragmentShader shader = pixiShader!;
+    final ui.Image ta = a.pixiTexture!;
+    final ui.Image tb = b.pixiTexture!;
+    final List<double> m = _matrixFor(b, shader: true);
+    shader
+      ..setFloat(0, size.width)
+      ..setFloat(1, size.height)
+      ..setFloat(2, phase.value)
+      ..setFloat(3, ta.width.toDouble())
+      ..setFloat(4, ta.height.toDouble())
+      ..setFloat(5, a.pixiPose.angles[0])
+      ..setFloat(6, a.pixiPose.angles[1])
+      ..setFloat(7, a.pixiPose.angles[2])
+      ..setFloat(8, a.pixiPose.angles[3])
+      ..setFloat(9, a.pixiPose.bend)
+      ..setFloat(10, b.pixiPose.angles[0])
+      ..setFloat(11, b.pixiPose.angles[1])
+      ..setFloat(12, b.pixiPose.angles[2])
+      ..setFloat(13, b.pixiPose.angles[3])
+      ..setFloat(14, b.pixiPose.bend)
+      ..setFloat(15, mix)
+      ..setFloat(16, alpha);
+    // 调色矩阵前三行：系数 r, g, b + 偏移（0–255 量纲换成 0–1）；alpha 行恒等。
+    int i = 17;
+    for (int row = 0; row < 3; row++) {
+      shader
+        ..setFloat(i++, m[row * 5])
+        ..setFloat(i++, m[row * 5 + 1])
+        ..setFloat(i++, m[row * 5 + 2])
+        ..setFloat(i++, m[row * 5 + 4] / 255);
+    }
+    shader
+      ..setImageSampler(0, ta, filterQuality: FilterQuality.low)
+      ..setImageSampler(1, tb, filterQuality: FilterQuality.low);
+    canvas.drawRect(Offset.zero & size, Paint()..shader = shader);
+    MusicLyricsBackdrop.debugOnFrameRendered?.call(
+      MusicLyricsBackdropStyle.pixi,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _BackdropPainter old) =>
+      !identical(old.to, to) ||
+      !identical(old.from, from) ||
+      !identical(old.pixiShader, pixiShader) ||
+      old.saturation != saturation ||
+      old.scheme != scheme ||
+      old.phase != phase ||
+      old.fade != fade;
 }
 
 /// 低分辨率离屏图缓存：尺寸与相位都没变时复用上一张（静态模式就此只渲染一次）。

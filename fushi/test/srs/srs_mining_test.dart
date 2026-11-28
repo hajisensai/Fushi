@@ -503,6 +503,32 @@ void main() {
 
   // 反馈 MhQHXQI-sB 审查：制卡位置写进 MiscInfo 等价字段。SRS 的映射键是 fieldId，
   // 共享渲染按字段名判落点，必须由 SrsMiner 把 fieldId 换回名字——否则位置被静默丢掉。
+  test('覆写首选牌组已删的笔记：提示里的牌组名取卡片实际所在牌组，不是空（反馈 OGj5irRpo7）', () async {
+    final String preferred = await store.createDeck('首选牌组');
+    final String landed = await store.createDeck('卡片所在牌组');
+    final String noteId = await store.createNote(
+      noteTypeId: store.fushiCardNoteTypeId,
+      fieldsById: <String, String>{fid('Expression'): '雪'},
+      deckId: preferred,
+    );
+    for (final SrsCardCacheRow card in await store.cardsOfNote(noteId)) {
+      await store.moveCard(card.id, landed);
+    }
+    await store.deleteDeck(preferred);
+    final SrsDeckTree tree = await store.deckTree();
+    expect((await store.note(noteId))!.deckId, preferred);
+    expect(tree[preferred], isNull, reason: '前提：首选牌组已不在牌组树里');
+    final MineOutcome out = await SrsMiner(store: store, media: media)
+        .overwrite(
+          noteId: noteId,
+          settings: const AnkiSettings(),
+          rawPayloadJson: _payload('雪', 'ゆき'),
+          context: const AnkiMiningContext(sentence: '雪が降る。'),
+        );
+    expect(out.result, MineResult.success, reason: out.errorDetail);
+    expect(out.deckName, tree.fullName(landed));
+  });
+
   group('制卡位置（charPositionText）落 SRS 的 MiscInfo 等价字段', () {
     const String position = '制卡位置：第 48210 字';
 

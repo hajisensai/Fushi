@@ -14,6 +14,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
+import 'package:fushi/src/dictionary/dictionary_file_health.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/content_font_chain.dart';
@@ -188,12 +189,19 @@ String _themeVariablesJs({
       .platformDispatcher
       .accessibilityFeatures
       .disableAnimations;
+  // 触屏平台（Android / iOS）：popup.css 的紧凑词典行（用户 2026-11-27「收起时更
+  // 紧凑」）桌面压到 24 / 28px，触屏保留 36px 命中区，靠 html.fushi-touch 区分
+  // （CSS 不能写 @media，见生成器）。
+  final bool touch =
+      theme.platform == TargetPlatform.android ||
+      theme.platform == TargetPlatform.iOS;
   final String glassLine =
       "document.documentElement.classList.toggle('fushi-glass-host', $glassHost);\n"
       "document.documentElement.classList.toggle('fushi-solid-backdrop', $solidBackdrop);\n"
       "document.documentElement.classList.toggle('fushi-apple', $appleDesign);\n"
       "document.documentElement.classList.toggle('fushi-m3e', $m3e);\n"
-      "document.documentElement.classList.toggle('fushi-reduced-motion', $reducedMotion);\n";
+      "document.documentElement.classList.toggle('fushi-reduced-motion', $reducedMotion);\n"
+      "document.documentElement.classList.toggle('fushi-touch', $touch);\n";
   return '''
       $classLine      $einkLine      $glassLine      document.documentElement.setAttribute('data-theme', '${isDark ? 'dark' : 'light'}');
       document.documentElement.style.setProperty('--fushi-primary-highlight', '${vars['--fushi-primary-highlight']}');
@@ -1392,6 +1400,10 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     window.i18nCrossAppAudio = ${jsonEncode(<String, String>{'button': t.popup_cross_app_audio_button, 'title': t.popup_advanced_mining_audio_section, 'hint': t.popup_cross_app_audio_hint, 'loading': t.popup_cross_app_audio_loading, 'unavailable': t.popup_cross_app_audio_unavailable, 'play': t.popup_ctx_preview_audio, 'stop': t.popup_ctx_preview_stop, 'reset': t.popup_advanced_mining_reset, 'start': t.popup_advanced_mining_audio_start, 'end': t.popup_advanced_mining_audio_end, 'cancel': t.dialog_cancel, 'mine': t.popup_cross_app_audio_mine, 'skip': t.popup_cross_app_audio_skip})};
     $crossAppAudioHostJs
     $advancedMiningTipJs
+    // 「编辑例句后制卡」按钮提示。入口门控 window.__fushiPreMineSentenceEdit 不在静态段：
+    // app 外覆盖窗按表面走每帧 renderJs（global_lookup_render.dart，游戏内查词卡借不了
+    // 主窗、不给），Android 查词窗走 dictionary_popup_webview 的 in-app 固定块。
+    window.i18nSentenceEdit = ${jsonEncode(t.popup_sentence_edit_button)};
     // 制卡模块开关（见上方 miningEnabled 的注释）。false ⇒ popup.js 的
     // createEntryHeader 不 append「+」制卡按钮 / ↗ 在 Anki 中打开按钮，也不发查重探测。
     // 浏览器扩展没有本注入通道 → undefined ⇒ popup.js 按 `!== false` 照旧渲染。
@@ -1403,7 +1415,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     window.__fushiSrsMiningTarget = $srsMiningToReview;
     window.sentenceDraftEnabled = ${options.sentenceDraftEnabled};
     window._noResultsMessage = ${jsonEncode(t.no_search_results)};
-    window._noResultsHint = ${jsonEncode(t.settings_search_empty_hint)};
+    window._noResultsHint = ${jsonEncode(dictionaryLookupFileNotice(DictionaryFileHealthMonitor.instance.value) ?? t.settings_search_empty_hint)};
     window.embedMedia = true;
     window.deduplicatePitchAccents = ${appModel.deduplicatePitchAccents};
     window.i18nPitchSourceCount = ${jsonEncode(t.dictionary_pitch_source_count(count: '{count}'))};

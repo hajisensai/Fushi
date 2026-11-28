@@ -1,0 +1,7 @@
+## BUG-5579 · 调试通道「打开发布页」落到 404：清单发布页按版本印记拼，包其实挂在滚动 release 上
+- **报告**：2026-11-27（应用内反馈 hgoGFEXKea：「iOS 上把更新通道切到调试版，点更新打开的是 GitHub 404 页」）
+- **真实性**：✅ 真 bug，线上实测。`update-manifest` 分支的 `latest-debug-fushi.json` 顶层 `tag` 是版本印记 `v3.4.0-debug.32865+8e2fbbf`，GitHub 上并没有这个 tag 的 release（`gh release view` 返回 release not found，`https://github.com/hajisensai/Fushi/releases/tag/v3.4.0-debug.32865+8e2fbbf` 返回 HTTP 404）；清单里每个包的 `browser_download_url` 都指向滚动 release `fushi-debug-rolling`。
+  - 根因：`fushi/lib/src/utils/misc/update_checker_release.dart` `buildReleaseFromManifest`（修前约 1897 行）把 `html_url` 拼成 `releases/tag/<顶层 tag>`，默认顶层 tag 就是 release 的 git tag。正式版 / 测试版确实如此，调试版不是。iOS 的 `IosUpdater.selectAsset` 恒为 null，侧载 / App Store（未上架）安装源的「前往下载」都落到 `html_url`（`update_landing.dart` `iosUpdateLanding`），所以 iOS 切到调试通道必然打开 404。其他不能应用内安装、只能「打开发布页」的路径（非 Flatpak 的 Linux、选不到包时的回退对话框）在调试通道下落到同一个死链。
+- **[x] ① 已修复** — 新增纯函数 `manifestReleasePageTag`：从包的下载地址 `…/releases/download/<release tag>/<name>` 取包实际所在的 release，优先取与顶层 tag 同版本的包，没有就取任意一个能解析的包，都解析不出才退回顶层 tag。`html_url` 改由它拼。仓库名仍用调用方给的 `repo`（legacy 源照旧落 legacy 仓）。客户端自己推导，不依赖 CI 往清单里补字段，线上已有的旧清单也立即生效。
+- **[x] ② 已加自动化测试** — `fushi/test/utils/misc/update_checker_manifest_test.dart`：用线上调试清单的形状（顶层版本印记 + 当前包在 `fushi-debug-rolling` + 残留旧包在 `debug-rolling`），断言 `html_url` 是 `releases/tag/fushi-debug-rolling`；另测非 GitHub 下载地址退回顶层 tag、没有同版印记时取任意一个包。修前第一条红（得到的是按版本印记拼的 404 地址）。
+- **备注**：反馈里开发者还提了「iOS 根本不该有调试通道（TestFlight 只给白名单）」。调试 release 实际带 iOS ipa，修完后侧载用户切调试通道能打开有 ipa 的发布页；要不要在 iOS 上隐藏调试通道是产品取舍，不在本条范围，交拍板台。

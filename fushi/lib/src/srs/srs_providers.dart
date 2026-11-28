@@ -26,6 +26,7 @@ import 'package:path/path.dart' as p;
 import 'package:fushi_engine/srs/srs_miner.dart';
 import 'package:fushi_engine/srs/srs_collection_binding.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_duplicate_notes.dart';
 import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
 import 'package:fushi_engine/srs/srs_purge.dart';
 import 'package:fushi_engine/srs/srs_rwkv_attach.dart';
@@ -334,6 +335,10 @@ srsStoreProvider = FutureProvider<SrsDbStore?>((Ref ref) async {
   if (reused && storage.core.mode == SrsOpenMode.secondary) {
     await store.refreshIdentity();
   }
+  // app 有 RWKV 运行时，但 RWKV 服务由 [srsRwkvServiceProvider] 在库交出去之后才挂上（它依赖本 provider）：
+  // 交库之前先声明，挂上之前（启动、换模型档位、换库重建服务的间隙）的计数 / 出卡把 RWKV 牌组当「准备中」，
+  // 不按存下的 FSRS-7 到期日数（BUG-5482：重启后列表停在按到期日数出的 959）。
+  store.hostsRwkv = true;
   // 绑定变了 = 库换了（设计 §5.1）：整份重建依赖这份库的东西（RWKV 服务随 [srsRwkvServiceProvider] 关旧挂新，
   // 列表 / 统计重读）。副本对象沿用（同一条连接、同一个 profile），它自己的缓存在 [SrsDbStore.onBindingChanged] 里已作废。
   final StreamSubscription<void> bindingChanges = store.bindingChanges.listen(
@@ -725,27 +730,37 @@ srsDeckListProvider = FutureProvider<SrsDeckListData?>((Ref ref) async {
   final SrsDbStore? store = await ref.watch(srsStoreProvider.future);
   if (store == null) return null;
   final int revision = store.revision;
-  Future<List<SrsDeckSummary>> load() async => srsVisibleDecks(
+  // 计数之前本库的 RWKV 服务是否已就绪：之后拿到的服务已就绪、而这次计数时还没有，说明就绪落在计数途中，要重读。
+  final bool readyBefore = store.rwkv?.ready ?? false;
+  final List<SrsDeckSummary> decks = srsVisibleDecks(
     await store.deckSummaries(),
     defaultDeckId: store.defaultDeckId,
   );
-  List<SrsDeckSummary> decks = await load();
   // RWKV 牌组的到期数在等 RWKV（[SrsDeckSummary.rwkvPending]）：RWKV 就绪不是 store 的写入，不推进
   // [srsRevisionProvider]，这里自己等它就绪再重读，列表 / 首页的「准备中」才会换成真实计数。
-  // 只在确有 pending 时取服务：pending 意味着 store 已装配了 RWKV（[srsRwkvServiceProvider] 已建好；远程复习时
-  // 是主机的状态，[srsRwkvStatusProvider]）。
+  // 不在这里 await 服务：启动时库先交出、服务后挂（[SrsDbStore.hostsRwkv]），等它会让列表一直转圈；先交出
+  // 「准备中」，服务到了再订阅（远程复习时是主机的状态，[srsRwkvStatusProvider]）。
   if (decks.any((SrsDeckSummary d) => d.rwkvPending)) {
-    final SrsRwkvStatusSource? rwkv = await ref.read(
-      srsRwkvStatusProvider.future,
+    bool disposed = false;
+    StreamSubscription<SrsRwkvStatus>? sub;
+    ref.onDispose(() {
+      disposed = true;
+      unawaited(sub?.cancel());
+    });
+    unawaited(
+      ref.read(srsRwkvStatusProvider.future).then<void>(
+        (SrsRwkvStatusSource? rwkv) {
+          if (disposed || rwkv == null) return;
+          sub = rwkv.statusChanges
+              .where((SrsRwkvStatus s) => s.phase == SrsRwkvPhase.ready)
+              .listen((_) => ref.invalidateSelf());
+          // 计数途中就已就绪（事件在订阅之前发过了）：重读一次。
+          if (rwkv.ready && !readyBefore) ref.invalidateSelf();
+        },
+        onError: (Object e, StackTrace stack) =>
+            ErrorLogService.instance.log('srsDeckListProvider.rwkv', e, stack),
+      ),
     );
-    if (rwkv != null) {
-      final StreamSubscription<SrsRwkvStatus> sub = rwkv.statusChanges
-          .where((SrsRwkvStatus s) => s.phase == SrsRwkvPhase.ready)
-          .listen((_) => ref.invalidateSelf());
-      ref.onDispose(sub.cancel);
-      // 计数途中就已就绪（事件在订阅之前发过了）：当场重读一次。
-      if (rwkv.ready) decks = await load();
-    }
   }
   return SrsDeckListData(store: store, decks: decks, revision: revision);
 });
@@ -893,7 +908,9 @@ final FutureProvider<int> srsLimitUnitLegacyCountProvider = FutureProvider<int>(
   },
 );
 
-/// 待处理的同步冲突（标志 / 设置类）+ 待裁决笔记，合计（牌组列表顶栏的冲突角标）。
+/// 待处理的同步冲突（标志 / 设置类）+ 扣着的删除 + 待确认设备 + 待裁决笔记 + 可能重复的笔记组，合计（牌组列表顶栏的
+/// 冲突角标）。口径与冲突页（srs_conflicts_page.dart `_load`）列出的分区一一对应：以前漏数重复笔记组，只有它时角标为 0、
+/// 进页面却有内容（反馈 4cqrL4u9UI）。
 /// 订阅 [srsRevisionProvider]；与牌组列表各自重读，互不等待。模块关着时为 0。内容没变时复用
 /// 上次结果（[_srsMemoByContent]）：评分只落日志，冲突数不可能因此变。
 final FutureProvider<int> srsConflictCountProvider = FutureProvider<int>((
@@ -910,7 +927,12 @@ final FutureProvider<int> srsConflictCountProvider = FutureProvider<int>((
     final int untrusted = srsDeviceViewsOf(
       await store.sync2Status(),
     ).where((SrsDeviceView d) => d.needsTrust).length;
-    return conflicts + held + untrusted + await store.pendingDecisionCount();
+    final int duplicates = (await store.duplicateNoteGroups()).length;
+    return conflicts +
+        held +
+        untrusted +
+        await store.pendingDecisionCount() +
+        duplicates;
   });
 });
 

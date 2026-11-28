@@ -39,6 +39,7 @@
 #include "global_mouse_trigger.h"
 #include "hang_watchdog.h"
 #include "low_level_mouse_hook.h"
+#include "startup_reveal_policy.h"
 #include "system_font_list.h"
 #include "system_transparency_channel.h"
 #include "utils.h"
@@ -548,6 +549,14 @@ bool FlutterWindow::OnCreate() {
         } else if (call.method_name() == "endStartupWindowPreparation") {
           EndStartupWindowPreparation();
           result->Success();
+        } else if (call.method_name() == "showStartupWindow") {
+          // BUG-5521: Dart's startup reveal (first frame rasterized), in one
+          // platform round trip: lift the startup cloak, show, bring to the
+          // foreground (what window_manager's show() did). Dart then only
+          // asks for keyboard focus.
+          RevealStartupWindow();
+          SetForegroundWindow(GetHandle());
+          result->Success();
         } else if (call.method_name() == "setCaptionMaxButtonRect") {
           // Physical-pixel rect of the Flutter maximize button in the Flutter
           // view (= child client coordinates); all zero = disabled.
@@ -798,6 +807,7 @@ bool FlutterWindow::OnCreate() {
   RegisterMagpieChannel();
   RegisterGameStreamInputChannel();
   RegisterSystemFontListChannel(flutter_controller_->engine()->messenger());
+  RegisterTrayChannel();
   RegisterSystemTransparencyChannel(flutter_controller_->engine()->messenger());
   ::fushi::RegisterStartupTraceChannel(
       flutter_controller_->engine()->messenger());
@@ -2366,6 +2376,22 @@ void FlutterWindow::RegisterFloatingBallChannel() {
         } else if (method == "stopScreenOcr") {
           StopScreenOcr();
           result->Success();
+        } else if (method == "foregroundAppToken") {
+          // 反馈 6RETmKY1TH：截屏识字开始时用户正在用的那个窗口（不属于本进程才回，
+          // 否则 null）。框选截图要临时把主窗拉到前台，结束后经 restoreAfterCapture
+          // 的 returnForeground 把前台还给它。
+          const HWND foreground = GetForegroundWindow();
+          DWORD foreground_pid = 0;
+          if (foreground != nullptr) {
+            GetWindowThreadProcessId(foreground, &foreground_pid);
+          }
+          if (foreground == nullptr || foreground_pid == 0 ||
+              foreground_pid == GetCurrentProcessId()) {
+            result->Success();
+          } else {
+            result->Success(flutter::EncodableValue(static_cast<int64_t>(
+                reinterpret_cast<intptr_t>(foreground))));
+          }
         } else if (method == "isSystemBallRunning") {
           result->Success(
               flutter::EncodableValue(floating_ball_window_->IsRunning()));
@@ -3532,9 +3558,13 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
         } else if (method == "restoreAfterCapture") {
           const int64_t capture_generation =
               Int64FromValue(args, "captureGeneration", 0);
+          // 反馈 6RETmKY1TH：Dart 在截屏识字开始时经 floating_ball 通道的
+          // foregroundAppToken 记下的前台窗口（0 = 不交还）。
+          const HWND return_foreground = reinterpret_cast<HWND>(
+              static_cast<intptr_t>(Int64FromValue(args, "returnForeground", 0)));
           result->Success(flutter::EncodableValue(
               capture_generation > 0 &&
-              win->RestoreAfterCapture(capture_generation)));
+              win->RestoreAfterCapture(capture_generation, return_foreground)));
         } else if (method == "prepare") {
           const std::wstring assets_dir = WideFromValue(args, "assetsDir", L"");
           win->SetPopupAssetsDir(assets_dir);
@@ -5066,6 +5096,10 @@ bool FlutterWindow::ApplyWindowIcon(const std::wstring& path) {
   if (new_small != nullptr) {
     SendMessage(hwnd, WM_SETICON, ICON_SMALL,
                 reinterpret_cast<LPARAM>(new_small));
+    // 托盘图标跟着换；Shell 自己拷一份图标，先换上新的再销毁旧的。
+    if (tray_) {
+      tray_->SetIcon(new_small);
+    }
     if (icon_small_ != nullptr) {
       DestroyIcon(icon_small_);
     }
@@ -5118,6 +5152,12 @@ void FlutterWindow::OnDestroy() {
   // Attached surface callbacks invoke gal_hook_text_channel_; tear the HWND and
   // its follow timer down while the Flutter messenger is still alive.
   attached_text_surface_window_.reset();
+  // 托盘图标先于图标句柄销毁摘掉（它可能还引用着 icon_small_），回调通道一并撤。
+  tray_.reset();
+  if (tray_channel_) {
+    tray_channel_->SetMethodCallHandler(nullptr);
+    tray_channel_.reset();
+  }
   if (icon_big_ != nullptr) {
     DestroyIcon(icon_big_);
     icon_big_ = nullptr;
@@ -5131,6 +5171,136 @@ void FlutterWindow::OnDestroy() {
   }
 
   Win32Window::OnDestroy();
+}
+
+bool FlutterWindow::HideToTray() {
+  HWND hwnd = GetHandle();
+  if (hwnd == nullptr || !tray_ || !tray_->visible()) {
+    return false;
+  }
+  SetPropW(hwnd, ::fushi::kTrayHiddenWindowProp, reinterpret_cast<HANDLE>(1));
+  ShowWindow(hwnd, SW_HIDE);
+  if (tray_channel_) {
+    tray_channel_->InvokeMethod("onHiddenToTray",
+                                std::make_unique<flutter::EncodableValue>());
+  }
+  return true;
+}
+
+namespace {
+
+const flutter::EncodableValue* TrayArg(const flutter::EncodableMap& map,
+                                       const char* key) {
+  const auto it = map.find(flutter::EncodableValue(key));
+  return it == map.end() ? nullptr : &it->second;
+}
+
+bool TrayBoolArg(const flutter::EncodableMap& map, const char* key,
+                 bool fallback) {
+  const flutter::EncodableValue* value = TrayArg(map, key);
+  const bool* b = value != nullptr ? std::get_if<bool>(value) : nullptr;
+  return b != nullptr ? *b : fallback;
+}
+
+std::string TrayStringArg(const flutter::EncodableMap& map, const char* key) {
+  const flutter::EncodableValue* value = TrayArg(map, key);
+  const std::string* s =
+      value != nullptr ? std::get_if<std::string>(value) : nullptr;
+  return s != nullptr ? *s : std::string();
+}
+
+}  // namespace
+
+void FlutterWindow::RegisterTrayChannel() {
+  tray_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(), "app.fushi/tray",
+          &flutter::StandardMethodCodec::GetInstance());
+  tray_channel_->SetMethodCallHandler(
+      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
+             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
+                 result) {
+        const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
+        if (call.method_name() == "configure") {
+          if (args == nullptr) {
+            result->Error("bad_args", "configure expects a map");
+            return;
+          }
+          HWND hwnd = GetHandle();
+          if (!tray_ && hwnd != nullptr) {
+            tray_ = std::make_unique<::fushi::TrayIcon>(
+                hwnd,
+                [this]() {
+                  ::fushi::TrayIcon::RevealWindow(GetHandle());
+                  if (tray_channel_) {
+                    tray_channel_->InvokeMethod(
+                        "onActivate",
+                        std::make_unique<flutter::EncodableValue>());
+                  }
+                },
+                [this](const std::string& id) {
+                  if (tray_channel_) {
+                    tray_channel_->InvokeMethod(
+                        "onMenuItem",
+                        std::make_unique<flutter::EncodableValue>(id));
+                  }
+                });
+            if (icon_small_ != nullptr) {
+              tray_->SetIcon(icon_small_);
+            }
+          }
+          if (!tray_) {
+            result->Error("no_window", "main window not created");
+            return;
+          }
+          std::vector<::fushi::TrayIcon::MenuItem> items;
+          if (const flutter::EncodableValue* raw = TrayArg(*args, "items")) {
+            if (const auto* list = std::get_if<flutter::EncodableList>(raw)) {
+              for (const flutter::EncodableValue& entry : *list) {
+                const auto* map = std::get_if<flutter::EncodableMap>(&entry);
+                if (map == nullptr) continue;
+                ::fushi::TrayIcon::MenuItem item;
+                item.separator = TrayBoolArg(*map, "separator", false);
+                item.id = TrayStringArg(*map, "id");
+                item.label = Utf8ToWideString(TrayStringArg(*map, "label"));
+                item.enabled = TrayBoolArg(*map, "enabled", true);
+                item.is_default = TrayBoolArg(*map, "isDefault", false);
+                item.reveal_window = TrayBoolArg(*map, "revealWindow", false);
+                items.push_back(std::move(item));
+              }
+            }
+          }
+          tray_->SetMenu(std::move(items));
+          tray_->SetTooltip(Utf8ToWideString(TrayStringArg(*args, "tooltip")));
+          tray_->SetVisible(TrayBoolArg(*args, "visible", true));
+          close_to_tray_ = TrayBoolArg(*args, "closeToTray", false);
+          result->Success(flutter::EncodableValue(tray_->visible()));
+        } else if (call.method_name() == "showNotification") {
+          if (args == nullptr) {
+            result->Error("bad_args", "showNotification expects a map");
+            return;
+          }
+          if (tray_) {
+            tray_->ShowNotification(
+                Utf8ToWideString(TrayStringArg(*args, "title")),
+                Utf8ToWideString(TrayStringArg(*args, "body")));
+          }
+          result->Success();
+        } else if (call.method_name() == "hideToTray") {
+          result->Success(flutter::EncodableValue(HideToTray()));
+        } else if (call.method_name() == "exiting") {
+          // 退出链开始（Dart 在 windowManager.hide() 之前调）：摘掉「藏在托盘」标记，
+          // 此后第二实例把这个隐藏主窗判成退出中（startup_reveal_policy.h）去等互斥量，
+          // 而不是把文件转交给马上就没的进程；也不再把关闭拦成藏到托盘。
+          close_to_tray_ = false;
+          if (HWND hwnd = GetHandle()) {
+            RemovePropW(hwnd, ::fushi::kTrayHiddenWindowProp);
+          }
+          result->Success();
+        } else {
+          result->NotImplemented();
+        }
+      });
 }
 
 void FlutterWindow::OnDisplayRecovered() {
@@ -5153,6 +5323,33 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
   // 主线程卡顿计量的心跳应答（hang_watchdog.h）：最先处理、不往下传。
   if (::fushi::HandleHangWatchdogHeartbeat(message, wparam)) {
     return 0;
+  }
+  // SetPropW 挂上的属性必须在窗口销毁前 RemovePropW（MSDN：否则属性条目泄漏）：
+  // 看门狗挂的「显示过」（startup_reveal_policy.h）与关闭到托盘挂的「藏在托盘」。
+  // 只能在这里用参数 hwnd 摘：Win32Window 处理 WM_DESTROY 时先清 window_handle_
+  // 再调 OnDestroy，到 OnDestroy 里 GetHandle() 已是 nullptr。
+  if (message == WM_DESTROY) {
+    RemovePropW(hwnd, ::fushi::kMainWindowShownProp);
+    RemovePropW(hwnd, ::fushi::kTrayHiddenWindowProp);
+  }
+  // 托盘图标的回调消息 / Explorer 重启广播。
+  if (tray_) {
+    if (std::optional<LRESULT> handled =
+            tray_->HandleMessage(message, wparam, lparam)) {
+      return *handled;
+    }
+  }
+  // 关闭到托盘：只拦 SC_CLOSE（标题栏关闭按钮经 window_manager.close() 投的就是
+  // 它，Alt+F4 与任务栏「关闭窗口」也是），必须排在 window_manager 之前——它会把
+  // SC_CLOSE 交给 DefWindowProc 变成 WM_CLOSE 再走 Dart 的退出链。
+  // **裸 WM_CLOSE 不拦**：安装器 / taskkill（不带 /F）靠它让 app 落盘退出，
+  // 拦成藏到托盘会让升级等满超时后强杀。
+  if (message == WM_SYSCOMMAND && (wparam & 0xFFF0) == SC_CLOSE &&
+      close_to_tray_ && HideToTray()) {
+    return 0;
+  }
+  if (message == WM_SHOWWINDOW && wparam) {
+    RemovePropW(hwnd, ::fushi::kTrayHiddenWindowProp);
   }
   if (message == WM_TIMER && system_ocr_host_ &&
       system_ocr_host_->HandleTimer(wparam)) {

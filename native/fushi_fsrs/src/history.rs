@@ -14,7 +14,7 @@
 //! - 同一份历史里同 ID 的日志只留最后一条（Dart `Map` 去重语义）；
 //! - 同一事件的多份副本只算一份（[EventKey]，BUG-4218）：同卡、同 kind、同 HLC（physical, counter, writerId）、
 //!   同发生时刻 / 来源 / 评分 / Anki revlog 时刻的日志是同一次真实事件换了 ID 的副本（profile 合并在 BUG-4217
-//!   修好前会把一次复习写成两个 ID，事件只追加、永远删不掉）。组里 ID 最小（UTF-16 序）的一条是代表，其余标
+//!   修好前会把一次复习写成两个 ID，事件只追加、永远删不掉）。组里原始 ID 最小（UTF-16 序）的一条是代表，其余标
 //!   [STATUS_DUPLICATE]、不算有效；组里任何一份被撤销，整组（每一份）算撤销。undo 与不认识的 kind 不成组。依据：HLC 每次写日志都由写入者时钟
 //!   tick 出来，同写入者内唯一；Anki 导入的 HLC 由 revlog id / 锚点时刻派生；合并 / 跨 profile 导入原样保留 HLC；
 //!   恢复备份的重放副本取新 HLC，不与原日志成组；
@@ -32,6 +32,7 @@
 
 use std::borrow::Cow;
 use std::cmp::Ordering;
+use std::collections::HashMap;
 
 pub use crate::ordering::{CLOCK_TOLERANCE_MS, cmp_utf16};
 use crate::ordering::{SortKey, is_clamped};
@@ -89,10 +90,39 @@ pub enum Origin {
     Other,
 }
 
+impl Origin {
+    /// 线格式 / 列里的 `origin` 原文：缺省 = fushi（Dart `SrsReviewLog.fromJson` 同缺省）。
+    pub fn of_wire(origin: Option<&str>) -> Origin {
+        match origin {
+            None | Some("fushi") => Origin::Fushi,
+            Some("anki") => Origin::Anki,
+            Some(_) => Origin::Other,
+        }
+    }
+}
+
+/// 单次作答计入学习用时的上限（毫秒，与 Anki「最长作答秒数」默认 60 秒同口径；Dart `kSrsMaxAnswerDurationMs` 同值）。
+/// 日志里存**真实**用时（2026-11-26 起；之前的版本在记日志时就封到这个值），封顶只在把用时拿去聚合 / 当输入的地方做
+/// （[counted_answer_ms]），走神、切出去之类的长停顿不把统计撑爆，用户看到的数与以前一样。
+pub const MAX_COUNTED_ANSWER_MS: i64 = 60_000;
+
+/// 一条日志计入学习用时（复习统计投影、今天的「按分钟」每日上限、RWKV 输入行）的作答用时：负数按 0；不是 Anki 来源的
+/// （Fushi 自己记的）封到 [MAX_COUNTED_ANSWER_MS]。Anki 导入的照 Anki 记的值算——它已按那份集合的 `maxTaken` 封过，
+/// 以前也是原值进统计，这里不改它。
+pub fn counted_answer_ms(origin: Origin, dur: i64) -> i64 {
+    match origin {
+        Origin::Anki => dur.max(0),
+        Origin::Fushi | Origin::Other => dur.clamp(0, MAX_COUNTED_ANSWER_MS),
+    }
+}
+
 /// 选取规则需要的一条日志（两条入口各自解出这一形状）。
 #[derive(Debug, Clone)]
 pub struct Log<'a> {
     pub id: Cow<'a, str>,
+    /// Immutable ID recorded on the event before alias resolution. The canonical
+    /// ID is used for references and undo, while ordering keeps this original key.
+    pub(crate) order_id: Option<Cow<'a, str>>,
     /// 日志所属的卡（一份历史可以是血统里几张卡的日志之和；同一事件只在同一张卡上成组）。
     pub card: Cow<'a, str>,
     pub writer: Cow<'a, str>,
@@ -139,12 +169,16 @@ impl Log<'_> {
         })
     }
 
+    fn ordering_id(&self) -> &str {
+        self.order_id.as_deref().unwrap_or(&self.id)
+    }
+
     fn sort_key(&self) -> SortKey<'_> {
         SortKey::new(
             self.physical,
             self.counter,
             &self.writer,
-            &self.id,
+            self.ordering_id(),
             self.server_time,
         )
     }
@@ -262,7 +296,8 @@ pub fn select(logs: &[Log<'_>]) -> Selection {
         if is_revoked(l) {
             group_revoked[r] = true;
         }
-        if r != k && cmp_utf16(&l.id, &logs[kept[best[r]]].id) == Ordering::Less {
+        if r != k && cmp_utf16(l.ordering_id(), logs[kept[best[r]]].ordering_id()) == Ordering::Less
+        {
             best[r] = k;
         }
     }
@@ -530,17 +565,13 @@ pub type Parsed<'a> = (Log<'a>, Option<Outcome>, Extra<'a>);
 
 /// 一条落库日志解成 [Parsed]（与 [state_from_json] 同一套坏数据判据）。
 pub fn parse_full(json: &str, server_time: Option<i64>) -> Result<Parsed<'_>, String> {
-    parse_stored(json, server_time, None)
+    parse_stored((json, server_time, None, None))
 }
 
 /// [parse_full]，日志可以是瘦存 + 列（[StoredLog]，store/slim.rs `log_row`）：读 `jslim` 与列的读者不经生成列
 /// `json`（逐行拼回原文）。
-pub fn parse_stored<'a>(
-    stored: &'a str,
-    server_time: Option<i64>,
-    cols: Option<&'a LogCols>,
-) -> Result<Parsed<'a>, String> {
-    let (log, res, extra) = parse_wire(stored, server_time, cols)?;
+pub fn parse_stored(stored: StoredLog<'_>) -> Result<Parsed<'_>, String> {
+    let (log, res, extra) = parse_wire(stored)?;
     Ok((log, res.as_ref().map(Outcome::of), extra))
 }
 
@@ -569,14 +600,12 @@ pub struct LogCols {
     pub dur: i64,
 }
 
-/// (落库 JSON 或瘦存 `jslim`, 服务器时刻, 瘦存时同一行的列)。
-pub type StoredLog<'a> = (&'a str, Option<i64>, Option<&'a LogCols>);
+/// (落库 JSON 或瘦存 `jslim`, 服务器时刻, 瘦存时同一行的列, 别名归一前的排序 ID)。
+pub type StoredLog<'a> = (&'a str, Option<i64>, Option<&'a LogCols>, Option<&'a str>);
 
 /// 一条落库日志解成 [Log]，连同解好的结果（与 Dart 一样每条都解：哪条的结果是坏数据都判错）。
 fn parse_wire<'a>(
-    stored: &'a str,
-    server_time: Option<i64>,
-    cols: Option<&'a LogCols>,
+    (stored, server_time, cols, order_id): StoredLog<'a>,
 ) -> Result<(Log<'a>, Option<WireResult<'a>>, Extra<'a>), String> {
     // 瘦存 `~<原文没有的键>{…}`：去掉的键从列补，记为原文没有的不补（与 slim::expand 拼回的原文同义）。
     let (json, absent, cols) = match (stored.strip_prefix('~'), cols) {
@@ -637,11 +666,7 @@ fn parse_wire<'a>(
         Some(r) if r.get().starts_with('{') => Some(parse_result(r)?),
         _ => None,
     };
-    let origin = match w.origin.as_deref() {
-        None | Some("fushi") => Origin::Fushi,
-        Some("anki") => Origin::Anki,
-        Some(_) => Origin::Other,
-    };
+    let origin = Origin::of_wire(w.origin.as_deref());
     // reviewType 缺省 manual（不是评分类）。
     let rtype = RType::parse(w.rtype.as_deref());
     let rating_type = rtype.is_rating();
@@ -657,6 +682,7 @@ fn parse_wire<'a>(
     Ok((
         Log {
             id,
+            order_id: order_id.map(Cow::Borrowed),
             card,
             writer,
             physical,
@@ -750,7 +776,7 @@ pub fn state_from_json(jsons: &[&str], server_times: &[Option<i64>]) -> Result<S
     let stored: Vec<StoredLog<'_>> = jsons
         .iter()
         .zip(server_times)
-        .map(|(j, s)| (*j, *s, None))
+        .map(|(j, s)| (*j, *s, None, None))
         .collect();
     state_from_stored(&stored)
 }
@@ -770,12 +796,14 @@ pub const MATURE_INTERVAL_DAYS: i64 = 21;
 #[derive(Debug, Clone, PartialEq)]
 pub struct StatRow {
     pub log_id: String,
+    pub(crate) order_id: Option<String>,
     pub occurred_at: i64,
     pub utc_off: i64,
     /// 1..4；None = 不是统计复习，只是成熟状态变化（[maturity_delta] ≠ 0）。
     pub rating: Option<i64>,
     /// `SrsStatReviewKind` 下标：0 新卡 / 1 学习 / 2 年轻 / 3 成熟 / 4 重学 / 5 筛选。
     pub kind: i64,
+    /// 计入学习用时的作答用时（[counted_answer_ms]：Fushi 记的封顶 60 秒；日志里存的是真实用时）。
     pub dur: i64,
     /// 按到期日排的复习卡复习：上一条有效结果的到期日（> 当天 = 提前复习）；其余 None。
     pub prev_due_day: Option<i64>,
@@ -810,7 +838,7 @@ pub fn stats_from_json(
     let stored: Vec<StoredLog<'_>> = jsons
         .iter()
         .zip(server_times)
-        .map(|(j, s)| (*j, *s, None))
+        .map(|(j, s)| (*j, *s, None, None))
         .collect();
     stats_from_stored(&stored)
 }
@@ -822,14 +850,96 @@ pub fn stats_from_stored(stored: &[StoredLog<'_>]) -> Result<Vec<StatRow>, Strin
     Ok(stat_rows(&sel, &logs, &results, &extras))
 }
 
+/// 一条日志在一份归属组的选取与投影里的去向（诊断用：迁移报告的 `statsTrace`，store/gen4/dryrun.rs）。只有 ID、
+/// 时刻与规则字段，不含内容。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LogFate {
+    pub id: String,
+    pub card: String,
+    pub writer: String,
+    pub physical: i64,
+    pub counter: i64,
+    pub kind: Kind,
+    pub origin: Origin,
+    pub rating_type: bool,
+    pub rating: Option<i64>,
+    pub anki_id: Option<i64>,
+    pub occurred_at: i64,
+    pub revokes: Option<String>,
+    pub has_result: bool,
+    /// 选取的 `STATUS_*` 位；None = 同 ID 有更晚的一条，这条在选取前就被去掉了。
+    pub status: Option<u8>,
+    /// 投影出了统计行（[stats_from_stored] 的输出里有它）。
+    pub produced: bool,
+    /// 投影出的统计行的 Anki 事件身份（[StatRow::anki_event]）。
+    pub anki_event: Option<AnkiEvent>,
+}
+
+/// [stats_from_stored] 同一份输入，逐条给出 [LogFate]（输入顺序）。
+pub fn log_fates(stored: &[StoredLog<'_>]) -> Result<Vec<LogFate>, String> {
+    let (logs, results, extras) = parse_all(stored)?;
+    let sel = select(&logs);
+    let rows = stat_rows(&sel, &logs, &results, &extras);
+    let mut status: Vec<Option<u8>> = vec![None; logs.len()];
+    for (k, &i) in sel.order.iter().enumerate() {
+        status[i] = Some(sel.status[k]);
+    }
+    let produced: HashMap<&str, Option<AnkiEvent>> = rows
+        .iter()
+        .map(|r| (r.log_id.as_str(), r.anki_event))
+        .collect();
+    Ok(logs
+        .iter()
+        .enumerate()
+        .map(|(i, l)| {
+            // 同 ID 的几条里只有留下的那条（有 status 的）算投影了。
+            let row = status[i].and_then(|_| produced.get(l.id.as_ref()));
+            LogFate {
+                id: l.id.clone().into_owned(),
+                card: l.card.clone().into_owned(),
+                writer: l.writer.clone().into_owned(),
+                physical: l.physical,
+                counter: l.counter,
+                kind: l.kind,
+                origin: l.origin,
+                rating_type: l.rating_type,
+                rating: l.rating,
+                anki_id: l.anki_id,
+                occurred_at: l.occurred_at,
+                revokes: l.revokes.as_deref().map(str::to_owned),
+                has_result: l.has_result,
+                status: status[i],
+                produced: row.is_some(),
+                anki_event: row.copied().flatten(),
+            }
+        })
+        .collect())
+}
+
+/// `STATUS_*` 位的名字（诊断用）。
+pub fn status_names(status: u8) -> Vec<&'static str> {
+    [
+        (STATUS_EFFECTIVE, "effective"),
+        (STATUS_REVOKED, "revoked"),
+        (STATUS_EQUIVALENT_IMPORT, "equivalentImport"),
+        (STATUS_REVOKER, "revoker"),
+        (STATUS_CLAMPED, "clamped"),
+        (STATUS_DUPLICATE, "duplicate"),
+    ]
+    .into_iter()
+    .filter(|(bit, _)| status & bit != 0)
+    .map(|(_, name)| name)
+    .collect()
+}
+
 type ParsedAll<'a> = (Vec<Log<'a>>, Vec<Option<WireResult<'a>>>, Vec<Extra<'a>>);
 
 fn parse_all<'a>(stored: &[StoredLog<'a>]) -> Result<ParsedAll<'a>, String> {
     let mut logs = Vec::with_capacity(stored.len());
     let mut results = Vec::with_capacity(stored.len());
     let mut extras = Vec::with_capacity(stored.len());
-    for (j, s, c) in stored {
-        let (log, res, extra) = parse_wire(j, *s, *c)?;
+    for &row in stored {
+        let (log, res, extra) = parse_wire(row)?;
         logs.push(log);
         results.push(res);
         extras.push(extra);
@@ -879,11 +989,12 @@ fn stat_rows(
         if kind.is_some() || delta != 0 {
             out.push(StatRow {
                 log_id: log.id.clone().into_owned(),
+                order_id: log.order_id.as_deref().map(str::to_owned),
                 occurred_at: log.occurred_at,
                 utc_off: extra.utc_off,
                 rating: kind.and(log.rating),
                 kind: kind.unwrap_or(0),
-                dur: extra.dur.max(0),
+                dur: counted_answer_ms(log.origin, extra.dur),
                 // 按回忆率排的复习（日志 alg = rwkv）不看到期日，无所谓「提前」。
                 prev_due_day: if kind.is_some()
                     && !extra.alg_rwkv
@@ -1077,11 +1188,12 @@ pub fn encode_states(states: &[State]) -> Vec<u8> {
 /// 2 其它）、`1<<5` 评分类 reviewType、`1<<6` 有结果、`1<<7` 有 revokes。
 pub const COLUMN_WORDS: usize = 7;
 
-/// 列模式每条日志带几个串（[select_columns]：id、writerId、revokes、cardId）。
-pub const COLUMN_STRINGS: usize = 4;
+/// 列模式每条日志带几个串（[select_columns]：id、writerId、revokes、cardId、排序 ID）。
+pub const COLUMN_STRINGS: usize = 5;
 
-/// 列模式批量：第 i 条日志的四个串 = `text[offs[4i]..offs[4i+1]]`（id）、`[4i+1..4i+2]`（writerId）、
-/// `[4i+2..4i+3]`（revokes，无则空串且 bits 不带 `1<<7`）、`[4i+3..4i+4]`（cardId）。
+/// 列模式批量：第 i 条日志的五个串 = `text[offs[5i]..offs[5i+1]]`（id）、`[5i+1..5i+2]`（writerId）、
+/// `[5i+2..5i+3]`（revokes，无则空串且 bits 不带 `1<<7`）、`[5i+3..5i+4]`（cardId）、`[5i+4..5i+5]`（别名归一前的
+/// 排序 ID [Log::order_id]，与 id 相同时为空串；BUG-5476：新代 `read logs` 的 `oid` 列，Dart 侧选取与内核同序）。
 ///
 /// 输出布局（小端）：`[u32 组边界 × (n_groups + 1)][u32 输入下标 × 去重后总数][i32 lastEffective × n_groups]
 /// [i32 schedulerFrom × n_groups][u8 STATUS_* × 去重后总数]`；下标都是全局输入下标，-1 = 无。
@@ -1113,7 +1225,9 @@ pub fn select_columns(
     for i in 0..n_logs {
         let c = &ints[i * COLUMN_WORDS..(i + 1) * COLUMN_WORDS];
         let bits = c[6];
+        let order_id = slice(COLUMN_STRINGS * i + 4)?;
         logs.push(Log {
+            order_id: (!order_id.is_empty()).then_some(Cow::Borrowed(order_id)),
             id: Cow::Borrowed(slice(COLUMN_STRINGS * i)?),
             card: Cow::Borrowed(slice(COLUMN_STRINGS * i + 3)?),
             writer: Cow::Borrowed(slice(COLUMN_STRINGS * i + 1)?),
@@ -1187,7 +1301,7 @@ pub fn import_equivalent_any(text: &[u8], offs: &[u32], groups: &[u32]) -> Resul
         if a > b || b > text.len() || !text.is_char_boundary(a) || !text.is_char_boundary(b) {
             return Err("bad import batch offsets".to_owned());
         }
-        logs.push(parse_wire(&text[a..b], None, None)?.0);
+        logs.push(parse_wire((&text[a..b], None, None, None))?.0);
     }
     let mut out = Vec::with_capacity(groups.len() - 1);
     for g in groups.windows(2) {
@@ -1404,6 +1518,45 @@ mod tests {
         assert_eq!(effective_ids(&[&mine, &other_rating]), ["a", "b"]);
     }
 
+    #[test]
+    fn counted_answer_ms_caps_native_durations_only() {
+        assert_eq!(
+            counted_answer_ms(Origin::Fushi, 600_000),
+            MAX_COUNTED_ANSWER_MS
+        );
+        assert_eq!(counted_answer_ms(Origin::Fushi, 59_000), 59_000);
+        assert_eq!(counted_answer_ms(Origin::Fushi, -5), 0);
+        assert_eq!(
+            counted_answer_ms(Origin::Other, 600_000),
+            MAX_COUNTED_ANSWER_MS
+        );
+        assert_eq!(counted_answer_ms(Origin::Anki, 90_000), 90_000);
+        assert_eq!(counted_answer_ms(Origin::Anki, -1), 0);
+    }
+
+    #[test]
+    fn stat_rows_cap_native_durations_but_keep_anki_ones() {
+        // 日志存真实用时（2026-11-26 起）：统计投影里 Fushi 记的单次封顶 60 秒，与以前记录时就封顶的数一样；Anki 导入的
+        // 照 Anki 记的值（以前也是原值进统计）。Anki 事件身份里的用时保持原值（判同一次复习用）。
+        let native = r#"{"id":"n","p":"p","card":"c","kind":"review","hlc":"10:0:A","at":10,"origin":"fushi","rtype":"review","rating":3,"dur":600000,"res":{"queue":"review","dueDay":3}}"#;
+        let anki = r#"{"id":"a","p":"p","card":"c","kind":"review","hlc":"900000:0:anki","at":900000,"origin":"anki","ankiId":900000,"rtype":"review","rating":3,"dur":90000,"res":{"queue":"review","dueDay":5}}"#;
+        let rows = stats_from_json(&[native, anki], &[None, None]).unwrap();
+        let dur_of = |id: &str| rows.iter().find(|r| r.log_id == id).unwrap().dur;
+        assert_eq!(dur_of("n"), MAX_COUNTED_ANSWER_MS);
+        assert_eq!(dur_of("a"), 90_000);
+        let ev = rows
+            .iter()
+            .find(|r| r.log_id == "a")
+            .unwrap()
+            .anki_event
+            .unwrap();
+        assert_eq!(ev.dur, 90_000);
+        // 日志本身（选取 / 线格式）仍是原值。
+        let (log, _, extra) = parse_full(native, None).unwrap();
+        assert_eq!(log.origin, Origin::Fushi);
+        assert_eq!(extra.dur, 600_000);
+    }
+
     /// 卡 [card] 上一条 Anki 导入的评分复习（HLC / 时刻都由 revlog id [rid] 派生，与导入器同形）。
     fn anki_on(card: &str, id: &str, rid: i64, rating: i64, due: i64) -> String {
         format!(
@@ -1489,25 +1642,30 @@ mod tests {
         assert_eq!(s.last_log_id.as_deref(), Some("l38"));
     }
 
-    #[test]
-    fn column_mode_reads_card_and_groups_copies() {
-        // 列模式（Dart SrsCardHistory）：每条日志四个串 id / writerId / revokes / cardId。
-        let rows: [(&str, &str, i64, &str); 3] = [
-            ("b-orig", "c", 10, ""),
-            ("a-copy", "c", 10, ""),
-            ("p1", "pred", 10, ""),
-        ];
+    /// 列模式输入：(id, cardId, physical, revokes, 排序 ID)。每条日志五个串 id / writerId / revokes / cardId / 排序 ID。
+    fn column_input(rows: &[(&str, &str, i64, &str, &str)]) -> (Vec<i64>, String, Vec<u32>) {
         let mut ints: Vec<i64> = Vec::new();
         let mut text = String::new();
         let mut offs: Vec<u32> = vec![0];
-        for (id, card, phys, revokes) in rows {
+        for &(id, card, phys, revokes, order_id) in rows {
             // kind review(0) | 评分类 1<<5 | 有结果 1<<6。
             ints.extend_from_slice(&[phys, 0, NONE_I64, phys, NONE_I64, 3, (1 << 5) | (1 << 6)]);
-            for part in [id, "A", revokes, card] {
+            for part in [id, "A", revokes, card, order_id] {
                 text.push_str(part);
                 offs.push(text.len() as u32);
             }
         }
+        (ints, text, offs)
+    }
+
+    #[test]
+    fn column_mode_reads_card_and_groups_copies() {
+        // 列模式（Dart SrsCardHistory）。
+        let (ints, text, offs) = column_input(&[
+            ("b-orig", "c", 10, "", ""),
+            ("a-copy", "c", 10, "", ""),
+            ("p1", "pred", 10, "", ""),
+        ]);
         let out = select_columns(&ints, text.as_bytes(), &offs, &[0, 3]).unwrap();
         let u32_at = |k: usize| u32::from_le_bytes(out[k * 4..k * 4 + 4].try_into().unwrap());
         // [bounds × 2][order × 3][last][sched][status × 3]：排序 a-copy < b-orig < p1（同 HLC 按 ID）；
@@ -1520,7 +1678,34 @@ mod tests {
             &out[out.len() - 3..],
             [STATUS_EFFECTIVE, STATUS_DUPLICATE, STATUS_EFFECTIVE]
         );
-        // 旧布局（三个串）判坏。
-        assert!(select_columns(&ints, text.as_bytes(), &offs[..10], &[0, 3]).is_err());
+        // 旧布局（四个串）判坏。
+        assert!(select_columns(&ints, text.as_bytes(), &offs[..13], &[0, 3]).is_err());
+    }
+
+    /// BUG-5476：新代 `read logs` 交回的是规范 ID，排序 ID 是别名归一前的原值。列模式按排序 ID 排序、选副本，
+    /// 与内核重放（[Log::order_id]）同一结果；规范 ID 的先后与原值相反时也不换代表。
+    #[test]
+    fn column_mode_orders_and_picks_copies_by_the_original_id() {
+        // 规范 ID a-canon < b-canon，原值 z-raw > m-raw：代表应是 b-canon（原值 m-raw 最小）。
+        let (ints, text, offs) = column_input(&[
+            ("a-canon", "c", 10, "", "z-raw"),
+            ("b-canon", "c", 10, "", "m-raw"),
+        ]);
+        let out = select_columns(&ints, text.as_bytes(), &offs, &[0, 2]).unwrap();
+        let u32_at = |k: usize| u32::from_le_bytes(out[k * 4..k * 4 + 4].try_into().unwrap());
+        assert_eq!([u32_at(2), u32_at(3)], [1, 0], "sorted by the original ID");
+        assert_eq!(u32_at(4), 1, "last effective = b-canon");
+        assert_eq!(&out[out.len() - 2..], [STATUS_EFFECTIVE, STATUS_DUPLICATE]);
+        // 同一份历史按 JSON 解析并带上排序 ID（重放走的路径）选出同一个代表。
+        let jsons = [
+            review("a-canon", "10:0:A", 10, 3),
+            review("b-canon", "10:0:A", 10, 3),
+        ];
+        let stored: Vec<StoredLog<'_>> = vec![
+            (jsons[0].as_str(), None, None, Some("z-raw")),
+            (jsons[1].as_str(), None, None, Some("m-raw")),
+        ];
+        let s = state_from_stored(&stored).unwrap();
+        assert_eq!(s.last_log_id.as_deref(), Some("b-canon"));
     }
 }

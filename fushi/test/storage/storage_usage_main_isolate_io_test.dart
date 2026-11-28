@@ -217,6 +217,48 @@ void main() {
       expect(refs.single.videoPath, '/docs/videos/v1.mkv');
       _expectNoFatSelect(recorder.statements);
     });
+
+    test('视频分组：取 id 最小的现存合集，别的媒体类型的成员不算；成员表不整表读回（BUG-5536）', () async {
+      await db
+          .into(db.videoBooks)
+          .insert(
+            VideoBooksCompanion.insert(
+              bookUid: 'video-2',
+              title: 'Video 2',
+              videoPath: '/docs/videos/v2.mkv',
+            ),
+          );
+      final int older = await db.createMediaCollection('作品 A');
+      final int newer = await db.createMediaCollection('播放列表 B');
+      final int epubOnly = await db.createMediaCollection('书单 C');
+      expect(older < newer && newer < epubOnly, isTrue);
+      // video-1 同时在两个合集里：按建立先后取较早的那个。
+      await db.addToCollection(newer, MediaKind.video, 'video-1');
+      await db.addToCollection(older, MediaKind.video, 'video-1');
+      // 同 key 的非视频成员不能把视频归进书单。
+      await db.addToCollection(epubOnly, MediaKind.epub, 'video-2');
+      recorder.statements.clear();
+
+      final List<StorageVideoRef> refs = await loadStorageVideoRefs(db);
+      final Map<String, String?> groupOf = <String, String?>{
+        for (final StorageVideoRef r in refs) r.id: r.group,
+      };
+      expect(groupOf, <String, String?>{'video-1': '作品 A', 'video-2': null});
+
+      final List<String> memberReads = <String>[
+        for (final String sql in recorder.statements)
+          if (sql.contains('media_collection_items')) sql,
+      ];
+      expect(memberReads, isNotEmpty);
+      for (final String sql in memberReads) {
+        expect(
+          sql.contains('media_type = ?') && sql.contains('GROUP BY'),
+          isTrue,
+          reason: '合集成员必须在 SQL 侧按类型过滤并分组，不能整表读回: $sql',
+        );
+      }
+      _expectNoFatSelect(recorder.statements);
+    });
   });
 
   group('开页扫描不在调用方 isolate 上做同步文件 IO', () {

@@ -354,7 +354,7 @@ void main() {
     packages: SyncAssetPackageService(db: db),
     refreshDictionaryCache: () async {},
     runExclusive: (Future<void> Function() body) => body(),
-    videoSubtitleLangCode: 'ja',
+    videoSubtitleExplicitLanguage: () => 'ja',
   );
 
   Future<void> seedVideo() => db.upsertVideoBook(

@@ -7,7 +7,7 @@ import 'package:fushi/src/media/video/airing_discovery_mapping.dart'
     show anilistIdOfVideoDownloadSubscription;
 import 'package:fushi/src/media/video/airing_week.dart';
 import 'package:fushi/src/media/video/anilist_client.dart';
-import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/torrent/download_timeouts.dart';
 
@@ -16,7 +16,7 @@ import 'package:fushi_engine/media/torrent/download_timeouts.dart';
 ///
 /// 口径：本地相关性（合集绑定的 anilistId + 下载订阅的 anilistId）恒重建；放送表
 /// 按 内存缓存 → 偏好缓存 → AniList 分页拉取 取（airing_calendar_cache.dart，
-/// **无 Drift schema 改动**）。HTTP 客户端经 [AppModel.createDownloadHttpClient]
+/// **无 Drift schema 改动**）。HTTP 客户端经 [AiringCalendarHost.createDownloadHttpClient]
 /// 走全应用统一代理出口。
 
 /// 「显示本季全部」分页上限：AniList perPage=50，一周全量 airing 实测数百条，
@@ -72,20 +72,35 @@ class AiringCalendarSnapshot {
   }
 }
 
-/// 页面消费的取数端口（生产装配 = [loadAiringCalendarWeek] 绑定 [AppModel]；
+/// [loadAiringCalendarWeek] 要的 app 能力（AppModel 实现）。取数层只经这个窄接口读库、订阅、
+/// 偏好缓存与下载出口；直接 import AppModel 会把本文件连同发现详情页、作品 logo 拖进 lib/ 的
+/// import 大环（`test/build/import_cycle_guard_test.dart`，2026-11-27）。
+abstract interface class AiringCalendarHost {
+  FushiDatabase get database;
+
+  /// 旧版番剧订阅（null = 还没装好）。
+  AnimeDownloadSubscriptionStore? get animeDownloadSubscriptionStore;
+
+  PreferencesRepository get prefsRepo;
+
+  /// 全应用统一代理出口的 HTTP 客户端。
+  Future<http.Client> createDownloadHttpClient();
+}
+
+/// 页面消费的取数端口（生产装配 = [loadAiringCalendarWeek] 绑定 [AiringCalendarHost]；
 /// widget 测试可注入确定性实现）。
 typedef AiringCalendarLoader =
     Future<AiringCalendarSnapshot> Function(AiringCalendarRequest request);
 
 /// 取一周放送：本地映射（合集 / 订阅）恒重建，放送表按缓存口径取。
 Future<AiringCalendarSnapshot> loadAiringCalendarWeek(
-  AppModel appModel,
+  AiringCalendarHost host,
   AiringCalendarRequest request,
 ) async {
-  final List<MediaCollectionRow> collections = await appModel.database
+  final List<MediaCollectionRow> collections = await host.database
       .getAllMediaCollections();
   final AnimeDownloadSubscriptionStore? store =
-      appModel.animeDownloadSubscriptionStore;
+      host.animeDownloadSubscriptionStore;
   final List<AnimeDownloadSubscription> subscriptions = store == null
       ? const <AnimeDownloadSubscription>[]
       : await store.loadAll();
@@ -95,8 +110,9 @@ Future<AiringCalendarSnapshot> loadAiringCalendarWeek(
   };
   // 订阅有两套存储：旧版番剧订阅 + 发现页订阅表（从日历点进详情页订阅写的是后者）。
   // 只认前者 = 刚订阅的番照样不显示「订阅中」。
-  final List<VideoDownloadSubscriptionRow> discoverySubscriptions =
-      await appModel.database.getVideoDownloadSubscriptions();
+  final List<VideoDownloadSubscriptionRow> discoverySubscriptions = await host
+      .database
+      .getVideoDownloadSubscriptions();
   final Set<int> subscribedIds = <int>{
     for (final AnimeDownloadSubscription s in subscriptions) s.anilistId,
     for (final VideoDownloadSubscriptionRow row in discoverySubscriptions)
@@ -105,7 +121,7 @@ Future<AiringCalendarSnapshot> loadAiringCalendarWeek(
   // 放送表恒取当季全量（用户 2026-10-20 去掉「显示本季全部」开关、默认全显）；
   // 本地映射只驱动「在库 / 订阅中」徽章。
   final List<AniListAiringEpisode> episodes = await _fetchAiringWeekEpisodes(
-    appModel,
+    host,
     request: request,
     filterIds: null,
   );
@@ -118,7 +134,7 @@ Future<AiringCalendarSnapshot> loadAiringCalendarWeek(
 
 /// 取本周窗口的放送条目：内存缓存 → 偏好缓存 → AniList 分页拉取。
 Future<List<AniListAiringEpisode>> _fetchAiringWeekEpisodes(
-  AppModel appModel, {
+  AiringCalendarHost host, {
   required AiringCalendarRequest request,
   required List<int>? filterIds,
 }) {
@@ -126,18 +142,15 @@ Future<List<AniListAiringEpisode>> _fetchAiringWeekEpisodes(
     request: request,
     filterIds: filterIds,
     readPersisted: () =>
-        appModel.prefsRepo.getPref(
-              kAiringCalendarCachePrefKey,
-              defaultValue: '',
-            )
+        host.prefsRepo.getPref(kAiringCalendarCachePrefKey, defaultValue: '')
             as String,
     writePersisted: (String raw) =>
-        appModel.prefsRepo.setPref(kAiringCalendarCachePrefKey, raw),
-    createHttpClient: appModel.createDownloadHttpClient,
+        host.prefsRepo.setPref(kAiringCalendarCachePrefKey, raw),
+    createHttpClient: host.createDownloadHttpClient,
   );
 }
 
-/// 放送表取数的缓存与分页口径（与 [AppModel] 解耦，便于单测）。
+/// 放送表取数的缓存与分页口径（与 app 解耦，便于单测）。
 ///
 /// - 整周请求（`request.day == null`）：签名 `<周一>|all`，按 内存 → 偏好 → 分页拉取。
 /// - 单日请求：先查**整周**缓存，命中就截取当天、不发请求；未命中再查单日缓存

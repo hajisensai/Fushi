@@ -236,6 +236,43 @@ void main() {
       expect(SrsCardHistory(logs.reversed).lastEffective!.id, first);
     });
 
+    test('同一事件的副本按别名归一前的原值日志 ID 选代表，与内核排程同一份（BUG-5476）', () {
+      // 新代 `read logs` 交回规范 ID；两份同次 Anki 复习的副本带不同排程结果，规范 ID 与原值的先后相反。
+      SrsReviewLog copy(String id, int dueDay) =>
+          SrsReviewLog.fromJson(<String, Object?>{
+            ..._log(
+              card: 'c',
+              kind: SrsLogKind.review,
+              at: kT0,
+              rating: 3,
+              origin: SrsLogOrigin.anki,
+              ankiId: kT0,
+              result: SrsScheduleResult(queue: SrsQueue.review, dueDay: dueDay),
+            ).toJson(),
+            'id': id,
+          });
+      final SrsReviewLog a = copy('a-canon', 5);
+      final SrsReviewLog b = copy('b-canon', 32);
+      expect(SrsCardHistory(<SrsReviewLog>[a, b]).lastEffective!.id, a.id);
+      const Map<String, String> raw = <String, String>{
+        'a-canon': 'z-raw',
+        'b-canon': 'm-raw',
+      };
+      for (final List<SrsReviewLog> logs in <List<SrsReviewLog>>[
+        <SrsReviewLog>[a, b],
+        <SrsReviewLog>[b, a],
+      ]) {
+        final SrsCardHistory h = SrsCardHistory(
+          logs,
+          orderIdOf: (String id) => raw[id],
+        );
+        expect(h.lastEffective!.id, b.id);
+        expect(h.effective.map((SrsReviewLog l) => l.id), <String>[b.id]);
+        expect(h.all.map((SrsReviewLog l) => l.id), <String>[b.id, a.id]);
+        expect(h.state.dueDay, 32);
+      }
+    });
+
     test('不认识的 kind 原样保留但不参与状态', () {
       final SrsReviewLog a = _log(
         card: 'c',

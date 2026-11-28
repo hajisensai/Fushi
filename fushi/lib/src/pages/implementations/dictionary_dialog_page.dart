@@ -35,6 +35,7 @@ import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/models/dictionary_download_resume.dart';
 import 'package:fushi/src/models/dictionary_import_manager.dart';
+import 'package:fushi/src/dictionary/dictionary_file_health.dart';
 import 'package:fushi/src/dictionary/recommended_dictionary_installer.dart';
 import 'package:fushi/src/pages/implementations/activity_feed.dart'
     show ActivityRelativeTime, ActivityRelativeUnit, activityRelativeTime;
@@ -461,6 +462,7 @@ class _DictionaryDialogPageState extends BasePageState {
     RemoteDictionaryCatalogService.reachabilityRevision.removeListener(
       _onReachabilityChanged,
     );
+    DictionaryFileHealthMonitor.instance.removeListener(_onFileHealthChanged);
     _revision.dispose();
     for (final FocusNode node in _rowFocusNodes.values) {
       node.dispose();
@@ -490,6 +492,9 @@ class _DictionaryDialogPageState extends BasePageState {
     RemoteDictionaryCatalogService.reachabilityRevision.addListener(
       _onReachabilityChanged,
     );
+    // BUG-5489：词典文件状态（不在 / 读不到）由 AppModel 的装载路径判定，变了就重建
+    // 行标签、顶部横幅与详情（sheet 经 [_revision] 跟着刷新）。
+    DictionaryFileHealthMonitor.instance.addListener(_onFileHealthChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       unawaited(_loadServerSources());
@@ -515,6 +520,22 @@ class _DictionaryDialogPageState extends BasePageState {
       }
     }
   }
+
+  void _onFileHealthChanged() {
+    if (mounted) setState(() {});
+  }
+
+  DictionaryFileIssue? _fileIssueOf(Dictionary dictionary) =>
+      DictionaryFileHealthMonitor.instance.value.issueOf(dictionary.name);
+
+  /// BUG-5489：文件不在的词典的「重新导入」：在线来源强制重下（不比版本——本机版本号
+  /// 还在库里，比了只会得到「已是最新」）；本地导入的选文件覆盖。都以它为显式替换
+  /// 目标，保住顺序 / 开关 / 改名。
+  void _reimportDictionary(Dictionary dictionary) => unawaited(
+    dictionary.isUpdatable
+        ? _updateSingleDictionary(dictionary, force: true)
+        : _updateDictionaryFromFile(dictionary),
+  );
 
   void _onRemoteDictionariesChanged() {
     if (!mounted) return;
@@ -958,8 +979,10 @@ class _DictionaryDialogPageState extends BasePageState {
   @override
   Widget build(BuildContext context) {
     // Apple 设计系统（iOS 26 / macOS 26）与 Cupertino 渲染一样把导入 / 更新 / 清空
-    // 放进标题栏动作（桌面一排玻璃圆钮、窄屏「…」溢出菜单），不再在内容层铺一排
-    // MD3 tonal 按钮——iOS 的「添加」类动作住在导航栏，内容层只放列表。
+    // 放进标题栏动作，不再在内容层铺一排 MD3 tonal 按钮——iOS 的「添加」类动作
+    // 住在导航栏，内容层只放列表。各宽度给同一份平铺动作，放不下由导航栏统一
+    // 收进「⋯」；以前窄屏自带一个「⋮」菜单，被导航栏再收一层就成了「⋮」「⋯」
+    // 两颗溢出钮并排。
     final bool cupertino =
         isCupertinoPlatform(context) || isGlassDesign(context);
     final double width = MediaQuery.sizeOf(context).width;
@@ -967,7 +990,7 @@ class _DictionaryDialogPageState extends BasePageState {
     // 宽屏（PC）= 列表 + 右侧详情侧板两栏；窄屏 = 单列卡片列表 + 底部 sheet。
     final bool split = dictionaryManagerUsesSplitLayout(width);
     final List<Widget> actions = cupertino
-        ? (compact ? _buildMobilePageActions() : _buildDesktopPageActions())
+        ? _buildApplePageActions()
         : const <Widget>[];
     final List<Widget> listChildren = <Widget>[
       if (!cupertino) _buildActionBar(compact: compact),
@@ -976,6 +999,8 @@ class _DictionaryDialogPageState extends BasePageState {
       // 还停在旧磁盘格式的词典的升级入口（拍板台 pr3554：升级前先问；启动期点了
       // 「以后再说」之后只剩这里）。没有待升级的、或有写任务在跑时是零高度。
       _buildFormatUpgradeRow(),
+      // BUG-5489：有已登记却找不到 / 读不到文件的词典时的横幅；全都正常时零高度。
+      _buildFileHealthBanner(),
       if (_hasAnyRows) _buildCategorySelector(),
       // 「来源」条：每台有目录的服务器一张卡片（状态 / 本数 / 用于查词 / 刷新），
       // 取代以前列表底部的按 host 提示。
@@ -1194,7 +1219,7 @@ class _DictionaryDialogPageState extends BasePageState {
                   // Folder import is unavailable on iOS. This bar only renders
                   // on Material, so the guard is a no-op on a normal iOS device;
                   // it stays live only for a forced Material design-system
-                  // override on iOS, mirroring _buildDesktopPageActions.
+                  // override on iOS, mirroring _buildApplePageActions.
                   if (!Platform.isIOS)
                     _buildActionButton(
                       focusPrefix: 'dict-action-folder',
@@ -1268,6 +1293,8 @@ class _DictionaryDialogPageState extends BasePageState {
       tooltip: _selecting ? t.dict_selection_exit : t.batch_select,
       selected: _selecting,
       enabled: _selecting || hasRows,
+      // Apple 导航栏放不下时，多选与「导入词典」最后才收进「⋯」。
+      overflowPriority: 10,
       onTap: _toggleSelecting,
     );
   }
@@ -1308,7 +1335,7 @@ class _DictionaryDialogPageState extends BasePageState {
     );
   }
 
-  List<Widget> _buildDesktopPageActions() {
+  List<Widget> _buildApplePageActions() {
     return [
       FushiIconButton(
         tooltip: t.dict_update_all,
@@ -1329,6 +1356,7 @@ class _DictionaryDialogPageState extends BasePageState {
       FushiIconButton(
         tooltip: t.dialog_import_dictionary,
         icon: Icons.upload_file_outlined,
+        overflowPriority: 20,
         onTap: _importDictionaryFiles,
       ),
       _buildSelectionToggle(),
@@ -1337,30 +1365,6 @@ class _DictionaryDialogPageState extends BasePageState {
         icon: Icons.delete_sweep_outlined,
         enabledColor: theme.colorScheme.error,
         onTap: showDictionaryClearDialog,
-      ),
-    ];
-  }
-
-  List<Widget> _buildMobilePageActions() {
-    return [
-      FushiIconButton(
-        tooltip: t.dialog_import_dictionary,
-        icon: Icons.upload_file_outlined,
-        onTap: _importDictionaryFiles,
-      ),
-      _buildSelectionToggle(),
-      FushiOverflowMenu<VoidCallback>(
-        tooltip: t.show_options,
-        icon: Icons.more_vert,
-        onSelected: (VoidCallback action) => action(),
-        items: [
-          buildPopupItem(
-            label: t.dict_download_browse,
-            icon: Icons.cloud_download_outlined,
-            action: _showDownloadSelectionDialog,
-          ),
-          ..._buildOverflowItems(includeSecondaryImports: true),
-        ],
       ),
     ];
   }
@@ -1695,7 +1699,11 @@ class _DictionaryDialogPageState extends BasePageState {
   }
 
   bool _isDictInstalled(RecommendedDictionary rec) =>
-      isRecommendedDictionaryInstalled(appModel.dictionaries, rec);
+      isRecommendedDictionaryInstalled(
+        appModel.dictionaries,
+        rec,
+        fileHealth: DictionaryFileHealthMonitor.instance.value,
+      );
 
   Set<int> _computeInstalledIndices(List<RecommendedDictionary> cat) {
     final Set<int> indices = {};
@@ -2210,6 +2218,52 @@ class _DictionaryDialogPageState extends BasePageState {
     );
   }
 
+  /// BUG-5489：列表顶部的词典文件状态横幅。文件不在优先说（要用户处理），只有读不到
+  /// 时说「没删任何东西」。逐本的出路在各自详情里（行上有标签）。
+  Widget _buildFileHealthBanner() {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final DictionaryFileHealth health =
+        DictionaryFileHealthMonitor.instance.value;
+    final int missing = health.missingCount;
+    final int unreadable = health.unreadableCount;
+    final bool show = missing > 0 || unreadable > 0;
+    final int restorable = missing > 0 ? _restorableFromHosts().length : 0;
+    return FushiAnimatedSize(
+      duration: context.fushiMotion.spatialDefault.duration,
+      curve: context.fushiMotion.spatialDefault.curve,
+      alignment: Alignment.topCenter,
+      child: !show
+          ? const SizedBox(width: double.infinity)
+          : Padding(
+              padding: EdgeInsets.only(
+                bottom: tokens.spacing.gap + tokens.spacing.gap / 2,
+              ),
+              child: FushiInlineNotice(
+                key: const ValueKey<String>('dict-file-health-banner'),
+                severity: missing > 0
+                    ? FushiNoticeSeverity.error
+                    : FushiNoticeSeverity.warning,
+                icon: missing > 0 ? FushiIcons.warning : FushiIcons.sdStorage,
+                message: missing > 0
+                    ? t.dictionary_files_list_banner_missing(n: missing)
+                    : t.dictionary_files_list_banner_unreadable(n: unreadable),
+                actions: <Widget>[
+                  if (restorable > 0)
+                    FushiTextButton(
+                      key: const ValueKey<String>(
+                        'dict-file-health-restore-all',
+                      ),
+                      onPressed: () => unawaited(_restoreAllFromHosts()),
+                      child: Text(
+                        t.dictionary_files_restore_all(n: restorable),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+    );
+  }
+
   static const _safChannel = FushiChannels.saf;
 
   /// 选词典目录。安卓与 iOS 都走原生 `pickAndCopyDirectory`：整目录拷进
@@ -2681,7 +2735,11 @@ class _DictionaryDialogPageState extends BasePageState {
     // 语言标签：分区里有两种及以上语言时，标了语言的行挂一枚语言 tag（与上方语言
     // 筛选同一套名字）；语言不影响排序，tag 只是告诉用户这本是什么语言。
     final String? language = _showLanguageTags ? row.languageTag : null;
-    if (!_hasServerRows && language == null) return label;
+    final Dictionary? local = row.local;
+    final DictionaryFileIssue? fileIssue = local == null
+        ? null
+        : _fileIssueOf(local);
+    if (!_hasServerRows && language == null && fileIssue == null) return label;
     final RemoteDictionary? remote = row.remote;
     final bool older = remote != null && _olderHost(remote.hostId);
     final bool showsChip =
@@ -2706,6 +2764,13 @@ class _DictionaryDialogPageState extends BasePageState {
             olderHost: older,
           ),
         if (showsChip) SizedBox(width: gap),
+        if (fileIssue != null) ...<Widget>[
+          DictionaryFileIssueTag(
+            key: ValueKey<String>('dict-row-file-issue-${row.key}'),
+            issue: fileIssue,
+          ),
+          SizedBox(width: gap),
+        ],
         Flexible(child: label),
       ],
     );
@@ -3593,7 +3658,122 @@ class _DictionaryDialogPageState extends BasePageState {
             ],
       serverCopySection: _buildServerCopySection(dictionary),
       transferSection: _buildTransferSection(dictionary),
+      fileIssue: _fileIssueOf(dictionary),
+      onReimport: () => _reimportDictionary(dictionary),
+      restoreHosts: _restoreHostsFor(dictionary),
+      onRestore: (String hostId) =>
+          unawaited(_restoreDictionaryFromHost(dictionary, hostId)),
     );
+  }
+
+  /// 文件不在的本机词典可以从哪些 host 拉回来（hostId → 展示名）：目录上有同名副本（没缺席）
+  /// 的 host（反馈 ujt4V8GdT8：此前只能在线重下或手选文件，host 上明明有却拉不回来）。弹窗
+  /// 进程没有传输服务，不给。
+  Map<String, String> _restoreHostsFor(Dictionary dictionary) {
+    if (appModel.dictionaryTransferService == null) {
+      return const <String, String>{};
+    }
+    return <String, String>{
+      for (final RemoteDictionary r in _serverCopiesOf(dictionary.name))
+        r.hostId: _hostName(r.hostId),
+    };
+  }
+
+  /// 文件不在、且有 host 副本可以恢复的本机词典，配上从哪台拉（排最前的那份，与「两者」
+  /// 行详情同一口径），按管理页顺序。
+  List<({Dictionary dictionary, String hostId})> _restorableFromHosts() {
+    if (appModel.dictionaryTransferService == null) {
+      return const <({Dictionary dictionary, String hostId})>[];
+    }
+    final DictionaryFileHealth health =
+        DictionaryFileHealthMonitor.instance.value;
+    return <({Dictionary dictionary, String hostId})>[
+      for (final Dictionary d in appModel.dictionaries)
+        if (health.issueOf(d.name) == DictionaryFileIssue.missing)
+          if (_serverCopiesOf(d.name).firstOrNull case final RemoteDictionary r)
+            (dictionary: d, hostId: r.hostId),
+    ];
+  }
+
+  /// 「从 <host> 恢复」：与「下载到本机」同一条单本传输（[DictionaryTransferService
+  /// .downloadFromHost] 认得文件丢了的那本，照拉并保住本机的顺序 / 开关 / 改名）。
+  Future<void> _restoreDictionaryFromHost(
+    Dictionary dictionary,
+    String hostId,
+  ) => _runDictionaryTransfer(
+    push: false,
+    hostId: hostId,
+    name: dictionary.name,
+    displayName: dictionary.effectiveDisplayName,
+  );
+
+  /// 横幅上的「从服务器恢复 n 本」：同一个进度框里逐本拉回（每本一次单本传输，与详情里的
+  /// 「从 <host> 恢复」同一条路），结束后一条汇总。
+  Future<void> _restoreAllFromHosts() async {
+    final DictionaryTransferService? service =
+        appModel.dictionaryTransferService;
+    final List<({Dictionary dictionary, String hostId})> plan =
+        _restorableFromHosts();
+    if (service == null || plan.isEmpty) return;
+    await _runWithDownloadProgressDialog(
+      initialMessage: t.dict_downloading(
+        name: plan.first.dictionary.effectiveDisplayName,
+      ),
+      body: (DictionaryDownloadJob job) async {
+        job.markImportPhase();
+        int restored = 0;
+        final List<String> failed = <String>[];
+        for (final ({Dictionary dictionary, String hostId}) item in plan) {
+          final String displayName = item.dictionary.effectiveDisplayName;
+          job.message.value = t.dict_downloading(name: displayName);
+          job.progress.value = 0;
+          final DictionaryTransferResult result = await service
+              .downloadFromHost(
+                item.hostId,
+                item.dictionary.name,
+                onProgress: (DictionaryTransferProgress progress) {
+                  if (progress.stage == DictionaryTransferStage.importing) {
+                    enterDictionaryImportStage(
+                      name: displayName,
+                      progressNotifier: job.message,
+                      downloadProgress: job.progress,
+                      job: job,
+                    );
+                    return;
+                  }
+                  job.progress.value = progress.fraction ?? 0;
+                },
+              );
+          switch (result) {
+            case DictionaryTransferDone():
+            case DictionaryTransferAlreadyPresent():
+              restored++;
+            case DictionaryTransferFailed():
+              failed.add(displayName);
+              ErrorLogService.instance.log(
+                'DictionaryDialog.restoreAll',
+                '${result.kind.name} ${item.dictionary.name}@${item.hostId}: '
+                    '${result.error ?? ''}',
+                StackTrace.current,
+              );
+          }
+        }
+        return DictionaryDownloadOutcome(
+          message: failed.isEmpty
+              ? t.dictionary_files_restore_all_done(n: restored)
+              : t.dictionary_files_restore_all_partial(
+                  ok: restored,
+                  failed: failed.length,
+                  names: failed.join(', '),
+                ),
+          severity: failed.isEmpty
+              ? ToastSeverity.success
+              : ToastSeverity.error,
+          toastLength: Toast.LENGTH_LONG,
+        );
+      },
+    );
+    await _loadServerSources();
   }
 
   /// 「推送到 <服务器>」分组；没有还缺这本的查词 host 时不画。
@@ -4029,7 +4209,12 @@ class _DictionaryDialogPageState extends BasePageState {
 
   /// 单本词典「更新」按钮：拉远端 index.json 比 revision，有新版才下载重导。无新版
   /// 提示「已是最新」。任何失败提示 [t.dict_update_failed]，不崩。
-  Future<void> _updateSingleDictionary(Dictionary dictionary) async {
+  ///
+  /// [force]：不比版本直接重下（BUG-5489 文件不在时的「重新导入」）。
+  Future<void> _updateSingleDictionary(
+    Dictionary dictionary, {
+    bool force = false,
+  }) async {
     if (_isDownloading) return;
     if (!dictionary.isUpdatable) return;
 
@@ -4051,10 +4236,11 @@ class _DictionaryDialogPageState extends BasePageState {
               severity: ToastSeverity.error,
             );
           }
-          if (!DictionaryUpdateService.needsUpdate(
-            dictionary.revision,
-            remote.revision,
-          )) {
+          if (!force &&
+              !DictionaryUpdateService.needsUpdate(
+                dictionary.revision,
+                remote.revision,
+              )) {
             return DictionaryDownloadOutcome(
               message: t.dict_update_latest,
               severity: ToastSeverity.info,

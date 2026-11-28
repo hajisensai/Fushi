@@ -24,6 +24,7 @@ import 'package:fushi/src/pages/implementations/stat_period_detail_sheet.dart';
 import 'package:fushi/src/pages/implementations/stat_session_list.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
+import 'package:fushi_srs/fushi_srs.dart' show SrsStoreOpenBlocked;
 import 'package:fushi_engine/stats/stat_derive.dart' show StatDayTotal;
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi/src/pages/implementations/stat_range_bar.dart';
@@ -168,6 +169,22 @@ class _StatisticsCenterPageState extends BasePageState<StatisticsCenterPage> {
   }
 }
 
+/// 总览并进复习时长用的 SRS 存储（[acquire] 即 `srsStorageProvider.future`）。复习库处在代际状态（待升级 / 别的
+/// 进程在升级 / 上次升级失败 / 旧主库待搬：[SrsStoreOpenBlocked] / [SrsLegacyMainDatabasePending]）时打不开，这是
+/// 要用户到复习页处理的状态、不是加载失败：返回 null，总览照常出阅读 / 观看 / 游戏，只是不并复习时长（BUG-5454：
+/// 以前整页「加载出错」，重试也一样）。别的错误照抛。
+Future<SrsStorage?> statsOverviewSrsStorage(
+  Future<SrsStorage?> Function() acquire,
+) async {
+  try {
+    return await acquire();
+  } on SrsStoreOpenBlocked {
+    return null;
+  } on SrsLegacyMainDatabasePending {
+    return null;
+  }
+}
+
 /// 总览 tab：跨域（书 + 视频 + 游戏）的学习日历（含「过去一周」）+ 范围区块 +
 /// 最近沉浸。数据一次 [loadStatFacts] 取完整日面。
 ///
@@ -269,7 +286,9 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab>
       final FushiDatabase db = appModel.database;
       // 复习（SRS）时长读时并进总览（BUG-3771），复习模块关着时不出现。
       final SrsStorage? srs = ref.read(srsModuleEnabledProvider)
-          ? await ref.read(srsStorageProvider.future)
+          ? await statsOverviewSrsStorage(
+              () => ref.read(srsStorageProvider.future),
+            )
           : null;
       // 上锁作品（本次会话未解锁）的行不进任何数字与列表（唯一过滤入口）。
       final StatFacts facts = mediaVisibility.visibleStatFacts(

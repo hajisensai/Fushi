@@ -276,6 +276,16 @@ Future<DataRootMigrationRunOutcome> runDataRootMigration({
       // 跨盘复制进度回灌到遮罩进度条（同盘 rename 不触发，遮罩显示不确定进度）。
       onProgress: (int copied, int total) =>
           appModel.updateDataRootMigrationProgress(copied, total),
+      // 成功时的取证摘要（怎么搬的、复制了多少）：用户报「迁移后书库空了」时靠它分清
+      // 「没复制到」和「复制完之后被别的东西删了」。迁移完马上重启，只记内存诊断日志
+      // 会随进程一起丢，所以记进跨运行保留的数据位置取证环（BUG-5490）并等它落盘。
+      onDiagnostic: (String summary) async {
+        ErrorLogService.instance.logDataLocation(
+          'DataRootMigration.last',
+          summary,
+        );
+        await ErrorLogService.instance.flush();
+      },
       // TODO-1182：引擎据此二次拒绝安装目录/exe 目录，回滚也绝不删含运行 exe 的根。
       resolvedExecutablePath: Platform.resolvedExecutable,
       // TODO-1226：默认根 = 共享用户 Documents → 只搬 Fushi 自有顶层项白名单，
@@ -296,7 +306,8 @@ Future<DataRootMigrationRunOutcome> runDataRootMigration({
     ErrorLogService.instance.logFatal('DataRootMigration.migrate', e, stack);
     _recoverAfterFailedMigration(
       appModel,
-      t.data_storage_migrate_failed(message: e.message),
+      dataRootMigrationFailureMessage(e),
+      hint: dataRootMigrationFailureHint(e, target),
     );
     return DataRootMigrationRunOutcome.failed;
   } catch (e, stack) {
@@ -304,6 +315,7 @@ Future<DataRootMigrationRunOutcome> runDataRootMigration({
     _recoverAfterFailedMigration(
       appModel,
       t.data_storage_migrate_failed(message: e.toString()),
+      hint: dataRootMigrationFailureHint(e, target),
     );
     return DataRootMigrationRunOutcome.failed;
   }
@@ -329,6 +341,30 @@ Future<DataRootMigrationRunOutcome> runDataRootMigration({
       : DataRootMigrationRunOutcome.restarting;
 }
 
+/// 迁移失败时给用户看的一句话。目标不区分大小写、源里有只差大小写的两个文件时讲清是
+/// 哪两个，用户才知道该改什么；其余失败沿用引擎的原因。
+String dataRootMigrationFailureMessage(DataRootMigrationException e) {
+  if (e is DataRootNameCollisionException) {
+    return t.data_storage_migrate_name_collision(
+      file: e.relativePath,
+      other: e.collidesWith,
+    );
+  }
+  return t.data_storage_migrate_failed(message: e.message);
+}
+
+/// 失败遮罩原因下面那行灰字建议。「换一个空文件夹、别选安装目录、别让文件被占用」只对
+/// 用户自己挑了目标文件夹的迁移有意义：Android 内部 / 外部互迁的目标是固定的，用户没
+/// 文件夹可换；撞名的原因文案已经说清该改哪两个文件，再配这句只会把人往错的方向带。
+String? dataRootMigrationFailureHint(
+  Object error,
+  DataRootMigrationTarget target,
+) {
+  if (error is DataRootNameCollisionException) return null;
+  if (target.androidDocumentsLocation != null) return null;
+  return t.data_storage_migrate_failed_suggestions;
+}
+
 /// Android：书库根在内部 / 外部之间迁移的计划（数据库不动）。
 ///
 /// [toExternal] 为真 = 迁到 `Android/data/<包名>/files/data`，否则迁回内部
@@ -338,8 +374,9 @@ Future<DataRootMigrationRunOutcome> runDataRootMigration({
 ///
 /// 但「目标一定不是活数据」只在位置锚点正确时成立。锚点错指空根时（反馈 RCv76PPoiJ），
 /// 用户点「移回内部」的目标恰好就是真正的书库（#4366 指出）。所以清之前先核实它确是
-/// 半成品——每个文件在源里都有同名相对路径（[AppPaths.firstAndroidMigrationTargetOnlyFile]）；
-/// 有源里没有的文件就拒绝，一个字节都不删。
+/// 半成品——每个文件在源里都有同名相对路径，且内容是源那份的前缀（复制完的逐字节相同、
+/// 被打断的是开头一截，见 [AppPaths.androidMigrationTargetBlocker]）。有源里没有的文件、
+/// 或同名文件内容对不上（反馈 hjOW5xpIJ0）就拒绝并报出那个文件，一个字节都不删。
 Future<DataRootMigrationPlan> planAndroidDocumentsMigration({
   required AppModel appModel,
   required bool toExternal,
@@ -376,22 +413,32 @@ Future<DataRootMigrationPlan> planAndroidDocumentsMigration({
     );
   }
   try {
-    final String? targetOnly =
-        await AppPaths.firstAndroidMigrationTargetOnlyFile(
-          target: newDocs,
-          source: Directory(oldDocs),
+    final AndroidMigrationTargetBlocker? blocker =
+        await AppPaths.androidMigrationTargetBlockerInBackground(
+          target: newDocs.path,
+          source: oldDocs,
         );
-    if (targetOnly != null) {
-      ErrorLogService.instance.logDiagnostic(
+    if (blocker != null) {
+      final bool conflict =
+          blocker.kind == AndroidMigrationTargetBlockKind.contentConflict;
+      ErrorLogService.instance.logDataLocation(
         'DataRootMigration.androidClearStaleTarget',
-        '拒绝清空目标 ${newDocs.path}：$targetOnly 在当前书库根 $oldDocs 里没有，'
-            '目标可能是真正的书库',
+        conflict
+            ? '拒绝清空目标 ${newDocs.path}：${blocker.file} 与当前书库根 $oldDocs '
+                  '里的同名文件内容不同（不是中断复制留下的前缀），两份都保留'
+            : '拒绝清空目标 ${newDocs.path}：${blocker.file} 在当前书库根 $oldDocs '
+                  '里没有，目标可能是真正的书库',
       );
       throw DataRootMigrationPrecheckFailure(
-        t.data_storage_migrate_target_has_library(
-          path: newDocs.path,
-          file: targetOnly,
-        ),
+        conflict
+            ? t.data_storage_migrate_target_conflict(
+                path: newDocs.path,
+                file: blocker.file,
+              )
+            : t.data_storage_migrate_target_has_library(
+                path: newDocs.path,
+                file: blocker.file,
+              ),
       );
     }
     if (await newDocs.exists()) await newDocs.delete(recursive: true);
@@ -450,8 +497,12 @@ Future<void> startAndroidDocumentsMigration({
 /// 换成迁移遮罩，设置页 State 已 unmount，snackbar 从不触发。closeResources 已在搬移前
 /// 关 DB，本进程无法原地恢复 → 保持遮罩激活（撤了会落到裸 loading），由用户在失败视图点
 /// 「重启」回到未改变的旧根重新初始化（数据已由引擎完整回滚保留、pref 未写）。
-void _recoverAfterFailedMigration(AppModel appModel, String failureMessage) {
-  appModel.failDataRootMigration(failureMessage);
+void _recoverAfterFailedMigration(
+  AppModel appModel,
+  String failureMessage, {
+  required String? hint,
+}) {
+  appModel.failDataRootMigration(failureMessage, hint: hint);
 }
 
 /// 设置行：显示当前数据根 + 更改位置按钮。仅桌面构造（section 已门控）。
@@ -483,17 +534,16 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
     }
   }
 
-  /// Android：内部 / 外部切换。目标固定，不弹目录选择器；确认框照样列出解析后的落点。
+  /// Android：只剩「外部 → 移回内部」一个方向（BUG-5492：外部 `Android/data` 书库能被
+  /// 文件管理器 / 电脑 / 清理工具整树删掉，不再提供移出去）。目标固定，不弹目录选择器；
+  /// 确认框照样列出解析后的落点。
   Future<void> _changeAndroidLocation() async {
     final bool? external = _androidExternal;
-    if (_migrating || external == null) return;
+    if (_migrating || external != true) return;
     final AppModel appModel = widget.settingsContext.appModel;
-    final bool toExternal = !external;
     final Directory target;
     try {
-      target = toExternal
-          ? await AppPaths.androidExternalDocumentsRoot()
-          : await AppPaths.androidInternalDocumentsRoot();
+      target = await AppPaths.androidInternalDocumentsRoot();
     } catch (e) {
       if (mounted) {
         _showSnackBar(
@@ -508,9 +558,7 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
       DataRootMigrationTarget.androidDocuments(
         documentsRoot: target.path,
         supportRoot: appModel.databaseDirectory.path,
-        location: toExternal
-            ? AppPaths.androidDocumentsLocationExternal
-            : AppPaths.androidDocumentsLocationInternal,
+        location: AppPaths.androidDocumentsLocationInternal,
       ),
     );
     if (!confirmed || !mounted) return;
@@ -518,7 +566,7 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
       await startAndroidDocumentsMigration(
         context: context,
         appModel: appModel,
-        toExternal: toExternal,
+        toExternal: false,
         onStarted: () {
           if (mounted) setState(() => _migrating = true);
         },
@@ -1000,13 +1048,14 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
         : t.data_storage_android_internal_hint;
   }
 
-  /// 按钮文案：桌面「更改位置」；Android 按当前位置给出要去的那一档。
-  String get _changeButtonLabel {
-    if (!Platform.isAndroid) return t.data_storage_change_button;
-    return _androidExternal == true
-        ? t.data_storage_android_move_internal
-        : t.data_storage_android_move_external;
-  }
+  /// 按钮文案：桌面「更改位置」；Android 只有「移回内部存储」。
+  String get _changeButtonLabel => Platform.isAndroid
+      ? t.data_storage_android_move_internal
+      : t.data_storage_change_button;
+
+  /// 有没有可做的位置变更：桌面总有；Android 只在书库还在外部时能移回内部。
+  bool get _canChangeLocation =>
+      !Platform.isAndroid || _androidExternal == true;
 
   @override
   Widget build(BuildContext context) {
@@ -1018,8 +1067,11 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
       icon: FushiIcons.folder,
       controlBelow: true,
       // 行 onTap 注册焦点目标（方向导航可达）；trailing 按钮是视觉入口。
-      onTap: _changeLocation,
-      trailing: _migrating
+      // Android 书库已在内部时没有可迁的方向：不给按钮也不注册点击。
+      onTap: _canChangeLocation ? _changeLocation : null,
+      trailing: !_canChangeLocation
+          ? null
+          : _migrating
           ? Row(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[

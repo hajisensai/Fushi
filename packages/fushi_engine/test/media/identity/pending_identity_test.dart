@@ -36,6 +36,12 @@ class _Facts implements LibraryCurateFacts {
   Future<bool> musicChangedSince(int? sinceMs) async => false;
 
   @override
+  Future<bool> videoWorksChangedSince(int? sinceMs) async => false;
+
+  @override
+  Future<String> changeStamp() async => '';
+
+  @override
   Future<Set<String>?> organizeEntriesSince(
     CollectionShelfDomain domain,
     int? sinceMs,

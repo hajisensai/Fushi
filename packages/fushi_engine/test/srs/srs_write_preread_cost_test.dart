@@ -10,7 +10,7 @@
 // | editFieldsBatch（3 张卡） | (1, 1) | (0, 1) |
 // | writeEdits（3 条笔记） | (1, 1) | (0, 1) |
 // | createNote | (1, 1) | (0, 1) |
-// | changeNoteType（6 条笔记） | (7, 1) | (5, 1)：少现值预读 2 条（笔记、卡片各一条） |
+// | changeNoteType（6 条笔记） | (7, 1) | (5, 1)：少现值预读 2 条（笔记、卡片各一条）；BUG-5572 后 (4, 1)：批量读笔记由身份记录 + 修改记录两条预读并成一条内核 `read note_views` |
 // | migrateLegacyLapis（6 条笔记） | (15, 1) | (11, 1)：少第二遍物化 2 条 + 现值预读 2 条；BUG-5176 后 (8, 1)：笔记不再经 Dart 物化，内核逐条算 |
 // | applyLapisBackfill（2 条要补） | (9, 1) | (8, 1)：少现值预读 1 条；BUG-5176 后 (6, 1)：候选不再经 Dart 物化 |
 // | srsPurgeNotesNow（5 条 / 205 条笔记） | (0, 5) / (0, 205) | (0, 1) / (0, 2) |
@@ -364,7 +364,8 @@ void main() {
 /// 这三条路径改动后的 Drift 语句数（只读查询；每条是什么见各自的实现）。改动前各多：换笔记类型 2 条（现值预读：
 /// 笔记、卡片两类实体各一条）、旧 Lapis 迁移 4 条（第二遍物化的 2 条 + 现值预读 2 条）、补迁 1 条（现值预读，只有笔记）。
 /// BUG-5176 起旧 Lapis 迁移与补迁的逐条判定在内核里做（`change` 的 `retype` 段），Dart 不再物化这批笔记：迁移再少 3 条、
-/// 补迁再少 2 条，且都不随笔记数增长。
-const int kChangeNoteTypeStatements = 5;
+/// 补迁再少 2 条，且都不随笔记数增长。BUG-5572 起 [SrsDbStore.notes] 每块只发一条内核读 `read note_views`（以前是身份
+/// 记录、修改记录两条预读再物化）：换笔记类型再少 1 条。
+const int kChangeNoteTypeStatements = 4;
 const int kMigrateLegacyLapisStatements = 8;
 const int kApplyLapisBackfillStatements = 6;

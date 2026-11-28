@@ -223,7 +223,7 @@ class ServerConfig {
     ffprobePath: null,
     adminToken: null,
     uploadQuotaBytes: 50 * 1024 * 1024 * 1024,
-    subtitleLanguage: 'ja',
+    subtitleLanguage: '',
     metadataLocale: defaultMetadataLocale,
     qbittorrentUrl: null,
     qbittorrentUsername: null,
@@ -255,7 +255,11 @@ class ServerConfig {
   final String? adminToken;
   final int uploadQuotaBytes;
 
-  /// 视频 sidecar 字幕匹配语言代码。
+  /// 显式字幕语言代码（下载 / 补字幕的搜索语言、打开视频时自动挑字幕的目标语言）。
+  ///
+  /// 空串 = 自动：跟随每个视频自己的语言（系列字幕语言 > 视频语言 > 刮削原语言 >
+  /// 偏好 `default_content_language`），与 app 字幕工作台默认语言留空时同一条链
+  /// （BUG-5465）。新装默认空串；已有配置文件里写着的值是用户的显式选择，照旧生效。
   final String subtitleLanguage;
 
   /// 刮削资料语言（BCP-47，如 `ja` / `zh-CN`）：TMDB 文字与海报语言、简介语言

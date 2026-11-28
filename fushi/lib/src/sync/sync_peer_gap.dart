@@ -116,6 +116,19 @@ class SyncPeerGap {
   final SyncPeerGapDimension dimension;
   final bool outdated;
 
+  /// [message] 的逆：报告行恰好是某个「维度 × 过旧 / 不支持」生成的原句时还原，否则
+  /// null。只做精确等值比对——同步任务面板只拿得到错误行文字，据此换成本地化说明
+  /// （`sync_peer_gap_ui.dart`），日志里的原句不变。
+  static SyncPeerGap? fromMessage(String message) {
+    for (final SyncPeerGapDimension d in SyncPeerGapDimension.values) {
+      for (final bool outdated in const <bool>[true, false]) {
+        final SyncPeerGap gap = SyncPeerGap(dimension: d, outdated: outdated);
+        if (gap.message == message) return gap;
+      }
+    }
+    return null;
+  }
+
   /// 写进 [SyncRunReport.errors] 的那一行（同步任务面板逐行展示、错误日志留痕）。
   String get message => outdated
       ? '${dimension.label}: the peer runs an older Fushi version, so '
